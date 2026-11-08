@@ -519,6 +519,7 @@ export type Database = {
           quantidade_pedida: number | null
           referencia_externa: string | null
           transferencia_id: string | null
+          kit_aviso_enviado_em: string | null
         }
         Insert: {
           alertado_em?: string | null
@@ -544,6 +545,7 @@ export type Database = {
           quantidade_pedida?: number | null
           referencia_externa?: string | null
           transferencia_id?: string | null
+          kit_aviso_enviado_em?: string | null
         }
         Update: {
           alertado_em?: string | null
@@ -569,6 +571,7 @@ export type Database = {
           quantidade_pedida?: number | null
           referencia_externa?: string | null
           transferencia_id?: string | null
+          kit_aviso_enviado_em?: string | null
         }
         Relationships: [
           {
@@ -1202,6 +1205,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      kit_ativacoes: {
+        Row: { alvos: string[]; ate: string; codigos: string[]; criado_em: string; dono_id: string; geracao: string; ml_item_id: string; org_id: string }
+        Insert: { alvos: string[]; ate: string; codigos: string[]; criado_em?: string; dono_id: string; geracao: string; ml_item_id: string; org_id: string }
+        Update: { alvos?: string[]; ate?: string; codigos?: string[]; criado_em?: string; dono_id?: string; geracao?: string; ml_item_id?: string; org_id?: string }
+        Relationships: []
+      }
+      kit_venda_identidade: {
+        Row: { canal: string; codigo: string; criado_em: string; ml_item_id: string; order_id: string; org_id: string; variation_id: string }
+        Insert: { canal: string; codigo: string; criado_em?: string; ml_item_id: string; order_id: string; org_id: string; variation_id?: string }
+        Update: { canal?: string; codigo?: string; criado_em?: string; ml_item_id?: string; order_id?: string; org_id?: string; variation_id?: string }
+        Relationships: []
+      }
+      kit_variacao_previas: {
+        Row: { criado_em: string; custo_centavos: number; familia_base_id: string; id: string; kit_id: string | null; modelo: string; org_id: string; pecas: number; tokens_input: number; tokens_output: number }
+        Insert: { criado_em?: string; custo_centavos?: number; familia_base_id: string; id?: string; kit_id?: string | null; modelo: string; org_id: string; pecas: number; tokens_input?: number; tokens_output?: number }
+        Update: { criado_em?: string; custo_centavos?: number; familia_base_id?: string; id?: string; kit_id?: string | null; modelo?: string; org_id?: string; pecas?: number; tokens_input?: number; tokens_output?: number }
+        Relationships: []
+      }
+      kit_variacao_imagens: {
+        Row: { atualizado_em: string; cores: string[]; criado_em: string; criado_por: string | null; custo_usd: number | null; familia_base_id: string; id: string; modelo: string; org_id: string; request_id: string; rotulo: string; status: string; storage_path: string | null }
+        Insert: { atualizado_em?: string; cores: string[]; criado_em?: string; criado_por?: string | null; custo_usd?: number | null; familia_base_id: string; id?: string; modelo: string; org_id: string; request_id: string; rotulo: string; status?: string; storage_path?: string | null }
+        Update: { atualizado_em?: string; cores?: string[]; criado_em?: string; criado_por?: string | null; custo_usd?: number | null; familia_base_id?: string; id?: string; modelo?: string; org_id?: string; request_id?: string; rotulo?: string; status?: string; storage_path?: string | null }
+        Relationships: []
+      }
+      platform_image_deliveries: {
+        Row: { cost_usd: number; delivered_at: string; id: string; month: string; org_id: string; reason: string | null; request_id: string; terms_id: string | null; timezone: string; total_cents: number; unit_cents: number; units: number }
+        Insert: { cost_usd: number; delivered_at?: string; id?: string; month: string; org_id: string; reason?: string | null; request_id: string; terms_id?: string | null; timezone?: string; total_cents: number; unit_cents: number; units: number }
+        Update: { cost_usd?: number; delivered_at?: string; id?: string; month?: string; org_id?: string; reason?: string | null; request_id?: string; terms_id?: string | null; timezone?: string; total_cents?: number; unit_cents?: number; units?: number }
+        Relationships: []
       }
       kit_avisos_sobra: {
         Row: { codigo: string; criado_em: string; org_id: string; resultado: string | null; versao: number }
@@ -3894,6 +3927,7 @@ export type Database = {
           starts_on: string
           timezone: string
           version: number
+          image_unit_cents: number
         }
         Insert: {
           created_at?: string
@@ -3914,6 +3948,7 @@ export type Database = {
           starts_on: string
           timezone?: string
           version: number
+          image_unit_cents?: number
         }
         Update: {
           created_at?: string
@@ -3934,6 +3969,7 @@ export type Database = {
           starts_on?: string
           timezone?: string
           version?: number
+          image_unit_cents?: number
         }
         Relationships: [
           {
@@ -4796,6 +4832,7 @@ export type Database = {
           estado: string
           org_id: string
           versao: number
+          bloqueio_operador_origem: string | null
         }
         Insert: {
           bloqueio_moderacao?: boolean
@@ -4805,6 +4842,7 @@ export type Database = {
           estado?: string
           org_id: string
           versao?: number
+          bloqueio_operador_origem?: string | null
         }
         Update: {
           bloqueio_moderacao?: boolean
@@ -4814,6 +4852,7 @@ export type Database = {
           estado?: string
           org_id?: string
           versao?: number
+          bloqueio_operador_origem?: string | null
         }
         Relationships: [
           {
@@ -5348,6 +5387,7 @@ export type Database = {
           org_id: string
           tentativas: number
           ultimo_erro: string | null
+          obrigatoria: boolean
         }
         Insert: {
           atualizado_em?: string
@@ -5357,6 +5397,7 @@ export type Database = {
           org_id: string
           tentativas?: number
           ultimo_erro?: string | null
+          obrigatoria?: boolean
         }
         Update: {
           atualizado_em?: string
@@ -5366,6 +5407,7 @@ export type Database = {
           org_id?: string
           tentativas?: number
           ultimo_erro?: string | null
+          obrigatoria?: boolean
         }
         Relationships: [
           {
@@ -5772,6 +5814,39 @@ export type Database = {
       inventario_orgs_elegiveis: { Args: never; Returns: string[] }
       is_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
+      kit_politica_operador: {
+        Args: { p_bloquear: boolean; p_codigos: string[]; p_org: string; p_origem?: string; p_versoes?: Json }
+        Returns: Json
+      }
+      kit_ativacao_reivindicar: {
+        Args: { p_alvos: string[]; p_codigos: string[]; p_dono: string; p_geracao: string; p_item: string; p_org: string; p_prazo_s: number }
+        Returns: Json
+      }
+      kit_ativacao_liberar: { Args: { p_apagar: boolean; p_dono: string; p_geracao: string; p_org: string }; Returns: boolean }
+      registrar_pendencia_kit: { Args: { p_erro: string; p_order: string; p_org: string }; Returns: undefined }
+      kit_variacao_consumir_previa: {
+        Args: { p_base: string; p_chave: string; p_kit: string; p_org: string; p_pecas: number; p_previa: string }
+        Returns: Json
+      }
+      kit_variacao_sair: { Args: { p_codigo: string; p_id: string; p_org: string }; Returns: undefined }
+      kit_variacao_base_em_kit: { Args: { p_codigos: string[]; p_org: string }; Returns: string }
+      kit_aplicar_movimento: {
+        Args: { p_codigo: string; p_delta: number; p_motivo: string; p_org: string; p_transferencia: string }
+        Returns: undefined
+      }
+      kit_sku_em_transferencia: { Args: { p_codigo: string; p_org: string }; Returns: boolean }
+      kit_transferencia_movimentos: {
+        Args: { p_org: string; p_transferencia: string }
+        Returns: { codigo: string; papel: string; quantidade: number }[]
+      }
+      kit_sku_travado: {
+        Args: { p_codigo: string; p_org: string }
+        Returns: { p_estoque: number; p_id: string; p_pai: string }[]
+      }
+      kit_reposicao_saldo: { Args: { p_codigo: string; p_org: string }; Returns: number }
+      kit_reposicao_pendente: { Args: { p_codigo: string; p_org: string }; Returns: boolean }
+      kit_reposicao_conferir: { Args: { p_org: string; p_versoes: Json }; Returns: string }
+      kit_reposicao_reivindicar: { Args: { p_kit: string; p_org: string }; Returns: string[] }
       kit_adquirir_exclusao: {
         Args: { p_codigos: string[]; p_dono_id: string; p_dono_tipo: string; p_org: string }
         Returns: Json

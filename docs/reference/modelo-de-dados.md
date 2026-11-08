@@ -1613,7 +1613,9 @@ Chave de vínculo é `(org_id, codigo)`. Toda tabela tem `org_id`, com FK compos
 ### `kits_variacao`
 `codigo_pai_base`, `codigo_pai_kit` (único por org), `pecas_por_kit` (2 a 6), `preco`, `so_em_kit`,
 `reposicao_auto`, `meta` (`>= 0`), `versao`, `status` (default `rascunho`, sem check; a criação grava `publicando`, e o
-worker da saga muda para `publicado` ou `erro`), `criado_em`, `chave_cadastro` (idempotência da criação, único por org).
+worker da saga muda para `publicado` ou `erro`), `criado_em`, `chave_cadastro` (idempotência da criação, único por org),
+`listing_type_id` (`gold_special|gold_pro`, default `gold_special`: tipo de anúncio dos itens do kit) e `pedido_hash`
+(hash do pedido que a chave criou; a mesma chave com outro pedido é recusada). *Migration `20261108040001_kit_variacao_criacao.sql`.*
 
 ### `kit_variacao_skus`
 `kit_id`, `codigo` (único por org), `tamanho`, `cores text[]`, `rotulo_cor`.
@@ -1624,7 +1626,8 @@ PK `(kit_sku_id, codigo)`, `quantidade` (peças em 1 kit). Imutável: trigger re
 
 ### `sku_politica_kit`
 PK `(org_id, codigo)`, `estado` (`normal|guardado|sobra`), `versao`, `bloqueio_operador`,
-`bloqueio_moderacao`, `bloqueio_retirada`. Trigger `sku_politica_kit_monotonica`: `versao` não decresce, e a linha
+`bloqueio_moderacao`, `bloqueio_retirada`, `bloqueio_operador_origem uuid` (quem criou o bloqueio do operador; o retry da
+mesma origem continua sendo dela, reativar limpa; migration `20261107234125_kit_politica_operador.sql`). Trigger `sku_politica_kit_monotonica`: `versao` não decresce, e a linha
 de SKU em transferência aberta não é apagada nem muda de código. É o que torna a soma de versões
 (`kit_transferencias.versao_politica`) uma prova de "nada mudou".
 
@@ -1676,9 +1679,54 @@ Aviso de Sobra pendente (Task 14): PK `(org_id, codigo, versao)`, `resultado` (`
 do envio), `criado_em`. Nasce em `kit_reposicao_sobra`, na mesma transação da transição; sai depois do envio. A reposição só
 avisa com o resultado da reativação conhecido. RLS de `select` por org; escrita só `service_role`.
 
+### `kit_ativacoes`
+Intenção de ativação pelo operador (Task 6), ligada à exclusão `ativacao`: PK `(org_id, dono_id)`, `ml_item_id`, `alvos text[]`,
+`codigos text[]`, `criado_em`, `geracao uuid` e `ate` (execução que detém a ativação e até quando; vencido, outra assume).
+Só sai quando o resultado no ML de todos os alvos (item e cópias de catálogo) foi confirmado; resultado incerto mantém a
+linha e a exclusão. RLS ligada; escrita só `service_role` (RPCs `kit_ativacao_reivindicar` e `kit_ativacao_liberar`).
+*Migration `20261107234125_kit_politica_operador.sql`.*
+
+### `kit_venda_identidade`
+Identidade estável por item de pedido (Task 8): PK `(org_id, canal, order_id, ml_item_id, variation_id)` (`variation_id` vazio =
+item sem variação), `codigo`, `criado_em`. Gravada na 1ª resolução, compartilhada por webhook e importação da saga; débito
+só sob essa identidade. Imutável (trigger `kit_venda_identidade_imutavel`). Sem acesso a `anon` e `authenticated`; `service_role`
+só `select` e `insert`. Colunas relacionadas: `worker_pendencias.obrigatoria boolean not null default false` (nunca descartada pelo
+contador) e `estoque_movimentos.kit_aviso_enviado_em timestamptz` (índice parcial `estoque_movimentos_zerado_sem_aviso_idx`).
+*Migration `20261108022634_kit_variacao_venda.sql`.*
+
+### `kit_variacao_previas`
+Consumo de IA da prévia de texto (Task 11): `id`, `org_id`, `familia_base_id`, `pecas` (2 a 6), `modelo`, `tokens_input`,
+`tokens_output`, `custo_centavos` (`>= 0`), `kit_id` (preenchido na criação), `criado_em`. Uma linha por chamada de
+`gerar-texto-kit`, gravada antes de interpretar a resposta. Sem acesso a `anon` e `authenticated`; escrita só `service_role`.
+`kit_variacao_consumir_previa` associa a prévia ao kit uma vez e soma o custo na família do kit. Índice `(org_id, criado_em desc)`.
+*Migration `20261108061820_kit_variacao_previa_texto.sql`.*
+
+### `kit_variacao_imagens`
+Geração de foto por IA (Task 15): `id`, `org_id`, `request_id` (único por org), `status`
+(`pendente|pendente_upload|gerada|recusada`), `familia_base_id`, `cores text[]`, `rotulo`, `modelo`, `storage_path`,
+`custo_usd numeric(12,6)` (custo real do provedor), `criado_por`, `criado_em`, `atualizado_em`. Check: `gerada` e
+`pendente_upload` exigem `storage_path` e `custo_usd > 0`. Índice parcial de cobrança `(org_id, criado_em) where status = 'gerada'`.
+Sem acesso a `anon` e `authenticated`. `configuracoes.ai_model_imagem` passa a aceitar só `google/gemini-nano-banana-2.1` e
+`google/gemini-2.5-flash-image` (NULL = nano-banana-2.1). *Migration `20261108083006_kit_variacao_imagem_ia.sql`.*
+
+### `platform_image_deliveries` e `platform_commercial_terms.image_unit_cents`
+Cobrança por imagem IA (Task 16): `image_unit_cents bigint not null default 0` na condição comercial (preço por imagem, R$ 0 até
+configurar). `platform_image_deliveries`: `id`, `org_id`, `request_id` (único por org), `terms_id`, `month` (Fortaleza, no
+momento da geração), `timezone`, `unit_cents`, `units` (0 ou 1), `total_cents`, `cost_usd` (custo real para a Daludi, não o
+valor cobrado), `reason`, `delivered_at`. Append-only (trigger), só `service_role`. O gatilho `kit_variacao_imagens_cobranca`
+grava a entrega na transação em que a linha vira `gerada`, com `on conflict do nothing`, sob o lock da org que o fechamento
+mensal também toma. `platform_save_terms` e `platform_billing_preview` redefinidas (linha "Imagens IA" só com preço > 0 ou uso).
+*Migration `20261108094500_platform_imagem_ia_metering.sql`.*
+
 ### `kit_exclusoes`
 Exclusão durável única: PK `(org_id, codigo)`, `up_id` (nulo até o dono resolver o UP), `dono_tipo`
 (`transferencia|publicacao|ativacao`), `dono_id`, `criado_em`. Índice `(org_id, dono_id)`.
+
+### Colunas novas em tabelas existentes
+- `familias.kit_variacao_pedido text`: hash do pedido da criação, para a retomada do cadastro parcial.
+- `estoque_movimentos.transferencia_id uuid` (FK composta para `kit_transferencias`) e motivos `kit_saida`/`kit_entrada` no check;
+  índice único `(transferencia_id, codigo, motivo)`. `kit_exclusoes.dono_tipo` aceita `transferencia|publicacao|ativacao`.
+- `kit_transferencias.chave_cadastro` e `pedido_hash`: ver acima.
 
 ### Funções
 Todas só `service_role`. As de transferência são `security definer`, dono `estoque_rpc_executor`,
@@ -1728,6 +1776,28 @@ Todas só `service_role`. As de transferência são `security definer`, dono `es
   `kit_soltar_exclusao(p_org, p_dono_id)`.
 - `registrar_entrada` e `ajustar_estoque` recusam (`23514`, `sku_em_transferencia`) SKU em transferência
   `ativa` ou `travada`.
+- Guards de SKU participante (Task 7, migration `20261108004705_kit_variacao_guards.sql`): triggers `variacoes_kit_saldo_copia`
+  (nova cópia herda o saldo da canônica, lido sob o lock dela), `variacoes_kit_conferir_update` (mutação que resolveu a canônica
+  antiga recebe `canonica_trocou`, `40001`, retentável), `variacoes_kit_preservar_composicao` e
+  `familias_kit_preservar_composicao` (a última cópia de um participante não sai; apagar a canônica leva o saldo à próxima);
+  `kit_variacao_sair(p_org, p_codigo, p_id)`; `kit_variacao_base_em_kit(p_org, p_codigos)` (recusa base com Kit Virtual ou kit
+  vinculado, nos dois sentidos); `preparar_republicacao` e `limpar_movimentos_orfaos` redefinidas (republicação disputa a
+  exclusão e incrementa a versão da política).
+- `kit_politica_operador(p_org, p_codigos, p_bloquear, p_versoes, p_origem)` (pausa/reativa do operador na política) e
+  `kit_ativacao_reivindicar` / `kit_ativacao_liberar` (migration `20261107234125_kit_politica_operador.sql`).
+- Venda (Task 8): `registrar_pendencias_pedido(p_org, p_ok, p_inicio, p_falhas, p_erro)` redefinida (devolve `descartados`) e
+  `registrar_pendencia_kit(p_org, p_order, p_erro)`.
+- `inventario_calcular(p_org)` redefinida (Task 9): assinatura igual; SKU de kit não vira linha e o total de um componente é
+  individual + Σ (saldo do kit × peças) + trânsito (invariante 2).
+- Criação e gestão (Tasks 10, 13, 14): `kit_variacao_criar` (redefinida na Task 14, `so_em_kit` guarda os componentes antes da
+  montagem), `kit_variacao_gerenciar(p_org, p_kit, p_acao, p_versao, p_chave, p_hash, p_meta, p_itens, p_alvos,
+  p_desligar_so_em_kit)`, `kit_variacao_adicionar(p_org, p_kit, p_versao, p_familia, p_chave, p_hash, p_novos, p_existentes,
+  p_baseline, p_alvos)` e `kit_variacao_consumir_previa(p_org, p_previa, p_base, p_pecas, p_kit, p_chave)`.
+  `kit_criar_transferencia` e `kit_saga_salvar_alvo` redefinidas com o alvo `criar`. `kit_saga_finalizar` ganhou
+  `p_pausas jsonb` (assinatura antiga dropada). Reposição: `kit_reposicao_saldo`, `kit_reposicao_pendente`, `kit_reposicao_conferir`
+  e `kit_reposicao_reivindicar`, além das já listadas.
+- Platform: ver `platform_image_deliveries` acima.
+
 
 ## Storage
 

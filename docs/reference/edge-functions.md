@@ -68,6 +68,13 @@
 | criar-kit-virtual | **true** | HTTP (frontend, **admin**) | sim (idempotência por `chave_cadastro`) |
 | encerrar-kit-virtual | **true** | HTTP (frontend, **admin**) | sim (kit já `closed` responde sucesso) |
 | subir-foto-kit-virtual | **true** | HTTP (frontend, **admin**) | sim (upload puro, sem escrita em banco) |
+| **Kit com variação (ADR-0199) — implementado na branch, módulo `kit_variacao` desligado** ||||
+| criar-kit-variacao | **true** | HTTP (frontend, **admin**, módulo `kit_variacao`) | sim (idempotência por `chave_cadastro` + `pedido_hash`) |
+| gerenciar-kit-variacao | **true** | HTTP (frontend, **admin**, módulo `kit_variacao`) | sim (`chave_cadastro` + `pedido_hash` + CAS de `kits_variacao.versao`) |
+| gerar-texto-kit | **true** | HTTP (frontend, **admin**, módulo `kit_variacao`) | não (cada chamada consome IA e grava uma prévia) |
+| gerar-foto-kit | **true** | HTTP (frontend, **admin**, módulos `kit_variacao` e `imagem_ia`) | sim (por `request_id` em `kit_variacao_imagens`) |
+| kit-transferencia | false | QStash worker | sim (claim por `execucao_token`; um passo por invocação) |
+| kit-reposicao | false | QStash worker | sim (decisões versionadas por `sku_politica_kit.versao`) |
 | **Fiscal (ADR-0135)** ||||
 | sincronizar-fiscal-ml | false | QStash worker | sim (upsert POST→409→PUT por SKU) |
 | sincronizar-marca-ml | false | QStash worker (enfileirado pelo Editar marca) | sim (versão + lease; SKU certo é pulado) |
@@ -1358,6 +1365,56 @@ Espelha o guard irmão `kit_vinculado_ativo` (ADR-0151 D-14); a trigger de banco
 mutação. **Pendência de verificação:** a query (`.eq('status', ...).in(...)`) só foi exercitada
 contra um fake em memória nos testes desta branch, que não filtra por `status` de verdade — falta
 um smoke test contra Postgres real antes do primeiro deploy.
+
+### Kit com variação (ADR-0199)
+
+> **Estado:** implementado na branch `worktree-kit-com-variacao-design`, **não implantado**. Módulos `kit_variacao` e
+> `imagem_ia` desligados em todas as orgs; migrations e edges ainda não aplicadas. Roteiro em
+> [project-status.md](../project-status.md) ("Antes de ligar o módulo"). Núcleo em `_shared/kit-variacao/`
+> (`saga.ts`, `politica.ts`, `reposicao.ts`, `ml-oferta.ts`, `conciliacao.ts`, `combinacoes.ts`, `familia-kit.ts`, `venda.ts`).
+
+- **criar-kit-variacao** — cria o kit (cores combinadas × tamanho numa família User Products). Admin (ADR-0060), módulo
+  `kit_variacao`, `requireUserOrg`. Valida a base, lê a oferta no ML (baseline por SKU), grava tudo pela RPC
+  `kit_variacao_criar` numa transação e enfileira a saga `montar`; **nada é publicado aqui**. Associa a prévia de texto
+  (`kit_variacao_consumir_previa`) e confere que as fotos são da própria org e fora de item moderado. Recusas por `motivo`
+  (409 salvo indicação): `base_em_kit`, `base_legacy`, `base_full`, `base_multi_origem`, `base_moderada`, `foto_moderada`,
+  `peca_insuficiente`, `baseline_divergente`, `up_ocupado`, `pedido_diferente`, `cadastro_parcial_divergente`,
+  `previa_usada`, `previa_divergente`; 403 `modulo_desligado` e `foto_nao_autorizada`. Também atende "Montar mais"
+  (SKU novo num kit existente, `kit_variacao_adicionar`).
+- **gerenciar-kit-variacao** — tela Gerenciar kit: montar, desmontar, meta, ligar/desligar reposição e "Vender só em kit".
+  Uma RPC por operação (`kit_variacao_gerenciar`), com CAS de `versao` e efeito na mesma transação; desmontar desliga a
+  reposição antes. Enfileira a saga ou a reposição. Recusas: `versao`, `up_ocupado`, `alvos_invalidos`, `sku_sem_anuncio`,
+  `so_em_kit_desligado`, `pedido_diferente`, `kit_nao_encontrado` (404), `modulo_desligado` (403).
+- **gerar-texto-kit** — prévia de título e descrição por IA (`copywriter-kit-prompt.ts`, modelo de texto da org). Não
+  grava no kit: registra o consumo em `kit_variacao_previas` **antes** de interpretar a resposta; o cliente nunca informa
+  tokens nem custo. Só admin.
+- **gerar-foto-kit** — foto da combinação por IA (módulo `imagem_ia`, modelo `ai_model_imagem`, padrão
+  `google/gemini-nano-banana-2.1`). Fotos de origem escolhidas no servidor. Reserva em `kit_variacao_imagens`
+  (`pendente` → `pendente_upload` → `gerada` | `recusada`); repetir o `request_id` confere o objeto no storage e nunca gera
+  de novo. Prazo de 140 s; sem tempo para a IA, recusa antes de reservar (nada gerado nem cobrado). Só `gerada` é cobrada
+  (trigger `kit_variacao_imagens_cobranca` → `platform_image_deliveries`).
+- **kit-transferencia** (`verify_jwt=false`, assinatura QStash) — worker da saga de transferência (`montar|desmontar|repor|
+  cancelamento|sair_sobra|entrada`). Um passo por invocação, com claim `kit_reivindicar_execucao`; pausa, reduz, aumenta e
+  confirma os alvos no ML, cria os itens do kit, registra o ledger e finaliza (`kit_saga_finalizar`). Ao fim, enfileira
+  a reposição e fecha a criação (`kits_variacao.status` = `publicado` ou `erro`).
+- **kit-reposicao** (`verify_jwt=false`, assinatura QStash) — reposição automática de "Vender só em kit". Disparada por kit
+  depois de venda, fim de transferência e ao desligar a opção. Reativa só a pausa da própria automação
+  (`kit_pausas_automaticas`) e avisa a Sobra pelo Telegram (`kit_avisos_sobra`). HTTP 500 = ficou para depois.
+- **Edges alteradas** (comportamento só com SKU participante de kit, org com o módulo; SKU comum inalterado):
+  `sync-venda`, `reconciliar-faturamento` (+`kit.ts`) e `reconciliar-estoque` (+`transferencias.ts`: leitura diária do ML,
+  transferência `entrada` para divergência) usam a identidade estável por item de pedido (`kit_venda_identidade`) e
+  `_shared/kit-variacao/venda.ts`; `publicar-familias`, `publish-familia-ml`, `publicar-split-ml`, `update-familia-ml`,
+  `atualizar-status-publicado`, `remover-publicado`, `operacoes-massa`, `sincronizar-estoque` e
+  `reconciliar-convergencia-up` importam `_shared/kit-variacao/politica.ts` (política do SKU e exclusão durável em
+  `kit_exclusoes`: publicação, pausa e quantidade de SKU participante passam pela política); `criar-kit-vinculado` e
+  `criar-kit-virtual` também (recusam base com kit com variação); `ingest-lote` e `adicionar-variacoes-familia` ganharam
+  guards de SKU participante (Task 7); `process-familia` e `reprocessar-familia` tratam a família do kit
+  (`familias.kit_variacao_pedido`, `_shared/kit-variacao/familia-kit.ts`) sem reescrever título e descrição aprovados;
+  `usuarios` grava módulos por `set_modulos_org_seguro` (`usuarios/modulos-org.ts`); `platform-admin`,
+  `fechar-mes-plataforma` e `materializar-metricas` (via `_shared/platform-admin/*`) cobram "Imagens IA" (`image_unit_cents`).
+  Mudou `_shared/ai/tokens.ts`, `_shared/queue.ts`, `_shared/estoque/baixa.ts` e `_shared/ml/*`: redeployar dependentes.
+- **config.toml:** `kit-transferencia` e `kit-reposicao` com `verify_jwt=false`; `criar-kit-variacao`, `gerar-texto-kit`,
+  `gerar-foto-kit` e `gerenciar-kit-variacao` com `verify_jwt=true`.
 
 ### Marca própria / marca por produto (ADR-0186, ADR-0188)
 - **atualizar-marca-familia** *(HTTP, JWT — admin ou suporte `full`, auditado)* — "Editar marca" do card do

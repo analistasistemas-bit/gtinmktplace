@@ -83,6 +83,11 @@
 | **Módulo** | Funcionalidade **paga** opcional, habilitada por organização pelo super-admin (`organizations.modulos_habilitados`, hoje `'estoque'` e `'fiscal'`), espelhando `canais_habilitados` — com uma diferença: **não há módulo obrigatório**, lista vazia é o default de toda org. Gate em dois níveis: esconder o menu **e** recusar a edge com 403 — diferente de **permissão de menu**, que é só navegação (ADR-0047). |
 | **Cadastro manual** | Criar produto pela UI, sem planilha (edge `cadastrar-produto`, módulo `estoque`). Grava um lote normal com `lotes.origem='manual'` e cai na **mesma Revisão** do fluxo de planilha, então publicação, split e user products não mudam. Não publica nada — publicar continua sendo ato explícito na Revisão. |
 | **Sessão de cadastro = um lote** | Vários produtos cadastrados em sequência entram no **mesmo** lote manual aberto da org, em vez de um lote por produto (D-1.1). "Aberto" = `origem='manual'` e status em `importando`/`processando`/`revisao`. |
+| **Kit com variação (ADR-0199)** | Anúncio de kit (2 a 6 peças) com cores combinadas × tamanho numa família User Products, com saldo próprio (`variacoes`) e composição imutável (`kit_variacao_componentes`). Módulo `kit_variacao`. Não é kit vinculado (ADR-0151) nem Kit Virtual (ADR-0154). |
+| **SKU participante** | SKU individual ou de kit que entra em `kit_variacao_skus` ou `kit_variacao_componentes`. Escrita de quantidade no ML só com o anúncio pausado, depois da quarentena e da conciliação. |
+| **Transferência de kit (saga)** | Operação durável e idempotente (`kit_transferencias`) que move peças entre individual e kit: `montar`, `desmontar`, `repor`, `cancelamento`, `sair_sobra`, `entrada`. Worker `kit-transferencia`. |
+| **Guardado / Sobra** | Estados do SKU individual em "Vender só em kit" (`sku_politica_kit.estado`). Guardado fica pausado e alimenta a reposição; Sobra reativa o individual e avisa no Telegram. |
+| **Invariante 2** | Total de peças de um componente = individual + Σ (saldo do kit × peças do componente no kit) + trânsito. Conferida por SQL no piloto e usada pelo inventário. |
 
 ## Fiscal (ADR-0135)
 

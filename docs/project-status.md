@@ -2,9 +2,40 @@
 
 > Documento vivo. Este e o retrato curto do estado atual do projeto. Historico detalhado fica em `project-history.md`.
 
-**Ultima atualizacao:** 2026-11-03
+**Ultima atualizacao:** 2026-11-08
+
+## Kit com variação: antes de ligar o módulo (nada abaixo foi executado)
+
+1. **Migrations.** `supabase db push` com 13 migrations novas do kit (`20261107190209` a `20261108094500`). Pode exigir
+   `--include-all`: `20261107190209` e `20261107192458` são anteriores a migrations da main já aplicadas
+   (`20261107192533` CEST e `20261107201608` modelo de texto). Validar com `npm run db:check`. Fazer o merge da main (sem
+   force-push) antes, para não reordenar.
+2. **Edges.** Deploy de **todas** as edges abaixo, depois de `db push` e antes de ligar qualquer módulo; conferir a versão
+   ativa e o hash de cada bundle por `supabase functions download` (prova por hash). Mudança em `_shared/` exige redeploy dos
+   dependentes transitivos. Manifesto estimado por fechamento estático de imports relativos contra a main mesclada
+   (`cfaae298`); refazer na hora do deploy.
+   - Novas (6): `kit-transferencia`, `kit-reposicao`, `criar-kit-variacao`, `gerenciar-kit-variacao`, `gerar-texto-kit`, `gerar-foto-kit`.
+   - Alteradas diretamente (25 no total, incluindo as novas): `adicionar-variacoes-familia`, `atualizar-status-publicado`, `criar-kit-variacao`, `criar-kit-vinculado`, `criar-kit-virtual`, `gerar-foto-kit`, `gerar-texto-kit`, `gerenciar-kit-variacao`, `ingest-lote`, `kit-reposicao`, `kit-transferencia`, `operacoes-massa`, `process-familia`, `publicar-familias`, `publicar-split-ml`, `publish-familia-ml`, `reconciliar-convergencia-up`, `reconciliar-estoque`, `reconciliar-faturamento`, `remover-publicado`, `reprocessar-familia`, `sincronizar-estoque`, `sync-venda`, `update-familia-ml`, `usuarios`.
+   - Dependentes transitivos de `_shared/` alterado (50): `acompanhar-migracao-pxv`, `ads-campanhas`, `ads-metricas`, `ajustar-estoque`, `analisar-viabilidade`, `atributos-familia`, `atualizar-fiscal-familia`, `atualizar-marca-familia`, `backfill-faturamento`, `cadastrar-produto`, `calcular-tarifa-ml`, `coletar-ads-ml`, `coletar-trafego-ml`, `confirmar-publicacao-ml`, `definir-categoria-familia`, `desfazer-nota-compra`, `encerrar-kit-virtual`, `entrada-estoque`, `extensao`, `fechar-mes-plataforma`, `importar-nota-compra`, `inventario`, `materializar-metricas`, `metricas-vendas`, `migrar-preco-por-variacao`, `ml-webhook`, `monitorar-moderados`, `notificar-carrinho`, `notificar-liberacao`, `platform-admin`, `posvenda-acao`, `posvenda-detalhe`, `preview-kit-virtual`, `publicar-anuncio`, `pulse-coletar`, `pulse-sonar-vendas`, `regenerar-copy-familia`, `renovar-tokens-ml`, `resumo-diario`, `retentar-catalogo`, `sincronizar-fiscal-ml`, `sincronizar-marca-ml`, `sincronizar-promocoes`, `status-publicados`, `sync-devolucao`, `sync-mensagem`, `sync-pergunta`, `tabela-frete-ml`, `telegram-bot`, `vincular-catalogo`.
+   - Ordem relevante: `publicar-familias` antes ou junto de `publish-familia-ml`; `kit-transferencia` junto com a migration
+     `20261108052338` (a assinatura de `kit_saga_finalizar` mudou); `usuarios` entra no manifesto (`set_modulos_org_seguro`).
+3. **Portão 4b (concorrência).** Rodar em Postgres local, com todas as migrations, `supabase/tests/*concorrencia*.sh`
+   integralmente verdes (`kit_variacao_rpc_concorrencia.sh`, `kit_variacao_guards_concorrencia.sh`,
+   `kit_politica_operador_concorrencia.sh`, `platform_imagem_ia_concorrencia.sh`; os demais `*concorrencia*.sh` do diretório
+   também). Docker estava parado quando as tasks fecharam: o portão **não foi rodado**. Sem ele, o módulo não liga.
+4. **Piloto.** Ligar `kit_variacao` só na DSA ou na Daludi e criar o primeiro kit real com Diego, com **1 combinação**.
+   Conferir a **invariante 2** (total de peças de cada componente = individual + Σ saldo do kit × peças + trânsito) por SQL
+   **antes e depois**, e validar a tela real (a validação visual foi feita só em harness com dados injetados).
+5. **Medir no piloto.** (a) se a cópia de catálogo é indexada pela busca do ML (fora da garantia de pausa pós-CREATE até
+   medir); (b) o tempo do seletor de combinação no ML. `imagem_ia` só depois, com o modelo de imagem da org conferido.
+
+**Pendências de decisão do Diego:** (a) org em produção com `ai_model_imagem = gemini-2.5-flash-image`: trocar para o padrão
+`nano-banana-2.1`? (escrita em produção); (b) preço da imagem IA (`image_unit_cents` nasce em R$ 0) e painel de consumo no admin;
+(c) token de bot do Telegram que apareceu na saída de um subagente (não foi a arquivo): girar?
 
 ## Snapshot
+
+- **Kit com variação (ADR-0199) — IMPLEMENTADO NA BRANCH `worktree-kit-com-variacao-design`, NÃO IMPLANTADO (2026-11-08).** Cores combinadas × tamanho numa família User Products, com saldo próprio do kit, escrita de quantidade só com o anúncio pausado (saga `kit-transferencia`), política por SKU, reposição "Vender só em kit", texto por IA, foto por IA (módulo `imagem_ia`) e cobrança por imagem na fatura. 16 tasks aprovadas por revisão externa; módulos `kit_variacao` e `imagem_ia` desligados, 13 migrations (`20261107190209` a `20261108094500`) e 6 edges novas (`kit-transferencia`, `kit-reposicao`, `criar-kit-variacao`, `gerenciar-kit-variacao`, `gerar-texto-kit`, `gerar-foto-kit`) não aplicadas. **Portões abertos:** `db push` (talvez `--include-all`), deploy do manifesto de edges com prova por hash, portão 4b (scripts `*concorrencia*.sh` em Postgres local, não rodado) e piloto com 1 combinação, ver "Antes de ligar o módulo" em `docs/TASKS.md`. Ver `docs/TASKS.md`.
 
 - **Anexo nas mensagens pós-venda do ML (emendas ADR-0067 e ADR-0192) — em produção desde 2026-11-07 (main `3236f39a`; `responder-mensagem` v42, `posvenda-anexo` v7, migration `20261107163534`); primeiro envio real pelo app pendente.** Foto ou PDF até 5 MB junto com o texto; anexos enviados e recebidos no histórico, sem storage próprio; envio protegido por trava por pack em `ml_posvenda_acoes`, com "Conferir no Mercado Livre" e "Já conferi, liberar envio". Contrato do ML medido em pedido real. Ver `docs/TASKS.md`.
 
