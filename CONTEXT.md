@@ -185,3 +185,31 @@ _Evitar_: baixo giro (que olha duas janelas de 30 dias e exclui quem vendeu zero
 **Oportunidade**:
 Estimativa do lucro das vendas que as visitas dos anúncios da campanha recomendada deveriam ter gerado na conversão média da conta e não geraram. Só ordena as sugestões: mede distância da média, não o que a promoção recupera, e por isso a tela mostra quanto vendeu e quanto seria esperado pela média da conta, não um valor em reais.
 _Evitar_: dinheiro parado, potencial garantido.
+
+## Imagens do anúncio por IA
+
+**Galeria da cor**:
+Conjunto de até sete imagens de anúncio geradas por IA para uma cor de uma família, cada uma com uma missão própria na jornada de compra (capa, contexto de uso, quebra de objeção, benefícios, especificações, como usar, detalhes). Cada variação daquela cor mostra a sua galeria no marketplace; cores diferentes têm galerias diferentes. O operador escolhe quais missões gerar, a mesma escolha para todas as cores da família. Aplicada, a galeria entra nas fotos daquela cor no anúncio, só com as imagens aprovadas e na ordem das missões, substituindo as fotos atuais (padrão) ou depois delas; cor sem galeria segue com as fotos de sempre. A galeria nasce para anúncios já publicados.
+_Evitar_: fotos comuns da família (capa, capa2 e capa3, que são as mesmas para todas as cores).
+
+**Fato do produto**:
+Informação técnica que uma imagem pode afirmar como verdade (medida, metragem, composição, marca, conteúdo da embalagem). Só vale o que consta nos dados da família; o que a IA lê na foto serve apenas para conferir, nunca como fonte.
+_Evitar_: informação da embalagem como fonte.
+
+**Divergência de fato**:
+Diferença entre um fato do produto e o que a embalagem ou a foto mostra (ex.: anúncio diz poliéster, etiqueta diz poliamida). Bloqueia a geração da galeria até o operador decidir qual vale, vendo o recorte da etiqueta, com o valor da etiqueta como sugestão; a decisão corrige os dados da família, não só a imagem.
+
+**Imagem de galeria faturável**:
+Imagem da galeria da cor gerada com sucesso e exibida ao operador, cobrada ao preço por imagem da organização, independentemente de ser aprovada ou publicada. Cada nova geração pedida pelo operador é outra imagem faturável; falha técnica do provedor, sem imagem entregue, não é cobrada.
+_Evitar_: cobrança só da imagem aprovada (regra da foto do kit com variação, que tem verificação automática).
+
+**Roteiro da galeria**:
+Plano textual das sete imagens, escrito pela IA a partir dos fatos do produto: para cada imagem, a missão, o cenário, a headline, a subheadline e os fatos que ela afirma. Há um roteiro por família, comum a todas as cores: cada galeria da cor sai dele, com a foto da própria cor como referência e o nome da cor nos textos. O operador revisa e edita o roteiro antes de qualquer imagem ser gerada; o roteiro não é cobrado do cliente.
+_Evitar_: prompt (termo do provedor de imagem, não do operador).
+
+**Aprovar imagem da galeria**:
+Decisão do operador de que uma imagem gerada serve. Só guarda a imagem na galeria; não muda nada no marketplace.
+
+**Aplicar galeria**:
+Comando explícito de um administrador da organização que envia as imagens aprovadas de uma galeria da cor ao anúncio publicado, guardando as fotos anteriores para reverter. Tem dois modos: substituir (padrão; a capa gerada vira a primeira foto) ou adicionar depois das fotos atuais, recusado antes do envio quando passa do limite de fotos da categoria.
+_Evitar_: publicar galeria (publicar é criar o anúncio).
