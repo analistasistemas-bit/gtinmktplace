@@ -1,6 +1,7 @@
 // ADR-0200 (Task 13): Gerenciar kit, na linha do kit em Publicados. Saldo por combinação × tamanho; Montar mais
 // (combinação × tamanho publicado só aumenta; nunca publicado vira SKU novo no mesmo kit, com foto), Desmontar (com reposição ligada, a desliga até o operador religar), "Vender só em kit",
-// reposição automática e meta. Tudo pela edge `gerenciar-kit-variacao`, que só aceita admin.
+// reposição automática, meta e Encerrar kit (emenda de 08/11: fecha os anúncios do kit no ML; encerrado fica só leitura).
+// Tudo pela edge `gerenciar-kit-variacao`, que só aceita admin.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -38,16 +39,21 @@ const STATUS: Record<string, { rotulo: string; tom: 'success' | 'warning' | 'dan
   publicado: { rotulo: 'Publicado', tom: 'success' },
   publicando: { rotulo: 'Montando', tom: 'warning' },
   erro: { rotulo: 'Com erro', tom: 'danger' },
+  encerrando: { rotulo: 'Encerrando', tom: 'warning' },
+  encerrado: { rotulo: 'Encerrado', tom: 'neutral' },
 };
 
-type Confirmacao = null | 'montar' | 'desmontar' | 'ligar_so_em_kit' | 'desligar_so_em_kit';
+type Confirmacao = null | 'montar' | 'desmontar' | 'ligar_so_em_kit' | 'desligar_so_em_kit' | 'encerrar';
 
-export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
+export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin: ehAdmin }: {
   kit: KitVariacaoResumo;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   isAdmin: boolean;
 }) {
+  // Kit encerrando ou encerrado não muda mais: nenhuma ação, nem para admin.
+  const fechado = kit.status === 'encerrando' || kit.status === 'encerrado';
+  const isAdmin = ehAdmin && !fechado;
   const qc = useQueryClient();
   const detalhe = useDetalheKitVariacao(open ? kit.id : null, kit.codigoPaiBase);
   const skus = useMemo(() => detalhe.data?.skus ?? [], [detalhe.data]);
@@ -89,6 +95,8 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
   // Desmontar só mexe nas combinações publicadas: a matriz nova participa apenas da montagem.
   const totalDesmontar = itens.reduce((s, i) => s + i.quantidade, 0);
   const ocupado = enviando || abertas.length > 0;
+  // Encerrar exige saldo 0 em todas as combinações (a RPC confere de novo, travada).
+  const comSaldo = skus.some((s) => s.saldo !== null && s.saldo !== 0);
 
   // Base canônica: cores, tamanhos e saldo das peças.
   const baseId = detalhe.data?.baseFamiliaId ?? '';
@@ -140,7 +148,7 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
 
   async function acao(
     a: AcaoKit, extra: { meta?: number; itens?: typeof itens; chave?: string; desligarSoEmKit?: boolean } = {},
-  ): Promise<{ ok: boolean; reposicaoDesligada?: boolean }> {
+  ): Promise<{ ok: boolean; reposicaoDesligada?: boolean; encerrado?: boolean }> {
     const r = await gerenciarKitEdge({ kitId: kit.id, acao: a, versao, ...extra });
     if (!r.ok) {
       toast.error('Não foi possível concluir', { description: r.mensagem });
@@ -149,7 +157,7 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
     // A versão autoritativa vem da RPC (também na repetição idempotente); nunca é presumida aqui.
     if (typeof r.versao === 'number') setVersao(r.versao);
     operacao.current = null;
-    return { ok: true, reposicaoDesligada: r.reposicaoDesligada };
+    return { ok: true, reposicaoDesligada: r.reposicaoDesligada, encerrado: r.encerrado };
   }
 
   async function executar(f: () => Promise<void>) {
@@ -220,6 +228,21 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
     acompanharNaTabela();
   });
 
+  // Desmontar tudo (caminho do "Desmonte antes"): todo o saldo de cada combinação, pela confirmação de sempre.
+  const desmontarTudo = () => {
+    setQtd(Object.fromEntries(skus.filter((s) => (s.saldo ?? 0) > 0).map((s) => [s.codigo, String(s.saldo)])));
+    setConfirmar('desmontar');
+  };
+
+  const encerrar = () => executar(async () => {
+    const r = await acao('encerrar');
+    if (!r.ok) return;
+    toast.success(r.encerrado ? 'Kit encerrado' : 'Encerramento do kit começou', {
+      description: r.encerrado ? undefined
+        : 'Os anúncios do kit são fechados no Mercado Livre em alguns minutos. Você recebe um aviso ao concluir.',
+    });
+  });
+
   const politica = (a: AcaoKit, sucesso: string, extra: { meta?: number } = {}) => executar(async () => {
     if ((await acao(a, extra)).ok) toast.success(sucesso);
   });
@@ -251,6 +274,18 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
             )}
             {kit.status === 'publicando' && (
               <p className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">{AVISO_SELETOR_ML}</p>
+            )}
+            {kit.status === 'encerrando' && (
+              <p className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                Fechando os anúncios do kit no Mercado Livre. O andamento aparece abaixo.
+              </p>
+            )}
+            {kit.status === 'encerrado' && (
+              <p className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                Kit encerrado: os anúncios foram fechados no Mercado Livre e o kit saiu de Publicados. O histórico continua
+                aqui; o kit não muda mais.
+              </p>
             )}
 
             {abertas.length > 0 && (
@@ -435,58 +470,85 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
               </section>
             )}
 
-            <section aria-label="Política do kit" className="grid gap-3 rounded-md border p-3">
-              {isAdmin ? (
-                <>
-                  <div className="flex items-center justify-between gap-3 text-sm">
-                    <label htmlFor="kv-so-em-kit">
-                      <span className="font-medium">Vender só em kit</span>
-                      <span className="block text-xs text-muted-foreground">As peças ficam guardadas, com o anúncio individual pausado.</span>
-                    </label>
-                    <Switch
-                      id="kv-so-em-kit" aria-label="Vender só em kit" checked={kit.soEmKit} disabled={enviando}
-                      onCheckedChange={(v) => setConfirmar(v ? 'ligar_so_em_kit' : 'desligar_so_em_kit')}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between gap-3 text-sm">
-                    <label htmlFor="kv-reposicao">
-                      <span className="font-medium">Reposição automática</span>
-                      <span className="block text-xs text-muted-foreground">
-                        {kit.soEmKit ? 'Monta kits até a meta conforme vendem.' : 'Só existe com "Vender só em kit" ligado.'}
-                      </span>
-                    </label>
-                    <Switch
-                      id="kv-reposicao" aria-label="Reposição automática" checked={kit.reposicaoAuto} disabled={enviando || !kit.soEmKit}
-                      onCheckedChange={(v) => politica(v ? 'ligar_reposicao' : 'desligar_reposicao',
-                        v ? 'Reposição automática ligada' : 'Reposição automática desligada. O Telegram avisa quando uma combinação acabar.')}
-                    />
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <label htmlFor="meta-kit" className="font-medium">Meta</label>
-                    <Input
-                      id="meta-kit" aria-label="Meta" type="number" min={0} step={1} inputMode="numeric"
-                      className="h-8 w-20 text-right tabular-nums" value={meta} onChange={(e) => setMeta(e.target.value)}
-                    />
-                    <span className="text-xs text-muted-foreground">kits por combinação e tamanho</span>
-                    <Button
-                      variant="outline" size="sm" className="ml-auto"
-                      disabled={enviando || !/^\d+$/.test(meta) || Number(meta) === kit.meta}
-                      onClick={() => politica('alterar_meta', `Meta alterada para ${meta}`, { meta: Number(meta) })}
-                    >
-                      Salvar meta
-                    </Button>
-                  </div>
-                  {kit.soEmKit && exemplo && (
-                    <ExplicacaoReposicao meta={inteiro(meta)} cores={exemplo.cores} tamanho={exemplo.tamanho} />
-                  )}
-                </>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  Vender só em kit: {kit.soEmKit ? 'ligado' : 'desligado'} · Reposição automática: {kit.reposicaoAuto ? 'ligada' : 'desligada'} · Meta {kit.meta}.
-                  Só administradores mudam o kit.
-                </p>
-              )}
-            </section>
+            {isAdmin && (
+              <section aria-label="Encerrar kit" className="flex flex-wrap items-center gap-2 rounded-md border p-3 text-sm">
+                <div className="mr-auto">
+                  <span className="font-medium">Encerrar kit</span>
+                  <span className="block text-xs text-muted-foreground">
+                    {comSaldo ? 'Desmonte antes: o kit ainda tem saldo.'
+                      : abertas.length > 0 ? 'Espere a transferência em andamento terminar.'
+                        : 'Fecha os anúncios do kit no Mercado Livre e tira o kit de Publicados.'}
+                  </span>
+                </div>
+                {comSaldo && (
+                  <Button variant="outline" size="sm" disabled={ocupado || detalhe.isLoading} onClick={desmontarTudo}>
+                    Desmontar tudo
+                  </Button>
+                )}
+                <Button
+                  variant="outline" size="sm" className="text-danger"
+                  disabled={ocupado || comSaldo || detalhe.isLoading || detalhe.isError}
+                  onClick={() => setConfirmar('encerrar')}
+                >
+                  Encerrar kit
+                </Button>
+              </section>
+            )}
+
+            {!fechado && (
+              <section aria-label="Política do kit" className="grid gap-3 rounded-md border p-3">
+                {isAdmin ? (
+                  <>
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <label htmlFor="kv-so-em-kit">
+                        <span className="font-medium">Vender só em kit</span>
+                        <span className="block text-xs text-muted-foreground">As peças ficam guardadas, com o anúncio individual pausado.</span>
+                      </label>
+                      <Switch
+                        id="kv-so-em-kit" aria-label="Vender só em kit" checked={kit.soEmKit} disabled={enviando}
+                        onCheckedChange={(v) => setConfirmar(v ? 'ligar_so_em_kit' : 'desligar_so_em_kit')}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <label htmlFor="kv-reposicao">
+                        <span className="font-medium">Reposição automática</span>
+                        <span className="block text-xs text-muted-foreground">
+                          {kit.soEmKit ? 'Monta kits até a meta conforme vendem.' : 'Só existe com "Vender só em kit" ligado.'}
+                        </span>
+                      </label>
+                      <Switch
+                        id="kv-reposicao" aria-label="Reposição automática" checked={kit.reposicaoAuto} disabled={enviando || !kit.soEmKit}
+                        onCheckedChange={(v) => politica(v ? 'ligar_reposicao' : 'desligar_reposicao',
+                          v ? 'Reposição automática ligada' : 'Reposição automática desligada. O Telegram avisa quando uma combinação acabar.')}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <label htmlFor="meta-kit" className="font-medium">Meta</label>
+                      <Input
+                        id="meta-kit" aria-label="Meta" type="number" min={0} step={1} inputMode="numeric"
+                        className="h-8 w-20 text-right tabular-nums" value={meta} onChange={(e) => setMeta(e.target.value)}
+                      />
+                      <span className="text-xs text-muted-foreground">kits por combinação e tamanho</span>
+                      <Button
+                        variant="outline" size="sm" className="ml-auto"
+                        disabled={enviando || !/^\d+$/.test(meta) || Number(meta) === kit.meta}
+                        onClick={() => politica('alterar_meta', `Meta alterada para ${meta}`, { meta: Number(meta) })}
+                      >
+                        Salvar meta
+                      </Button>
+                    </div>
+                    {kit.soEmKit && exemplo && (
+                      <ExplicacaoReposicao meta={inteiro(meta)} cores={exemplo.cores} tamanho={exemplo.tamanho} />
+                    )}
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Vender só em kit: {kit.soEmKit ? 'ligado' : 'desligado'} · Reposição automática: {kit.reposicaoAuto ? 'ligada' : 'desligada'} · Meta {kit.meta}.
+                    Só administradores mudam o kit.
+                  </p>
+                )}
+              </section>
+            )}
 
             <DialogFooter>
               <Button variant="outline" disabled={enviando} onClick={() => onOpenChange(false)}>Fechar</Button>
@@ -562,6 +624,20 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
                 <AlertDialogCancel disabled={enviando}>Cancelar</AlertDialogCancel>
                 <AlertDialogAction disabled={enviando} onClick={(e) => { e.preventDefault(); void politica('ligar_so_em_kit', '"Vender só em kit" ligado. Os anúncios individuais vão ser pausados.'); }}>
                   Ligar
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </>
+          )}
+          {confirmar === 'encerrar' && (
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Encerrar o kit {kit.codigoPaiKit}?</AlertDialogTitle>
+                <AlertDialogDescription>Encerra os anúncios do kit no Mercado Livre. Não dá para desfazer.</AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={enviando}>Cancelar</AlertDialogCancel>
+                <AlertDialogAction disabled={enviando} onClick={(e) => { e.preventDefault(); void encerrar(); }}>
+                  Encerrar anúncios
                 </AlertDialogAction>
               </AlertDialogFooter>
             </>

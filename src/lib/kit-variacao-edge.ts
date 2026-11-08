@@ -69,7 +69,7 @@ export function gerarFotoKitEdge(p: { requestId: string; familiaBaseId: string; 
 
 export type AcaoKit =
   | 'ligar_so_em_kit' | 'desligar_so_em_kit' | 'ligar_reposicao' | 'desligar_reposicao' | 'alterar_meta'
-  | 'montar' | 'desmontar';
+  | 'montar' | 'desmontar' | 'encerrar';
 
 export function gerenciarKitEdge(p: {
   kitId: string; acao: AcaoKit; versao: number; meta?: number; itens?: Array<{ codigo: string; quantidade: number }>;
@@ -78,7 +78,11 @@ export function gerenciarKitEdge(p: {
   /** Desmontar: desliga também "Vender só em kit", na mesma transação. */
   desligarSoEmKit?: boolean;
 }) {
-  return invocar<{ transferenciaId?: string; reposicaoDesligada?: boolean; soEmKit?: boolean; existente?: boolean; versao?: number }>(
+  return invocar<{
+    transferenciaId?: string; reposicaoDesligada?: boolean; soEmKit?: boolean; existente?: boolean; versao?: number;
+    /** Encerrar sem nada no ML: encerrado na hora, sem transferência. */
+    encerrado?: boolean;
+  }>(
     'gerenciar-kit-variacao',
     {
       kit_id: p.kitId, acao: p.acao, versao: p.versao, meta: p.meta, itens: p.itens, chave: p.chave,
@@ -99,7 +103,8 @@ export interface KitVariacaoResumo {
   reposicaoAuto: boolean;
   meta: number;
   versao: number;
-  /** `publicando` (saga montando), `publicado`, `erro` (saga travou: combinações podem faltar). */
+  /** `publicando` (saga montando), `publicado`, `erro` (saga travou: combinações podem faltar), `encerrando` (fechando
+   *  os anúncios no ML) e `encerrado` (fora de Publicados, só leitura). */
   status: string;
   /** Transferência aberta (ativa ou travada) mais recente do kit, para o indicador em Publicados. */
   transferencia?: TransferenciaAberta | null;

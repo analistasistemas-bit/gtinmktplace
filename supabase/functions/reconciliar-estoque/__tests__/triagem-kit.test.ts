@@ -52,6 +52,13 @@ function falso(b: Banco) {
   };
   const nomes: string[] = [];
   const rpc = async (n: string, args: Record<string, unknown>) => {
+    // Espelho de `kit_codigos_triagem`: SKUs de kit não encerrados e componentes (leitura, não efeito).
+    if (n === 'kit_codigos_triagem') {
+      const daOrg = (r: Linha) => r.org_id === args.p_org;
+      const cods = [...b.kitSkus.filter((r) => daOrg(r) && r.encerrado !== true), ...b.componentes.filter(daOrg)]
+        .map((r) => r.codigo as string);
+      return { data: [...new Set(cods)].sort(), error: null };
+    }
     rpcs.push(args);
     nomes.push(n);
     return { data: b.rpc ? b.rpc(args, n) : { ok: true, id: `T-${rpcs.length}` }, error: null };
@@ -134,6 +141,18 @@ describe('triarParticipantes — volume e retirados', () => {
     const { d, rpcs } = deps(b);
     await triarParticipantes(d);
     expect(rpcs).toEqual([]);
+  });
+
+  it('Encerrar kit: SKU de kit encerrado (itens retirados) fica fora da triagem: nem transferência nem "sem user product"', async () => {
+    const b: Banco = {
+      ...BANCO, kitSkus: [{ org_id: 'O', codigo: 'K1', encerrado: true }],
+      itens: BANCO.itens.map((i) => (i.sku === 'K1' ? { ...i, retirado: true } : i)),
+    };
+    const ler = vi.fn(async (_o: string, up: string) => (up === 'UP-K1' ? 0 : ML[up]));
+    const { d, rpcs } = deps(b, { lerQuantidade: ler });
+    await triarParticipantes(d);
+    expect(rpcs.map((r) => (r.p_itens as Array<{ codigo: string }>)[0].codigo)).toEqual(['P1']);
+    expect(d.alertar).not.toHaveBeenCalledWith('O', expect.stringMatching(/K1/));
   });
 
   it('item retirado não serve de alvo: SKU só com item retirado alerta como sem UP', async () => {

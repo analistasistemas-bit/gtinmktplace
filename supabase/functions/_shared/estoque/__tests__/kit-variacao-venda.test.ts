@@ -435,6 +435,19 @@ describe('agendarCancelamentoKit', () => {
     expect(chamadas.some((c) => c.op === 'update')).toBe(false);
   });
 
+  it('Encerrar kit: estorno em SKU de kit encerrado não vira transferência e avisa o saldo preso (não remonta)', async () => {
+    const avisos: string[] = [];
+    const { admin, rpcChamadas } = fakeAdmin({
+      kit_variacao_skus: [{ codigo: 'KIT-PB-M', kit_id: 'kit-1', kits_variacao: { status: 'encerrado' } }],
+      anuncios_externos_itens: ITENS,
+    }, { kit_criar_transferencia: () => ({ ok: true, id: 't-1' }) });
+    expect(await agendarCancelamentoKit(admin, () => Promise.resolve(), {
+      orgId: 'org-1', canal: 'mercado_livre', orderId: 77, codigos: ['KIT-PB-M'],
+    }, async () => { avisos.push('varredura'); })).toEqual([]);
+    expect(rpcChamadas).toEqual([]);
+    expect(avisos).toEqual(['varredura']);
+  });
+
   it('componente individual (não é SKU de kit) não vira transferência cancelamento', async () => {
     const { admin, rpcChamadas } = fakeAdmin({ kit_variacao_skus: [] }, {});
     expect(await agendarCancelamentoKit(admin, () => Promise.resolve(), {

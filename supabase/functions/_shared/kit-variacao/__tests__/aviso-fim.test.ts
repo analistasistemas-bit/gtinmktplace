@@ -22,6 +22,7 @@ function banco(tabelas: Record<string, Linha[]>) {
       in: (k: string, v: unknown[]) => { filtros.push((l) => v.includes(l[k])); return q; },
       is: (k: string, v: unknown) => { filtros.push((l) => (l[k] ?? null) === v); return q; },
       not: (k: string, _op: string, v: unknown) => { filtros.push((l) => (l[k] ?? null) !== v); return q; },
+      neq: (k: string, v: unknown) => { filtros.push((l) => l[k] !== v); return q; },
       maybeSingle: () => Promise.resolve({ data: linhas()[0] ?? null, error: null }),
       then: (res: (v: unknown) => unknown) => {
         if (patch) {
@@ -68,6 +69,14 @@ function notificador(falhar = () => false) {
 }
 
 describe('avisarFimTransferencia', () => {
+  it('Encerrar kit: sem aviso de fim genérico, nem com alerta enviado (a conclusão sai por kit_encerrado)', async () => {
+    const b = cenario({ tipo: 'encerrar' });
+    (b.tabelas.kit_transferencias[0] as Record<string, unknown>).alerta_enviado = 'Transferência de kit em espera';
+    const n = notificador();
+    expect(await avisarFimTransferencia(b.admin, n.notificar, 'org-1', 't1')).toBe(false);
+    expect(n.enviados).toEqual([]);
+  });
+
   it('montagem concluída avisa uma vez com kit, combinações, tamanhos, quantidade e URL', async () => {
     const b = cenario();
     const n = notificador();

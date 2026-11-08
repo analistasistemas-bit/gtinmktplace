@@ -22,6 +22,7 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { lerOferta } from '../_shared/kit-variacao/ml-oferta.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { avisarKitsZeradosDasOrgs } from '../_shared/kit-variacao/venda.ts';
+import { avisarKitsEncerradosDasOrgs } from '../_shared/kit-variacao/encerrar.ts';
 import { avisarFinsPendentes } from '../_shared/kit-variacao/aviso-fim.ts';
 
 /** Teto operacional por execução: 5 páginas × 200 = 1.000 movimentos por org. */
@@ -163,6 +164,9 @@ Deno.serve(async (req) => {
   // ADR-0200 (Task 8): aviso de kit zerado que não saiu (envio falhou ou nenhuma venda nova desde então).
   const avisosKit = await avisarKitsZeradosDasOrgs(admin, { notificar: notificarCategoria })
     .catch((e) => { console.error('reconciliar_kit_avisos_zerado_falhou', e); return 0; });
+  // Emenda "Encerrar kit": conclusão e saldo preso em kit encerrado que não foram avisados.
+  await avisarKitsEncerradosDasOrgs(admin, notificarCategoria)
+    .catch((e) => console.error('reconciliar_kit_avisos_encerrado_falhou', e));
   // ADR-0200 (adendo 08/11): aviso de fim de montagem/desmontagem/reposição que não saiu na hora.
   const avisosFimKit = await avisarFinsPendentes(admin, notificarCategoria)
     .catch((e) => { console.error('reconciliar_kit_avisos_fim_falhou', e); return 0; });

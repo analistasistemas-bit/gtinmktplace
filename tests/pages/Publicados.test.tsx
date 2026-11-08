@@ -721,6 +721,20 @@ describe('Publicados', () => {
       expect(screen.queryByRole('button', { name: 'Criar kit com variação' })).toBeNull();
       expect(screen.getByRole('button', { name: 'Criar kit' })).toHaveAttribute('title', 'Este anúncio já é um kit com variação.');
     });
+
+    it('Encerrar kit: kit encerrado some de Publicados (encerrando ainda aparece)', () => {
+      useModulosHabilitadosMock.mockReturnValue({ data: ['kit_variacao', 'estoque'] });
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ qtdVariacoesFamilia: 1, userProducts: true, kitBaseCodigoPai: null })], isLoading: false, error: null,
+      });
+      useKitsVariacaoMock.mockReturnValue({ data: [{ ...kit, status: 'encerrando' }] });
+      const { unmount } = render(<MemoryRouter><Publicados /></MemoryRouter>);
+      expect(screen.getByRole('button', { name: 'Gerenciar kit' })).toBeInTheDocument();
+      unmount();
+      useKitsVariacaoMock.mockReturnValue({ data: [{ ...kit, status: 'encerrado' }] });
+      render(<MemoryRouter><Publicados /></MemoryRouter>);
+      expect(screen.queryByRole('button', { name: 'Gerenciar kit' })).toBeNull();
+    });
   });
 
   // ADR-0151 D-2/D-10/D-12: gatilho "Criar kit" — desabilitado + tooltip, nunca escondido.

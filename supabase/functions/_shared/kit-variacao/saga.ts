@@ -18,6 +18,7 @@ import type { ResultadoBaixaVenda } from '../estoque/baixa.ts';
 import { parseStatusML } from '../ml/status.ts';
 import { calcularReserva, idsDoItem, pagosDesde, type PedidoPago, type PedidoPendente } from './conciliacao.ts';
 import type { OfertaUP } from './ml-oferta.ts';
+import { type DepsEncerramento, passoEncerrar } from './encerrar.ts';
 
 export type PassoSaga =
   | 'pausar' | 'aguardar' | 'conciliar' | 'calcular' | 'reduzir' | 'confirmar_reducao'
@@ -147,7 +148,8 @@ export interface DepsSaga {
     /** `antesDeBaixar` roda logo antes de cada baixa e lança se o prazo venceu. */
     importarPedidos(itemIds: string[], desde: string, idsPasso1: string[], antesDeBaixar: () => void): Promise<ResultadoImportacao>;
     putQuantidade(itemId: string, quantidade: number): Promise<void>;
-    putStatus(itemId: string, status: 'paused' | 'active'): Promise<void>;
+    /** `closed` só na transferência `encerrar` (emenda "Encerrar kit"). */
+    putStatus(itemId: string, status: 'paused' | 'active' | 'closed'): Promise<void>;
     /**
      * Prepara o CREATE do item do SKU de kit (foto, guia de tamanhos, payload com `available_quantity = quantidade`)
      * e devolve o POST, que a saga só chama depois de gravar a intenção. Erro do POST com `status` 4xx é recusa.
@@ -164,6 +166,8 @@ export interface DepsSaga {
   agora(): Date;
   quarentenaS: number;
   novoToken(): string;
+  /** Portas da transferência `encerrar` (`encerrar.ts`). */
+  encerramento?: DepsEncerramento;
 }
 
 export interface ResultadoPasso {
@@ -878,6 +882,8 @@ export async function avancarSaga(deps: DepsSaga, transferenciaId: string): Prom
     const { transferencia, alvos } = await deps.repo.carregar(transferenciaId);
     const ctx: Ctx = { deps, t: transferencia, alvos, token, limite };
     try {
+      // Encerrar não move quantidade: passo próprio, antes do pipeline (emenda "Encerrar kit").
+      if (transferencia.tipo === 'encerrar') return await passoEncerrar(ctx);
       return await PASSOS[transferencia.passo](ctx);
     } catch (e) {
       return await reagendar(ctx, mensagem(e));

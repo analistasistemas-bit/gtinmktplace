@@ -34,6 +34,8 @@ export function etapaTransferencia(t: EtapaEntrada, agoraMs: number): { numero: 
     confirmar_aumento: 'Conferindo o novo estoque no Mercado Livre',
     reativar: 'Reativando os anúncios',
   };
+  // Encerrar (emenda "Encerrar kit") não segue o pipeline de quantidade: passo único até fechar tudo.
+  if (t.tipo === 'encerrar' && t.passo !== 'fim') return { numero: null, total: TOTAL_PASSOS, rotulo: 'Fechando os anúncios do kit no Mercado Livre' };
   if (t.passo === 'fim') return { numero: TOTAL_PASSOS, total: TOTAL_PASSOS, rotulo: 'Concluído' };
   const i = (ORDEM as readonly string[]).indexOf(t.passo);
   if (i < 0) return { numero: null, total: TOTAL_PASSOS, rotulo: 'Em andamento' };

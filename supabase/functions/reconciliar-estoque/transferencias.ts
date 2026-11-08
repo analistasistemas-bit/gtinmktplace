@@ -50,14 +50,13 @@ function blocos<T>(xs: T[]): T[][] {
   return out;
 }
 
+/** Regra única de participante (`kit_participante`), sem SKU de kit encerrado: itens fechados não são "sem user
+ *  product", e o saldo preso neles tem aviso próprio (`avisarKitsEncerrados`). Escalar: sem corte de 1.000 linhas. */
 async function codigosParticipantes(admin: SupabaseClient, orgId: string): Promise<string[]> {
-  const out = new Set<string>();
-  for (const tabela of ['kit_variacao_skus', 'kit_variacao_componentes']) {
-    const linhas = await paginarTudo<{ codigo: string }>((de, ate) =>
-      admin.from(tabela).select('codigo').eq('org_id', orgId).order('codigo').range(de, ate));
-    linhas.forEach((l) => out.add(l.codigo));
-  }
-  return [...out].sort();
+  const { data, error } = await admin.rpc('kit_codigos_triagem', { p_org: orgId });
+  if (error) throw new Error(`kit_codigos_triagem: ${error.message}`);
+  if (!Array.isArray(data)) throw new Error('kit_codigos_triagem: resposta inesperada');
+  return (data as string[]).slice().sort();
 }
 
 async function triarOrg(deps: DepsTriagem, orgId: string): Promise<number> {

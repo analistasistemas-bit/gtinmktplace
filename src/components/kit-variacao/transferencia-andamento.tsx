@@ -45,7 +45,7 @@ function useAgora(ativo: boolean) {
 
 const TIPO: Record<string, string> = {
   montar: 'Montagem', desmontar: 'Desmontagem', repor: 'Reposição', cancelamento: 'Cancelamento',
-  sair_sobra: 'Guardar peças', entrada: 'Entrada',
+  sair_sobra: 'Guardar peças', entrada: 'Entrada', encerrar: 'Encerramento',
 };
 
 export function EtapaTransferencia({ t }: { t: TransferenciaAberta }) {
@@ -60,6 +60,8 @@ export function EtapaTransferencia({ t }: { t: TransferenciaAberta }) {
           {travada ? 'Travou em: ' : ''}{e.rotulo}{e.numero ? ` · passo ${e.numero} de ${e.total}` : ''}
         </span>
       </p>
+      {/* Encerrar nunca trava: o motivo da pendência (itens, leitura falhando, faixa) aparece enquanto tenta. */}
+      {t.tipo === 'encerrar' && !travada && t.alerta && <p className="mt-1 text-muted-foreground">{t.alerta}</p>}
       {travada && (
         <div className="mt-1 flex gap-1.5 text-danger">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />

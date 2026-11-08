@@ -379,6 +379,25 @@ describe('prepararStatusOperador (Task 6: pausar/reativar pelo operador)', () =>
     expect(r).toBe('manter');
   });
 
+  it('Encerrar kit: peça que deixou de participar (kit encerrado) é reativada e confirmada pela leitura, sem exclusão', async () => {
+    const f = falso(banco({ componentes: [], politicas: [pol()] }));
+    const puts: string[] = [];
+    const r = await reativarPausaAutomatica(f.admin, {
+      orgId: 'O', codigo: 'P1', itemId: 'MLB1',
+      lerStatus: async (id) => (puts.includes(id) ? 'ativo' : 'pausado'),
+      putAtivo: async (id) => { puts.push(id); return { ok: true }; }, alertar: async () => {},
+    });
+    expect(r).toBe('reativado');
+    expect(puts).toEqual(['MLB1']);
+    expect(f.rpcs).toEqual([]);   // sem participante: nem exclusão nem CAS de política
+    // PUT aceito e leitura ainda pausada: repete (não conta como reativado).
+    const g = falso(banco({ componentes: [], politicas: [pol()] }));
+    expect(await reativarPausaAutomatica(g.admin, {
+      orgId: 'O', codigo: 'P1', itemId: 'MLB1', lerStatus: async () => 'pausado',
+      putAtivo: async () => ({ ok: true }), alertar: async () => {},
+    })).toBe('manter');
+  });
+
   it('Fix 1b: item visto ativo ou inexistente na leitura: sem PUT, sem exclusão', async () => {
     const opcoes = (puts: string[], st: 'ativo' | 'encerrado' | null) => ({
       orgId: 'O', codigo: 'P1', itemId: 'MLB1', lerStatus: async () => st,

@@ -8,6 +8,7 @@ function cenario(semAnuncio: string[] = []) {
   const s = {
     chamadas: [] as Array<Parameters<DepsGerenciarKit['rpc']>[0]>,
     resposta: { ok: true, transferencia_id: null, normais: [], reposicao_desligada: false, so_em_kit: false, reposicao_auto: false, versao: 4 } as RespostaRpcGerenciar,
+    encerrar: { ok: true, transferencia_id: 'T-ENC', versao: 4 } as RespostaRpcGerenciar,
   };
   const deps: DepsGerenciarKit = {
     orgId: 'ORG',
@@ -23,6 +24,7 @@ function cenario(semAnuncio: string[] = []) {
     async rpc(a) { s.chamadas.push(a); log.push(`rpc ${a.acao}`); return s.resposta; },
     async enfileirarSaga(id) { log.push(`saga ${id}`); },
     async enfileirarReposicao(id) { log.push(`reposicao ${id}`); },
+    async encerrar(kitId, versao) { log.push(`encerrar ${kitId} v${versao}`); return s.encerrar; },
   };
   return { deps, log, s };
 }
@@ -138,5 +140,30 @@ describe('gerenciarKit', () => {
   it('ação desconhecida recusa', async () => {
     const { deps } = cenario();
     expect(await gerenciarKit(deps, pedido({ acao: 'apagar' as never }))).toMatchObject({ ok: false, motivo: 'acao_invalida' });
+  });
+
+  it('Encerrar kit: só a RPC própria (alvos saem do vínculo local no SQL) e a saga da transferência na fila', async () => {
+    const c = cenario();
+    expect(await gerenciarKit(c.deps, pedido({ acao: 'encerrar' }))).toMatchObject({ ok: true, transferenciaId: 'T-ENC', versao: 4 });
+    expect(c.log).toEqual(['encerrar K1 v3', 'saga T-ENC']);
+    expect(c.s.chamadas).toEqual([]);
+  });
+
+  it('Encerrar kit sem nada no ML: encerra direto e a rodada desfaz as pausas da automação', async () => {
+    const c = cenario();
+    c.s.encerrar = { ok: true, transferencia_id: null, encerrado: true, versao: 5 } as RespostaRpcGerenciar;
+    expect(await gerenciarKit(c.deps, pedido({ acao: 'encerrar' }))).toMatchObject({ ok: true, encerrado: true });
+    expect(c.log).toEqual(['encerrar K1 v3', 'reposicao K1']);
+  });
+
+  it('Encerrar kit com saldo ou transferência aberta: recusa com a mensagem e nada na fila', async () => {
+    const c = cenario();
+    c.s.encerrar = { ok: false, motivo: 'saldo', codigo: 'KPB-M' };
+    expect(await gerenciarKit(c.deps, pedido({ acao: 'encerrar' })))
+      .toEqual({ ok: false, motivo: 'saldo', mensagem: expect.stringContaining('Desmonte antes') });
+    c.s.encerrar = { ok: false, motivo: 'transferencia_aberta' };
+    expect(await gerenciarKit(c.deps, pedido({ acao: 'encerrar' })))
+      .toMatchObject({ ok: false, motivo: 'transferencia_aberta' });
+    expect(c.log).toEqual(['encerrar K1 v3', 'encerrar K1 v3']);
   });
 });

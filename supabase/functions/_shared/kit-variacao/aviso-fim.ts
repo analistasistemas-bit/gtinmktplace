@@ -50,6 +50,8 @@ export async function avisarFimTransferencia(
       aviso_fim_enviado_em: string | null; alerta_enviado: string | null;
     } | null;
   if (!t || t.estado !== 'concluida' || t.aviso_fim_enviado_em) return false;
+  // Encerrar kit avisa a conclusão por `avisarKitsEncerrados` (`kit_encerrado:<kit>`): sem aviso duplicado.
+  if (t.tipo === 'encerrar') return false;
   const enviar = async (texto: string) => {
     await notificar(admin, orgId, 'estoque', texto, { chave: `kit_fim:${transferenciaId}` });
     // Sem a marca, a varredura reenvia com a mesma chave: não duplica.
@@ -112,7 +114,7 @@ export async function avisarFinsPendentes(admin: SupabaseClient, notificar: Noti
   // Duas leituras (tipos com aviso de fim; qualquer tipo que alertou) em vez de um `or` de PostgREST.
   const ler = async (filtro: 'tipo' | 'alerta') => {
     let q = admin.from('kit_transferencias').select('id, org_id').eq('estado', 'concluida').is('aviso_fim_enviado_em', null);
-    q = filtro === 'tipo' ? q.in('tipo', TIPOS) : q.not('alerta_enviado', 'is', null);
+    q = filtro === 'tipo' ? q.in('tipo', TIPOS) : q.not('alerta_enviado', 'is', null).neq('tipo', 'encerrar');
     return exigir(await q.order('criado_em', { ascending: true }).limit(200), 'ler pendentes') as Array<{ id: string; org_id: string }>;
   };
   const pendentes = [...new Map([...await ler('tipo'), ...await ler('alerta')].map((p) => [p.id, p])).values()];

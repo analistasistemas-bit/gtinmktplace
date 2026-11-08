@@ -244,6 +244,11 @@ function KitsVinculados({ codigoPai, ativo }: { codigoPai: string; ativo: boolea
   );
 }
 
+/** Estado do kit no bloco da base. Encerrado continua listado (histórico), sem ação de montar. */
+const SUFIXO_KIT: Record<string, string> = {
+  erro: ' (com erro)', publicando: ' (montando…)', encerrando: ' (encerrando…)', encerrado: ' · Encerrado',
+};
+
 /** ADR-0200: kits com variação feitos a partir do produto. Mostra também o kit ainda montando ou com erro, que
  *  pode nem ter linha própria na tabela. Transferência aberta (adendo 08/11): etapa ao vivo com aura + raio; travada
  *  em vermelho; sem transferência, o link do anúncio. `foco`: veio de criar/montar/desmontar, rola até aqui e destaca. */
@@ -295,9 +300,9 @@ function KitsComVariacao({ kits, onGerenciar, foco }: {
                   title="Gerenciar kit"
                 >
                   {!t && k.status === 'erro' && <AlertTriangle className="h-3 w-3 text-danger" />}
-                  {!t && k.status === 'publicando' && <Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" />}
+                  {!t && (k.status === 'publicando' || k.status === 'encerrando') && <Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" />}
                   Kit {k.pecasPorKit} · {k.codigoPaiKit}
-                  {!t && (k.status === 'erro' ? ' (com erro)' : k.status === 'publicando' ? ' (montando…)' : '')}
+                  {!t && (SUFIXO_KIT[k.status] ?? '')}
                 </button>
                 {t ? (
                   <EtapaTransferencia t={t} />
@@ -1175,7 +1180,7 @@ export default function Publicados() {
 
 function AbaAnuncios({ abas }: { abas: ReactNode }) {
   const navigate = useNavigate();
-  const { data: publicados = [], isLoading: loadingPublicados, error: erroPublicados, refetch: refetchPublicados } = usePublicados();
+  const { data: publicadosTodos = [], isLoading: loadingPublicados, error: erroPublicados, refetch: refetchPublicados } = usePublicados();
   const { data: statusData, isFetching: fetchingStatus, refetch: refetchStatus } = useStatusPublicados();
   const { data: familiasRisco } = useCatalogoEmRisco();
   // Fase 3 (2026-08-13): só os anúncios com a tag catalog_forewarning do ML entram no card — o
@@ -1204,6 +1209,11 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
   const temKitVariacao = !!modulos?.includes('kit_variacao');
   const { data: kitsVariacao } = useKitsVariacao(temKitVariacao);
   const kitPorCodigo = useMemo(() => new Map((kitsVariacao ?? []).map((k) => [k.codigoPaiKit, k])), [kitsVariacao]);
+  // Kit com variação encerrado sai de Publicados (itens fechados no ML); segue no bloco "Kits com variação" da base.
+  const publicados = useMemo(
+    () => publicadosTodos.filter((p) => kitPorCodigo.get(p.codigoPai)?.status !== 'encerrado'),
+    [publicadosTodos, kitPorCodigo],
+  );
   const [criarKitVariacaoDe, setCriarKitVariacaoDe] = useState<string | null>(null);
   const [kitGerenciado, setKitGerenciado] = useState<KitVariacaoResumo | null>(null);
   // id da família aberta no DialogFiscalProduto (T13) — null = fechado. Fila vazia: edição

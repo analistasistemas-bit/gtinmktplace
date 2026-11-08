@@ -9,6 +9,7 @@ import { registrarPendenciaKit } from '../faturamento/pendencias.ts';
 import { classificarItensKit, gravarIdentidades } from '../kit-variacao/venda.ts';
 import { notificarCategoria } from '../notificacoes/config.ts';
 import { skusParticipantes } from '../kit-variacao/politica.ts';
+import { avisarKitsEncerrados } from '../kit-variacao/encerrar.ts';
 import { agendarCancelamentoKit, type DepsCancelamento } from './cancelamento.ts';
 
 export const depsCancelamento: DepsCancelamento = {
@@ -20,7 +21,8 @@ export const depsCancelamento: DepsCancelamento = {
   reservarNotificacao,
   notificarCategoria,
   skusParticipantes,
-  agendarCancelamentoKit: (admin, p) => agendarCancelamentoKit(admin, (id, orgId) => enfileirarSaga(id, orgId), p),
+  agendarCancelamentoKit: (admin, p) => agendarCancelamentoKit(admin, (id, orgId) => enfileirarSaga(id, orgId), p,
+    () => avisarKitsEncerrados(admin, notificarCategoria, p.orgId)),
   classificarItensKit,
   gravarIdentidades,
   registrarPendenciaKit,

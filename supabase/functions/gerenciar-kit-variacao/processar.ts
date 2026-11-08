@@ -8,8 +8,8 @@
 
 export type AcaoKit =
   | 'ligar_so_em_kit' | 'desligar_so_em_kit' | 'ligar_reposicao' | 'desligar_reposicao' | 'alterar_meta'
-  | 'montar' | 'desmontar';
-const ACOES: AcaoKit[] = ['ligar_so_em_kit', 'desligar_so_em_kit', 'ligar_reposicao', 'desligar_reposicao', 'alterar_meta', 'montar', 'desmontar'];
+  | 'montar' | 'desmontar' | 'encerrar';
+const ACOES: AcaoKit[] = ['ligar_so_em_kit', 'desligar_so_em_kit', 'ligar_reposicao', 'desligar_reposicao', 'alterar_meta', 'montar', 'desmontar', 'encerrar'];
 
 export interface GerenciarKitInput {
   kitId: string;
@@ -29,6 +29,8 @@ export type RespostaRpcGerenciar =
   | {
     ok: true; existente?: boolean; transferencia_id: string | null; normais?: string[]; reposicao_desligada?: boolean;
     so_em_kit?: boolean; reposicao_auto?: boolean; versao?: number;
+    /** Encerrar sem nada no ML: encerrado na própria RPC, sem transferência. */
+    encerrado?: boolean;
   }
   | { ok: false; motivo: string; codigo?: string | null; versao_atual?: number };
 
@@ -45,12 +47,14 @@ export interface DepsGerenciarKit {
   }): Promise<RespostaRpcGerenciar>;
   enfileirarSaga(transferenciaId: string): Promise<void>;
   enfileirarReposicao(kitId: string): Promise<void>;
+  /** `kit_variacao_encerrar` (emenda "Encerrar kit"): CAS de versão; alvos saem do vínculo local, no SQL. */
+  encerrar(kitId: string, versao: number): Promise<RespostaRpcGerenciar>;
 }
 
 export type ResultadoGerenciar =
   | {
     ok: true; transferenciaId?: string; normais?: string[]; reposicaoDesligada?: boolean; soEmKit?: boolean;
-    existente?: boolean; versao?: number;
+    existente?: boolean; versao?: number; encerrado?: boolean;
   }
   | { ok: false; motivo: string; mensagem?: string };
 
@@ -64,6 +68,8 @@ const MENSAGEM: Record<string, string> = {
   itens_invalidos: 'Informe quantidades inteiras maiores que 0 para combinações deste kit.',
   chave_ausente: 'Pedido sem identificação. Recarregue a tela.',
   acao_invalida: 'Ação desconhecida.',
+  saldo: 'Desmonte antes: o kit ainda tem saldo',
+  transferencia_aberta: 'Há transferência em andamento neste kit. Espere ela terminar para encerrar.',
 };
 const recusa = (motivo: string, mensagem?: string): ResultadoGerenciar => ({ ok: false, motivo, mensagem: mensagem ?? MENSAGEM[motivo] });
 
@@ -78,6 +84,17 @@ export async function gerenciarKit(deps: DepsGerenciarKit, input: GerenciarKitIn
   const transfere = input.acao === 'montar' || input.acao === 'desmontar';
   if (input.acao === 'alterar_meta' && (!Number.isInteger(input.meta) || (input.meta as number) < 0)) return recusa('meta_invalida');
   if (transfere && !input.chave) return recusa('chave_ausente');
+
+  // Encerrar: a RPC trava, confere saldo e transferências e cria a transferência `encerrar` (ou encerra direto).
+  if (input.acao === 'encerrar') {
+    const r = await deps.encerrar(input.kitId, input.versao as number);
+    if (!r.ok) {
+      return recusa(r.motivo, r.motivo === 'saldo' ? `${MENSAGEM.saldo}${r.codigo ? ` em ${r.codigo}` : ''}.` : undefined);
+    }
+    if (r.transferencia_id) await deps.enfileirarSaga(r.transferencia_id);
+    else if (r.encerrado && !r.existente) await deps.enfileirarReposicao(input.kitId);
+    return { ok: true, transferenciaId: r.transferencia_id ?? undefined, encerrado: !!r.encerrado, existente: !!r.existente, versao: r.versao };
+  }
 
   let alvos: Array<{ codigo: string; up_id: string; item_ids: string[] }> = [];
   let itens: Array<{ codigo: string; quantidade: number }> | null = null;

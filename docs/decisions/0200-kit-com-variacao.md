@@ -139,6 +139,120 @@ inexistente.
 - Ainda a medir: tempo de quarentena e efeito das pausas no ranking do ML; individual pausado em campanha de
   promoção.
 
+## Emenda 2026-11-08 — Encerrar kit
+
+**Contexto.** "Desmontar" devolve as peças e deixa os itens do kit pausados com 0; não havia como fechar o kit de vez,
+e a lixeira é bloqueada de propósito para kit com variação (Task 7). Caso real: Zaven, kit 00000223 (SKU 00000224,
+MLB7959912198), desmontado em 08/11. "Encerrar kit" fecha os itens do kit no ML (`status=closed`, irreversível), tira o
+kit de Publicados e devolve as peças da base ao estado Normal, sem apagar variação, composição, ledger nem histórico.
+
+**Decisão.**
+
+1. **Ação no Gerenciar kit**, só admin (ADR-0060) e módulo `kit_variacao` ligado, com confirmação explícita "Encerra
+   os anúncios do kit no Mercado Livre. Não dá para desfazer." Habilitada só com saldo 0 em todos os SKUs do kit e
+   nenhuma transferência do kit aberta (ativa ou travada). Com saldo, a tela diz "Desmonte antes" e oferece desmontar
+   tudo (o Desmontar de sempre, com todo o saldo).
+2. **RPC `kit_variacao_encerrar(p_org, p_kit, p_versao)`**, uma transação, com a ordem de locks org (`for share`, módulo
+   revalidado: contrato de `set_modulos_org_seguro`), kit (`for update`, CAS de `versao`), exclusões de todos os SKUs
+   do kit e só então o saldo (a republicação pega exclusão e depois variação; a ordem inversa fecharia um ciclo);
+   recusa `saldo` (variação canônica de cada SKU do kit lida `for share`, desempate `criado_em desc, id desc`), `transferencia_aberta` (do kit, ou que
+   liste um SKU do kit) e `up_ocupado` (exclusão de outro dono). Repetição com o kit já `encerrando` devolve a
+   transferência existente; já `encerrado`, ok sem efeito. Grava `status='encerrando'`, `reposicao_auto=false` e
+   `versao+1` (invalida jobs e telas antigas) e cria a transferência `encerrar` por `kit_criar_transferencia`, sem
+   redefini-la: alvos calculados no SQL a partir de `anuncios_externos_itens` (um por SKU do kit com
+   `user_product_id`: item + cópia de catálogo), nunca vindos da edge. SKU do kit sem UP fica fora dos alvos, mas a
+   exclusão dele é adquirida com o mesmo dono na mesma transação. Kit sem nenhum alvo (nada chegou ao ML) encerra ali
+   mesmo, na mesma transação (passo 4), depois de adquirir a exclusão de todos os SKUs com um dono só da transação
+   (publicação em curso recusa com `up_ocupado`) e soltá-la no fim. Kit `publicado` sem nenhum vínculo recusa
+   (`sem_vinculo`): o vínculo sumiu (republicação) e os itens antigos não seriam fechados.
+3. **Worker.** `kit-transferencia` despacha `tipo='encerrar'` para um módulo próprio (`_shared/kit-variacao/encerrar.ts`)
+   antes do pipeline de quantidade, com o mesmo claim por `execucao_token` e as mesmas RPCs validadas por token,
+   prazo e exclusão. Cada invocação, para cada alvo ainda não confirmado: grava o início da obrigação
+   (`intencao_escrita_em`, uma vez, ANTES de qualquer leitura: leitura que falha sempre também conta o prazo); lê o
+   UP (`lerOferta`: todos os itens do UP, inclusive cópias de catálogo); nenhum item aberto = confirmado
+   (`escrita_em`, que neste tipo significa "fechamento confirmado por leitura"; `confirmada_em` não é usado porque
+   avançaria a marca d'água do SKU); senão `PUT /items/{id} status=closed` em cada item aberto. Erro de leitura ou de
+   PUT num alvo/item não interrompe os demais (lição da Task 10); erro de leitura nunca vira confirmação. Resultado
+   incerto nunca reenvia às cegas: a próxima invocação relê, `closed` confirma, aberto recebe novo PUT (fechar é
+   idempotente; o GET antes evita o 400 de item já fechado). 4xx conta em `recusas` e entra no mesmo backoff. Sem
+   `travada`: o kit não pode ficar preso em `encerrando` sem caminho de saída. Backoff pelo tempo desde a primeira
+   intenção (5 s, 30 s, 60 s, 5 min) e alerta (app + Telegram, chave por faixa) só depois de 15 min de carência,
+   repetido a cada faixa (15 min, 1 h, 6 h, depois diário), com o motivo estável (itens pendentes, se a leitura
+   está falhando e a faixa), que a tela mostra no andamento.
+4. **Conclusão numa transação** (`kit_encerrar_finalizar`, validada pelo token e com todos os alvos confirmados; e a
+   mesma `kit_encerrar_aplicar` no caminho sem alvos do passo 2): `status='encerrado'`, `encerrado_em`;
+   `kit_reposicao_desligar` (remove as reivindicações do kit; peça sem outra reivindicação volta a Normal com
+   `versao+1`, `so_em_kit=false`); apaga `kit_pausas_automaticas` dos itens do kit (fechados); marca os filhos do kit
+   em `anuncios_externos_itens` como `retirado=true, status='pausado'` (padrão de retirar; o check de status não tem
+   "encerrado"); no caminho da saga, solta as exclusões e
+   fecha a transferência (`kit_saga_finalizar`); no caminho sem alvos não há transferência nem exclusão a soltar. Não
+   apaga variações, composição, `estoque_movimentos` nem vendas. Família e raiz do kit não mudam (`familia_status` e
+   `anuncios_externos.status` não têm "encerrado"): o padrão destrutivo do Remover não serve. Publicados esconde a
+   família do kit pelo `kits_variacao.status`. Reposição depois do commit: o `reporDepois` do worker (caminho da
+   saga) ou a edge (caminho sem alvos) enfileira a rodada do kit, que desfaz só as pausas da automação das peças fora
+   de Guardado, pelo caminho com exclusão e CAS (regra da Task 14). Rede durável: a rodada diária já dispara pelos
+   SKUs com `kit_pausas_automaticas` pendente.
+5. **Participante depois do encerramento.** Regra única em SQL (`kit_participante`):
+   - SKU de kit (`kit_variacao_skus`) participa sempre, inclusive de kit encerrado: preserva a identidade estável da
+     venda (Task 8), a recusa de excluir a última cópia (venda tardia baixa e estorna pelo caminho normal) e a
+     proteção do crédito de cancelamento.
+   - Peça da base (`kit_variacao_componentes`) participa enquanto (a) um kit **não encerrado** a usa, ou (b) a
+     política persistida ainda a restringe (`estado <> 'normal'` ou qualquer `bloqueio_*`), ou (c) há pausa da
+     automação a desfazer (`kit_pausas_automaticas`). Assim a pausa do operador e a moderação continuam valendo
+     depois do encerramento (o push comum reativaria sem olhar os bloqueios), e a reativação da reposição segue pelo
+     caminho com exclusão e CAS; a peça só vira SKU comum quando nada mais a prende.
+   Usam a regra: `kit_skus_participantes` (guardas de edge das Tasks 5 e 6, Remover, publicação, cancelamento), os
+   triggers da Task 7 (`kit_variacao_saldo_copia`, `kit_variacao_conferir_update`, `kit_variacao_preservar_*`) e a
+   triagem diária (`reconciliar-estoque`), que além disso pula SKU de kit encerrado (itens fechados, não "sem user
+   product"). `limpar_movimentos_orfaos` não muda (preserva todo movimento de SKU em composição). A transferência
+   `encerrar` segura só os SKUs do kit: `kit_sku_em_transferencia`/`kit_reposicao_pendente` não expandem os
+   componentes dela.
+6. **Kit encerrando ou encerrado não muda mais.** Triggers de rede. Os de `kit_transferencias` e `kit_exclusoes`
+   travam os kits envolvidos (`for share`, em ordem de id) antes de ler o status: quem esperou o `for update` de
+   `kit_variacao_encerrar` lê o status já commitado, e nenhuma publicação nova passa no meio. Exceção: a exclusão da
+   republicação não trava o kit (ela segura `familias` FOR UPDATE e `kit_variacao_adicionar` faz kit → família:
+   deadlock); contra o encerramento ela é serializada pela própria linha de exclusão. Em `kit_exclusoes` são duas
+   etapas: BEFORE INSERT trava o kit (publicação e ativação, na ordem kit → exclusão do encerramento) e AFTER INSERT
+   confere o status (roda depois da espera pelo índice único e lê o commit esperado); a republicação que termina
+   antes deixa o kit sem vínculo, que o encerramento recusa.
+   - `kits_variacao`: recusa sair de `encerrando`/`encerrado` (só `encerrando → encerrado`) e ligar
+     `so_em_kit`/`reposicao_auto` (cobre ligar, adicionar com SKU novo, montar via gerenciar);
+   - `kit_transferencias` (`security definer`: o executor não lê `kits_variacao`): recusa transferência que não seja a
+     `encerrar` quando o kit, explícito em `kit_id` ou inferido pelos SKUs de `itens` (`entrada`, `sair_sobra`,
+     `cancelamento` com `kit_id` nulo ou snapshot antigo), está `encerrando`/`encerrado`; e `encerrar` só com o kit
+     em `encerrando`;
+   - `kit_exclusoes`: recusa dono que não seja `transferencia` em SKU de kit `encerrando`/`encerrado`. Cobre
+     publicação e ativação (`kit_adquirir_exclusao`) e a republicação (`preparar_republicacao` insere a exclusão
+     antes de apagar vínculos e virar CREATE: a recusa desfaz tudo).
+   A tela esconde as ações; a recusa por trigger só aparece numa corrida, como erro.
+7. **Avisos duráveis.** `kits_variacao.encerrado_avisado_em` marca o aviso de conclusão. `avisarKitsEncerrados`
+   (org com o módulo) envia, com chave idempotente: a conclusão de cada kit `encerrado` ainda sem marca
+   (`kit_encerrado:<kit>`), marcando depois do envio; e, para cada SKU de kit encerrado com saldo diferente de 0, o
+   aviso de saldo preso (`kit_encerrado_saldo:<codigo>:<último movimento>`: crédito que chegou durante
+   `encerrando` ou estorno depois de `encerrado`), pedindo ajuste manual. Nada remonta sozinho. Roda depois do
+   commit da conclusão (worker), depois de todo crédito de cancelamento em SKU de kit e na reconciliação diária,
+   então não depende de `aplicados` nem do claim da transferência. Cancelamento em SKU de kit encerrando/encerrado
+   não tenta criar transferência.
+8. **Tela.** `encerrando` mostra o andamento na seção de transferências do Gerenciar (a mesma leitura que repete a
+   cada 10 s, com o motivo do passo 3) e o kit segue relido enquanto `encerrando`; `encerrado` some de Publicados e
+   aparece "Encerrado" no bloco "Kits com variação" da base, sem ações. Org sem o módulo não lê nada novo.
+9. **Deploy, nesta ordem.** (1) Migration `20261108154241_kit_variacao_encerrar` (sozinha não muda comportamento:
+   nenhum kit está `encerrando`/`encerrado`, então nenhuma peça sai da regra de participante e as guardas não
+   disparam). (2) Edges `gerenciar-kit-variacao`, `kit-transferencia`, `kit-reposicao`, `reconciliar-estoque`,
+   `reconciliar-faturamento`, `sincronizar-estoque` e `sync-venda` (importam `encerrar.ts`, `saga.ts`, `reposicao.ts`
+   ou `cancelamento.ts`); `reconciliar-estoque` chama `kit_codigos_triagem` e lê `encerrado_avisado_em`, por isso
+   depois da migration. A tela vai ao ar no merge; até `gerenciar-kit-variacao` subir, o botão recebe `acao_invalida`.
+
+**Riscos aceitos.** Se o módulo for desligado depois de um encerramento, a família do kit (itens fechados) volta a
+aparecer em Publicados, como qualquer anúncio fechado no ML. Peça com bloqueio de moderação ou retirada que nunca é
+limpo segue participante (entradas pela saga), como hoje com o kit vivo. Kit sem nenhum item no ML encerra sem aviso
+no Telegram além da resposta na tela e do aviso de conclusão da varredura.
+
+**Junção com o adendo de acompanhamento (08/11).** O encerramento usa a carência única `CARENCIA_ALERTA_MS` (3 min)
+da saga como início das faixas de alerta (3 min, 15 min, 1 h, 6 h, diário). O aviso de fim genérico (`kit_fim:`)
+não vale para `encerrar`: a conclusão do encerramento sai só por `avisarKitsEncerrados` (`kit_encerrado:<kit>`). Na
+tela, a transferência `encerrar` aparece como "Encerramento", etapa "Fechando os anúncios do kit no Mercado Livre".
+
 ## Adendo (2026-11-08): acompanhar a transferência na tela e avisar ao terminar
 
 Criar o kit só mostrava um toast; a saga leva de 10 a 15 min e ninguém era avisado ao fim.

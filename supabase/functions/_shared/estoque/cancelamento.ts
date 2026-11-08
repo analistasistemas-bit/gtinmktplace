@@ -278,11 +278,23 @@ export async function agendarCancelamentoKit(
   admin: SupabaseClient,
   enfileirarSaga: (id: string, orgId: string) => Promise<void>,
   p: { orgId: string; canal: string; orderId: string | number; codigos: string[] },
+  /** Emenda "Encerrar kit": crédito em SKU de kit encerrado vira aviso de saldo preso (`avisarKitsEncerrados`). */
+  avisarEncerrados?: () => Promise<unknown>,
 ): Promise<string[]> {
-  const { data: skus, error } = await admin.from('kit_variacao_skus')
-    .select('codigo, kit_id').eq('org_id', p.orgId).in('codigo', p.codigos);
+  const { data: lidos, error } = await admin.from('kit_variacao_skus')
+    .select('codigo, kit_id, kits_variacao(status)').eq('org_id', p.orgId).in('codigo', p.codigos);
   if (error) throw new Error(`kit_variacao_skus: ${error.message}`);
-  if ((skus ?? []).length === 0) return [];
+  // Kit encerrando/encerrado não recebe transferência (a guarda do banco recusaria): o crédito fica local e avisa.
+  const statusDe = (s: Record<string, unknown>) => {
+    const k = s.kits_variacao as { status?: string } | Array<{ status?: string }> | null | undefined;
+    return (Array.isArray(k) ? k[0] : k)?.status;
+  };
+  const encerrados = (lidos ?? []).filter((s) => ['encerrando', 'encerrado'].includes(statusDe(s) ?? ''));
+  if (encerrados.length > 0 && avisarEncerrados) {
+    await avisarEncerrados().catch((e) => console.error('kit_encerrado_estorno_aviso_falhou', p.orderId, String(e)));
+  }
+  const skus = (lidos ?? []).filter((s) => !encerrados.includes(s));
+  if (skus.length === 0) return [];
 
   const { data: itens, error: e2 } = await admin.from('anuncios_externos_itens')
     .select('sku, item_externo_id, user_product_id, catalog_listing_id')
