@@ -30,10 +30,8 @@ vi.mock('@/components/kit-variacao/simulador-kit', () => ({
 }));
 vi.mock('@/lib/kit-variacao-edge', () => ({
   criarKitVariacaoEdge: vi.fn(async () => ({ ok: true, kit_id: 'K1' })),
+  enviarFotoKit: vi.fn(async (pasta: string, rotulo: string) => `ORG/${pasta}/${rotulo}.jpg`),
   gerarTextoKitEdge: vi.fn(async () => ({ ok: true, titulo: 'Kit 2 Blusas Canelada', descricao: 'Kit com 2 peças.', previa_id: 'PV1' })),
-}));
-vi.mock('@/lib/storage', () => ({
-  uploadFile: vi.fn(async (_b: string, path: string) => path), buildStoragePath: (o: string, l: string, f: string) => `${o}/${l}/${f}`,
 }));
 
 function abrir(isAdmin = true) {

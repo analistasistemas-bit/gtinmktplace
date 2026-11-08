@@ -16,10 +16,10 @@ export function useKitsVariacao(enabled: boolean) {
 }
 
 /** Saldo por combinação × tamanho e transferências abertas. Repete enquanto houver transferência em andamento. */
-export function useDetalheKitVariacao(kitId: string | null) {
+export function useDetalheKitVariacao(kitId: string | null, codigoPaiBase: string) {
   return useQuery({
     queryKey: [...QK_KITS_VARIACAO, 'detalhe', kitId],
-    queryFn: () => fetchDetalheKitVariacao(kitId as string),
+    queryFn: () => fetchDetalheKitVariacao(kitId as string, codigoPaiBase),
     enabled: !!kitId,
     refetchInterval: (q) => ((q.state.data?.abertas.length ?? 0) > 0 ? 10_000 : false),
   });

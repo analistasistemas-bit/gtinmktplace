@@ -1,10 +1,10 @@
-// ADR-0197 (Task 13): Gerenciar kit, na linha do kit em Publicados. Saldo por combinação × tamanho; Montar mais (só
-// aumenta anúncio existente), Desmontar (com reposição ligada, a desliga até o operador religar), "Vender só em kit",
+// ADR-0197 (Task 13): Gerenciar kit, na linha do kit em Publicados. Saldo por combinação × tamanho; Montar mais
+// (combinação × tamanho publicado só aumenta; nunca publicado vira SKU novo no mesmo kit, com foto), Desmontar (com reposição ligada, a desliga até o operador religar), "Vender só em kit",
 // reposição automática e meta. Tudo pela edge `gerenciar-kit-variacao`, que só aceita admin.
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertTriangle, Loader2 } from 'lucide-react';
+import { AlertTriangle, ChevronDown, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -18,13 +18,18 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { QK_KITS_VARIACAO, useDetalheKitVariacao } from '@/hooks/useKitsVariacao';
+import { useFamilia } from '@/hooks/useFamilia';
 import { QK } from '@/lib/queries';
-import { AVISO_SELETOR_ML } from '@/lib/kit-variacao';
-import { gerenciarKitEdge, type AcaoKit, type KitVariacaoResumo } from '@/lib/kit-variacao-edge';
+import { AVISO_SELETOR_ML, gerarCombinacoes, rotuloCombinacao } from '@/lib/kit-variacao';
+import {
+  adicionarAoKitEdge, enviarFotoKit, gerenciarKitEdge, type AcaoKit, type KitVariacaoResumo,
+} from '@/lib/kit-variacao-edge';
 import { cn } from '@/lib/utils';
 import { ExplicacaoReposicao } from '@/components/kit-variacao/explicacao-reposicao';
 
 const inteiro = (s: string | undefined) => (s && /^\d+$/.test(s) ? Number(s) : 0);
+/** Combinação = conjunto de cores: a ordem em que foram marcadas não cria outra. */
+const conjunto = (cores: string[]) => [...cores].sort().join('|');
 const TIPO: Record<string, string> = {
   montar: 'Montagem', desmontar: 'Desmontagem', repor: 'Reposição', cancelamento: 'Cancelamento', sair_sobra: 'Guardar peças', entrada: 'Entrada',
 };
@@ -43,7 +48,7 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
   isAdmin: boolean;
 }) {
   const qc = useQueryClient();
-  const detalhe = useDetalheKitVariacao(open ? kit.id : null);
+  const detalhe = useDetalheKitVariacao(open ? kit.id : null, kit.codigoPaiBase);
   const skus = useMemo(() => detalhe.data?.skus ?? [], [detalhe.data]);
   const abertas = detalhe.data?.abertas ?? [];
   // Versão lida + as mudanças feitas aqui (a releitura chega depois). Versão velha a edge recusa.
@@ -56,12 +61,62 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
 
   useEffect(() => { setVersao(kit.versao); }, [kit.versao]);
   useEffect(() => { setMeta(String(kit.meta)); }, [kit.meta]);
-  useEffect(() => { if (open) { setQtd({}); setConfirmar(null); setDesligarJunto(false); } }, [open]);
+  // Montar mais com combinação × tamanho nunca publicado (vira SKU novo no mesmo kit).
+  const [novoAberto, setNovoAberto] = useState(false);
+  const [novaQtd, setNovaQtd] = useState<Record<string, string>>({});
+  const [fotos, setFotos] = useState<Record<string, File>>({});
+  const chave = useRef(crypto.randomUUID());
+  const enviadas = useRef(new Map<string, { file: File; path: string }>());
+
+  useEffect(() => {
+    if (!open) return;
+    setQtd({}); setConfirmar(null); setDesligarJunto(false); setNovaQtd({}); setFotos({}); setNovoAberto(false);
+    chave.current = crypto.randomUUID();
+    enviadas.current.clear();
+  }, [open]);
 
   const itens = skus.map((s) => ({ codigo: s.codigo, quantidade: inteiro(qtd[s.codigo]) })).filter((i) => i.quantidade > 0);
-  const totalKits = itens.reduce((s, i) => s + i.quantidade, 0);
   const alemDoSaldo = itens.some((i) => i.quantidade > (skus.find((s) => s.codigo === i.codigo)?.saldo ?? 0));
   const ocupado = enviando || abertas.length > 0;
+
+  // Base canônica: cores, tamanhos e saldo das peças.
+  const baseId = detalhe.data?.baseFamiliaId ?? '';
+  const baseQ = useFamilia(baseId, open && !!baseId, false);
+  const pecasBase = useMemo(() => (baseQ.data?.variacoes ?? []).filter((v) => !v.excluidaDaPublicacao), [baseQ.data]);
+  const coresBase = useMemo(() => [...new Set(pecasBase.map((v) => v.cor))], [pecasBase]);
+  const tamanhosBase = useMemo(() => [...new Set(pecasBase.map((v) => v.tamanho).filter((t): t is string => !!t))], [pecasBase]);
+  const combinacoes = useMemo(() => gerarCombinacoes(coresBase, kit.pecasPorKit), [coresBase, kit.pecasPorKit]);
+  const publicada = (cores: string[], tamanho?: string) =>
+    skus.find((s) => conjunto(s.cores) === conjunto(cores) && (tamanho == null || s.tamanho === tamanho));
+  // Tamanho novo de combinação publicada usa as cores e o rótulo gravados (mesmo COLOR) e a foto dela.
+  const novos = combinacoes.flatMap((c) => tamanhosBase.map((t) => {
+    const irma = publicada(c);
+    return { cores: irma?.cores ?? c, rotulo: irma?.rotulo ?? rotuloCombinacao(c), tamanho: t, temFoto: !!irma,
+      quantidade: publicada(c, t) ? 0 : inteiro(novaQtd[`${conjunto(c)}#${t}`]) };
+  })).filter((n) => n.quantidade > 0);
+  const semFoto = [...new Set(novos.filter((n) => !n.temFoto && !fotos[n.rotulo]).map((n) => n.rotulo))];
+  const rotulosNovos = [...new Set(novos.filter((n) => !n.temFoto).map((n) => n.rotulo))];
+  const totalKits = itens.reduce((s, i) => s + i.quantidade, 0) + novos.reduce((s, n) => s + n.quantidade, 0);
+
+  // Conferência só de leitura das peças da base (a RPC continua validando): por código de peça, não por nome de cor.
+  const precisa = new Map<string, number>();
+  const somar = (codigo: string, n: number) => precisa.set(codigo, (precisa.get(codigo) ?? 0) + n);
+  for (const i of itens) for (const c of skus.find((s) => s.codigo === i.codigo)?.componentes ?? []) somar(c.codigo, c.quantidade * i.quantidade);
+  const semPeca: string[] = [];
+  for (const n of novos) {
+    for (const cor of n.cores) {
+      const v = pecasBase.find((x) => x.cor === cor && x.tamanho === n.tamanho);
+      if (v) somar(v.codigo, n.quantidade); else semPeca.push(`${cor} ${n.tamanho}`);
+    }
+  }
+  const faltas = [
+    ...semPeca.map((x) => `${x}: não existe na base`),
+    ...[...precisa].flatMap(([codigo, n]) => {
+      const v = pecasBase.find((x) => x.codigo === codigo);
+      return v && n > v.estoque ? [`${v.cor} ${v.tamanho}: precisa ${n}, há ${v.estoque}`] : [];
+    }),
+  ];
+  const conferiu = !!baseQ.data && !baseQ.isError;
 
   async function acao(a: AcaoKit, extra: { meta?: number; itens?: typeof itens } = {}, v = versao): Promise<boolean> {
     const r = await gerenciarKitEdge({ kitId: kit.id, acao: a, versao: v, ...extra });
@@ -83,8 +138,36 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
   }
 
   const montar = () => executar(async () => {
-    if (await acao('montar', { itens })) {
-      setQtd({});
+    let ok: boolean;
+    if (novos.length === 0) {
+      ok = await acao('montar', { itens });
+    } else {
+      // Foto já enviada nesta abertura reaproveita o caminho: a repetição mantém o pedido (hash) da chave.
+      const caminhos: Record<string, string> = {};
+      for (const rotulo of rotulosNovos) {
+        const file = fotos[rotulo];
+        const ja = enviadas.current.get(rotulo);
+        if (ja?.file === file) { caminhos[rotulo] = ja.path; continue; }
+        const path = await enviarFotoKit(`kit-variacao-${chave.current}`, rotulo, file);
+        enviadas.current.set(rotulo, { file, path });
+        caminhos[rotulo] = path;
+      }
+      const r = await adicionarAoKitEdge({
+        kitId: kit.id, chaveCadastro: chave.current, fotos: caminhos,
+        quantidades: [
+          ...itens.map((i) => {
+            const s = skus.find((x) => x.codigo === i.codigo)!;
+            return { cores: s.cores, tamanho: s.tamanho, quantidade: i.quantidade };
+          }),
+          ...novos.map((n) => ({ cores: n.cores, tamanho: n.tamanho, quantidade: n.quantidade })),
+        ],
+      });
+      ok = r.ok;
+      if (!r.ok) toast.error('Não foi possível concluir', { description: r.mensagem });
+      else { chave.current = crypto.randomUUID(); enviadas.current.clear(); }
+    }
+    if (ok) {
+      setQtd({}); setNovaQtd({}); setFotos({});
       toast.success(`Montagem de ${totalKits} ${totalKits === 1 ? 'kit' : 'kits'} começou`, {
         description: 'Os anúncios das peças ficam pausados alguns minutos enquanto elas vão para o kit.',
       });
@@ -123,7 +206,7 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
                 <StatusPill tone={status.tom}>{status.rotulo}</StatusPill>
               </DialogTitle>
               <DialogDescription>
-                Kit de {kit.pecasPorKit} peças. Montar e desmontar movem peças entre o kit e os anúncios individuais, sem criar anúncio novo.
+                Kit de {kit.pecasPorKit} peças. Montar e desmontar movem peças entre o kit e os anúncios individuais. Combinação publicada só ganha saldo.
               </DialogDescription>
             </DialogHeader>
 
@@ -202,8 +285,108 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
                 <Button variant="outline" disabled={ocupado || totalKits === 0 || alemDoSaldo} onClick={() => setConfirmar('desmontar')}>
                   Desmontar
                 </Button>
-                <Button disabled={ocupado || totalKits === 0} onClick={() => setConfirmar('montar')}>Montar mais</Button>
+                <Button
+                  disabled={ocupado || totalKits === 0 || faltas.length > 0 || semFoto.length > 0}
+                  onClick={() => setConfirmar('montar')}
+                >
+                  Montar mais
+                </Button>
               </div>
+            )}
+
+            {isAdmin && faltas.length > 0 && (
+              <p className="rounded-md border border-danger/20 bg-danger/10 px-3 py-2 text-xs text-danger" role="alert">
+                Faltam peças na base para montar: {faltas.join('; ')}.
+              </p>
+            )}
+            {isAdmin && !conferiu && totalKits > 0 && !baseQ.isLoading && (
+              <p className="text-xs text-warning">Não foi possível conferir as peças da base agora. A montagem confere de novo antes de mover.</p>
+            )}
+
+            {isAdmin && (
+              <section aria-label="Combinação ou tamanho novo" className="rounded-md border">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm font-medium"
+                  aria-expanded={novoAberto}
+                  onClick={() => setNovoAberto((v) => !v)}
+                >
+                  <span>
+                    Combinação ou tamanho novo
+                    <span className="block text-xs font-normal text-muted-foreground">
+                      Vira anúncio novo dentro deste mesmo kit, com a foto da combinação.
+                    </span>
+                  </span>
+                  <ChevronDown className={cn('h-4 w-4 shrink-0 motion-safe:transition-transform', novoAberto && 'rotate-180')} />
+                </button>
+                {novoAberto && (
+                  baseQ.isLoading ? (
+                    <p className="flex items-center gap-2 border-t p-3 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Carregando a base…</p>
+                  ) : !conferiu ? (
+                    <p className="border-t p-3 text-sm text-danger">Não foi possível ler o produto-base. Feche e abra de novo.</p>
+                  ) : (
+                    <div className="grid gap-3 border-t p-3">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b text-left text-xs text-muted-foreground">
+                              <th className="py-2 pr-3 font-medium">Combinação</th>
+                              {tamanhosBase.map((t) => <th key={t} className="px-2 py-2 text-right font-medium">{t}</th>)}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {combinacoes.map((c) => {
+                              const rotulo = publicada(c)?.rotulo ?? rotuloCombinacao(c);
+                              return (
+                                <tr key={conjunto(c)} className="border-b last:border-0">
+                                  <td className="py-1.5 pr-3">{rotulo}</td>
+                                  {tamanhosBase.map((t) => (
+                                    <td key={t} className="px-2 py-1.5 text-right">
+                                      {publicada(c, t) ? (
+                                        <span className="text-xs text-muted-foreground" title="Já publicado: use a tabela acima">publicado</span>
+                                      ) : (
+                                        <Input
+                                          type="number" min={0} step={1} inputMode="numeric" placeholder="0"
+                                          aria-label={`Nova ${rotulo} ${t}`}
+                                          className="ml-auto h-8 w-16 text-right tabular-nums"
+                                          value={novaQtd[`${conjunto(c)}#${t}`] ?? ''}
+                                          onChange={(e) => setNovaQtd((p) => ({ ...p, [`${conjunto(c)}#${t}`]: e.target.value }))}
+                                        />
+                                      )}
+                                    </td>
+                                  ))}
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      {rotulosNovos.length > 0 && (
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {rotulosNovos.map((rotulo) => (
+                            <label key={rotulo} className={cn('flex items-center gap-3 rounded-md border p-2 text-sm', !fotos[rotulo] && 'border-dashed')}>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate font-medium">Foto de {rotulo}</span>
+                                <span className="block text-xs text-muted-foreground">{fotos[rotulo]?.name ?? 'Escolher arquivo'}</span>
+                              </span>
+                              <input
+                                type="file" accept="image/*" className="sr-only" aria-label={`Foto ${rotulo}`}
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) setFotos((p) => ({ ...p, [rotulo]: file }));
+                                }}
+                              />
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                      {semFoto.length > 0 && (
+                        <p className="text-xs text-danger">Envie a foto de cada combinação nova ({semFoto.join(', ')}).</p>
+                      )}
+                    </div>
+                  )
+                )}
+              </section>
             )}
 
             <section aria-label="Política do kit" className="grid gap-3 rounded-md border p-3">
@@ -274,7 +457,12 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
                 <AlertDialogTitle>Montar {totalKits} {totalKits === 1 ? 'kit' : 'kits'}?</AlertDialogTitle>
                 <AlertDialogDescription>
                   As peças saem dos anúncios individuais, que ficam pausados alguns minutos enquanto vão para o kit.
-                  Nenhum anúncio novo é criado: só aumenta o saldo das combinações já publicadas.
+                  {(() => {
+                    const n = new Set(novos.map((x) => `${x.rotulo}#${x.tamanho}`)).size;
+                    return n === 0
+                      ? ' Nenhum anúncio novo é criado: só aumenta o saldo das combinações já publicadas.'
+                      : ` ${n} ${n === 1 ? 'anúncio novo (combinação ou tamanho) entra' : 'anúncios novos (combinação ou tamanho) entram'} neste mesmo kit. ${AVISO_SELETOR_ML}`;
+                  })()}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

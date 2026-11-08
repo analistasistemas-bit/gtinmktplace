@@ -3,20 +3,38 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DialogGerenciarKit } from '../dialog-gerenciar-kit';
-import { gerenciarKitEdge, type KitVariacaoResumo } from '@/lib/kit-variacao-edge';
+import { adicionarAoKitEdge, enviarFotoKit, gerenciarKitEdge, type KitVariacaoResumo } from '@/lib/kit-variacao-edge';
 
 const detalhe = {
   data: {
     skus: [
-      { codigo: 'KPB-M', tamanho: 'M', rotulo: 'Preto e Branco', cores: ['Preto', 'Branco'], saldo: 2 },
-      { codigo: 'KPB-G', tamanho: 'G', rotulo: 'Preto e Branco', cores: ['Preto', 'Branco'], saldo: 0 },
+      { codigo: 'KPB-M', tamanho: 'M', rotulo: 'Preto e Branco', cores: ['Preto', 'Branco'], saldo: 2,
+        componentes: [{ codigo: 'P-M', quantidade: 1 }, { codigo: 'B-M', quantidade: 1 }] },
+      { codigo: 'KPB-G', tamanho: 'G', rotulo: 'Preto e Branco', cores: ['Preto', 'Branco'], saldo: 0,
+        componentes: [{ codigo: 'P-G', quantidade: 1 }, { codigo: 'B-G', quantidade: 1 }] },
     ],
+    baseFamiliaId: 'FAM-BASE',
     abertas: [] as Array<{ id: string; tipo: string; estado: string; passo: string; alerta: string | null; criadoEm: string }>,
   },
   isLoading: false, isError: false,
 };
 vi.mock('@/hooks/useKitsVariacao', () => ({ useDetalheKitVariacao: () => detalhe, QK_KITS_VARIACAO: ['kits-variacao'] }));
-vi.mock('@/lib/kit-variacao-edge', () => ({ gerenciarKitEdge: vi.fn(async () => ({ ok: true })) }));
+vi.mock('@/lib/kit-variacao-edge', () => ({
+  gerenciarKitEdge: vi.fn(async () => ({ ok: true })),
+  adicionarAoKitEdge: vi.fn(async () => ({ ok: true })),
+  enviarFotoKit: vi.fn(async (pasta: string, rotulo: string) => `ORG/${pasta}/${rotulo}.jpg`),
+}));
+// Base: Preto, Branco e Marrom em M, G e GG. Preto M tem só 3 peças.
+const peca = (codigo: string, cor: string, tamanho: string, estoque: number) => ({ codigo, cor, tamanho, estoque, excluidaDaPublicacao: false });
+const base = {
+  data: {
+    variacoes: ['M', 'G', 'GG'].flatMap((t) => [
+      peca(`P-${t}`, 'Preto', t, t === 'M' ? 3 : 9), peca(`B-${t}`, 'Branco', t, 9), peca(`M-${t}`, 'Marrom', t, 9),
+    ]),
+  },
+  isLoading: false, isError: false,
+};
+vi.mock('@/hooks/useFamilia', () => ({ useFamilia: () => base }));
 
 const kitBase: KitVariacaoResumo = {
   id: 'K1', codigoPaiBase: '0001', codigoPaiKit: '0002', pecasPorKit: 2, soEmKit: false, reposicaoAuto: false,
@@ -35,6 +53,8 @@ function abrir(kit: Partial<KitVariacaoResumo> = {}, isAdmin = true) {
 describe('DialogGerenciarKit', () => {
   beforeEach(() => {
     vi.mocked(gerenciarKitEdge).mockClear();
+    vi.mocked(adicionarAoKitEdge).mockClear();
+    vi.mocked(enviarFotoKit).mockClear();
     detalhe.data.abertas = [];
   });
 
@@ -115,5 +135,58 @@ describe('DialogGerenciarKit', () => {
     expect(screen.queryByRole('switch', { name: 'Vender só em kit' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Montar mais' })).toBeNull();
     expect(screen.getByLabelText('Saldo do kit Preto e Branco M')).toHaveTextContent('2');
+  });
+
+  describe('Montar mais com combinação ou tamanho novo', () => {
+    async function abrirNovo(user: ReturnType<typeof userEvent.setup>) {
+      abrir();
+      await user.click(screen.getByRole('button', { name: /Combinação ou tamanho novo/ }));
+    }
+
+    it('combinação nunca publicada exige foto própria e vai para a criação de SKU no mesmo kit', async () => {
+      const user = userEvent.setup();
+      await abrirNovo(user);
+      expect(screen.queryByLabelText('Nova Preto e Branco M')).toBeNull();   // já publicada: só pela tabela
+      await user.type(screen.getByLabelText('Quantidade Preto e Branco M'), '1');
+      await user.type(screen.getByLabelText('Nova Preto e Marrom M'), '2');
+      expect(screen.getByRole('button', { name: 'Montar mais' })).toBeDisabled();
+      expect(screen.getByText(/Envie a foto de cada combinação nova/)).toBeInTheDocument();
+
+      await user.upload(screen.getByLabelText('Foto Preto e Marrom'), new File(['x'], 'pm.jpg', { type: 'image/jpeg' }));
+      await user.click(screen.getByRole('button', { name: 'Montar mais' }));
+      expect(screen.getByRole('alertdialog')).toHaveTextContent(/1 anúncio novo \(combinação ou tamanho\)/);
+      await user.click(screen.getByRole('button', { name: 'Montar' }));
+      await waitFor(() => expect(adicionarAoKitEdge).toHaveBeenCalledTimes(1));
+      const chamada = vi.mocked(adicionarAoKitEdge).mock.calls[0][0];
+      expect(chamada).toMatchObject({
+        kitId: 'K1',
+        quantidades: [
+          { cores: ['Preto', 'Branco'], tamanho: 'M', quantidade: 1 },
+          { cores: ['Preto', 'Marrom'], tamanho: 'M', quantidade: 2 },
+        ],
+        fotos: { 'Preto e Marrom': expect.stringContaining('Preto e Marrom') },
+      });
+      expect(chamada.chaveCadastro).toBeTruthy();
+      expect(gerenciarKitEdge).not.toHaveBeenCalled();
+    });
+
+    it('tamanho novo de combinação publicada usa a foto dela (sem envio)', async () => {
+      const user = userEvent.setup();
+      await abrirNovo(user);
+      await user.type(screen.getByLabelText('Nova Preto e Branco GG'), '1');
+      expect(screen.queryByLabelText('Foto Preto e Branco')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Montar mais' })).toBeEnabled();
+    });
+
+    it('antes de montar confere as peças da base: falta avisa e bloqueia', async () => {
+      const user = userEvent.setup();
+      await abrirNovo(user);
+      await user.type(screen.getByLabelText('Quantidade Preto e Branco M'), '2');
+      await user.type(screen.getByLabelText('Nova Preto e Marrom M'), '2');
+      await user.upload(screen.getByLabelText('Foto Preto e Marrom'), new File(['x'], 'pm.jpg', { type: 'image/jpeg' }));
+      // Preto M: 2 (Preto e Branco) + 2 (Preto e Marrom) = 4, há 3.
+      expect(screen.getByText(/Preto M: precisa 4, há 3/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Montar mais' })).toBeDisabled();
+    });
   });
 });

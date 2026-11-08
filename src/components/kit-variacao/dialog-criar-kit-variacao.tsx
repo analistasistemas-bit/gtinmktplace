@@ -16,17 +16,13 @@ import {
 import { useFamilia } from '@/hooks/useFamilia';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { QK_KITS_VARIACAO } from '@/hooks/useKitsVariacao';
-import { storageOwnerForUpload } from '@/hooks/useUploadLote';
-import { supabase } from '@/lib/supabase';
-import { effectiveOrgId, useSupportStore } from '@/stores/support-store';
-import { buildStoragePath, uploadFile } from '@/lib/storage';
 import { QK } from '@/lib/queries';
 import { fmtBRL } from '@/lib/formato';
 import { cn } from '@/lib/utils';
 import {
   AVISO_SELETOR_ML, gerarCombinacoes, rotuloCombinacao, saldoDePecas,
 } from '@/lib/kit-variacao';
-import { criarKitVariacaoEdge, gerarTextoKitEdge } from '@/lib/kit-variacao-edge';
+import { criarKitVariacaoEdge, enviarFotoKit, gerarTextoKitEdge } from '@/lib/kit-variacao-edge';
 import { SimuladorKit } from '@/components/kit-variacao/simulador-kit';
 import { ExplicacaoReposicao } from '@/components/kit-variacao/explicacao-reposicao';
 
@@ -139,17 +135,13 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
 
   const criar = useMutation({
     mutationFn: async () => {
-      const { data: ud } = await supabase.auth.getUser();
-      const orgId = effectiveOrgId();
-      if (!ud.user?.id || !orgId) throw new Error('Sem sessão');
-      const dono = storageOwnerForUpload(ud.user.id, orgId, useSupportStore.getState().context?.scope ?? null);
       const caminhos: Record<string, string> = {};
       for (const c of combinacoesPublicadas) {
         const rotulo = rotuloCombinacao(c);
         const file = fotos[rotulo];
         const ja = enviadas.current.get(rotulo);
         if (ja?.file === file) { caminhos[rotulo] = ja.path; continue; }
-        const path = await uploadFile('imagens', buildStoragePath(dono, `kit-variacao-${chave.current}`, `${rotulo}-${file.name}`), file);
+        const path = await enviarFotoKit(`kit-variacao-${chave.current}`, rotulo, file);
         enviadas.current.set(rotulo, { file, path });
         caminhos[rotulo] = path;
       }

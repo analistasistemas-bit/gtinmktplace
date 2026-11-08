@@ -3,6 +3,9 @@
 import { supabase } from '@/lib/supabase';
 import { corpoDoErroDaEdge } from '@/lib/edge-erro';
 import type { CriarKitVariacaoInput } from '@/lib/kit-variacao';
+import { effectiveOrgId, useSupportStore } from '@/stores/support-store';
+import { storageOwnerForUpload } from '@/hooks/useUploadLote';
+import { buildStoragePath, uploadFile } from '@/lib/storage';
 
 export type Resultado<T> = ({ ok: true } & T) | { ok: false; motivo?: string; mensagem: string };
 
@@ -27,6 +30,25 @@ export function criarKitVariacaoEdge(i: CriarKitVariacaoInput) {
     ...(i.previaId ? { previa_id: i.previaId } : {}),
     ...(i.listingTypeId ? { listing_type_id: i.listingTypeId } : {}),
   });
+}
+
+/** Montar mais (Task 13, ajuste): o que já é SKU do kit só aumenta; combinação × tamanho novo vira SKU no mesmo kit. */
+export function adicionarAoKitEdge(p: {
+  kitId: string; quantidades: { cores: string[]; tamanho: string; quantidade: number }[];
+  fotos: Record<string, string>; chaveCadastro: string;
+}) {
+  return invocar<{ transferenciaId?: string; aviso?: string }>('criar-kit-variacao', {
+    kit_id: p.kitId, quantidades: p.quantidades, fotos: p.fotos, chave_cadastro: p.chaveCadastro,
+  });
+}
+
+/** Foto de combinação no bucket `imagens`, sob a pasta do dono (org ou usuário legado, que a edge exige). */
+export async function enviarFotoKit(pasta: string, rotulo: string, file: File): Promise<string> {
+  const { data: ud } = await supabase.auth.getUser();
+  const orgId = effectiveOrgId();
+  if (!ud.user?.id || !orgId) throw new Error('Sem sessão');
+  const dono = storageOwnerForUpload(ud.user.id, orgId, useSupportStore.getState().context?.scope ?? null);
+  return uploadFile('imagens', buildStoragePath(dono, pasta, `${rotulo}-${file.name}`), file);
 }
 
 export function gerarTextoKitEdge(p: { familiaBaseId: string; pecasPorKit: number; cores: string[] }) {
@@ -75,15 +97,25 @@ export async function fetchKitsVariacao(): Promise<KitVariacaoResumo[]> {
   }));
 }
 
-export interface SkuKitSaldo { codigo: string; tamanho: string; rotulo: string; cores: string[]; saldo: number | null }
+export interface SkuKitSaldo {
+  codigo: string; tamanho: string; rotulo: string; cores: string[]; saldo: number | null;
+  /** Peças por kit (SKU individual × quantidade), para conferir o saldo da base antes de montar. */
+  componentes: Array<{ codigo: string; quantidade: number }>;
+}
 export interface TransferenciaAberta { id: string; tipo: string; estado: string; passo: string; alerta: string | null; criadoEm: string }
 
-export async function fetchDetalheKitVariacao(kitId: string): Promise<{ skus: SkuKitSaldo[]; abertas: TransferenciaAberta[] }> {
-  const [skusR, transR] = await Promise.all([
-    supabase.from('kit_variacao_skus').select('codigo, tamanho, rotulo_cor, cores').eq('kit_id', kitId),
+export async function fetchDetalheKitVariacao(kitId: string, codigoPaiBase: string): Promise<{
+  skus: SkuKitSaldo[]; abertas: TransferenciaAberta[]; baseFamiliaId: string | null;
+}> {
+  const [skusR, transR, baseR] = await Promise.all([
+    supabase.from('kit_variacao_skus').select('codigo, tamanho, rotulo_cor, cores, kit_variacao_componentes(codigo, quantidade)')
+      .eq('kit_id', kitId),
     supabase.from('kit_transferencias').select('id, tipo, estado, passo, alerta, criado_em')
       .eq('kit_id', kitId).in('estado', ['ativa', 'travada']).order('criado_em', { ascending: true }),
+    // Base canônica (a mais recente do PAI): cores, tamanhos e saldo das peças para Montar mais.
+    supabase.from('familias').select('id').eq('codigo_pai', codigoPaiBase).order('criado_em', { ascending: false }).limit(1),
   ]);
+  if (baseR.error) throw baseR.error;
   if (skusR.error) throw skusR.error;
   if (transR.error) throw transR.error;
   const codigos = (skusR.data ?? []).map((s) => s.codigo);
@@ -102,9 +134,11 @@ export async function fetchDetalheKitVariacao(kitId: string): Promise<{ skus: Sk
   return {
     skus: (skusR.data ?? []).map((s) => ({
       codigo: s.codigo, tamanho: s.tamanho, rotulo: s.rotulo_cor, cores: s.cores, saldo: saldo.get(s.codigo)?.estoque ?? null,
+      componentes: ((s as { kit_variacao_componentes?: Array<{ codigo: string; quantidade: number }> }).kit_variacao_componentes ?? []),
     })).sort((a, b) => a.rotulo.localeCompare(b.rotulo) || a.tamanho.localeCompare(b.tamanho)),
     abertas: (transR.data ?? []).map((t) => ({
       id: t.id, tipo: t.tipo, estado: t.estado, passo: t.passo, alerta: t.alerta, criadoEm: t.criado_em,
     })),
+    baseFamiliaId: baseR.data?.[0]?.id ?? null,
   };
 }
