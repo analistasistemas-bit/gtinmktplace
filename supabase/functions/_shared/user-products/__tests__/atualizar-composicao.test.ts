@@ -115,7 +115,7 @@ function entrada(over: Partial<EntradaComposicao> = {}): EntradaComposicao {
   };
 }
 
-describe('atualizarComposicao — kit com variação (ADR-0197)', () => {
+describe('atualizarComposicao — kit com variação (ADR-0199)', () => {
   it('SKU participante não leva available_quantity; o comum segue igual', async () => {
     const w = fakeMundo({ seed: [filho('A', 'MLB1'), filho('B', 'MLB2')] });
     const r = await atualizarComposicao(w.portas, entrada({ participantes: new Set(['A']) }));

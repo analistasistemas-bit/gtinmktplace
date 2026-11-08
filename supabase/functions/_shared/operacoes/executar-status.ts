@@ -16,7 +16,7 @@ export interface DepsStatus extends DepsLaco {
   /** Mensagem do guard de migração PxV (ADR-0161) ou null. */
   migracaoPxv(mlItemId: string): Promise<string | null>;
   atualizarStatus(mlItemId: string, alvo: 'ativo' | 'pausado'): Promise<ResultadoCanal<void>>;
-  /** ADR-0197 (`prepararStatusOperador`): grava a pausa do operador ou autoriza a reativação de SKU de kit;
+  /** ADR-0199 (`prepararStatusOperador`): grava a pausa do operador ou autoriza a reativação de SKU de kit;
    *  `concluir(resultado do PUT)` só libera a exclusão com o resultado confirmado no ML. */
   prepararKit(mlItemId: string, alvo: 'ativo' | 'pausado'): Promise<PreparoStatus>;
   /** Fatal: todo item `pendente`/`enviando` da operação → `erro` com a mensagem. */
@@ -31,7 +31,7 @@ async function processarStatus(op: OperacaoStatusRow, it: ItemRow, deps: DepsSta
   const [atual, migracao] = await Promise.all([deps.lerStatus(id), deps.migracaoPxv(id)]);
   const d = decidirStatus(op.acao, atual, migracao);
   if (d.tipo === 'fim') {
-    // ADR-0197: item já pausado (pela saga, por exemplo) também recebe a pausa do operador; senão a saga o reativa.
+    // ADR-0199: item já pausado (pela saga, por exemplo) também recebe a pausa do operador; senão a saga o reativa.
     // Se o bloqueio é desta operação (agora ou num retry), conta como aplicado e entra no Reverter.
     if (op.acao === 'pausar' && d.status === 'ja_estava') {
       const k = await deps.prepararKit(id, 'pausado');
@@ -43,7 +43,7 @@ async function processarStatus(op: OperacaoStatusRow, it: ItemRow, deps: DepsSta
     if (d.status === 'ja_estava' && it.saida_pedida_em) return gravarPos(deps.gravarItem(op.id, id, { status: 'aplicado', mensagem: null }));
     return deps.gravarItem(op.id, id, { status: d.status, mensagem: d.mensagem });
   }
-  // ADR-0197: Guardado, moderado ou SKU em transferência recusam (massa e Reverter); a pausa vai antes do PUT.
+  // ADR-0199: Guardado, moderado ou SKU em transferência recusam (massa e Reverter); a pausa vai antes do PUT.
   const kit = await deps.prepararKit(id, d.alvo);
   if ('recusa' in kit) {
     // Geração ocupada (ativação anterior ainda no prazo, exclusão preservada): o item fica `enviando`, sem gastar

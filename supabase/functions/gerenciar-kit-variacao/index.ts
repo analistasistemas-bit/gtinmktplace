@@ -1,4 +1,4 @@
-// ADR-0197 (Task 13): edge da tela Gerenciar kit. Casca: autenticação, gate de admin (montar, desmontar e "Vender só
+// ADR-0199 (Task 13): edge da tela Gerenciar kit. Casca: autenticação, gate de admin (montar, desmontar e "Vender só
 // em kit" pausam anúncios, ADR-0060), módulo `kit_variacao` e as portas reais de `processar.ts`. Cada operação é uma
 // RPC (`kit_variacao_gerenciar`): CAS de versão e efeito na mesma transação.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';

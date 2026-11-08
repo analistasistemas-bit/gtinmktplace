@@ -1,4 +1,4 @@
--- ADR-0197 (Task 11, rodada 1): registro durável do consumo de IA da prévia do texto do kit.
+-- ADR-0199 (Task 11, rodada 1): registro durável do consumo de IA da prévia do texto do kit.
 -- Cada chamada de `gerar-texto-kit` grava uma linha ANTES de interpretar a resposta da IA (prévia
 -- descartada ou com JSON inválido também consumiu tokens). O cliente nunca informa tokens nem custo.
 -- Na criação, `kit_variacao_consumir_previa` associa a prévia ao kit uma vez só e soma o custo na

@@ -1,5 +1,5 @@
 \set ON_ERROR_STOP on
--- ADR-0197 (Task 13, fix round 1): `kit_variacao_gerenciar`. CAS de `kits_variacao.versao` e efeito na mesma transação;
+-- ADR-0199 (Task 13, fix round 1): `kit_variacao_gerenciar`. CAS de `kits_variacao.versao` e efeito na mesma transação;
 -- montar/desmontar com chave estável por operação; desmontar + desligar "Vender só em kit" muda a política ANTES de a
 -- transferência capturar a soma de versões (a mesma soma que a saga confere em `politicaMudou`), então não aborta.
 -- Fixtures só dentro da transação desfeita (scripts/teste-sql-desfeito.py), em org própria.

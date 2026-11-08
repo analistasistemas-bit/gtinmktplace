@@ -32,7 +32,7 @@ export async function registrarPendencias(
   return (data as Array<{ descartados: number }> | null)?.[0]?.descartados ?? 0;
 }
 
-/** ADR-0197: obrigação de crédito de kit com variação (`obrigatoria`, nunca descartada pelo contador). Lança em erro. */
+/** ADR-0199: obrigação de crédito de kit com variação (`obrigatoria`, nunca descartada pelo contador). Lança em erro. */
 export async function registrarPendenciaKit(
   admin: SupabaseClient, orgId: string, orderId: string, erro: string,
 ): Promise<void> {
@@ -41,7 +41,7 @@ export async function registrarPendenciaKit(
 }
 
 /**
- * ADR-0197: dos pedidos do lote, os com obrigação de kit ativa (crédito ou baixa adiada). Filtrado pelos ids do
+ * ADR-0199: dos pedidos do lote, os com obrigação de kit ativa (crédito ou baixa adiada). Filtrado pelos ids do
  * lote, em blocos de 200 (abaixo do teto de linhas do PostgREST): pedido com obrigação omitido viraria "ok" e a
  * obrigação seria apagada. Lança em erro.
  */

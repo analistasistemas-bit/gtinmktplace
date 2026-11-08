@@ -54,12 +54,12 @@ export const MODULOS: Modulo[] = [
   {
     id: 'kit_variacao',
     nome: 'Kit com variação',
-    descricao: 'Kits de cores combinadas × tamanho numa página só, com saldo próprio (ADR-0197).',
+    descricao: 'Kits de cores combinadas × tamanho numa página só, com saldo próprio (ADR-0199).',
   },
   {
     id: 'imagem_ia',
     nome: 'Imagem por IA',
-    descricao: 'Gerar a foto do kit com IA, cobrada por imagem gerada (ADR-0197).',
+    descricao: 'Gerar a foto do kit com IA, cobrada por imagem gerada (ADR-0199).',
   },
 ];
 

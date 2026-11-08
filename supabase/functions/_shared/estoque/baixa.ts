@@ -8,7 +8,7 @@ export interface ItemVendaBaixa {
   codigo: string | null;
   quantity: number;
   ml_item_id?: string | null;
-  /** ADR-0197: parte da identidade do item vendido (`kit_venda_identidade`). */
+  /** ADR-0199: parte da identidade do item vendido (`kit_venda_identidade`). */
   variation_id?: number | string | null;
   titulo?: string | null;
 }
@@ -86,9 +86,9 @@ export interface ResultadoBaixaVenda {
   semSku: Array<{ titulo: string | null; mlItemId: string | null; quantidade: number }>;
   /** SKUs que vieram no pedido mas não existem no catálogo — a RPC recusa e nada é baixado. */
   skuDesconhecido: Array<{ codigo: string; quantidade: number }>;
-  /** ADR-0197: itens sem identidade e com leitura incerta, sem prova de serem comuns. Não baixados; repetir. */
+  /** ADR-0199: itens sem identidade e com leitura incerta, sem prova de serem comuns. Não baixados; repetir. */
   adiados: ItemVendaBaixa[];
-  /** ADR-0197: resolução desta execução diferente da identidade gravada. A baixa seguiu pela identidade. */
+  /** ADR-0199: resolução desta execução diferente da identidade gravada. A baixa seguiu pela identidade. */
   divergentes: Array<{ mlItemId: string; resolvido: string; identidade: string }>;
   /** Itens pagos sem SKU desta execução, gravado ou não o diagnóstico (`semSku` só lista os gravados). */
   semCodigo: ItemVendaBaixa[];
@@ -114,7 +114,7 @@ export function classificarBaixaSemSaldo(
 export async function registrarBaixaVenda(
   admin: SupabaseClient,
   p: { orgId: string; canal: string; orderId: string | number; itens: ItemVendaBaixa[] },
-  /** ADR-0197: org com o módulo `kit_variacao`. `incerto` = catálogo ou GTIN lidos pela metade. Ausente = como hoje. */
+  /** ADR-0199: org com o módulo `kit_variacao`. `incerto` = catálogo ou GTIN lidos pela metade. Ausente = como hoje. */
   opts: { kit?: { incerto: boolean } } = {},
 ): Promise<ResultadoBaixaVenda> {
   let adiados: ItemVendaBaixa[] = [];
@@ -285,7 +285,7 @@ async function registrarVendaSemSku(
 }
 
 /**
- * ADR-0197: `canonica_trocou` = a cópia canônica do SKU de kit com variação trocou enquanto a RPC esperava o
+ * ADR-0199: `canonica_trocou` = a cópia canônica do SKU de kit com variação trocou enquanto a RPC esperava o
  * lock. A RPC desfez tudo (nem a referência ficou), e repetir resolve a cópia nova. Até 3 tentativas; depois
  * vira falha comum, reaplicada no próximo evento do pedido.
  */
@@ -294,7 +294,7 @@ function rpcEstoque(admin: SupabaseClient, nome: string, args: Record<string, un
 }
 
 /**
- * ADR-0197: 40001 (`canonica_trocou`, inclusive do trigger de cópia de `variacoes`) e 40P01 (deadlock) já
+ * ADR-0199: 40001 (`canonica_trocou`, inclusive do trigger de cópia de `variacoes`) e 40P01 (deadlock) já
  * desfizeram a transação inteira do statement; repetir a chamada é seguro. Até 3 tentativas, depois devolve o
  * último erro para o chamador falhar de forma retentável.
  */
@@ -479,7 +479,7 @@ export async function despacharPushPendente(
 }
 
 /**
- * ADR-0197: retomada durável da baixa adiada pelo portão (item sem identidade, leitura incerta, sem prova de ser
+ * ADR-0199: retomada durável da baixa adiada pelo portão (item sem identidade, leitura incerta, sem prova de ser
  * comum). O sync-venda grava a obrigação em `worker_pendencias` (`obrigatoria`); a etapa de pendências da
  * reconciliação relê o pedido e chama isto. Devolve true quando nada ficou para trás; senão renova a obrigação
  * (lança se não conseguir gravar: o chamador conta falha e repete).

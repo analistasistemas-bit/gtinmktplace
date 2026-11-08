@@ -62,7 +62,7 @@ obrigatório** — lista vazia é estado válido. Lida pelo front via RPC `modul
 (`security definer`, sem parâmetro de propósito: não existe caminho para ler os módulos de outra
 org; `revoke all from public`, `grant execute to authenticated`).
 `set_modulos_org` grava pela RPC `set_modulos_org_seguro`, que recusa desligar `kit_variacao` com kit
-que tenha saldo ou transferência aberta (ADR-0197).
+que tenha saldo ou transferência aberta (ADR-0199).
 Esconder o menu é **navegação**, não fronteira de segurança (ADR-0047): o gate real são as edges
 `cadastrar-produto` e `entrada-estoque`, que respondem 403 para org sem o módulo.
 
@@ -632,7 +632,7 @@ pedido pediu, auditoria/alerta de venda-sem-saldo), `motivo` (check: `venda`, `e
 `estorno_venda`, `venda_sku_nao_encontrado`, `estorno_sku_nao_encontrado`, `cancelamento_sem_baixa`
 — tombstone de cancelamento que chegou antes da baixa existir —, `venda_cancelada_antes`,
 `ajuste` — redução manual, ADR-0110; `quantidade` sempre `<= 0`, e `0` quando o operador conferiu
-sem mudar nada, `kit_saida` e `kit_entrada` — transferência de kit, ADR-0197),
+sem mudar nada, `kit_saida` e `kit_entrada` — transferência de kit, ADR-0199),
 `canal_origem`, `referencia_externa` (idempotência), `custo_unitario numeric(12,2)` (só em
 `entrada`), `documento` (NF do fornecedor), `observacao`, `estoque_anterior`, `estoque_resultante`,
 **`push_enfileirado_em`** (outbox no próprio ledger: marca quando o push foi de fato aceito pelo
@@ -652,7 +652,7 @@ Não há coluna de "anúncio de origem": a Decisão 7 foi revisada para **não**
 quando há kit vinculado (o push é absoluto e recalculado, então reempurrar tudo dá o mesmo
 resultado por 1-2 chamadas de API a mais).
 
-**`transferencia_id`** (ADR-0197: FK composta para `kit_transferencias`; nula em todo movimento que
+**`transferencia_id`** (ADR-0199: FK composta para `kit_transferencias`; nula em todo movimento que
 não é de transferência de kit).
 
 Índices:
@@ -1603,7 +1603,7 @@ o upsert de uma escrita nova invalida os jobs da anterior. RLS de `select` por
 `org_id = current_org_id()`; escrita só por service role (`update-familia-ml`, `publicar-split-ml`,
 `confirmar-publicacao-ml`).
 
-## Kit com variação (ADR-0197)
+## Kit com variação (ADR-0199)
 
 Cores combinadas × tamanho numa família User Products, com saldo próprio do kit em `variacoes`.
 Chave de vínculo é `(org_id, codigo)`. Toda tabela tem `org_id`, com FK composta nas filhas. RLS de

@@ -265,7 +265,7 @@ function chain(table: string, state: {
       if ('codigo' in f) return { data: [], error: null }; // codigosJaUsados
       return { data: [], error: null };
     }
-    // ADR-0197: participantes de kit com variação (componentes) — e quem leu as tabelas.
+    // ADR-0199: participantes de kit com variação (componentes) — e quem leu as tabelas.
     if (table === 'kit_variacao_skus' || table === 'kit_variacao_componentes') {
       state.lidasKit?.push(table);
       const pedidos = (f.codigo?.val ?? []) as string[];
@@ -296,7 +296,7 @@ function depsFake(opts: {
   faltantesBase?: string[];
   // ncm_consultar (ADR-0187): default vigente.
   ncm?: 'vigente' | 'vencido' | 'inexistente' | 'erro';
-  // ADR-0197: módulo kit_variacao embutido na leitura da base e SKUs em composição.
+  // ADR-0199: módulo kit_variacao embutido na leitura da base e SKUs em composição.
   kitModulo?: boolean;
   participantes?: string[];
 } = {}) {
@@ -457,7 +457,7 @@ describe('criarKitsVinculados', () => {
     expect(enfileirados.publicarFamilias).toEqual(0);
   });
 
-  // ADR-0197: peça de kit com variação não pode ganhar outra oferta fora da transferência.
+  // ADR-0199: peça de kit com variação não pode ganhar outra oferta fora da transferência.
   it('base em kit com variação é recusada antes de lote, família ou código', async () => {
     const { deps, inserts, admin } = depsFake({ kitModulo: true, participantes: ['00000001'] });
     const r = await criarKitsVinculados(deps, { familiaBaseId: 'f-base', kits: [kitPadrao(2)] });

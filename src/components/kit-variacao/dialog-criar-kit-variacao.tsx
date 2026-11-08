@@ -1,4 +1,4 @@
-// ADR-0197 (Task 13): Criar kit com variação, a partir de Publicados. Rascunho aprovado em 06/11: cores e peças por
+// ADR-0199 (Task 13): Criar kit com variação, a partir de Publicados. Rascunho aprovado em 06/11: cores e peças por
 // kit → combinações geradas → quantidade por combinação × tamanho (só > 0 vira anúncio) com o saldo de peças ao lado
 // → preço, texto por IA e foto por combinação → simulador → confirmar. Nada vai ao ML sem passar por esta revisão.
 import { useEffect, useMemo, useRef, useState } from 'react';

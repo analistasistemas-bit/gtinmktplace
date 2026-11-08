@@ -1,4 +1,4 @@
-// ADR-0197 (decisão 11): título e descrição do kit com variação por IA, chamados pela prévia da tela
+// ADR-0199 (decisão 11): título e descrição do kit com variação por IA, chamados pela prévia da tela
 // antes de criar o kit. Etapa própria: não passa por process-familia (que reescreveria o kit) e não
 // grava nada — devolve o texto e o custo de tokens; quem grava é criar-kit-variacao, com o texto que
 // o operador viu e aprovou.

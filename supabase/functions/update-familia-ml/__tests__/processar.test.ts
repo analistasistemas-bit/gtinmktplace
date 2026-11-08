@@ -61,7 +61,7 @@ function fakeAdmin(over: {
   reajusteAtivo?: string | null; // rpc reajuste_ativo_produto (spec reajuste C2)
   reajusteErro?: boolean;         // rpc reajuste_ativo_produto falha (timeout, função ausente)
   ncm?: 'vigente' | 'vencido' | 'inexistente' | 'erro'; // rpc ncm_consultar (ADR-0187)
-  kitComponentes?: string[]; // ADR-0197: SKUs usados em kit com variação
+  kitComponentes?: string[]; // ADR-0199: SKUs usados em kit com variação
 } = {}) {
   const writes: Array<{ table: string; payload: Record<string, unknown>; filters: Record<string, unknown> }> = [];
   const familia = over.familia === undefined ? { ...FAMILIA_BASE } : over.familia;
@@ -855,7 +855,7 @@ describe('pesoLiquidoGramas do kit vinculado no UPDATE (ADR-0151, bug MLB7585283
   });
 });
 
-describe('UPDATE Legacy × kit com variação (ADR-0197)', () => {
+describe('UPDATE Legacy × kit com variação (ADR-0199)', () => {
   const skusSemQuantidade = () =>
     (fakeConnector.chamadas.find((c) => c.metodo === 'atualizarAnuncio')?.args as { skusSemQuantidade?: string[] }).skusSemQuantidade;
 

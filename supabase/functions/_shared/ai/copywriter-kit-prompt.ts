@@ -1,4 +1,4 @@
-// Kit com variação (ADR-0197, decisão 11). Caminho próprio, sem slots nem as regras de grade de
+// Kit com variação (ADR-0199, decisão 11). Caminho próprio, sem slots nem as regras de grade de
 // copywriter-prompt.ts: o modelo só reescreve título e descrição da BASE dizendo que é kit de N
 // peças. O que o sistema garante não depende do modelo: `posProcessarTituloKit` fixa "Kit N" no
 // começo e o limite de 60 (só palavras inteiras); `posProcessarDescricaoKit` fixa a abertura

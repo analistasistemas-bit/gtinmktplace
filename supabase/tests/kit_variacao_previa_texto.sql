@@ -1,5 +1,5 @@
 \set ON_ERROR_STOP on
--- ADR-0197 (migration kit_variacao_previa_texto): consumo da prévia associa uma vez e soma o custo.
+-- ADR-0199 (migration kit_variacao_previa_texto): consumo da prévia associa uma vez e soma o custo.
 begin;
 insert into public.organizations (id, nome, slug, modulos_habilitados, is_test) values
   ('97300000-0000-0000-0000-000000000001', 'Prévia texto', 'previa-texto-teste', array['kit_variacao'], true),

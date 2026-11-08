@@ -1,5 +1,5 @@
 \set ON_ERROR_STOP on
--- ADR-0197 (Task 9): inventário (ADR-0181) em peças com kit com variação. Montar, trânsito, desmontar e
+-- ADR-0199 (Task 9): inventário (ADR-0181) em peças com kit com variação. Montar, trânsito, desmontar e
 -- cancelar transferência não mexem em quantidade, custo nem nota; venda e estorno do kit contam em peças
 -- (saldo do kit × composição). Prova principal: cada componente fica IGUAL a um SKU de controle comum que
 -- recebe só as operações não-kit equivalentes (mesma nota, venda e estorno em peças).

@@ -1,4 +1,4 @@
-# ADR-0197 — Kit com variação: página única, estoque separado e escrita só com anúncio pausado
+# ADR-0199 — Kit com variação: página única, estoque separado e escrita só com anúncio pausado
 
 - **Status:** aceito, em implementação
 - **Data:** 2026-11-07

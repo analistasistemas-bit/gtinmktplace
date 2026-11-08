@@ -1,4 +1,4 @@
--- ADR-0197 (Task 10): criação do kit com variação e destino sem item na saga.
+-- ADR-0199 (Task 10): criação do kit com variação e destino sem item na saga.
 --
 -- 1. Destino sem item: o SKU de kit novo ainda não tem UP. O alvo nasce com `criar = true`, `up_id`
 --    sintético `criar:<codigo>` (a PK e a chave de `kit_saga_salvar_alvo` continuam estáveis) e

@@ -95,7 +95,7 @@ export const STRIP_FAMILIA_KIT = [
   'capa3_storage_path', 'capa3_ml_picture_id',
   'atacado', 'atacado_status', 'atacado_erro',
   'kit_base_codigo_pai', 'kit_multiplicador',
-  // ADR-0197: embed do módulo na leitura da base, não é coluna.
+  // ADR-0199: embed do módulo na leitura da base, não é coluna.
   'organizations',
   // I-2: promoção visual não confirmada no preview do kit (default false / nullable).
   'exibir_com_desconto', 'desconto_pct',
@@ -345,7 +345,7 @@ export async function criarKitsVinculados(
     .eq('id', input.familiaBaseId).eq('org_id', orgId).maybeSingle();
   if (!base) return { ok: false, motivo: 'base_nao_encontrada' };
 
-  // ADR-0197: peça de kit com variação só muda de oferta pela transferência; um kit vinculado daria a ela
+  // ADR-0199: peça de kit com variação só muda de oferta pela transferência; um kit vinculado daria a ela
   // outra oferta fora desse controle. Antes de criar E de retomar (reenvio de chave antiga re-encadeia kit em
   // `erro`). Org sem o módulo não consulta nada.
   if (kitLigado(base)) {

@@ -385,7 +385,7 @@ Deno.serve(async (req) => {
   // `montarVariacaoNova` produzem o MESMO conjunto de chaves (invariante documentado em
   // processar.ts e travado por teste). Chave presente em uma origem e ausente na outra vira
   // NULL explícito na linha que não a tem — não o DEFAULT da coluna — e estoura nas NOT NULL.
-  // ADR-0197: 40001/40P01 do trigger de cópia de SKU em kit com variação repetem a inserção inteira.
+  // ADR-0199: 40001/40P01 do trigger de cópia de SKU em kit com variação repetem a inserção inteira.
   const { error: varErr } = await comRetryConcorrencia(
     () => admin.from('variacoes').insert([...clonesVariacoes, ...novasVariacoes]),
   );
@@ -394,7 +394,7 @@ Deno.serve(async (req) => {
     // Mesma limpeza do famErr acima: lote dedicado sem família não deve sobrar na tela Lotes.
     await admin.from('lotes').delete().eq('id', loteId);
     await auditarOperacaoSuporte(admin, context, target, 'failed');
-    // ADR-0197: o trigger `variacoes_kit_saldo_copia` grava o saldo da cópia de SKU em kit com variação
+    // ADR-0199: o trigger `variacoes_kit_saldo_copia` grava o saldo da cópia de SKU em kit com variação
     // e recusa com transferência aberta — espera, não falha do sistema.
     if (varErr.message.startsWith('sku_em_transferencia')) return json({ error: varErr.message }, 409);
     if (varErr.code === '40001' || varErr.code === '40P01') {

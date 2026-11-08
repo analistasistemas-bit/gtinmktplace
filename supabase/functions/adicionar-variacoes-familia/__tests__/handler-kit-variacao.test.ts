@@ -1,4 +1,4 @@
-// ADR-0197 (Task 7): o saldo da cópia de SKU em kit com variação é gravado pelo trigger
+// ADR-0199 (Task 7): o saldo da cópia de SKU em kit com variação é gravado pelo trigger
 // `variacoes_kit_saldo_copia` (supabase/tests/kit_variacao_guards.sql). Com transferência aberta o
 // insert é recusado: o handler desfaz família e lote e devolve 409, sem publicar.
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';

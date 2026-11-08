@@ -3,7 +3,7 @@ import { fetchDetalheKitVariacao, fetchKitsVariacao } from '@/lib/kit-variacao-e
 
 export const QK_KITS_VARIACAO = ['kits-variacao'] as const;
 
-/** Kits com variação da org (ADR-0197). Só com o módulo ligado: sem ele as tabelas podem nem existir. Repete a
+/** Kits com variação da org (ADR-0199). Só com o módulo ligado: sem ele as tabelas podem nem existir. Repete a
  *  leitura enquanto algum kit está sendo montado, para a linha sair de "publicando" sozinha. */
 export function useKitsVariacao(enabled: boolean) {
   return useQuery({

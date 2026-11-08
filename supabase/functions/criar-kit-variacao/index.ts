@@ -1,4 +1,4 @@
-// ADR-0197 (Task 10): cria o kit com variação na tela Publicados. Casca: autenticação, gate de admin (a
+// ADR-0199 (Task 10): cria o kit com variação na tela Publicados. Casca: autenticação, gate de admin (a
 // montagem pausa os individuais por T, ADR-0060) e as portas de `processar.ts` no Supabase e no ML. Nada é
 // publicado aqui: a saga `kit-transferencia` reduz as peças e cria os itens.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';

@@ -1,5 +1,5 @@
 \set ON_ERROR_STOP on
--- ADR-0197 (migration kit_variacao_criacao): criação do kit numa transação, marca inicial e alvo `criar`.
+-- ADR-0199 (migration kit_variacao_criacao): criação do kit numa transação, marca inicial e alvo `criar`.
 -- Fixtures só dentro da transação desfeita (scripts/teste-sql-desfeito.py), em org própria.
 begin;
 

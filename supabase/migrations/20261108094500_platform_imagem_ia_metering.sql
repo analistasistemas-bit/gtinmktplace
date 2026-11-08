@@ -1,4 +1,4 @@
--- Task 16 (kit com variação, ADR-0197): cobrança por imagem IA na fatura, igual ao Sonar.
+-- Task 16 (kit com variação, ADR-0199): cobrança por imagem IA na fatura, igual ao Sonar.
 --
 -- 1. platform_commercial_terms.image_unit_cents (padrão 0): preço por imagem na condição comercial da org.
 -- 2. platform_image_deliveries: uma entrega por (org_id, request_id), append-only, só service_role. Congela

@@ -89,7 +89,7 @@ describe('processarEntrada', () => {
     ]);
   });
 
-  // ADR-0197: a recusa vem da RPC (guard sku_em_transferencia) e o texto chega ao operador sem push.
+  // ADR-0199: a recusa vem da RPC (guard sku_em_transferencia) e o texto chega ao operador sem push.
   it('entrada recusada por transferência de kit: mensagem ao operador e nenhum push', async () => {
     const msg = 'sku_em_transferencia: A2 está em transferência de kit. Repita a operação depois.';
     const { deps: d, jobs } = deps({ erroPorCodigo: { A2: msg } });

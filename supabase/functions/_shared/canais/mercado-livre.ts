@@ -272,7 +272,7 @@ export const mercadoLivreConnector: ChannelConnector = {
           },
         };
       }
-      // ADR-0197: kit com variação só existe em user products; chegar aqui com um participante é erro.
+      // ADR-0199: kit com variação só existe em user products; chegar aqui com um participante é erro.
       const participante = [...a.existentes, ...a.novas].find((v) => a.skusSemQuantidade?.includes(v.sku));
       if (participante) {
         return { ok: false, erro: {

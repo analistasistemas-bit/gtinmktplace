@@ -1297,7 +1297,7 @@ describe('removerPublicado — precheck em_processamento no fallback UP (revisã
   });
 });
 
-describe('removerPublicado — SKU em kit com variação (ADR-0197, Task 7)', () => {
+describe('removerPublicado — SKU em kit com variação (ADR-0199, Task 7)', () => {
   afterEach(() => { vi.unstubAllGlobals(); });
 
   const ALVO_KIT = {

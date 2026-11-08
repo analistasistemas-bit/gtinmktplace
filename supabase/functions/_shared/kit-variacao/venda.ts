@@ -1,4 +1,4 @@
-// ADR-0197 (Task 8): identidade de item vendido e aviso de kit zerado, para org com o módulo `kit_variacao`.
+// ADR-0199 (Task 8): identidade de item vendido e aviso de kit zerado, para org com o módulo `kit_variacao`.
 //
 // A referência da baixa é `canal:pedido:SKU`. Se duas execuções resolverem SKUs diferentes para o mesmo item do
 // pedido (catálogo ou GTIN tolerante, fallback `seller_custom_field`), nascem dois débitos. Por isso a primeira

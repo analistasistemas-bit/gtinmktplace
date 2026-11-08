@@ -149,7 +149,7 @@ export default function Relatorio() {
                   <a href={f.mlPermalink} target="_blank" rel="noreferrer" className="text-primary underline">ver anúncio ↗</a>
                 ) : null
               )}
-              {/* ADR-0197: publicada com aviso (SKU de kit com variação mantido no anúncio). */}
+              {/* ADR-0199: publicada com aviso (SKU de kit com variação mantido no anúncio). */}
               {f.status === 'publicado' && f.erroMensagem && (
                 <span className="max-w-md break-words text-warning">{f.erroMensagem}</span>
               )}

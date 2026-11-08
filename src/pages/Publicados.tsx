@@ -242,7 +242,7 @@ function KitsVinculados({ codigoPai, ativo }: { codigoPai: string; ativo: boolea
   );
 }
 
-/** ADR-0197: kits com variação feitos a partir do produto. Mostra também o kit ainda montando ou com erro, que
+/** ADR-0199: kits com variação feitos a partir do produto. Mostra também o kit ainda montando ou com erro, que
  *  pode nem ter linha própria na tabela. */
 function KitsComVariacao({ kits, onGerenciar }: { kits: KitVariacaoResumo[]; onGerenciar: (k: KitVariacaoResumo) => void }) {
   if (kits.length === 0) return null;
@@ -286,7 +286,7 @@ interface LinhaProps {
   onPreencherFiscal: (familiaId: string) => void;
   temModuloEstoque: boolean;
   onCriarKit: (item: PublicadoItem) => void;
-  /** ADR-0197: módulo `kit_variacao` ligado. */
+  /** ADR-0199: módulo `kit_variacao` ligado. */
   temKitVariacao: boolean;
   /** Kit com variação cujo anúncio é esta linha (null = não é kit). */
   kitVariacao: KitVariacaoResumo | null;
@@ -361,7 +361,7 @@ function LinhaTabela({
         : temVariacaoDeCor
           ? 'Kit vinculado só existe para produto sem variação de cor.'
           : undefined;
-  // ADR-0197: kit com variação nasce de anúncio User Products com grade de cor; o próprio kit não vira base.
+  // ADR-0199: kit com variação nasce de anúncio User Products com grade de cor; o próprio kit não vira base.
   const motivoKitVariacaoDesabilitado = !isAdmin
     ? 'Somente administradores podem criar kits.'
     : !item.userProducts
@@ -1146,7 +1146,7 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
   const { data: modulos } = useModulosHabilitados();
   const temFiscal = !!modulos?.includes('fiscal');
   const temModuloEstoque = !!modulos?.includes('estoque');
-  // ADR-0197: kit com variação. Sem o módulo as tabelas nem são lidas.
+  // ADR-0199: kit com variação. Sem o módulo as tabelas nem são lidas.
   const temKitVariacao = !!modulos?.includes('kit_variacao');
   const { data: kitsVariacao } = useKitsVariacao(temKitVariacao);
   const kitPorCodigo = useMemo(() => new Map((kitsVariacao ?? []).map((k) => [k.codigoPaiKit, k])), [kitsVariacao]);

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ADR-0197: corridas reais (duas sessões) das RPCs de transferência. Em cada variante a sessão A executa e
+# ADR-0199: corridas reais (duas sessões) das RPCs de transferência. Em cada variante a sessão A executa e
 # SEGURA a transação 3 s; a B começa 1 s depois, tem de ESPERAR o lock de A e decidir sobre o que A commitou.
 # Cada variante tem fixture própria (códigos 097NN...). Mesmo arranjo de reajuste_preco_concorrencia.sh.
 #

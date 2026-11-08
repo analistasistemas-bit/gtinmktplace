@@ -149,7 +149,7 @@ async function legado(admin: ReturnType<typeof adminClient>): Promise<Response> 
             const { claim: atual, ret, extras, lidoEm } = await lerClaimCompleto(token, String(claim.id));
             // ADR-0121: é por AQUI que o cancelamento com devolução chega — o pedido já saiu da
             // janela de 72h do passo 2, e o webhook do cancelamento pode nunca ter vindo.
-            // ADR-0197: o desfecho do crédito de kit decide se a devolução é gravada (processarClaim).
+            // ADR-0199: o desfecho do crédito de kit decide se a devolução é gravada (processarClaim).
             await processarClaim({
               kitLigado,
               resolverPedido: async () => {
@@ -389,7 +389,7 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
             // Claim relido aqui (versão capturada antes): o da listagem pode ter minutos de idade.
             const { claim: atual, ret, extras, lidoEm } = await lerClaimCompleto(token, String(claim.id));
             // ADR-0121: o cancelamento com devolução chega por aqui (pedido fora da janela de 72h).
-            // ADR-0197: `repetir` lança antes de gravar a devolução: o claim fica no filtro e não conta (processarClaim).
+            // ADR-0199: `repetir` lança antes de gravar a devolução: o claim fica no filtro e não conta (processarClaim).
             await processarClaim({
               kitLigado,
               resolverPedido: async () => {
@@ -498,7 +498,7 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
     async processarPedidos(token, cx, userId, org, pedidos) {
       const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver, incompleto, kitLigado } = await catalogoDe(userId, org);
       const { gtinPorItem, incerto: gtinIncerto } = await carregarGtinsDaVenda(token, pedidos, idsPubliai, kitLigado);
-      // ADR-0197: pedidos com obrigação de kit (baixa adiada ou crédito). Só com o módulo; lança → a etapa falha.
+      // ADR-0199: pedidos com obrigação de kit (baixa adiada ou crédito). Só com o módulo; lança → a etapa falha.
       const obrigacoesKit = kitLigado
         ? await lerPendenciasKit(admin, org, pedidos.map((x) => String(x.id)))
         : new Set<string>();
@@ -531,9 +531,9 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
               temEnvio: pedido.shipping?.id != null,
               kitLigado, catalogoIncompleto: incompleto || gtinIncerto,
             });
-            // ADR-0197: obrigação de crédito não gravada → falha do pedido (vira pendência e repete). Crédito
+            // ADR-0199: obrigação de crédito não gravada → falha do pedido (vira pendência e repete). Crédito
             // pendente → nem ok nem falha: a obrigação gravada não pode ser apagada por este "sucesso".
-            // ADR-0197: baixa adiada pelo portão do sync-venda é refeita aqui, de forma durável.
+            // ADR-0199: baixa adiada pelo portão do sync-venda é refeita aqui, de forma durável.
             const baixaOk = !(obrigacoesKit.has(String(pedido.id)) && pedido.status === 'paid') || await refazerBaixaAdiada(admin, {
               registrarPendenciaKit,
               despachar: (pend) => despacharPushPendente(admin, org, pend, enfileirarSincronizacaoEstoque),

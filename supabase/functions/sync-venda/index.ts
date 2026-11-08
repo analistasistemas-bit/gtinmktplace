@@ -117,7 +117,7 @@ Deno.serve(async (req) => {
     liquidoPorPayment: liquidoPorPayment ?? undefined,
   });
 
-  // Portão da Task 3 (ADR-0197): a referência da baixa inclui o SKU. Com o módulo ligado, cada item do pedido
+  // Portão da Task 3 (ADR-0199): a referência da baixa inclui o SKU. Com o módulo ligado, cada item do pedido
   // baixa sob a identidade gravada na primeira baixa (`kit_venda_identidade`); sem ela e com leitura incerta, só
   // segue o item comprovadamente comum, o resto fica para depois (502, o QStash repete). Org sem módulo segue
   // tolerante, sem consulta nova.
@@ -254,7 +254,7 @@ Deno.serve(async (req) => {
           + 'de ajustar manualmente em Estoque, para não descontar duas vezes.',
         );
       }
-      // ADR-0197: kit em modo manual que zerou. O evento é o movimento do ledger; o dedupe é por movimento, e
+      // ADR-0199: kit em modo manual que zerou. O evento é o movimento do ledger; o dedupe é por movimento, e
       // a importação da saga chama o mesmo despacho. Último do bloco: erro aqui não cala os alertas acima.
       if (kitLigado) {
         await avisarKitsZerados(admin, { notificar: notificarCategoria }, orgId);
@@ -312,7 +312,7 @@ Deno.serve(async (req) => {
   if (liquidoPorPayment === null) {
     return new Response(JSON.stringify({ ok: false, mpIndisponivel: true }), { status: 502, headers: corsHeaders });
   }
-  // ADR-0197: baixa adiada pelo portão do catálogo. Mesmo tratamento do MP: o QStash repete.
+  // ADR-0199: baixa adiada pelo portão do catálogo. Mesmo tratamento do MP: o QStash repete.
   if (adiados.length > 0 || cancelamento === 'repetir') {
     return new Response(JSON.stringify({ ok: false, catalogoIncompleto: true }), { status: 502, headers: corsHeaders });
   }

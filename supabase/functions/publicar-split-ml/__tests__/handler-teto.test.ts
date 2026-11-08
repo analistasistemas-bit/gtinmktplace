@@ -147,7 +147,7 @@ describe('publicar-split-ml — conferência do CREATE (ADR-0195)', () => {
   });
 });
 
-// ADR-0197: kit com variação só existe em user products; o split Legacy nunca escreve quantidade dele.
+// ADR-0199: kit com variação só existe em user products; o split Legacy nunca escreve quantidade dele.
 describe('publicar-split-ml — kit com variação', () => {
   it('cor participante: recusa antes de criar ou atualizar qualquer partição', async () => {
     f.modulos = ['kit_variacao']; f.componentes = ['A'];

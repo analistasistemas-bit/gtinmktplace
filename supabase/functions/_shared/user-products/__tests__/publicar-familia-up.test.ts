@@ -205,7 +205,7 @@ describe('publicarFamiliaUP — orquestra raiz + saga + persistência', () => {
   });
 });
 
-// ADR-0197 (Task 5): CREATE e ativação de SKU de kit com variação seguram a exclusão do SKU durante a saga e
+// ADR-0199 (Task 5): CREATE e ativação de SKU de kit com variação seguram a exclusão do SKU durante a saga e
 // publicam o saldo relido sob a exclusão, nunca o do snapshot do job.
 describe('publicarFamiliaUP — kit com variação (saga real publicarGrupo)', () => {
   beforeEach(() => { criarPortasSpy.mockReset(); portasFalsas.atual = null; });

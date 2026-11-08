@@ -1,4 +1,4 @@
--- ADR-0197 (Task 7): saldo e composição duráveis do SKU que participa de kit com variação.
+-- ADR-0199 (Task 7): saldo e composição duráveis do SKU que participa de kit com variação.
 --
 -- Participante = código em `kit_variacao_skus` ou `kit_variacao_componentes` da org.
 -- 1. Nova cópia (planilha, adicionar variação, CREATE depois de republicar): trigger em `variacoes` grava o
@@ -191,7 +191,7 @@ create trigger familias_kit_preservar_composicao
   before delete on public.familias
   for each row execute procedure public.kit_variacao_preservar_familia();
 
--- 3. Corpo de 20261018131329 (ADR-0185) mais o guard do ADR-0197, depois dos locks e da recusa de
+-- 3. Corpo de 20261018131329 (ADR-0185) mais o guard do ADR-0199, depois dos locks e da recusa de
 -- processamento e antes de qualquer escrita.
 create or replace function public.preparar_republicacao(
   p_org uuid, p_canal text, p_codigo_pai text, p_familia_alvo uuid
@@ -246,7 +246,7 @@ begin
     raise exception 'republicar:em_processamento' using errcode = 'P0001';
   end if;
 
-  -- ADR-0197: participante de kit com variação (qualquer cópia do pai). Disputa a mesma exclusão que
+  -- ADR-0199: participante de kit com variação (qualquer cópia do pai). Disputa a mesma exclusão que
   -- transferência, publicação e ativação, em ordem de código, até o fim desta transação: transferência que
   -- começa depois espera o commit e só então pega a exclusão. Dono atual recusa — transferência/ativação
   -- (o vínculo que ela usa não pode sumir) ou publicação pendente (a exclusão dela tem a raiz antiga como
@@ -327,7 +327,7 @@ $$;
 revoke all on function public.preparar_republicacao(uuid, text, text, uuid) from public, anon, authenticated;
 grant execute on function public.preparar_republicacao(uuid, text, text, uuid) to service_role;
 
--- 4. Corpo de 20260801092323 (ADR-0097 D-1.1) mais o ADR-0197: movimento de SKU em composição e de
+-- 4. Corpo de 20260801092323 (ADR-0097 D-1.1) mais o ADR-0199: movimento de SKU em composição e de
 -- transferência nunca é órfão. Apagar o de transferência liberaria o índice único e a reserva repetiria.
 create or replace function public.limpar_movimentos_orfaos(p_org uuid)
 returns integer language plpgsql security definer set search_path = ''

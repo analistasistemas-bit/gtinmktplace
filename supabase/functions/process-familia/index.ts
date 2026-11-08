@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
   // kit seguir daqui reescreve os dois como produto comum — foi o que apagou o título do primeiro
   // kit real (2026-09-03, virou "… 700g 2un"). Devolve a família ao estado publicável sem tocar em
   // nada: o caminho de recuperação do kit é republicar, nunca reprocessar.
-  // Kit com variação (ADR-0197) tem o mesmo problema: título e descrição vêm de gerar-texto-kit.
+  // Kit com variação (ADR-0199) tem o mesmo problema: título e descrição vêm de gerar-texto-kit.
   if (ehFamiliaDeKit(claimed)) {
     console.error('process_familia_recusa_kit', { familiaId: job.familia_id, orgId: claimed.org_id });
     await admin.from('familias').update({ status: 'pronto' }).eq('id', job.familia_id);

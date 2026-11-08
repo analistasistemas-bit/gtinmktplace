@@ -419,7 +419,7 @@ Deno.serve(async (req) => {
     }
     for (const subset of [variacoesCreate, variacoesUpdate]) {
       if (subset.length === 0) continue;
-      // ADR-0197: o trigger de cópia de SKU em kit com variação recusa com 40001 se a canônica trocou na espera.
+      // ADR-0199: o trigger de cópia de SKU em kit com variação recusa com 40001 se a canônica trocou na espera.
       const { error: varErr } = await comRetryConcorrencia(() => admin.from('variacoes').insert(subset));
       if (varErr) throw new Error(`Insert variações: ${varErr.message}`);
     }

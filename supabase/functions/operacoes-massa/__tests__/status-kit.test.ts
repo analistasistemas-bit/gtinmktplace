@@ -1,4 +1,4 @@
-// ADR-0197 (Task 6, fix round 1): ligação real `operacoes_massa` (embed do módulo) → `kitLigado(linha)` →
+// ADR-0199 (Task 6, fix round 1): ligação real `operacoes_massa` (embed do módulo) → `kitLigado(linha)` →
 // `depsStatus` → `executarStatus`. Org sem o módulo não ganha consulta nova; org com o módulo recusa Guardado.
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 

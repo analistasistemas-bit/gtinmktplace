@@ -6,12 +6,12 @@ describe('MODULOS_VALIDOS', () => {
   it('fica em sincronia com o registry do frontend', () => {
     expect([...MODULOS_VALIDOS].sort()).toEqual(MODULOS.map((m) => m.id).sort());
   });
-  it('tem kit_variacao e imagem_ia (ADR-0197)', () => {
+  it('tem kit_variacao e imagem_ia (ADR-0199)', () => {
     expect(MODULOS_VALIDOS).toEqual(expect.arrayContaining(['kit_variacao', 'imagem_ia']));
   });
 });
 
-describe('gravarModulosOrg (ADR-0197)', () => {
+describe('gravarModulosOrg (ADR-0199)', () => {
   it('gravou: 200', async () => {
     const chamar = vi.fn().mockResolvedValue({ data: { ok: true }, error: null });
     expect(await gravarModulosOrg(chamar)).toEqual({ status: 200, body: { ok: true } });

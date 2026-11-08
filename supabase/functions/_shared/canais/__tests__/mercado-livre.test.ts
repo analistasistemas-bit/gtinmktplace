@@ -215,7 +215,7 @@ describe('atualizarAnuncio em item plano (ADR-0084)', () => {
     expect(putChamado).toBe(false);
   });
 
-  // ADR-0197: quantidade de SKU de kit com variação só a saga escreve.
+  // ADR-0199: quantidade de SKU de kit com variação só a saga escreve.
   it('SKU sem quantidade (kit com variação): PUT plano só com price; sem price, nenhum PUT', async () => {
     const puts: unknown[] = [];
     globalThis.fetch = ((_url: string, init?: RequestInit) => {

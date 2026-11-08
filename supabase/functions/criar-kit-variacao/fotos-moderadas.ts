@@ -1,4 +1,4 @@
-// ADR-0197: fotos usadas por item moderado no ML (spec, teste de 07/11: nunca usar foto de item moderado). Extraído de
+// ADR-0199: fotos usadas por item moderado no ML (spec, teste de 07/11: nunca usar foto de item moderado). Extraído de
 // `criar-kit-variacao/index.ts` (Task 15) para a geração de foto por IA (`gerar-foto-kit`) aplicar a mesma regra às
 // fotos de origem. Foto → itens que a usam (`itensPorFoto`: Legacy, principal e cópias de catálogo) → status lido no ML
 // agora, com leitura completa (`moderadosDoBulk` lança se faltar item). Qualquer falha lança e quem chama recusa.

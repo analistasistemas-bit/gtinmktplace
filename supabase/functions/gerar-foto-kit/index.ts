@@ -1,4 +1,4 @@
-// ADR-0197 (Task 15): gera por IA a foto de uma combinação do kit com variação, para a prévia da tela Criar/Gerenciar.
+// ADR-0199 (Task 15): gera por IA a foto de uma combinação do kit com variação, para a prévia da tela Criar/Gerenciar.
 // Só em org com o módulo `imagem_ia`, com o modelo de Configurações (`ai_model_imagem`). Não publica nem grava na
 // família: devolve o caminho no storage, e a foto só vai ao anúncio se o operador a aprovar na tela e criar o kit.
 // Fotos de origem: escolhidas aqui (nunca vindas do cliente), da própria org e fora de item moderado no ML.

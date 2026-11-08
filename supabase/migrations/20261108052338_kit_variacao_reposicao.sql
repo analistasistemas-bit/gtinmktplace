@@ -1,4 +1,4 @@
--- ADR-0197 (Task 14): "Vender só em kit". Estados por SKU (Normal, Guardado, Sobra) e reposição automática.
+-- ADR-0199 (Task 14): "Vender só em kit". Estados por SKU (Normal, Guardado, Sobra) e reposição automática.
 --
 -- 1. `kit_pausas_automaticas`: pausa que a automação fez e ainda não desfez. Gravada só pela saga, ao finalizar,
 --    com os itens que ela pausou e a política deixou pausados (validados contra `pausado_pela_saga`). A reposição

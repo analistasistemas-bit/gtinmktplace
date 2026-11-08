@@ -1,4 +1,4 @@
--- ADR-0197 (Task 8): venda e cancelamento do kit com variação.
+-- ADR-0199 (Task 8): venda e cancelamento do kit com variação.
 --
 -- 1) Identidade estável por item de pedido. A referência da baixa é `canal:pedido:SKU`; se duas execuções
 --    resolvessem SKUs diferentes para o mesmo item (catálogo ou GTIN tolerante), nasceriam dois débitos. Na
@@ -28,7 +28,7 @@ create or replace function public.kit_venda_identidade_imutavel()
 returns trigger language plpgsql set search_path = ''
 as $$
 begin
-  raise exception 'Identidade de item vendido é imutável (ADR-0197).' using errcode = 'restrict_violation';
+  raise exception 'Identidade de item vendido é imutável (ADR-0199).' using errcode = 'restrict_violation';
 end $$;
 drop trigger if exists kit_venda_identidade_imutavel on public.kit_venda_identidade;
 create trigger kit_venda_identidade_imutavel

@@ -1,4 +1,4 @@
-// ADR-0197: worker QStash da saga de transferência de kit. Casca fina: liga as portas de saga.ts no
+// ADR-0199: worker QStash da saga de transferência de kit. Casca fina: liga as portas de saga.ts no
 // Supabase e no ML. Um passo por invocação.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
@@ -198,7 +198,7 @@ async function kitDoSku(admin: SupabaseClient, orgId: string, codigo: string) {
 }
 
 /**
- * ADR-0197 (Task 10): vínculo local do item que a saga criou ou adotou. Idempotente: a retomada repete.
+ * ADR-0199 (Task 10): vínculo local do item que a saga criou ou adotou. Idempotente: a retomada repete.
  * Grava a raiz e o filho (a venda acha o SKU por `anuncios_externos_itens`), publica a família do kit e
  * dispara descrição, fiscal por SKU e o fechamento do lote. `family_id` diferente dos irmãos recusa: o
  * seletor do ML não juntaria os itens.

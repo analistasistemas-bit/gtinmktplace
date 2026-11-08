@@ -1,4 +1,4 @@
--- ADR-0197 (Task 15): foto da combinação do kit com variação gerada por IA (módulo `imagem_ia`).
+-- ADR-0199 (Task 15): foto da combinação do kit com variação gerada por IA (módulo `imagem_ia`).
 --
 -- 1. `ai_model_imagem` deixa de ser dormente (ADR-0074) e aceita o padrão decidido em 07/11 (Nano Banana 2.1).
 --    O 2.5 Flash Image continua aceito para não invalidar o que alguma org já salvou. Todo slug aqui está em
@@ -19,7 +19,7 @@ alter table public.configuracoes
     check (ai_model_imagem is null or ai_model_imagem in ('google/gemini-nano-banana-2.1', 'google/gemini-2.5-flash-image'));
 
 comment on column public.configuracoes.ai_model_imagem is
-  'Slug OpenRouter do modelo de imagem da org (ADR-0074, ADR-0197). Usado pela foto do kit com variação '
+  'Slug OpenRouter do modelo de imagem da org (ADR-0074, ADR-0199). Usado pela foto do kit com variação '
   '(edge gerar-foto-kit). NULL = padrão google/gemini-nano-banana-2.1.';
 
 create table if not exists public.kit_variacao_imagens (
@@ -46,5 +46,5 @@ alter table public.kit_variacao_imagens enable row level security;
 revoke all on public.kit_variacao_imagens from anon, authenticated;
 
 comment on table public.kit_variacao_imagens is
-  'ADR-0197: cada geração de foto do kit com variação por IA, idempotente por (org_id, request_id). '
+  'ADR-0199: cada geração de foto do kit com variação por IA, idempotente por (org_id, request_id). '
   'Cobrança (Task 16): status = ''gerada''.';

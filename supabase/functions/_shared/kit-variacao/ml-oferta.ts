@@ -1,4 +1,4 @@
-// ADR-0197: leituras do ML para a conciliação. Só GET. Tudo aqui lança em falha, nunca devolve
+// ADR-0199: leituras do ML para a conciliação. Só GET. Tudo aqui lança em falha, nunca devolve
 // vazio por erro: quem chama trata como dúvida (spec "Escrita de estoque com anúncio pausado").
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { registrarBaixaVenda, type ResultadoBaixaVenda } from '../estoque/baixa.ts';
@@ -183,7 +183,7 @@ export async function importarPedidosDoItem(
   for (const pedido of pagos) {
     const { itens } = mapearPedidoParaVenda(pedido, { idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem });
     deps.antesDeBaixar?.();
-    // ADR-0197: mesma identidade por item que o sync-venda; leitura estrita, então nada é incerto por catálogo.
+    // ADR-0199: mesma identidade por item que o sync-venda; leitura estrita, então nada é incerto por catálogo.
     const resultado = await registrarBaixaVenda(
       admin, { orgId, canal: 'mercado_livre', orderId: pedido.id, itens }, { kit: { incerto: false } },
     );
@@ -195,7 +195,7 @@ export async function importarPedidosDoItem(
       ...resultado.skuDesconhecido.map((x) => `pedido ${pedido.id}: SKU fora do catálogo: ${x.codigo}`),
     );
   }
-  // ADR-0197: a baixa daqui pode ser a que zerou um kit em modo manual; o sync-venda depois só vê duplicata.
+  // ADR-0199: a baixa daqui pode ser a que zerou um kit em modo manual; o sync-venda depois só vê duplicata.
   try {
     await avisarKitsZerados(admin, { notificar: notificarCategoria }, orgId);
   } catch (e) {

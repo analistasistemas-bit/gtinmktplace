@@ -58,4 +58,4 @@ Veja o [README principal](../README.md#onde-encontrar-o-quê) para a tabela comp
 - [ADR-0197](0197-tabela-oficial-cest.md) — Tabela oficial de CEST: quando o XML não traz CEST, a entrada por nota preenche o candidato único por NCM completo e mostra os demais para escolha; a declaração segue obrigatória sem candidato.
 - [ADR-0198](0198-identidade-do-produto-no-titulo.md) — Identidade do produto no título: nome comercial em `modelo`, conector não é cor, produto simples sem cor, conferência na Revisão.
 - [ADR-0193](0193-relatorio-mensal-do-cliente-e-fechamento-automatico.md) — Relatório mensal do cliente (PDF de prestação de contas), fechamento automático no dia 01 e Central premium (aceito).
-- [ADR-0197](0197-kit-com-variacao.md) — Kit com variação: página única no ML, estoque separado e escrita de quantidade só com anúncio pausado (aceito, em implementação).
+- [ADR-0199](0199-kit-com-variacao.md) — Kit com variação: página única no ML, estoque separado e escrita de quantidade só com anúncio pausado (aceito, em implementação).

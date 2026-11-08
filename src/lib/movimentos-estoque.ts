@@ -16,7 +16,7 @@ export const MOTIVOS_MOVIMENTO = [
   'venda_cancelada_antes',
   // ADR-0110: redução manual de saldo (venda física, perda, fim de estoque).
   'ajuste',
-  // ADR-0197: peça saindo da origem e chegando ao destino numa transferência de kit.
+  // ADR-0199: peça saindo da origem e chegando ao destino numa transferência de kit.
   'kit_saida',
   'kit_entrada',
 ] as const;

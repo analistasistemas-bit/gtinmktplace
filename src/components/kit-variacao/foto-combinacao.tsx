@@ -1,4 +1,4 @@
-// ADR-0197 (Task 15): foto de uma combinação do kit (Criar e Gerenciar). Sempre dá para enviar a foto; com o módulo
+// ADR-0199 (Task 15): foto de uma combinação do kit (Criar e Gerenciar). Sempre dá para enviar a foto; com o módulo
 // `imagem_ia`, também gerar por IA. A foto gerada fica como candidata e só vira a foto da combinação quando o operador
 // clica "Usar esta foto", que só libera depois que a prévia carregou: sem aprovação, nada publica. Cada geração é um
 // pedido novo (`requestId`); depois de falha incerta a repetição usa o mesmo, e a edge devolve a imagem já gerada em vez

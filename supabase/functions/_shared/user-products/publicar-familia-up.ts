@@ -47,9 +47,9 @@ export interface PublicarFamiliaUPArgs {
   garantirChartFn?: typeof garantirChart;
   /** Injetável em teste; produção lê o schema real da categoria (dicionário de COLOR). */
   lerSchemaAtributosFn?: typeof lerSchemaAtributos;
-  /** ADR-0197: leitura do UP para confirmar a publicação de SKU de kit com variação. */
+  /** ADR-0199: leitura do UP para confirmar a publicação de SKU de kit com variação. */
   lerOfertaFn?: typeof lerOferta;
-  /** ADR-0197: `sku_politica_kit.versao` de cada SKU de kit, capturada ao enfileirar (Publicar/Reenviar). */
+  /** ADR-0199: `sku_politica_kit.versao` de cada SKU de kit, capturada ao enfileirar (Publicar/Reenviar). */
   versoesKit?: Record<string, number>;
   now?: () => string;
 }
@@ -68,7 +68,7 @@ function ordenarPorCor<T extends { sku: string; cor: string | null }>(vs: T[]): 
 }
 
 /**
- * ADR-0197: identidade (o item é do UP gravado), estado `active` e quantidade do UP no ML que não passa do
+ * ADR-0199: identidade (o item é do UP gravado), estado `active` e quantidade do UP no ML que não passa do
  * saldo local relido sob a exclusão, por leitura do ML. Qualquer falha ou excesso devolve false.
  * Abaixo do local é o lado seguro (venda já baixada no ML, entrada pendente); a triagem diária reconcilia.
  */
@@ -104,7 +104,7 @@ export function familyNameDe(familia: { titulo_ml: string | null; nome_pai: stri
 
 /**
  * Payload plano por SKU de uma família User Products: guia de tamanhos da própria conta (ADR-0167), GENDER,
- * dicionário de COLOR e family_name. Usado pela publicação e pelo CREATE do kit com variação na saga (ADR-0197),
+ * dicionário de COLOR e family_name. Usado pela publicação e pelo CREATE do kit com variação na saga (ADR-0199),
  * que passa a variação com o saldo inicial calculado por ela.
  */
 export async function prepararPayloadUP(args: {
@@ -241,7 +241,7 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
   // 2. Portas reais. Payload plano por SKU (`prepararPayloadUP`).
   const varPorSku = new Map(anuncio.variacoes.map((v) => [v.sku, v]));
 
-  // ADR-0197: SKU de kit com variação. Só CREATE de item novo segue por aqui, com a exclusão do SKU
+  // ADR-0199: SKU de kit com variação. Só CREATE de item novo segue por aqui, com a exclusão do SKU
   // (dono = raiz, estável no retry) mantida até a confirmação no ML. Item que já existe ou que a busca
   // adotaria é da saga do kit (Gerenciar kit): recusa, exceto a retomada da própria publicação (a
   // exclusão já era deste dono antes da tentativa). Sob a exclusão: versão da política igual à capturada

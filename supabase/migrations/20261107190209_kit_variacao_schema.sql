@@ -1,4 +1,4 @@
--- ADR-0197: Kit com variação. Cores combinadas × tamanho numa família User Products, com saldo
+-- ADR-0199: Kit com variação. Cores combinadas × tamanho numa família User Products, com saldo
 -- próprio do kit em `variacoes`. Peça muda de lugar só por saga durável (`kit_transferencias`).
 --
 -- Chave de vínculo é (org_id, codigo), nunca variacoes.id nem familias.id: a família ganha linha
@@ -59,7 +59,7 @@ create or replace function public.kit_variacao_componentes_imutavel()
 returns trigger language plpgsql set search_path = ''
 as $$
 begin
-  raise exception 'Composição de kit é imutável (ADR-0197).' using errcode = 'restrict_violation';
+  raise exception 'Composição de kit é imutável (ADR-0199).' using errcode = 'restrict_violation';
 end $$;
 
 drop trigger if exists kit_variacao_componentes_imutavel on public.kit_variacao_componentes;
@@ -154,7 +154,7 @@ alter table public.estoque_movimentos
     'venda_sku_nao_encontrado', 'estorno_sku_nao_encontrado',
     'cancelamento_sem_baixa', 'venda_cancelada_antes',
     'ajuste',
-    -- ADR-0197: peça saindo da origem e chegando ao destino numa transferência de kit.
+    -- ADR-0199: peça saindo da origem e chegando ao destino numa transferência de kit.
     'kit_saida', 'kit_entrada'
   ));
 

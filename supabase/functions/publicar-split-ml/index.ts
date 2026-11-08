@@ -69,7 +69,7 @@ Deno.serve(async (req) => {
   catch { return new Response('Body inválido', { status: 400, headers: corsHeaders }); }
 
   const admin = adminClient();
-  // ADR-0197: o módulo da org vem embutido (sem consulta nova).
+  // ADR-0199: o módulo da org vem embutido (sem consulta nova).
   const { data: familia } = await admin.from('familias').select(`*, ${EMBED_MODULOS}`).eq('id', job.familia_id).single();
   if (!familia) return new Response('familia não encontrada', { status: 404, headers: corsHeaders });
 
@@ -134,7 +134,7 @@ Deno.serve(async (req) => {
       err.status = 400;
       throw err;
     }
-    // ADR-0197: kit com variação só existe em user products. A partição Legacy escreveria quantidade
+    // ADR-0199: kit com variação só existe em user products. A partição Legacy escreveria quantidade
     // (CREATE e reposição) fora da saga do kit: recusa antes de qualquer chamada ao ML.
     const participantes = await skusParticipantes(
       admin, familia.org_id as string, variacoes.map((v) => v.codigo as string), kitLigado(familia),

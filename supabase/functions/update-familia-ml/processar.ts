@@ -110,7 +110,7 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
   const finalizarLote = deps.finalizarLote ?? ((loteId: string) => talvezFinalizarLote(admin, loteId));
   const { tentativas } = opts;
 
-  // ADR-0197: o módulo da org vem embutido (sem consulta nova); `atualizarFamiliaUP` lê o mesmo embed.
+  // ADR-0199: o módulo da org vem embutido (sem consulta nova); `atualizarFamiliaUP` lê o mesmo embed.
   const { data: familia } = await admin.from('familias').select(`*, ${EMBED_MODULOS}`).eq('id', job.familia_id).single();
   if (!familia) return { tipo: 'familia_inexistente' };
 
@@ -386,7 +386,7 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
     // (reenviar TODAS as variações: o ML deleta as omitidas; comuns capa2/capa3 aplicadas a
     // todas; foto da cor nova também em item.pictures). Não lança: erro vira ResultadoCanal.
     const enviadoEm = new Date().toISOString();
-    // ADR-0197: quantidade de SKU de kit com variação só a saga escreve. Falha de leitura lança antes do PUT.
+    // ADR-0199: quantidade de SKU de kit com variação só a saga escreve. Falha de leitura lança antes do PUT.
     const skusSemQuantidade = [...await skusParticipantes(
       admin, familia.org_id as string, [...casadas, ...novasComFoto].map((v) => v.codigo as string), kitLigado(familia),
     )];

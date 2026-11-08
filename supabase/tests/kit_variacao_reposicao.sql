@@ -1,5 +1,5 @@
 \set ON_ERROR_STOP on
--- ADR-0197 (migration kit_variacao_reposicao, Task 14): "Vender só em kit", Guardado ↔ Sobra versionado, reposição,
+-- ADR-0199 (migration kit_variacao_reposicao, Task 14): "Vender só em kit", Guardado ↔ Sobra versionado, reposição,
 -- pausas da automação e ligar/desligar por reivindicação. Fixtures só dentro da transação desfeita, em org própria.
 begin;
 

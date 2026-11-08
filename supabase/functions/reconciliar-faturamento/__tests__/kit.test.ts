@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { desfechoKit, processarClaim, type IoClaim } from '../kit.ts';
 import type { PedidoCancelado, ResultadoCancelamento } from '../../_shared/estoque/cancelamento.ts';
 
-// ADR-0197 (Task 8, rodada 2): o crédito de kit entra no desfecho do claim. Sem crédito nem obrigação gravada
+// ADR-0199 (Task 8, rodada 2): o crédito de kit entra no desfecho do claim. Sem crédito nem obrigação gravada
 // (`repetir`), a devolução não é gravada (o claim continua no filtro) e o claim conta como falha.
 const PRE: PedidoCancelado = {
   orgId: 'o', userId: null, canal: 'mercado_livre', orderId: 1, itens: [], statusPedido: 'cancelled',

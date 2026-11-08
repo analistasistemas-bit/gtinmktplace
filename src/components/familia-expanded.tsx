@@ -225,7 +225,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
   // D-10/D-4: este card É um kit (caminho de recuperação — kit falho vira card comum na
   // Revisão, ADR-0151 Decisão 4) — não pode virar base de um kit-de-kit.
   const ehKitVinculado = !!familia.kitBaseCodigoPai;
-  // ADR-0197: a família de um kit com variação (mesmo de 1 SKU só) também não vira base de kit vinculado.
+  // ADR-0199: a família de um kit com variação (mesmo de 1 SKU só) também não vira base de kit vinculado.
   const { data: kitsVariacao } = useKitsVariacao(!!modulosHabilitados?.includes('kit_variacao'));
   const ehKitVariacao = !!kitsVariacao?.some((k) => k.codigoPaiKit === familia.codigoPai);
   const motivoCriarKitDesabilitado = !isAdmin

@@ -1,4 +1,4 @@
-// ADR-0197 (Task 6): pausar/reativar individual de SKU participante de kit com variação.
+// ADR-0199 (Task 6): pausar/reativar individual de SKU participante de kit com variação.
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const f = vi.hoisted(() => ({

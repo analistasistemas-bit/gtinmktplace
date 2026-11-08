@@ -1,4 +1,4 @@
--- ADR-0197 (Task 6): pausa e reativação do operador na política do SKU de kit com variação.
+-- ADR-0199 (Task 6): pausa e reativação do operador na política do SKU de kit com variação.
 
 -- Quem criou o bloqueio do operador (a operação em massa que pausou). Retry da mesma origem continua
 -- sendo dela; bloqueio anterior não é atribuído a outra. Reativar limpa.

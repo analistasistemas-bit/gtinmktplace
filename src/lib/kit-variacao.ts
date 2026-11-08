@@ -1,4 +1,4 @@
-// ADR-0197: kit com variação na tela. As combinações vivem no módulo puro da edge, que valida o mesmo
+// ADR-0199: kit com variação na tela. As combinações vivem no módulo puro da edge, que valida o mesmo
 // pedido no servidor; aqui só se reexporta, para tela e edge nunca divergirem.
 export {
   gerarCombinacoes, rotuloCombinacao, normalizarCombinacao, AVISO_SELETOR_ML,

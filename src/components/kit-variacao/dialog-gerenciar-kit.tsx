@@ -1,4 +1,4 @@
-// ADR-0197 (Task 13): Gerenciar kit, na linha do kit em Publicados. Saldo por combinação × tamanho; Montar mais
+// ADR-0199 (Task 13): Gerenciar kit, na linha do kit em Publicados. Saldo por combinação × tamanho; Montar mais
 // (combinação × tamanho publicado só aumenta; nunca publicado vira SKU novo no mesmo kit, com foto), Desmontar (com reposição ligada, a desliga até o operador religar), "Vender só em kit",
 // reposição automática e meta. Tudo pela edge `gerenciar-kit-variacao`, que só aceita admin.
 import { useEffect, useMemo, useRef, useState } from 'react';

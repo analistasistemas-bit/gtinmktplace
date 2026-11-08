@@ -1,4 +1,4 @@
-// ADR-0197 (Task 8): o desfecho do crédito de kit com variação entra no desfecho do claim e do pedido. Sem crédito
+// ADR-0199 (Task 8): o desfecho do crédito de kit com variação entra no desfecho do claim e do pedido. Sem crédito
 // nem obrigação gravada (`repetir`), nada pode marcar o trabalho como feito.
 import { entraNoCreditoKit, type PedidoCancelado, type ResultadoCancelamento } from '../_shared/estoque/cancelamento.ts';
 

@@ -7,7 +7,7 @@ import { processarSincronizacao, type DepsSincronizacao } from '../processar.ts'
 import { fakeConnector } from '../../_shared/canais/fake';
 import type { ChannelConnector } from '../../_shared/canais/contrato';
 
-// ADR-0197 (Task 5): SKU de kit com variação nunca recebe push absoluto; vira transferência `entrada`.
+// ADR-0199 (Task 5): SKU de kit com variação nunca recebe push absoluto; vira transferência `entrada`.
 
 interface Banco {
   modulos: string[];
@@ -50,7 +50,7 @@ function fakeAdmin(b: Banco) {
       if (b.falhar === tabela) return { data: null, error: { message: 'boom' } };
       if (kitsVinculados) return { data: [], error: null };
       switch (tabela) {
-        // ADR-0197: o módulo chega embutido na leitura de família que o caminho já faz.
+        // ADR-0199: o módulo chega embutido na leitura de família que o caminho já faz.
         case 'familias':
           return { data: { id: 'F', nome_pai: 'Blusa', ml_permalink: null, organizations: { modulos_habilitados: b.modulos } }, error: null };
         case 'variacoes': return { data: [{ codigo: 'P1', estoque: 4 }, { codigo: 'P2', estoque: 6 }], error: null };

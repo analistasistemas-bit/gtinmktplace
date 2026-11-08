@@ -550,4 +550,4 @@ custo subestimado — fora da regra da operação.
 
 ## Emenda 2026-11-07 — Kit com variação
 
-O kit com variação (ADR-0197) gera título e descrição por IA, em etapa própria que diz que é kit e quantas peças. Isso difere da Decisão 3 deste ADR, que vale só para o kit vinculado. O kit vinculado não muda.
+O kit com variação (ADR-0199) gera título e descrição por IA, em etapa própria que diz que é kit e quantas peças. Isso difere da Decisão 3 deste ADR, que vale só para o kit vinculado. O kit vinculado não muda.

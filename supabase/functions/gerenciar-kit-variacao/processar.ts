@@ -1,4 +1,4 @@
-// ADR-0197 (Task 13): ações da tela Gerenciar kit. Cada operação é UMA RPC (`kit_variacao_gerenciar`): confere
+// ADR-0199 (Task 13): ações da tela Gerenciar kit. Cada operação é UMA RPC (`kit_variacao_gerenciar`): confere
 // `kits_variacao.versao` sob o lock do kit, relê o estado e aplica política e transferência na mesma transação. Nenhuma
 // escrita direta de quantidade: montar e desmontar viram transferência da saga, com chave estável por operação (a
 // repetição devolve a transferência original). Desmontar + desligar "Vender só em kit" vai numa chamada: a RPC desliga a

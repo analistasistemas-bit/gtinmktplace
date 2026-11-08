@@ -129,7 +129,7 @@ vi.mock('@/lib/movimentos-estoque', async (importOriginal) => {
 
 // Gate do módulo fiscal (ADR-0135 D-13) — mockado no nível do módulo porque viabilidade-linha.tsx
 // (dentro do painel expandido) também chama o hook.
-// ADR-0197: kits com variação (só lidos com o módulo `kit_variacao`).
+// ADR-0199: kits com variação (só lidos com o módulo `kit_variacao`).
 const useKitsVariacaoMock = vi.fn((): { data: unknown[] } => ({ data: [] }));
 vi.mock('@/hooks/useKitsVariacao', () => ({
   useKitsVariacao: () => useKitsVariacaoMock(),

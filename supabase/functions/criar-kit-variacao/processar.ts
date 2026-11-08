@@ -1,4 +1,4 @@
-// ADR-0197 (Task 10): cria o kit com variação a partir de uma família publicada em user products.
+// ADR-0199 (Task 10): cria o kit com variação a partir de uma família publicada em user products.
 //
 // Tudo que pode falhar sem ser o ML roda aqui, antes de qualquer escrita: depois de `confirmar_reducao` a
 // saga já tirou as peças dos individuais, e a única falha aceitável é a do CREATE. Depois grava a família e
@@ -588,7 +588,7 @@ export async function criarKitVariacao(
 const conjunto = (cores: string[]) => [...cores].map(texto).sort().join('|');
 
 /**
- * ADR-0197 (Task 13, ajuste): Montar mais. Combinação × tamanho já publicado só aumenta o saldo; nunca publicado vira
+ * ADR-0199 (Task 13, ajuste): Montar mais. Combinação × tamanho já publicado só aumenta o saldo; nunca publicado vira
  * SKU novo no MESMO kit e na família do kit, criado pela saga (alvo `criar`, passo `aumentar`), como na criação. Uma
  * transferência só para os dois (`kit_variacao_adicionar`), com as mesmas garantias: peças conferidas no ML, foto da
  * org fora de moderação, guia, fiscal, marca inicial, `comRetryConcorrencia` e chave idempotente com o hash.

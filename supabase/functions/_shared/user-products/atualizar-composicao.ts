@@ -115,12 +115,12 @@ export interface EntradaComposicao {
   atributosFamilia?: unknown;
   /** family_id das cores existentes (validação da cor nova). null → sem validação (sem cor viva). */
   familyIdEsperado: string | null;
-  /** ADR-0197: SKUs de kit com variação. Quantidade deles só a saga escreve; ausente = nenhum. */
+  /** ADR-0199: SKUs de kit com variação. Quantidade deles só a saga escreve; ausente = nenhum. */
   participantes?: ReadonlySet<string>;
 }
 
 export type ResultadoComposicao =
-  // `mantidosKit` (ADR-0197): participantes ausentes do conjunto desejado que NÃO foram retirados (aviso ao lote).
+  // `mantidosKit` (ADR-0199): participantes ausentes do conjunto desejado que NÃO foram retirados (aviso ao lote).
   | { tipo: 'sem_mudanca'; mantidosKit?: string[] } // nenhuma mudança de composição — só reposição rodou
   | { tipo: 'concluido'; criadas: string[]; mantidosKit?: string[] } // composição aplicada; `criadas` = cores GENUINAMENTE
                                         // novas (POST/adoção, não readd) — base do reenfileirar catálogo
@@ -222,7 +222,7 @@ export async function atualizarComposicao(
   const soRepor = entrada.somenteEstoque;
 
   // paraRetirar: filho não-retirado cujo SKU saiu do conjunto desejado.
-  // ADR-0197: participante de kit com variação nunca sai por aqui — só pelo Gerenciar kit. Fica intacto e é
+  // ADR-0199: participante de kit com variação nunca sai por aqui — só pelo Gerenciar kit. Fica intacto e é
   // devolvido em `mantidosKit` para o aviso do lote.
   const ausentes = soRepor ? [] : naoRetirados.filter((f) => !desejadosSet.has(f.sku));
   const mantidosKit = ausentes.filter((f) => entrada.participantes?.has(f.sku)).map((f) => f.sku);
@@ -268,7 +268,7 @@ export async function atualizarComposicao(
   const jaAtivos = new Set(naoRetirados.filter((f) => f.status === 'ativo' && f.itemExternoId).map((f) => f.sku));
   const paraAdicionar = soRepor ? [] : desejados.filter((sku) => !jaAtivos.has(sku));
 
-  // ADR-0197: criar ou reativar item de SKU participante publicaria o saldo do snapshot fora da saga.
+  // ADR-0199: criar ou reativar item de SKU participante publicaria o saldo do snapshot fora da saga.
   const participantesNovos = paraAdicionar.filter((sku) => entrada.participantes?.has(sku));
   if (participantesNovos.length > 0) {
     const e = new Error(

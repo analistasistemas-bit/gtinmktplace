@@ -1,5 +1,5 @@
 \set ON_ERROR_STOP on
--- ADR-0197 (migration kit_variacao_rpc): transferência de peças entre SKUs individuais e SKUs de kit.
+-- ADR-0199 (migration kit_variacao_rpc): transferência de peças entre SKUs individuais e SKUs de kit.
 -- Fixtures só dentro da transação desfeita (scripts/teste-sql-desfeito.py), numa org própria: nenhuma
 -- linha real é travada.
 --
