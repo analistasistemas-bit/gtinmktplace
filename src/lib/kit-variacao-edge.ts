@@ -7,6 +7,17 @@ import { effectiveOrgId, useSupportStore } from '@/stores/support-store';
 import { storageOwnerForUpload } from '@/hooks/useUploadLote';
 import { buildStoragePath, uploadFile } from '@/lib/storage';
 import { quarentenaAte } from '@/lib/kit-transferencia-etapa';
+import type { PrecoPeca } from '@/lib/kit-preco-avulso';
+
+/** Preço avulso das peças da base, lido do ML na hora (edge `preco-avulso-kit`, só leitura). Lança em falha:
+ *  a tela mostra "preço avulso indisponível" sem bloquear. */
+export async function fetchPrecoAvulsoKit(familiaBaseId: string): Promise<Map<string, PrecoPeca>> {
+  const { data, error } = await supabase.functions.invoke('preco-avulso-kit', { body: { familia_base_id: familiaBaseId } });
+  if (error) throw error;
+  type Bruto = Record<string, { normal: number | null; promocao: number | null; fim_promocao: string | null }>;
+  const pecas = (data as { pecas?: Bruto } | null)?.pecas ?? {};
+  return new Map(Object.entries(pecas).map(([sku, p]) => [sku, { normal: p.normal, promocao: p.promocao, fimPromocao: p.fim_promocao }]));
+}
 
 export type Resultado<T> = ({ ok: true } & T) | { ok: false; motivo?: string; mensagem: string };
 
@@ -103,6 +114,8 @@ export interface KitVariacaoResumo {
   reposicaoAuto: boolean;
   meta: number;
   versao: number;
+  /** Preço do kit (R$), o mesmo para todas as combinações (combinação nova sai com ele). */
+  preco: number;
   /** `publicando` (saga montando), `publicado`, `erro` (saga travou: combinações podem faltar), `encerrando` (fechando
    *  os anúncios no ML) e `encerrado` (fora de Publicados, só leitura). */
   status: string;
@@ -129,7 +142,7 @@ function transferenciaDe(t: LinhaTransferencia): TransferenciaAberta {
 export async function fetchKitsVariacao(): Promise<KitVariacaoResumo[]> {
   const [kitsR, transR] = await Promise.all([
     supabase.from('kits_variacao')
-      .select('id, codigo_pai_base, codigo_pai_kit, pecas_por_kit, so_em_kit, reposicao_auto, meta, versao, status')
+      .select('id, codigo_pai_base, codigo_pai_kit, pecas_por_kit, so_em_kit, reposicao_auto, meta, versao, status, preco')
       .order('criado_em', { ascending: true }),
     supabase.from('kit_transferencias').select(SEL_TRANSFERENCIA)
       .in('estado', ['ativa', 'travada']).not('kit_id', 'is', null).order('criado_em', { ascending: true }),
@@ -151,7 +164,7 @@ export async function fetchKitsVariacao(): Promise<KitVariacaoResumo[]> {
   }
   return kits.map((k) => ({
     id: k.id, codigoPaiBase: k.codigo_pai_base, codigoPaiKit: k.codigo_pai_kit, pecasPorKit: k.pecas_por_kit,
-    soEmKit: k.so_em_kit, reposicaoAuto: k.reposicao_auto, meta: k.meta, versao: k.versao, status: k.status,
+    soEmKit: k.so_em_kit, reposicaoAuto: k.reposicao_auto, meta: k.meta, versao: k.versao, status: k.status, preco: Number(k.preco),
     transferencia: aberta.get(k.id) ?? null, permalink: permalink.get(k.codigo_pai_kit)?.url ?? null,
   }));
 }

@@ -62,6 +62,9 @@ verify_jwt = true
 # ADR-0200: título e descrição do kit com variação por IA (prévia). Chamada pelo APP com o JWT do admin.
 [functions.gerar-texto-kit]
 verify_jwt = true
+# ADR-0200 (adendo 08/11): preço avulso das peças da base (só leitura no ML). APP com o JWT do usuário.
+[functions.preco-avulso-kit]
+verify_jwt = true
 # ADR-0200 (Task 15): foto da combinação do kit por IA (módulo imagem_ia), prévia para aprovação. APP com o JWT do admin.
 [functions.gerar-foto-kit]
 verify_jwt = true

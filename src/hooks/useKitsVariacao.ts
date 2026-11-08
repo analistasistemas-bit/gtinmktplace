@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { fetchDetalheKitVariacao, fetchKitsVariacao } from '@/lib/kit-variacao-edge';
+import { fetchDetalheKitVariacao, fetchKitsVariacao, fetchPrecoAvulsoKit } from '@/lib/kit-variacao-edge';
 
 export const QK_KITS_VARIACAO = ['kits-variacao'] as const;
 
@@ -15,6 +15,17 @@ export function useKitsVariacao(enabled: boolean) {
     // Transferência ativa (montar, desmontar, repor, encerrar): 5 s para a etapa andar na tela; travada não muda sozinha.
     refetchInterval: (q) => ((q.state.data ?? []).some((k) => k.transferencia?.estado === 'ativa') ? 5_000
       : (q.state.data ?? []).some((k) => k.status === 'publicando' || k.status === 'encerrando') ? 10_000 : false),
+  });
+}
+
+/** Preço avulso das peças da base (ADR-0200, adendo 08/11). Uma leitura nova por abertura do diálogo (`abertura`
+ *  muda a cada vez): nunca mostra o preço de uma abertura anterior. */
+export function usePrecoAvulsoKit(familiaBaseId: string | null, abertura: string | null) {
+  return useQuery({
+    queryKey: [...QK_KITS_VARIACAO, 'preco-avulso', familiaBaseId, abertura],
+    queryFn: () => fetchPrecoAvulsoKit(familiaBaseId as string),
+    enabled: !!familiaBaseId && !!abertura,
+    staleTime: Infinity, gcTime: 0, retry: false, refetchOnWindowFocus: false,
   });
 }
 

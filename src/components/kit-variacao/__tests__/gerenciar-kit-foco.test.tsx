@@ -21,7 +21,10 @@ const detalhe = {
   },
   isLoading: false, isError: false,
 };
-vi.mock('@/hooks/useKitsVariacao', () => ({ useDetalheKitVariacao: () => detalhe, QK_KITS_VARIACAO: ['kits-variacao'] }));
+vi.mock('@/hooks/useKitsVariacao', () => ({
+  useDetalheKitVariacao: () => detalhe, QK_KITS_VARIACAO: ['kits-variacao'],
+  usePrecoAvulsoKit: () => ({ data: undefined, isFetching: false, isError: true }),
+}));
 vi.mock('@/lib/kit-variacao-edge', () => ({
   gerenciarKitEdge: vi.fn(async () => ({ ok: true })),
   adicionarAoKitEdge: vi.fn(async () => ({ ok: true })),
@@ -44,7 +47,7 @@ vi.mock('@/hooks/useFamilia', () => ({ useFamilia: () => base }));
 
 const kitBase: KitVariacaoResumo = {
   id: 'K1', codigoPaiBase: '0001', codigoPaiKit: '0002', pecasPorKit: 2, soEmKit: false, reposicaoAuto: false,
-  meta: 3, versao: 7, status: 'publicado',
+  meta: 3, versao: 7, status: 'publicado', preco: 89.9,
 };
 
 function abrir(kit: Partial<KitVariacaoResumo> = {}, isAdmin = true, onOpenChange: (v: boolean) => void = () => {}) {

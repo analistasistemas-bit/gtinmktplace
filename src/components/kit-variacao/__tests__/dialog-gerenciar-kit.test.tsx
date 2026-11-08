@@ -18,7 +18,17 @@ const detalhe = {
   },
   isLoading: false, isError: false,
 };
-vi.mock('@/hooks/useKitsVariacao', () => ({ useDetalheKitVariacao: () => detalhe, QK_KITS_VARIACAO: ['kits-variacao'] }));
+// Preço avulso das peças (Preto em promoção até 20/11 em BRT 19/11; Branco sem promoção); mutável por teste.
+const avulso = {
+  data: new Map([
+    ['P-GG', { normal: 71.9, promocao: 41.9, fimPromocao: '2026-11-20T02:59:00Z' }],
+    ['B-GG', { normal: 59.9, promocao: null, fimPromocao: null }],
+  ]) as Map<string, { normal: number | null; promocao: number | null; fimPromocao: string | null }> | undefined,
+  isFetching: false, isError: false,
+};
+vi.mock('@/hooks/useKitsVariacao', () => ({
+  useDetalheKitVariacao: () => detalhe, QK_KITS_VARIACAO: ['kits-variacao'], usePrecoAvulsoKit: () => avulso,
+}));
 vi.mock('@/lib/kit-variacao-edge', () => ({
   gerenciarKitEdge: vi.fn(async () => ({ ok: true })),
   adicionarAoKitEdge: vi.fn(async () => ({ ok: true })),
@@ -44,7 +54,7 @@ vi.mock('@/hooks/useFamilia', () => ({ useFamilia: () => base }));
 
 const kitBase: KitVariacaoResumo = {
   id: 'K1', codigoPaiBase: '0001', codigoPaiKit: '0002', pecasPorKit: 2, soEmKit: false, reposicaoAuto: false,
-  meta: 3, versao: 7, status: 'publicado',
+  meta: 3, versao: 7, status: 'publicado', preco: 89.9,
 };
 
 function abrir(kit: Partial<KitVariacaoResumo> = {}, isAdmin = true) {
@@ -282,6 +292,16 @@ describe('DialogGerenciarKit', () => {
       expect(screen.getByText(/Preto M: precisa 4, há 3/)).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Montar mais' })).toBeDisabled();
     });
+  });
+
+  it('combinação nova: referência do preço avulso e aviso quando o preço do kit passa da soma em promoção', async () => {
+    const user = userEvent.setup();
+    abrir({ preco: 120 });
+    await user.click(screen.getByRole('button', { name: /Combinação ou tamanho novo/ }));
+    await user.type(screen.getByLabelText('Nova Preto e Branco GG'), '1');
+    expect(screen.getByText(/Avulso \(2 peças, Preto e Branco · GG\)/)).toHaveTextContent('R$ 131,80 normal · R$ 101,80 em promoção');
+    expect(screen.getByText(/O kit sai mais caro que comprar as 2 peças avulsas na promoção atual \(R\$ 101,80\)/)).toBeInTheDocument();
+    expect(screen.getByText('A promoção da peça termina em 19/11. Depois disso a comparação muda.')).toBeInTheDocument();
   });
 
   it('Desmontar usa só as combinações publicadas: a matriz nova não habilita nem entra no total', async () => {

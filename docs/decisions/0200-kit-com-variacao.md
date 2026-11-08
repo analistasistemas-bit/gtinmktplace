@@ -351,3 +351,25 @@ geração acima de ~60 s na 1ª tentativa estoura o prazo e a chamada falha sem 
 pelo OpenRouter em nenhuma qualidade (low, medium, high): `Complexity '…' is not supported for this image model`
 (`provider_unavailable`), como em 07/11. `google/gemini-3-pro-image` ficou fora por decisão do Diego (~3× o custo).
 Fica o Nano Banana 2.1; o script de medição aceita `--modelo` e `--qualidade` para repetir a comparação.
+
+## Adendo (2026-11-08): preço avulso das peças na criação do kit
+
+**Problema.** O operador digitava o preço do kit sem ver por quanto as peças vendem avulsas. Com a base em
+promoção (ex.: Short Bermuda Zaven R$ 71,90 → R$ 41,90), o kit podia sair mais caro que comprar as peças
+separadas, o que derruba a conversão e queima o anúncio.
+
+**Decisão.**
+- Edge nova, só leitura: `preco-avulso-kit` (`verify_jwt=true`, módulo `kit_variacao`, token da org). Por SKU da
+  base: `normal` = `price` do `/items/bulk` (lotes de 20 ids únicos); `promocao` = `amount` do `/sale_price`
+  quando abaixo do normal (o `regular_amount` não é usado como normal: pode ficar velho, ADR-0196); fim =
+  `finish_date` da oferta vencedora (`metadata.promotion_id`/`campaign_id` do `/sale_price` casado com
+  `/seller-promotions/items/{id}`), senão nulo. Timeout de 5 s por chamada. Nada é gravado; sem cache: a tela
+  lê de novo a cada abertura.
+- Leitura incerta (bulk, `/sale_price`, sem vínculo, sem conexão) nunca vira "sem promoção": a peça fica
+  "preço avulso indisponível" e o aviso diz que não foi possível comparar. Não bloqueia.
+- Tela: etapa 1 mostra a soma avulsa (normal · em promoção) por combinação × tamanho; etapa 2 a pior combinação
+  (menor soma em promoção) e o desconto do kit sobre as duas somas; etapa 3 a comparação por combinação. Kit ≥
+  soma em promoção (ou normal, sem promoção) em qualquer célula com quantidade → aviso amarelo e "Criar mesmo
+  assim", invalidado quando preço ou combinações mudam. Gerenciar kit mostra a mesma referência para
+  combinação ou tamanho novo (informativo).
+- Nenhuma fórmula de tarifa nova: a comparação é só entre preços de venda; o lucro segue no simulador.

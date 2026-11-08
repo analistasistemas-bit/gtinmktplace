@@ -73,6 +73,7 @@
 | criar-kit-variacao | **true** | HTTP (frontend, **admin**, módulo `kit_variacao`) | sim (idempotência por `chave_cadastro` + `pedido_hash`) |
 | gerenciar-kit-variacao | **true** | HTTP (frontend, **admin**, módulo `kit_variacao`) | sim (`chave_cadastro` + `pedido_hash` + CAS de `kits_variacao.versao`) |
 | gerar-texto-kit | **true** | HTTP (frontend, **admin**, módulo `kit_variacao`) | não (cada chamada consome IA e grava uma prévia) |
+| preco-avulso-kit | **true** | HTTP (frontend, módulo `kit_variacao`) | sim (só leitura no ML, nada gravado) |
 | gerar-foto-kit | **true** | HTTP (frontend, **admin**, módulos `kit_variacao` e `imagem_ia`) | sim (por `request_id` em `kit_variacao_imagens`) |
 | kit-transferencia | false | QStash worker | sim (claim por `execucao_token`; um passo por invocação) |
 | kit-reposicao | false | QStash worker | sim (decisões versionadas por `sku_politica_kit.versao`) |
@@ -1390,6 +1391,11 @@ um smoke test contra Postgres real antes do primeiro deploy.
   0 e sem transferência aberta (recusa `transferencia_aberta`; com saldo, a tela pede "Desmonte antes"); marca o kit
   `encerrando` e enfileira a saga `encerrar`. Enfileira a saga ou a reposição. Recusas: `versao`, `up_ocupado`, `alvos_invalidos`, `sku_sem_anuncio`,
   `so_em_kit_desligado`, `pedido_diferente`, `kit_nao_encontrado` (404), `modulo_desligado` (403).
+- **preco-avulso-kit** — preço avulso das peças da base do kit (adendo ADR-0200). Corpo `{familia_base_id}`; vínculo
+  SKU→item de `anuncios_externos_itens` (raiz do PAI, `retirado=false`). Normal = `price` do `/items/bulk` (lotes de 20 ids
+  únicos); promoção = `amount` do `/sale_price` abaixo do normal; fim = `finish_date` da oferta vencedora
+  (`metadata.promotion_id`/`campaign_id`) em `/seller-promotions/items/{id}`. Timeout 5 s por chamada. Peça sem leitura volta
+  com tudo `null`; sem conexão ML → `indisponivel: true`. Nunca grava.
 - **gerar-texto-kit** — prévia de título e descrição (`copywriter-kit-prompt.ts`, modelo de texto da org, hoje `gpt-6-luna`).
   Parte da `descricao_ml` da base canônica (base sem descrição no padrão: gera antes pelo prompt do anúncio novo). A IA
   reescreve só a abertura "KIT N …" e a frase final; o resto é determinístico (Quantidade: Kit com N unidades; pergunta

@@ -18,7 +18,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { QK_KITS_VARIACAO, useDetalheKitVariacao } from '@/hooks/useKitsVariacao';
+import { QK_KITS_VARIACAO, useDetalheKitVariacao, usePrecoAvulsoKit } from '@/hooks/useKitsVariacao';
 import { useFamilia } from '@/hooks/useFamilia';
 import { QK } from '@/lib/queries';
 import { AVISO_SELETOR_ML, gerarCombinacoes, maximoPorCelula, rotuloCombinacao } from '@/lib/kit-variacao';
@@ -28,6 +28,8 @@ import {
 import { cn } from '@/lib/utils';
 import { ExplicacaoReposicao } from '@/components/kit-variacao/explicacao-reposicao';
 import { FotoCombinacao, type FotoKit } from '@/components/kit-variacao/foto-combinacao';
+import { ComparacaoAvulso } from '@/components/kit-variacao/referencia-avulso';
+import { compararKit, somaAvulsa } from '@/lib/kit-preco-avulso';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { AuraTransferencia, EtapaTransferencia } from '@/components/kit-variacao/transferencia-andamento';
 import { useFocoKitStore } from '@/stores/foco-kit-store';
@@ -83,8 +85,11 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin: ehAdmin }
   };
   const enviadas = useRef(new Map<string, { file: File; path: string }>());
 
+  // Preço avulso: leitura nova do ML a cada abertura.
+  const [abertura, setAbertura] = useState<string | null>(null);
   useEffect(() => {
     if (!open) return;
+    setAbertura(crypto.randomUUID());
     setQtd({}); setConfirmar(null); setDesligarJunto(false); setNovaQtd({}); setFotos({}); setNovoAberto(false);
     operacao.current = null;
     enviadas.current.clear();
@@ -125,6 +130,10 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin: ehAdmin }
     ...novos.map((n) => ({ cores: n.cores, tamanho: n.tamanho, quantidade: n.quantidade })),
   ];
   const maximo = (cores: string[], tamanho: string) => maximoPorCelula(pecasBase, { cores, tamanho }, pedidos);
+  // Combinação ou tamanho novo sai com o preço do kit: a mesma referência do avulso da criação (só informativa).
+  const precosQ = usePrecoAvulsoKit(open && novoAberto && baseId ? baseId : null, abertura);
+  const linhasAvulso = novos.map((n) => ({ rotulo: n.rotulo, tamanho: n.tamanho, soma: somaAvulsa(pecasBase, precosQ.data, n.cores, n.tamanho) }));
+  const comparacaoNovos = compararKit(kit.preco, linhasAvulso);
 
   // Conferência só de leitura das peças da base (a RPC continua validando): por código de peça, não por nome de cor.
   const precisa = new Map<string, number>();
@@ -463,6 +472,12 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin: ehAdmin }
                       )}
                       {semFoto.length > 0 && (
                         <p className="text-xs text-danger">Envie a foto de cada combinação nova ({semFoto.join(', ')}).</p>
+                      )}
+                      {novos.length > 0 && (
+                        <ComparacaoAvulso
+                          c={comparacaoNovos} preco={kit.preco} lendo={precosQ.isFetching} erro={precosQ.isError}
+                          pecas={kit.pecasPorKit} linhas={linhasAvulso}
+                        />
                       )}
                     </div>
                   )

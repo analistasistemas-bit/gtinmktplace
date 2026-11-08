@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useFamilia } from '@/hooks/useFamilia';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
-import { QK_KITS_VARIACAO } from '@/hooks/useKitsVariacao';
+import { QK_KITS_VARIACAO, usePrecoAvulsoKit } from '@/hooks/useKitsVariacao';
 import { QK } from '@/lib/queries';
 import { fmtBRL } from '@/lib/formato';
 import { cn } from '@/lib/utils';
@@ -30,6 +30,8 @@ import { criarKitVariacaoEdge, enviarFotoKit, gerarTextoKitEdge } from '@/lib/ki
 import { SimuladorKit } from '@/components/kit-variacao/simulador-kit';
 import { ExplicacaoReposicao } from '@/components/kit-variacao/explicacao-reposicao';
 import { FotoCombinacao, type FotoKit } from '@/components/kit-variacao/foto-combinacao';
+import { CelulaAvulso, ComparacaoAvulso } from '@/components/kit-variacao/referencia-avulso';
+import { compararKit, somaAvulsa } from '@/lib/kit-preco-avulso';
 import { useFocoKitStore } from '@/stores/foco-kit-store';
 
 const PECAS = [2, 3, 4, 5, 6];
@@ -85,10 +87,14 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
   const chave = useRef('');
   // Foto já enviada nesta abertura: a repetição usa o mesmo caminho (o pedido da chave não muda).
   const enviadas = useRef(new Map<string, { file: File; path: string }>());
+  // Preço avulso das peças: uma leitura nova do ML por abertura (a chave da query muda a cada vez).
+  const [abertura, setAbertura] = useState<string | null>(null);
+  const precosQ = usePrecoAvulsoKit(open ? familiaBaseId : null, abertura);
 
   useEffect(() => {
     if (!open) return;
     chave.current = crypto.randomUUID();
+    setAbertura(chave.current);
     enviadas.current.clear();
     setEtapa('montagem'); setCores([]); setPecas(2); setQtd({}); setPreco(''); setTipo('gold_special');
     setTitulo(''); setDescricao(''); setPrevia(undefined); setFotos({}); setSoEmKit(false); setMeta('3');
@@ -135,6 +141,18 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
   const mudarMontagem = (f: () => void) => f();
 
   const precoNum = Number(preco.replace(',', '.'));
+  // Kit × peças avulsas, só nas células com quantidade: o que vira anúncio.
+  const lendoAvulso = precosQ.isFetching || (!!abertura && !precosQ.isFetched);
+  const somaDe = (cs: string[], t: string) => somaAvulsa(variacoes, precosQ.data, cs, t);
+  const linhasAvulso = quantidades.map((q) => ({ rotulo: rotuloCombinacao(q.cores), tamanho: q.tamanho, soma: somaDe(q.cores, q.tamanho) }));
+  const comparacao = compararKit(precoNum, linhasAvulso);
+  // "Criar mesmo assim" vale só para o preço e as combinações vistos: mudou um deles, confirma de novo (no render,
+  // como no simulador: um effect deixaria um frame com a confirmação antiga).
+  const chaveAvulso = [Math.round(precoNum * 100), ...linhasAvulso.map((l) => `${l.rotulo}#${l.tamanho}:${Math.round(l.soma.promocao * 100)}`)].join('|');
+  const [avulsoConfirmadoEm, setAvulsoConfirmadoEm] = useState<string | null>(null);
+  const [chaveAvulsoVista, setChaveAvulsoVista] = useState(chaveAvulso);
+  if (chaveAvulsoVista !== chaveAvulso) { setChaveAvulsoVista(chaveAvulso); setAvulsoConfirmadoEm(null); }
+  const avulsoOk = !lendoAvulso && (!comparacao.maisCaro || avulsoConfirmadoEm === chaveAvulso);
   const metaNum = inteiro(meta);
   const semFoto = combinacoesPublicadas.filter((c) => !fotos[rotuloCombinacao(c)]);
   const tituloOk = titulo.trim().length > 0 && titulo.length <= TITULO_MAX;
@@ -317,6 +335,7 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
                     <table className="w-full text-sm">
                       <caption className="px-3 pt-2 text-left text-xs text-muted-foreground">
                         Kits a montar · {combinacoes.length} {combinacoes.length === 1 ? 'combinação' : 'combinações'}
+                        {' '}· abaixo da quantidade, o preço avulso das {pecas} peças (normal e em promoção)
                       </caption>
                       <thead>
                         <tr className="border-b text-left text-xs text-muted-foreground">
@@ -354,6 +373,7 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
                                     >
                                       máx {maximo}
                                     </span>
+                                    <CelulaAvulso soma={somaDe(c, t)} lendo={lendoAvulso} rotulo={`${rotulo} ${t}`} />
                                   </td>
                                 );
                               })}
@@ -410,11 +430,12 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
             </div>
           ) : etapa === 'anuncio' ? (
             <div className="grid gap-4">
-              <section className="grid gap-3 sm:grid-cols-2" aria-label="Preço">
+              <section className="grid items-start gap-3 sm:grid-cols-2" aria-label="Preço">
                 <div className="grid gap-1 text-sm">
                   <label htmlFor="kv-preco" className="font-medium">Preço do kit</label>
                   <Input id="kv-preco" aria-label="Preço do kit" inputMode="decimal" value={preco} onChange={(e) => setPreco(e.target.value)} className="h-9 tabular-nums" />
                   <span className="text-xs text-muted-foreground">Um preço para todas as combinações e tamanhos.</span>
+                  <ComparacaoAvulso c={comparacao} preco={precoNum} lendo={lendoAvulso} erro={precosQ.isError} pecas={pecas} />
                 </div>
                 <div className="grid gap-1 text-sm">
                   <span className="font-medium">Tipo de anúncio</span>
@@ -526,6 +547,18 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
                   onChange={(e) => setPreco(e.target.value)} className="h-9 tabular-nums"
                 />
               </div>
+              <section aria-label="Preço avulso das peças" className="grid gap-2">
+                <ComparacaoAvulso c={comparacao} preco={precoNum} lendo={lendoAvulso} erro={precosQ.isError} pecas={pecas} linhas={linhasAvulso} />
+                {comparacao.maisCaro && !lendoAvulso && (
+                  <label htmlFor="kit-criar-mesmo-assim" className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      id="kit-criar-mesmo-assim" checked={avulsoConfirmadoEm === chaveAvulso}
+                      onCheckedChange={(v) => setAvulsoConfirmadoEm(v ? chaveAvulso : null)}
+                    />
+                    Criar mesmo assim
+                  </label>
+                )}
+              </section>
               <SimuladorKit
                 familiaBaseId={familiaBaseId} cores={marcadas} pecas={pecas} quantidades={quantidades}
                 preco={precoNum} tipo={tipo} onPodeSeguir={setPodeSeguir}
@@ -550,7 +583,7 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
             ) : (
               <>
                 <Button variant="outline" disabled={criar.isPending} onClick={() => setEtapa('anuncio')}>Voltar</Button>
-                <Button disabled={!(precoNum > 0) || !podeSeguir || criar.isPending} onClick={() => criar.mutate()}>
+                <Button disabled={!(precoNum > 0) || !podeSeguir || !avulsoOk || criar.isPending} onClick={() => criar.mutate()}>
                   {criar.isPending ? 'Criando…' : 'Criar kit'}
                 </Button>
               </>
