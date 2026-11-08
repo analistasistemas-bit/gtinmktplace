@@ -104,6 +104,14 @@ vi.mock('@/lib/movimentos-estoque', async (importOriginal) => {
       fetchMovimentosEstoqueMock(...args),
   };
 });
+// ADR-0197: kits com variação (só lidos com o módulo `kit_variacao`).
+const useKitsVariacaoMock = vi.fn((): { data: unknown[] } => ({ data: [] }));
+vi.mock('@/hooks/useKitsVariacao', () => ({
+  useKitsVariacao: () => useKitsVariacaoMock(),
+  useDetalheKitVariacao: () => ({ data: undefined, isLoading: true, isError: false }),
+  QK_KITS_VARIACAO: ['kits-variacao'],
+}));
+
 vi.mock('@/hooks/useModulosHabilitados', () => ({
   useModulosHabilitados: () => useModulosHabilitadosMock(),
 }));

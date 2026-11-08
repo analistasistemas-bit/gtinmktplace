@@ -147,6 +147,14 @@ vi.mock('@/lib/movimentos-estoque', async (importOriginal) => {
 
 // Gate do módulo fiscal (ADR-0135 D-13) — mockado no nível do módulo porque viabilidade-linha.tsx
 // (dentro do painel expandido) também chama o hook.
+// ADR-0197: kits com variação (só lidos com o módulo `kit_variacao`).
+const useKitsVariacaoMock = vi.fn((): { data: unknown[] } => ({ data: [] }));
+vi.mock('@/hooks/useKitsVariacao', () => ({
+  useKitsVariacao: () => useKitsVariacaoMock(),
+  useDetalheKitVariacao: () => ({ data: undefined, isLoading: true, isError: false }),
+  QK_KITS_VARIACAO: ['kits-variacao'],
+}));
+
 vi.mock('@/hooks/useModulosHabilitados', () => ({
   useModulosHabilitados: () => useModulosHabilitadosMock(),
 }));
@@ -672,6 +680,46 @@ describe('Publicados', () => {
         </MemoryRouter>,
       );
       expect(screen.getByRole('button', { name: 'Remover publicação incompleta' })).toBeDisabled();
+    });
+  });
+
+  // ADR-0197: kit com variação (Task 13).
+  describe('kit com variação (ADR-0197)', () => {
+    const kit = {
+      id: 'K1', codigoPaiBase: 'OUTRO', codigoPaiKit: itemBase({}).codigoPai, pecasPorKit: 2, soEmKit: false,
+      reposicaoAuto: false, meta: 0, versao: 1, status: 'publicado',
+    };
+    afterEach(() => useKitsVariacaoMock.mockReturnValue({ data: [] }));
+
+    it('produto UP com cores ganha "Criar kit com variação" com o módulo', () => {
+      useModulosHabilitadosMock.mockReturnValue({ data: ['kit_variacao'] });
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ qtdVariacoesFamilia: 4, userProducts: true })], isLoading: false, error: null,
+      });
+      render(<MemoryRouter><Publicados /></MemoryRouter>);
+      expect(screen.getByRole('button', { name: 'Criar kit com variação' })).toBeEnabled();
+      expect(screen.queryByRole('button', { name: 'Gerenciar kit' })).toBeNull();
+    });
+
+    it('sem o módulo não aparece', () => {
+      useModulosHabilitadosMock.mockReturnValue({ data: ['estoque'] });
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ qtdVariacoesFamilia: 4, userProducts: true })], isLoading: false, error: null,
+      });
+      render(<MemoryRouter><Publicados /></MemoryRouter>);
+      expect(screen.queryByRole('button', { name: 'Criar kit com variação' })).toBeNull();
+    });
+
+    it('a linha do próprio kit ganha "Gerenciar kit" e não vira base de outro kit', () => {
+      useModulosHabilitadosMock.mockReturnValue({ data: ['kit_variacao', 'estoque'] });
+      useKitsVariacaoMock.mockReturnValue({ data: [kit] });
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ qtdVariacoesFamilia: 1, userProducts: true, kitBaseCodigoPai: null })], isLoading: false, error: null,
+      });
+      render(<MemoryRouter><Publicados /></MemoryRouter>);
+      expect(screen.getByRole('button', { name: 'Gerenciar kit' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Criar kit com variação' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Criar kit' })).toHaveAttribute('title', 'Este anúncio já é um kit com variação.');
     });
   });
 

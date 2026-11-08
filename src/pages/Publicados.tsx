@@ -354,8 +354,10 @@ function LinhaTabela({
     ? 'Somente administradores podem criar kits.'
     : !temModuloEstoque
       ? 'Kit vinculado exige o módulo Estoque habilitado.'
-      : ehKitVinculado || kitVariacao
-        ? 'Este anúncio já é um kit.'
+      : ehKitVinculado
+        ? 'Este anúncio já é um kit vinculado.'
+        : kitVariacao
+          ? 'Este anúncio já é um kit com variação.'
         : temVariacaoDeCor
           ? 'Kit vinculado só existe para produto sem variação de cor.'
           : undefined;

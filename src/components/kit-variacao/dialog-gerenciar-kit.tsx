@@ -116,7 +116,7 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
     <>
       <Dialog open={open} onOpenChange={(v) => !enviando && onOpenChange(v)}>
         <DialogContent className="flex max-h-[85vh] w-full max-w-[calc(100vw-2rem)] flex-col p-0 sm:max-w-3xl">
-          <div className="grid min-h-0 gap-4 overflow-y-auto p-4">
+          <div className="min-h-0 space-y-4 overflow-y-auto p-4">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 Gerenciar kit <span className="font-normal text-muted-foreground">{kit.codigoPaiKit}</span>

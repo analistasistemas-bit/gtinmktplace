@@ -184,7 +184,7 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
         rotuloProcessando="Criando o kit"
         className="flex max-h-[85vh] w-full max-w-[calc(100vw-2rem)] flex-col p-0 sm:max-w-4xl"
       >
-        <div className="grid min-h-0 gap-4 overflow-y-auto p-4">
+        <div className="min-h-0 space-y-4 overflow-y-auto p-4">
           <DialogHeader>
             <DialogTitle>Criar kit com variação</DialogTitle>
             <DialogDescription>
