@@ -8,6 +8,9 @@ import { ehVendaDaConta, mapearPedidoParaVenda, type PedidoML } from '../faturam
 import { MLApiError } from '../ml/erro-ml.ts';
 import { caminhoMultiget, comoEnvelopeAntigo } from '../ml/multiget.ts';
 import type { PedidoPago, PedidoPendente } from './conciliacao.ts';
+import { avisarKitsZerados } from './venda.ts';
+import { reservarNotificacao } from '../faturamento/notificacoes-dedupe.ts';
+import { notificarCategoria } from '../notificacoes/config.ts';
 
 const API = 'https://api.mercadolibre.com';
 const LIMITE_PAGINA = 50;
@@ -181,13 +184,23 @@ export async function importarPedidosDoItem(
   for (const pedido of pagos) {
     const { itens } = mapearPedidoParaVenda(pedido, { idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem });
     deps.antesDeBaixar?.();
-    const resultado = await registrarBaixaVenda(admin, { orgId, canal: 'mercado_livre', orderId: pedido.id, itens });
+    // ADR-0197: mesma identidade por item que o sync-venda; leitura estrita, então nada é incerto por catálogo.
+    const resultado = await registrarBaixaVenda(
+      admin, { orgId, canal: 'mercado_livre', orderId: pedido.id, itens }, { kit: { incerto: false } },
+    );
     baixas.push({ orderId: String(pedido.id), resultado });
     falhas.push(
+      ...resultado.adiados.map((x) => `pedido ${pedido.id}: identidade do item incerta: ${x.ml_item_id ?? x.codigo}`),
       ...resultado.falhas.map((x) => `pedido ${pedido.id}: ${x.codigo}: ${x.mensagem}`),
       ...resultado.semSku.map((x) => `pedido ${pedido.id}: sem SKU: ${x.mlItemId ?? x.titulo}`),
       ...resultado.skuDesconhecido.map((x) => `pedido ${pedido.id}: SKU fora do catálogo: ${x.codigo}`),
     );
+  }
+  // ADR-0197: a baixa daqui pode ser a que zerou um kit em modo manual; o sync-venda depois só vê duplicata.
+  try {
+    await avisarKitsZerados(admin, { reservar: reservarNotificacao, notificar: notificarCategoria }, orgId, null);
+  } catch (e) {
+    console.error('kit_aviso_zerado_falhou', orgId, String(e));
   }
   return { pagos, naoPagos, falhas, baixas };
 }

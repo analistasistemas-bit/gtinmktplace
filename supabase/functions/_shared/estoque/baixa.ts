@@ -2,12 +2,14 @@
 // A venda é sagrada — nada aqui pode derrubar o sync-venda; o chamador envolve em try/catch.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { resolverOrigemEstoque } from './kit.ts';
-import { skusParticipantes } from '../kit-variacao/politica.ts';
+import { classificarItensKit, gravarIdentidades } from '../kit-variacao/venda.ts';
 
 export interface ItemVendaBaixa {
   codigo: string | null;
   quantity: number;
   ml_item_id?: string | null;
+  /** ADR-0197: parte da identidade do item vendido (`kit_venda_identidade`). */
+  variation_id?: number | string | null;
   titulo?: string | null;
 }
 export interface BaixaSelecionada { codigo: string; quantity: number }
@@ -84,8 +86,10 @@ export interface ResultadoBaixaVenda {
   semSku: Array<{ titulo: string | null; mlItemId: string | null; quantidade: number }>;
   /** SKUs que vieram no pedido mas não existem no catálogo — a RPC recusa e nada é baixado. */
   skuDesconhecido: Array<{ codigo: string; quantidade: number }>;
-  /** ADR-0197: SKUs vendidos cujo saldo foi a 0 nesta baixa (alerta de kit em modo manual). */
-  zerados: string[];
+  /** ADR-0197: itens sem identidade e com leitura incerta, sem prova de serem comuns. Não baixados; repetir. */
+  adiados: ItemVendaBaixa[];
+  /** ADR-0197: resolução desta execução diferente da identidade gravada. A baixa seguiu pela identidade. */
+  divergentes: Array<{ mlItemId: string; resolvido: string; identidade: string }>;
 }
 
 /**
@@ -108,21 +112,39 @@ export function classificarBaixaSemSaldo(
 export async function registrarBaixaVenda(
   admin: SupabaseClient,
   p: { orgId: string; canal: string; orderId: string | number; itens: ItemVendaBaixa[] },
+  /** ADR-0197: org com o módulo `kit_variacao`. `incerto` = catálogo ou GTIN lidos pela metade. Ausente = como hoje. */
+  opts: { kit?: { incerto: boolean } } = {},
 ): Promise<ResultadoBaixaVenda> {
+  let adiados: ItemVendaBaixa[] = [];
+  let divergentes: ResultadoBaixaVenda['divergentes'] = [];
+  if (opts.kit) {
+    // Identidade estável por item: a primeira baixa grava o SKU, as seguintes usam o gravado. Leitura falha:
+    // nada baixa nesta execução (o chamador repete), nunca uma referência nova.
+    try {
+      const c = await classificarItensKit(admin, { ...p, incerto: opts.kit.incerto });
+      adiados = c.incertos;
+      divergentes = c.divergentes;
+      p = { ...p, itens: await gravarIdentidades(admin, { ...p, itens: c.certos }) };
+    } catch (e) {
+      console.error('kit_identidade_falhou', p.orderId, String(e));
+      adiados = p.itens.filter((i) => i.quantity > 0);
+      p = { ...p, itens: [] };
+    }
+  }
+
   // O diagnóstico do que NÃO dá para baixar vem primeiro e roda mesmo quando não há nenhuma
   // baixa possível — era exatamente esse o caminho que saía calado.
   const semSku = await registrarVendaSemSku(admin, p);
 
   const baixas = selecionarBaixas(p.itens);
   if (baixas.length === 0) {
-    return { pendentesDePush: [], vendaAcimaSaldo: [], desyncMl: [], falhas: [], semSku, skuDesconhecido: [], zerados: [] };
+    return { pendentesDePush: [], vendaAcimaSaldo: [], desyncMl: [], falhas: [], semSku, skuDesconhecido: [], adiados, divergentes };
   }
 
   const vendaAcimaSaldo: ResultadoBaixaVenda['vendaAcimaSaldo'] = [];
   const desyncMl: ResultadoBaixaVenda['desyncMl'] = [];
   const falhas: Array<{ codigo: string; mensagem: string }> = [];
   const skuDesconhecido: Array<{ codigo: string; quantidade: number }> = [];
-  const zerados: string[] = [];
 
   // O SKU vendido pode ser de um kit vinculado (ADR-0151 D-6): nesse caso quem tem saldo é a
   // BASE, e cada unidade de venda consome N unidades dela. Sem esta resolução, `baixar_estoque`
@@ -168,8 +190,6 @@ export async function registrarBaixaVenda(
       kitCodigoPai: origem.kitCodigoPai,
       multiplicador: origem.kitCodigoPai ? origem.multiplicador : null,
     });
-    const aplicada = r.quantidade_aplicada ?? 0;
-    if (aplicada > 0 && r.estoque_anterior !== undefined && r.estoque_anterior - aplicada <= 0) zerados.push(b.codigo);
     const classe = classificarBaixaSemSaldo(r, b.quantity * origem.multiplicador);
     if (classe === 'desync') {
       desyncMl.push({
@@ -194,7 +214,7 @@ export async function registrarBaixaVenda(
   // movimento com push ainda não entregue. É o que fecha o buraco em que a RPC
   // commita e o enfileiramento falha — no retry, `aplicado` seria false e o push
   // se perderia para sempre. Aqui ele é reencontrado.
-  return { pendentesDePush: await lerPushPendente(admin, p.orgId), vendaAcimaSaldo, desyncMl, falhas, semSku, skuDesconhecido, zerados };
+  return { pendentesDePush: await lerPushPendente(admin, p.orgId), vendaAcimaSaldo, desyncMl, falhas, semSku, skuDesconhecido, adiados, divergentes };
 }
 
 /**
@@ -319,59 +339,6 @@ export async function estornarVendaCancelada(
     // O que enfileirar vem do outbox, não do retorno — mesma razão da baixa.
   }
   return { pendentesDePush: await lerPushPendente(admin, p.orgId), falhas, aplicados };
-}
-
-/**
- * ADR-0197: dos SKUs zerados por uma venda, os de kit com variação em modo manual. Pela spec (Reposição), só
- * "Vender só em kit" com reposição automática repõe sozinho; individual ativo ou reposição desligada é só
- * Montar mais, e o operador precisa saber que a combinação acabou. Quem chama só consulta com o módulo
- * ligado. Erro de leitura lança.
- */
-export async function kitsManuaisZerados(admin: SupabaseClient, orgId: string, codigos: string[]): Promise<string[]> {
-  if (codigos.length === 0) return [];
-  const { data, error } = await admin.from('kit_variacao_skus')
-    .select('codigo, kits_variacao(reposicao_auto, so_em_kit)').eq('org_id', orgId).in('codigo', codigos);
-  if (error) throw new Error(`kit_variacao_skus: ${error.message}`);
-  return (data ?? []).filter((r) => {
-    const k = (r as { kits_variacao?: unknown }).kits_variacao;
-    const kit = (Array.isArray(k) ? k[0] : k) as { reposicao_auto?: boolean; so_em_kit?: boolean } | null;
-    return !!kit && !(kit.so_em_kit === true && kit.reposicao_auto === true);
-  }).map((r) => r.codigo as string);
-}
-
-/**
- * ADR-0197 (portão da Task 3): com catálogo incompleto e o módulo ligado, separa os itens que podem ser de SKU
- * participante. Participante = o item ML é de um anúncio de participante (`anuncios_externos_itens`, inclusive a
- * cópia de catálogo) ou o código resolvido (que pode ser o de fallback) é participante. Esses ficam para depois:
- * baixar agora poderia gravar outra referência (`canal:pedido:SKU`) para o mesmo pedido. Os demais baixam como
- * hoje, e a referência por SKU deixa o retry baixar só o que faltou. Leitura falha: adia tudo.
- */
-export async function separarParticipantes(
-  admin: SupabaseClient, orgId: string, itens: ItemVendaBaixa[],
-): Promise<{ comuns: ItemVendaBaixa[]; adiados: ItemVendaBaixa[] }> {
-  try {
-    const ids = [...new Set(itens.map((i) => i.ml_item_id).filter((x): x is string => !!x))];
-    const skusDoItem = new Map<string, string[]>();
-    for (const coluna of ['item_externo_id', 'catalog_listing_id']) {
-      if (ids.length === 0) break;
-      const { data, error } = await admin.from('anuncios_externos_itens')
-        .select('sku, item_externo_id, catalog_listing_id').eq('org_id', orgId).in(coluna, ids);
-      if (error) throw new Error(`anuncios_externos_itens: ${error.message}`);
-      for (const r of data ?? []) {
-        for (const id of [r.item_externo_id, r.catalog_listing_id] as Array<string | null>) {
-          if (id) skusDoItem.set(id, [...(skusDoItem.get(id) ?? []), r.sku as string]);
-        }
-      }
-    }
-    const candidatos = new Set([...itens.flatMap((i) => (i.codigo ? [i.codigo] : [])), ...[...skusDoItem.values()].flat()]);
-    const part = await skusParticipantes(admin, orgId, [...candidatos], true);
-    const ehPart = (i: ItemVendaBaixa) => (!!i.codigo && part.has(i.codigo))
-      || (skusDoItem.get(i.ml_item_id ?? '') ?? []).some((s) => part.has(s));
-    return { comuns: itens.filter((i) => !ehPart(i)), adiados: itens.filter(ehPart) };
-  } catch (e) {
-    console.error('separar_participantes_falhou', orgId, String(e));
-    return { comuns: [], adiados: itens };
-  }
 }
 
 /** Movimentos aplicados cujo push ao QStash ainda não foi confirmado (outbox no ledger). */

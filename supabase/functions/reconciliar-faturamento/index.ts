@@ -7,7 +7,7 @@ import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { mapearConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { buscarPedidosPeriodo, buscarPedidosPeriodoEstrito, buscarPedido, memoCatalogo, upsertVenda, buscarShipment, buscarFreteVendedor, reconciliarLiberacoes } from '../_shared/faturamento/io.ts';
-import { carregarLiquidoMP, carregarLiquidoMPDoPedido, carregarGtinsFallback, mapaLiberacaoPorOrder } from '../_shared/faturamento/enriquecimento.ts';
+import { carregarLiquidoMP, carregarLiquidoMPDoPedido, carregarGtinsDaVenda, mapaLiberacaoPorOrder } from '../_shared/faturamento/enriquecimento.ts';
 import { buscarPerguntasSeller, buscarTituloItem, upsertPergunta, carregarPerguntasLocais } from '../_shared/faturamento/perguntas-io.ts';
 import { buscarClaimsSeller, lerClaimCompleto, upsertDevolucao, carregarDevolucoesLocais, enriquecerPendentes } from '../_shared/faturamento/devolucoes-io.ts';
 import { mapearPergunta } from '../_shared/faturamento/pergunta.ts';
@@ -149,12 +149,12 @@ async function legado(admin: ReturnType<typeof adminClient>): Promise<Response> 
             if (ignorado || row.order_id == null) return;
             const pedido = await buscarPedido(token, String(row.order_id));
             const shippingId = pedido.shipping?.id ?? null;
-            const [frete, shipment, liquidoPorPayment, gtinPorItem] = await Promise.all([
+            const [frete, shipment, liquidoPorPayment, { gtinPorItem, incerto: gtinIncerto }] = await Promise.all([
               buscarFreteVendedor(token, shippingId),
               buscarShipment(token, shippingId),
               carregarLiquidoMPDoPedido(token, Number(cx.contaExternaId),
                 (pedido.payments ?? []).flatMap((p) => (p?.id != null ? [p.id] : []))),
-              carregarGtinsFallback(token, [pedido], idsPubliai),
+              carregarGtinsDaVenda(token, [pedido], idsPubliai, kitLigado),
             ]);
             const { itens } = await upsertVenda(admin, userId, orgId, pedido, {
               freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver, contaExternaId: cx.contaExternaId,
@@ -167,7 +167,7 @@ async function legado(admin: ReturnType<typeof adminClient>): Promise<Response> 
               statusPedido: pedido.status ?? null,
               shipmentStatus: shipment?.status != null ? String(shipment.status) : null,
               temEnvio: pedido.shipping?.id != null,
-              kitLigado, catalogoIncompleto: incompleto,
+              kitLigado, catalogoIncompleto: incompleto || gtinIncerto,
             });
           } catch { /* segue */ }
         }));
@@ -201,9 +201,9 @@ async function legado(admin: ReturnType<typeof adminClient>): Promise<Response> 
     try {
       const pedidos = await buscarPedidosPeriodo(token, intervalo);
       const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver, incompleto, kitLigado } = await catalogoDe(userId, orgId);
-      const [liquidoPorPayment, gtinPorItem] = await Promise.all([
+      const [liquidoPorPayment, { gtinPorItem, incerto: gtinIncerto }] = await Promise.all([
         carregarLiquidoMP(token, Number(e.cx.contaExternaId)),
-        carregarGtinsFallback(token, pedidos, idsPubliai),
+        carregarGtinsDaVenda(token, pedidos, idsPubliai, kitLigado),
       ]);
       // Varredura periódica: loga e segue. preservarDadosMP impede que o mapa vazio apague
       // estorno/liberação já gravados, e a próxima rodada volta a estes pedidos.
@@ -245,7 +245,7 @@ async function legado(admin: ReturnType<typeof adminClient>): Promise<Response> 
               statusPedido: pedido.status ?? null,
               shipmentStatus: shipment?.status != null ? String(shipment.status) : null,
               temEnvio: pedido.shipping?.id != null,
-              kitLigado, catalogoIncompleto: incompleto,
+              kitLigado, catalogoIncompleto: incompleto || gtinIncerto,
             });
             total++;
           } catch { /* segue */ }
@@ -377,11 +377,11 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
             if (ignorado || row.order_id == null) { n++; return; }
             const pedido = await buscarPedido(token, String(row.order_id));
             const shippingId = pedido.shipping?.id ?? null;
-            const [frete, shipment, liquidoPorPayment, gtinPorItem] = await Promise.all([
+            const [frete, shipment, liquidoPorPayment, { gtinPorItem, incerto: gtinIncerto }] = await Promise.all([
               buscarFreteVendedor(token, shippingId),
               buscarShipment(token, shippingId),
               carregarLiquidoMPDoPedido(token, Number(cx.contaExternaId), pagamentosDoPedido(pedido)),
-              carregarGtinsFallback(token, [pedido], idsPubliai),
+              carregarGtinsDaVenda(token, [pedido], idsPubliai, kitLigado),
             ]);
             const { itens } = await upsertVenda(admin, userId, org, pedido, {
               freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver, contaExternaId: cx.contaExternaId,
@@ -393,7 +393,7 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
               statusPedido: pedido.status ?? null,
               shipmentStatus: shipment?.status != null ? String(shipment.status) : null,
               temEnvio: pedido.shipping?.id != null,
-              kitLigado, catalogoIncompleto: incompleto,
+              kitLigado, catalogoIncompleto: incompleto || gtinIncerto,
             });
             n++;
           } catch (e) {
@@ -469,7 +469,7 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
 
     async processarPedidos(token, cx, userId, org, pedidos) {
       const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver, incompleto, kitLigado } = await catalogoDe(userId, org);
-      const gtinPorItem = await carregarGtinsFallback(token, pedidos, idsPubliai);
+      const { gtinPorItem, incerto: gtinIncerto } = await carregarGtinsDaVenda(token, pedidos, idsPubliai, kitLigado);
       const r = resultadoVazio();
       for (const lote of chunk(pedidos, PARALELAS)) {
         await Promise.all(lote.map(async (pedido) => {
@@ -492,14 +492,17 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
               liquidoPorPayment: liquidoPorPayment ?? undefined,
             });
             // ADR-0121 — idempotente dos dois lados: pode rodar a cada varredura.
-            await tratarPedidoCancelado(admin, depsCancelamento, {
+            const cancelamento = await tratarPedidoCancelado(admin, depsCancelamento, {
               orgId: org, userId, canal: 'mercado_livre', orderId: pedido.id, itens,
               statusPedido: pedido.status ?? null,
               shipmentStatus: shipment?.status != null ? String(shipment.status) : null,
               temEnvio: pedido.shipping?.id != null,
-              kitLigado, catalogoIncompleto: incompleto,
+              kitLigado, catalogoIncompleto: incompleto || gtinIncerto,
             });
-            return liquidoPorPayment !== null;
+            // ADR-0197: obrigação de crédito não gravada → falha do pedido (vira pendência e repete). Crédito
+            // pendente → nem ok nem falha: a obrigação gravada não pode ser apagada por este "sucesso".
+            if (cancelamento === 'repetir') throw new Error('kit_cancelamento: obrigação de crédito não gravada');
+            return liquidoPorPayment !== null && cancelamento !== 'pendente';
           });
           if (erro) console.warn(`reconciliar: pedido ${pedido.id} da org ${org} falhou: ${(erro as Error)?.message ?? erro}`);
         }));

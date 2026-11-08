@@ -46,7 +46,8 @@ function fakeDeps(over: Partial<DepsCancelamento> = {}) {
     // Org sem módulo nunca chega aqui; lançar prova que nada de kit é consultado.
     skusParticipantes: () => Promise.reject(new Error('consulta de kit inesperada')),
     agendarCancelamentoKit: () => Promise.reject(new Error('agendamento de kit inesperado')),
-    registrarPendencias: () => Promise.reject(new Error('pendência inesperada')),
+    classificarItensKit: () => Promise.reject(new Error('identidade inesperada')),
+    registrarPendenciaKit: () => Promise.reject(new Error('pendência inesperada')),
     ...over,
   };
   return { chamadas, deps };
@@ -182,7 +183,7 @@ describe('tratarPedidoCancelado — kit com variação', () => {
     const extra = {
       participantes: [] as string[][],
       agendados: [] as string[][],
-      pendencias: [] as Array<{ falhas: string[]; erro: string | null }>,
+      pendencias: [] as Array<{ orderId: string; erro: string }>,
       despachados: [] as string[][],
     };
     const { chamadas, deps } = fakeDeps({
@@ -202,9 +203,13 @@ describe('tratarPedidoCancelado — kit com variação', () => {
         extra.agendados.push(p.codigos);
         return Promise.resolve(['est-kit']);
       },
-      registrarPendencias: (_a, _o, _ok, _ini, falhas, erro) => {
-        extra.pendencias.push({ falhas, erro });
-        return Promise.resolve(0);
+      // Leitura incerta: só '00000029' é comum comprovado (vínculo sem participante); o resto fica incerto.
+      classificarItensKit: (_a, p) => Promise.resolve(p.incerto
+        ? { certos: p.itens.filter((i) => i.codigo === '00000029'), incertos: p.itens.filter((i) => i.codigo !== '00000029'), divergentes: [] }
+        : { certos: p.itens, incertos: [], divergentes: [] }),
+      registrarPendenciaKit: (_a, _o, orderId, erro) => {
+        extra.pendencias.push({ orderId, erro });
+        return Promise.resolve();
       },
       ...over,
     });
@@ -245,7 +250,7 @@ describe('tratarPedidoCancelado — kit com variação', () => {
     });
     const r = await tratarPedidoCancelado(ADMIN, deps, KIT);
     expect(r).toBe('pendente');
-    expect(extra.pendencias).toEqual([{ falhas: [String(BASE.orderId)], erro: expect.stringContaining('canonica_trocou') }]);
+    expect(extra.pendencias).toEqual([{ orderId: String(BASE.orderId), erro: expect.stringContaining('canonica_trocou') }]);
     expect(chamadas.reservas).toContainEqual({ entidade: 'estoque_cancelado_kit_pendente', chave: String(BASE.orderId) });
     expect(chamadas.notificacoes[0].categoria).toBe('estoque');
     // O que já está no outbox segue para o push.
@@ -268,12 +273,11 @@ describe('tratarPedidoCancelado — kit com variação', () => {
     expect(chamadas.notificacoes).toEqual([]);
   });
 
-  it('catálogo incompleto com o módulo ligado: pendente, sem estorno por código incerto', async () => {
+  it('catálogo incompleto com o módulo ligado: participante incerto pendente, sem estorno dele', async () => {
     const { chamadas, deps, extra } = depsKit();
     const r = await tratarPedidoCancelado(ADMIN, deps, { ...KIT, catalogoIncompleto: true });
     expect(r).toBe('pendente');
-    expect(chamadas.estornos).toHaveLength(0);
-    expect(extra.participantes).toEqual([]);
+    expect(chamadas.estornos[0].itens).toEqual([]);
     expect(extra.pendencias).toHaveLength(1);
     expect(chamadas.reservas).toEqual([]);
     expect(chamadas.notificacoes).toEqual([]);
@@ -304,6 +308,54 @@ describe('tratarPedidoCancelado — kit com variação', () => {
     expect(r).toBe('reposto');
     expect(extra.pendencias).toEqual([]);
     expect(extra.agendados).toEqual([]);
+  });
+
+  it('pedido misto com leitura incerta: credita o comum já, só o participante fica pendente', async () => {
+    const { chamadas, deps, extra } = depsKit();
+    const COMUM = { codigo: '00000029', quantity: 1 };
+    const r = await tratarPedidoCancelado(ADMIN, deps, { ...KIT, itens: [COMUM, ...KIT.itens], catalogoIncompleto: true });
+    expect(r).toBe('pendente');
+    expect(chamadas.estornos[0].itens).toEqual([COMUM]);
+    expect(extra.pendencias).toHaveLength(1);
+  });
+
+  it('pedido só comum com leitura incerta: comportamento de hoje (reposto, sem pendência)', async () => {
+    const { chamadas, deps, extra } = depsKit({
+      estornarVendaCancelada: (_a, p) => {
+        chamadas.estornos.push({ orderId: p.orderId, itens: p.itens });
+        return Promise.resolve({ pendentesDePush: [], falhas: [], aplicados: ['00000029'] });
+      },
+    });
+    const r = await tratarPedidoCancelado(ADMIN, deps, { ...KIT, itens: [{ codigo: '00000029', quantity: 1 }], catalogoIncompleto: true });
+    expect(r).toBe('reposto');
+    expect(chamadas.estornos).toHaveLength(1);
+    expect(extra.pendencias).toEqual([]);
+  });
+
+  it('estorna pelo SKU da identidade da baixa, não pelo resolvido agora', async () => {
+    const { chamadas, deps } = depsKit({
+      classificarItensKit: (_a, p) => Promise.resolve({ certos: p.itens.map((i) => ({ ...i, codigo: 'KIT-ORIGINAL' })), incertos: [], divergentes: [] }),
+    });
+    await tratarPedidoCancelado(ADMIN, deps, KIT);
+    expect(chamadas.estornos[0].itens).toEqual([{ codigo: 'KIT-ORIGINAL', quantity: 1 }]);
+  });
+
+  it('identidade ilegível: pendente calado, sem estorno', async () => {
+    const { chamadas, deps, extra } = depsKit({ classificarItensKit: () => Promise.reject(new Error('fora')) });
+    expect(await tratarPedidoCancelado(ADMIN, deps, KIT)).toBe('pendente');
+    expect(chamadas.estornos).toHaveLength(0);
+    expect(extra.pendencias).toHaveLength(1);
+    expect(chamadas.notificacoes).toEqual([]);
+  });
+
+  it('obrigação não gravada: repetir (o chamador não pode reconhecer)', async () => {
+    const { deps } = depsKit({
+      estornarVendaCancelada: () => Promise.resolve({
+        pendentesDePush: [], falhas: [{ codigo: 'KIT-PB-M', mensagem: 'x' }], aplicados: [],
+      }),
+      registrarPendenciaKit: () => Promise.reject(new Error('banco fora')),
+    });
+    expect(await tratarPedidoCancelado(ADMIN, deps, KIT)).toBe('repetir');
   });
 
   it('org sem módulo: nenhuma consulta de kit, falha segue como hoje', async () => {

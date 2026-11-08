@@ -12,6 +12,7 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { refBaixa, selecionarBaixas, type ItemVendaBaixa, type MovimentoPendente } from './baixa.ts';
 import type { CategoriaNotificacao } from '../notificacoes/categorias.ts';
 import { criarTransferencia } from '../kit-variacao/saga.ts';
+import type { classificarItensKit } from '../kit-variacao/venda.ts';
 
 /** Estados de envio que provam que a mercadoria NÃO saiu. Allowlist, nunca denylist:
  *  `buscarShipment` devolve null em qualquer erro de rede, e tratar o desconhecido como
@@ -58,10 +59,10 @@ export interface DepsCancelamento {
   agendarCancelamentoKit: (
     admin: SupabaseClient, p: { orgId: string; canal: string; orderId: string | number; codigos: string[] },
   ) => Promise<string[]>;
-  /** ADR-0197: `registrarPendencias` (worker_pendencias, ADR-0173): a reconciliação relê o pedido. */
-  registrarPendencias: (
-    admin: SupabaseClient, orgId: string, ok: string[], inicio: string, falhas: string[], erro: string | null,
-  ) => Promise<number>;
+  /** ADR-0197: `classificarItensKit` (identidade do item vendido). Lança em erro de leitura. */
+  classificarItensKit: typeof classificarItensKit;
+  /** ADR-0197: RPC `registrar_pendencia_kit` (worker_pendencias obrigatória, sem descarte). Lança em erro. */
+  registrarPendenciaKit: (admin: SupabaseClient, orgId: string, orderId: string, erro: string) => Promise<void>;
 }
 
 export interface PedidoCancelado {
@@ -85,7 +86,8 @@ export type ResultadoCancelamento =
   | 'avisado'
   | 'sem-baixa' // cancelado, mas o estoque nunca desceu por este pedido — nada a conferir
   | 'silenciado' // aviso já dado antes (a reconciliação revisita o pedido de hora em hora)
-  | 'pendente' // ADR-0197: crédito de SKU de kit com variação não confirmado; fica em worker_pendencias
+  | 'pendente' // ADR-0197: crédito de SKU de kit com variação não confirmado; obrigação gravada em worker_pendencias
+  | 'repetir' // ADR-0197: obrigação de crédito NÃO gravada; quem chama tem de repetir (502 / falha do pedido)
   | 'ignorado'
   | 'erro';
 
@@ -156,17 +158,27 @@ export async function tratarPedidoCancelado(
  * com variação creditado agora, cria a transferência `cancelamento` (escrita no ML só com o kit pausado), mesmo
  * com reposição automática desligada. Componente individual segue pelo outbox, que já vira transferência `entrada`.
  *
- * Só para participante, crédito não confirmado não é `reposto`: fica em `worker_pendencias` e a reconciliação
- * relê o pedido (5 tentativas, ADR-0173). Catálogo incompleto também: o código pode não ser o da baixa, e o
- * estorno gravaria o tombstone numa referência que não existe.
+ * O SKU de cada item vem da identidade da baixa (`kit_venda_identidade`), não da resolução desta execução: assim
+ * GTIN ou catálogo tolerante não estornam outra referência nem gravam tombstone numa que não existe. Item sem
+ * identidade com leitura incerta e sem prova de ser comum fica pendente; os demais (comuns inclusive) creditam já.
+ *
+ * Crédito não confirmado de participante não é `reposto`: vira obrigação em `worker_pendencias` (sem descarte),
+ * gravada antes de responder; se a gravação falha, `repetir`.
  */
 async function reporComKit(
   admin: SupabaseClient, deps: DepsCancelamento, p: PedidoCancelado,
 ): Promise<ResultadoCancelamento> {
-  // Causa transitória, sem saber se há participante: pendência calada. Avisar aqui mandaria "crédito do kit não
+  // Causas transitórias, sem saber se há participante: pendência calada. Avisar aqui mandaria "crédito do kit não
   // confirmado" a todo cancelamento da org numa varredura com uma página ruim (a classe dos 26 avisos do ADR-0121).
-  if (p.catalogoIncompleto) return await pendente(admin, deps, p, 'catálogo incompleto', false);
-  const codigos = selecionarBaixas(p.itens).map((b) => b.codigo);
+  let itens: Awaited<ReturnType<DepsCancelamento['classificarItensKit']>>;
+  try {
+    itens = await deps.classificarItensKit(admin, {
+      orgId: p.orgId, canal: p.canal, orderId: p.orderId, itens: p.itens, incerto: !!p.catalogoIncompleto,
+    });
+  } catch (e) {
+    return await pendente(admin, deps, p, `identidade: ${String(e)}`, false);
+  }
+  const codigos = selecionarBaixas(itens.certos).map((b) => b.codigo);
   let participantes: Set<string>;
   try {
     participantes = await deps.skusParticipantes(admin, p.orgId, codigos, true);
@@ -176,7 +188,7 @@ async function reporComKit(
 
   let r: Awaited<ReturnType<DepsCancelamento['estornarVendaCancelada']>>;
   try {
-    r = await deps.estornarVendaCancelada(admin, { orgId: p.orgId, canal: p.canal, orderId: p.orderId, itens: p.itens });
+    r = await deps.estornarVendaCancelada(admin, { orgId: p.orgId, canal: p.canal, orderId: p.orderId, itens: itens.certos });
   } catch (e) {
     if (codigos.some((c) => participantes.has(c))) return await pendente(admin, deps, p, String(e), true);
     throw e;
@@ -201,18 +213,25 @@ async function reporComKit(
   if (falhasKit.length > 0) {
     return await pendente(admin, deps, p, falhasKit.map((f) => `${f.codigo}: ${f.mensagem}`).join('; '), true);
   }
+  if (itens.incertos.length > 0) {
+    return await pendente(admin, deps, p, `identidade incerta: ${itens.incertos.map((i) => i.ml_item_id ?? i.codigo).join(', ')}`, false);
+  }
   return 'reposto';
 }
 
-/** `avisar` só quando o crédito de participante falhou de fato; o aviso sai uma vez por pedido. */
+/**
+ * Grava a obrigação ANTES de responder; sem gravação, `repetir`. `avisar` só quando o crédito de participante falhou
+ * de fato; o aviso sai uma vez por pedido.
+ */
 async function pendente(
   admin: SupabaseClient, deps: DepsCancelamento, p: PedidoCancelado, erro: string, avisar: boolean,
-): Promise<'pendente'> {
+): Promise<'pendente' | 'repetir'> {
   console.error('kit_cancelamento_pendente', p.orderId, erro);
   try {
-    await deps.registrarPendencias(admin, p.orgId, [], new Date().toISOString(), [String(p.orderId)], `kit_cancelamento: ${erro}`);
+    await deps.registrarPendenciaKit(admin, p.orgId, String(p.orderId), `kit_cancelamento: ${erro}`);
   } catch (e) {
     console.error('kit_cancelamento_pendencia_falhou', p.orderId, String(e));
+    return 'repetir';
   }
   if (!avisar) return 'pendente';
   try {

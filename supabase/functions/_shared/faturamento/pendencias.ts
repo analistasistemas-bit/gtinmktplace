@@ -32,6 +32,14 @@ export async function registrarPendencias(
   return (data as Array<{ descartados: number }> | null)?.[0]?.descartados ?? 0;
 }
 
+/** ADR-0197: obrigação de crédito de kit com variação (`obrigatoria`, nunca descartada pelo contador). Lança em erro. */
+export async function registrarPendenciaKit(
+  admin: SupabaseClient, orgId: string, orderId: string, erro: string,
+): Promise<void> {
+  const { error } = await admin.rpc('registrar_pendencia_kit', { p_org: orgId, p_order: orderId, p_erro: erro });
+  if (error) throw new Error(`registrar pendência de kit: ${error.message}`);
+}
+
 /** Há pendência ativa na org? (decide `parcial` no fim da rodada). Lança em erro. */
 export async function temPendenciaAtiva(admin: SupabaseClient, orgId: string): Promise<number> {
   const { count, error } = await admin.from('worker_pendencias')

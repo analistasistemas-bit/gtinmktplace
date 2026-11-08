@@ -339,6 +339,8 @@ function fakeAdmin(opts: { erroRpc?: string } = {}) {
       select: () => self, eq: () => self, is: () => self, neq: () => self, order: () => self, limit: () => self,
       update: () => self,
       insert: () => Promise.resolve({ error: null }),
+      // ADR-0197 (Task 8): identidade do item e aviso de kit zerado (sem linhas aqui).
+      upsert: () => Promise.resolve({ error: null }), in: () => self, gt: () => self, gte: () => self,
       maybeSingle: () => Promise.resolve({
         data: { familias: { codigo_pai: 'PAI-1', kit_base_codigo_pai: null, kit_multiplicador: null } }, error: null,
       }),

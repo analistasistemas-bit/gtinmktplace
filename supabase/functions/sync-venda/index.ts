@@ -4,7 +4,8 @@
 import { corsHeaders } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura, enfileirarSincronizacaoEstoque } from '../_shared/queue.ts';
-import { registrarBaixaVenda, despacharPushPendente, kitsManuaisZerados, separarParticipantes } from '../_shared/estoque/baixa.ts';
+import { registrarBaixaVenda, despacharPushPendente } from '../_shared/estoque/baixa.ts';
+import { avisarKitsZerados } from '../_shared/kit-variacao/venda.ts';
 import { tratarPedidoCancelado } from '../_shared/estoque/cancelamento.ts';
 import { depsCancelamento } from '../_shared/estoque/cancelamento-deps.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
@@ -114,14 +115,12 @@ Deno.serve(async (req) => {
     liquidoPorPayment: liquidoPorPayment ?? undefined,
   });
 
-  // Portão da Task 3 (ADR-0197): a referência da baixa inclui o SKU. Com leitura parcial o código pode cair
-  // no seller_custom_field e o mesmo pedido ganharia outra referência, outro débito. Com o módulo ligado, só os
-  // itens de SKU participante ficam para depois (502, o QStash repete); os comuns baixam como hoje. Org sem
-  // módulo segue tolerante, sem consulta nova.
-  const { comuns: itensBaixa, adiados } = kitLigado && (incompleto || gtinFalhou) && orgId
-    ? await separarParticipantes(admin, orgId, itens)
-    : { comuns: itens, adiados: [] };
-  const catalogoIncerto = adiados.length > 0;
+  // Portão da Task 3 (ADR-0197): a referência da baixa inclui o SKU. Com o módulo ligado, cada item do pedido
+  // baixa sob a identidade gravada na primeira baixa (`kit_venda_identidade`); sem ela e com leitura incerta, só
+  // segue o item comprovadamente comum, o resto fica para depois (502, o QStash repete). Org sem módulo segue
+  // tolerante, sem consulta nova.
+  const leituraIncerta = kitLigado && (incompleto || gtinFalhou);
+  let adiados: Array<{ codigo: string | null; ml_item_id?: string | null }> = [];
 
   // Alerta de nova venda paga aos destinatários da categoria 'vendas'. Usa os itens já com EAN
   // resolvido (catálogo/GTIN) e o nome real do comprador já resolvido pelo upsert (nunca o
@@ -148,20 +147,31 @@ Deno.serve(async (req) => {
   // retry veria novaPaga=false e a perda seria permanente. Gatear em "está pago" faz
   // o retry retomar naturalmente, e a idempotência vem do ledger: cada SKU já baixado
   // devolve `aplicado=false` e não é reaplicado.
-  if (pedido.status === 'paid' && orgId && catalogoIncerto
-    && await reservarNotificacao(admin, orgId, userId, 'estoque_baixa_adiada', String(pedido.id))) {
-    await notificarCategoria(
-      admin, orgId, 'vendas',
-      `🚨 Baixa de estoque adiada (pedido ${pedido.id})\n\n${adiados.map((i) => `• ${i.codigo ?? i.ml_item_id}`).join('\n')}\n\n`
-      + 'O catálogo não carregou por inteiro, e com kit com variação a baixa poderia sair no SKU errado. '
-      + 'O PubliAI tenta de novo sozinho. Confira o saldo antes de ajustar manualmente em Estoque, para não descontar duas vezes.',
-    );
-  }
   if (pedido.status === 'paid' && orgId) {
     try {
-      const { pendentesDePush, vendaAcimaSaldo, desyncMl, falhas, semSku, skuDesconhecido, zerados } = await registrarBaixaVenda(admin, {
-        orgId, canal: 'mercado_livre', orderId: pedido.id, itens: itensBaixa,
-      });
+      const r = await registrarBaixaVenda(admin, {
+        orgId, canal: 'mercado_livre', orderId: pedido.id, itens,
+      }, kitLigado ? { kit: { incerto: leituraIncerta } } : {});
+      const { pendentesDePush, vendaAcimaSaldo, desyncMl, falhas, semSku, skuDesconhecido } = r;
+      adiados = r.adiados;
+      if (adiados.length > 0
+        && await reservarNotificacao(admin, orgId, userId, 'estoque_baixa_adiada', String(pedido.id))) {
+        await notificarCategoria(
+          admin, orgId, 'vendas',
+          `🚨 Baixa de estoque adiada (pedido ${pedido.id})\n\n${adiados.map((i) => `• ${i.codigo ?? i.ml_item_id}`).join('\n')}\n\n`
+          + 'O catálogo não carregou por inteiro, e com kit com variação a baixa poderia sair no SKU errado. '
+          + 'O PubliAI tenta de novo sozinho. Confira o saldo antes de ajustar manualmente em Estoque, para não descontar duas vezes.',
+        );
+      }
+      if (r.divergentes.length > 0
+        && await reservarNotificacao(admin, orgId, userId, 'estoque_identidade_divergente', String(pedido.id))) {
+        await notificarCategoria(
+          admin, orgId, 'vendas',
+          `⚠️ SKU do pedido ${pedido.id} resolvido diferente da primeira baixa\n\n`
+          + r.divergentes.map((d) => `• ${d.mlItemId}: agora ${d.resolvido}, baixado como ${d.identidade}`).join('\n')
+          + '\n\nO estoque seguiu o SKU da primeira baixa (sem débito duplo). Confira o vínculo do anúncio.',
+        );
+      }
       // Despacha o OUTBOX, não só o que esta execução aplicou: assim um push que ficou
       // para trás numa execução anterior é reenviado aqui. O canal de origem NÃO é
       // passado — cada movimento carrega a própria intenção.
@@ -235,17 +245,10 @@ Deno.serve(async (req) => {
           + 'de ajustar manualmente em Estoque, para não descontar duas vezes.',
         );
       }
-      // ADR-0197: kit com variação com reposição automática desligada não volta sozinho. Último do bloco:
-      // erro de leitura aqui não pode calar os alertas acima.
-      const manuais = kitLigado ? await kitsManuaisZerados(admin, orgId, zerados) : [];
-      if (manuais.length > 0
-        && await reservarNotificacao(admin, orgId, userId, 'estoque_kit_zerado', String(pedido.id))) {
-        await notificarCategoria(
-          admin, orgId, 'estoque',
-          `🧩 Kit sem saldo (pedido ${pedido.id})\n\n${manuais.map((c) => `• ${c}`).join('\n')}\n\n`
-          + 'Este kit não repõe sozinho (reposição automática desligada ou individual ativo). '
-          + 'Para voltar a vender, use Montar mais.',
-        );
+      // ADR-0197: kit em modo manual que zerou. O evento é o movimento do ledger; o dedupe é por movimento, e
+      // a importação da saga chama o mesmo despacho. Último do bloco: erro aqui não cala os alertas acima.
+      if (kitLigado) {
+        await avisarKitsZerados(admin, { reservar: reservarNotificacao, notificar: notificarCategoria }, orgId, userId);
       }
     } catch (e) {
       console.error('baixa_estoque_falhou', e);
@@ -261,13 +264,14 @@ Deno.serve(async (req) => {
   // `_shared/estoque/cancelamento.ts` porque a reconciliação horária também precisa dela — este
   // worker só enxerga o cancelamento quando o ML reenvia o webhook, e ele nem sempre reenvia
   // (ADR-0121).
+  let cancelamento: string | null = null;
   if (orgId) {
-    await tratarPedidoCancelado(admin, depsCancelamento, {
+    cancelamento = await tratarPedidoCancelado(admin, depsCancelamento, {
       orgId, userId, canal: 'mercado_livre', orderId: pedido.id, itens,
       statusPedido: pedido.status ?? null,
       shipmentStatus: shipment?.status != null ? String(shipment.status) : null,
       temEnvio: pedido.shipping?.id != null,
-      kitLigado, catalogoIncompleto: catalogoIncerto,
+      kitLigado, catalogoIncompleto: leituraIncerta,
     });
   }
 
@@ -296,7 +300,7 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ ok: false, mpIndisponivel: true }), { status: 502, headers: corsHeaders });
   }
   // ADR-0197: baixa adiada pelo portão do catálogo. Mesmo tratamento do MP: o QStash repete.
-  if (catalogoIncerto) {
+  if (adiados.length > 0 || cancelamento === 'repetir') {
     return new Response(JSON.stringify({ ok: false, catalogoIncompleto: true }), { status: 502, headers: corsHeaders });
   }
 
