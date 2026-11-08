@@ -43,6 +43,7 @@ import { useImageUrl, invalidarImagem } from '@/hooks/useImageUrl';
 import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { useProfile } from '@/hooks/useProfile';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
+import { useKitsVariacao } from '@/hooks/useKitsVariacao';
 import { useKitsDoProduto } from '@/hooks/useKitsDoProduto';
 import { DialogCriarKit } from '@/components/kit/dialog-criar-kit';
 import type { BaseParaKit } from '@/lib/kit';
@@ -219,12 +220,15 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
   // D-10/D-4: este card É um kit (caminho de recuperação — kit falho vira card comum na
   // Revisão, ADR-0151 Decisão 4) — não pode virar base de um kit-de-kit.
   const ehKitVinculado = !!familia.kitBaseCodigoPai;
+  // ADR-0197: a família de um kit com variação (mesmo de 1 SKU só) também não vira base de kit vinculado.
+  const { data: kitsVariacao } = useKitsVariacao(!!modulosHabilitados?.includes('kit_variacao'));
+  const ehKitVariacao = !!kitsVariacao?.some((k) => k.codigoPaiKit === familia.codigoPai);
   const motivoCriarKitDesabilitado = !isAdmin
     ? 'Somente administradores podem criar kits.'
     : !temModuloEstoque
       ? 'Kit vinculado exige o módulo Estoque habilitado.'
-      : ehKitVinculado
-        ? 'Este anúncio já é um kit vinculado.'
+      : ehKitVinculado || ehKitVariacao
+        ? 'Este anúncio já é um kit.'
         : temVariacaoDeCor
           ? 'Kit vinculado só existe para produto sem variação de cor.'
           : familia.status !== 'pronto'

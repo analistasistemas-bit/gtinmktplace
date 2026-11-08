@@ -20,4 +20,20 @@ export interface CriarKitVariacaoInput {
   chaveCadastro: string;
   /** Clássico (padrão) ou Premium. */
   listingTypeId?: 'gold_special' | 'gold_pro';
+  /** Prévia de texto da IA (`gerar-texto-kit`): o custo dos tokens entra na família do kit. */
+  previaId?: string;
+}
+
+/** Peças pedidas × saldo da base por cor e tamanho. `tem` = estoque da variação publicável (0 se não existe). */
+export interface SaldoPeca { cor: string; tamanho: string; precisa: number; tem: number; existe: boolean }
+
+export function saldoDePecas(
+  variacoes: Array<{ cor: string; tamanho: string | null; estoque: number; excluidaDaPublicacao?: boolean }>,
+  cores: string[], tamanhos: string[], quantidades: { cores: string[]; tamanho: string; quantidade: number }[],
+): SaldoPeca[] {
+  return cores.flatMap((cor) => tamanhos.map((tamanho) => {
+    const v = variacoes.find((x) => !x.excluidaDaPublicacao && x.cor === cor && x.tamanho === tamanho);
+    const precisa = quantidades.reduce((s, q) => s + (q.tamanho === tamanho && q.cores.includes(cor) ? Math.max(0, q.quantidade) : 0), 0);
+    return { cor, tamanho, precisa, tem: v ? Math.max(0, v.estoque) : 0, existe: !!v };
+  }));
 }

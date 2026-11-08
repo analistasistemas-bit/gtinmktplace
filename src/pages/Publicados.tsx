@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { RefreshCw, ExternalLink, Trash2, Pause, Play, PackageOpen, PackagePlus, ArrowUp, ArrowDown, ChevronsUpDown, Wallet, ChevronRight, AlertTriangle, RotateCcw, Boxes, Package, Split, Loader2 } from 'lucide-react';
+import { RefreshCw, ExternalLink, Trash2, Pause, Play, PackageOpen, PackagePlus, ArrowUp, ArrowDown, ChevronsUpDown, Wallet, ChevronRight, AlertTriangle, RotateCcw, Boxes, Package, Split, Loader2, Layers, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { PageHeader } from '@/components/ui/page-header';
@@ -79,6 +79,10 @@ import {
 } from '@/lib/kit-virtual';
 import { useSupportStore } from '@/stores/support-store';
 import { DialogCriarKitVirtual } from '@/components/kit-virtual/DialogCriarKitVirtual';
+import { DialogCriarKitVariacao } from '@/components/kit-variacao/dialog-criar-kit-variacao';
+import { DialogGerenciarKit } from '@/components/kit-variacao/dialog-gerenciar-kit';
+import { useKitsVariacao } from '@/hooks/useKitsVariacao';
+import type { KitVariacaoResumo } from '@/lib/kit-variacao-edge';
 import { AnunciosOrfaos } from '@/components/anuncios-orfaos';
 import { paginar } from '@/lib/paginacao';
 import { paramsParaEstado, estadoParaParams, type EstadoPublicados } from '@/lib/publicados-url';
@@ -238,6 +242,31 @@ function KitsVinculados({ codigoPai, ativo }: { codigoPai: string; ativo: boolea
   );
 }
 
+/** ADR-0197: kits com variação feitos a partir do produto. Mostra também o kit ainda montando ou com erro, que
+ *  pode nem ter linha própria na tabela. */
+function KitsComVariacao({ kits, onGerenciar }: { kits: KitVariacaoResumo[]; onGerenciar: (k: KitVariacaoResumo) => void }) {
+  if (kits.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-md border bg-background px-3 py-2 text-xs">
+      <span className="font-medium">Kits com variação:</span>
+      {kits.map((k) => (
+        <button
+          key={k.id}
+          type="button"
+          onClick={() => onGerenciar(k)}
+          className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 hover:bg-muted"
+          title="Gerenciar kit"
+        >
+          {k.status === 'erro' && <AlertTriangle className="h-3 w-3 text-danger" />}
+          {k.status === 'publicando' && <Loader2 className="h-3 w-3 animate-spin" />}
+          Kit {k.pecasPorKit} · {k.codigoPaiKit}
+          {k.status === 'erro' ? ' (com erro)' : k.status === 'publicando' ? ' (montando…)' : ''}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ============================================================================
 // Linha da tabela
 // ============================================================================
@@ -257,6 +286,14 @@ interface LinhaProps {
   onPreencherFiscal: (familiaId: string) => void;
   temModuloEstoque: boolean;
   onCriarKit: (item: PublicadoItem) => void;
+  /** ADR-0197: módulo `kit_variacao` ligado. */
+  temKitVariacao: boolean;
+  /** Kit com variação cujo anúncio é esta linha (null = não é kit). */
+  kitVariacao: KitVariacaoResumo | null;
+  /** Kits com variação feitos a partir deste produto. */
+  kitsVariacaoDaBase: KitVariacaoResumo[];
+  onCriarKitVariacao: (familiaId: string) => void;
+  onGerenciarKit: (kit: KitVariacaoResumo) => void;
   onMigrarPrecoPorVariacao: (familiaId: string) => Promise<void>;
   migrando: boolean;
   selecionado: boolean;
@@ -290,6 +327,7 @@ function LinhaTabela({
   item, onRemover, removendo, onRepublicar, republicando, onPausarReativar, pausando,
   onRetentarCatalogo, retentandoCatalogo, isAdmin, temFiscal, onPreencherFiscal,
   temModuloEstoque, onCriarKit, onMigrarPrecoPorVariacao, migrando,
+  temKitVariacao, kitVariacao, kitsVariacaoDaBase, onCriarKitVariacao, onGerenciarKit,
   selecionado, onSelecionar, motivoNaoSelecionavel: motivoSelecao,
 }: LinhaProps) {
   // Expansão persistida (sobrevive a ordenar/filtrar/paginar, que remonta a linha), como o sort.
@@ -316,11 +354,17 @@ function LinhaTabela({
     ? 'Somente administradores podem criar kits.'
     : !temModuloEstoque
       ? 'Kit vinculado exige o módulo Estoque habilitado.'
-      : ehKitVinculado
-        ? 'Este anúncio já é um kit vinculado.'
+      : ehKitVinculado || kitVariacao
+        ? 'Este anúncio já é um kit.'
         : temVariacaoDeCor
           ? 'Kit vinculado só existe para produto sem variação de cor.'
           : undefined;
+  // ADR-0197: kit com variação nasce de anúncio User Products com grade de cor; o próprio kit não vira base.
+  const motivoKitVariacaoDesabilitado = !isAdmin
+    ? 'Somente administradores podem criar kits.'
+    : !item.userProducts
+      ? 'Kit com variação só sai de anúncio User Products.'
+      : undefined;
 
   // Migração ML "preço por variação" (irreversível): só faz sentido pra quem tem mais de uma
   // cor e está ativo/pausado — status já encerrado/moderado não tem o que migrar.
@@ -452,11 +496,38 @@ function LinhaTabela({
             aria-label="Criar kit"
             title={motivoCriarKitDesabilitado ?? 'Criar kit vinculado'}
             className="h-7 px-2 text-xs"
-            disabled={!isAdmin || !temModuloEstoque || ehKitVinculado || temVariacaoDeCor}
+            disabled={!!motivoCriarKitDesabilitado}
             onClick={(e) => { e.stopPropagation(); onCriarKit(item); }}
           >
             <PackagePlus className="h-3 w-3" />
           </Button>
+
+          {temKitVariacao && !kitVariacao && temVariacaoDeCor && (
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Criar kit com variação"
+              title={motivoKitVariacaoDesabilitado ?? 'Criar kit com variação (cores combinadas)'}
+              className="h-7 px-2 text-xs"
+              disabled={!!motivoKitVariacaoDesabilitado}
+              onClick={(e) => { e.stopPropagation(); onCriarKitVariacao(item.familiaId); }}
+            >
+              <Layers className="h-3 w-3" />
+            </Button>
+          )}
+
+          {kitVariacao && (
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Gerenciar kit"
+              title="Gerenciar kit"
+              className="h-7 px-2 text-xs"
+              onClick={(e) => { e.stopPropagation(); onGerenciarKit(kitVariacao); }}
+            >
+              <Settings2 className="h-3 w-3" />
+            </Button>
+          )}
 
           {/* `!item.produtoDividido` (ADR-0161 J10): produto publicado como vários anúncios não pode
               migrar — a adoção zeraria o vínculo das cores que vivem nas outras partições. A edge
@@ -726,6 +797,7 @@ function LinhaTabela({
                 </div>
               )}
               {!ehKitVinculado && <KitsVinculados codigoPai={item.codigoPai} ativo={aberto} />}
+              <KitsComVariacao kits={kitsVariacaoDaBase} onGerenciar={onGerenciarKit} />
               <PainelAnalise
                 familia={familia}
                 precoOverride={item.precoAtual ?? item.precoPublicacao}
@@ -1072,6 +1144,12 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
   const { data: modulos } = useModulosHabilitados();
   const temFiscal = !!modulos?.includes('fiscal');
   const temModuloEstoque = !!modulos?.includes('estoque');
+  // ADR-0197: kit com variação. Sem o módulo as tabelas nem são lidas.
+  const temKitVariacao = !!modulos?.includes('kit_variacao');
+  const { data: kitsVariacao } = useKitsVariacao(temKitVariacao);
+  const kitPorCodigo = useMemo(() => new Map((kitsVariacao ?? []).map((k) => [k.codigoPaiKit, k])), [kitsVariacao]);
+  const [criarKitVariacaoDe, setCriarKitVariacaoDe] = useState<string | null>(null);
+  const [kitGerenciado, setKitGerenciado] = useState<KitVariacaoResumo | null>(null);
   // id da família aberta no DialogFiscalProduto (T13) — null = fechado. Fila vazia: edição
   // single a partir do badge, sem "salvar e próximo" (isso é o fluxo em lote do Estoque).
   const [fiscalAberto, setFiscalAberto] = useState<string | null>(null);
@@ -1776,6 +1854,11 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
                         onPreencherFiscal={setFiscalAberto}
                         temModuloEstoque={temModuloEstoque}
                         onCriarKit={handleCriarKit}
+                        temKitVariacao={temKitVariacao}
+                        kitVariacao={kitPorCodigo.get(item.codigoPai) ?? null}
+                        kitsVariacaoDaBase={(kitsVariacao ?? []).filter((k) => k.codigoPaiBase === item.codigoPai)}
+                        onCriarKitVariacao={setCriarKitVariacaoDe}
+                        onGerenciarKit={setKitGerenciado}
                         onMigrarPrecoPorVariacao={handleMigrarPrecoPorVariacao}
                         migrando={migrando && migrandoId === item.familiaId}
                         selecionado={selecao.has(item.mlItemId)}
@@ -1873,6 +1956,25 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
           kitsExistentes={kitsExistentesRows ?? []}
           open
           onOpenChange={(v) => { if (!v) setKitAlvo(null); }}
+        />
+      )}
+
+      {criarKitVariacaoDe && (
+        <DialogCriarKitVariacao
+          familiaBaseId={criarKitVariacaoDe}
+          open
+          onOpenChange={(v) => { if (!v) setCriarKitVariacaoDe(null); }}
+          isAdmin={isAdmin}
+        />
+      )}
+
+      {kitGerenciado && (
+        <DialogGerenciarKit
+          // Versão e status ao vivo: a lista relida substitui o retrato do clique.
+          kit={(kitsVariacao ?? []).find((k) => k.id === kitGerenciado.id) ?? kitGerenciado}
+          open
+          onOpenChange={(v) => { if (!v) setKitGerenciado(null); }}
+          isAdmin={isAdmin}
         />
       )}
 
