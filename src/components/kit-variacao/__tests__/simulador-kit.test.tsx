@@ -14,12 +14,12 @@ vi.mock('@/hooks/useConfiguracoes', () => ({ useAliquotas: () => aliquotas }));
 const peca = (cor: string, custo: number) => ({
   cor, tamanho: 'M', custo, pesoGramas: 200, alturaCm: 3, larguraCm: 20, comprimentoCm: 30,
 });
-vi.mock('@/hooks/useFamilia', () => ({
-  useFamilia: () => ({
-    data: { origem: 'nacional', categoriaMlId: 'MLB1', variacoes: [peca('Preto', 20), peca('Branco', 25), peca('Marrom', 40)] },
-    isLoading: false, isError: false,
-  }),
-}));
+const familiaBase = {
+  data: { origem: 'nacional', categoriaMlId: 'MLB1', variacoes: [peca('Preto', 20), peca('Branco', 25), peca('Marrom', 40)] },
+  isLoading: false, isError: false,
+};
+const useFamiliaMock = vi.fn((..._args: unknown[]) => familiaBase);
+vi.mock('@/hooks/useFamilia', () => ({ useFamilia: (...a: unknown[]) => useFamiliaMock(...a) }));
 
 function tarifa(preco: number, frete: number, aliquotaPct: number): Tarifa {
   const imposto = Math.round(preco * aliquotaPct) / 100;
@@ -53,6 +53,23 @@ describe('SimuladorKit', () => {
     vi.mocked(calcularTarifaML).mockReset();
     vi.mocked(calcularTarifaML).mockImplementation(async (preco, _c, _d, aliq = 0) => tarifa(preco, 10, aliq));
     aliquotas.data = { nacional: 8, importado: 16, confirmada: true };
+    familiaBase.data.variacoes = [peca('Preto', 20), peca('Branco', 25), peca('Marrom', 40)];
+    useFamiliaMock.mockClear();
+  });
+
+  it('custo vem da própria base, a mesma fonte da edge (sem custo recente de outra família)', async () => {
+    renderSim(100);
+    await screen.findByText(/Pior combinação/);
+    expect(useFamiliaMock).toHaveBeenCalledWith('fam-1', true, false);
+  });
+
+  it('peça sem custo na base bloqueia sem lucro e sem "Seguir mesmo assim"', async () => {
+    familiaBase.data.variacoes = [peca('Preto', 20), { ...peca('Branco', 25), custo: null as unknown as number }, peca('Marrom', 40)];
+    const { onPodeSeguir } = renderSim(100);
+    expect(await screen.findByText(/sem custo na base/)).toBeInTheDocument();
+    expect(screen.queryByText(/Pior combinação/)).toBeNull();
+    expect(screen.queryByLabelText('Seguir mesmo assim')).toBeNull();
+    expect(onPodeSeguir).toHaveBeenLastCalledWith(false);
   });
 
   it('mostra a pior combinação com o card de Promoções e libera sem confirmação', async () => {

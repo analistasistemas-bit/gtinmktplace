@@ -64,7 +64,8 @@ export function aliquotaDoKit(
 }
 
 export interface LinhaSimulada extends SkuKit { resumo: ResumoLucro | null; motivo: string | null }
-export type EstadoSimulacao = 'calculando' | 'indisponivel' | 'prejuizo' | 'ok';
+/** `sem_custo`: peça da base sem custo. A edge recusa (`base_sem_custo`), então bloqueia sem confirmação. */
+export type EstadoSimulacao = 'calculando' | 'sem_custo' | 'indisponivel' | 'prejuizo' | 'ok';
 export interface SimulacaoKit {
   linhas: LinhaSimulada[];
   /** Menor lucro. Só existe quando todas as combinações têm conta (senão não dá para afirmar a pior). */
@@ -110,12 +111,16 @@ export function simularKit(p: {
     const t = p.cotacoes.get(chaveDimensoes(sku.dim));
     if (t === undefined) { calculando = true; linhas.push({ ...sku, resumo: null, motivo: null }); continue; }
     const oficial = t != null && provenienciaDaTarifa(t).proveniencia === 'official';
-    const motivo = sku.custo == null ? 'Peça sem custo cadastrado.'
+    const motivo = sku.custo == null ? 'Peça sem custo na base.'
       : !oficial ? 'Não foi possível calcular a tarifa do Mercado Livre.' : null;
     linhas.push({ ...sku, resumo: motivo ? null : resumoDaTarifa(t!, p.tipo, p.preco, sku.custo!, sku.rotulo, p.aliquotaPct ?? 0), motivo });
   }
   const semAliquota = p.aliquotaPct == null;
   const faltaConta = linhas.some((l) => l.resumo == null && l.motivo != null);
+  // Custo vem da base (o que a edge soma); sem ele a criação é recusada, não adianta cotar nem confirmar.
+  if (linhas.some((l) => l.custo == null && l.motivo === 'Peça sem custo na base.')) {
+    return { linhas, pior: null, estado: 'sem_custo', semAliquota, precisaConfirmar: false };
+  }
   if (calculando) return { linhas, pior: null, estado: 'calculando', semAliquota, precisaConfirmar: false };
   if (faltaConta || linhas.length === 0) return { linhas, pior: null, estado: 'indisponivel', semAliquota, precisaConfirmar: true };
   const pior = linhas.reduce((a, b) => (b.resumo!.lucro < a.resumo!.lucro ? b : a));

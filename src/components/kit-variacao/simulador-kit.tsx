@@ -30,8 +30,9 @@ export function SimuladorKit({ familiaBaseId, cores, pecas, quantidades, preco, 
   /** Conta pronta e, se houver prejuízo, conta indisponível ou imposto fora, confirmada pelo operador. */
   onPodeSeguir?: (pode: boolean) => void;
 }) {
-  // Custo vigente (ADR-0185): o lote mais novo de cada SKU, não o da família mais antiga.
-  const familiaQ = useFamilia(familiaBaseId, true, true);
+  // Mesma fonte de custo da edge criar-kit-variacao: as variações da própria base (que precisa ser a
+  // versão mais recente do PAI). Custo recente de outra família divergiria do que o kit grava.
+  const familiaQ = useFamilia(familiaBaseId, true, false);
   const aliquotasQ = useAliquotas();
   const familia = familiaQ.data;
   const aliquotaPct = aliquotaDoKit(familia?.origem, aliquotasQ.data);
@@ -89,7 +90,7 @@ export function SimuladorKit({ familiaBaseId, cores, pecas, quantidades, preco, 
   ].join('|');
   const [confirmadoEm, setConfirmadoEm] = useState<string | null>(null);
   const confirmado = confirmadoEm === chaveConta;
-  const pode = estado !== 'calculando' && (!precisaConfirmar || confirmado);
+  const pode = estado !== 'calculando' && estado !== 'sem_custo' && (!precisaConfirmar || confirmado);
   useEffect(() => { onPodeSeguir?.(pode); }, [pode, onPodeSeguir]);
 
   const [expandido, setExpandido] = useState(false);
@@ -98,6 +99,12 @@ export function SimuladorKit({ familiaBaseId, cores, pecas, quantidades, preco, 
   return (
     <section aria-label="Simulador de lucro do kit" className="flex flex-col gap-2">
       {estado === 'calculando' && <p className="text-xs text-muted-foreground">Calculando o que você recebe…</p>}
+
+      {estado === 'sem_custo' && (
+        <p className="text-xs text-danger">
+          Há peça sem custo na base: cadastre o custo antes de criar o kit. O lucro não é calculado.
+        </p>
+      )}
 
       {estado === 'indisponivel' && (
         <p className="text-xs text-danger">

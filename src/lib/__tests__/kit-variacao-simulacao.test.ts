@@ -106,12 +106,15 @@ describe('simularKit', () => {
     expect(s.linhas[0].resumo).toBeNull();
   });
 
-  it('SKU sem custo deixa a conta indisponível (não dá para afirmar a pior)', () => {
+  it('peça sem custo na base bloqueia (como base_sem_custo da edge), sem lucro e sem confirmação', () => {
     const s = simularKit({
       ...base, variacoes: [peca('Preto', 'M', 20), peca('Branco', 'M', null), peca('Marrom', 'M', 40)],
       cotacoes: cotacoesPara(100, 10, 8),
     });
-    expect(s.estado).toBe('indisponivel');
+    expect(s.estado).toBe('sem_custo');
+    expect(s.pior).toBeNull();
+    expect(s.precisaConfirmar).toBe(false);
+    expect(s.linhas.find((l) => l.rotulo === 'Preto e Branco')!.motivo).toMatch(/sem custo/i);
     expect(s.linhas.find((l) => l.rotulo === 'Preto e Branco')!.resumo).toBeNull();
     expect(s.linhas.find((l) => l.rotulo === 'Preto e Marrom')!.resumo).not.toBeNull();
   });
