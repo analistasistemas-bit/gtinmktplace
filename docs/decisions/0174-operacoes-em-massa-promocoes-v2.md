@@ -323,6 +323,18 @@ preço original até R$ 19. Substitui o "Só Relâmpago" da emenda de 2026-11-02
    bloquear ali esconderia uma escrita incerta. Sair segue livre.
 5. **Reverter passa pela mesma trava:** voltar a preço abaixo de R$ 19 é recusado; o operador escolhe preço ≥ R$ 19
    ou sai da campanha.
+
+## Emenda 2026-11-08 — teto crível da Relâmpago
+
+Corrige a decisão 6 da emenda de 2026-11-02. Na LGH-MLB1000 a adesão do Creme Melancia (52,66 e 51,95) e do
+Defrizante (37,74 e 37,90) voltou `400 ERROR_CREDIBILITY_DISCOUNTED_PRICE`. Os dois têm `PRICE_DISCOUNT` próprio
+ativo (52,90 e 33,90); o `max_discounted_price` da visão por item (90% do base) e o sugerido ignoram esse desconto.
+Lido em 4 convidados: o `price` do convite é 97% do preço próprio do anúncio (base, ou o `PRICE_DISCOUNT` quando
+existe; DEAL ativo não conta) — 51,31 e 32,88 nos dois recusados.
+
+1. **Teto = menor entre `max_discounted_price` e o `price` do convite**, no sync (Central, Simular) e na execução.
+   Sem desconto próprio o convite fica acima do máximo e nada muda.
+2. **Sugerido limitado ao teto.** O `price` continua fora da tela como preço (não é o sugerido nem o atual).
 6. **"Até quanto" para no piso:** o sync calcula na faixa real e limita o resultado a R$ 19, para o botão não sugerir
    preço recusado. SMART sem preço da oferta não adere: sem ele o piso não é conferido.
 7. **Fora do escopo:** anúncios que já participam abaixo de R$ 19 não saem sozinhos, e o reajuste em massa

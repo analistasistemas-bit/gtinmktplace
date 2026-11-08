@@ -209,14 +209,17 @@ export function umaOfertaPorAnuncio(itens: ItemPromocaoML[]): ItemPromocaoML[] {
 
 /**
  * Convidado da Relâmpago: max e sugerido só da visão por item; min = o maior das duas visões (conservador);
- * o `price` do convite não serve (spike 02/11) → null. Sem visão por item a linha fica sem faixa (⚪).
+ * o `price` do convite não é preço exibível (spike 02/11) → null, mas é o teto crível (08/11) e limita max/sugerido. Sem visão por item a linha fica sem faixa (⚪).
  */
 export function comOfertaRelampago(it: ItemPromocaoML, o: OfertaRelampago | null): ItemPromocaoML {
   if (it.status !== 'candidate') return it;
   const mins = [it.preco_min, o?.preco_min].filter((n): n is number => n != null);
+  // Teto crível (08/11): o price do convite = 97% do preço próprio (com PRICE_DISCOUNT); acima → ERROR_CREDIBILITY.
+  const max = o?.preco_max == null ? null : Math.min(o.preco_max, it.preco_promo ?? Infinity);
+  const sug = o?.preco_sugerido ?? null;
   return {
     ...it, preco_promo: null, preco_min: mins.length ? Math.max(...mins) : null,
-    preco_max: o?.preco_max ?? null, preco_sugerido: o?.preco_sugerido ?? null,
+    preco_max: max, preco_sugerido: sug !== null && max !== null ? Math.min(sug, max) : sug,
   };
 }
 
