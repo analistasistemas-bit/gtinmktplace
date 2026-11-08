@@ -316,7 +316,10 @@ export default function PromocaoDetalhe() {
       </div>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex w-full flex-col gap-3 sm:flex-row lg:max-w-2xl">
-        <Select value={pai ?? TODOS_PAIS} onValueChange={(v) => setPai(v === TODOS_PAIS ? null : v)} disabled={opcoesDePai.length === 0}>
+        <Select value={pai ?? TODOS_PAIS} onValueChange={(v) => {
+          // Revisão Grok: seleção de outro PAI ficaria fora da tela mas dentro da operação.
+          setPai(v === TODOS_PAIS ? null : v); setSelecionados(new Set()); setPreview(null);
+        }} disabled={opcoesDePai.length === 0}>
           <SelectTrigger className="w-full sm:w-72" aria-label="Filtrar por produto PAI">
             <SelectValue />
           </SelectTrigger>
