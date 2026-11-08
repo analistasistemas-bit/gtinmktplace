@@ -1650,7 +1650,9 @@ kit e a incrementam com o efeito, na mesma transação.
 ### `kit_transferencia_alvos`
 PK `(transferencia_id, up_id)`, `codigo`, `papel` (`origem|destino`), `delta` (peças ou kits com sinal,
 calculado pela RPC de criação), `item_ids text[]` (o PUT de quantidade vai para `item_ids[0]`: item principal primeiro), `qtd_passo1`, `passo1_em`, `ids_passo1 text[]`
-(pedidos pendentes na leitura que confirmou a pausa), `valor_anterior`, `valor_alvo` (os dois gravam uma vez),
+(pedidos pendentes na leitura que confirmou a pausa), `pagos_passo1 text[]` (pagos já incorporados a `qtd_passo1`: baixados
+localmente no passo 1 com o saldo local fechando com o ML; a conciliação não os reserva; migration
+`20261108105448_kit_variacao_correcoes_finais.sql`), `valor_anterior`, `valor_alvo` (os dois gravam uma vez),
 `pausado_pela_saga text[]`, `intencao_escrita_em` (antes do PUT), `recusa_definitiva_em` (4xx
 recebido), `escrita_em`, `confirmada_em`, `item_escrita` (item aberto que recebe o PUT; não muda em tentativa
 incerta), `recusas` (4xx recebidos; na 5ª a saga trava), `repausar text[]` (itens a conferir ou repausar depois de
@@ -1796,6 +1798,13 @@ Todas só `service_role`. As de transferência são `security definer`, dono `es
   `kit_criar_transferencia` e `kit_saga_salvar_alvo` redefinidas com o alvo `criar`. `kit_saga_finalizar` ganhou
   `p_pausas jsonb` (assinatura antiga dropada). Reposição: `kit_reposicao_saldo`, `kit_reposicao_pendente`, `kit_reposicao_conferir`
   e `kit_reposicao_reivindicar`, além das já listadas.
+- Correções da revisão final (migration `20261108105448_kit_variacao_correcoes_finais.sql`, invoker, só `service_role`):
+  `kit_skus_participantes(p_org, p_codigos)` (códigos distintos de `kit_variacao_skus` ∪ `kit_variacao_componentes` num
+  `text[]`, sem o corte de 1.000 linhas do PostgREST; é a leitura de `skusParticipantes`), `kit_saldo_canonico(p_org,
+  p_codigos)` (`{codigo: estoque}` da variação canônica, `DISTINCT ON (codigo)` por `familias.criado_em desc, id desc`; saldo
+  da publicação UP sob a exclusão) e `kit_variacao_gravar_variacoes(p_org, p_familia, p_linhas)` (variações da criação sob o
+  lock da família; cor + tamanho já gravado reaproveita o código; devolve os códigos finais na ordem). `kit_saga_salvar_alvo`
+  redefinida com `pagos_passo1`.
 - Platform: ver `platform_image_deliveries` acima.
 
 

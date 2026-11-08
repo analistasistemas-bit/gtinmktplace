@@ -1286,6 +1286,7 @@ export type Database = {
           escrita_em: string | null
           fase: string | null
           ids_passo1: string[] | null
+          pagos_passo1: string[] | null
           item_criado: string | null
           item_escrita: string | null
           intencao_escrita_em: string | null
@@ -1313,6 +1314,7 @@ export type Database = {
           escrita_em?: string | null
           fase?: string | null
           ids_passo1?: string[] | null
+          pagos_passo1?: string[] | null
           item_criado?: string | null
           item_escrita?: string | null
           intencao_escrita_em?: string | null
@@ -1340,6 +1342,7 @@ export type Database = {
           escrita_em?: string | null
           fase?: string | null
           ids_passo1?: string[] | null
+          pagos_passo1?: string[] | null
           item_criado?: string | null
           item_escrita?: string | null
           intencao_escrita_em?: string | null
@@ -5835,6 +5838,9 @@ export type Database = {
         Returns: undefined
       }
       kit_sku_em_transferencia: { Args: { p_codigo: string; p_org: string }; Returns: boolean }
+      kit_skus_participantes: { Args: { p_codigos: string[]; p_org: string }; Returns: string[] }
+      kit_saldo_canonico: { Args: { p_codigos: string[]; p_org: string }; Returns: Json }
+      kit_variacao_gravar_variacoes: { Args: { p_familia: string; p_linhas: Json; p_org: string }; Returns: Json }
       kit_transferencia_movimentos: {
         Args: { p_org: string; p_transferencia: string }
         Returns: { codigo: string; papel: string; quantidade: number }[]
