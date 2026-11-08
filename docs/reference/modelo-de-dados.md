@@ -1804,7 +1804,11 @@ Todas só `service_role`. As de transferência são `security definer`, dono `es
   p_codigos)` (`{codigo: estoque}` da variação canônica, `DISTINCT ON (codigo)` por `familias.criado_em desc, id desc`; saldo
   da publicação UP sob a exclusão) e `kit_variacao_gravar_variacoes(p_org, p_familia, p_linhas)` (variações da criação sob o
   lock da família; cor + tamanho já gravado reaproveita o código; devolve os códigos finais na ordem). `kit_saga_salvar_alvo`
-  redefinida com `pagos_passo1`.
+  redefinida com `pagos_passo1`. Canônica única: a mesma migration redefine, só com o desempate `familias.id desc` depois de
+  `criado_em desc`, `baixar_estoque`, `estornar_estoque`, `registrar_entrada`, `ajustar_estoque`, `kit_sku_travado`,
+  `confirmar_inventario`, `importar_nota_compra`, `desfazer_nota_compra`, `kit_saga_conferir_saldo`, os triggers
+  `kit_variacao_saldo_copia`/`kit_variacao_conferir_update`, `kit_variacao_sair`, `inventario_calcular`, `kit_variacao_criar`,
+  `kit_reposicao_saldo` e `kit_variacao_adicionar`. Leituras só de exibição seguem sem desempate.
 - Platform: ver `platform_image_deliveries` acima.
 
 
