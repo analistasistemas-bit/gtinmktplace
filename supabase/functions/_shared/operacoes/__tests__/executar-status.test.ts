@@ -244,4 +244,44 @@ describe('executarStatus × kit com variação (Task 6)', () => {
     expect(itens[0]).toMatchObject({ status: 'erro', mensagem: 'banco fora' });
     expect(deps.atualizarStatus).not.toHaveBeenCalled();
   });
+
+  it('fix round 3: 502 → continuação em 150 s com a geração viva → item segue retentável e é aplicado depois do prazo', async () => {
+    const itens = [item('A')];
+    const deps = montar(itens, { A: 'pausado' });
+    // `itensPendentes`/`reivindicar` reais devolvem `enviando` parado há mais de 2 min: `parado` emula isso.
+    let parado = false;
+    deps.itensPendentes = vi.fn(async () => itens.filter((i) => i.status === 'pendente' || (parado && i.status === 'enviando'))
+      .map((i) => ({ ...i })));
+    deps.reivindicar = vi.fn(async () => {
+      const it = itens[0];
+      if (it.status !== 'pendente' && !(parado && it.status === 'enviando')) return false;
+      it.status = 'enviando';
+      parado = false;
+      return true;
+    });
+    let rodada = 0;
+    deps.prepararKit = vi.fn(async () => (rodada === 2
+      ? { recusa: 'Reativação deste anúncio já em andamento.', retentar: true }
+      : { criouBloqueio: false, concluir: async () => rodada !== 1 }));
+    deps.atualizarStatus = vi.fn(async () => (rodada === 1
+      ? { ok: false, erro: { codigo: 'INDISPONIVEL', mensagemOperador: 'ML fora', retentavel: true, status: 502 } }
+      : { ok: true })) as DepsStatus['atualizarStatus'];
+    const reativar = { ...PAUSAR, acao: 'reativar' as const };
+
+    rodada = 1;   // 502: fica enviando, continuação em 150 s
+    await executarStatus(reativar, deps, OPTS);
+    expect(itens[0]).toMatchObject({ status: 'enviando', conferencias: 1 });
+    expect(deps.continuar).toHaveBeenLastCalledWith(150);
+
+    rodada = 2; parado = true;   // 150 s depois: a geração do 502 ainda está no prazo
+    await executarStatus(reativar, deps, OPTS);
+    expect(itens[0]).toMatchObject({ status: 'enviando', conferencias: 1 });   // nem bloqueado, nem tentativa gasta
+    expect(deps.atualizarStatus).toHaveBeenCalledTimes(1);
+    expect(deps.continuar).toHaveBeenLastCalledWith(150);
+
+    rodada = 3; parado = true;   // prazo vencido: assume, escreve e aplica
+    await executarStatus(reativar, deps, OPTS);
+    expect(itens[0].status).toBe('aplicado');
+    expect(deps.atualizarStatus).toHaveBeenCalledTimes(2);
+  });
 });

@@ -45,7 +45,12 @@ async function processarStatus(op: OperacaoStatusRow, it: ItemRow, deps: DepsSta
   }
   // ADR-0197: Guardado, moderado ou SKU em transferência recusam (massa e Reverter); a pausa vai antes do PUT.
   const kit = await deps.prepararKit(id, d.alvo);
-  if ('recusa' in kit) return deps.gravarItem(op.id, id, { status: 'bloqueado', mensagem: kit.recusa });
+  if ('recusa' in kit) {
+    // Geração ocupada (ativação anterior ainda no prazo, exclusão preservada): o item fica `enviando`, sem gastar
+    // tentativa; `finalizar` agenda a continuação em 150 s e ele volta em `itensPendentes` até o prazo vencer.
+    if (kit.retentar) return deps.gravarItem(op.id, id, { mensagem: kit.recusa });
+    return deps.gravarItem(op.id, id, { status: 'bloqueado', mensagem: kit.recusa });
+  }
   // Exceção antes da resposta do PUT = resultado ambíguo (sem status HTTP): a exclusão fica até confirmar.
   let put: ResultadoCanal<void> = { ok: false };
   try {

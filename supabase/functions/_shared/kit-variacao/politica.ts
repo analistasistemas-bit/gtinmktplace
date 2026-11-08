@@ -117,7 +117,8 @@ export interface ResultadoPutStatus { ok: boolean; erro?: { status?: number } }
 
 /** `concluir(resultado do PUT)`: true = exclusão liberada (resultado confirmado no ML). */
 export type PreparoStatus =
-  | { recusa: string }
+  /** `retentar`: espera (outra geração da ativação no prazo), não bloqueio definitivo. */
+  | { recusa: string; retentar?: boolean }
   | { criouBloqueio: boolean; concluir: (r: ResultadoPutStatus) => Promise<boolean> };
 const NADA: PreparoStatus = { criouBloqueio: false, concluir: () => Promise.resolve(true) };
 
@@ -210,7 +211,7 @@ export async function prepararStatusOperador(admin: SupabaseClient, o: OpcoesSta
   });
   if (e1) throw new Error(`kit_ativacao_reivindicar: ${e1.message}`);
   const claim = reiv as { ok?: boolean; anterior?: boolean } | null;
-  if (claim?.ok !== true) return { recusa: MSG_KIT_ATIVACAO_EM_CURSO };
+  if (claim?.ok !== true) return { recusa: MSG_KIT_ATIVACAO_EM_CURSO, retentar: true };
   /** Só a geração dona age: `apagar` solta exclusão e intenção juntas; senão só encerra o prazo. */
   const liberar = async (apagar: boolean): Promise<boolean> => {
     const { data: ok, error: e } = await admin.rpc('kit_ativacao_liberar', {

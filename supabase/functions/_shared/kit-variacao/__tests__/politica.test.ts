@@ -296,7 +296,8 @@ describe('prepararStatusOperador (Task 6: pausar/reativar pelo operador)', () =>
 
   it('fix 2 (P1-1): mesmo dono com outra execução viva: recusa sem exclusão nem PUT', async () => {
     const f = falso(banco({ rpc: { ...RPC, kit_ativacao_reivindicar: { ok: false } } }));
-    expect(await preparar(f).r).toEqual({ recusa: MSG_KIT_ATIVACAO_EM_CURSO });
+    // Fix round 3: geração ocupada é espera, não bloqueio definitivo.
+    expect(await preparar(f).r).toEqual({ recusa: MSG_KIT_ATIVACAO_EM_CURSO, retentar: true });
     expect(f.eventos).toEqual(['rpc:kit_ativacao_reivindicar']);
   });
 

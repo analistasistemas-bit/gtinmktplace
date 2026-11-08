@@ -19,7 +19,6 @@ import {
 import { resolverConexaoEstrita } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { lerOferta } from '../_shared/kit-variacao/ml-oferta.ts';
-import { lerStatusMLEstrito } from '../_shared/operacoes/ml-status.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 
 /** Teto operacional por execução: 5 páginas × 200 = 1.000 movimentos por org. */
@@ -155,7 +154,7 @@ Deno.serve(async (req) => {
     console.error('reconciliar_kit_publicacoes_falhou', e);
   }
   await conferirAtivacoesPendentes(admin, {
-    lerStatus: async (orgId, itemId) => lerStatusMLEstrito(await token(orgId), itemId),
+    token,
     alertar,
   }).catch((e) => console.error('reconciliar_kit_ativacoes_falhou', e));
 

@@ -1,4 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
+
+// Fix round 3: a conferência de ativações usa a leitura ESTRITA (a frouxa confirmaria envelope 500 como null).
+const ml = vi.hoisted(() => ({ estrita: [] as string[], frouxa: [] as string[] }));
+vi.mock('../../_shared/operacoes/ml-status.ts', () => ({
+  SemAcessoStatusML: class extends Error {},
+  lerStatusML: async (_t: string, id: string) => { ml.frouxa.push(id); return 'ativo'; },
+  lerStatusMLEstrito: async (t: string, id: string) => { ml.estrita.push(`${t}:${id}`); return 'ativo'; },
+}));
 import { triarParticipantes, alertarPublicacoesParadas, conferirAtivacoesPendentes, type DepsTriagem } from '../transferencias.ts';
 
 // ADR-0197 (Task 5, ruling da dúvida 2): todo SKU participante, sem filtro de status local nem janela de
@@ -200,6 +208,7 @@ describe('conferirAtivacoesPendentes (Task 6, achado 1 e fix round 2)', () => {
     const lidos: string[] = [];
     const alertar = vi.fn(async () => {});
     const n = await conferirAtivacoesPendentes(f.admin, {
+      token: async () => 'tok',
       lerStatus: async (_o, id) => { lidos.push(id); if (id === 'MLB2') throw new Error('ML 500'); return 'ativo'; },
       alertar,
     }, AGORA);
@@ -217,6 +226,7 @@ describe('conferirAtivacoesPendentes (Task 6, achado 1 e fix round 2)', () => {
   it('P1-2: geração que mudou durante a conferência (retomada) não é liberada pelo snapshot', async () => {
     const { f, ativacao } = banco();
     const n = await conferirAtivacoesPendentes(f.admin, {
+      token: async () => 'tok',
       lerStatus: async (_o, id) => { if (id === 'MLB1C') ativacao('D1')!.geracao = 'CLIQUE'; return 'ativo'; },
       alertar: async () => {},
     }, AGORA);
@@ -229,15 +239,23 @@ describe('conferirAtivacoesPendentes (Task 6, achado 1 e fix round 2)', () => {
     const { f, ativacao } = banco();
     ativacao('D1')!.ate = '2026-11-07T12:09:00.000Z';
     const lidos: string[] = [];
-    await conferirAtivacoesPendentes(f.admin, { lerStatus: async (_o, id) => { lidos.push(id); return 'ativo'; }, alertar: async () => {} }, AGORA);
+    await conferirAtivacoesPendentes(f.admin, { token: async () => 'tok', lerStatus: async (_o, id) => { lidos.push(id); return 'ativo'; }, alertar: async () => {} }, AGORA);
     expect(lidos).toEqual(['MLB2']);
     expect(f.tabelas.kit_exclusoes.map((r) => r.dono_id)).toContain('D1');
   });
 
   it('nunca libera por idade: exclusão velha sem confirmação fica', async () => {
     const { f } = banco();
-    await conferirAtivacoesPendentes(f.admin, { lerStatus: async () => { throw new Error('fora'); }, alertar: async () => {} }, AGORA);
+    await conferirAtivacoesPendentes(f.admin, { token: async () => 'tok', lerStatus: async () => { throw new Error('fora'); }, alertar: async () => {} }, AGORA);
     expect(f.tabelas.kit_exclusoes).toHaveLength(3);
     expect(f.nomes).not.toContain('kit_ativacao_liberar');
+  });
+
+  it('fix round 3: sem `lerStatus` injetado, lê com lerStatusMLEstrito e o token da org', async () => {
+    const { f } = banco();
+    const n = await conferirAtivacoesPendentes(f.admin, { token: async (o) => `tok-${o}`, alertar: async () => {} }, AGORA);
+    expect(n).toBe(2);
+    expect(ml.estrita).toEqual(['tok-O:MLB1', 'tok-O:MLB1C', 'tok-O:MLB2']);
+    expect(ml.frouxa).toEqual([]);
   });
 });

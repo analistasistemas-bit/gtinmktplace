@@ -6,6 +6,7 @@
 // 3. Exclusão de publicação parada (resultado não confirmado) gera alerta: só o Reenviar a solta.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { paginarTudo } from '../_shared/pagina.ts';
+import { lerStatusMLEstrito } from '../_shared/operacoes/ml-status.ts';
 import { criarTransferencia } from '../_shared/kit-variacao/saga.ts';
 
 const PARADA_MS = 30 * 60 * 1000;
@@ -161,9 +162,15 @@ const PRAZO_CONFERENCIA_S = 600;
  */
 export async function conferirAtivacoesPendentes(
   admin: SupabaseClient,
-  deps: { lerStatus: (orgId: string, itemId: string) => Promise<unknown>; alertar: (orgId: string, texto: string) => Promise<void> },
+  deps: {
+    token: (orgId: string) => Promise<string>;
+    alertar: (orgId: string, texto: string) => Promise<void>;
+    /** Só teste. Produção: `lerStatusMLEstrito` (só 404 é null; envelope inválido lança). */
+    lerStatus?: (orgId: string, itemId: string) => Promise<unknown>;
+  },
   agoraMs = Date.now(),
 ): Promise<number> {
+  const lerStatus = deps.lerStatus ?? (async (orgId: string, itemId: string) => lerStatusMLEstrito(await deps.token(orgId), itemId));
   const agora = new Date(agoraMs).toISOString();
   const linhas = await paginarTudo<{ org_id: string; dono_id: string; ml_item_id: string; alvos: string[]; codigos: string[] }>(
     (de, ate) => admin.from('kit_ativacoes').select('org_id, dono_id, ml_item_id, alvos, codigos')
@@ -178,7 +185,7 @@ export async function conferirAtivacoesPendentes(
       });
       if (e1) throw new Error(`kit_ativacao_reivindicar: ${e1.message}`);
       if ((claim as { ok?: boolean } | null)?.ok !== true) continue;   // outra execução assumiu
-      for (const id of l.alvos) await deps.lerStatus(l.org_id, id);   // lança = não confirmado
+      for (const id of l.alvos) await lerStatus(l.org_id, id);   // lança = não confirmado
       const { data: ok, error: e2 } = await admin.rpc('kit_ativacao_liberar', {
         p_org: l.org_id, p_dono: l.dono_id, p_geracao: geracao, p_apagar: true,
       });
