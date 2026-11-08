@@ -172,7 +172,7 @@ Daludi pagar imagem boa que o cliente nunca veria.
 
 R9.1 [OP] O gerador não respeita dimensão: pedir 3:4 e recortar ao centro para 1200×1540 (nunca esticar); capa
 com preenchimento branco quando o corte comeria o produto. **Corte acima de 15% bloqueia** e oferece
-preenchimento [REV]. JPG 300 KB–1 MB. Critérios do arquivo final verificados depois do recorte e do texto.
+preenchimento [REV]. JPEG ≤1 MB e não branco (conferido no navegador); 300 KB–1 MB era o peso-alvo do agente [OP], não regra do ML. Critérios do arquivo final verificados depois do recorte e do texto.
 
 R9.2 [OP] Upload `POST /pictures` multipart (campo `file`); a foto só é usada com `variations` e URL real na
 resposta.
