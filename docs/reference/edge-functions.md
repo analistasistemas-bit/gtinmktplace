@@ -1386,26 +1386,48 @@ um smoke test contra Postgres real antes do primeiro deploy.
   (SKU novo num kit existente, `kit_variacao_adicionar`).
 - **gerenciar-kit-variacao** — tela Gerenciar kit: montar, desmontar, meta, ligar/desligar reposição e "Vender só em kit".
   Uma RPC por operação (`kit_variacao_gerenciar`), com CAS de `versao` e efeito na mesma transação; desmontar desliga a
-  reposição antes. Enfileira a saga ou a reposição. Recusas: `versao`, `up_ocupado`, `alvos_invalidos`, `sku_sem_anuncio`,
+  reposição antes. **Ação `encerrar`** (RPC `kit_variacao_encerrar`, CAS de `versao`): admin, módulo `kit_variacao`, saldo
+  0 e sem transferência aberta (recusa `transferencia_aberta`; com saldo, a tela pede "Desmonte antes"); marca o kit
+  `encerrando` e enfileira a saga `encerrar`. Enfileira a saga ou a reposição. Recusas: `versao`, `up_ocupado`, `alvos_invalidos`, `sku_sem_anuncio`,
   `so_em_kit_desligado`, `pedido_diferente`, `kit_nao_encontrado` (404), `modulo_desligado` (403).
-- **gerar-texto-kit** — prévia de título e descrição por IA (`copywriter-kit-prompt.ts`, modelo de texto da org). Não
-  grava no kit: registra o consumo em `kit_variacao_previas` **antes** de interpretar a resposta; o cliente nunca informa
-  tokens nem custo. Só admin.
+- **gerar-texto-kit** — prévia de título e descrição (`copywriter-kit-prompt.ts`, modelo de texto da org, hoje `gpt-6-luna`).
+  Parte da `descricao_ml` da base canônica (base sem descrição no padrão: gera antes pelo prompt do anúncio novo). A IA
+  reescreve só a abertura "KIT N …" e a frase final; o resto é determinístico (Quantidade: Kit com N unidades; pergunta
+  "N unidades (kit)"; guia só com tamanhos com quantidade; CORES DISPONÍVEIS só as do kit). Guardas descartam trecho da IA
+  com cor, material, número+unidade ou tamanho fora da base ou do kit. Corpo aceita `tamanhos: string[]` opcional (400
+  "Tamanho fora da base."). Não grava no kit: registra o consumo em `kit_variacao_previas` **antes** de interpretar a
+  resposta; o cliente nunca informa tokens nem custo. Só admin. O diálogo chama sozinho ao entrar na etapa 2, uma vez por
+  pedido (cores com quantidade, peças, tamanhos), com cache por pedido; a prévia só é enviada se as peças batem
+  (evita `previa_divergente`). Medição real: 12 bases x 4 = 48/48.
 - **gerar-foto-kit** — foto da combinação por IA (módulo `imagem_ia`, modelo `ai_model_imagem`, padrão
-  `google/gemini-nano-banana-2.1`). Fotos de origem escolhidas no servidor. Reserva em `kit_variacao_imagens`
-  (`pendente` → `pendente_upload` → `gerada` | `recusada`); repetir o `request_id` confere o objeto no storage e nunca gera
-  de novo. Prazo de 140 s; sem tempo para a IA, recusa antes de reservar (nada gerado nem cobrado). Só `gerada` é cobrada
-  (trigger `kit_variacao_imagens_cobranca` → `platform_image_deliveries`).
+  `google/gemini-nano-banana-2.1`). **Uma tentativa por chamada** (prazo 145 s): ficha estruturada da peça por visão,
+  geração ancorada com todas as fotos de referência e verificação automática por visão. Reserva em `kit_variacao_imagens`
+  (`pendente` -> `pendente_upload` -> `gerada` | `recusada`); foto reprovada fica `recusada`, sem cobrança e sem `storage_path`.
+  Até 3 tentativas pelo mesmo `request_id` (a seguinte recebe os motivos da reprovação); após 3 reprovações a tela mostra
+  "A IA não conseguiu uma foto fiel". Repetir o `request_id` confere o objeto no storage e nunca gera de novo uma foto já
+  `gerada`. Só `gerada` é cobrada (trigger `kit_variacao_imagens_cobranca` -> `platform_image_deliveries`). A verificação
+  reduz, não elimina, foto infiel: a trava é a aprovação humana no botão Ampliar (`previa-ampliada.tsx`: gerada + originais
+  + verificação). Medição 08/11 (Nano Banana 2.1, 12 kits): 7/12 aprovados de primeira; conferência humana das 12
+  aprovadas: 3 fiéis, 7 em dúvida, 2 não fiéis. `gpt-5.4-image-2` não gerou imagem pela OpenRouter; `gemini-3-pro-image`
+  descartado por custo (~3x).
 - **kit-transferencia** (`verify_jwt=false`, assinatura QStash) — worker da saga de transferência (`montar|desmontar|repor|
-  cancelamento|sair_sobra|entrada`). Um passo por invocação, com claim `kit_reivindicar_execucao`; pausa, reduz, aumenta e
+  cancelamento|sair_sobra|entrada|encerrar`). Um passo por invocação, com claim `kit_reivindicar_execucao`; pausa, reduz, aumenta e
   confirma os alvos no ML, cria os itens do kit, registra o ledger e finaliza (`kit_saga_finalizar`). Ao fim, enfileira
-  a reposição e fecha a criação (`kits_variacao.status` = `publicado` ou `erro`).
+  a reposição e fecha a criação (`kits_variacao.status` = `publicado` ou `erro`). Pausa do item recém-criado confirmada
+  por GET via `/items/bulk` (`lerItens`); busca por UP vazia = ainda indexando. **Tipo `encerrar`** (emenda "Encerrar kit"):
+  fecha (`PUT status=closed`) todos os itens do UP, inclusive cópias de catálogo, confirma por leitura; erro em um item
+  não para os outros; ao concluir, `kit_encerrar_finalizar` (ver modelo-de-dados). **Aviso de fim** (montagem,
+  desmontagem, reposição) no app e no Telegram com chave `kit_fim:<transferência>`, marcado em `aviso_fim_enviado_em` só
+  depois do envio. **Alerta escalonado** com carência única de 3 min (`alerta_desde`), "bloqueada" só a partir de 15 min,
+  chave `kit_alerta:<id>:<hash do texto>`, "resolvido" uma vez; concluir limpa `kit_transferencias.alerta`.
 - **kit-reposicao** (`verify_jwt=false`, assinatura QStash) — reposição automática de "Vender só em kit". Disparada por kit
   depois de venda, fim de transferência e ao desligar a opção. Reativa só a pausa da própria automação
   (`kit_pausas_automaticas`) e avisa a Sobra pelo Telegram (`kit_avisos_sobra`). HTTP 500 = ficou para depois.
 - **Edges alteradas** (comportamento só com SKU participante de kit, org com o módulo; SKU comum inalterado):
   `sync-venda`, `reconciliar-faturamento` (+`kit.ts`) e `reconciliar-estoque` (+`transferencias.ts`: leitura diária do ML,
-  transferência `entrada` para divergência) usam a identidade estável por item de pedido (`kit_venda_identidade`) e
+  transferência `entrada` para divergência; varreduras diárias que reenviam o aviso de fim sem marca
+  (`aviso-fim.ts`, chave `kit_fim:`) e o aviso `kit_encerrado:<kit>` de kit encerrado ainda não avisado
+  (`encerrar.ts`)) usam a identidade estável por item de pedido (`kit_venda_identidade`) e
   `_shared/kit-variacao/venda.ts`; `publicar-familias`, `publish-familia-ml`, `publicar-split-ml`, `update-familia-ml`,
   `atualizar-status-publicado`, `remover-publicado`, `operacoes-massa`, `sincronizar-estoque` e
   `reconciliar-convergencia-up` importam `_shared/kit-variacao/politica.ts` (política do SKU e exclusão durável em

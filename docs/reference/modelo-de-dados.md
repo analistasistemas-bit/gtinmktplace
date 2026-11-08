@@ -1616,6 +1616,9 @@ Chave de vínculo é `(org_id, codigo)`. Toda tabela tem `org_id`, com FK compos
 worker da saga muda para `publicado` ou `erro`), `criado_em`, `chave_cadastro` (idempotência da criação, único por org),
 `listing_type_id` (`gold_special|gold_pro`, default `gold_special`: tipo de anúncio dos itens do kit) e `pedido_hash`
 (hash do pedido que a chave criou; a mesma chave com outro pedido é recusada). *Migration `20261108040001_kit_variacao_criacao.sql`.*
+Emenda "Encerrar kit" (`20261108170711_kit_variacao_encerrar.sql`): `status` ganha `encerrando` e `encerrado` (trigger
+`kits_variacao_guarda_encerrado`: só `encerrando` -> `encerrado`, nunca volta), `encerrado_em timestamptz` e
+`encerrado_avisado_em timestamptz` (aviso `kit_encerrado:<kit>`).
 
 ### `kit_variacao_skus`
 `kit_id`, `codigo` (único por org), `tamanho`, `cores text[]`, `rotulo_cor`.
@@ -1636,7 +1639,7 @@ PK `(org_id, codigo, kit_id)`: quais kits em "só em kit" usam o SKU.
 
 ### `kit_transferencias`
 A saga. `kit_id` (nulo só em `entrada` e `sair_sobra`), `tipo`
-(`montar|desmontar|repor|cancelamento|sair_sobra|entrada`), `passo` (default `pausar`), `estado`
+(`montar|desmontar|repor|cancelamento|sair_sobra|entrada|encerrar`), `passo` (default `pausar`), `estado`
 (`ativa|concluida|travada|abortada`), `versao_politica`, `itens jsonb`, `alerta`, `execucao_token`,
 `execucao_ate` (claim atômico), `criado_em`, `passo_em`. `itens`, `tipo` e `kit_id` são imutáveis desde a
 criação (trigger `kit_transferencias_imutavel`): alvos, deltas e exclusões saíram deles.
@@ -1646,6 +1649,10 @@ montar/desmontar (`kit_variacao_gerenciar`) e "Montar mais" com SKU novo (`kit_v
 a mesma transferência; outro hash recusa (`pedido_diferente`). As duas RPCs conferem `kits_variacao.versao` sob o lock do
 kit e a incrementam com o efeito, na mesma transação.
 *Migration `20261108073740_kit_variacao_adicionar.sql`.*
+Colunas de acompanhamento: `aviso_fim_enviado_em timestamptz` (marca só depois do envio do aviso de fim; índice parcial
+dos pendentes; migration `20261108150206_kit_transferencia_aviso_fim.sql`), `alerta_desde timestamptz` e `alerta_enviado text`
+(carência de 3 min e chave do último alerta escalonado; `kit_saga_salvar_transferencia` e `kit_saga_finalizar` redefinidas;
+migration `20261108155239_kit_transferencia_alerta_carencia.sql`).
 
 ### `kit_transferencia_alvos`
 PK `(transferencia_id, up_id)`, `codigo`, `papel` (`origem|destino`), `delta` (peças ou kits com sinal,
@@ -1708,6 +1715,10 @@ Geração de foto por IA (Task 15): `id`, `org_id`, `request_id` (único por org
 (`pendente|pendente_upload|gerada|recusada`), `familia_base_id`, `cores text[]`, `rotulo`, `modelo`, `storage_path`,
 `custo_usd numeric(12,6)` (custo real do provedor), `criado_por`, `criado_em`, `atualizado_em`. Check: `gerada` e
 `pendente_upload` exigem `storage_path` e `custo_usd > 0`. Índice parcial de cobrança `(org_id, criado_em) where status = 'gerada'`.
+Verificação da foto (`20261108173535_kit_foto_ia_verificacao.sql`): `tentativa smallint` (1 a 3), `ficha jsonb` (ficha
+estruturada por visão + fotos de origem) e `verificacao jsonb` (resultado item a item e motivos da reprovação); unique
+`(org_id, request_id, tentativa)` no lugar de `(org_id, request_id)` e índice único parcial `kit_variacao_imagens_viva_uidx`
+`(org_id, request_id) where status <> 'recusada'` (no máximo uma tentativa viva por pedido). Reprovada = `recusada`, sem cobrança.
 Sem acesso a `anon` e `authenticated`. `configuracoes.ai_model_imagem` passa a aceitar só `google/gemini-nano-banana-2.1` e
 `google/gemini-2.5-flash-image` (NULL = nano-banana-2.1). *Migration `20261108083006_kit_variacao_imagem_ia.sql`.*
 
@@ -1731,6 +1742,13 @@ Exclusão durável única: PK `(org_id, codigo)`, `up_id` (nulo até o dono reso
 - `kit_transferencias.chave_cadastro` e `pedido_hash`: ver acima.
 
 ### Funções
+Encerrar kit (`20261108170711_kit_variacao_encerrar.sql`): `kit_variacao_encerrar(p_org, p_kit, p_versao)` (tela; CAS, trava o
+kit, exclusões e transferência `encerrar`), `kit_encerrar_aplicar(p_org, p_kit)` (efeito local: itens do vínculo
+`retirado`, kit `encerrado`) e `kit_encerrar_finalizar(p_org, p_transferencia, p_token)` (saga). `kit_participante` é a regra
+única de participação: SKU do próprio kit participa sempre; peça da base só enquanto um kit não encerrado a usa. Ao
+concluir: remove reivindicações, o SKU da base sem reivindicação volta a Normal, reativa só o que a automação pausou e
+solta exclusões; nada de variação, composição, ledger ou venda é apagado.
+
 Todas só `service_role`. As de transferência são `security definer`, dono `estoque_rpc_executor`,
 `search_path` vazio. Contrato de `itens`: `[{codigo, quantidade}]`; em montar, repor e desmontar,
 `codigo` é SKU de kit e `quantidade` é em kits (migration `20261107192458_kit_variacao_rpc.sql`).

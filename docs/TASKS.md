@@ -11,10 +11,7 @@ Em produção desde 2026-11-08 (main `a3e180dc`; `cadastrar-produto` v44, `adici
 
 ## Kit com variação (ADR-0200) — 2026-11-08
 
-**Estado:** no ar desde 2026-11-08 (main `3ee59923`; Tasks 0–16 aprovadas por revisão externa): 14 migrations aplicadas
-e 75 edges implantadas. **Piloto OK na Zaven em 2026-11-08** (módulos `kit_variacao` e `imagem_ia` ligados só lá): montar e desmontar 1 kit
-fecharam o estoque no PubliAI e no ML. Próximas: encerrar kit, acompanhamento na aba Operações com aviso app/Telegram,
-texto no padrão da copy, foto com verificação automática, preço editável na etapa Conferir, fim do alarme falso pós-CREATE. Portão de concorrência
+**Estado:** no ar desde 2026-11-08 (main `3ee59923`; Tasks 0–16 aprovadas por revisão externa); as 7 melhorias abaixo entraram na main (`f9a462d5`) e em produção no mesmo dia. **Piloto OK na Zaven em 2026-11-08** (módulos `kit_variacao` e `imagem_ia` ligados só lá). Portão de concorrência
 verde em 2026-11-08: os 4 scripts `supabase/tests/kit_*_concorrencia.sh` e `platform_imagem_ia_concorrencia.sh`,
 2 rodadas cada, em Postgres local carregado com o schema de produção (`supabase db dump`). Spec `docs/superpowers/specs/2026-11-06-kit-com-variacao-design.md`; plano
 `docs/superpowers/plans/2026-11-07-kit-com-variacao.md`; ADR [0200](decisions/0200-kit-com-variacao.md).
@@ -22,10 +19,22 @@ verde em 2026-11-08: os 4 scripts `supabase/tests/kit_*_concorrencia.sh` e `plat
 - [x] Schema, RPCs e saga de transferência (pausa, reduz, aumenta, confirma no ML), política por SKU, guards de saldo e composição.
 - [x] Venda e cancelamento com identidade estável por item de pedido; inventário em peças; reposição "Vender só em kit".
 - [x] Criação e Gerenciar kit (montar, desmontar, meta, montar mais), prévia de texto por IA, foto por IA (`imagem_ia`) e cobrança na fatura.
-- [ ] Portões de abertura e piloto: ver "Antes de ligar o módulo" abaixo.
-- [ ] Revisão final do diff (Codex e Grok), merge fast-forward na main e deploy (coordenador, com pedido do Diego).
+- [x] Portões de abertura, piloto na Zaven, merge na main e deploy (08/11). "Antes de ligar o módulo" abaixo é histórico.
+- [x] Estoque por cor e máximo por célula no Criar/Gerenciar kit (`879bcd85`, só front): total de peças por cor (detalhe por tamanho no title, cor zerada esmaecida); "máx N" por célula (`maximoPorCelula` em `src/lib/kit-variacao.ts`); máximo 0 desabilita ("Sem peça livre de X em T"), acima do máximo fica vermelho; "monta até N" em Kits a mover.
+- [x] Texto do kit automático (`e4fbc290`): `gerar-texto-kit` parte da `descricao_ml` da base, IA só na abertura e na frase final, guardas contra cor/material/tamanho fora do kit, `tamanhos` opcional; diálogo gera sozinho na etapa 2 (cache por pedido). Medição 48/48. Deploy: `gerar-texto-kit`, `preview-kit-virtual`, `process-familia`, `publicar-split-ml`, `reconciliar-convergencia-up`, `regenerar-copy-familia`, `update-familia-ml`.
+- [x] Preço editável na etapa 3 Conferir (`957ab998`, só front): mesmo estado `preco` da etapa 2, simulador recota com debounce, confirmação de prejuízo invalidada a cada troca, Criar kit desabilitado até o recálculo e com preço <= 0. Sem fórmula nova.
+- [x] Acompanhar a montagem e fim do alarme falso (`364dd077`): indicador de etapa na Publicados, aviso de fim no app e Telegram (`kit_fim:`), pausa do item recém-criado confirmada por GET, carência de 3 min no alerta escalonado, "bloqueada" a partir de 15 min. Migrations `20261108150206` e `20261108155239`. Deploy: `criar-kit-variacao`, `gerar-foto-kit`, `kit-transferencia`, `publish-familia-ml`, `reconciliar-estoque`, `reconciliar-faturamento`, `sincronizar-estoque`, `sync-venda`.
+- [x] Encerrar kit (`e544b200`): botão no Gerenciar kit (admin, saldo 0, sem transferência aberta), saga `encerrar` fecha todos os itens do UP, kit sai de Publicados e vira "Encerrado", SKU da base volta a Normal, nada apagado. Migration `20261108170711`. Teste real na Zaven em 08/11: kit 00000223 encerrado em ~14 s, sem alerta. Deploy: `gerenciar-kit-variacao`, `kit-reposicao`, `kit-transferencia`, `reconciliar-estoque`, `reconciliar-faturamento`, `sincronizar-estoque`, `sync-venda`.
+- [x] Foto fiel (`f9a462d5`): ficha por visão, geração ancorada, verificação automática, até 3 tentativas por `request_id` sem cobrar reprovada, botão Ampliar. Migration `20261108173535`. Medição: 7/12 aprovados de primeira; na conferência humana, 3 fiéis, 7 em dúvida e 2 não fiéis (a aprovação humana no Ampliar é a trava). Deploy: `gerar-foto-kit`.
+- [x] Tela Gerenciar kit: base canônica desempata por id desc (`879bcd85`).
 
-### Antes de ligar o módulo (nada abaixo foi executado)
+**Pendências conhecidas (08/11):**
+- [ ] Inspetor da foto cobra etiqueta não visível: ajustar e medir de novo (~US$ 1–2).
+- [ ] Telegram que falha no aviso com chave não é reenviado (só o in-app é garantido); mexe em `notificarCategoriaComChave`, que o Pulse usa.
+- [ ] "Atualizar anúncio" num kit reescreve CORES DISPONÍVEIS (`atualizar-familia-up.ts`) e sobra a linha "Combinação do kit".
+- [ ] `src/lib/database.types.ts` sem as colunas novas.
+
+### Antes de ligar o módulo (histórico: tudo executado em 2026-11-08)
 
 1. **Migrations.** `supabase db push` com 13 migrations novas do kit (`20261107190209` a `20261108094500`). Pode exigir
    `--include-all`: `20261107190209` e `20261107192458` são anteriores a migrations da main já aplicadas
