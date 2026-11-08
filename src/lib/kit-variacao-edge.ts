@@ -51,9 +51,11 @@ export async function enviarFotoKit(pasta: string, rotulo: string, file: File): 
   return uploadFile('imagens', buildStoragePath(dono, pasta, `${rotulo}-${file.name}`), file);
 }
 
-export function gerarTextoKitEdge(p: { familiaBaseId: string; pecasPorKit: number; cores: string[] }) {
+/** `tamanhos`: os do kit (com quantidade > 0); sem eles, o guia do texto lista todos os da base. */
+export function gerarTextoKitEdge(p: { familiaBaseId: string; pecasPorKit: number; cores: string[]; tamanhos?: string[] }) {
   return invocar<{ titulo: string; descricao: string; previa_id?: string }>('gerar-texto-kit', {
     familia_base_id: p.familiaBaseId, pecas_por_kit: p.pecasPorKit, cores: p.cores,
+    ...(p.tamanhos ? { tamanhos: p.tamanhos } : {}),
   });
 }
 
