@@ -88,10 +88,13 @@ function conferir(c: Caso, ia: { cabecalho?: string; paragrafos?: string[]; fech
   const ini = descricao.indexOf('🎨');
   const fimCores = descricao.indexOf('A tonalidade', ini);
   const listaCores = descricao.slice(ini, fimCores).match(/^- .+$/gm)?.map((l) => l.slice(2)) ?? [];
-  let semKit = norm(descricao + ' ' + titulo);
-  for (const k of [...d.coresKit].sort((a, b) => b.length - a.length)) semKit = semKit.split(norm(k)).join(' ');
-  const corFora = d.coresBase.filter((x) => !d.coresKit.includes(x))
-    .filter((x) => new RegExp(`(?<![\\p{L}])${norm(x)}(?![\\p{L}])`, 'u').test(semKit));
+  // Cor mais longa primeiro, kit e fora juntos: com o kit em Cinza, "Cinza Escuro" conta como fora.
+  const fora = d.coresBase.filter((x) => !d.coresKit.includes(x));
+  let marcado = norm(descricao + ' ' + titulo);
+  for (const c of [...d.coresKit, ...fora].sort((a, b) => norm(b).length - norm(a).length)) {
+    marcado = marcado.split(new RegExp(`(?<![\\p{L}])${norm(c)}(?![\\p{L}])`, 'u')).join(fora.includes(c) ? ` §${c}§ ` : ' ');
+  }
+  const corFora = fora.filter((x) => marcado.includes(`§${x}§`));
   const permitidos = new Set([...numeros(`${d.descricaoBase} ${d.tituloBase} ${d.nomeBase}`), String(d.pecas)]);
   const numFora = numeros(descricao + ' ' + titulo).filter((n) => !permitidos.has(n));
   const abertura = descricao.slice(0, descricao.indexOf('\n✅') > -1 ? descricao.indexOf('\n✅') : 400);
