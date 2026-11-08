@@ -455,6 +455,11 @@ describe('Relâmpago: faixa e sugerido da visão por item', () => {
     });
   });
 
+  it('comOfertaRelampago: teto do convite abaixo do mínimo → sem faixa (⚪), nunca faixa invertida', () => {
+    expect(comOfertaRelampago(item({ preco_promo: 29.1, preco_min: 30 }), { preco_min: 20, preco_max: 90, preco_sugerido: 85 }))
+      .toMatchObject({ preco_promo: null, preco_min: 30, preco_max: null, preco_sugerido: null });
+  });
+
   it('comOfertaRelampago null degrada: sem faixa nem preço', () => {
     expect(comOfertaRelampago(item({ preco_promo: 28.13, preco_min: 8.7 }), null)).toMatchObject({
       preco_promo: null, preco_min: 8.7, preco_max: null, preco_sugerido: null,
