@@ -213,12 +213,16 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar, p
   const fresco = await ml.lerNaCampanha(op.promocao_id, op.promocao_tipo, id)
     .catch((e) => { throw retomada && !(e instanceof SemEscritaPromocoes) ? new FalhaPosEscrita(e) : e; });
   if (op.acao === 'alterar_preco') return alterarPreco(op, it, deps, fresco);
+  // Relâmpago com um horário participando e outro convidado (emenda 2026-11-08 (2)): adere pelo convite. Na retomada,
+  // CANDIDATE gravado diferente do aberto é outro horário que o operador não viu → segue o participando (Já estava).
+  const extra = op.acao === 'aderir' && op.promocao_tipo === 'LIGHTNING' ? fresco?.convite : undefined;
+  const alvo = extra && !(it.offer_id?.startsWith('CANDIDATE-') && it.offer_id !== extra.offer_id) ? extra : fresco;
   // Relações só importam quando o item ainda é convidado (é aí que decidir bloqueia o par UP/catálogo).
-  const convidado = op.acao === 'aderir' && fresco?.status === 'candidate';
+  const convidado = op.acao === 'aderir' && alvo?.status === 'candidate';
   const relacoes = convidado ? await ml.lerRelacoes(id) : null;
   // Relâmpago: máximo, sugerido e stock.min só na visão por item; falha aqui lança → erro sem escrita.
   const oferta = convidado && op.promocao_tipo === 'LIGHTNING' ? await ml.lerOfertaNoItem(op.promocao_id, id) : null;
-  const d = decidir(op.acao, op.promocao_tipo, op.promocao_id, { ml_item_id: id, preco: it.preco }, fresco, relacoes, oferta);
+  const d = decidir(op.acao, op.promocao_tipo, op.promocao_id, { ml_item_id: id, preco: it.preco }, alvo, relacoes, oferta);
 
   if (d.tipo === 'fim') {
     if (d.status !== 'ja_estava') {
@@ -258,6 +262,10 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar, p
     if (await deps.adesaoRecente(op.promocao_id, id)) { await encerrar({ status: 'mudou', mensagem: ADESAO_RECENTE }); return; }
     if (!(await adquirir({ etapa: 'escrita_pedida' }))) return;
   }
+  // Relâmpago: o convite usado fica gravado antes do POST; a retomada só posta de novo pelo mesmo convite.
+  if (op.promocao_tipo === 'LIGHTNING' && alvo?.offer_id?.startsWith('CANDIDATE-')) {
+    await deps.gravarItem(op.id, id, { offer_id: alvo.offer_id });
+  }
   let resposta: Awaited<ReturnType<ClienteML['post']>>;
   try {
     resposta = await ml.post(id, d.body);
@@ -276,7 +284,7 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar, p
   }));
   if (op.promocao_tipo === 'LIGHTNING') {
     // Best-effort: o item já está aplicado; a janela é informativa.
-    const o = await ml.lerOfertaNoItem(op.promocao_id, id).catch(() => null);
+    const o = await ml.lerOfertaNoItem(op.promocao_id, id, offer_id).catch(() => null);
     const mensagem = o && mensagemJanela(o.inicio, o.fim);
     if (mensagem) await deps.gravarItem(op.id, id, { mensagem }).catch(() => {});
   }

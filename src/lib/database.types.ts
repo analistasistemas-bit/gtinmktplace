@@ -2621,6 +2621,7 @@ export type Database = {
           ml_item_id: string
           ml_pct: number | null
           org_id: string
+          convite_aberto: boolean
           permalink: string | null
           pior_semaforo: string
           preco_avaliado: number | null
@@ -2646,6 +2647,7 @@ export type Database = {
           ml_item_id: string
           ml_pct?: number | null
           org_id: string
+          convite_aberto?: boolean
           permalink?: string | null
           pior_semaforo: string
           preco_avaliado?: number | null
@@ -2671,6 +2673,7 @@ export type Database = {
           ml_item_id?: string
           ml_pct?: number | null
           org_id?: string
+          convite_aberto?: boolean
           permalink?: string | null
           pior_semaforo?: string
           preco_avaliado?: number | null

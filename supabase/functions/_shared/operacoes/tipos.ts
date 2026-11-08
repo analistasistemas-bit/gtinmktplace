@@ -39,6 +39,8 @@ export interface ItemNaCampanha {
   estoque_min: number | null;     // stock.min (LIGHTNING/SMART_LIGHTNING); null nos outros tipos ou ausente
   /** `price` da visão da campanha: no participante é o preço promocional vigente (spike 03/11). */
   preco?: number | null;
+  /** Relâmpago: convite aberto para outro horário de um anúncio que já participa (emenda 2026-11-08 (2)). */
+  convite?: ItemNaCampanha;
 }
 /** Relâmpago na visão POR ITEM (/seller-promotions/items/{id}): a única com máximo e sugerido. null = não aparece. */
 export interface OfertaNoItem {

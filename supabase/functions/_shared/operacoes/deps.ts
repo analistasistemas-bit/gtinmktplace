@@ -23,7 +23,7 @@ import { notificarCategoria } from '../notificacoes/config.ts';
 
 const ITENS = 'operacoes_massa_itens';
 const COLS_ITEM = 'ml_item_id, preco, status, conferencias, semaforo, confirmado_risco, proxima_conferencia, saida_pedida_em, etapa, preco_anterior, estado_anterior, offer_id';
-export const COLS_CENTRAL = 'ml_item_id, status, titulo, preco_original, preco_min, preco_max, preco_sugerido, preco_promo, preco_avaliado, projecao';
+export const COLS_CENTRAL = 'ml_item_id, status, titulo, preco_original, preco_min, preco_max, preco_sugerido, preco_promo, preco_avaliado, projecao, convite_aberto';
 const ENVIANDO_PARADO_MS = 2 * 60_000; // mesmo limite da RPC operacoes_massa_reivindicar
 // ponytail: teto por tempo. Passados 30 min, `candidate` é aceito como verdade (o ML reflete em ~2 min) e nova adesão posta.
 // Sem expiração não dá: o ML devolve o mesmo CANDIDATE após a saída, e quem sai pelo Seller Center ficaria travado para
@@ -43,7 +43,7 @@ export function linhaCentral(r: Record<string, unknown>): LinhaCentral {
     ml_item_id: String(r.ml_item_id), status: String(r.status), titulo: (r.titulo as string | null) ?? null,
     preco_original: numOuNull(r.preco_original), preco_min: numOuNull(r.preco_min), preco_max: numOuNull(r.preco_max), preco_sugerido: numOuNull(r.preco_sugerido),
     preco_promo: numOuNull(r.preco_promo), preco_avaliado: numOuNull(r.preco_avaliado),
-    projecao: (r.projecao as ProjecaoCor[] | null) ?? [],
+    projecao: (r.projecao as ProjecaoCor[] | null) ?? [], convite_aberto: r.convite_aberto === true,
   };
 }
 
@@ -167,7 +167,8 @@ export function depsExecutar(admin: SupabaseClient, cx: Cx, op: OperacaoRow, cha
       // DEAL: saiu volta a convidado; SMART: o item some da campanha (o sync também o apagaria).
       const q = espelho === 'saiu' && tipo === 'SMART'
         ? tab.delete()
-        : tab.update({ status: espelho === 'saiu' ? 'candidate' : espelho });
+        // A marca de convite de outro horário vale só até a próxima mudança; o sync a refaz se o ML abrir outro.
+        : tab.update({ status: espelho === 'saiu' ? 'candidate' : espelho, convite_aberto: false });
       const { error } = await q.eq('org_id', op.org_id).eq('promocao_id', promocaoId).eq('ml_item_id', mlItemId);
       falhou('espelharStatusCentral', error);
     },

@@ -278,6 +278,44 @@ describe('executar — LIGHTNING', () => {
     expect(deps.espelharStatusCentral).toHaveBeenCalledWith('LGH-1', 'LIGHTNING', 'MLB1', 'pending');
   });
 
+  // Emenda 2026-11-08 (2): um horário participando e outro convidado.
+  const participandoComConvite = conv({ status: 'pending', offer_id: 'OFFER-X-1', convite });
+  it('participando em um horário com convite aberto: grava o CANDIDATE antes e posta pelo convite', async () => {
+    const itens = [item('MLB1', { preco: 24.65 })];
+    const { deps, ml } = montar(itens, {
+      campanha: (_id, n) => (n === 1 ? participandoComConvite : conv({ status: 'pending', offer_id: 'OFFER-X-2' })),
+      oferta: () => ofertaConvite, post: () => ({ offer_id: 'OFFER-X-2' }),
+    });
+    await executar(LGH, deps, OPTS);
+    const gravouCandidato = deps.gravarItem.mock.invocationCallOrder[deps.gravarItem.mock.calls.findIndex((c) => c[2].offer_id === 'CANDIDATE-MLB1-5')];
+    expect(gravouCandidato).toBeLessThan(vi.mocked(ml.post).mock.invocationCallOrder[0]);
+    expect(ml.post).toHaveBeenCalledWith('MLB1', { promotion_id: 'LGH-1', promotion_type: 'LIGHTNING', deal_price: 24.65, stock: 5 });
+    expect(itens[0]).toMatchObject({ status: 'aplicado', offer_id: 'OFFER-X-2' });
+  });
+
+  it('retomada com outro convite aberto (CANDIDATE diferente do gravado) → Já estava, sem POST', async () => {
+    const itens = [item('MLB1', { preco: 24.65, offer_id: 'CANDIDATE-MLB1-ANTIGO' })];
+    const { deps, ml } = montar(itens, { campanha: () => participandoComConvite, oferta: () => ofertaConvite });
+    await executar(LGH, deps, OPTS);
+    expect(ml.post).not.toHaveBeenCalled();
+    expect(itens[0]).toMatchObject({ status: 'ja_estava' });
+  });
+
+  it('retomada com o mesmo convite gravado → posta', async () => {
+    const itens = [item('MLB1', { preco: 24.65, offer_id: 'CANDIDATE-MLB1-5' })];
+    const { deps, ml } = montar(itens, { campanha: () => participandoComConvite, oferta: () => ofertaConvite, post: () => ({ offer_id: 'OFFER-X-2' }) });
+    await executar(LGH, deps, OPTS);
+    expect(ml.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('participando sem convite → Já estava', async () => {
+    const itens = [item('MLB1', { preco: 24.65 })];
+    const { deps, ml } = montar(itens, { campanha: () => conv({ status: 'pending', offer_id: 'OFFER-X-1' }) });
+    await executar(LGH, deps, OPTS);
+    expect(ml.post).not.toHaveBeenCalled();
+    expect(itens[0]).toMatchObject({ status: 'ja_estava' });
+  });
+
   it('janela com fuso explícito → horário de Brasília', async () => {
     const itens = [item('MLB1', { preco: 24.65 })];
     const { deps } = montar(itens, {

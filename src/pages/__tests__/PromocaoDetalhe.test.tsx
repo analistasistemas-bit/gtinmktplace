@@ -101,6 +101,17 @@ describe('PromocaoDetalhe', () => {
     expect(screen.queryByText('Preço fixo')).toBeNull();
   });
 
+  it('Relâmpago: participando com convite de outro horário aparece em Convidados com o aviso (emenda 2026-11-08 (2))', () => {
+    vi.mocked(usePromocoes).mockReturnValue({ data: [{ ...promo, tipo: 'LIGHTNING' }], isLoading: false } as never);
+    const comConvite = { ...item, ml_item_id: 'MLB9', titulo: 'Máscara', status: 'pending', convite_aberto: true } as ItemPromocao;
+    const soParticipa = { ...item, ml_item_id: 'MLB8', titulo: 'Shampoo', status: 'pending' } as ItemPromocao;
+    vi.mocked(useItensPromocao).mockReturnValue({ data: [comConvite, soParticipa, item], isLoading: false } as never);
+    renderDetalhe();
+    expect(screen.getAllByText('Máscara').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Shampoo')).toBeNull();
+    expect(screen.getAllByText('Já participa em outro horário').length).toBeGreaterThan(0);
+  });
+
   it('renderiza a tabela com uma linha que tem ml_pct sem erro de TooltipProvider', () => {
     vi.mocked(usePromocoes).mockReturnValue({ data: [promo], isLoading: false } as never);
     vi.mocked(useItensPromocao).mockReturnValue({ data: [item], isLoading: false } as never);

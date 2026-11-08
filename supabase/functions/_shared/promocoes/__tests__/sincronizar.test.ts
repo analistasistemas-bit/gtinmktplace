@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  comOfertaRelampago, MSG_ALIQUOTA, mesmaRodada, projetarItem, sincronizarLista, sincronizarPromocao,
+  comConviteRelampago, comOfertaRelampago, MSG_ALIQUOTA, umaOfertaPorAnuncio, mesmaRodada, projetarItem, sincronizarLista, sincronizarPromocao,
   type DepsLeitura, type DepsLista, type MsgLeitura,
 } from '../sincronizar.ts';
 import { montarCadastro, type LinhaVariacao } from '../cadastro.ts';
@@ -506,5 +506,33 @@ describe('Relâmpago: faixa e sugerido da visão por item', () => {
     await sincronizarPromocao(d, msg, opts);
     expect(d.ofertaRelampago).not.toHaveBeenCalled();
     expect(d.gravarLote.mock.calls[0][0][0]).toMatchObject({ preco_promo: 50 });
+  });
+});
+
+// ADR-0174, emenda 2026-11-08 (2): a Relâmpago aceita uma oferta por horário (LGH-MLB1000, MLB5322348511).
+describe('umaOfertaPorAnuncio + comConviteRelampago', () => {
+  const pend = item({ ml_item_id: 'MLB1', status: 'pending', preco_promo: 24.45, estoque_min: null });
+  const conv = item({ ml_item_id: 'MLB1', status: 'candidate', preco_promo: 27.64, preco_min: 8.55, estoque_min: 5, estoque_max: 100 });
+
+  it('Relâmpago: participando + convite → segue participando e leva o convite, em qualquer ordem', () => {
+    for (const ordem of [[pend, conv], [conv, pend], [conv, pend, { ...pend, preco_promo: 23.73 }]]) {
+      const [r] = umaOfertaPorAnuncio(ordem, true);
+      expect(r.status).toBe('pending');
+      expect(r.convite).toEqual(conv);
+    }
+  });
+
+  it('dois horários participando sem convite → sem convite; outros tipos nunca levam convite', () => {
+    expect(umaOfertaPorAnuncio([pend, { ...pend, preco_promo: 23.73 }], true)[0].convite).toBeUndefined();
+    expect(umaOfertaPorAnuncio([conv, pend], false)[0]).not.toHaveProperty('convite');
+  });
+
+  it('comConviteRelampago: faixa/teto/sugerido/estoque do convite; preço da oferta participando intacto', () => {
+    const [r] = umaOfertaPorAnuncio([pend, conv], true);
+    const o = { preco_min: 5.7, preco_max: 25.65, preco_sugerido: 24.23 };
+    const l = comConviteRelampago(r, o);
+    expect(l).toMatchObject({ status: 'pending', preco_promo: 24.45, convite_aberto: true, preco_min: 8.55, preco_max: 25.65, preco_sugerido: 24.23, estoque_min: 5 });
+    expect(l).not.toHaveProperty('convite');
+    expect(comConviteRelampago(pend, o)).toBe(pend);
   });
 });

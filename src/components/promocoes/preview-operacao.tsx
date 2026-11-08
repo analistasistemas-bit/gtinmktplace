@@ -289,10 +289,10 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
           </div>
         )}
         {selecionaveis.length > 1 && (
-          <label className="flex items-center gap-3 border-b px-4 py-2 text-sm">
-            <Checkbox aria-label="Selecionar todos" checked={todosMarcados} onCheckedChange={(v) => marcarTodos(!!v)} />
-            Selecionar todos
-          </label>
+          <div className="flex items-center gap-3 border-b px-4 py-2 text-sm">
+            <Checkbox id="selecionar-todos" aria-label="Selecionar todos" checked={todosMarcados} onCheckedChange={(v) => marcarTodos(!!v)} />
+            <label htmlFor="selecionar-todos">Selecionar todos</label>
+          </div>
         )}
         <ul className="flex flex-1 flex-col divide-y divide-border overflow-y-auto px-4">
           {linhas.map((l) => {
