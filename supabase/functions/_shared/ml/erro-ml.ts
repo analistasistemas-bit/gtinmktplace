@@ -28,6 +28,15 @@ function humanizarCausa(c: Causa): string {
   }
   if (code.includes('title')) return `Problema no título${det}.`;
   if (code.includes('picture') || code.includes('image') || code.includes('thumbnail')) {
+    // "has status ERROR": o ML baixou a foto e não conseguiu processar — caso real 08/11 foi PNG de 37 MB.
+    // Prefixo "Problema nas fotos" é mantido: ehErroDefinitivoFoto depende dele para limpar o cache.
+    if (/status ERROR/i.test(c.message ?? '')) {
+      // ponytail: status ERROR também cobre falha de download/formato — tamanho é a causa provável, não a única.
+      return `Problema nas fotos do anúncio: o Mercado Livre não conseguiu processar uma das imagens${det}. `
+        + 'Confira as fotos do produto: se alguma estiver pesada (acima de 10 MB) ou com resolução muito alta, '
+        + 'troque a foto por uma menor (até 10 MB, cerca de 2000 px no lado maior); se estiver corrompida ou em formato '
+        + 'diferente de JPG/PNG, troque também. Depois clique em Reenviar.';
+    }
     return `Problema nas fotos do anúncio${det}. Verifique as imagens das variações.`;
   }
   if (code.includes('price')) return `Problema no preço${det}.`;
