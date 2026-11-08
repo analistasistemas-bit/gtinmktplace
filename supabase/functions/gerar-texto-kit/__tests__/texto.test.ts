@@ -201,6 +201,25 @@ describe('montarTextoKit — guardas contra dado inventado (revisão Codex 08/11
     }).descricao;
     expect(d).toContain('O kit traz 2 shorts nas cores Estampa 4 e Estampa 5.');
     expect(d).toContain('Compre o kit com proteção fator 30 para os dias de sol.');
+    const d2 = montarTextoKit(dados({ descricaoBase: base }), { ...IA_BOA, fechamento: 'Proteção fator 30 contra os raios do sol.' }).descricao;
+    expect(d2).toContain('Proteção fator 30 contra os raios do sol.');
+  });
+  it('2ª revisão: cor simples em minúsculas, material fora da lista antiga, N do kit com outra unidade', () => {
+    expect(com('Disponível na cor azul.')).not.toContain('cor azul');
+    expect(com('Feito em acrílico macio.')).not.toContain('acrílico');
+    expect(com('Composição de 2% fibra e 20% poliéster.')).not.toContain('2% fibra');
+  });
+  it('N do kit vale com peças/unidades/kit ou com a peça da base no plural', () => {
+    expect(com('São 2 peças para alternar.')).toContain('São 2 peças para alternar.');
+    expect(com('Leve 2 shorts para alternar.')).toContain('Leve 2 shorts para alternar.');
+  });
+  it('palavra de cor que é parte de cor do kit passa ("tons de azul" com Azul Claro no kit)', () => {
+    const d = montarTextoKit(dados({ coresKit: ['Bege Cru', 'Azul Claro'] }), { ...IA_BOA, paragrafos: [IA_BOA.paragrafos[1], 'Tons de azul para combinar.'] }).descricao;
+    expect(d).toContain('Tons de azul para combinar.');
+  });
+  it('tamanho fora do kit no texto da IA é descartado; "G" solto na prosa não conta', () => {
+    expect(com('Disponível também no tamanho GG.')).not.toContain('GG');
+    expect(com('Disponível nos tamanhos P, M e G.')).toContain('Disponível nos tamanhos P, M e G.');
   });
   it('material que a base cita passa', () => {
     expect(com('O poliéster da composição ajuda no conforto.')).toContain('O poliéster da composição');
@@ -211,10 +230,24 @@ describe('montarTextoKit — fallback da base sem cor/tamanho fora do kit', () =
   it('frase da abertura da base que cita cor ou tamanho fora do kit sai', () => {
     const base = BASE.replace('diversas ocasiões.\n\nCom cós',
       'diversas ocasiões. Disponível em Verde Claro. Vai até o tamanho GG.\n\nCom cós');
-    const d = montarTextoKit(dados({ descricaoBase: base, tamanhosBase: ['P', 'M', 'G', 'GG'] }), { cabecalho: '', paragrafos: [], fechamento: '' }).descricao;
+    const d = montarTextoKit(dados({ descricaoBase: base }), { cabecalho: '', paragrafos: [], fechamento: '' }).descricao;
     expect(d).not.toContain('Verde Claro');
     expect(d).not.toContain('GG');
     expect(d).toContain('O Short Masculino Mauricinho é uma peça casual');
+  });
+});
+
+describe('montarTextoKit — cabeçalho e bullets da base sem cor/tamanho fora do kit (2ª revisão)', () => {
+  it('cabeçalho da base no fallback perde cor e tamanho fora do kit', () => {
+    const base = BASE.replace('🧵 SHORT MASCULINO MAURICINHO LINHO CASUAL', '🧵 SHORT MASCULINO LINHO VERDE CLARO TAMANHO GG');
+    const d = montarTextoKit(dados({ descricaoBase: base }), { cabecalho: '', paragrafos: [], fechamento: '' }).descricao;
+    expect(d.split('\n')[0]).toBe('🧵 KIT 2 SHORT MASCULINO LINHO');
+  });
+  it('bullet do corpo com tamanho fora do kit sai', () => {
+    const base = BASE.replace('✔ Bolsos funcionais', '✔ Disponível até o tamanho GG\n✔ Bolsos funcionais');
+    const d = montarTextoKit(dados({ descricaoBase: base }), IA_BOA).descricao;
+    expect(d).not.toContain('até o tamanho GG');
+    expect(d).toContain('✔ Bolsos funcionais');
   });
 });
 
