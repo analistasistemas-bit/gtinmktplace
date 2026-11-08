@@ -141,6 +141,8 @@ verify_jwt = true
 verify_jwt = true
 [functions.excluir-lote]
 verify_jwt = true
+[functions.excluir-familia]
+verify_jwt = true
 [functions.status-publicados]
 verify_jwt = true
 [functions.atualizar-status-publicado]
