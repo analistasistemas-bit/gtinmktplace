@@ -338,6 +338,24 @@ describe('refazerBaixaAdiada (reconciliação, rodada 2)', () => {
     expect(alertas).toEqual([{ texto: expect.stringContaining('pedido 400'), chave: 'kit_baixa_adiada:400' }]);
   });
 
+  it('diagnóstico sem SKU que falha ao gravar: a retomada ainda não é sucesso (rodada 4)', async () => {
+    const b = bancoKit({});
+    const from = b.admin.from;
+    b.admin.from = (t: string) => {
+      const q = from(t);
+      if (t === 'estoque_movimentos') q.insert = () => Promise.resolve({ error: { code: '42501', message: 'permission denied' } });
+      return q;
+    };
+    const obrigacoes: string[] = [];
+    const ok = await refazerBaixaAdiada(b.admin, {
+      registrarPendenciaKit: (_a, _o, id, erro) => { obrigacoes.push(`${id}|${erro}`); return Promise.resolve(); },
+      despachar: () => Promise.resolve(),
+      alertar: () => Promise.resolve(),
+    }, { ...P, itens: [{ codigo: null, quantity: 1, ml_item_id: 'MLB-SEM' }], incerto: false });
+    expect(ok).toBe(false);
+    expect(obrigacoes).toEqual([expect.stringContaining('sem SKU: MLB-SEM')]);
+  });
+
   it('obrigação não gravada: lança (o pedido conta como falha)', async () => {
     const b = bancoKit({});
     await expect(refazerBaixaAdiada(b.admin, {

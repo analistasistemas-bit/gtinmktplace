@@ -90,6 +90,8 @@ export interface ResultadoBaixaVenda {
   adiados: ItemVendaBaixa[];
   /** ADR-0197: resolução desta execução diferente da identidade gravada. A baixa seguiu pela identidade. */
   divergentes: Array<{ mlItemId: string; resolvido: string; identidade: string }>;
+  /** Itens pagos sem SKU desta execução, gravado ou não o diagnóstico (`semSku` só lista os gravados). */
+  semCodigo: ItemVendaBaixa[];
 }
 
 /**
@@ -138,7 +140,7 @@ export async function registrarBaixaVenda(
 
   const baixas = selecionarBaixas(p.itens);
   if (baixas.length === 0) {
-    return { pendentesDePush: [], vendaAcimaSaldo: [], desyncMl: [], falhas: [], semSku, skuDesconhecido: [], adiados, divergentes };
+    return { pendentesDePush: [], vendaAcimaSaldo: [], desyncMl: [], falhas: [], semSku, skuDesconhecido: [], adiados, divergentes, semCodigo: selecionarSemSku(p.itens) };
   }
 
   const vendaAcimaSaldo: ResultadoBaixaVenda['vendaAcimaSaldo'] = [];
@@ -214,7 +216,7 @@ export async function registrarBaixaVenda(
   // movimento com push ainda não entregue. É o que fecha o buraco em que a RPC
   // commita e o enfileiramento falha — no retry, `aplicado` seria false e o push
   // se perderia para sempre. Aqui ele é reencontrado.
-  return { pendentesDePush: await lerPushPendente(admin, p.orgId), vendaAcimaSaldo, desyncMl, falhas, semSku, skuDesconhecido, adiados, divergentes };
+  return { pendentesDePush: await lerPushPendente(admin, p.orgId), vendaAcimaSaldo, desyncMl, falhas, semSku, skuDesconhecido, adiados, divergentes, semCodigo: selecionarSemSku(p.itens) };
 }
 
 /**
@@ -496,7 +498,8 @@ export async function refazerBaixaAdiada(
   await deps.despachar(r.pendentesDePush);
   // Sem SKU ou SKU fora do catálogo: nada baixou. Mantém a obrigação e avisa; nunca some em silêncio.
   const operador = [
-    ...r.semSku.map((s) => `sem SKU: ${s.mlItemId ?? s.titulo ?? 'item'}`),
+    // `semCodigo`, não `semSku`: o diagnóstico pode não ter sido gravado, e o item continua sem débito.
+    ...r.semCodigo.map((s) => `sem SKU: ${s.ml_item_id ?? s.titulo ?? 'item'}`),
     ...r.skuDesconhecido.map((s) => `SKU fora do catálogo: ${s.codigo}`),
   ];
   const resto = [
