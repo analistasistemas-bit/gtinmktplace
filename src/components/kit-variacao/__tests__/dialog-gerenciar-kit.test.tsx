@@ -27,13 +27,16 @@ vi.mock('@/lib/kit-variacao-edge', () => ({
 }));
 const modulos = { data: ['kit_variacao'] as string[] };
 vi.mock('@/hooks/useModulosHabilitados', () => ({ useModulosHabilitados: () => modulos }));
-// Base: Preto, Branco e Marrom em M, G e GG. Preto M tem só 3 peças.
-const peca = (codigo: string, cor: string, tamanho: string, estoque: number) => ({ codigo, cor, tamanho, estoque, excluidaDaPublicacao: false });
+// Base: Preto, Branco e Marrom em M, G e GG. Preto M tem só 3 peças; Marrom GG está zerado (a cópia excluída não conta).
+const peca = (codigo: string, cor: string, tamanho: string, estoque: number, excluidaDaPublicacao = false) => ({ codigo, cor, tamanho, estoque, excluidaDaPublicacao });
 const base = {
   data: {
-    variacoes: ['M', 'G', 'GG'].flatMap((t) => [
-      peca(`P-${t}`, 'Preto', t, t === 'M' ? 3 : 9), peca(`B-${t}`, 'Branco', t, 9), peca(`M-${t}`, 'Marrom', t, 9),
-    ]),
+    variacoes: [
+      peca('M-GG-OLD', 'Marrom', 'GG', 50, true),
+      ...['M', 'G', 'GG'].flatMap((t) => [
+        peca(`P-${t}`, 'Preto', t, t === 'M' ? 3 : 9), peca(`B-${t}`, 'Branco', t, 9), peca(`M-${t}`, 'Marrom', t, t === 'GG' ? 0 : 9),
+      ]),
+    ],
   },
   isLoading: false, isError: false,
 };
@@ -238,6 +241,35 @@ describe('DialogGerenciarKit', () => {
       await user.type(screen.getByLabelText('Nova Preto e Branco GG'), '1');
       expect(screen.queryByLabelText('Foto Preto e Branco')).toBeNull();
       expect(screen.getByRole('button', { name: 'Montar mais' })).toBeEnabled();
+    });
+
+    it('cada célula nova mostra o máximo, que cai com o que Montar mais já usa da mesma cor', async () => {
+      const user = userEvent.setup();
+      await abrirNovo(user);
+      expect(screen.getByLabelText('Máximo nova Preto e Marrom M')).toHaveTextContent('máx 3');
+      expect(screen.getByLabelText('Máximo montar Preto e Branco M')).toHaveTextContent('monta até 3');
+      await user.type(screen.getByLabelText('Quantidade Preto e Branco M'), '2');
+      expect(screen.getByLabelText('Máximo nova Preto e Marrom M')).toHaveTextContent('máx 1');
+      await user.type(screen.getByLabelText('Nova Preto e Marrom M'), '1');
+      expect(screen.getByLabelText('Máximo montar Preto e Branco M')).toHaveTextContent('monta até 2');
+    });
+
+    it('célula nova com máximo 0 fica desabilitada e diz qual cor falta; a cópia excluída não conta', async () => {
+      const user = userEvent.setup();
+      await abrirNovo(user);
+      const campo = screen.getByLabelText('Nova Preto e Marrom GG');
+      expect(campo).toBeDisabled();
+      expect(campo.closest('td')).toHaveAttribute('title', 'Sem peça de Marrom em GG');
+      expect(screen.getByLabelText('Nova Preto e Branco GG')).toBeEnabled();
+    });
+
+    it('célula nova acima do máximo fica vermelha', async () => {
+      const user = userEvent.setup();
+      await abrirNovo(user);
+      const campo = screen.getByLabelText('Nova Preto e Marrom M');
+      await user.type(campo, '4');
+      expect(campo).toHaveAttribute('aria-invalid', 'true');
+      expect(campo.className).toMatch(/text-danger/);
     });
 
     it('antes de montar confere as peças da base: falta avisa e bloqueia', async () => {

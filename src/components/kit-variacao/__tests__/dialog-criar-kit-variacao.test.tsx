@@ -15,6 +15,9 @@ const familia = {
     variacoes: [
       v('P-M', 'Preto', 'M', 2), v('B-M', 'Branco', 'M', 5), v('M-M', 'Marrom', 'M', 5),
       v('P-G', 'Preto', 'G', 5), v('B-G', 'Branco', 'G', 5), v('M-G', 'Marrom', 'G', 5),
+      v('BC-M', 'Bege Cru', 'M', 0), v('BC-G', 'Bege Cru', 'G', 0),
+      // Excluída da publicação: não conta no estoque nem no máximo.
+      { ...v('M-M-OLD', 'Marrom', 'M', 50), excluidaDaPublicacao: true },
     ],
   },
   isLoading: false, isError: false,
@@ -91,6 +94,48 @@ describe('DialogCriarKitVariacao', () => {
     expect(screen.getByLabelText('Saldo Branco M')).toHaveAttribute('data-excesso', 'false');
     expect(screen.getByRole('button', { name: 'Próximo' })).toBeDisabled();
     expect(screen.getByText(/Faltam peças/)).toBeInTheDocument();
+  });
+
+  it('cada cor mostra o estoque antes da escolha; zerada fica visível e esmaecida; excluída não conta', () => {
+    abrir();
+    const preto = screen.getByLabelText('Estoque Preto');
+    expect(preto).toHaveTextContent('(7)');
+    expect(preto).toHaveAttribute('title', 'M 2 · G 5');
+    expect(screen.getByLabelText('Estoque Marrom')).toHaveTextContent('(10)');
+    expect(screen.getByLabelText('Estoque Bege Cru')).toHaveTextContent('(0)');
+    expect(screen.getByRole('checkbox', { name: 'Cor Bege Cru' }).closest('label')).toHaveAttribute('data-zerada', 'true');
+    expect(screen.getByRole('checkbox', { name: 'Cor Preto' }).closest('label')).toHaveAttribute('data-zerada', 'false');
+  });
+
+  it('cada célula mostra o máximo, que cai quando outra célula usa a mesma cor', async () => {
+    const user = userEvent.setup();
+    abrir();
+    await montar(user, ['Preto', 'Branco', 'Marrom'], {});
+    expect(screen.getByLabelText('Máximo Preto e Branco M')).toHaveTextContent('máx 2');
+    expect(screen.getByLabelText('Máximo Branco e Marrom M')).toHaveTextContent('máx 5');
+    await montar(user, [], { 'Preto e Marrom M': '1' });
+    expect(screen.getByLabelText('Máximo Preto e Branco M')).toHaveTextContent('máx 1');
+    expect(screen.getByLabelText('Máximo Branco e Marrom M')).toHaveTextContent('máx 4');
+  });
+
+  it('célula com máximo 0 fica desabilitada e diz qual cor falta', async () => {
+    const user = userEvent.setup();
+    abrir();
+    await montar(user, ['Preto', 'Bege Cru'], {});
+    const campo = screen.getByLabelText('Quantidade Preto e Bege Cru M');
+    expect(campo).toBeDisabled();
+    expect(campo.closest('td')).toHaveAttribute('title', 'Sem peça de Bege Cru em M');
+  });
+
+  it('acima do máximo o campo fica vermelho', async () => {
+    const user = userEvent.setup();
+    abrir();
+    await montar(user, ['Preto', 'Branco'], { 'Preto e Branco M': '3' });
+    const campo = screen.getByLabelText('Quantidade Preto e Branco M');
+    expect(campo).toHaveAttribute('aria-invalid', 'true');
+    expect(campo.className).toMatch(/text-danger/);
+    await montar(user, [], { 'Preto e Branco M': '2' });
+    expect(campo).toHaveAttribute('aria-invalid', 'false');
   });
 
   it('sem foto em toda combinação bloqueia em empresa sem IA de imagem', async () => {

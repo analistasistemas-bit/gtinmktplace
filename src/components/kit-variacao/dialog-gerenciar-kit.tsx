@@ -20,7 +20,7 @@ import {
 import { QK_KITS_VARIACAO, useDetalheKitVariacao } from '@/hooks/useKitsVariacao';
 import { useFamilia } from '@/hooks/useFamilia';
 import { QK } from '@/lib/queries';
-import { AVISO_SELETOR_ML, gerarCombinacoes, rotuloCombinacao } from '@/lib/kit-variacao';
+import { AVISO_SELETOR_ML, gerarCombinacoes, maximoPorCelula, rotuloCombinacao } from '@/lib/kit-variacao';
 import {
   adicionarAoKitEdge, enviarFotoKit, gerenciarKitEdge, type AcaoKit, type KitVariacaoResumo,
 } from '@/lib/kit-variacao-edge';
@@ -109,6 +109,15 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
   const semFoto = [...new Set(novos.filter((n) => !n.temFoto && !fotos[n.rotulo]).map((n) => n.rotulo))];
   const rotulosNovos = [...new Set(novos.filter((n) => !n.temFoto).map((n) => n.rotulo))];
   const totalKits = itens.reduce((s, i) => s + i.quantidade, 0) + novos.reduce((s, n) => s + n.quantidade, 0);
+  // Tudo o que Montar mais pede, por cores × tamanho: base do máximo por célula e corpo de `adicionarAoKitEdge`.
+  const pedidos = [
+    ...itens.map((i) => {
+      const s = skus.find((x) => x.codigo === i.codigo)!;
+      return { cores: s.cores, tamanho: s.tamanho, quantidade: i.quantidade };
+    }),
+    ...novos.map((n) => ({ cores: n.cores, tamanho: n.tamanho, quantidade: n.quantidade })),
+  ];
+  const maximo = (cores: string[], tamanho: string) => maximoPorCelula(pecasBase, { cores, tamanho }, pedidos);
 
   // Conferência só de leitura das peças da base (a RPC continua validando): por código de peça, não por nome de cor.
   const precisa = new Map<string, number>();
@@ -174,13 +183,7 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
       }
       const r = await adicionarAoKitEdge({
         kitId: kit.id, versao, chaveCadastro: chave, fotos: caminhos,
-        quantidades: [
-          ...itens.map((i) => {
-            const s = skus.find((x) => x.codigo === i.codigo)!;
-            return { cores: s.cores, tamanho: s.tamanho, quantidade: i.quantidade };
-          }),
-          ...novos.map((n) => ({ cores: n.cores, tamanho: n.tamanho, quantidade: n.quantidade })),
-        ],
+        quantidades: pedidos,
       });
       ok = r.ok;
       if (!r.ok) toast.error('Não foi possível concluir', { description: r.mensagem });
@@ -295,6 +298,12 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
                               value={qtd[s.codigo] ?? ''}
                               onChange={(e) => setQtd((p) => ({ ...p, [s.codigo]: e.target.value }))}
                             />
+                            {/* ponytail: só dica. O campo serve também ao Desmontar (limite = saldo do kit): sem vermelho nem bloqueio aqui. */}
+                            {conferiu && (
+                              <span aria-label={`Máximo montar ${s.rotulo} ${s.tamanho}`} className="mt-0.5 block text-xs tabular-nums text-muted-foreground">
+                                monta até {maximo(s.cores, s.tamanho).maximo}
+                              </span>
+                            )}
                           </td>
                         )}
                       </tr>
@@ -365,21 +374,40 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
                               return (
                                 <tr key={conjunto(c)} className="border-b last:border-0">
                                   <td className="py-1.5 pr-3">{rotulo}</td>
-                                  {tamanhosBase.map((t) => (
-                                    <td key={t} className="px-2 py-1.5 text-right">
-                                      {publicada(c, t) ? (
-                                        <span className="text-xs text-muted-foreground" title="Já publicado: use a tabela acima">publicado</span>
-                                      ) : (
+                                  {tamanhosBase.map((t) => {
+                                    if (publicada(c, t)) {
+                                      return (
+                                        <td key={t} className="px-2 py-1.5 text-right">
+                                          <span className="text-xs text-muted-foreground" title="Já publicado: use a tabela acima">publicado</span>
+                                        </td>
+                                      );
+                                    }
+                                    const k = `${conjunto(c)}#${t}`;
+                                    const m = maximo(c, t);
+                                    const valor = inteiro(novaQtd[k]);
+                                    // Com valor digitado a célula fica aberta, para o operador poder zerar.
+                                    const bloqueada = m.maximo === 0 && valor === 0;
+                                    const acima = valor > m.maximo;
+                                    return (
+                                      <td key={t} className="px-2 py-1.5 text-right" title={bloqueada ? `Sem peça de ${m.faltam.join(', ')} em ${t}` : undefined}>
                                         <Input
                                           type="number" min={0} step={1} inputMode="numeric" placeholder="0"
                                           aria-label={`Nova ${rotulo} ${t}`}
-                                          className="ml-auto h-8 w-16 text-right tabular-nums"
-                                          value={novaQtd[`${conjunto(c)}#${t}`] ?? ''}
-                                          onChange={(e) => setNovaQtd((p) => ({ ...p, [`${conjunto(c)}#${t}`]: e.target.value }))}
+                                          aria-invalid={acima}
+                                          disabled={bloqueada}
+                                          className={cn('ml-auto h-8 w-16 text-right tabular-nums', acima && 'font-semibold text-danger')}
+                                          value={novaQtd[k] ?? ''}
+                                          onChange={(e) => setNovaQtd((p) => ({ ...p, [k]: e.target.value }))}
                                         />
-                                      )}
-                                    </td>
-                                  ))}
+                                        <span
+                                          aria-label={`Máximo nova ${rotulo} ${t}`}
+                                          className={cn('mt-0.5 block text-xs tabular-nums', acima ? 'text-danger' : 'text-muted-foreground')}
+                                        >
+                                          máx {m.maximo}
+                                        </span>
+                                      </td>
+                                    );
+                                  })}
                                 </tr>
                               );
                             })}

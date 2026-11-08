@@ -20,7 +20,7 @@ import { QK } from '@/lib/queries';
 import { fmtBRL } from '@/lib/formato';
 import { cn } from '@/lib/utils';
 import {
-  AVISO_SELETOR_ML, gerarCombinacoes, rotuloCombinacao, saldoDePecas,
+  AVISO_SELETOR_ML, gerarCombinacoes, maximoPorCelula, rotuloCombinacao, saldoDePecas,
 } from '@/lib/kit-variacao';
 import { criarKitVariacaoEdge, enviarFotoKit, gerarTextoKitEdge } from '@/lib/kit-variacao-edge';
 import { SimuladorKit } from '@/components/kit-variacao/simulador-kit';
@@ -90,6 +90,14 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
     () => [...new Set(variacoes.map((v) => v.tamanho).filter((t): t is string => !!t))],
     [variacoes],
   );
+  // Estoque por cor antes da escolha: total e o detalhe por tamanho (no title).
+  const estoqueDaCor = useMemo(() => new Map(coresBase.map((cor) => {
+    const daCor = variacoes.filter((v) => v.cor === cor);
+    return [cor, {
+      total: daCor.reduce((s, v) => s + Math.max(0, v.estoque), 0),
+      porTamanho: daCor.filter((v) => v.tamanho).map((v) => `${v.tamanho} ${Math.max(0, v.estoque)}`).join(' · '),
+    }];
+  })), [coresBase, variacoes]);
   const marcadas = useMemo(() => coresBase.filter((c) => cores.includes(c)), [coresBase, cores]);
   const combinacoes = useMemo(() => gerarCombinacoes(marcadas, pecas), [marcadas, pecas]);
   const quantidades = useMemo(() => combinacoes.flatMap((c) => tamanhos.map((t) => ({
@@ -210,16 +218,25 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
               <section className="grid gap-2" aria-label="Cores e peças">
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                   <span className="text-sm font-medium">Cores</span>
-                  {coresBase.map((c) => (
-                    <label key={c} className="flex cursor-pointer items-center gap-1.5 text-sm">
-                      <Checkbox
-                        aria-label={`Cor ${c}`}
-                        checked={cores.includes(c)}
-                        onCheckedChange={(v) => mudarMontagem(() => setCores((p) => (v === true ? [...p, c] : p.filter((x) => x !== c))))}
-                      />
-                      {c}
-                    </label>
-                  ))}
+                  {coresBase.map((c) => {
+                    const e = estoqueDaCor.get(c)!;
+                    return (
+                      <label
+                        key={c} data-zerada={e.total === 0 ? 'true' : 'false'}
+                        className={cn('flex cursor-pointer items-center gap-1.5 text-sm', e.total === 0 && 'opacity-50')}
+                      >
+                        <Checkbox
+                          aria-label={`Cor ${c}`}
+                          checked={cores.includes(c)}
+                          onCheckedChange={(v) => mudarMontagem(() => setCores((p) => (v === true ? [...p, c] : p.filter((x) => x !== c))))}
+                        />
+                        {c}
+                        <span aria-label={`Estoque ${c}`} title={e.porTamanho} className="text-xs tabular-nums text-muted-foreground">
+                          ({e.total})
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">Peças por kit</span>
@@ -254,18 +271,33 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
                           return (
                             <tr key={rotulo} aria-label={`Combinação ${rotulo}`} className="border-b last:border-0">
                               <td className="px-3 py-1.5">{rotulo}</td>
-                              {tamanhos.map((t) => (
-                                <td key={t} className="px-2 py-1.5 text-right">
-                                  <Input
-                                    type="number" min={0} step={1} inputMode="numeric"
-                                    aria-label={`Quantidade ${rotulo} ${t}`}
-                                    className="ml-auto h-8 w-16 text-right tabular-nums"
-                                    value={qtd[chaveQtd(rotulo, t)] ?? ''}
-                                    placeholder="0"
-                                    onChange={(e) => setQtd((p) => ({ ...p, [chaveQtd(rotulo, t)]: e.target.value }))}
-                                  />
-                                </td>
-                              ))}
+                              {tamanhos.map((t) => {
+                                const { maximo, faltam } = maximoPorCelula(variacoes, { cores: c, tamanho: t }, quantidades);
+                                const valor = inteiro(qtd[chaveQtd(rotulo, t)]);
+                                // Com valor digitado a célula fica aberta, para o operador poder zerar.
+                                const bloqueada = maximo === 0 && valor === 0;
+                                const acima = valor > maximo;
+                                return (
+                                  <td key={t} className="px-2 py-1.5 text-right" title={bloqueada ? `Sem peça de ${faltam.join(', ')} em ${t}` : undefined}>
+                                    <Input
+                                      type="number" min={0} step={1} inputMode="numeric"
+                                      aria-label={`Quantidade ${rotulo} ${t}`}
+                                      aria-invalid={acima}
+                                      disabled={bloqueada}
+                                      className={cn('ml-auto h-8 w-16 text-right tabular-nums', acima && 'font-semibold text-danger')}
+                                      value={qtd[chaveQtd(rotulo, t)] ?? ''}
+                                      placeholder="0"
+                                      onChange={(e) => setQtd((p) => ({ ...p, [chaveQtd(rotulo, t)]: e.target.value }))}
+                                    />
+                                    <span
+                                      aria-label={`Máximo ${rotulo} ${t}`}
+                                      className={cn('mt-0.5 block text-xs tabular-nums', acima ? 'text-danger' : 'text-muted-foreground')}
+                                    >
+                                      máx {maximo}
+                                    </span>
+                                  </td>
+                                );
+                              })}
                             </tr>
                           );
                         })}

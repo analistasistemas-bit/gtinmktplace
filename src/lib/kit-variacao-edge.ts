@@ -127,7 +127,7 @@ export async function fetchDetalheKitVariacao(kitId: string, codigoPaiBase: stri
     supabase.from('kit_transferencias').select('id, tipo, estado, passo, alerta, criado_em')
       .eq('kit_id', kitId).in('estado', ['ativa', 'travada']).order('criado_em', { ascending: true }),
     // Base canônica (a mais recente do PAI): cores, tamanhos e saldo das peças para Montar mais.
-    supabase.from('familias').select('id').eq('codigo_pai', codigoPaiBase).order('criado_em', { ascending: false }).limit(1),
+    supabase.from('familias').select('id').eq('codigo_pai', codigoPaiBase).order('criado_em', { ascending: false }).order('id', { ascending: false }).limit(1),
   ]);
   if (baseR.error) throw baseR.error;
   if (skusR.error) throw skusR.error;

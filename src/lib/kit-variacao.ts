@@ -37,3 +37,19 @@ export function saldoDePecas(
     return { cor, tamanho, precisa, tem: v ? Math.max(0, v.estoque) : 0, existe: !!v };
   }));
 }
+
+/**
+ * Quantos kits cabem numa célula (combinação × tamanho): o menor saldo entre as cores dela, descontado o que as outras
+ * células do mesmo tamanho já usam. `faltam` = cores sem peça sobrando. Só orienta a tela: a RPC dá a palavra final.
+ * ponytail: uma família só por chamada, e `variacoes` é única por (familia_id, codigo): não há cópia de SKU a desempatar.
+ */
+export function maximoPorCelula(
+  variacoes: Parameters<typeof saldoDePecas>[0],
+  celula: { cores: string[]; tamanho: string },
+  quantidades: { cores: string[]; tamanho: string; quantidade: number }[],
+): { maximo: number; faltam: string[] } {
+  const chave = (cores: string[]) => [...cores].sort().join('|');
+  const outras = quantidades.filter((q) => q.tamanho !== celula.tamanho || chave(q.cores) !== chave(celula.cores));
+  const livre = saldoDePecas(variacoes, celula.cores, [celula.tamanho], outras).map((s) => ({ cor: s.cor, n: Math.max(0, s.tem - s.precisa) }));
+  return { maximo: Math.min(...livre.map((l) => l.n)), faltam: livre.filter((l) => l.n === 0).map((l) => l.cor) };
+}
