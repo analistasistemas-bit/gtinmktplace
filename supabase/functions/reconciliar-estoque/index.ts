@@ -9,7 +9,8 @@
 // aplicar a baixa; isso NÃO existe hoje e está registrado como fora de escopo.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { verificarAssinatura, enfileirarSincronizacaoEstoque, enfileirarSaga } from '../_shared/queue.ts';
+import { verificarAssinatura, enfileirarSincronizacaoEstoque, enfileirarSaga, enfileirarReposicao } from '../_shared/queue.ts';
+import { dispararReposicaoDiaria } from '../_shared/kit-variacao/reposicao.ts';
 import { paginarTudo } from '../_shared/pagina.ts';
 import { filtroNotIn, listarOrgsArquivadas } from '../_shared/orgs-arquivadas.ts';
 import { lerPushPendente, despacharPushPendente } from '../_shared/estoque/baixa.ts';
@@ -161,9 +162,12 @@ Deno.serve(async (req) => {
   // ADR-0197 (Task 8): aviso de kit zerado que não saiu (envio falhou ou nenhuma venda nova desde então).
   const avisosKit = await avisarKitsZeradosDasOrgs(admin, { notificar: notificarCategoria })
     .catch((e) => { console.error('reconciliar_kit_avisos_zerado_falhou', e); return 0; });
+  // ADR-0197 (Task 14): rede da reposição automática (gatilho perdido, pausa da automação a desfazer).
+  const reposicoesKit = await dispararReposicaoDiaria(admin, enfileirarReposicao)
+    .catch((e) => { console.error('reconciliar_kit_reposicao_falhou', e); return 0; });
 
   return new Response(
-    JSON.stringify({ ok: true, drenados, enfileirados, avaliados: alvos.size, transferencias, triadas, publicacoesParadas, avisosKit }),
+    JSON.stringify({ ok: true, drenados, enfileirados, avaliados: alvos.size, transferencias, triadas, publicacoesParadas, avisosKit, reposicoesKit }),
     { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
   );
 });

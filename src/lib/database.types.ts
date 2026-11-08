@@ -1203,6 +1203,12 @@ export type Database = {
           },
         ]
       }
+      kit_pausas_automaticas: {
+        Row: { codigo: string; criado_em: string; item_id: string; org_id: string; transferencia_id: string }
+        Insert: { codigo: string; criado_em?: string; item_id: string; org_id: string; transferencia_id: string }
+        Update: { codigo?: string; criado_em?: string; item_id?: string; org_id?: string; transferencia_id?: string }
+        Relationships: []
+      }
       kit_marca_ml: {
         Row: {
           atualizado_em: string
@@ -5760,9 +5766,18 @@ export type Database = {
         Returns: Json
       }
       kit_saga_finalizar: {
-        Args: { p_alerta: string; p_estado: string; p_org: string; p_token: string; p_transferencia: string }
+        Args: { p_alerta: string; p_estado: string; p_org: string; p_pausas?: Json; p_token: string; p_transferencia: string }
         Returns: undefined
       }
+      kit_reposicao_foto: { Args: { p_kit: string; p_org: string }; Returns: Json }
+      kit_reposicao_sobra: { Args: { p_codigos: string[]; p_org: string; p_versoes: Json }; Returns: Json }
+      kit_reposicao_guardar: {
+        Args: { p_alvos: Json; p_codigos: string[]; p_org: string; p_parceiros: string[]; p_versoes: Json }
+        Returns: Json
+      }
+      kit_reposicao_repor: { Args: { p_alvos: Json; p_itens: Json; p_kit: string; p_org: string; p_versoes: Json }; Returns: Json }
+      kit_reposicao_ligar: { Args: { p_alvos: Json; p_kit: string; p_org: string }; Returns: Json }
+      kit_reposicao_desligar: { Args: { p_kit: string; p_org: string }; Returns: string[] }
       kit_saga_ledger: {
         Args: { p_op: string; p_org: string; p_token: string; p_transferencia: string }
         Returns: Json

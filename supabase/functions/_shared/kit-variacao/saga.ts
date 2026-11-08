@@ -100,14 +100,22 @@ export interface DepsSaga {
     // As cinco abaixo validam token, prazo, estado `ativa` e exclusão no banco, e lançam se não valer.
     salvarTransferencia(id: string, token: string, patch: { passo?: PassoSaga; alerta?: string; travar?: boolean }): Promise<void>;
     salvarAlvo(id: string, token: string, upId: string, patch: Partial<AlvoSaga>): Promise<void>;
-    /** Estado final e exclusões numa transação. */
-    finalizar(id: string, token: string, estado: 'concluida' | 'abortada', alerta: string | null): Promise<void>;
+    /**
+     * Estado final e exclusões numa transação. `pausas`: itens que esta saga pausou e deixou pausados pela política;
+     * viram pausa da automação (Task 14), a única que a reposição desfaz.
+     */
+    finalizar(
+      id: string, token: string, estado: 'concluida' | 'abortada', alerta: string | null,
+      pausas?: Array<{ codigo: string; itemId: string }>,
+    ): Promise<void>;
     ledger(id: string, token: string, op: 'reservar' | 'creditar' | 'cancelar'): Promise<{ ok: boolean; motivo?: string }>;
     /** Política dos alvos travada, versão igual à da criação e SKU sem bloqueio. */
     podeReativar(id: string, token: string, codigo: string): Promise<boolean>;
     liberar(id: string, token: string): Promise<void>;
     /** Soma das versões de `sku_politica_kit` dos códigos, a mesma da criação. */
     versaoPolitica(codigos: string[]): Promise<number>;
+    /** Task 14: códigos em Guardado. Pausa que fica em Guardado é o esperado: sem alerta. Ausente = nenhum. */
+    guardados?(codigos: string[]): Promise<Set<string>>;
     /** Saldo travado, marca d'água e efeito pendente do SKU; valida token, prazo e exclusão. */
     conferirSaldo(id: string, token: string, codigo: string): Promise<SaldoConferido>;
     /** Vínculo local do item criado (raiz e filho do anúncio, família publicada). Idempotente. `ok:false` (ex.:
@@ -197,9 +205,11 @@ async function ledger(ctx: Ctx, op: 'reservar' | 'creditar' | 'cancelar') {
   vivo(ctx);
   return await ctx.deps.repo.ledger(ctx.t.id, ctx.token, op);
 }
-async function finalizar(ctx: Ctx, estado: 'concluida' | 'abortada', alerta: string | null): Promise<void> {
+async function finalizar(
+  ctx: Ctx, estado: 'concluida' | 'abortada', alerta: string | null, pausas?: Array<{ codigo: string; itemId: string }>,
+): Promise<void> {
   vivo(ctx);
-  await ctx.deps.repo.finalizar(ctx.t.id, ctx.token, estado, alerta);
+  await ctx.deps.repo.finalizar(ctx.t.id, ctx.token, estado, alerta, pausas);
 }
 async function putStatus(ctx: Ctx, itemId: string, status: 'paused' | 'active'): Promise<void> {
   vivo(ctx);
@@ -656,7 +666,7 @@ async function repausar(ctx: Ctx, itemId: string): Promise<void> {
 async function reativar(ctx: Ctx): Promise<ResultadoPasso> {
   // Chega aqui concluída (todos confirmados) ou abortada antes da reserva.
   const estado = ctx.alvos.every((a) => a.confirmada_em) ? 'concluida' : 'abortada';
-  const seguem: string[] = [];
+  const seguem: Array<{ codigo: string; itemId: string }> = [];
   let repausou = false;
   const semObrigacao = (alvo: AlvoSaga, id: string) => salvarAlvo(ctx, alvo, { repausar: alvo.repausar.filter((x) => x !== id) });
 
@@ -674,7 +684,7 @@ async function reativar(ctx: Ctx): Promise<ResultadoPasso> {
       if (pausadoPeloVendedor(item)) {
         if (pendente) await semObrigacao(alvo, item.id);   // repausa confirmada pela leitura
         if (!(await podeReativar(ctx, alvo.codigo))) {
-          seguem.push(item.id);
+          seguem.push({ codigo: alvo.codigo, itemId: item.id });
           continue;
         }
         // Obrigação gravada antes do PUT: resposta incerta ou queda daqui em diante é retomada.
@@ -687,7 +697,7 @@ async function reativar(ctx: Ctx): Promise<ResultadoPasso> {
       if (await podeReativar(ctx, alvo.codigo)) {
         await semObrigacao(alvo, item.id);
       } else {
-        seguem.push(item.id);
+        seguem.push({ codigo: alvo.codigo, itemId: item.id });
         await repausar(ctx, item.id);
         repausou = true;
       }
@@ -696,12 +706,17 @@ async function reativar(ctx: Ctx): Promise<ResultadoPasso> {
   // A repausa só vale confirmada pela leitura; até lá, finalizar recusa.
   if (repausou) return reagendar(ctx, 'confirmando a repausa', CONFIRMAR_APOS_S);
 
+  // Task 14: Guardado pausado é o objetivo (Vender só em kit), não anomalia; os demais bloqueios alertam.
+  const guardados = seguem.length > 0 && ctx.deps.repo.guardados
+    ? await ctx.deps.repo.guardados([...new Set(seguem.map((x) => x.codigo))])
+    : new Set<string>();
+  const inesperados = seguem.filter((x) => !guardados.has(x.codigo)).map((x) => x.itemId);
   let alerta = ctx.t.alerta;
-  if (seguem.length > 0) {
-    alerta = `política não autoriza reativar: ${seguem.join(', ')} seguem pausados`;
+  if (inesperados.length > 0) {
+    alerta = `política não autoriza reativar: ${inesperados.join(', ')} seguem pausados`;
     await alertar(ctx, `Transferência de kit terminou, mas ${alerta}.`);
   }
-  await finalizar(ctx, estado, alerta);
+  await finalizar(ctx, estado, alerta, seguem);
   return { passo: 'fim', acao: estado === 'concluida' ? 'concluida' : 'abortada' };
 }
 

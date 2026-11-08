@@ -3,9 +3,10 @@
 // Faz fetch autenticado do pedido (+ shipment/frete), upsert e alerta Telegram em venda nova.
 import { corsHeaders } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { verificarAssinatura, enfileirarSincronizacaoEstoque } from '../_shared/queue.ts';
+import { verificarAssinatura, enfileirarSincronizacaoEstoque, enfileirarReposicao } from '../_shared/queue.ts';
 import { registrarBaixaVenda, despacharPushPendente } from '../_shared/estoque/baixa.ts';
 import { avisarKitsZerados } from '../_shared/kit-variacao/venda.ts';
+import { dispararReposicao } from '../_shared/kit-variacao/reposicao.ts';
 import { registrarPendenciaKit } from '../_shared/faturamento/pendencias.ts';
 import { tratarPedidoCancelado } from '../_shared/estoque/cancelamento.ts';
 import { depsCancelamento } from '../_shared/estoque/cancelamento-deps.ts';
@@ -257,6 +258,10 @@ Deno.serve(async (req) => {
       // a importação da saga chama o mesmo despacho. Último do bloco: erro aqui não cala os alertas acima.
       if (kitLigado) {
         await avisarKitsZerados(admin, { notificar: notificarCategoria }, orgId);
+        // Task 14: venda de kit em "Vender só em kit" dispara a reposição, agrupada por kit na fila.
+        await dispararReposicao(admin, orgId, itens.map((i) => i.codigo).filter((c): c is string => !!c),
+          (kitId) => enfileirarReposicao(orgId, kitId), { soAutomaticos: true })
+          .catch((e) => console.error('kit_reposicao_disparo_falhou', pedido.id, String(e)));
       }
     } catch (e) {
       console.error('baixa_estoque_falhou', e);

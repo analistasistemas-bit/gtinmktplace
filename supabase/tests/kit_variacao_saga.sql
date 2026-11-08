@@ -80,7 +80,7 @@ begin
     'public.kit_reivindicar_execucao(uuid, uuid, uuid, integer)',
     'public.kit_saga_salvar_alvo(uuid, uuid, uuid, text, jsonb)',
     'public.kit_saga_salvar_transferencia(uuid, uuid, uuid, text, text, boolean)',
-    'public.kit_saga_finalizar(uuid, uuid, uuid, text, text)',
+    'public.kit_saga_finalizar(uuid, uuid, uuid, text, text, jsonb)',
     'public.kit_saga_ledger(uuid, uuid, uuid, text)',
     'public.kit_saga_pode_reativar(uuid, uuid, uuid, text)'
   ] loop

@@ -354,6 +354,29 @@ export async function enfileirarSincronizacaoMarca(job: SincronizarMarcaJobFila,
   return messageId;
 }
 
+/** ADR-0197 (Task 14): rodada de reposição de um kit com "Vender só em kit" (worker kit-reposicao). */
+export interface KitReposicaoJob { org_id: string; kit_id: string }
+
+/** Janela de agrupamento: eventos do mesmo kit dentro dela viram uma rodada só. */
+export const JANELA_REPOSICAO_S = 60;
+
+/**
+ * Agrupamento por kit: o `deduplicationId` é o kit mais a janela, então venda, entrada, cancelamento e ajuste
+ * seguidos geram uma rodada; o `delay` deixa a janela fechar antes de fotografar. Rodada repetida é inofensiva
+ * (decisões versionadas no banco).
+ */
+export async function enfileirarReposicao(orgId: string, kitId: string): Promise<void> {
+  const url = Deno.env.get('SUPABASE_URL')!;
+  const janela = Math.floor(Date.now() / (JANELA_REPOSICAO_S * 1000));
+  await qstashClient().publishJSON({
+    url: `${url}/functions/v1/kit-reposicao`,
+    body: { org_id: orgId, kit_id: kitId } satisfies KitReposicaoJob,
+    delay: JANELA_REPOSICAO_S,
+    deduplicationId: `kit-reposicao-${kitId}-${janela}`,
+    retries: 3,
+  });
+}
+
 /** ADR-0197: um passo da saga de transferência de kit (worker kit-transferencia). */
 export interface KitTransferenciaJob { transferencia_id: string; org_id: string }
 

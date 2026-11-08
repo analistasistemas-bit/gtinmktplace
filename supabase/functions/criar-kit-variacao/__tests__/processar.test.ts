@@ -275,12 +275,20 @@ describe('criarKitVariacao', () => {
     expect(await criarKitVariacao(c.deps, pedido({ fotos: {} }))).toMatchObject({ ok: false, motivo: 'sem_foto' });
   });
 
-  it('cores repetidas, peças fora de 2..6, preço zero e Vender só em kit recusam', async () => {
+  it('Vender só em kit (Task 14): o kit vai à RPC com a opção; os componentes viram Guardado lá, antes da montagem', async () => {
+    const c = cenario();
+    expect(await criarKitVariacao(c.deps, pedido({ soEmKit: true, meta: 3 }))).toMatchObject({ ok: true });
+    expect(c.s.kits[0].kit).toMatchObject({ so_em_kit: true, meta: 3 });
+    const d = cenario();
+    await criarKitVariacao(d.deps, pedido());
+    expect(d.s.kits[0].kit).toMatchObject({ so_em_kit: false });
+  });
+
+  it('cores repetidas, peças fora de 2..6 e preço zero recusam', async () => {
     const c = cenario();
     expect(await criarKitVariacao(c.deps, pedido({ cores: ['Preto', 'Preto', 'Branco'] }))).toMatchObject({ motivo: 'cores_invalidas' });
     expect(await criarKitVariacao(c.deps, pedido({ pecasPorKit: 7 }))).toMatchObject({ motivo: 'pecas_invalidas' });
     expect(await criarKitVariacao(c.deps, pedido({ preco: 0 }))).toMatchObject({ motivo: 'preco_invalido' });
-    expect(await criarKitVariacao(c.deps, pedido({ soEmKit: true }))).toMatchObject({ motivo: 'so_em_kit_indisponivel' });
     expect(await criarKitVariacao(c.deps, pedido({
       quantidades: [{ cores: ['Preto', 'Branco'], tamanho: 'M', quantidade: 1 }, { cores: ['Branco', 'Preto'], tamanho: 'M', quantidade: 1 }],
     }))).toMatchObject({ motivo: 'combinacao_repetida' });

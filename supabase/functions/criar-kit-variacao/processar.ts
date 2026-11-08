@@ -201,8 +201,6 @@ function validarPedido(input: CriarKitVariacaoInput): string | { combinacoes: Om
   if (input.listingTypeId != null && input.listingTypeId !== 'gold_special' && input.listingTypeId !== 'gold_pro') {
     return 'tipo_anuncio_invalido';
   }
-  // ponytail: a transição Normal → Guardado (pausar os individuais) é da Task 14; até lá o kit nasce sem a opção.
-  if (input.soEmKit) return 'so_em_kit_indisponivel';
   const vistas = new Set<string>();
   const combinacoes: Omit<Combinacao, 'componentes'>[] = [];
   for (const q of input.quantidades ?? []) {
@@ -437,6 +435,8 @@ export async function criarKitVariacao(
     kit: {
       codigo_pai_base: familia.codigo_pai, codigo_pai_kit: codigoPai, pecas_por_kit: input.pecasPorKit,
       preco: input.preco, meta: input.meta, listing_type_id: input.listingTypeId ?? 'gold_special', pedido_hash: hash,
+      // Task 14: a RPC guarda os componentes antes de criar a montagem; a montagem pausa e confirma antes de usar.
+      so_em_kit: input.soEmKit === true,
     },
     skus: combinacoes.map((c, i) => ({
       codigo: codigos[i], tamanho: c.tamanho, cores: c.cores, rotulo_cor: c.rotulo, quantidade: c.quantidade,

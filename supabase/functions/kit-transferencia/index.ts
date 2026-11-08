@@ -2,7 +2,8 @@
 // Supabase e no ML. Um passo por invocação.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { enfileirarSaga, verificarAssinatura, type KitTransferenciaJob } from '../_shared/queue.ts';
+import { enfileirarReposicao, enfileirarSaga, verificarAssinatura, type KitTransferenciaJob } from '../_shared/queue.ts';
+import { dispararReposicao } from '../_shared/kit-variacao/reposicao.ts';
 import { resolverConexaoEstrita } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import type { ConexaoCanal } from '../_shared/canais/conexao.ts';
@@ -78,8 +79,10 @@ function deps(orgId: string): DepsSaga {
       async salvarAlvo(id, token, upId, patch) {
         exigir(await admin.rpc('kit_saga_salvar_alvo', { ...base(id, token), p_up: upId, p_patch: patch }), 'gravar alvo');
       },
-      async finalizar(id, token, estado, alerta) {
-        exigir(await admin.rpc('kit_saga_finalizar', { ...base(id, token), p_estado: estado, p_alerta: alerta }), 'finalizar');
+      async finalizar(id, token, estado, alerta, pausas) {
+        exigir(await admin.rpc('kit_saga_finalizar', {
+          ...base(id, token), p_estado: estado, p_alerta: alerta, p_pausas: pausas ?? [],
+        }), 'finalizar');
       },
       async ledger(id, token, op) {
         return exigir(await admin.rpc('kit_saga_ledger', { ...base(id, token), p_op: op }), `ledger ${op}`) as
@@ -98,6 +101,11 @@ function deps(orgId: string): DepsSaga {
         const linhas = exigir(await admin.from('sku_politica_kit').select('versao')
           .eq('org_id', orgId).in('codigo', codigos), 'ler política') ?? [];
         return linhas.reduce((soma, p) => soma + p.versao, 0);
+      },
+      async guardados(codigos) {
+        const linhas = exigir(await admin.from('sku_politica_kit').select('codigo')
+          .eq('org_id', orgId).in('codigo', codigos).eq('estado', 'guardado'), 'ler estados') ?? [];
+        return new Set(linhas.map((p) => p.codigo as string));
       },
       async conferirSaldo(id, token, codigo) {
         return exigir(await admin.rpc('kit_saga_conferir_saldo', { ...base(id, token), p_codigo: codigo }), 'conferir saldo') as
@@ -271,6 +279,24 @@ async function fecharCriacao(admin: SupabaseClient, orgId: string, transferencia
   }
 }
 
+/**
+ * Task 14: fim de transferência (entrada, ajuste, estorno, cancelamento, montagem, volta a Guardado) dispara a rodada
+ * de reposição dos kits que usam os SKUs, agrupada por kit na fila. Todos os kits, não só os automáticos: a rodada
+ * também desfaz a pausa da automação de kit desligado. Best-effort: a reconciliação diária repete.
+ */
+async function reporDepois(admin: SupabaseClient, orgId: string, transferenciaId: string, acao: string): Promise<void> {
+  if (acao !== 'concluida' && acao !== 'abortada') return;
+  try {
+    const { data, error } = await admin.from('kit_transferencia_alvos').select('codigo')
+      .eq('transferencia_id', transferenciaId).eq('org_id', orgId);
+    if (error) throw new Error(error.message);
+    await dispararReposicao(admin, orgId, [...new Set((data ?? []).map((a) => a.codigo as string))],
+      (kitId) => enfileirarReposicao(orgId, kitId), { soAutomaticos: false });
+  } catch (e) {
+    console.error('kit_reposicao_disparo_falhou', transferenciaId, String(e));
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
@@ -289,6 +315,7 @@ Deno.serve(async (req) => {
   try {
     const r = await avancarSaga(deps(job.org_id), job.transferencia_id);
     await fecharCriacao(adminClient(), job.org_id, job.transferencia_id, r.acao);
+    await reporDepois(adminClient(), job.org_id, job.transferencia_id, r.acao);
     // Ocupada: outra invocação tem o claim, ou a anterior morreu e o prazo ainda não venceu. O QStash
     // repete; se a outra estava viva, a repetição só executa um passo já idempotente.
     return json(r.acao === 'ocupada' ? 409 : 200, r);

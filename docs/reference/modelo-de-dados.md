@@ -1659,6 +1659,13 @@ confirmado no ML), `atualizado_em`. Avança, nunca recua, quando `kit_saga_salva
 pendente = entrada, ajuste, estorno de venda e `kit_saida`/`kit_entrada` depois dela, menos os de transferência com o alvo do
 SKU confirmado. Venda fica fora: baixa o ML e o local. RLS de `select` por org; escrita só pela RPC.
 
+### `kit_pausas_automaticas`
+Pausa que a automação fez e ainda não desfez (Task 14): PK `(org_id, item_id)`, `codigo`, `transferencia_id`, `criado_em`.
+Gravada só por `kit_saga_finalizar` (`p_pausas`), com os itens que a saga pausou (`pausado_pela_saga`) e a política deixou
+pausados. A reposição (`kit-reposicao`) desfaz só estas, e só com o SKU fora de Guardado; pausa do operador, moderação e
+retirada fazem o registro sair sem PUT. Pausa anterior à saga nunca entra. RLS de `select` por org; escrita só `service_role`.
+*Migration `20261108052338_kit_variacao_reposicao.sql`.*
+
 ### `kit_exclusoes`
 Exclusão durável única: PK `(org_id, codigo)`, `up_id` (nulo até o dono resolver o UP), `dono_tipo`
 (`transferencia|publicacao|ativacao`), `dono_id`, `criado_em`. Índice `(org_id, dono_id)`.
@@ -1694,6 +1701,14 @@ Todas só `service_role`. As de transferência são `security definer`, dono `es
 - `kit_saga_conferir_saldo(p_org, p_transferencia, p_token, p_codigo)`: com a variação canônica travada, devolve `saldo`,
   `marca`, `pendente` e `ordem`. A saga só segue se `saldo − ML = pendente` (sem marca, `pendente` é só o desta
   transferência, ou seja, local = ML); senão trava com "divergência sem explicação". Nunca ajusta por ledger − ML.
+- Task 14 ("Vender só em kit", migration `20261108052338_kit_variacao_reposicao.sql`, invoker, só `service_role`):
+  `kit_reposicao_foto(p_org, p_kit)` (fotografia numa consulta: kits com a opção mais o do job, SKUs, componentes,
+  política e pausas da automação); `kit_reposicao_sobra` (Guardado → Sobra), `kit_reposicao_guardar` (Sobra → Guardado e
+  transferência `sair_sobra` com os parceiros, que os reserva pela exclusão) e `kit_reposicao_repor` (transferência `repor`
+  só com origens Guardadas), todas recusando com `versao` se a política dos SKUs envolvidos mudou desde a fotografia;
+  `kit_reposicao_ligar` (reivindica os componentes, Normal → Guardado e `sair_sobra` que pausa os individuais) e
+  `kit_reposicao_desligar` (remove só a reivindicação do kit; SKU sem nenhuma volta a Normal). Toda mudança de estado
+  incrementa `sku_politica_kit.versao`. `kit_variacao_criar` com `so_em_kit` guarda os componentes antes da montagem.
 - `kit_aplicar_movimento` grava `ordem` na inserção (o trigger de ADR-0181 só numera no update).
 - `kit_reservar_transferencia(p_org, p_transferencia)` grava `kit_saida` nas origens, tudo ou nada;
   `kit_creditar_transferencia` grava `kit_entrada` no destino se o ledger bate com `itens`;

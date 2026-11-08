@@ -134,6 +134,8 @@ export interface OpcoesStatusOperador {
   lerStatus: (itemId: string) => Promise<StatusAnuncioCanal | null>;
   /** Alerta durável ao operador (Telegram) quando a ativação fica sem confirmação. */
   alertar: (texto: string) => Promise<unknown>;
+  /** Task 14: reativação pela automação (desfazer a pausa que ela fez). Pausa do operador recusa. */
+  automatico?: boolean;
 }
 
 async function politicaOperador(
@@ -186,7 +188,7 @@ export async function prepararStatusOperador(admin: SupabaseClient, o: OpcoesSta
 
   const politicas = await lerPoliticas(admin, orgId, codigos);
   for (const c of codigos) {
-    const d = podeReativar({ politica: politicas.get(c) ?? null, origem: 'operador' });
+    const d = podeReativar({ politica: politicas.get(c) ?? null, origem: o.automatico ? 'automatico' : 'operador' });
     if (!d.pode) return { recusa: d.motivo };
   }
   let vivo: StatusAnuncioCanal | null;

@@ -277,6 +277,15 @@ describe('prepararStatusOperador (Task 6: pausar/reativar pelo operador)', () =>
   };
   const args = (f: ReturnType<typeof falso>, nome: string) => f.rpcs.filter((x) => x.nome === nome).map((x) => x.args);
 
+  it('Task 14: reativação automática nunca desfaz a pausa do operador (nem pega a exclusão)', async () => {
+    const f = falso(banco({ politicas: [pol({ bloqueio_operador: true })] }));
+    expect(await preparar(f, { automatico: true }).r).toEqual({ recusa: 'Pausado pelo operador.' });
+    expect(f.rpcs).toEqual([]);
+    // Sem bloqueio, a automática segue o mesmo caminho da manual.
+    const g = falso(banco({ politicas: [pol()] }));
+    expect('concluir' in await preparar(g, { automatico: true }).r).toBe(true);
+  });
+
   it('reativa a pausa do operador: reivindica a geração, exclusão com dono estável, limpa o bloqueio; confirmado, libera a geração', async () => {
     const f = falso(banco({ politicas: [pol({ bloqueio_operador: true })] }));
     const { r, lidos } = preparar(f);

@@ -42,6 +42,8 @@ verify_jwt = false
 verify_jwt = false
 [functions.kit-transferencia]
 verify_jwt = false
+[functions.kit-reposicao]
+verify_jwt = false
 [functions.reconciliar-estoque]
 verify_jwt = false
 # E6b: chamadas pelo APP com o JWT do usuário (não pelo QStash) — verify_jwt fica ligado.

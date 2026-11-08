@@ -46,6 +46,10 @@ function cenario() {
     agora: INICIO,
     versaoPolitica: 7,
     semReativar: [] as string[],
+    /** SKUs em Guardado (Task 14): pausa que fica é da automação, sem alerta. */
+    guardados: new Set<string>(),
+    /** Pausas automáticas gravadas por `finalizar`. */
+    pausas: [] as Array<{ codigo: string; itemId: string }>,
     pendentes: [] as PedidoPendente[],
     falhasImportacao: [] as string[],
     baixas: [] as Array<{ orderId: string; resultado: never }>,
@@ -149,12 +153,13 @@ function cenario() {
         Object.assign(a, structuredClone(patch));
         s.aoSalvarAlvo(patch);
       },
-      async finalizar(_id, token, estado, alerta) {
+      async finalizar(_id, token, estado, alerta, pausas) {
         if (s.falhaFinalizar) { const e = s.falhaFinalizar; s.falhaFinalizar = null; throw e; }
         validar(token);
         // Espelho de kit_saga_finalizar: repausa pendente recusa.
         if (s.alvos.some((a) => a.repausar.length > 0)) throw new Error('kit_repausa_pendente');
         s.rpcs.push('finalizar');
+        s.pausas.push(...(pausas ?? []));
         s.exclusaoSolta = true;
         Object.assign(s.t, { estado, passo: 'fim', alerta: alerta ?? s.t.alerta });
         s.token = null;
@@ -183,6 +188,9 @@ function cenario() {
       },
       async versaoPolitica() {
         return s.versaoPolitica;
+      },
+      async guardados(codigos) {
+        return new Set(codigos.filter((c) => s.guardados.has(c)));
       },
       async conferirSaldo(_id, token, codigo) {
         validar(token);
@@ -783,6 +791,35 @@ describe('avancarSaga', () => {
     expect(c.s.t.estado).toBe('concluida');
     expect(c.s.chamadas).not.toContain('active MLB-P');
     expect(c.s.chamadas).toContain('active MLB-K');
+  });
+
+  it('Task 14: SKU Guardado fica pausado sem alerta, e a pausa é gravada como da automação', async () => {
+    const c = cenario();
+    c.s.semReativar = ['P'];
+    c.s.guardados.add('P');
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(c.s.chamadas).not.toContain('active MLB-P');
+    expect(c.s.alertas).toEqual([]);
+    expect(c.s.pausas).toEqual([{ codigo: 'P', itemId: 'MLB-P' }]);
+  });
+
+  it('Task 14: bloqueio que não é Guardado segue alertando, e a pausa também é gravada', async () => {
+    const c = cenario();
+    c.s.semReativar = ['P'];
+    await rodar(c);
+    expect(c.s.alertas.some((a) => a.includes('MLB-P'))).toBe(true);
+    expect(c.s.pausas).toEqual([{ codigo: 'P', itemId: 'MLB-P' }]);
+  });
+
+  it('Task 14: pausa manual anterior nunca entra nas pausas da automação', async () => {
+    const c = cenario();
+    c.s.ups['UP-B'].itens[1] = { id: 'MLB-BC', status: 'paused', subStatus: ['paused_by_seller'] };
+    c.s.semReativar = ['B'];
+    c.s.guardados.add('B');
+    await rodar(c);
+    expect(c.s.pausas).toEqual([{ codigo: 'B', itemId: 'MLB-B' }]);
+    expect(c.s.chamadas).not.toContain('active MLB-BC');
   });
 
   it('item com pausa manual antes da saga não é reativado (Review Focus 1)', async () => {
