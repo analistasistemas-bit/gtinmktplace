@@ -79,8 +79,13 @@ R4.4 Por categoria [A1][A2]: cosméticos, vestuário, tecidos/aviamentos/fitas, 
 R5.1 [A1][A2] 1 Capa · 2 Contexto de uso · 3 Quebra de objeção · 4 Benefícios · 5 Especificações · 6 Como usar ·
 7 Detalhes. O operador escolhe quais gerar (§1); a ordem das fotos segue a numeração.
 
-R5.2 Capa [A1][A2][OP]: produto isolado, fundo branco #FFFFFF, proporção real, sombra discreta, **nenhum texto
-de marketing acrescentado**; a impressão da embalagem real é preservada (em uso real nunca causou pausa).
+R5.2 Capa [A1][A2][OP]: **sempre gerada** — trata a foto de referência (normalmente sem tratamento) e, aplicada
+no modo substituir, vira a 1ª foto do anúncio. Produto isolado, fundo branco #FFFFFF, proporção real, sombra
+discreta, **nenhum texto de marketing acrescentado**; a impressão da embalagem real é preservada e legível (em uso
+real nunca causou pausa). Detalhes do prompt de origem [OP]: perspectiva de três quartos quando mostra melhor a
+embalagem; produto ocupando ~85% da composição; produto em rolo (renda, fita, linha) com parte desenrolada em
+curvas no primeiro plano, mostrando desenho, transparência e bordas. Sem layout de texto: os layouts são das
+missões 2 a 7.
 
 R5.3 [REV] **Só tetos, nunca pisos:** até 3 benefícios (≤6 palavras), até 6 especificações, 3–4 etapas. Missão
 sem fato elegível não é oferecida. "Como usar" só usa passos já escritos nos dados da família; sem eles, vira guia
