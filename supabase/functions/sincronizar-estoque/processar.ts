@@ -177,13 +177,18 @@ interface ContextoAlerta {
 async function alertarEstoqueZerado(
   admin: SupabaseClient, notificar: typeof notificarCategoria, ctx: ContextoAlerta,
   incluir: (codigo: string) => boolean = () => true,
+  soLocais = false,
 ): Promise<void> {
   try {
-    const { data: candidatos } = await admin.from('estoque_movimentos')
+    let q = admin.from('estoque_movimentos')
       .select('id, codigo')
       .eq('org_id', ctx.orgId).eq('codigo_pai', ctx.codigoPai)
       .eq('estoque_resultante', 0).gt('estoque_anterior', 0)
       .is('alertado_em', null);
+    // Caminho da saga: só os movimentos locais encaminhados a ela; o próprio movimento da transferência
+    // (montar, repor, sair_sobra) não é "estoque zerado".
+    if (soLocais) q = q.is('transferencia_id', null);
+    const { data: candidatos } = await q;
     const ids = (candidatos ?? []).filter((m) => incluir(m.codigo as string)).map((m) => m.id as string);
     if (ids.length === 0) return;
 
@@ -226,7 +231,7 @@ export async function alertarZeradosConfirmados(
   try {
     const { data, error } = await admin.from('estoque_movimentos').select('codigo_pai')
       .eq('org_id', orgId).in('codigo', codigos).eq('estoque_resultante', 0).gt('estoque_anterior', 0)
-      .is('alertado_em', null);
+      .is('alertado_em', null).is('transferencia_id', null);
     if (error) throw new Error(error.message);
     const so = new Set(codigos);
     for (const codigoPai of new Set((data ?? []).map((m) => m.codigo_pai as string))) {
@@ -235,7 +240,7 @@ export async function alertarZeradosConfirmados(
       await alertarEstoqueZerado(admin, notificar, {
         orgId, codigoPai, produto: f.nome, permalink: f.permalink,
         rotuloPorSku: f.rotuloPorSku, estoquePorSku: f.estoquePorSku, temAnuncio: true,
-      }, (c) => so.has(c));
+      }, (c) => so.has(c), true);
     }
   } catch (e) {
     console.error('kit_alerta_zerado_confirmado_falhou', orgId, String(e));
@@ -499,9 +504,9 @@ export async function processarSincronizacao(
   // 3) ADR-0199: SKU de kit com variação só recebe quantidade pela saga, com o anúncio pausado. O alvo
   // sai inteiro: num item com variações o conector regravaria as demais com a quantidade lida.
   const retentaveis: string[] = [];
-  // SKUs tirados do push (participantes e quem divide o item com eles): o zero deles não foi ao ML nesta execução
-  // (ADR-0134). O do participante a saga avisa ao confirmar a redução.
-  const semPush = new Set<string>();
+  // Participantes encaminhados à saga: o zero deles não foi ao ML nesta execução (ADR-0134); a saga avisa ao
+  // confirmar a redução. SKU comum segue no aviso como hoje.
+  const daSaga = new Set<string>();
   // Filho de participante fora de `ativo` no vínculo local também entra: o push o descartaria em silêncio.
   if (alvos.length + inativos.length > 0) {
     const participantes = await skusParticipantes(
@@ -512,7 +517,7 @@ export async function processarSincronizacao(
       a.estoques.some((e) => !podeEscreverQuantidade({ participa: participantes.has(e.sku), origem: 'outro' }));
     const fora = [...alvos.filter(naoEscreve), ...inativos.filter(naoEscreve)];
     if (fora.length > 0) {
-      for (const a of fora) for (const e of a.estoques) semPush.add(e.sku);
+      for (const a of fora) for (const e of a.estoques) if (participantes.has(e.sku)) daSaga.add(e.sku);
       alvos.splice(0, alvos.length, ...alvos.filter((a) => !naoEscreve(a)));
       if (!job.sem_transferencia_kit) {
         const r = await transferirParaSaga(deps, org_id, fora, participantes);
@@ -534,7 +539,7 @@ export async function processarSincronizacao(
   if (alvos.length === 0 && retentaveis.length > 0) return { status: 500, body: { retry: retentaveis } };
   if (alvos.length === 0) {
     // Sem canal publicado o saldo não pausa anúncio nenhum: fecha os movimentos sem avisar.
-    await alertarEstoqueZerado(admin, notificar, ctxAlerta, (c) => !semPush.has(c));
+    await alertarEstoqueZerado(admin, notificar, ctxAlerta, (c) => !daSaga.has(c));
     return { status: 200, body: { ok: true, alvos: 0 } };
   }
 
@@ -627,6 +632,6 @@ export async function processarSincronizacao(
   // zero seria mentira (ADR-0134).
   if (retentaveis.length > 0) return { status: 500, body: { retry: retentaveis } };
 
-  await alertarEstoqueZerado(admin, notificar, ctxAlerta, (c) => !semPush.has(c));
+  await alertarEstoqueZerado(admin, notificar, ctxAlerta, (c) => !daSaga.has(c));
   return { status: 200, body: { ok: true, alvos: alvos.length } };
 }

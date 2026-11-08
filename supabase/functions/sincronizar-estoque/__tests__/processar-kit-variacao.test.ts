@@ -19,6 +19,8 @@ interface Banco {
   p1Pausado?: boolean;
   /** Movimentos >0 → 0 de P1 (z1) e P2 (z2), ainda sem alerta. */
   zerados?: boolean;
+  /** P1 e P2 como variações de um item Legacy só (sem filhos UP). */
+  mesmoItem?: boolean;
 }
 
 const ITENS = [
@@ -43,6 +45,8 @@ function fakeAdmin(b: Banco) {
     ...(b.zerados ? [
       mov('z1', 'P1', 6, '2026-11-07T11:40:00Z', { estoque_anterior: 2, estoque_resultante: 0, alertado_em: null }),
       mov('z2', 'P2', 7, '2026-11-07T11:41:00Z', { estoque_anterior: 1, estoque_resultante: 0, alertado_em: null }),
+      // Saída de montagem (movimento da própria transferência) que zerou P1: nunca é "estoque zerado".
+      mov('z3', 'P1', 8, '2026-11-07T11:42:00Z', { estoque_anterior: 1, estoque_resultante: 0, alertado_em: null, transferencia_id: 'T9' }),
     ] : []),
   ];
   const consultas: string[] = [];
@@ -61,8 +65,11 @@ function fakeAdmin(b: Banco) {
           return { data: { id: 'F', nome_pai: 'Blusa', ml_permalink: null, organizations: { modulos_habilitados: b.modulos } }, error: null };
         case 'variacoes': return { data: [{ codigo: 'P1', estoque: 4 }, { codigo: 'P2', estoque: 6 }], error: null };
         case 'anuncios_externos':
-          return { data: [{ id: 'A', canal: 'fake', item_externo_id: null, variacoes_externas: null }], error: null };
+          return { data: [b.mesmoItem
+            ? { id: 'A', canal: 'fake', item_externo_id: 'MLB-X', variacoes_externas: { P1: 1, P2: 2 } }
+            : { id: 'A', canal: 'fake', item_externo_id: null, variacoes_externas: null }], error: null };
         case 'anuncios_externos_itens':
+          if (b.mesmoItem) return { data: [], error: null };
           return { data: ITENS.map((r) => (b.semUp ? { ...r, user_product_id: null } : r))
             .map((r) => (b.p1Pausado && r.sku === 'P1' ? { ...r, status: 'pausado' } : r))
             .filter((r) => filtros.every((f) => f(r))), error: null };
@@ -211,11 +218,31 @@ describe('sincronizar-estoque × kit com variação', () => {
     await alertarZeradosConfirmados(m.admin, m.notificar as never, 'O', ['P1']);
     expect(m.movs.find((x) => x.id === 'z1')!.alertado_em).not.toBeNull();
     expect(m.movs.find((x) => x.id === 'z2')!.alertado_em).toBeNull();
+    expect(m.movs.find((x) => x.id === 'z3')!.alertado_em).toBeNull();
     expect(m.notificar).toHaveBeenCalledTimes(1);
     expect(String((m.notificar.mock.calls[0] as unknown[])[3])).toMatch(/Estoque zerado[\s\S]*P1/);
     // Reentrega: a marca deduplica.
     await alertarZeradosConfirmados(m.admin, m.notificar as never, 'O', ['P1']);
     expect(m.notificar).toHaveBeenCalledTimes(1);
+  });
+
+  it('confirmação de montagem que só zerou pelo próprio movimento não avisa (achado 5)', async () => {
+    const m = montar({ modulos: ['kit_variacao'], componentes: ['P1'], zerados: true });
+    m.movs.find((x) => x.id === 'z1')!.alertado_em = 'antes';
+    await alertarZeradosConfirmados(m.admin, m.notificar as never, 'O', ['P1']);
+    expect(m.movs.find((x) => x.id === 'z3')!.alertado_em).toBeNull();
+    expect(m.notificar).not.toHaveBeenCalled();
+  });
+
+  it('SKU comum no mesmo item do participante: fora do push, mas o zero dele segue no aviso como hoje', async () => {
+    const m = montar({ modulos: ['kit_variacao'], componentes: ['P1'], zerados: true, mesmoItem: true });
+    expect((await processarSincronizacao(m.deps, JOB)).status).toBe(200);
+    expect(pushes()).toEqual([]);
+    expect(m.movs.find((x) => x.id === 'z1')!.alertado_em).toBeNull();
+    expect(m.movs.find((x) => x.id === 'z2')!.alertado_em).not.toBeNull();
+    const zerado = m.notificar.mock.calls.map((c) => String((c as unknown[])[3])).filter((x) => x.includes('Estoque zerado'));
+    expect(zerado).toHaveLength(1);
+    expect(zerado[0]).toContain('P2');
   });
 
   it('SKU comum zerado em org sem o módulo: alerta como hoje', async () => {
