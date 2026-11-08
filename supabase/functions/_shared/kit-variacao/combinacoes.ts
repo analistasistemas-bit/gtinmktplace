@@ -32,3 +32,7 @@ export function normalizarCombinacao(marcadas: string[], combinacao: string[]): 
   if (combinacao.some((c) => !marcadas.includes(c))) return null;
   return marcadas.filter((c) => combinacao.includes(c));
 }
+
+/** Medido em 07/11: o seletor do ML levou minutos para juntar os itens novos (combinações sozinhas ou "Sem estoque"). */
+export const AVISO_SELETOR_ML = 'O Mercado Livre leva alguns minutos para juntar os itens no seletor de combinação. '
+  + 'Até lá, algumas combinações podem aparecer sozinhas ou como "Sem estoque".';
