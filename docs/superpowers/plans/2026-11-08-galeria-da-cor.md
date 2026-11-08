@@ -1,329 +1,235 @@
-# Galeria da cor por IA — Implementation Plan
+# Galeria da cor por IA — Implementation Plan (v2)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Em Publicados, gerar até 7 imagens por cor de um anúncio já publicado (roteiro → cenas por IA → texto composto → aprovação → aplicar no ML), cobrando cada imagem gerada.
+**Goal:** Em Publicados, gerar até 7 imagens por cor de um anúncio já publicado (fatos → roteiro → cenas por IA → texto composto → aprovação → aplicar no ML), cobrando cada imagem entregue.
 
-**Architecture:** Fatos e roteiro em edges síncronas; cada imagem é um job QStash (`galeria-worker`) que chama o provedor (OpenRouter síncrono; Higgsfield assíncrono com nova consulta agendada por QStash), grava a cena no Storage e vira faturável ao chegar a `gerada`. O corte 1200×1540 e a tipografia são compostos **no navegador** (canvas) na aprovação — as edges não têm biblioteca de imagem e têm teto de CPU. Aplicar usa upload multipart ao ML e PUT só de fotos, com foto anterior guardada para reverter.
+**Architecture:** Fatos e roteiro em edges síncronas. Cada imagem é um job QStash com claim por tentativa e lease; Higgsfield é consultado por novos jobs agendados com claim por rodada e prazo absoluto. Corte 1200×1540 e tipografia são compostos no navegador (canvas) na aprovação; a missão 7 e as lupas saem de recortes da foto real, sem gerador. Aplicar é uma saga persistida: preparação com retrato completo do anúncio, um job por item na fila serial da conta, fotos anteriores gravadas antes do PUT, retomada por GET e varredura de itens presos.
 
-**Tech Stack:** React + TS (Vite), Supabase (Postgres, Storage, Deno edges), QStash, OpenRouter, Higgsfield API, API do Mercado Livre, vitest.
+**Tech Stack:** React + TS (Vite), Supabase (Postgres, Storage, Deno edges), QStash, OpenRouter, Higgsfield API, API do Mercado Livre, vitest, Playwright (render real do canvas).
 
-**Spec:** `docs/superpowers/specs/2026-11-08-galeria-da-cor-regras.md` (regras R0–R11) · `docs/decisions/0201-galeria-da-cor-por-ia.md` (§1–§12) · `CONTEXT.md` ("Imagens do anúncio por IA").
+**Spec:** `docs/superpowers/specs/2026-11-08-galeria-da-cor-regras.md` (R0–R11) · `docs/decisions/0201-galeria-da-cor-por-ia.md` (§1–§13) · `CONTEXT.md` ("Imagens do anúncio por IA").
+
+**Histórico:** v1 revisada por Codex (`gpt-6.1-sol` high) e Grok 4.7 xhigh — ambos REVISAR; v2 incorpora os 8 + 8 achados.
 
 ## Global Constraints
 
 - Bloco técnico literal ao fim de todo prompt de imagem: `photorealistic, ultra detailed, commercial product photography, studio lighting, realistic shadows, sharp focus, clean composition, high resolution, professional catalog, no distortion, no blur, no watermark, premium marketplace standard` (R5.4).
-- Arquivo final: 1200×1540 JPG, 300 KB–1 MB; corte ao centro, nunca esticar; capa com preenchimento branco; corte >15% bloqueia (R9.1).
-- Layout estilo A: Inter, texto #1b1f24 em placa branca ≥92% opaca; fonte ≥5% da largura, títulos 7–8,5%; contraste ≥4,5:1; área segura 6% laterais e 12–88% da altura; ≤3 benefícios, ≤4 pares na ficha (R6.4–R6.5).
+- Arquivo final: 1200×1540 JPEG, 60 KB–1 MB (piso só contra arquivo vazio/branco); corte ao centro, nunca esticar; capa com preenchimento branco; corte >15% bloqueia (R9.1).
+- Layout estilo A: Inter, texto #1b1f24 em placa branca ≥92% opaca; fonte ≥5% da largura, títulos 7–8,5%; contraste ≥4,5:1 na cor composta; área segura 6% laterais e 12–88% da altura; ≤3 benefícios, ≤4 pares na ficha (R6.4–R6.5).
 - Texto: headline ≤5 palavras, subheadline ≤10, benefício ≤6, etapa ≤7, legenda ≤5; NFC (R6.1–R6.2).
-- Moda (ADR §11): nenhuma imagem com texto; missões de Moda conforme R5.5.
-- Fato `CONFIRMADO` só de planilha, atributo editado pelo operador ou confirmação explícita do operador (ADR §12, R1.2).
-- Modelos liberados: `google/gemini-nano-banana-2.1` (padrão, OpenRouter), `xai/grok-imagine-image-2.0` e `alibaba/qwen-image-3/edit` (Higgsfield, `prompt_extend: true` obrigatório no Qwen; ≤3 referências).
-- Teto: geração inicial + 2 por (cor, missão); chave única por geração; falha sem arquivo não cobra (R8.2–R8.3).
-- Limite de fotos ML: 10 por variação (`max_pictures_per_item_var`), 12 por item sem variações (`max_pictures_per_item`); ler da categoria ao vivo.
-- Aplicar e reverter só com admin da org (ADR §8); PUT só de fotos — nunca preço, estoque ou status (R9.3).
-- Migrations só via `supabase migration new` + `supabase db push`; `npm run db:check` (ADR-0043). Edge chamada por QStash: `verify_jwt = false`.
-- Segredo `HF_CREDENTIALS` (`KEY_ID:KEY_SECRET`) só em `supabase secrets`; nunca em código.
-- Tabelas novas: RLS com `org_id = (select public.current_org_id())` para select; escrita só service_role.
-- Retenção (ADR §13): arquivos de imagens aprovadas/aplicadas ficam para sempre; não aprovadas são apagadas do Storage após 30 dias, a linha no banco é preservada.
-- Referência da geração: a foto **da própria cor** (`variacoes.imagem_path` no Storage; sem ela, a 1ª foto da variação no ML), nunca a capa multicolor.
+- Moda (ADR §11): decidida pela **edge** pela categoria lida ao vivo (`path_from_root`), nunca pelo modelo de IA; em Moda nenhuma imagem leva texto.
+- Fato `CONFIRMADO` só da planilha ou de confirmação explícita do operador por campo. `atributos_ml`, `titulo_ml`, `descricao_ml` são `SUGERIDO` — a marca `atributos_editados_pelo_operador` é da família inteira e não prova a origem de cada atributo (ADR §12).
+- Missão 7 e lupas: recortes da foto real da cor, compostos no navegador; não chamam provedor e não são cobrados (R3.3).
+- Modelos: `google/gemini-nano-banana-2.1` (padrão), `xai/grok-imagine-image-2.0`, `alibaba/qwen-image-3/edit` (`prompt_extend: true`, ≤3 refs).
+- Referência: foto da própria cor (`variacoes.imagem_path`; sem ela, 1ª foto da variação no ML); nunca capa multicolor.
+- Cobrança: uma linha por `request_id` da imagem quando ela é **entregue à tela pela primeira vez** (`entregue_em`), com arquivo validado; teto 3 gerações por (cor, missão, versão do roteiro), contando só gerações entregues (R8.2–R8.3).
+- Limite ML: 10 fotos por variação, 12 por item sem variações, lidos da categoria ao vivo.
+- Aplicar/reverter: só admin; PUT só de fotos (mais o que o ensaio da Task 13 provar obrigatório); recusar `catalog_listing` e tag `variations_migration_pending`; fila serial da conta.
+- Migrations via `supabase migration new` + `supabase db push`; `npm run db:check`. Funções SQL novas: `security definer`, `set search_path = ''`, `revoke all … from public, anon, authenticated`. Teste SQL com `set local lock_timeout = '5s'`.
+- Edge chamada por QStash: `verify_jwt = false` + `verificarAssinatura`. `HF_CREDENTIALS` só em `supabase secrets`.
+- Retenção (ADR §13): aprovadas/aplicadas ficam; não aprovadas apagadas do Storage após 30 dias; linha preservada.
 
 ## Review Focus
 
-1. **Pedido repetido** (duplo clique, recarga, retry do QStash) — uma única linha faturável por `request_id`. Teste em Task 8 e Task 9.
-2. **Anúncio mudou entre preparar e aplicar** (outro admin trocou fotos, cor nova, variação removida) — aplicar para e mostra a diferença, não sobrescreve. Teste em Task 13.
-3. **Família UP em que um item falha no meio** — os itens já trocados voltam às fotos anteriores e o resultado fica registrado por item. Teste em Task 14.
-4. **Fato sugerido nunca confirmado ou divergente** — não pode aparecer em texto de imagem nem no roteiro aprovado. Teste em Task 6.
-5. **Cena do provedor em proporção inesperada** (ex.: 1:1 ou 16:9) — corte >15% bloqueia em vez de deformar. Teste em Task 11.
+1. **Pedido repetido ou publish perdido** (duplo clique, recarga, QStash fora) — nenhuma linha fica `pendente` para sempre e nunca há 2 cobranças nem 2 submissões ao provedor. Testes na Task 8 e Task 9.
+2. **Queda no meio do aplicar** (edge morre depois do PUT, compensação falha) — a saga retoma por GET e nunca deixa o anúncio sem saber o estado. Testes na Task 14.
+3. **Família UP com vários tamanhos da mesma cor** — todos os itens daquela cor recebem a galeria; conjunto incompleto aborta. Teste na Task 14.
+4. **Fato ou roteiro mudou depois da geração** — imagens desatualizadas não podem ser aprovadas nem aplicadas. Teste na Task 6 e Task 12.
+5. **Cena em proporção inesperada ou arquivo final inválido** — corte >15% bloqueia; arquivo fora do contrato não vai ao ML. Testes na Task 11 e Task 12.
 
 ---
 
-## Fatia 0 — Registro técnico
+## Fatia 0 — Registro técnico e ensaio do ML
 
-### Task 0: Adendo ao ADR-0201 (composição no navegador, geração assíncrona, cobrança compartilhada)
+### Task 0: Adendo técnico ao ADR-0201
 
-**Files:**
-- Modify: `docs/decisions/0201-galeria-da-cor-por-ia.md` (seção "Adendo técnico")
-
-- [ ] **Step 1:** Escrever o adendo com 3 decisões e seus porquês: (a) corte e texto compostos em canvas no navegador na aprovação, servidor valida dimensões/peso — edges sem biblioteca de imagem, teto de CPU, sem worker no Render; (b) um job QStash por imagem; Higgsfield consultado por nova mensagem com `delay: 15` até 6 min; (c) função de cobrança compartilhada `platform_registrar_imagem(...)` chamada por gatilho em cada tabela de origem.
+**Files:** Modify `docs/decisions/0201-galeria-da-cor-por-ia.md` (seção "Adendo técnico").
+- [ ] **Step 1:** Registrar: (a) composição no navegador — edges têm 2 s de CPU e não há worker; limitação aceita: o arquivo final é produzido pelo navegador do operador da própria org; o servidor valida formato, dimensões e peso e guarda o hash; (b) job por imagem com claim por tentativa e lease; Higgsfield consultado por jobs agendados com claim por rodada e prazo absoluto; (c) cobrança na primeira entrega, por função compartilhada `platform_registrar_imagem`; (d) aplicar como saga persistida, job por item na fila serial da conta; (e) missão 7 e lupas sem gerador.
 - [ ] **Step 2:** Commit `docs(galeria-ia): adendo técnico ao ADR-0201`.
+
+### Task 1: Ensaio do contrato do PUT de fotos (bloqueador)
+
+**Files:** Create `scripts/ensaio-galeria-put.ts` (fora da suíte; só GET e um PUT de fotos em itens de teste), `docs/superpowers/specs/2026-11-08-galeria-da-cor-ensaio-put.md` (resultado).
+- [ ] **Step 1:** Diego escolhe 1 anúncio Legacy com ≥2 variações e 1 família UP com ≥2 tamanhos da mesma cor, de baixo risco. Nada roda sem a escolha dele.
+- [ ] **Step 2:** Medir, registrando o GET antes/depois (preço, estoque, status, variações, `picture_ids`): (a) Legacy, PUT com `variations: [{id, picture_ids}]` **sem** `available_quantity` — o ML aceita? preserva estoque e preço? (b) idem com `available_quantity` do GET; (c) UP, PUT só `{pictures}`; (d) upload multipart (`POST /pictures`, campo `file`, `User-Agent: Mozilla/5.0`) e prazo até a foto ficar com URL real; (e) restaurar as fotos originais e conferir.
+- [ ] **Step 3:** Gravar o resultado no doc de ensaio: corpo mínimo aceito por formato. Se (a) falhar e só (b) funcionar, a Task 14 usa a quantidade do GET imediatamente anterior e registra o risco de janela; Codex e Grok revisam essa escolha antes da Task 13.
+- [ ] **Step 4:** Commit `docs(galeria-ia): ensaio do contrato do PUT de fotos`.
 
 ## Fatia 1 — Fundação
 
-### Task 1: Tabelas da galeria e cobrança compartilhada
+### Task 2: Tabelas, saga e cobrança compartilhada
 
-**Files:**
-- Create: `supabase/migrations/<ts>_galeria_da_cor.sql` (via `supabase migration new galeria_da_cor`)
-- Create: `scripts/sql/teste-galeria-cobranca.sql` (teste em transação desfeita, padrão "Teste SQL sem Docker")
+**Files:** Create `supabase/migrations/<ts>_galeria_da_cor.sql`; `scripts/sql/teste-galeria-cobranca.sql`.
 
-**Interfaces:**
-- Produces (tabelas, todas com `org_id uuid not null references public.organizations(id)`, RLS select por org, escrita só service_role):
-  - `galeria_fatos(id uuid pk, org_id, familia_id uuid, campo text, valor text, origem text check in ('planilha','atributo_operador','confirmado_operador'), evidencia jsonb, confirmado_por uuid null, confirmado_em timestamptz null, descartado boolean default false, unique(org_id, familia_id, campo))`
-  - `galeria_roteiros(id uuid pk, org_id, familia_id, versao int, conteudo jsonb, status text check in ('rascunho','aprovado'), criado_por uuid, aprovado_por uuid null, criado_em, aprovado_em null, unique(org_id, familia_id, versao))`
-  - `galeria_imagens(id uuid pk, org_id, familia_id, roteiro_id uuid references galeria_roteiros, cor text, missao smallint check between 1 and 7, geracao smallint check between 1 and 3, request_id uuid not null, modelo text, provedor text check in ('openrouter','higgsfield'), provider_request_id text null, status text check in ('pendente','gerando','gerada','falhou','aprovada','descartada'), cena_path text null, final_path text null, custo_usd numeric(12,6) default 0, alertas jsonb default '[]', erro text null, aprovado_por uuid null, aprovado_em null, criado_em, atualizado_em, unique(org_id, request_id), unique(org_id, roteiro_id, cor, missao, geracao))`
-  - `galeria_aplicacoes(id uuid pk, org_id, familia_id, cor text, item_id text, modo text check in ('substituir','adicionar'), fotos_antes jsonb, fotos_depois jsonb null, status text check in ('aplicando','aplicada','falhou','revertida'), erro text null, aplicado_por uuid, criado_em, atualizado_em)`
-  - `platform_image_deliveries.origem text not null default 'kit_variacao'` (nova coluna).
-  - Função `public.platform_registrar_imagem(p_org uuid, p_request uuid, p_custo_usd numeric, p_origem text)` — corpo de `platform_image_delivery_on_generated()` atual (lock da org, mês com `America/Fortaleza`, `platform_resolve_terms`, `units` 0/1, `reason`, `on conflict (org_id, request_id) do nothing`) + grava `origem`.
-  - `platform_image_delivery_on_generated()` passa a chamar `platform_registrar_imagem(new.org_id, new.request_id, new.custo_usd, 'kit_variacao')`.
-  - Gatilho novo `galeria_imagens_cobranca after insert or update of status on public.galeria_imagens for each row when (new.status = 'gerada')` → `platform_registrar_imagem(new.org_id, new.request_id, new.custo_usd, 'galeria')`.
+**Interfaces (Produces):** todas com `org_id uuid not null references public.organizations(id)`, RLS select `org_id = (select public.current_org_id())`, escrita só service_role.
+- `galeria_fatos(id, org_id, familia_id, campo, valor, origem check in ('planilha','confirmado_operador'), evidencia jsonb, confirmado_por, confirmado_em, descartado bool default false, unique(org_id, familia_id, campo))`
+- `galeria_roteiros(id, org_id, familia_id, versao int, conteudo jsonb, fatos_hash text, moda bool, status check in ('rascunho','aprovado','desatualizado'), criado_por, aprovado_por, criado_em, aprovado_em, unique(org_id, familia_id, versao))`
+- `galeria_pedidos(id uuid pk = request_id do cliente, org_id, familia_id, roteiro_id, itens jsonb, criado_por, criado_em)`
+- `galeria_imagens(id, org_id, familia_id, pedido_id, roteiro_id, cor, missao 1..7, geracao 1..3, request_id uuid, modelo, provedor, provider_request_id, tentativa int default 0, lease_ate timestamptz, publicado_em timestamptz, prazo_ate timestamptz, status check in ('pendente','gerando','gerada','falhou','aprovada','descartada','desatualizada'), cena_path, final_path, final_sha256, custo_usd, alertas jsonb, erro, entregue_em, aprovado_por, aprovado_em, ml_picture_id, criado_em, atualizado_em, unique(org_id, request_id), unique(org_id, roteiro_id, cor, missao, geracao))`
+- `galeria_aplicacoes(id, org_id, familia_id, cor, modo check in ('substituir','adicionar'), retrato jsonb, status check in ('preparada','em_andamento','aplicada','falhou','revertendo','revertida','reversao_incompleta'), aplicado_por, criado_em, atualizado_em)`
+- `galeria_aplicacao_itens(id, org_id, aplicacao_id, item_id, fotos_antes jsonb, fotos_novas jsonb, fotos_depois jsonb, status check in ('pendente','subindo','aplicando','aplicado','falhou','revertendo','revertido','reversao_incompleta'), tentativa int, lease_ate, erro, atualizado_em, unique(aplicacao_id, item_id))`
+- `platform_image_deliveries.origem text not null default 'kit_variacao'`.
+- `public.platform_registrar_imagem(p_org uuid, p_request uuid, p_custo_usd numeric, p_origem text)` — corpo atual de `platform_image_delivery_on_generated()` + `origem`; `security definer`, `search_path = ''`, `revoke all … from public, anon, authenticated`. Função do kit passa a chamá-la com `'kit_variacao'`.
+- Gatilho `galeria_imagens_cobranca after update of entregue_em on public.galeria_imagens for each row when (old.entregue_em is null and new.entregue_em is not null and new.cena_path is not null)` → `platform_registrar_imagem(new.org_id, new.request_id, new.custo_usd, 'galeria')`.
+- RPC `public.galeria_reservar_pedido(p_pedido jsonb) returns setof galeria_imagens` (security definer, só service_role): insere pedido e imagens numa transação; repetição do mesmo `id` devolve as linhas existentes; teto conta só gerações com `entregue_em` não nulo.
 
-- [ ] **Step 1: Teste SQL que falha** (`scripts/sql/teste-galeria-cobranca.sql`, `begin; … rollback;`): org de teste com módulo `imagem_ia` e termos com `image_unit_cents = 50`; inserir `galeria_imagens` `pendente` → 0 linhas em `platform_image_deliveries`; atualizar para `gerada` → 1 linha `units=1, total_cents=50, origem='galeria'`; atualizar de novo `gerada→gerada` → continua 1 linha; org sem módulo → `units=0, reason='modulo_desligado'`; linha de `kit_variacao_imagens` virando `gerada` → `origem='kit_variacao'` (não regrediu).
-- [ ] **Step 2:** Rodar contra produção em transação desfeita (Management API) — Expected: falha (tabela inexistente).
-- [ ] **Step 3:** Escrever a migration com as interfaces acima.
-- [ ] **Step 4:** Rodar o conteúdo da migration seguido do teste dentro de um único `begin … rollback` pela Management API (nada fica gravado); Expected: todas as asserções `ok`.
-- [ ] **Step 5:** Commit `feat(galeria-ia): tabelas da galeria e cobrança compartilhada`. (O `db push` real acontece no deploy final, Task 16.)
+- [ ] **Step 1: Teste SQL que falha** (`begin; set local lock_timeout='5s'; … rollback;`): `gerada` sem `entregue_em` → 0 cobranças; `entregue_em` preenchido → 1 linha `units=1, origem='galeria'`; preencher de novo → continua 1; `cena_path` nulo → 0; org sem módulo → `units=0, reason='modulo_desligado'`; kit (`kit_variacao_imagens` → `gerada`) → `origem='kit_variacao'`; `galeria_reservar_pedido` chamado 2× com o mesmo id → mesmas linhas; 3 gerações entregues → a 4ª é recusada; `has_function_privilege('authenticated', 'public.platform_registrar_imagem(uuid,uuid,numeric,text)', 'execute') = false`.
+- [ ] **Step 2:** Rodar pela Management API em transação desfeita — Expected: FAIL.
+- [ ] **Step 3:** Escrever a migration.
+- [ ] **Step 4:** Rodar migration + teste no mesmo `begin … rollback` — Expected: todas `ok`.
+- [ ] **Step 5:** Commit `feat(galeria-ia): tabelas, saga e cobrança compartilhada`.
 
-### Task 2: Regras puras (limites, bloco técnico, proibidos, Moda, missões)
+### Task 3: Regras puras e categorias de Moda
 
-**Files:**
-- Create: `supabase/functions/_shared/galeria/regras.ts`
-- Test: `supabase/functions/_shared/galeria/__tests__/regras.test.ts`
+**Files:** Create `supabase/functions/_shared/galeria/regras.ts`; Test `supabase/functions/_shared/galeria/__tests__/regras.test.ts`.
 
-**Interfaces:**
-- Produces:
-  - `export const BLOCO_TECNICO: string` (frase exata das Global Constraints)
-  - `export const LIMITES = { headline: 5, subheadline: 10, beneficio: 6, etapa: 7, legenda: 5, beneficios: 3, fichaPares: 4 } as const`
-  - `export type Missao = 1|2|3|4|5|6|7`
-  - `export function missoesDisponiveis(moda: boolean): Array<{ missao: Missao; nome: string; comTexto: boolean }>` (Moda: nomes de R5.5, `comTexto: false` em todas; demais: R5.1, `comTexto: missao !== 1`)
-  - `export function missoesSugeridas(nCores: number): Missao[]` (≤3 cores → 1..7; >3 → 1..4)
-  - `export function ehModa(pathFromRoot: Array<{ id: string }>): boolean` (raiz `MLB1430`)
-  - `export function contarPalavras(texto: string): number` (NFC, separa por espaço)
-  - `export function termosProibidos(texto: string, categoria: 'cosmeticos'|'vestuario'|'aviamentos'|'geral'): string[]` (listas fechadas de R4.2–R4.4)
+**Interfaces (Produces):**
+- `BLOCO_TECNICO: string`; `LIMITES = { headline: 5, subheadline: 10, beneficio: 6, etapa: 7, legenda: 5, beneficios: 3, fichaPares: 4 } as const`
+- `type Missao = 1|2|3|4|5|6|7`; `missoesDisponiveis(moda: boolean): Array<{ missao: Missao; nome: string; comTexto: boolean; usaGerador: boolean }>` (missão 7 `usaGerador: false`; Moda: nomes de R5.5, `comTexto: false`)
+- `missoesSugeridas(nCores: number): Missao[]`
+- `CATEGORIAS_MODA: ReadonlySet<string>` (ids de nós de vestuário; qualquer ancestral casando = Moda); `ehModa(pathFromRoot: Array<{ id: string }>): boolean`
+- `contarPalavras(texto: string): number`; `termosProibidos(texto: string, categoria: 'cosmeticos'|'vestuario'|'aviamentos'|'geral'): string[]`
+- [ ] **Step 1:** Montar `CATEGORIAS_MODA` com chamadas reais `GET /categories/{id}` partindo das categorias das regatas e vestidos publicados (ex.: MLB31447) e do nó de roupas sob "Calçados, Roupas e Bolsas"; registrar os ids no próprio arquivo com a data. Calçados e bolsas **não** entram.
+- [ ] **Step 2: Testes que falham:** `BLOCO_TECNICO` literal; `missoesSugeridas(3)` = 1..7, `(4)` = 1..4; `missoesDisponiveis(true).every(m => !m.comTexto)`; missão 7 `usaGerador === false`; `ehModa` verdadeiro para o path real de uma regata e falso para o de uma renda e de um calçado; `contarPalavras('Largura certa: 20 mm') === 4`; proibidos de `'Frete grátis e premium'` e `'100% natural'` (cosméticos).
+- [ ] **Step 3:** Rodar — FAIL. **Step 4:** Implementar (módulo puro). **Step 5:** PASS; commit `feat(galeria-ia): regras puras e categorias de Moda`.
 
-- [ ] **Step 1: Testes que falham:** `BLOCO_TECNICO` igual à string literal; `missoesSugeridas(3)` = `[1,2,3,4,5,6,7]`, `missoesSugeridas(4)` = `[1,2,3,4]`; `missoesDisponiveis(true).every(m => !m.comTexto)`; `missoesDisponiveis(false).find(m => m.missao === 1)!.comTexto === false`; `ehModa([{id:'MLB1430'},{id:'MLB31447'}]) === true`, `ehModa([{id:'MLB1574'}]) === false`; `contarPalavras('Largura certa: 20 mm') === 4`; `termosProibidos('Frete grátis e premium', 'geral')` contém `'frete grátis'` e `'premium'`; `termosProibidos('100% natural', 'cosmeticos')` contém `'100% natural'`.
-- [ ] **Step 2:** `pnpm vitest run supabase/functions/_shared/galeria/__tests__/regras.test.ts` — Expected: FAIL (módulo inexistente).
-- [ ] **Step 3:** Implementar `regras.ts` (sem `jsr:`/`npm:` — módulo puro para vitest).
-- [ ] **Step 4:** Rodar de novo — Expected: PASS.
-- [ ] **Step 5:** Antes do commit, conferir `MLB1430` com uma chamada real `GET /categories/MLB31447` (path_from_root da categoria de uma regata publicada); ajustar se a raiz for outra. Commit `feat(galeria-ia): regras puras da galeria`.
+### Task 4: Provedores e cliente Higgsfield
 
-### Task 3: Provedores (registro de modelos + cliente Higgsfield)
+**Files:** Create `supabase/functions/_shared/galeria/provedores.ts`, `supabase/functions/_shared/ai/higgsfield.ts`; Tests em `__tests__/`.
 
-**Files:**
-- Create: `supabase/functions/_shared/galeria/provedores.ts`
-- Create: `supabase/functions/_shared/ai/higgsfield.ts`
-- Test: `supabase/functions/_shared/galeria/__tests__/provedores.test.ts`, `supabase/functions/_shared/ai/__tests__/higgsfield.test.ts`
+**Interfaces (Produces):** `ModeloGaleria { slug; provedor: 'openrouter'|'higgsfield'; endpoint?; maxReferencias; extra; custoUsd; rotulo }`; `MODELOS_GALERIA`; `MODELO_GALERIA_PADRAO`; `modeloGaleria(slug|null)`; `resolverModeloGaleria(admin, orgId): Promise<ModeloGaleria>`; `submeterHF(endpoint, entrada): Promise<string>`; `consultarHF(requestId): Promise<{ status: 'pendente'|'concluida'|'falhou'; url?: string; erro?: string }>` (header `Authorization: Key <id>:<secret>` de `HF_CREDENTIALS`).
+- [ ] **Step 1: Testes que falham:** slug desconhecido → padrão; qwen `extra.prompt_extend === true`; `submeterHF` faz `POST https://api.higgsfield.ai/<endpoint>` com o corpo; `consultarHF` mapeia `completed`→`concluida` (+url), `nsfw`→`falhou`; 401 lança erro com status.
+- [ ] **Step 2–4:** FAIL → implementar → PASS. **Step 5:** Commit `feat(galeria-ia): provedores e cliente Higgsfield`.
 
-**Interfaces:**
-- Produces:
-  - `export interface ModeloGaleria { slug: string; provedor: 'openrouter'|'higgsfield'; endpoint?: string; campoReferencia?: 'image_urls'; maxReferencias: number; extra: Record<string, unknown>; custoUsd: number; rotulo: string }`
-  - `export const MODELOS_GALERIA: ModeloGaleria[]` — nano (`custoUsd` 0.039, ref por data URL), grok (`extra: {resolution:'1k', quality:'medium', aspect_ratio:'3:4'}`, `custoUsd` 0.06), qwen (`extra: {resolution:'1k', aspect_ratio:'3:4', prompt_extend:true}`, `maxReferencias: 3`, `custoUsd` 0.04)
-  - `export const MODELO_GALERIA_PADRAO = 'google/gemini-nano-banana-2.1'`
-  - `export function modeloGaleria(slug: string | null): ModeloGaleria` (slug desconhecido → padrão)
-  - `higgsfield.ts`: `export async function submeterHF(endpoint: string, entrada: Record<string, unknown>): Promise<string>` (devolve `request_id`); `export async function consultarHF(requestId: string): Promise<{ status: 'pendente'|'concluida'|'falhou'; url?: string; erro?: string }>`; credencial de `Deno.env.get('HF_CREDENTIALS')`, header `Authorization: Key <id>:<secret>`; status `completed`→`concluida`, `failed|nsfw|canceled`→`falhou`, demais→`pendente`.
+### Task 5: Modelo da galeria por organização
 
-- [ ] **Step 1: Testes que falham:** `modeloGaleria('x').slug === MODELO_GALERIA_PADRAO`; qwen tem `extra.prompt_extend === true`; `submeterHF` com fetch mockado envia `POST https://api.higgsfield.ai/<endpoint>`, header `Authorization` começa com `Key `, corpo = entrada; `consultarHF` mapeia `{status:'completed', images:[{url:'u'}]}` → `{status:'concluida', url:'u'}` e `{status:'nsfw'}` → `falhou`; resposta 401 → lança erro com status.
-- [ ] **Step 2:** Rodar — FAIL.
-- [ ] **Step 3:** Implementar (sem `jsr:` em `provedores.ts`; `higgsfield.ts` só `fetch` + `Deno.env`).
-- [ ] **Step 4:** Rodar — PASS.
-- [ ] **Step 5:** Commit `feat(galeria-ia): registro de modelos e cliente Higgsfield`.
-
-### Task 4: Modelo da galeria por organização
-
-**Files:**
-- Create: `supabase/migrations/<ts>_configuracoes_ai_model_galeria.sql`
-- Modify: `src/lib/ai-modelos.ts` (novo `MODELOS_GALERIA_UI: OpcaoModeloIA[]`), `src/components/configuracoes/secao-ia.tsx` (novo `Select` de `src/components/ui/select.tsx`)
-- Test: `src/lib/__tests__/ai-modelos-galeria.test.ts`
-
-**Interfaces:**
-- Produces: coluna `configuracoes.ai_model_galeria text null` com check `in ('google/gemini-nano-banana-2.1','xai/grok-imagine-image-2.0','alibaba/qwen-image-3/edit')`; `resolverModeloGaleria(admin, orgId): Promise<ModeloGaleria>` em `_shared/galeria/provedores.ts` (erro/nulo → padrão).
-- [ ] **Step 1:** Teste: slugs de `MODELOS_GALERIA_UI` são exatamente os 3 slugs de `MODELOS_GALERIA` (importar ambos) e o primeiro é o padrão.
-- [ ] **Step 2:** Rodar — FAIL.
-- [ ] **Step 3:** Migration + lista + seletor (rótulos "Nano Banana 2.1 (padrão)", "Grok Imagine 2 (Higgsfield)", "Qwen Image 3 Edit (Higgsfield)"); só admin da plataforma edita (mesma regra do seletor atual de imagem).
-- [ ] **Step 4:** Rodar + `pnpm lint` — PASS.
-- [ ] **Step 5:** Commit `feat(galeria-ia): modelo da galeria por organização`.
+**Files:** Create `supabase/migrations/<ts>_configuracoes_ai_model_galeria.sql`; Modify `src/lib/ai-modelos.ts` (`MODELOS_GALERIA_UI`), `src/components/configuracoes/secao-ia.tsx` (Select de `src/components/ui/select.tsx`); Test `src/lib/__tests__/ai-modelos-galeria.test.ts`.
+- [ ] **Step 1:** Teste: slugs de `MODELOS_GALERIA_UI` = slugs de `MODELOS_GALERIA`, primeiro = padrão. **Step 2:** FAIL. **Step 3:** coluna `configuracoes.ai_model_galeria` com check dos 3 slugs + seletor (só admin da plataforma). **Step 4:** PASS + `pnpm lint`. **Step 5:** Commit `feat(galeria-ia): modelo da galeria por organização`.
 
 ## Fatia 2 — Fatos e roteiro
 
-### Task 5: Ficha Verdade (fatos confirmados × sugeridos × divergência)
+### Task 6: Ficha Verdade
 
-**Files:**
-- Create: `supabase/functions/_shared/galeria/fatos.ts`, `supabase/functions/galeria-fatos/index.ts`
-- Modify: `supabase/config.toml` (`[functions.galeria-fatos] verify_jwt = true`)
-- Test: `supabase/functions/_shared/galeria/__tests__/fatos.test.ts`
+**Files:** Create `supabase/functions/_shared/galeria/fatos.ts`, `supabase/functions/galeria-fatos/index.ts`; Modify `supabase/config.toml`; Test `…/__tests__/fatos.test.ts`.
 
-**Interfaces:**
-- Produces:
-  - `export type EstadoFato = 'CONFIRMADO'|'SUGERIDO'|'DIVERGENTE'|'NAO_CONFERIDO'`
-  - `export interface Fato { campo: string; valor: string; estado: EstadoFato; origem: string; evidencia: string; etiqueta?: string }`
-  - `export function montarFicha(entrada: { planilha: Record<string, string|null>; atributosOperador: Array<{id: string; valor: string}>; atributosIA: Array<{id: string; valor: string}>; textosIA: { titulo: string; descricao: string }; confirmados: Array<{campo: string; valor: string; descartado: boolean}> }): Fato[]`
-  - `export function aplicarEtiqueta(fichas: Fato[], leitura: Array<{campo: string; valor: string|null; legivel: boolean}>): Fato[]` (valor igual → mantém; diferente e legível → `DIVERGENTE` com `etiqueta`; ilegível → `NAO_CONFERIDO`)
-  - Edge `galeria-fatos`: `POST {familia_id, acao: 'montar'}` → `{fatos: Fato[], recorte_etiqueta_url: string|null}`; `POST {familia_id, acao: 'confirmar'|'descartar', campo, valor}` → grava `galeria_fatos` (`confirmado_operador`, `confirmado_por`); `acao: 'manter_cadastro'|'corrigir_cadastro'` para DIVERGENTE (corrigir grava só na família, nunca no ML). Gate `exigirModulo(admin, orgId, 'imagem_ia')`.
-- [ ] **Step 1: Testes que falham:** planilha `{LARGURA_CM: '2'}` → fato `CONFIRMADO` origem `planilha`; material só em `descricao` IA → `SUGERIDO`; sugerido confirmado em `confirmados` → `CONFIRMADO` origem `confirmado_operador`; descartado → ausente; renda: `MATERIAL='100% POLIÉSTER'` (atributo IA) + etiqueta legível `'100% Poliamida'` → `DIVERGENTE` com `etiqueta: '100% Poliamida'`; regata: atributo `Poliamida` × descrição `96% poliéster` → `DIVERGENTE` mesmo sem etiqueta (conflito interno).
-- [ ] **Step 2:** Rodar — FAIL.
-- [ ] **Step 3:** Implementar `fatos.ts` (puro) e a edge; a leitura da etiqueta usa `visaoJson` com `MODELO_VISION` sobre a foto da cor e devolve também a caixa do recorte (x,y,w,h) que o front usa para mostrar o recorte.
-- [ ] **Step 4:** Rodar + `pnpm check:functions` — PASS.
-- [ ] **Step 5:** Commit `feat(galeria-ia): ficha verdade com sugeridos e divergência`.
+**Interfaces (Produces):**
+- `type EstadoFato = 'CONFIRMADO'|'SUGERIDO'|'DIVERGENTE'|'NAO_CONFERIDO'`; `Fato { campo; valor; estado; origem; evidencia; etiqueta? }`
+- `montarFicha({ planilha, atributosML, textosIA, confirmados }): Fato[]` — planilha → `CONFIRMADO`; atributos e textos IA → `SUGERIDO`; confirmado pelo operador → `CONFIRMADO`; conflito entre fontes → `DIVERGENTE`.
+- `aplicarEtiqueta(fatos, leitura: Array<{ campo; valor: string|null; legivel: boolean; caixa?: [number,number,number,number] }>): Fato[]`
+- `hashFatos(fatos: Fato[]): string` (só `CONFIRMADO`, ordenado; usado para invalidar roteiro)
+- Edge: `acao: 'montar'|'confirmar'|'descartar'|'manter_cadastro'|'corrigir_cadastro'` (corrigir grava só na família; nunca toca no ML); gate `exigirModulo(admin, orgId, 'imagem_ia')`. Ao mudar fatos, roteiros `aprovado` com `fatos_hash` diferente → `desatualizado` e imagens não aplicadas → `desatualizada`.
+- [ ] **Step 1: Testes que falham:** planilha `LARGURA` → `CONFIRMADO`; `atributosML` `MATERIAL` → `SUGERIDO` (mesmo com família marcada como editada); renda: atributo `100% POLIÉSTER` + etiqueta legível `100% Poliamida` → `DIVERGENTE`; regata: atributo `Poliamida` × descrição `96% poliéster` → `DIVERGENTE`; etiqueta ilegível → `NAO_CONFERIDO`; `hashFatos` muda quando um `CONFIRMADO` muda e não muda com `SUGERIDO`.
+- [ ] **Step 2–4:** FAIL → implementar → PASS (+ `pnpm check:functions`). **Step 5:** Commit `feat(galeria-ia): ficha verdade`.
 
-### Task 6: Roteiro (IA escreve, código valida)
+### Task 7: Roteiro
 
-**Files:**
-- Create: `supabase/functions/_shared/galeria/roteiro.ts`, `supabase/functions/galeria-roteiro/index.ts`
-- Modify: `supabase/config.toml`
-- Test: `supabase/functions/_shared/galeria/__tests__/roteiro.test.ts`
+**Files:** Create `supabase/functions/_shared/galeria/roteiro.ts`, `supabase/functions/galeria-roteiro/index.ts`; Test `…/__tests__/roteiro.test.ts`.
 
-**Interfaces:**
-- Consumes: `Fato`, `LIMITES`, `missoesDisponiveis`, `termosProibidos`, `contarPalavras`.
-- Produces:
-  - `export interface MissaoRoteiro { missao: Missao; ativa: boolean; cena: string; headline?: string; subheadline?: string; beneficios?: string[]; specs?: Array<[string, string]>; etapas?: string[]; legendas?: string[]; fatosUsados: string[] }`
-  - `export interface Roteiro { moda: boolean; categoria: 'cosmeticos'|'vestuario'|'aviamentos'|'geral'; contrato: string; missoes: MissaoRoteiro[] }`
-  - `export function validarRoteiro(r: Roteiro, fatos: Fato[]): string[]` (lista de erros; vazio = válido)
-  - Edge `galeria-roteiro`: `POST {familia_id, acao:'criar', missoes: Missao[]}` (IA de texto com `resolverModeloIA` da org, saída JSON do schema `Roteiro`, recusa se houver fato `DIVERGENTE`), `acao:'salvar', versao, conteudo` (edição; revalida), `acao:'aprovar', versao`.
-- [ ] **Step 1: Testes que falham:** headline de 6 palavras → erro `headline > 5`; 4 benefícios → erro; spec com valor que não é de fato `CONFIRMADO` → erro `fato não confirmado: <campo>`; texto com "premium" → erro de proibido; roteiro `moda: true` com `headline` em qualquer missão → erro `moda sem texto`; missão 1 com `headline` → erro; roteiro com fato `DIVERGENTE` em `fatos` → erro `divergência pendente`; roteiro válido do caso renda (largura 20 mm, 50 m, marca Búfalo; sem composição) → `[]`.
-- [ ] **Step 2:** Rodar — FAIL.
-- [ ] **Step 3:** Implementar `validarRoteiro` (puro) e a edge; o prompt de sistema traz R1–R5 resumidas, lista de fatos `CONFIRMADO` e as missões pedidas; o código nunca aprova roteiro com erro.
-- [ ] **Step 4:** Rodar — PASS.
-- [ ] **Step 5:** Commit `feat(galeria-ia): roteiro com validação em código`.
+**Interfaces (Produces):** `MissaoRoteiro { missao; ativa; cena; headline?; subheadline?; beneficios?; specs?: Array<[string,string]>; etapas?; legendas?; fatosUsados: string[] }`; `Roteiro { categoria; contrato; missoes }` (sem `moda` — vem da edge); `validarRoteiro(r: Roteiro, fatos: Fato[], moda: boolean): string[]`. Edge: `criar` (lê categoria ao vivo, define `moda` por `ehModa`, IA de texto com `resolverModeloIA`, recusa com `DIVERGENTE`), `salvar` (revalida), `aprovar` (grava `fatos_hash`).
+- [ ] **Step 1: Testes que falham:** headline de 6 palavras → erro; 4 benefícios → erro; spec com valor fora dos `CONFIRMADO` → `fato não confirmado: <campo>`; "premium" → proibido; `moda=true` com headline em qualquer missão → `moda sem texto` (mesmo que o JSON do modelo traga `moda: false`); missão 1 com headline → erro; `DIVERGENTE` presente → `divergência pendente`; caso renda válido → `[]`.
+- [ ] **Step 2–4:** FAIL → implementar → PASS. **Step 5:** Commit `feat(galeria-ia): roteiro validado em código`.
 
-### Task 7: Tela — Fatos e Roteiro (dialog da galeria, passos 1–2)
+### Task 7b: Tela — fatos e roteiro
 
-**Files:**
-- Create: `src/components/galeria/dialog-galeria.tsx`, `src/components/galeria/passo-fatos.tsx`, `src/components/galeria/passo-roteiro.tsx`, `src/lib/galeria/api.ts`
-- Modify: `src/pages/Publicados.tsx` (botão "Galeria IA", ícone `Images`, em `LinhaTabela` ao lado de "Criar kit com variação"; estado `galeriaDe: string|null`; dialog no fim da página)
-- Test: `src/components/galeria/__tests__/dialog-galeria.test.tsx`
+**Files:** Create `src/components/galeria/dialog-galeria.tsx`, `passo-fatos.tsx`, `passo-roteiro.tsx`, `src/lib/galeria/api.ts`; Modify `src/pages/Publicados.tsx` (botão "Galeria IA", ícone `Images`, em `LinhaTabela`; estado `galeriaDe`; dialog no fim); Test `src/components/galeria/__tests__/dialog-galeria.test.tsx`.
 
-**Interfaces:**
-- Consumes: edges `galeria-fatos`, `galeria-roteiro`.
-- Produces: `DialogGaleria({ familiaId, open, onOpenChange, isAdmin })`; `src/lib/galeria/api.ts` com `montarFatos(familiaId)`, `decidirFato(...)`, `criarRoteiro(...)`, `salvarRoteiro(...)`, `aprovarRoteiro(...)`, `gerarImagens(...)`, `listarImagens(...)`, `aprovarImagem(...)`, `aplicarGaleria(...)`, `reverterGaleria(...)` (assinaturas espelham os corpos das edges das Tasks 5, 6, 8, 12, 14).
-- [ ] **Step 1: Testes que falham:** botão "Galeria IA" ausente sem módulo `imagem_ia`; fato `DIVERGENTE` mostra recorte e o botão "Usar o da etiqueta" pré-selecionado; botão "Gerar roteiro" desabilitado com divergência pendente; contadores de palavras ficam vermelhos acima do limite; "Aprovar roteiro" desabilitado com erro de validação.
-- [ ] **Step 2:** `pnpm vitest run src/components/galeria` — FAIL.
-- [ ] **Step 3:** Implementar (Select de `src/components/ui/select.tsx`; padrão de espera em diálogos do ADR-0163).
-- [ ] **Step 4:** Rodar + `pnpm lint` — PASS.
-- [ ] **Step 5:** Commit `feat(galeria-ia): fatos e roteiro na tela`.
+**Interfaces (Produces):** `DialogGaleria({ familiaId, open, onOpenChange, isAdmin })`; `api.ts` com uma função por ação das edges (`montarFatos`, `decidirFato`, `criarRoteiro`, `salvarRoteiro`, `aprovarRoteiro`, `pedirGeracao`, `listarImagens`, `aprovarImagem`, `prepararAplicacao`, `aplicarGaleria`, `reverterGaleria`).
+- [ ] **Step 1: Testes que falham:** sem módulo `imagem_ia` não há botão; `DIVERGENTE` mostra recorte e "Usar o da etiqueta" pré-selecionado; `SUGERIDO` tem "Confirmar"/"Descartar"; contador de palavras vermelho acima do limite; "Aprovar roteiro" desabilitado com erro; roteiro `desatualizado` mostra aviso.
+- [ ] **Step 2–4:** FAIL → implementar (Select do `ui/select.tsx`; espera em diálogo ADR-0163) → PASS. **Step 5:** Commit `feat(galeria-ia): fatos e roteiro na tela`.
 
 ## Fatia 3 — Geração
 
-### Task 8: Pedido de geração (orçamento, teto, idempotência)
+### Task 8: Pedido de geração
 
-**Files:**
-- Create: `supabase/functions/galeria-gerar/index.ts`, `supabase/functions/_shared/galeria/pedido.ts`
-- Test: `supabase/functions/_shared/galeria/__tests__/pedido.test.ts`
+**Files:** Create `supabase/functions/galeria-gerar/index.ts`, `supabase/functions/_shared/galeria/pedido.ts`; Test `…/__tests__/pedido.test.ts`.
 
-**Interfaces:**
-- Produces:
-  - `export function planejarGeracoes(entrada: { cores: string[]; missoes: Missao[]; existentes: Array<{cor: string; missao: Missao; geracao: number}> }): { novas: Array<{cor: string; missao: Missao; geracao: number}>; bloqueadas: Array<{cor: string; missao: Missao; motivo: 'teto'}> }` (geração = maior existente + 1; >3 → bloqueada)
-  - `export function idDerivado(requestId: string, cor: string, missao: Missao, geracao: number): string` (UUID v5 determinístico)
-  - Edge `galeria-gerar`: `POST {familia_id, roteiro_versao, cores, missoes, request_id}` → gate módulo; roteiro `aprovado`; cor sem foto real → recusada sem custo; insere linhas `pendente` com `request_id` derivado (`uuidv5(request_id, cor|missao|geracao)`); publica 1 mensagem QStash por linha (`url: …/galeria-worker`, `retries: 3`); repetir o mesmo `request_id` devolve as mesmas linhas sem publicar de novo. Resposta inclui `custo_estimado_centavos` = novas × `image_unit_cents`.
-- [ ] **Step 1: Testes que falham:** 2 cores × 3 missões sem existentes → 6 novas com `geracao: 1`; existente `(Rosa, 2, 3)` → `(Rosa, 2)` bloqueada `teto`; mesma entrada duas vezes com o mesmo `request_id` gera os mesmos ids derivados (função `idDerivado(requestId, cor, missao, geracao)` determinística).
-- [ ] **Step 2:** Rodar — FAIL.
-- [ ] **Step 3:** Implementar; a tela mostra o custo e pede confirmação antes de chamar (Task 10).
-- [ ] **Step 4:** Rodar — PASS.
-- [ ] **Step 5:** Commit `feat(galeria-ia): pedido de geração com teto e idempotência`.
+**Interfaces (Produces):** `idDerivado(requestId, cor, missao, geracao): string` (UUID v5); `planejarGeracoes({ cores, missoes, entregues }): { novas; bloqueadas }` (missão 7 nunca entra; teto conta só `entregues`). Edge `POST {request_id, familia_id, roteiro_versao, cores, missoes}`: roteiro `aprovado` e não `desatualizado`; cor sem foto real recusada sem custo; `galeria_reservar_pedido`; publica jobs das linhas sem `publicado_em` e grava `publicado_em`; repetição republica só `pendente` sem `publicado_em`. Varredura (pg_cron, a cada 5 min) republica `pendente` com `publicado_em` nulo há >2 min.
+- [ ] **Step 1: Testes que falham:** 2 cores × 3 missões → 6 novas `geracao 1`; missão 7 não gera linha; `(Rosa,2)` com 3 entregues → bloqueada `teto`; `(Rosa,2)` com 2 entregues + 1 `pendente` → nova geração **não** é criada (a pendente é republicada); `idDerivado` determinístico.
+- [ ] **Step 2–4:** FAIL → implementar → PASS. **Step 5:** Commit `feat(galeria-ia): pedido de geração`.
 
-### Task 9: Worker de geração (provedores, consulta, Storage, alertas)
+### Task 9: Worker de geração
 
-**Files:**
-- Create: `supabase/functions/galeria-worker/index.ts`, `supabase/functions/_shared/galeria/prompt.ts`, `supabase/functions/_shared/galeria/alertas.ts`
-- Modify: `supabase/config.toml` (`[functions.galeria-worker] verify_jwt = false`)
-- Test: `supabase/functions/_shared/galeria/__tests__/prompt.test.ts`, `.../alertas.test.ts`
+**Files:** Create `supabase/functions/galeria-worker/index.ts`, `supabase/functions/_shared/galeria/prompt.ts`, `alertas.ts`, `worker-estado.ts`; Modify `supabase/config.toml` (`verify_jwt = false`); Tests.
 
-**Interfaces:**
-- Consumes: `MODELOS_GALERIA`, `submeterHF`, `consultarHF`, `gerarImagem` (`_shared/ai/imagem.ts`, com `extra: {aspect_ratio: '3:4'}`), `verificarAssinatura` (`_shared/queue.ts`). Referência = foto da própria cor: OpenRouter recebe data URL; Higgsfield recebe URL assinada de 2 h (`createSignedUrl(path, 7200)`), em `image_urls`.
-- Produces:
-  - `export function montarPromptCena(m: MissaoRoteiro, r: Roteiro, cor: string, layout: 'topo'|'esquerda'|'nenhum'|'paineis'): string` — termina com `BLOCO_TECNICO`; inclui `r.contrato`, proibidos e a instrução "não escrever texto" (texto da embalagem real permanece).
-  - `export function interpretarAlertas(resposta: unknown): Array<{ tipo: 'cor'|'produto'|'texto_na_cena'|'rotulo_alterado'; nota: string }>`
-  - Worker: corpo `{imagem_id, fase: 'gerar'|'consultar', tentativa?}`; claim `pendente→gerando` (ou consulta de `gerando` com `provider_request_id`); OpenRouter → bytes direto; Higgsfield → `submeterHF` grava `provider_request_id` e publica `{fase:'consultar'}` com `delay: 15`; consulta repete até 24 vezes (6 min) e então `falhou` (sem cobrança); com bytes → Storage `${orgId}/galeria-ia/${familiaId}/${cor-slug}/${missao}-${geracao}-${imagem_id}.${ext}` → alertas por visão (referência + cena) → `status='gerada'`, `custo_usd` (OpenRouter `usage.cost`; Higgsfield `custoUsd` do registro).
-- [ ] **Step 1: Testes que falham:** `montarPromptCena(...).endsWith(BLOCO_TECNICO)`; prompt de missão de Moda não contém "headline"; layout `esquerda` contém "left 45%"; `interpretarAlertas({cor_diferente: true, texto_adicionado: true})` → tipos `cor` e `texto_na_cena`; resposta ilegível → `[]` (nunca bloqueia).
-- [ ] **Step 2:** Rodar — FAIL.
-- [ ] **Step 3:** Implementar; worker responde 5xx em erro transitório (QStash repete) e é idempotente por `status`.
-- [ ] **Step 4:** Rodar + `pnpm check:functions` — PASS.
-- [ ] **Step 5:** Teste manual de ponta a ponta com 1 imagem por modelo numa família de teste (≈US$ 0,15), conferir 1 linha em `platform_image_deliveries` por imagem. Commit `feat(galeria-ia): worker de geração`.
+**Interfaces (Produces):**
+- `montarPromptCena(m: MissaoRoteiro, r: Roteiro, moda: boolean, cor: string, layout: 'topo'|'esquerda'|'nenhum'|'paineis'): string` — termina com `BLOCO_TECNICO`.
+- `interpretarAlertas(resposta: unknown): Array<{ tipo: 'cor'|'produto'|'texto_na_cena'|'rotulo_alterado'; nota }>` (ilegível → `[]`).
+- `proximaFase(linha, agora): { acao: 'submeter'|'consultar'|'baixar'|'falhar'|'ignorar'; tentativa: number }` — claim por `(id, tentativa)` com `lease_ate`; Higgsfield só submete se `provider_request_id` nulo; prazo absoluto `prazo_ate = criado_em + 6 min`; status terminal nunca regride.
+- Worker `{imagem_id, tentativa}`: claim atômico `update … where id=$1 and tentativa=$2` (incrementa); OpenRouter → bytes (referência data URL); Higgsfield → submete (referência URL assinada 2 h) e publica `{tentativa+1}` com `delay: 15`, respondendo **200** (nunca 5xx depois de publicar); com bytes: valida (`dimensoesImagem`, proporção entre 0,7 e 0,8, ≥60 KB) → Storage `${orgId}/galeria-ia/${familiaId}/${cor-slug}/${missao}-${geracao}-${id}.${ext}` → alertas → `gerada` com `custo_usd`. Falha sem bytes → `falhou` (sem cobrança).
+- [ ] **Step 1: Testes que falham:** prompt termina com `BLOCO_TECNICO`; Moda sem "headline"; `proximaFase` com `provider_request_id` preenchido nunca devolve `submeter`; claim com tentativa antiga → `ignorar`; após `prazo_ate` → `falhar`; linha `gerada` → `ignorar`; alertas `{cor_diferente:true, texto_adicionado:true}` → `cor` e `texto_na_cena`; imagem 1024×1024 → `falhou` por proporção.
+- [ ] **Step 2–4:** FAIL → implementar → PASS (+ `pnpm check:functions`). **Step 5:** 1 imagem real por modelo numa família de teste (~US$ 0,15); conferir que nada é cobrado antes da entrega. Commit `feat(galeria-ia): worker de geração`.
 
-### Task 10: Tela — gerar e acompanhar
+### Task 10: Tela — gerar, entregar e acompanhar
 
-**Files:**
-- Create: `src/components/galeria/passo-gerar.tsx`, `src/components/galeria/cartao-imagem.tsx`
-- Test: `src/components/galeria/__tests__/passo-gerar.test.tsx`
+**Files:** Create `src/components/galeria/passo-gerar.tsx`, `cartao-imagem.tsx`, `supabase/functions/galeria-imagens/index.ts` (lista e marca entrega); Tests.
 
-**Interfaces:** Consumes `gerarImagens`, `listarImagens` (Task 7). Produces `CartaoImagem({ imagem, onGerarDeNovo, onAprovar })`.
-- [ ] **Step 1: Testes que falham:** seleção de missões vem pré-marcada por `missoesSugeridas(nCores)`; diálogo de confirmação mostra "N imagens · R$ X"; cartão com alerta mostra o texto do alerta; "Gerar de novo" mostra o preço e some na 3ª geração; cor sem foto aparece desabilitada com motivo.
-- [ ] **Step 2:** Rodar — FAIL. **Step 3:** Implementar (polling `listarImagens` a cada 5 s enquanto houver `pendente|gerando`). **Step 4:** PASS. **Step 5:** Commit `feat(galeria-ia): gerar e acompanhar na tela`.
+**Interfaces (Produces):** edge `galeria-imagens` `POST {familia_id, roteiro_versao}` → lista; para cada `gerada` com `entregue_em` nulo e arquivo existente, grava `entregue_em = now()` (dispara a cobrança uma única vez) antes de devolver a URL assinada. `CartaoImagem({ imagem, onGerarDeNovo, onAprovar })`.
+- [ ] **Step 1: Testes que falham:** missões pré-marcadas por `missoesSugeridas`; confirmação mostra "N imagens · R$ X" (missão 7 grátis); alerta aparece no cartão; "Gerar de novo" some na 3ª entregue; cor sem foto desabilitada com motivo; listar 2× marca `entregue_em` só uma vez.
+- [ ] **Step 2–4:** FAIL → implementar (polling a cada 5 s com `pendente|gerando`) → PASS. **Step 5:** Commit `feat(galeria-ia): gerar e acompanhar`.
 
 ## Fatia 4 — Composição e aprovação
 
-### Task 11: Layouts e contraste (cálculo puro)
+### Task 11: Layouts, corte e contraste (puro)
 
-**Files:**
-- Create: `src/lib/galeria/layouts.ts`, `src/lib/galeria/contraste.ts`, `src/lib/galeria/corte.ts`
-- Test: `src/lib/galeria/__tests__/layouts.test.ts`, `contraste.test.ts`, `corte.test.ts`
+**Files:** Create `src/lib/galeria/layouts.ts`, `contraste.ts`, `corte.ts`; Tests.
 
-**Interfaces:**
-- Produces:
-  - `export function razaoContraste(a: string, b: string): number`
-  - `export function corDeAcento(corProduto: string): string` (cor do produto se `razaoContraste(cor, '#ffffff') >= 4.5`, senão `#1b1f24`)
-  - `export function planejarCorte(w: number, h: number, capa: boolean): { tipo: 'corte'|'preenchimento'|'bloqueado'; sx: number; sy: number; sw: number; sh: number; perda: number }` (alvo 1200:1540)
-  - `export interface Caixa { x: number; y: number; w: number; h: number; fontePx: number }`
-  - `export function layoutMissao(m: Missao, textos: MissaoRoteiro): Caixa[]` (coordenadas no arquivo de 1200×1540)
-- [ ] **Step 1: Testes que falham:** `razaoContraste('#ffffff', '#1b1f24') > 16`; `corDeAcento('#139aa0') === '#1b1f24'`, `corDeAcento('#1f2a52') === '#1f2a52'`; `planejarCorte(864, 1152, false)` → `tipo 'corte'`, `perda` ≈ 0,037; `planejarCorte(1024, 1024, false)` → `bloqueado` (perda > 0,15); `planejarCorte(1024, 1024, true)` → `preenchimento`; para toda missão 2–7 do caso renda: toda caixa `fontePx >= 60`, `x >= 72`, `x + w <= 1128`, `y >= 184.8`, `y + h <= 1355.2`.
-- [ ] **Step 2:** Rodar — FAIL. **Step 3:** Implementar (sem DOM). **Step 4:** PASS. **Step 5:** Commit `feat(galeria-ia): layouts, corte e contraste`.
+**Interfaces (Produces):** `razaoContraste(a, b): number`; `corDeAcento(cor): string`; `planejarCorte(w, h, capa): { tipo: 'corte'|'preenchimento'|'bloqueado'; sx; sy; sw; sh; perda }`; `Caixa { x; y; w; h; fontePx; linhasMax }`; `layoutMissao(m: Missao, textos: MissaoRoteiro): Caixa[]`; `recortesDetalhe(refW, refH): Array<{ sx; sy; sw; sh }>` (missão 7 e lupas).
+- [ ] **Step 1: Testes que falham:** `razaoContraste('#ffffff','#1b1f24') > 16`; `corDeAcento('#139aa0') === '#1b1f24'`; `planejarCorte(864,1152,false)` → `corte`, perda ≈ 0,037; `(1024,1024,false)` → `bloqueado`; `(1024,1024,true)` → `preenchimento`; toda caixa das missões 2–7: `fontePx >= 60`, `x >= 72`, `x+w <= 1128`, `y >= 184.8`, `y+h <= 1355.2`.
+- [ ] **Step 2–4:** FAIL → implementar → PASS. **Step 5:** Commit `feat(galeria-ia): layouts, corte e contraste`.
 
 ### Task 12: Composição no navegador e aprovação
 
-**Files:**
-- Create: `src/lib/galeria/compor.ts`, `supabase/functions/galeria-aprovar/index.ts`
-- Modify: `src/components/galeria/cartao-imagem.tsx` (botão "Aprovar" → compõe → envia)
-- Test: `src/lib/galeria/__tests__/compor.test.ts` (canvas mockado: ordem das chamadas), `supabase/functions/galeria-aprovar/__tests__/validar.test.ts`
+**Files:** Create `src/lib/galeria/compor.ts`, `supabase/functions/galeria-aprovar/index.ts`; Modify `cartao-imagem.tsx`; Config: CORS do bucket `imagens` para a origem do app; Tests: `src/lib/galeria/__tests__/compor.test.ts`, `supabase/functions/galeria-aprovar/__tests__/validar.test.ts`, `tests/e2e/galeria-compor.spec.ts` (Playwright, skill `playwright-cli`).
 
-**Interfaces:**
-- Consumes: `planejarCorte`, `layoutMissao`, `corDeAcento`, `dimensoesImagem` (`_shared/ai/imagem.ts`).
-- Produces: `export async function comporImagemFinal(cenaUrl: string, missao: Missao, textos: MissaoRoteiro, corProduto: string, moda: boolean): Promise<Blob>` (JPEG q=0.85, cai para 0.80 se >1 MB; espera `document.fonts.load('600 60px Inter')`); edge `galeria-aprovar`: `POST {imagem_id}` depois do upload do cliente em `final_path` assinado → valida 1200×1540, JPEG, 300 KB–1 MB → `status='aprovada'`, `aprovado_por`; `export function validarArquivoFinal(bytes: Uint8Array): string[]`.
-- [ ] **Step 1: Testes que falham:** `validarArquivoFinal` de PNG → erro `formato`; JPEG 1200×1200 → erro `dimensoes`; JPEG 1200×1540 de 200 KB → erro `peso`; compor com `moda: true` não chama `fillText`; missão 1 não chama `fillText`.
-- [ ] **Step 2:** Rodar — FAIL. **Step 3:** Implementar. **Step 4:** PASS. **Step 5:** Commit `feat(galeria-ia): composição e aprovação`.
+**Interfaces (Produces):** `comporImagemFinal({ cenaUrl, refUrl, missao, textos, corProduto, moda }): Promise<Blob>` — `img.crossOrigin = 'anonymous'`; espera `document.fonts.load('600 60px Inter')`; JPEG com laço de qualidade (0,92 → 0,70) até ficar entre 60 KB e 1 MB; missão 7 usa só `refUrl`. `validarArquivoFinal(bytes): string[]`. Edge `galeria-aprovar` `POST {imagem_id}` após upload do cliente em `final_path` assinado: relê os bytes, valida, grava `final_sha256`, recusa imagem `desatualizada`, → `aprovada`.
+- [ ] **Step 1: Testes que falham:** PNG → `formato`; JPEG 1200×1200 → `dimensoes`; JPEG 1200×1540 de 2 MB → `peso`; imagem `desatualizada` → recusa; Playwright renderiza `comporImagemFinal` no Chromium com uma cena real e confere: blob 1200×1540, `toBlob` sem erro de canvas sujo, e (missão 2) pixels escuros na faixa do título; com `moda: true`, nenhum pixel de texto na placa.
+- [ ] **Step 2–4:** FAIL → implementar → PASS. **Step 5:** Commit `feat(galeria-ia): composição e aprovação`.
 
 ## Fatia 5 — Aplicar no ML
 
-### Task 13: Upload multipart e plano de fotos (puro)
+### Task 13: Upload multipart, retrato e plano de fotos (puro)
 
-**Files:**
-- Modify: `supabase/functions/_shared/ml/fotos.ts` (nova `subirFotoMLArquivo`)
-- Create: `supabase/functions/_shared/galeria/aplicar.ts`
-- Test: `supabase/functions/_shared/ml/__tests__/fotos-arquivo.test.ts`, `supabase/functions/_shared/galeria/__tests__/aplicar.test.ts`
+**Files:** Modify `supabase/functions/_shared/ml/fotos.ts` (`subirFotoMLArquivo`); Modify `supabase/functions/_shared/ml/atualizar-item.ts` (`buscarItemML` passa a ler `catalog_listing`; nova `atualizarFotosItemML(token, itemId, corpo)`); Create `supabase/functions/_shared/galeria/aplicar.ts`; Tests.
 
-**Interfaces:**
-- Produces:
-  - `export async function subirFotoMLArquivo(accessToken: string, bytes: Uint8Array, mime: string): Promise<{ id: string; pronta: boolean }>` (multipart campo `file`, `User-Agent: Mozilla/5.0`; `pronta = Array.isArray(resp.variations) && resp.variations.length > 0`)
-  - `export function planejarFotosItem(entrada: { item: ItemMLAtual; variacoesDaCor: number[] | null; novas: string[]; modo: 'substituir'|'adicionar'; limiteVar: number; limiteItem: number; snapshot: string[] }): { ok: true; corpo: { pictures: Array<{id: string}>; variations?: Array<{ id: number; picture_ids: string[] }> } } | { ok: false; motivo: 'mudou'|'limite'|'variacao_ausente'; detalhe: string }`
-- [ ] **Step 1: Testes que falham:** item com 2 variações (Rosa, Azul) e modo `substituir` na Rosa → `variations` contém as duas, Azul com `picture_ids` intactos, Rosa só com `novas`, `pictures` = união; nenhuma chave `price`, `available_quantity` ou `status` no corpo; modo `adicionar` com 4 atuais + 7 novas e `limiteVar: 10` → `ok:false, motivo:'limite'`; `snapshot` diferente das fotos atuais da cor → `motivo:'mudou'`; item sem variações (UP) → corpo só `pictures`; `subirFotoMLArquivo` com fetch mockado envia `FormData` com campo `file` e devolve `pronta:false` quando a resposta não tem `variations`.
-- [ ] **Step 2:** Rodar — FAIL. **Step 3:** Implementar. **Step 4:** PASS. **Step 5:** Commit `feat(galeria-ia): upload multipart e plano de fotos`.
+**Interfaces (Produces):**
+- `subirFotoMLArquivo(token, bytes, mime): Promise<{ id: string; pronta: boolean }>` (multipart `file`, `User-Agent: Mozilla/5.0`)
+- `type Retrato = { itens: Array<{ itemId: string; variacoes: Array<{ id: number|null; cor: string; pictureIds: string[] }>; pictures: string[] }> }`
+- `alvosDaCor(vinculos: Array<{ sku: string; item_externo_id: string; user_product_id: string|null; retirado: boolean }>, skusDaCor: string[]): string[]` (itens não retirados dos SKUs da cor; vazio ou SKU sem vínculo → erro `conjunto_incompleto`)
+- `planejarFotosItem({ atual, retrato, cor, novas, modo, limiteVar, limiteItem, corpoMinimo }): { ok: true; corpo } | { ok: false; motivo: 'mudou'|'limite'|'variacao_ausente'|'catalogo'|'migracao_pendente'; detalhe }` — `mudou` compara o item **inteiro** (todas as variações e a ordem) com o retrato; `corpoMinimo` vem do ensaio da Task 1.
+- [ ] **Step 1: Testes que falham:** Legacy Rosa+Azul, substituir Rosa → Azul intacta, Rosa só com novas, `pictures` = união; corpo sem `price` e `status`; adicionar 4+7 com limite 10 → `limite`; Azul mudou desde o retrato → `mudou`; `catalog_listing: true` → `catalogo`; tag `variations_migration_pending` → `migracao_pendente`; `alvosDaCor` com 3 SKUs da cor (P, M, G) → 3 itens; um SKU sem vínculo → `conjunto_incompleto`; `subirFotoMLArquivo` envia `FormData` com `file` e devolve `pronta:false` sem `variations`.
+- [ ] **Step 2–4:** FAIL → implementar → PASS. **Step 5:** Commit `feat(galeria-ia): retrato e plano de fotos`.
 
-### Task 14: Aplicar e reverter (edge, só admin)
+### Task 14: Saga de aplicar e reverter
 
-**Files:**
-- Create: `supabase/functions/galeria-aplicar/index.ts`
-- Modify: `supabase/functions/_shared/ml/atualizar-item.ts` (nova `atualizarFotosItemML(accessToken, itemId, corpo)` — PUT só com o corpo de `planejarFotosItem`)
-- Test: `supabase/functions/galeria-aplicar/__tests__/orquestrar.test.ts` (orquestração pura com ML mockado)
+**Files:** Create `supabase/functions/galeria-aplicar/index.ts` (preparar e disparar), `supabase/functions/galeria-aplicar-worker/index.ts` (um item por job), `supabase/functions/_shared/galeria/saga.ts`; Modify `supabase/config.toml`; Test `…/__tests__/saga.test.ts`.
 
-**Interfaces:**
-- Consumes: `planejarFotosItem`, `subirFotoMLArquivo`, `buscarItemML`, `descobrirFamiliaUP`, `getValidAccessTokenConexao`, `resolverConexaoEstrita`.
-- Produces: edge `POST {familia_id, cor, modo, acao:'aplicar'|'reverter', aplicacao_id?}`; `requireUserOrg` + `isAdmin || support.scope==='full'` senão 403; categoria de Moda/limite lidos ao vivo (`GET /categories/{id}`); para cada item alvo (UP: todos os itens daquela cor, por `descobrirFamiliaUP`; legacy: o item): grava `galeria_aplicacoes` `aplicando` com `fotos_antes`, sobe as aprovadas na ordem das missões, PUT, GET de conferência (variação da cor com os ids esperados e na ordem; demais intactas); falha em qualquer item → reverte os já trocados com `fotos_antes` e marca `falhou`; `reverter` só sobrescreve se as fotos atuais forem as `fotos_depois` gravadas, senão devolve `motivo:'mudou'`.
-  - `export async function orquestrarAplicacao(deps: DepsAplicar, alvo: AlvoAplicar): Promise<ResultadoAplicar>` (puro com dependências injetadas, para teste)
-- [ ] **Step 1: Testes que falham:** UP com 3 itens, PUT do 2º falha → 1º revertido com `fotos_antes`, 3º intocado, resultado `falhou` com detalhe por item; GET de conferência mostrando ordem diferente → `falhou` e reversão; foto que volta `pronta:false` → nenhum PUT; não admin → 403; `reverter` com fotos atuais ≠ `fotos_depois` → `mudou` sem PUT.
-- [ ] **Step 2:** Rodar — FAIL. **Step 3:** Implementar. **Step 4:** PASS + `pnpm check:functions`. **Step 5:** Commit `feat(galeria-ia): aplicar e reverter no ML`.
+**Interfaces (Produces):**
+- Edge `galeria-aplicar`: `requireUserOrg` + admin (senão 403). `acao:'preparar'` → GET ao vivo de todos os alvos (`alvosDaCor` + `buscarItemML`), grava `galeria_aplicacoes` `preparada` com `retrato`; `acao:'confirmar', aplicacao_id` → `em_andamento` e publica um job por item na fila serial da conta (`garantirFilaSerialCanal`); `acao:'reverter', aplicacao_id` → jobs de reversão.
+- `passoSaga(item, ctx): { acao: 'subir'|'put'|'conferir'|'compensar'|'concluir'|'ignorar'; ... }` — puro; ordem: grava `fotos_antes` (commit) → sobe fotos que ainda não têm `ml_picture_id` (reaproveita) → GET imediato + `planejarFotosItem` → PUT → GET de conferência → `aplicado`; erro após o PUT → GET decide se o PUT pegou; falha → compensa com `fotos_antes` só se as fotos atuais forem as esperadas, senão `reversao_incompleta`.
+- Varredura (pg_cron, 5 min): item `aplicando|revertendo` com `lease_ate` vencido → republica o job.
+- [ ] **Step 1: Testes que falham:** UP com P, M, G da mesma cor → 3 jobs; PUT do M falha → P compensado, G não tocado, aplicação `falhou` com detalhe por item; queda depois do PUT (resposta perdida) + GET mostra fotos novas → `aplicado` sem novo PUT; compensação com fotos atuais diferentes das esperadas → `reversao_incompleta`, sem PUT; conferência com ordem errada → compensa; foto `pronta:false` → nenhum PUT; não admin → 403; reverter com fotos atuais ≠ `fotos_depois` → `mudou`.
+- [ ] **Step 2–4:** FAIL → implementar → PASS (+ `pnpm check:functions`). **Step 5:** Commit `feat(galeria-ia): saga de aplicar e reverter`.
 
 ### Task 15: Tela — aplicar e reverter
 
-**Files:**
-- Create: `src/components/galeria/passo-aplicar.tsx`
-- Test: `src/components/galeria/__tests__/passo-aplicar.test.tsx`
-
-**Interfaces:** Consumes `aplicarGaleria`, `reverterGaleria`.
-- [ ] **Step 1: Testes que falham:** não admin vê botões desabilitados com `title` explicando (padrão ADR-0060); confirmação lista os MLB afetados e o modo (Substituir pré-selecionado); `motivo:'limite'` mostra "Adicionar passa do limite de 10 fotos desta cor — usar Substituir?"; `motivo:'mudou'` mostra a diferença; resultado `aplicada` oferece "Reverter".
-- [ ] **Step 2:** FAIL. **Step 3:** Implementar. **Step 4:** PASS. **Step 5:** Commit `feat(galeria-ia): aplicar e reverter na tela`.
+**Files:** Create `src/components/galeria/passo-aplicar.tsx`; Test `…/__tests__/passo-aplicar.test.tsx`.
+- [ ] **Step 1: Testes que falham:** não admin vê botões desabilitados com `title` (ADR-0060); confirmação lista os MLB do retrato e o modo (Substituir pré-selecionado); `limite` oferece Substituir; `mudou` mostra a diferença e pede nova preparação; `reversao_incompleta` mostra aviso vermelho com os MLB; `aplicada` oferece "Reverter".
+- [ ] **Step 2–4:** FAIL → implementar → PASS. **Step 5:** Commit `feat(galeria-ia): aplicar e reverter na tela`.
 
 ## Fatia 6 — Retenção, entrega e validação
 
-### Task 16: Retenção, deploy e documentação
+### Task 16: Retenção, deploy, documentação e validação real
 
-**Files:**
-- Create: `supabase/migrations/<ts>_galeria_retencao_cron.sql` (pg_cron diário: apaga do Storage arquivos de `galeria_imagens` com `status in ('gerada','descartada','falhou')` e `criado_em < now() - interval '30 days'`; zera `cena_path`, mantém a linha; ADR §13)
-- Modify: `docs/reference/edge-functions.md`, `docs/reference/modelo-de-dados.md`, `docs/TASKS.md`, `docs/project-status.md` (skill `docs-update-checklist`)
-- [ ] **Step 1:** `pnpm preflight` — Expected: tudo verde.
-- [ ] **Step 2:** `supabase secrets set HF_CREDENTIALS=…` (Diego executa com `!`), `supabase db push`, `npm run db:check`, `supabase functions deploy galeria-fatos galeria-roteiro galeria-gerar galeria-worker galeria-aprovar galeria-aplicar` + `gerar-foto-kit` (gatilho de cobrança alterado não muda a edge, mas `_shared/ml/fotos.ts` e `atualizar-item.ts` mudaram → redeployar todas as funções que importam esses arquivos; listar com grep e conferir versão pós-deploy).
-- [ ] **Step 3:** Validação real (com Diego): 1 família de teste escolhida por ele, 1 cor, missões 1–4, gerar → aprovar → aplicar → conferir no ML → reverter → conferir. Registrar custo e a linha de cobrança.
+**Files:** Create `supabase/migrations/<ts>_galeria_retencao_cron.sql` (pg_cron diário: apaga do Storage arquivos de `galeria_imagens` com status `gerada|descartada|falhou|desatualizada` e `criado_em < now() - interval '30 days'`; zera `cena_path`/`final_path`; mantém a linha); Modify `docs/reference/edge-functions.md`, `docs/reference/modelo-de-dados.md`, `docs/TASKS.md`, `docs/project-status.md` (skill `docs-update-checklist`).
+- [ ] **Step 1:** `pnpm preflight` — tudo verde.
+- [ ] **Step 2:** Diego roda `! supabase secrets set HF_CREDENTIALS=…`; `supabase db push`; `npm run db:check`; deploy de `galeria-fatos galeria-roteiro galeria-gerar galeria-worker galeria-imagens galeria-aprovar galeria-aplicar galeria-aplicar-worker` + todas as funções que importam `_shared/ml/fotos.ts` e `_shared/ml/atualizar-item.ts` (listar com grep); conferir versões.
+- [ ] **Step 3:** Validação real com Diego (bloqueia a liberação): 1 anúncio Legacy e 1 família UP da Task 1; gerar → aprovar → aplicar → conferir no ML (preço, estoque, demais cores) → reverter → conferir; conferir 1 cobrança por imagem entregue e nenhuma pela missão 7.
 - [ ] **Step 4:** Commit `docs(galeria-ia): entrega da galeria da cor`.
 
 ---
 
 ## Revisão e execução
 
-- Cada task: revisão do diff pelo Codex (`gpt-6.1-sol`, high) **e** pelo Grok 4.7 xhigh (decisão do Diego para esta feature).
-- Pré-merge da branch: Grok 4.7 xhigh no diff completo + CI verde.
+- Cada task: diff revisado pelo Codex (`gpt-6.1-sol`, high) **e** pelo Grok 4.7 xhigh (decisão do Diego para esta feature).
+- Pré-merge: Grok 4.7 xhigh no diff completo + CI verde. Merge só depois da validação real da Task 16.
