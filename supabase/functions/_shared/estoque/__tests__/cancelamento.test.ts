@@ -20,7 +20,10 @@ function fakeDeps(over: Partial<DepsCancelamento> = {}) {
   const deps: DepsCancelamento = {
     estornarVendaCancelada: (_admin, p) => {
       chamadas.estornos.push({ orderId: p.orderId, itens: p.itens });
-      return Promise.resolve({ pendentesDePush: [{ id: 'm1', codigoPai: 'P1', canalOrigem: null, reposicao: true }], falhas: [] });
+      return Promise.resolve({
+        pendentesDePush: [{ id: 'm1', codigoPai: 'P1', canalOrigem: null, reposicao: true, skuRestrito: null }],
+        falhas: [], aplicados: [],
+      });
     },
     despacharPushPendente: () => {
       chamadas.despachos++;
@@ -40,6 +43,10 @@ function fakeDeps(over: Partial<DepsCancelamento> = {}) {
       chamadas.notificacoes.push({ categoria, texto });
       return Promise.resolve();
     },
+    // Org sem módulo nunca chega aqui; lançar prova que nada de kit é consultado.
+    skusParticipantes: () => Promise.reject(new Error('consulta de kit inesperada')),
+    agendarCancelamentoKit: () => Promise.reject(new Error('agendamento de kit inesperado')),
+    registrarPendencias: () => Promise.reject(new Error('pendência inesperada')),
     ...over,
   };
   return { chamadas, deps };
@@ -160,5 +167,151 @@ describe('tratarPedidoCancelado — guarda de status', () => {
     const { deps } = fakeDeps({ estornarVendaCancelada: () => Promise.reject(new Error('rpc caiu')) });
     const r = await tratarPedidoCancelado(ADMIN, deps, { ...BASE, shipmentStatus: 'ready_to_ship' });
     expect(r).toBe('erro');
+  });
+});
+
+// ADR-0197 (Task 8): SKU participante de kit com variação. Só com o módulo ligado; o resto segue como hoje.
+describe('tratarPedidoCancelado — kit com variação', () => {
+  const KIT = { ...BASE, itens: [{ codigo: 'KIT-PB-M', quantity: 1 }], shipmentStatus: 'ready_to_ship', kitLigado: true };
+  const PENDENTES = [
+    { id: 'est-kit', codigoPai: 'KIT', canalOrigem: null, reposicao: true, skuRestrito: null },
+    { id: 'outro', codigoPai: 'OUTRO', canalOrigem: null, reposicao: true, skuRestrito: null },
+  ];
+
+  function depsKit(over: Partial<DepsCancelamento> = {}) {
+    const extra = {
+      participantes: [] as string[][],
+      agendados: [] as string[][],
+      pendencias: [] as Array<{ falhas: string[]; erro: string | null }>,
+      despachados: [] as string[][],
+    };
+    const { chamadas, deps } = fakeDeps({
+      estornarVendaCancelada: (_a, p) => {
+        chamadas.estornos.push({ orderId: p.orderId, itens: p.itens });
+        return Promise.resolve({ pendentesDePush: PENDENTES, falhas: [], aplicados: ['KIT-PB-M'] });
+      },
+      despacharPushPendente: (_a, _o, pendentes) => {
+        extra.despachados.push(pendentes.map((m) => m.id));
+        return Promise.resolve({ marcados: pendentes.length, falhas: 0 });
+      },
+      skusParticipantes: (_a, _o, skus) => {
+        extra.participantes.push(skus);
+        return Promise.resolve(new Set(skus.filter((s) => s.startsWith('KIT-'))));
+      },
+      agendarCancelamentoKit: (_a, p) => {
+        extra.agendados.push(p.codigos);
+        return Promise.resolve(['est-kit']);
+      },
+      registrarPendencias: (_a, _o, _ok, _ini, falhas, erro) => {
+        extra.pendencias.push({ falhas, erro });
+        return Promise.resolve(0);
+      },
+      ...over,
+    });
+    return { chamadas, deps, extra };
+  }
+
+  it('pré-despacho credita e agenda a transferência; o estorno agendado sai do push', async () => {
+    const { chamadas, deps, extra } = depsKit();
+    const r = await tratarPedidoCancelado(ADMIN, deps, KIT);
+    expect(r).toBe('reposto');
+    expect(chamadas.estornos).toHaveLength(1);
+    expect(extra.agendados).toEqual([['KIT-PB-M']]);
+    expect(extra.despachados).toEqual([['outro']]);
+    expect(extra.pendencias).toEqual([]);
+  });
+
+  it('retry com o crédito já feito (duplicata) não cria outra transferência', async () => {
+    const { deps, extra } = depsKit({
+      estornarVendaCancelada: () => Promise.resolve({ pendentesDePush: [], falhas: [], aplicados: [] }),
+    });
+    expect(await tratarPedidoCancelado(ADMIN, deps, KIT)).toBe('reposto');
+    expect(extra.agendados).toEqual([]);
+  });
+
+  it('pós-despacho não credita nem agenda', async () => {
+    const { chamadas, deps, extra } = depsKit();
+    const r = await tratarPedidoCancelado(ADMIN, deps, { ...KIT, shipmentStatus: 'shipped' });
+    expect(r).toBe('avisado');
+    expect(chamadas.estornos).toHaveLength(0);
+    expect(extra.agendados).toEqual([]);
+  });
+
+  it('falha de crédito do participante fica pendente com retry durável', async () => {
+    const { chamadas, deps, extra } = depsKit({
+      estornarVendaCancelada: () => Promise.resolve({
+        pendentesDePush: PENDENTES, falhas: [{ codigo: 'KIT-PB-M', mensagem: 'canonica_trocou' }], aplicados: [],
+      }),
+    });
+    const r = await tratarPedidoCancelado(ADMIN, deps, KIT);
+    expect(r).toBe('pendente');
+    expect(extra.pendencias).toEqual([{ falhas: [String(BASE.orderId)], erro: expect.stringContaining('canonica_trocou') }]);
+    expect(chamadas.reservas).toContainEqual({ entidade: 'estoque_cancelado_kit_pendente', chave: String(BASE.orderId) });
+    expect(chamadas.notificacoes[0].categoria).toBe('estoque');
+    // O que já está no outbox segue para o push.
+    expect(extra.despachados).toEqual([['est-kit', 'outro']]);
+  });
+
+  it('estorno que lança com participante no pedido também fica pendente', async () => {
+    const { deps, extra } = depsKit({ estornarVendaCancelada: () => Promise.reject(new Error('rede')) });
+    expect(await tratarPedidoCancelado(ADMIN, deps, KIT)).toBe('pendente');
+    expect(extra.pendencias).toHaveLength(1);
+  });
+
+  it('participantes ilegíveis: pendente, sem estornar às cegas', async () => {
+    const { chamadas, deps, extra } = depsKit({ skusParticipantes: () => Promise.reject(new Error('timeout')) });
+    expect(await tratarPedidoCancelado(ADMIN, deps, KIT)).toBe('pendente');
+    expect(chamadas.estornos).toHaveLength(0);
+    expect(extra.pendencias).toHaveLength(1);
+  });
+
+  it('catálogo incompleto com o módulo ligado: pendente, sem estorno por código incerto', async () => {
+    const { chamadas, deps, extra } = depsKit();
+    const r = await tratarPedidoCancelado(ADMIN, deps, { ...KIT, catalogoIncompleto: true });
+    expect(r).toBe('pendente');
+    expect(chamadas.estornos).toHaveLength(0);
+    expect(extra.participantes).toEqual([]);
+    expect(extra.pendencias).toHaveLength(1);
+  });
+
+  it('SKU retirado segue creditável: credita, sem transferência e sem pendência', async () => {
+    const { chamadas, deps, extra } = depsKit({ agendarCancelamentoKit: () => Promise.resolve([]) });
+    const r = await tratarPedidoCancelado(ADMIN, deps, KIT);
+    expect(r).toBe('reposto');
+    expect(chamadas.estornos).toHaveLength(1);
+    expect(extra.despachados).toEqual([['est-kit', 'outro']]);
+    expect(extra.pendencias).toEqual([]);
+  });
+
+  it('agendamento que falha não desfaz o crédito: o outbox leva o estorno', async () => {
+    const { deps, extra } = depsKit({ agendarCancelamentoKit: () => Promise.reject(new Error('rpc')) });
+    expect(await tratarPedidoCancelado(ADMIN, deps, KIT)).toBe('reposto');
+    expect(extra.despachados).toEqual([['est-kit', 'outro']]);
+  });
+
+  it('SKU comum com o módulo ligado: falha segue como hoje (reposto), sem pendência', async () => {
+    const { deps, extra } = depsKit({
+      estornarVendaCancelada: () => Promise.resolve({
+        pendentesDePush: [], falhas: [{ codigo: '00000029', mensagem: 'x' }], aplicados: [],
+      }),
+    });
+    const r = await tratarPedidoCancelado(ADMIN, deps, { ...KIT, itens: [{ codigo: '00000029', quantity: 1 }] });
+    expect(r).toBe('reposto');
+    expect(extra.pendencias).toEqual([]);
+    expect(extra.agendados).toEqual([]);
+  });
+
+  it('org sem módulo: nenhuma consulta de kit, falha segue como hoje', async () => {
+    const { deps, extra } = depsKit({
+      estornarVendaCancelada: () => Promise.resolve({
+        pendentesDePush: PENDENTES, falhas: [{ codigo: 'KIT-PB-M', mensagem: 'x' }], aplicados: ['KIT-PB-M'],
+      }),
+    });
+    const r = await tratarPedidoCancelado(ADMIN, deps, { ...KIT, kitLigado: false, catalogoIncompleto: true });
+    expect(r).toBe('reposto');
+    expect(extra.participantes).toEqual([]);
+    expect(extra.agendados).toEqual([]);
+    expect(extra.pendencias).toEqual([]);
+    expect(extra.despachados).toEqual([['est-kit', 'outro']]);
   });
 });

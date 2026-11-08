@@ -9,6 +9,7 @@ import { fundirItensUP } from './catalogo-up.ts';
 import { fundirAnunciosMigrados } from './anuncios-migrados.ts';
 import { montarMapasCustoVigente, resolverCustoVigente, type LinhaCusto, type ItemParaCusto } from './custo-vigente.ts';
 import { chunk } from './utils.ts';
+import { EMBED_MODULOS, kitLigado } from '../kit-variacao/politica.ts';
 
 const API = 'https://api.mercadolibre.com';
 
@@ -38,6 +39,10 @@ export interface Catalogo {
   infoPorGtin: Map<string, { codigo: string | null; ean: string | null }>;
   /** ADR-0109 — custo vigente do item, para congelar na venda. null = não casou no catálogo. */
   custoVigenteResolver: (item: ItemParaCusto) => number | null;
+  /** ADR-0197: modo tolerante e alguma página falhou. O código resolvido pode divergir do de uma leitura completa. */
+  incompleto: boolean;
+  /** ADR-0197: módulo `kit_variacao` da org. Com `incompleto` e módulo ilegível, `true` (conservador). */
+  kitLigado: boolean;
 }
 
 /** Lê todas as páginas de uma query, evitando o teto padrão (~1000 linhas) do PostgREST —
@@ -46,12 +51,14 @@ export interface Catalogo {
 async function paginarTudo<T>(
   pagina: (de: number, ate: number) => PromiseLike<{ data: T[] | null; error?: { message: string } | null }>,
   estrito = false,
-  tamanho = 1000,
+  aoFalhar?: () => void,
 ): Promise<T[]> {
+  const tamanho = 1000;
   const todas: T[] = [];
   for (let de = 0; ; de += tamanho) {
     const { data, error } = await pagina(de, de + tamanho - 1);
     if (estrito && error) throw new Error(`carregar catálogo: ${error.message}`);
+    if (error) aoFalhar?.();
     const lote = data ?? [];
     todas.push(...lote);
     if (lote.length < tamanho) break;
@@ -84,12 +91,15 @@ export async function carregarCatalogo(
   // supabase-js estourar a inferência (`TS2589: type instantiation excessively deep`).
   const colEscopo = orgId ? 'org_id' : 'user_id';
   const valEscopo = orgId ?? userId;
+  let incompleto = false;
+  const marcar = () => { incompleto = true; };
 
+  // ADR-0197: o módulo vem embutido nesta leitura (`EMBED_MODULOS`), sem consulta nova.
   const familias = await paginarTudo<{ id: string; ml_item_id: string | null; codigo_pai: string | null }>(
     (de, ate) => admin.from('familias')
-      .select('id, ml_item_id, codigo_pai').eq(colEscopo, valEscopo)
+      .select(`id, ml_item_id, codigo_pai, ${EMBED_MODULOS}`).eq(colEscopo, valEscopo)
       .not('ml_item_id', 'is', null).range(de, ate),
-    estrito,
+    estrito, marcar,
   );
   const famPorId = new Map<string, { mlItemId: string; codigoPai: string | null }>();
   const idsPubliai = new Set<string>();
@@ -104,7 +114,7 @@ export async function carregarCatalogo(
       // catalog_listing_id: o MLB do anúncio de catálogo (ADR-0021) — ver o bloco no loop abaixo.
       .select('familia_id, codigo, gtin, ml_variation_id, catalog_listing_id, custo, atualizado_em')
       .eq(colEscopo, valEscopo).range(de, ate),
-    estrito,
+    estrito, marcar,
   );
   // Linhas de custo montadas ANTES do filtro de família publicada abaixo: uma variação de família
   // ainda não publicada não tem ml_item_id, mas seu código/GTIN continuam válidos para casar a
@@ -160,7 +170,7 @@ export async function carregarCatalogo(
         // (venda.ts §2), que depende de um GET best-effort no ML.
         .select('item_externo_id, sku, catalog_listing_id')
         .eq('org_id', orgId).not('item_externo_id', 'is', null).range(de, ate),
-      estrito,
+      estrito, marcar,
     );
     fundirItensUP(
       { idsPubliai, codPorItem, eanPorItem, infoPorGtin },
@@ -186,7 +196,7 @@ export async function carregarCatalogo(
       (de, ate) => admin.from('anuncios_externos')
         .select('ml_item_id_anterior, migracao_pxv_snapshot')
         .eq('org_id', orgId).not('ml_item_id_anterior', 'is', null).range(de, ate),
-      estrito,
+      estrito, marcar,
     );
     fundirAnunciosMigrados(
       { idsPubliai, codPorVar, eanPorVar },
@@ -204,9 +214,20 @@ export async function carregarCatalogo(
       if (varId != null) { const x = porVar.get(`${itemId}:${varId}`); if (x) return x; }
       return porItem.get(itemId) ?? null;
     };
+  let ligado = familias.length > 0 && kitLigado(familias[0]);
+  // Só no caminho de falha: a página com o módulo pode ter sido a que falhou. Ilegível = ligado.
+  if (incompleto && !ligado && orgId) {
+    try {
+      const { data, error } = await admin.from('organizations').select('modulos_habilitados').eq('id', orgId).maybeSingle();
+      ligado = !!error || kitLigado({ organizations: data });
+    } catch {
+      ligado = true;
+    }
+  }
   return {
     idsPubliai, codigoResolver: mk(codPorVar, codPorItem), eanResolver: mk(eanPorVar, eanPorItem), infoPorGtin,
     custoVigenteResolver: (item: ItemParaCusto) => resolverCustoVigente(mapasCusto, item),
+    incompleto, kitLigado: ligado,
   };
 }
 

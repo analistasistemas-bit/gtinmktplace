@@ -139,7 +139,7 @@ async function legado(admin: ReturnType<typeof adminClient>): Promise<Response> 
       if (claimsPendentes.length < claims.length) {
         console.log(`reconciliar: claims org ${orgId} — ${claimsPendentes.length}/${claims.length} precisam de reprocesso`);
       }
-      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await catalogoDe(userId, orgId);
+      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver, incompleto, kitLigado } = await catalogoDe(userId, orgId);
       for (const lote of chunk(claimsPendentes, PARALELAS)) {
         await Promise.all(lote.map(async (claim) => {
           try {
@@ -167,6 +167,7 @@ async function legado(admin: ReturnType<typeof adminClient>): Promise<Response> 
               statusPedido: pedido.status ?? null,
               shipmentStatus: shipment?.status != null ? String(shipment.status) : null,
               temEnvio: pedido.shipping?.id != null,
+              kitLigado, catalogoIncompleto: incompleto,
             });
           } catch { /* segue */ }
         }));
@@ -199,7 +200,7 @@ async function legado(admin: ReturnType<typeof adminClient>): Promise<Response> 
     const { userId, orgId, token } = e;
     try {
       const pedidos = await buscarPedidosPeriodo(token, intervalo);
-      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await catalogoDe(userId, orgId);
+      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver, incompleto, kitLigado } = await catalogoDe(userId, orgId);
       const [liquidoPorPayment, gtinPorItem] = await Promise.all([
         carregarLiquidoMP(token, Number(e.cx.contaExternaId)),
         carregarGtinsFallback(token, pedidos, idsPubliai),
@@ -244,6 +245,7 @@ async function legado(admin: ReturnType<typeof adminClient>): Promise<Response> 
               statusPedido: pedido.status ?? null,
               shipmentStatus: shipment?.status != null ? String(shipment.status) : null,
               temEnvio: pedido.shipping?.id != null,
+              kitLigado, catalogoIncompleto: incompleto,
             });
             total++;
           } catch { /* segue */ }
@@ -364,7 +366,7 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
     },
 
     async processarClaims(token, cx, userId, org, claims) {
-      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await catalogoDe(userId, org);
+      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver, incompleto, kitLigado } = await catalogoDe(userId, org);
       let n = 0;
       for (const lote of chunk(claims, PARALELAS)) {
         await Promise.all(lote.map(async (claim) => {
@@ -391,6 +393,7 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
               statusPedido: pedido.status ?? null,
               shipmentStatus: shipment?.status != null ? String(shipment.status) : null,
               temEnvio: pedido.shipping?.id != null,
+              kitLigado, catalogoIncompleto: incompleto,
             });
             n++;
           } catch (e) {
@@ -465,7 +468,7 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
     agora: () => new Date().toISOString(),
 
     async processarPedidos(token, cx, userId, org, pedidos) {
-      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await catalogoDe(userId, org);
+      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver, incompleto, kitLigado } = await catalogoDe(userId, org);
       const gtinPorItem = await carregarGtinsFallback(token, pedidos, idsPubliai);
       const r = resultadoVazio();
       for (const lote of chunk(pedidos, PARALELAS)) {
@@ -494,6 +497,7 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
               statusPedido: pedido.status ?? null,
               shipmentStatus: shipment?.status != null ? String(shipment.status) : null,
               temEnvio: pedido.shipping?.id != null,
+              kitLigado, catalogoIncompleto: incompleto,
             });
             return liquidoPorPayment !== null;
           });

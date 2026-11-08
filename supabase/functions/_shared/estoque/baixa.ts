@@ -83,6 +83,8 @@ export interface ResultadoBaixaVenda {
   semSku: Array<{ titulo: string | null; mlItemId: string | null; quantidade: number }>;
   /** SKUs que vieram no pedido mas não existem no catálogo — a RPC recusa e nada é baixado. */
   skuDesconhecido: Array<{ codigo: string; quantidade: number }>;
+  /** ADR-0197: SKUs vendidos cujo saldo foi a 0 nesta baixa (alerta de kit em modo manual). */
+  zerados: string[];
 }
 
 /**
@@ -112,13 +114,14 @@ export async function registrarBaixaVenda(
 
   const baixas = selecionarBaixas(p.itens);
   if (baixas.length === 0) {
-    return { pendentesDePush: [], vendaAcimaSaldo: [], desyncMl: [], falhas: [], semSku, skuDesconhecido: [] };
+    return { pendentesDePush: [], vendaAcimaSaldo: [], desyncMl: [], falhas: [], semSku, skuDesconhecido: [], zerados: [] };
   }
 
   const vendaAcimaSaldo: ResultadoBaixaVenda['vendaAcimaSaldo'] = [];
   const desyncMl: ResultadoBaixaVenda['desyncMl'] = [];
   const falhas: Array<{ codigo: string; mensagem: string }> = [];
   const skuDesconhecido: Array<{ codigo: string; quantidade: number }> = [];
+  const zerados: string[] = [];
 
   // O SKU vendido pode ser de um kit vinculado (ADR-0151 D-6): nesse caso quem tem saldo é a
   // BASE, e cada unidade de venda consome N unidades dela. Sem esta resolução, `baixar_estoque`
@@ -164,6 +167,8 @@ export async function registrarBaixaVenda(
       kitCodigoPai: origem.kitCodigoPai,
       multiplicador: origem.kitCodigoPai ? origem.multiplicador : null,
     });
+    const aplicada = r.quantidade_aplicada ?? 0;
+    if (aplicada > 0 && r.estoque_anterior !== undefined && r.estoque_anterior - aplicada <= 0) zerados.push(b.codigo);
     const classe = classificarBaixaSemSaldo(r, b.quantity * origem.multiplicador);
     if (classe === 'desync') {
       desyncMl.push({
@@ -188,7 +193,7 @@ export async function registrarBaixaVenda(
   // movimento com push ainda não entregue. É o que fecha o buraco em que a RPC
   // commita e o enfileiramento falha — no retry, `aplicado` seria false e o push
   // se perderia para sempre. Aqui ele é reencontrado.
-  return { pendentesDePush: await lerPushPendente(admin, p.orgId), vendaAcimaSaldo, desyncMl, falhas, semSku, skuDesconhecido };
+  return { pendentesDePush: await lerPushPendente(admin, p.orgId), vendaAcimaSaldo, desyncMl, falhas, semSku, skuDesconhecido, zerados };
 }
 
 /**
@@ -290,10 +295,16 @@ export async function comRetryConcorrencia<T extends { error: { code?: string; m
 export async function estornarVendaCancelada(
   admin: SupabaseClient,
   p: { orgId: string; canal: string; orderId: string | number; itens: ItemVendaBaixa[] },
-): Promise<{ pendentesDePush: MovimentoPendente[]; falhas: Array<{ codigo: string; mensagem: string }> }> {
+): Promise<{
+  pendentesDePush: MovimentoPendente[];
+  falhas: Array<{ codigo: string; mensagem: string }>;
+  /** SKUs creditados NESTA execução (`aplicado`). Duplicata e tombstone ficam de fora. */
+  aplicados: string[];
+}> {
   const falhas: Array<{ codigo: string; mensagem: string }> = [];
+  const aplicados: string[] = [];
   for (const b of selecionarBaixas(p.itens)) {
-    const { error } = await rpcEstoque(admin, 'estornar_estoque', {
+    const { data, error } = await rpcEstoque(admin, 'estornar_estoque', {
       p_org: p.orgId, p_canal: p.canal,
       p_ref_venda: refBaixa(p.canal, p.orderId, b.codigo),
       p_codigo: b.codigo,
@@ -301,10 +312,28 @@ export async function estornarVendaCancelada(
     if (error) {
       console.error('estornar_estoque_falhou', { orderId: p.orderId, codigo: b.codigo, erro: error.message });
       falhas.push({ codigo: b.codigo, mensagem: error.message });
+    } else if ((data as { aplicado?: boolean } | null)?.aplicado) {
+      aplicados.push(b.codigo);
     }
     // O que enfileirar vem do outbox, não do retorno — mesma razão da baixa.
   }
-  return { pendentesDePush: await lerPushPendente(admin, p.orgId), falhas };
+  return { pendentesDePush: await lerPushPendente(admin, p.orgId), falhas, aplicados };
+}
+
+/**
+ * ADR-0197: dos SKUs zerados por uma venda, os de kit com variação com reposição automática desligada (modo
+ * manual). Ninguém repõe esse kit sozinho: o operador precisa saber que a combinação acabou. Quem chama só
+ * consulta com o módulo ligado. Erro de leitura lança.
+ */
+export async function kitsManuaisZerados(admin: SupabaseClient, orgId: string, codigos: string[]): Promise<string[]> {
+  if (codigos.length === 0) return [];
+  const { data, error } = await admin.from('kit_variacao_skus')
+    .select('codigo, kits_variacao(reposicao_auto)').eq('org_id', orgId).in('codigo', codigos);
+  if (error) throw new Error(`kit_variacao_skus: ${error.message}`);
+  return (data ?? []).filter((r) => {
+    const k = (r as { kits_variacao?: unknown }).kits_variacao;
+    return ((Array.isArray(k) ? k[0] : k) as { reposicao_auto?: boolean } | null)?.reposicao_auto === false;
+  }).map((r) => r.codigo as string);
 }
 
 /** Movimentos aplicados cujo push ao QStash ainda não foi confirmado (outbox no ledger). */

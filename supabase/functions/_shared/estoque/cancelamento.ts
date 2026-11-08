@@ -9,8 +9,9 @@
 // A decisão de repor NÃO mudou (ADR-0094 D-7): só a allowlist de pré-despacho repõe, e todo o
 // resto avisa. O que mudou é quem pode chamar.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import type { ItemVendaBaixa, MovimentoPendente } from './baixa.ts';
+import { refBaixa, selecionarBaixas, type ItemVendaBaixa, type MovimentoPendente } from './baixa.ts';
 import type { CategoriaNotificacao } from '../notificacoes/categorias.ts';
+import { criarTransferencia } from '../kit-variacao/saga.ts';
 
 /** Estados de envio que provam que a mercadoria NÃO saiu. Allowlist, nunca denylist:
  *  `buscarShipment` devolve null em qualquer erro de rede, e tratar o desconhecido como
@@ -28,7 +29,7 @@ export interface DepsCancelamento {
   estornarVendaCancelada: (
     admin: SupabaseClient,
     p: { orgId: string; canal: string; orderId: string | number; itens: ItemVendaBaixa[] },
-  ) => Promise<{ pendentesDePush: MovimentoPendente[]; falhas: Array<{ codigo: string; mensagem: string }> }>;
+  ) => Promise<{ pendentesDePush: MovimentoPendente[]; falhas: Array<{ codigo: string; mensagem: string }>; aplicados: string[] }>;
   despacharPushPendente: (
     admin: SupabaseClient,
     orgId: string,
@@ -51,6 +52,16 @@ export interface DepsCancelamento {
   notificarCategoria: (
     admin: SupabaseClient, orgId: string, categoria: CategoriaNotificacao, texto: string,
   ) => Promise<unknown>;
+  /** ADR-0197: `skusParticipantes` de `kit-variacao/politica.ts`. Só chamado com o módulo ligado. */
+  skusParticipantes: (admin: SupabaseClient, orgId: string, skus: string[], ligado: boolean) => Promise<Set<string>>;
+  /** ADR-0197: `agendarCancelamentoKit` com `enfileirarSaga`. Devolve os movimentos de estorno já cobertos. */
+  agendarCancelamentoKit: (
+    admin: SupabaseClient, p: { orgId: string; canal: string; orderId: string | number; codigos: string[] },
+  ) => Promise<string[]>;
+  /** ADR-0197: `registrarPendencias` (worker_pendencias, ADR-0173): a reconciliação relê o pedido. */
+  registrarPendencias: (
+    admin: SupabaseClient, orgId: string, ok: string[], inicio: string, falhas: string[], erro: string | null,
+  ) => Promise<number>;
 }
 
 export interface PedidoCancelado {
@@ -63,6 +74,10 @@ export interface PedidoCancelado {
   /** `null` = o shipment não pôde ser lido. NUNCA equivale a "não despachado". */
   shipmentStatus: string | null;
   temEnvio: boolean;
+  /** ADR-0197: módulo `kit_variacao` (`Catalogo.kitLigado`). Ausente = desligado, comportamento de hoje. */
+  kitLigado?: boolean;
+  /** ADR-0197: o catálogo que resolveu os códigos veio incompleto (`Catalogo.incompleto`). */
+  catalogoIncompleto?: boolean;
 }
 
 export type ResultadoCancelamento =
@@ -70,6 +85,7 @@ export type ResultadoCancelamento =
   | 'avisado'
   | 'sem-baixa' // cancelado, mas o estoque nunca desceu por este pedido — nada a conferir
   | 'silenciado' // aviso já dado antes (a reconciliação revisita o pedido de hora em hora)
+  | 'pendente' // ADR-0197: crédito de SKU de kit com variação não confirmado; fica em worker_pendencias
   | 'ignorado'
   | 'erro';
 
@@ -90,6 +106,7 @@ export async function tratarPedidoCancelado(
   const preDespachoConhecido = st !== null && PRE_DESPACHO.includes(st);
 
   try {
+    if ((preDespachoConhecido || !p.temEnvio) && p.kitLigado) return await reporComKit(admin, deps, p);
     if (preDespachoConhecido || !p.temEnvio) {
       // A checagem "houve baixa?" vive dentro da RPC, atômica com o estorno — e quando não há
       // baixa ela grava o tombstone que impede a execução `paid` posterior de baixar um pedido
@@ -132,4 +149,140 @@ export async function tratarPedidoCancelado(
     console.error('estorno_estoque_falhou', p.orderId, e);
     return 'erro';
   }
+}
+
+/**
+ * ADR-0197 (spec, contrato de segurança 9): pré-despacho com o módulo ligado. Credita como hoje; para SKU de kit
+ * com variação creditado agora, cria a transferência `cancelamento` (escrita no ML só com o kit pausado), mesmo
+ * com reposição automática desligada. Componente individual segue pelo outbox, que já vira transferência `entrada`.
+ *
+ * Só para participante, crédito não confirmado não é `reposto`: fica em `worker_pendencias` e a reconciliação
+ * relê o pedido (5 tentativas, ADR-0173). Catálogo incompleto também: o código pode não ser o da baixa, e o
+ * estorno gravaria o tombstone numa referência que não existe.
+ */
+async function reporComKit(
+  admin: SupabaseClient, deps: DepsCancelamento, p: PedidoCancelado,
+): Promise<ResultadoCancelamento> {
+  if (p.catalogoIncompleto) return await pendente(admin, deps, p, 'catálogo incompleto');
+  const codigos = selecionarBaixas(p.itens).map((b) => b.codigo);
+  let participantes: Set<string>;
+  try {
+    participantes = await deps.skusParticipantes(admin, p.orgId, codigos, true);
+  } catch (e) {
+    return await pendente(admin, deps, p, `participantes: ${String(e)}`);
+  }
+
+  let r: Awaited<ReturnType<DepsCancelamento['estornarVendaCancelada']>>;
+  try {
+    r = await deps.estornarVendaCancelada(admin, { orgId: p.orgId, canal: p.canal, orderId: p.orderId, itens: p.itens });
+  } catch (e) {
+    if (codigos.some((c) => participantes.has(c))) return await pendente(admin, deps, p, String(e));
+    throw e;
+  }
+
+  let pendentes = r.pendentesDePush;
+  const kit = r.aplicados.filter((c) => participantes.has(c));
+  if (kit.length > 0) {
+    try {
+      const cobertos = new Set(await deps.agendarCancelamentoKit(admin, {
+        orgId: p.orgId, canal: p.canal, orderId: p.orderId, codigos: kit,
+      }));
+      pendentes = pendentes.filter((m) => !cobertos.has(m.id));
+    } catch (e) {
+      // O crédito já está feito: o estorno segue no outbox, e o push vira transferência `entrada`.
+      console.error('kit_cancelamento_agendar_falhou', p.orderId, String(e));
+    }
+  }
+  await deps.despacharPushPendente(admin, p.orgId, pendentes, deps.enfileirarSincronizacaoEstoque);
+
+  const falhasKit = r.falhas.filter((f) => participantes.has(f.codigo));
+  if (falhasKit.length > 0) {
+    return await pendente(admin, deps, p, falhasKit.map((f) => `${f.codigo}: ${f.mensagem}`).join('; '));
+  }
+  return 'reposto';
+}
+
+async function pendente(
+  admin: SupabaseClient, deps: DepsCancelamento, p: PedidoCancelado, erro: string,
+): Promise<'pendente'> {
+  console.error('kit_cancelamento_pendente', p.orderId, erro);
+  try {
+    await deps.registrarPendencias(admin, p.orgId, [], new Date().toISOString(), [String(p.orderId)], `kit_cancelamento: ${erro}`);
+  } catch (e) {
+    console.error('kit_cancelamento_pendencia_falhou', p.orderId, String(e));
+  }
+  try {
+    if (await deps.reservarNotificacao(admin, p.orgId, p.userId, 'estoque_cancelado_kit_pendente', String(p.orderId))) {
+      await deps.notificarCategoria(
+        admin, p.orgId, 'estoque',
+        `⏳ Pedido ${p.orderId} cancelado antes do envio\n\n`
+          + 'O crédito do kit com variação ainda não foi confirmado. O PubliAI tenta de novo sozinho na reconciliação. '
+          + 'Não dê entrada manual: ela somaria duas vezes.',
+      );
+    }
+  } catch (e) {
+    console.error('kit_cancelamento_aviso_falhou', p.orderId, String(e));
+  }
+  return 'pendente';
+}
+
+/**
+ * ADR-0197: cria a transferência `cancelamento` de cada kit cujo SKU foi creditado, com os alvos do push
+ * (`transferirParaSaga`: UP + cópia de catálogo), enfileira a saga e marca o estorno desses SKUs como entregue
+ * no outbox. Sem a marca, o push criaria uma `entrada` que disputa a exclusão e pausaria o kit outra vez.
+ *
+ * SKU que não é de kit (componente) ou sem item vivo (retirado): nada aqui; o crédito local fica e o outbox
+ * segue. Recusa (`up_ocupado`): também nada, o outbox repete pela `entrada`. Erro de leitura lança.
+ */
+export async function agendarCancelamentoKit(
+  admin: SupabaseClient,
+  enfileirarSaga: (id: string, orgId: string) => Promise<void>,
+  p: { orgId: string; canal: string; orderId: string | number; codigos: string[] },
+): Promise<string[]> {
+  const { data: skus, error } = await admin.from('kit_variacao_skus')
+    .select('codigo, kit_id').eq('org_id', p.orgId).in('codigo', p.codigos);
+  if (error) throw new Error(`kit_variacao_skus: ${error.message}`);
+  if ((skus ?? []).length === 0) return [];
+
+  const { data: itens, error: e2 } = await admin.from('anuncios_externos_itens')
+    .select('sku, item_externo_id, user_product_id, catalog_listing_id')
+    .eq('org_id', p.orgId).eq('retirado', false).in('sku', (skus ?? []).map((s) => s.codigo as string));
+  if (e2) throw new Error(`anuncios_externos_itens: ${e2.message}`);
+
+  const porKit = new Map<string, Array<{ codigo: string; upId: string; itemIds: string[] }>>();
+  for (const s of skus ?? []) {
+    const i = (itens ?? []).find((x) => x.sku === s.codigo && x.user_product_id && x.item_externo_id);
+    if (!i) continue;
+    const alvos = porKit.get(s.kit_id as string) ?? [];
+    alvos.push({
+      codigo: s.codigo as string, upId: i.user_product_id as string,
+      itemIds: [i.item_externo_id as string, ...(i.catalog_listing_id ? [i.catalog_listing_id as string] : [])],
+    });
+    porKit.set(s.kit_id as string, alvos);
+  }
+
+  const cobertos: string[] = [];
+  for (const [kitId, alvos] of porKit) {
+    const r = await criarTransferencia(admin, {
+      orgId: p.orgId, kitId, tipo: 'cancelamento', itens: alvos.map((a) => ({ codigo: a.codigo, quantidade: 0 })), alvos,
+    });
+    if (!('id' in r)) {
+      console.error('kit_transferencia_cancelamento_recusada', p.orgId, kitId, r.motivo);
+      continue;
+    }
+    await enfileirarSaga(r.id, p.orgId);
+    cobertos.push(...alvos.map((a) => a.codigo));
+  }
+  if (cobertos.length === 0) return [];
+
+  const { data: marcados, error: e3 } = await admin.from('estoque_movimentos')
+    .update({ push_enfileirado_em: new Date().toISOString() })
+    .eq('org_id', p.orgId).is('push_enfileirado_em', null)
+    .in('referencia_externa', cobertos.map((c) => `estorno:${refBaixa(p.canal, p.orderId, c)}`))
+    .select('id');
+  if (e3) {
+    console.error('kit_cancelamento_marcar_falhou', p.orderId, e3.message);
+    return [];
+  }
+  return (marcados ?? []).map((m) => m.id as string);
 }

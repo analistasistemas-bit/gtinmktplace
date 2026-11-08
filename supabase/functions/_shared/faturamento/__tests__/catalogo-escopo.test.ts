@@ -64,6 +64,64 @@ describe('carregarCatalogo — estrito', () => {
   });
 });
 
+// ADR-0197 (Task 8): o sync-venda segue tolerante, mas precisa saber que o catálogo veio incompleto para
+// não gerar outra referência de baixa num SKU participante.
+describe('carregarCatalogo — incompleto e módulo de kit', () => {
+  function admin(o: { falha?: boolean; modulos?: string[] | null; erroModulo?: boolean }) {
+    const tabelas: string[] = [];
+    const query = (tabela: string) => {
+      tabelas.push(tabela);
+      const alvo = {
+        select: () => alvo,
+        not: () => alvo,
+        eq: () => alvo,
+        range: () => {
+          if (tabela === 'familias') {
+            return Promise.resolve({
+              data: o.modulos === null ? [] : [{ id: 'f', ml_item_id: 'MLB1', codigo_pai: 'P', organizations: { modulos_habilitados: o.modulos ?? [] } }],
+              error: null,
+            });
+          }
+          if (tabela === 'variacoes' && o.falha) return Promise.resolve({ data: null, error: { message: 'timeout' } });
+          return Promise.resolve({ data: [], error: null });
+        },
+        maybeSingle: () => Promise.resolve(o.erroModulo
+          ? { data: null, error: { message: 'x' } }
+          : { data: { modulos_habilitados: ['kit_variacao'] }, error: null }),
+      };
+      return alvo;
+    };
+    return { tabelas, from: query };
+  }
+
+  it('leitura completa: módulo vem embutido em familias, sem consulta nova', async () => {
+    const a = admin({ modulos: ['kit_variacao'] });
+    const c = await carregarCatalogo(a as never, USER, ORG);
+    expect(c.incompleto).toBe(false);
+    expect(c.kitLigado).toBe(true);
+    expect(a.tabelas).not.toContain('organizations');
+  });
+
+  it('org sem módulo, leitura completa: desligado e sem consulta nova', async () => {
+    const a = admin({ modulos: [] });
+    const c = await carregarCatalogo(a as never, USER, ORG);
+    expect(c).toMatchObject({ incompleto: false, kitLigado: false });
+    expect(a.tabelas).not.toContain('organizations');
+  });
+
+  it('página com erro marca incompleto e lê o módulo só nesse caminho', async () => {
+    const a = admin({ falha: true, modulos: null });
+    const c = await carregarCatalogo(a as never, USER, ORG);
+    expect(c).toMatchObject({ incompleto: true, kitLigado: true });
+    expect(a.tabelas).toContain('organizations');
+  });
+
+  it('incompleto e módulo ilegível: trata como ligado (conservador)', async () => {
+    const c = await carregarCatalogo(admin({ falha: true, modulos: null, erroModulo: true }) as never, USER, ORG);
+    expect(c.kitLigado).toBe(true);
+  });
+});
+
 describe('carregarCatalogo — escopo', () => {
   it('filtra famílias e variações por org_id quando há conexão', async () => {
     const admin = criarAdminFake({ org_id: ORG });

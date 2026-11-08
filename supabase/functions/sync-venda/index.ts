@@ -4,7 +4,7 @@
 import { corsHeaders } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura, enfileirarSincronizacaoEstoque } from '../_shared/queue.ts';
-import { registrarBaixaVenda, despacharPushPendente } from '../_shared/estoque/baixa.ts';
+import { registrarBaixaVenda, despacharPushPendente, kitsManuaisZerados } from '../_shared/estoque/baixa.ts';
 import { tratarPedidoCancelado } from '../_shared/estoque/cancelamento.ts';
 import { depsCancelamento } from '../_shared/estoque/cancelamento-deps.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
@@ -99,7 +99,9 @@ Deno.serve(async (req) => {
     );
   }
 
-  const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await carregarCatalogo(admin, userId, orgId);
+  const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver, incompleto, kitLigado } = await carregarCatalogo(admin, userId, orgId);
+  // ADR-0197: com o módulo de kit, GTIN estrito; a falha não derruba a venda, só marca o catálogo incerto.
+  let gtinFalhou = false;
   const shippingId = pedido.shipping?.id ?? null;
   const [frete, shipment, liquidoPorPayment, gtinPorItem] = await Promise.all([
     buscarFreteVendedor(token, shippingId),
@@ -107,8 +109,16 @@ Deno.serve(async (req) => {
     // Só os pagamentos deste pedido (1-2 requisições), não a varredura de 120 dias do MP.
     carregarLiquidoMPDoPedido(token, Number(conexao.contaExternaId),
       (pedido.payments ?? []).flatMap((p) => (p?.id != null ? [p.id] : []))),
-    carregarGtinsFallback(token, [pedido], idsPubliai),
+    carregarGtinsFallback(token, [pedido], idsPubliai, { estrito: kitLigado }).catch((e) => {
+      console.error('gtin_fallback_falhou', pedido.id, String(e));
+      gtinFalhou = true;
+      return new Map<string, string>();
+    }),
   ]);
+  // Portão da Task 3 (ADR-0197): a referência da baixa inclui o SKU. Com leitura parcial o código pode cair
+  // no seller_custom_field e o mesmo pedido ganharia outra referência, outro débito. Com o módulo ligado não
+  // baixa nem estorna: 502 para o QStash repetir. Org sem módulo segue tolerante, como sempre.
+  const catalogoIncerto = kitLigado && (incompleto || gtinFalhou);
 
   const { novaPaga, itens, compradorNome } = await upsertVenda(admin, userId, orgId, pedido, {
     freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver, contaExternaId: conexao.contaExternaId,
@@ -140,9 +150,18 @@ Deno.serve(async (req) => {
   // retry veria novaPaga=false e a perda seria permanente. Gatear em "está pago" faz
   // o retry retomar naturalmente, e a idempotência vem do ledger: cada SKU já baixado
   // devolve `aplicado=false` e não é reaplicado.
-  if (pedido.status === 'paid' && orgId) {
+  if (pedido.status === 'paid' && orgId && catalogoIncerto) {
+    if (await reservarNotificacao(admin, orgId, userId, 'estoque_baixa_adiada', String(pedido.id))) {
+      await notificarCategoria(
+        admin, orgId, 'vendas',
+        `🚨 Baixa de estoque adiada (pedido ${pedido.id})\n\n`
+        + 'O catálogo não carregou por inteiro, e com kit com variação a baixa poderia sair no SKU errado. '
+        + 'O PubliAI tenta de novo sozinho. Confira o saldo antes de ajustar manualmente em Estoque, para não descontar duas vezes.',
+      );
+    }
+  } else if (pedido.status === 'paid' && orgId) {
     try {
-      const { pendentesDePush, vendaAcimaSaldo, desyncMl, falhas, semSku, skuDesconhecido } = await registrarBaixaVenda(admin, {
+      const { pendentesDePush, vendaAcimaSaldo, desyncMl, falhas, semSku, skuDesconhecido, zerados } = await registrarBaixaVenda(admin, {
         orgId, canal: 'mercado_livre', orderId: pedido.id, itens,
       });
       // Despacha o OUTBOX, não só o que esta execução aplicou: assim um push que ficou
@@ -218,6 +237,17 @@ Deno.serve(async (req) => {
           + 'de ajustar manualmente em Estoque, para não descontar duas vezes.',
         );
       }
+      // ADR-0197: kit com variação com reposição automática desligada não volta sozinho. Último do bloco:
+      // erro de leitura aqui não pode calar os alertas acima.
+      const manuais = kitLigado ? await kitsManuaisZerados(admin, orgId, zerados) : [];
+      if (manuais.length > 0
+        && await reservarNotificacao(admin, orgId, userId, 'estoque_kit_zerado', String(pedido.id))) {
+        await notificarCategoria(
+          admin, orgId, 'estoque',
+          `🧩 Kit sem saldo (pedido ${pedido.id})\n\n${manuais.map((c) => `• ${c}`).join('\n')}\n\n`
+          + 'A reposição automática deste kit está desligada. Para voltar a vender, use Montar mais.',
+        );
+      }
     } catch (e) {
       console.error('baixa_estoque_falhou', e);
     }
@@ -238,6 +268,7 @@ Deno.serve(async (req) => {
       statusPedido: pedido.status ?? null,
       shipmentStatus: shipment?.status != null ? String(shipment.status) : null,
       temEnvio: pedido.shipping?.id != null,
+      kitLigado, catalogoIncompleto: incompleto || gtinFalhou,
     });
   }
 
@@ -264,6 +295,10 @@ Deno.serve(async (req) => {
   // recomputado do status já gravado. Não marca processado_em nem registrarSyncOk.
   if (liquidoPorPayment === null) {
     return new Response(JSON.stringify({ ok: false, mpIndisponivel: true }), { status: 502, headers: corsHeaders });
+  }
+  // ADR-0197: baixa adiada pelo portão do catálogo. Mesmo tratamento do MP: o QStash repete.
+  if (catalogoIncerto) {
+    return new Response(JSON.stringify({ ok: false, catalogoIncompleto: true }), { status: 502, headers: corsHeaders });
   }
 
   // Marca o evento processado (best-effort).
