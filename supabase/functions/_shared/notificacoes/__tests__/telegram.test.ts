@@ -83,6 +83,11 @@ describe('montarMensagemNovaDevolucao (link ML)', () => {
     const msg = montarMensagemNovaDevolucao({ claim_id: 789, order_id: 1, tipo: 'mediations', motivo: null, valor: null, moeda: 'BRL' });
     expect(msg).toContain('https://www.mercadolivre.com.br/vendas/reclamacoes/vendedor/789');
   });
+  it('arrependimento (PDD9939) sai como devolução, não reclamação', () => {
+    const msg = montarMensagemNovaDevolucao({ claim_id: 789, order_id: 1, tipo: 'mediations', reason_id: 'PDD9939', motivo: 'Arrependimento da compra', valor: null, moeda: 'BRL' });
+    expect(msg).toContain('Nova devolução (arrependimento)');
+    expect(msg).not.toContain('Nova reclamação');
+  });
   it('linka a lista filtrada quando tipo é returns', () => {
     const msg = montarMensagemNovaDevolucao({ claim_id: 789, order_id: 1, tipo: 'returns', motivo: null, valor: null, moeda: 'BRL' });
     expect(msg).toContain('post-purchase/post-sales?main.filter=returns');
