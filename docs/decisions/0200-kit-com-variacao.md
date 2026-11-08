@@ -229,8 +229,12 @@ kit de Publicados e devolve as peças da base ao estado Normal, sem apagar varia
 8. **Tela.** `encerrando` mostra o andamento na seção de transferências do Gerenciar (a mesma leitura que repete a
    cada 10 s, com o motivo do passo 3) e o kit segue relido enquanto `encerrando`; `encerrado` some de Publicados e
    aparece "Encerrado" no bloco "Kits com variação" da base, sem ações. Org sem o módulo não lê nada novo.
-9. **Deploy.** Migration nova; edges `kit-transferencia`, `gerenciar-kit-variacao`, `reconciliar-estoque` e todas as
-   que importam `_shared/kit-variacao/{saga,reposicao,encerrar}.ts` ou `_shared/estoque/cancelamento.ts`.
+9. **Deploy, nesta ordem.** (1) Migration `20261108154241_kit_variacao_encerrar` (sozinha não muda comportamento:
+   nenhum kit está `encerrando`/`encerrado`, então nenhuma peça sai da regra de participante e as guardas não
+   disparam). (2) Edges `gerenciar-kit-variacao`, `kit-transferencia`, `kit-reposicao`, `reconciliar-estoque`,
+   `reconciliar-faturamento`, `sincronizar-estoque` e `sync-venda` (importam `encerrar.ts`, `saga.ts`, `reposicao.ts`
+   ou `cancelamento.ts`); `reconciliar-estoque` chama `kit_codigos_triagem` e lê `encerrado_avisado_em`, por isso
+   depois da migration. A tela vai ao ar no merge; até `gerenciar-kit-variacao` subir, o botão recebe `acao_invalida`.
 
 **Riscos aceitos.** Se o módulo for desligado depois de um encerramento, a família do kit (itens fechados) volta a
 aparecer em Publicados, como qualquer anúncio fechado no ML. Peça com bloqueio de moderação ou retirada que nunca é
