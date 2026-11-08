@@ -13,6 +13,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useFamilia } from '@/hooks/useFamilia';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { QK_KITS_VARIACAO } from '@/hooks/useKitsVariacao';
@@ -69,6 +73,13 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
   const [soEmKit, setSoEmKit] = useState(false);
   const [meta, setMeta] = useState('3');
   const [podeSeguir, setPodeSeguir] = useState(false);
+  // Texto do anúncio: de qual pedido (cores, peças, tamanhos) ele é, se o operador editou, e o erro da última geração.
+  const [textoDe, setTextoDe] = useState<string | null>(null);
+  const [editado, setEditado] = useState(false);
+  const [erroTexto, setErroTexto] = useState<string | null>(null);
+  const [confirmarTexto, setConfirmarTexto] = useState(false);
+  // Pedido cuja geração falhou: não repete sozinho (o operador usa o botão ou escreve).
+  const falhouEm = useRef('');
   const chave = useRef('');
   // Foto já enviada nesta abertura: a repetição usa o mesmo caminho (o pedido da chave não muda).
   const enviadas = useRef(new Map<string, { file: File; path: string }>());
@@ -79,6 +90,7 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
     enviadas.current.clear();
     setEtapa('montagem'); setCores([]); setPecas(2); setQtd({}); setPreco(''); setTipo('gold_special');
     setTitulo(''); setDescricao(''); setPreviaId(undefined); setFotos({}); setSoEmKit(false); setMeta('3');
+    setTextoDe(null); setEditado(false); setErroTexto(null); setConfirmarTexto(false); falhouEm.current = '';
   }, [open]);
 
   const variacoes = useMemo(
@@ -111,8 +123,10 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
     [combinacoes, quantidades],
   );
 
-  // Texto e prévia são de uma combinação de cores e peças: mudar uma delas descarta (senão: previa_divergente).
-  const mudarMontagem = (f: () => void) => { f(); setTitulo(''); setDescricao(''); setPreviaId(undefined); };
+  // O texto cita cores, quantidade e tamanhos: é de um pedido. Mudou o pedido, a etapa 2 gera de novo.
+  const tamanhosUsados = useMemo(() => tamanhos.filter((t) => quantidades.some((q) => q.tamanho === t)), [tamanhos, quantidades]);
+  const pedidoTexto = JSON.stringify([marcadas, pecas, tamanhosUsados]);
+  const mudarMontagem = (f: () => void) => f();
 
   const precoNum = Number(preco.replace(',', '.'));
   const metaNum = inteiro(meta);
@@ -131,16 +145,26 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
       if (sugerido > 0) setPreco(sugerido.toFixed(2));
     }
     setEtapa('anuncio');
+    // Uma geração por pedido. Texto editado de outro pedido só é trocado com confirmação.
+    if (textoDe === pedidoTexto || falhouEm.current === pedidoTexto || texto.isPending) return;
+    if (editado && (titulo.trim() || descricao.trim())) { setConfirmarTexto(true); return; }
+    gerarTexto();
   }
 
   const texto = useMutation({
-    mutationFn: () => gerarTextoKitEdge({ familiaBaseId, pecasPorKit: pecas, cores: marcadas }),
-    onSuccess: (r) => {
-      if (!r.ok) { toast.error('Não foi possível gerar o texto', { description: r.mensagem }); return; }
+    mutationFn: (p: { pedido: string; cores: string[]; pecas: number; tamanhos: string[] }) =>
+      gerarTextoKitEdge({ familiaBaseId, pecasPorKit: p.pecas, cores: p.cores, tamanhos: p.tamanhos }),
+    onSuccess: (r, p) => {
+      if (!r.ok) { falhouEm.current = p.pedido; setErroTexto(r.mensagem); return; }
       setTitulo(r.titulo); setDescricao(r.descricao); setPreviaId(r.previa_id);
+      setTextoDe(p.pedido); setEditado(false); setErroTexto(null);
     },
-    onError: (e) => toast.error('Não foi possível gerar o texto', { description: (e as Error).message }),
+    onError: (e, p) => { falhouEm.current = p.pedido; setErroTexto((e as Error).message); },
   });
+  function gerarTexto() {
+    setErroTexto(null);
+    texto.mutate({ pedido: pedidoTexto, cores: marcadas, pecas, tamanhos: tamanhosUsados });
+  }
 
   const criar = useMutation({
     mutationFn: async () => {
@@ -181,6 +205,22 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
   const exemplo = quantidades[0];
 
   return (
+    <>
+    <AlertDialog open={confirmarTexto} onOpenChange={setConfirmarTexto}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Trocar o texto que você editou?</AlertDialogTitle>
+          <AlertDialogDescription>
+            As cores, as peças por kit ou os tamanhos mudaram, e o título e a descrição citam esses dados. Gerar um texto
+            novo substitui o texto que você editou.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={() => setTextoDe(pedidoTexto)}>Manter meu texto</AlertDialogCancel>
+          <AlertDialogAction onClick={gerarTexto}>Gerar texto novo</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     <Dialog open={open} onOpenChange={(v) => !criar.isPending && onOpenChange(v)}>
       <DialogContent
         processando={criar.isPending}
@@ -395,16 +435,32 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
               <section className="grid gap-2" aria-label="Texto do anúncio">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm font-medium">Título e descrição</span>
-                  <Button type="button" variant="outline" size="sm" disabled={texto.isPending} onClick={() => texto.mutate()}>
+                  <Button type="button" variant="outline" size="sm" disabled={texto.isPending} onClick={gerarTexto}>
                     {texto.isPending ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Sparkles className="mr-1 h-3 w-3" />}
                     {titulo ? 'Gerar de novo' : 'Gerar título e descrição'}
                   </Button>
                 </div>
-                <Input aria-label="Título" value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Gere por IA ou escreva" />
+                {texto.isPending && (
+                  <p className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
+                    <Loader2 className="h-3 w-3 animate-spin" />Gerando título e descrição a partir do anúncio da base…
+                  </p>
+                )}
+                {erroTexto && !texto.isPending && (
+                  <p className="text-xs text-danger" role="alert">
+                    Não foi possível gerar o texto: {erroTexto}. Escreva o título e a descrição ou tente de novo.
+                  </p>
+                )}
+                <Input
+                  aria-label="Título" value={titulo} disabled={texto.isPending} placeholder="Gere por IA ou escreva"
+                  onChange={(e) => { setTitulo(e.target.value); setEditado(true); }}
+                />
                 <span className={cn('text-xs', titulo.length > TITULO_MAX ? 'text-danger' : 'text-muted-foreground')}>
                   {titulo.length}/{TITULO_MAX} caracteres
                 </span>
-                <Textarea aria-label="Descrição" rows={5} value={descricao} onChange={(e) => setDescricao(e.target.value)} />
+                <Textarea
+                  aria-label="Descrição" rows={12} value={descricao} disabled={texto.isPending}
+                  onChange={(e) => { setDescricao(e.target.value); setEditado(true); }}
+                />
               </section>
 
               <section className="grid gap-2" aria-label="Fotos">
@@ -471,5 +527,6 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
         </div>
       </DialogContent>
     </Dialog>
+    </>
   );
 }

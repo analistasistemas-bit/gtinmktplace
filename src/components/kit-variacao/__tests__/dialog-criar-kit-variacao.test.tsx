@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
@@ -37,7 +37,7 @@ vi.mock('@/lib/kit-variacao-edge', () => ({
   gerarTextoKitEdge: vi.fn(async () => ({ ok: true, titulo: 'Kit 2 Blusas Canelada', descricao: 'Kit com 2 peças.', previa_id: 'PV1' })),
   gerarFotoKitEdge: vi.fn(async (p: { requestId: string }) => ({ ok: true, path: `ORG/kit-variacao-ia/${p.requestId}.png`, url: `https://x/${p.requestId}.png` })),
 }));
-import { criarKitVariacaoEdge, enviarFotoKit, gerarFotoKitEdge } from '@/lib/kit-variacao-edge';
+import { criarKitVariacaoEdge, enviarFotoKit, gerarFotoKitEdge, gerarTextoKitEdge } from '@/lib/kit-variacao-edge';
 
 function abrir(isAdmin = true) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -143,7 +143,6 @@ describe('DialogCriarKitVariacao', () => {
     abrir();
     await montar(user, ['Preto', 'Branco'], { 'Preto e Branco M': '1' });
     await user.click(screen.getByRole('button', { name: 'Próximo' }));
-    await user.click(screen.getByRole('button', { name: /Gerar título e descrição/ }));
     await screen.findByDisplayValue('Kit 2 Blusas Canelada');
     expect(screen.getByRole('button', { name: 'Próximo' })).toBeDisabled();
     expect(screen.getByText(/Envie a foto de cada combinação/)).toBeInTheDocument();
@@ -170,7 +169,6 @@ describe('DialogCriarKitVariacao', () => {
     abrir();
     await montar(user, ['Preto', 'Branco'], { 'Preto e Branco M': '1' });
     await user.click(screen.getByRole('button', { name: 'Próximo' }));
-    await user.click(screen.getByRole('button', { name: /Gerar título e descrição/ }));
     await screen.findByDisplayValue('Kit 2 Blusas Canelada');
 
     await user.click(screen.getByRole('button', { name: 'Gerar foto Preto e Branco' }));
@@ -294,16 +292,99 @@ describe('DialogCriarKitVariacao', () => {
     expect(screen.queryByRole('checkbox', { name: /Vender só em kit/ })).toBeNull();
   });
 
-  it('mudar as cores descarta o texto gerado (a prévia é de outra combinação)', async () => {
-    const user = userEvent.setup();
-    abrir();
-    await montar(user, ['Preto', 'Branco'], { 'Preto e Branco M': '1' });
-    await user.click(screen.getByRole('button', { name: 'Próximo' }));
-    await user.click(screen.getByRole('button', { name: /Gerar título e descrição/ }));
-    await screen.findByDisplayValue('Kit 2 Blusas Canelada');
-    await user.click(screen.getByRole('button', { name: 'Voltar' }));
-    await user.click(screen.getByRole('checkbox', { name: 'Cor Marrom' }));
-    await user.click(screen.getByRole('button', { name: 'Próximo' }));
-    expect(screen.queryByDisplayValue('Kit 2 Blusas Canelada')).toBeNull();
+  describe('texto do anúncio', () => {
+    const gerar = () => vi.mocked(gerarTextoKitEdge);
+    beforeEach(() => { gerar().mockClear(); });
+    async function ateEtapa2(user: ReturnType<typeof userEvent.setup>) {
+      await montar(user, ['Preto', 'Branco'], { 'Preto e Branco M': '1' });
+      await user.click(screen.getByRole('button', { name: 'Próximo' }));
+      await screen.findByDisplayValue('Kit 2 Blusas Canelada');
+    }
+
+    it('ao entrar na etapa 2 gera sozinho, uma vez por pedido, com os tamanhos que têm quantidade', async () => {
+      const user = userEvent.setup();
+      abrir();
+      await ateEtapa2(user);
+      expect(gerar()).toHaveBeenCalledTimes(1);
+      expect(gerar().mock.calls[0][0]).toMatchObject({ familiaBaseId: 'FAM', pecasPorKit: 2, cores: ['Preto', 'Branco'], tamanhos: ['M'] });
+      expect(screen.getByLabelText('Descrição')).toHaveValue('Kit com 2 peças.');
+      await user.click(screen.getByRole('button', { name: 'Voltar' }));
+      await user.click(screen.getByRole('button', { name: 'Próximo' }));
+      expect(gerar()).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('button', { name: /Gerar de novo/ })).toBeEnabled();
+    });
+
+    it('mostra o carregamento enquanto gera, com os campos travados', async () => {
+      let soltar: (v: unknown) => void = () => {};
+      gerar().mockImplementationOnce(() => new Promise((r) => { soltar = r; }) as never);
+      const user = userEvent.setup();
+      abrir();
+      await montar(user, ['Preto', 'Branco'], { 'Preto e Branco M': '1' });
+      await user.click(screen.getByRole('button', { name: 'Próximo' }));
+      expect(await screen.findByText(/Gerando título e descrição/)).toBeInTheDocument();
+      expect(screen.getByLabelText('Título')).toBeDisabled();
+      soltar({ ok: true, titulo: 'Kit 2 Blusas Canelada', descricao: 'Kit com 2 peças.', previa_id: 'PV1' });
+      await waitFor(() => expect(screen.getByLabelText('Título')).toBeEnabled());
+      expect(screen.getByLabelText('Título')).toHaveValue('Kit 2 Blusas Canelada');
+    });
+
+    it('texto editado não é sobrescrito ao voltar e seguir sem mudar o pedido', async () => {
+      const user = userEvent.setup();
+      abrir();
+      await ateEtapa2(user);
+      await user.clear(screen.getByLabelText('Título'));
+      await user.type(screen.getByLabelText('Título'), 'Meu título');
+      await user.click(screen.getByRole('button', { name: 'Voltar' }));
+      await user.click(screen.getByRole('button', { name: 'Próximo' }));
+      expect(screen.getByLabelText('Título')).toHaveValue('Meu título');
+      expect(gerar()).toHaveBeenCalledTimes(1);
+    });
+
+    it('mudar as cores sem edição gera de novo sem perguntar', async () => {
+      const user = userEvent.setup();
+      abrir();
+      await ateEtapa2(user);
+      await user.click(screen.getByRole('button', { name: 'Voltar' }));
+      await user.click(screen.getByRole('checkbox', { name: 'Cor Marrom' }));
+      await user.click(screen.getByRole('button', { name: 'Próximo' }));
+      await waitFor(() => expect(gerar()).toHaveBeenCalledTimes(2));
+      expect(gerar().mock.calls[1][0].cores).toEqual(['Preto', 'Branco', 'Marrom']);
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+    });
+
+    it('mudar as cores com texto editado pede confirmação antes de trocar', async () => {
+      const user = userEvent.setup();
+      abrir();
+      await ateEtapa2(user);
+      await user.clear(screen.getByLabelText('Título'));
+      await user.type(screen.getByLabelText('Título'), 'Meu título');
+      await user.click(screen.getByRole('button', { name: 'Voltar' }));
+      await user.click(screen.getByRole('checkbox', { name: 'Cor Marrom' }));
+      await user.click(screen.getByRole('button', { name: 'Próximo' }));
+      expect(await screen.findByRole('alertdialog')).toHaveTextContent(/texto que você editou/);
+      expect(gerar()).toHaveBeenCalledTimes(1);
+      await user.click(screen.getByRole('button', { name: 'Manter meu texto' }));
+      expect(screen.getByLabelText('Título')).toHaveValue('Meu título');
+      expect(gerar()).toHaveBeenCalledTimes(1);
+
+      await user.click(screen.getByRole('button', { name: 'Voltar' }));
+      await user.click(screen.getByRole('checkbox', { name: 'Cor Marrom' }));
+      await user.click(screen.getByRole('button', { name: 'Próximo' }));
+      await user.click(await screen.findByRole('button', { name: 'Gerar texto novo' }));
+      await screen.findByDisplayValue('Kit 2 Blusas Canelada');
+      expect(gerar()).toHaveBeenCalledTimes(2);
+    });
+
+    it('falha da IA mostra o erro e deixa os campos editáveis', async () => {
+      gerar().mockResolvedValueOnce({ ok: false, mensagem: 'modelo fora do ar' } as never);
+      const user = userEvent.setup();
+      abrir();
+      await montar(user, ['Preto', 'Branco'], { 'Preto e Branco M': '1' });
+      await user.click(screen.getByRole('button', { name: 'Próximo' }));
+      expect(await screen.findByText(/Não foi possível gerar o texto/)).toHaveTextContent('modelo fora do ar');
+      await user.type(screen.getByLabelText('Título'), 'Escrito à mão');
+      expect(screen.getByLabelText('Título')).toHaveValue('Escrito à mão');
+      expect(gerar()).toHaveBeenCalledTimes(1);
+    });
   });
 });
