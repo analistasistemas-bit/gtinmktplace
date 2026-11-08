@@ -17,18 +17,17 @@ import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { exigirModulo, moduloHabilitadoStrict } from '../_shared/produto/modulo.ts';
 import {
-  validarProdutoNovo, montarLinhasProduto, montarSugestaoDistribuicao, type ProdutoEntrada, type SugestaoDistribuicao,
+  validarProdutoNovo, montarLinhasProduto, montarSugestaoDistribuicao, errosMarcaDaNota, type ProdutoEntrada, type SugestaoDistribuicao,
 } from '../_shared/produto/validar.ts';
 import { lerRegimeFiscalOrg } from '../_shared/fiscal/regime.ts';
 import { enfileirarFamilia } from '../_shared/queue.ts';
 import { type CodigosGerados, codigosJaUsados, derivarCodigos } from '../_shared/produto/codigos.ts';
 import {
   aplicaEstoqueInicial, estoqueInicialDiverge, variacoesDivergem, validarFiscalDaEntrada, validarNcmDaEntrada, fiscalEfetivo,
-  entradaTamanhoEfetiva, tamanhoNaoHabilitadoNaEntrada, validarTamanhosDaEntrada, gradeOuGeneroDivergem, refNotaDiverge,
+  entradaTamanhoEfetiva, tamanhoNaoHabilitadoNaEntrada, validarTamanhosDaEntrada, gradeOuGeneroDivergem, refNotaDiverge, marcaDiverge,
   sugestaoDiverge,
 } from './processar.ts';
 import { tiposProdutoDaOrg } from '../_shared/produto/tipo-produto.ts';
-import { lerMarcaOrg } from '../_shared/categoria/marca-org.ts';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -125,7 +124,7 @@ Deno.serve(async (req) => {
   // rede de segurança de verdade. Um select que falhar aqui não duplica nada — cai no insert
   // normal, que se colidir é pego pelo ramo 23505 mais abaixo.
   const { data: jaCadastrado } = await admin.from('familias')
-    .select('id, lote_id, qstash_message_id, codigo_pai, origem_cadastro, grade_tamanho, genero, mudanca_estrutural').eq('org_id', orgId).eq('chave_cadastro', produto.chaveCadastro)
+    .select('id, lote_id, qstash_message_id, codigo_pai, origem_cadastro, grade_tamanho, genero, mudanca_estrutural, marca').eq('org_id', orgId).eq('chave_cadastro', produto.chaveCadastro)
     .maybeSingle();
 
   let familiaId: string;
@@ -176,6 +175,8 @@ Deno.serve(async (req) => {
     if (gradeOuGeneroDivergem(produto, jaCadastrado, vars.map((v) => v.tamanho as string | null))) return divergiu();
     // ADR-0181 (emenda): refNota diferente da gravada — também antes de qualquer efeito.
     if (refNotaDiverge(jaCadastrado.mudanca_estrutural, produto.refNota)) return divergiu();
+    // Emenda ADR-0188: marca corrigida entre tentativas — a gravada é a que iria ao ML.
+    if (marcaDiverge(jaCadastrado.marca as string | null, produto.marca)) return divergiu();
     // Emenda 2026-10-17: quantidades da nota diferentes da sugestão gravada — idem. Os códigos
     // gravados (ordenados) casam por índice com o payload: `variacoesDivergem` já descartou reordenação.
     sugestaoDistribuicao = montarSugestaoDistribuicao(produto, vars.map((v) => v.codigo as string));
@@ -205,6 +206,10 @@ Deno.serve(async (req) => {
     codigoPai = jaCadastrado.codigo_pai as string;
     origemCadastro = (jaCadastrado.origem_cadastro as string | null) ?? null;
   } else {
+    // Emenda ADR-0188: marca exigida na nota só na CRIAÇÃO — o retry acima recupera a família já
+    // gravada mesmo vindo de um front antigo sem o campo.
+    const errosMarca = errosMarcaDaNota(produto);
+    if (errosMarca.length > 0) return json({ erros: errosMarca }, 400);
     // A reserva vem ANTES de qualquer insert: assim o estouro de oito dígitos (D-5) e a
     // colisão falham sem deixar lote/família pela metade.
     const qtd = produto.variacoes.length + 1;
@@ -271,7 +276,6 @@ Deno.serve(async (req) => {
       codigos: gerados.codigos,
       chaveCadastro: produto.chaveCadastro,
       regimeOrg,
-      marcaPropria: (await lerMarcaOrg(admin, orgId)).marcaPropria, // ADR-0188
     });
 
     const { data: familiaCriada, error: famErr } = await admin.from('familias')

@@ -1043,6 +1043,7 @@ falha ao ler `organizations` não libera.
   'nacional'`, então omitir o campo gravaria imposto errado em silêncio (ADR-0055) — a edge
   responde 400 em vez de assumir.
   **Cadastro a partir de nota de compra (ADR-0181, emenda 2026-10-17):** com `origemNota === true`, grava `familias.mudanca_estrutural.refNota = nfe:<chave44>:<nItem>`; reenvio com `refNota` diferente → 409. A importação retoma o produto cadastrado para aquele item (prioridade: manual > cadastrado desta nota > vínculo > GTIN; vários códigos → escolha explícita). `REF_NOTA` vive em `_shared/nfe/ref-nota.ts`. Deploy 2026-10-17: `cadastrar-produto` v29, `adicionar-variacoes-familia` v19.
+  **Marca / Fabricante (emenda ADR-0188, 2026-11-07):** `marca` preenchida grava `familias.marca` em qualquer org (vira BRAND e MANUFACTURER no ML, antes do fornecedor). Com `origemNota`, marca vazia → 400 (`errosMarcaDaNota`), cobrado só no ramo de criação para o retry de família já gravada recuperar; reenvio com marca diferente da gravada → 409 (`marcaDiverge`). Deploy 2026-11-08: `cadastrar-produto` v44, `adicionar-variacoes-familia` v31.
   **Código gerado pelo sistema (ADR-0096), não mais pelo operador.** O payload não carrega mais
   `codigoPai` nem `codigo` por variação; passa a exigir `chaveCadastro` (uuid, validado com trava
   LOUD em `validarProdutoNovo` — ausência ou formato inválido é 400). A edge reserva a faixa

@@ -139,6 +139,13 @@ export function gradeOuGeneroDivergem(
   return (p.genero ?? null) !== (gravada.genero ?? null);
 }
 
+/** Emenda ADR-0188 (2026-11-07): retry com marca diferente da gravada é divergência (409) — senão
+ *  devolveria 200 e a marca antiga iria ao ML. Entrada sem marca não decide (trigger / front antigo). */
+export function marcaDiverge(gravada: string | null | undefined, entrada: string | null | undefined): boolean {
+  const e = entrada?.trim();
+  return !!e && e !== (gravada ?? '').trim();
+}
+
 /** ADR-0181 (emenda): retry com refNota diferente da gravada (ou presente só de um lado)
  *  é divergência (409) — a referência liga o produto ao item da nota. */
 export function refNotaDiverge(gravada: unknown, entrada: string | undefined): boolean {

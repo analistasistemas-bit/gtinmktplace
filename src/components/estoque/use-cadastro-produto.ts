@@ -42,7 +42,7 @@ export function numOuNull(v: string): number | null {
 export function montarPayload(
   pai: {
     nomePai: string; descricaoPai: string; unidade: string; fornecedor: string;
-    /** ADR-0188: só a org com marca própria manda; ausente = a edge usa a marca da org. */
+    /** ADR-0188 (emenda 2026-11-07): marca preenchida (qualquer org) → BRAND/MANUFACTURER; ausente = trigger decide. */
     marca?: string;
     origem: 'nacional' | 'importado';
     genero: Genero | null;

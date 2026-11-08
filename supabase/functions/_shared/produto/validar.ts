@@ -43,7 +43,8 @@ export interface ProdutoEntrada {
   descricaoPai?: string | null;
   unidade?: string | null;
   fornecedor?: string | null;
-  /** ADR-0188: marca que vai ao ML (só na org com marca própria). Ausente/vazia = a da org (trigger). */
+  /** ADR-0188: marca que vai ao ML (BRAND/MANUFACTURER). Ausente/vazia = trigger decide (marca da org
+   *  ou null → fornecedor). Obrigatória com `origemNota` (emenda 2026-11-07). */
   marca?: string | null;
   origem: 'nacional' | 'importado';
   /** ADR-0166: gênero da peça. Ausente/null = não informado. O ML exige que o gênero do anúncio
@@ -93,6 +94,14 @@ export function gradeEfetivaDaEntrada(p: ProdutoEntrada): GradeTamanho | null {
 const ORIGENS_VALIDAS = ['nacional', 'importado'];
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Emenda ADR-0188 (2026-11-07): o emitente da nota é revendedor, nunca a marca — sem marca o envio
+ *  ao ML caía no fornecedor (BRAND/MANUFACTURER) e o anúncio foi bloqueado. Fora de `validarProdutoNovo`
+ *  porque a edge só cobra na CRIAÇÃO: o retry de família já gravada (front antigo) precisa recuperar. */
+export function errosMarcaDaNota(p: ProdutoEntrada): ErroValidacao[] {
+  if (p.origemNota !== true || (typeof p.marca === 'string' && p.marca.trim())) return [];
+  return [{ campo: 'marca', mensagem: 'Informe a marca do fabricante — o fornecedor da nota não é a marca.' }];
+}
 
 export function validarProdutoNovo(p: ProdutoEntrada): ErroValidacao[] {
   const erros: ErroValidacao[] = [];
@@ -232,11 +241,10 @@ export function montarLinhasProduto(
     loteId: string; userId: string; orgId: string;
     codigoPai: string; codigos: string[]; chaveCadastro: string;
     regimeOrg?: 'simples' | 'normal';
-    /** ADR-0188: org com marca própria — só nela o campo marca do cadastro vale. */
-    marcaPropria?: boolean;
   },
 ): { familia: Record<string, unknown>; variacoes: Array<Record<string, unknown>> } {
-  const marca = ctx.marcaPropria ? p.marca?.trim() : undefined;
+  // Emenda ADR-0188 (2026-11-07): a marca preenchida vale em qualquer org (é a que vai ao ML).
+  const marca = p.marca?.trim();
   const familia = {
     lote_id: ctx.loteId,
     user_id: ctx.userId,

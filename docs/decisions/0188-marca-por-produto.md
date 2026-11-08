@@ -41,3 +41,21 @@ ao ML na hora; e a planilha seguir usando a coluna FORNECEDOR.
 - Produto da Zaven entrando por planilha usa o FORNECEDOR como marca (risco aceito pelo Diego).
 - **Nunca republicar**: a troca é só `PUT {attributes}`; o ML move os SKUs UP para um `family_id` novo e o worker
   regrava o vínculo local depois de convergir.
+
+## Emenda 2026-11-07 — campo Marca / Fabricante em toda org
+
+**Problema:** fora da org com marca própria o cadastro não tinha campo de marca; `familias.marca` ficava
+vazia e o envio caía no fornecedor (`marcaParaCriacao`). No cadastro pela nota de compra o fornecedor é o
+emitente — uma revenda —, que foi ao ML como BRAND e MANUFACTURER; o anúncio foi bloqueado.
+
+**Decisão:**
+1. O campo **Marca / Fabricante** aparece no cadastro (simples e grade) em toda org e grava `familias.marca`
+   quando preenchido. É ele que vai ao ML como BRAND e MANUFACTURER (a ordem `marca → fornecedor` não muda).
+2. Obrigatório na org com marca própria (como antes, pré-preenchido com a marca da org) e no cadastro pela
+   nota (nasce vazio: o prefill nunca copia o emitente). Fora disso, vazio = fornecedor, como sempre.
+3. A edge `cadastrar-produto` recusa `origemNota` sem marca (`errosMarcaDaNota`) só no ramo de criação —
+   o retry de família já gravada recupera mesmo vindo de front antigo — e grava a marca preenchida em
+   qualquer org (`montarLinhasProduto` deixa de depender de `marca_propria`). Retry com marca diferente da
+   gravada é divergência (409, `marcaDiverge`).
+
+Sem migration: a coluna, o trigger `familias_marca_default` e a proteção de UPDATE seguem iguais.

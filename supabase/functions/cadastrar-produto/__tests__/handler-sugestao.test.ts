@@ -95,7 +95,7 @@ beforeEach(() => { f.db = { empresa_fiscal: [{ org_id: 'org-1', regime_tributari
 const REF = `nfe:${'1'.repeat(44)}:2`;
 const corpo = (quantidades: number[], extra: Linha = {}) => ({
   nomePai: 'Conjunto', origem: 'nacional', chaveCadastro: '11111111-1111-1111-1111-111111111111',
-  origemNota: true, refNota: REF, fatorNota: 12,
+  origemNota: true, marca: 'Eucerin', refNota: REF, fatorNota: 12,
   variacoes: [
     { nome: 'Azul', preco: 50, custo: 14.5, quantidadeNota: quantidades[0] },
     { nome: 'Rosa', preco: 50, custo: 14.5, quantidadeNota: quantidades[1] },
