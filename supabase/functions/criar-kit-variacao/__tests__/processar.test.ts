@@ -395,6 +395,30 @@ describe('prévia do texto por IA (Task 11, rodada 1)', () => {
     expect(c.s.consumos).toHaveLength(1);
     expect(c.s.consumos[0]).toMatchObject({ kitId: 'KIT1', chave: 'CHAVE1' });
   });
+  // B leu `existente` antes de A terminar (null); ao reler, o kit de A já existe com o mesmo pedido.
+  async function corrida(kitDaPrevia: string) {
+    const a = cenario();
+    await criarKitVariacao(a.deps, pedido({ previaId: 'PREV1' }));
+    const c = cenario();
+    let leituras = 0;
+    c.deps.existente = async () => {
+      if (++leituras === 1) return null;
+      return { kitId: 'KIT1', transferenciaId: 'T1', pedidoHash: a.s.ultimoHash };
+    };
+    c.s.previa = { baseId: 'FAM-BASE', pecas: 2, kitId: kitDaPrevia };
+    return { c, r: await criarKitVariacao(c.deps, pedido({ previaId: 'PREV1' })) };
+  }
+  it('corrida da mesma chave: prévia já associada a ESTE kit devolve o kit, sem 409', async () => {
+    const { c, r } = await corrida('KIT1');
+    expect(r).toEqual({ ok: true, kitId: 'KIT1', transferenciaId: 'T1', existente: true });
+    expect(c.s.familias.length + c.s.kits.length).toBe(0);
+    expect(c.s.sagas).toEqual(['T1']);
+  });
+  it('prévia associada a OUTRO kit continua recusada', async () => {
+    const { c, r } = await corrida('KIT-OUTRO');
+    expect(r).toMatchObject({ ok: false, motivo: 'previa_usada' });
+    expect(c.s.familias.length + c.s.kits.length).toBe(0);
+  });
   it('sem previaId nada é consumido', async () => {
     const c = cenario();
     await criarKitVariacao(c.deps, pedido());

@@ -311,7 +311,16 @@ export async function criarKitVariacao(
     if (p.baseId !== input.familiaBaseId || p.pecas !== input.pecasPorKit) {
       return recusa('previa_divergente', 'A prévia do texto é de outro produto ou de outra quantidade de peças.');
     }
-    if (p.kitId) return recusa('previa_usada', 'A prévia do texto já foi usada em outro kit. Gere o texto de novo.');
+    if (p.kitId) {
+      // Repetição concorrente da mesma chave: a outra requisição criou o kit e já associou a prévia entre a
+      // primeira leitura de `existente` e esta. Mesma chave, mesmo pedido e prévia deste kit = mesma criação.
+      const outra = await deps.existente(input.chaveCadastro);
+      if (outra && outra.pedidoHash === hash && outra.kitId === p.kitId) {
+        if (outra.transferenciaId) await deps.enfileirarSaga(outra.transferenciaId);
+        return { ok: true, kitId: outra.kitId, transferenciaId: outra.transferenciaId ?? '', existente: true };
+      }
+      return recusa('previa_usada', 'A prévia do texto já foi usada em outro kit. Gere o texto de novo.');
+    }
   }
 
   const base = await deps.lerBase(input.familiaBaseId);
