@@ -99,3 +99,25 @@ falharia em silêncio, que é o que a regra de trava LOUD do projeto proíbe.
 
 Restaurar o corpo de `platform_save_terms` de `20260907210746_corrigir_regex_setup_due_month.sql`
 (a única diferença é o bloco de herança). Nenhuma outra função depende da mudança.
+
+## Emenda 2026-11-08 — herdar do termo que vigora no mês gravado; mês mínimo pelo relógio depois do lock
+
+Dois furos em `platform_save_terms`, apontados na revisão da emenda de 2026-11-08 do ADR-0155:
+
+1. **A fonte da herança era o termo de maior `starts_on`, inclusive futuro.** Sequência possível pela RPC (que aceita
+   qualquer `starts_on` a partir do mês seguinte): implantação devida em dezembro; renegociação para janeiro grava `0`/`null`
+   (o vencimento já passou para ela); renegociação para dezembro herda de **janeiro**, grava setup zerado no mesmo
+   `starts_on` e vira a linha resolvida de dezembro — a taxa some, o mesmo defeito que este ADR corrigiu.
+   **Correção:** herdar de `platform_resolve_terms(org, starts_on)` — o termo que vigoraria no mês que está sendo gravado
+   (`starts_on <=` o novo, maior `starts_on`, maior `version`). É exatamente a linha que a versão nova substitui na
+   resolução, então a obrigação dela é a que precisa sobreviver; termos posteriores não influenciam meses anteriores. Sem
+   termo resolvido (primeiro contrato agendado para depois do mês da renegociação), nada a herdar: `0`/`null`, e o primeiro
+   contrato continua carregando a própria implantação no mês dele. A regra "venceu antes de `starts_on` → `0`/`null`" fica igual.
+2. **O mês mínimo usava `now()`** (início da transação). Uma gravação iniciada no fim do mês e liberada pelo lock da
+   organização já no mês seguinte ainda aceitava `starts_on` = o mês que acabou de começar — renegociação retroativa da
+   competência corrente. **Correção:** calcular a competência com `clock_timestamp()` depois do `for update` na organização,
+   como as entregas de Imagem IA e Sonar e `platform_save_unit_prices`.
+
+A trava `Setup fee cannot be reapplied on renegotiation` e o restante da função não mudam. Sem backfill: em 2026-11-08
+nenhuma organização tinha termo com `starts_on` depois do mês seguinte, e todas as implantações já tinham vencido
+(setembro/outubro) — não há versão achatada a recuperar.

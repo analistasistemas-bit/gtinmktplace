@@ -28,4 +28,4 @@ Renegociar continua valendo só a partir do mês seguinte (mensalidade, faixas, 
 
 **Demonstrativo:** prévia e fechamento continuam somando `total_cents` das entregas. A linha de Sonar/Imagem mostra `unit_cents` do único preço praticado no mês; com preços diferentes no mesmo mês, `unit_cents = null` (a quantidade e o valor continuam exatos); sem consumo, o preço vigente. A revisão da prévia já inclui o termo inteiro, então a troca invalida uma prévia aberta (409 e recarrega); mês fechado devolve o snapshot gravado.
 
-Fora do escopo, apontado pela revisão do desenho e registrado para tratar à parte: `platform_save_terms` herda a implantação do termo de maior `starts_on` (inclusive futuro) e calcula o mês mínimo com `now()` em vez do relógio depois do lock. Nenhum dos dois é introduzido nem agravado por esta ação.
+A revisão do desenho também apontou dois defeitos anteriores em `platform_save_terms` (herança da implantação a partir de termo futuro; mês mínimo com `now()`), corrigidos na emenda de 2026-11-08 do ADR-0164.

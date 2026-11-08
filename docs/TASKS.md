@@ -4,8 +4,8 @@
 
 - [x] RPC `platform_save_unit_prices` (versão nova do termo na competência aberta; só Sonar/Imagem IA) + lock da org na entrega do Sonar.
 - [x] Bloco na aba Cobrança; teste SQL desfeito e teste de corrida em Postgres local (vermelho → verde).
+- [x] `platform_save_terms`: herança da implantação pelo termo resolvido do mês gravado e mês mínimo por `clock_timestamp()` (emenda ADR-0164).
 - [ ] Merge, `supabase db push` e deploy da edge `platform-admin`.
-- [ ] À parte: `platform_save_terms` herda implantação de termo futuro e usa `now()` no mês mínimo (achado da revisão).
 
 ## Campo Marca / Fabricante no cadastro (emenda ADR-0188) — 2026-11-07
 
