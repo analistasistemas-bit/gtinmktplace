@@ -90,7 +90,8 @@ export function SimuladorKit({ familiaBaseId, cores, pecas, quantidades, preco, 
   ].join('|');
   const [confirmadoEm, setConfirmadoEm] = useState<string | null>(null);
   const confirmado = confirmadoEm === chaveConta;
-  const pode = estado !== 'calculando' && estado !== 'sem_custo' && (!precisaConfirmar || confirmado);
+  const bloqueado = estado === 'sem_custo' || estado === 'peca_inexistente';
+  const pode = estado !== 'calculando' && !bloqueado && (!precisaConfirmar || confirmado);
   useEffect(() => { onPodeSeguir?.(pode); }, [pode, onPodeSeguir]);
 
   const [expandido, setExpandido] = useState(false);
@@ -103,6 +104,12 @@ export function SimuladorKit({ familiaBaseId, cores, pecas, quantidades, preco, 
       {estado === 'sem_custo' && (
         <p className="text-xs text-danger">
           Há peça sem custo na base: cadastre o custo antes de criar o kit. O lucro não é calculado.
+        </p>
+      )}
+
+      {estado === 'peca_inexistente' && (
+        <p className="text-xs text-danger">
+          A base não tem uma das peças de alguma combinação (inexistente ou excluída da publicação). Ajuste as combinações.
         </p>
       )}
 
@@ -131,7 +138,8 @@ export function SimuladorKit({ familiaBaseId, cores, pecas, quantidades, preco, 
         </div>
       )}
 
-      {varias && estado !== 'calculando' && (
+      {/* Leitura falhou: o react-query conserva dados antigos; nenhum número nem a pior combinação. */}
+      {varias && estado !== 'calculando' && !erroLeitura && (
         <div>
           <Button type="button" variant="ghost" size="sm" onClick={() => setExpandido((e) => !e)} aria-expanded={expandido}>
             <ChevronDown className={cn('size-3.5 transition-transform', expandido && 'rotate-180')} aria-hidden />

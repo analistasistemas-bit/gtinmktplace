@@ -137,4 +137,15 @@ describe('simularKit', () => {
     const s = simularKit({ ...base, tipo: 'gold_pro', cotacoes: cotacoesPara(100, 10, 8) });
     expect(s.pior?.resumo?.comissaoPct).toBe(17);
   });
+
+  it('peça excluída da publicação não entra (como a edge): combinação inválida e bloqueia', () => {
+    const s = simularKit({
+      ...base, variacoes: [peca('Preto', 'M', 20), { ...peca('Branco', 'M', 25), excluidaDaPublicacao: true }, peca('Marrom', 'M', 40)],
+      cotacoes: cotacoesPara(100, 10, 8),
+    });
+    expect(s.estado).toBe('peca_inexistente');
+    expect(s.pior).toBeNull();
+    expect(s.precisaConfirmar).toBe(false);
+    expect(s.linhas.find((l) => l.rotulo === 'Preto e Branco')!.resumo).toBeNull();
+  });
 });

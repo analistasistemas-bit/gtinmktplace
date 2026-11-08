@@ -16,7 +16,7 @@ const peca = (cor: string, custo: number) => ({
 });
 const familiaBase = {
   data: { origem: 'nacional', categoriaMlId: 'MLB1', variacoes: [peca('Preto', 20), peca('Branco', 25), peca('Marrom', 40)] },
-  isLoading: false, isError: false,
+  isLoading: false, isError: false as boolean,
 };
 const useFamiliaMock = vi.fn((..._args: unknown[]) => familiaBase);
 vi.mock('@/hooks/useFamilia', () => ({ useFamilia: (...a: unknown[]) => useFamiliaMock(...a) }));
@@ -54,6 +54,7 @@ describe('SimuladorKit', () => {
     vi.mocked(calcularTarifaML).mockImplementation(async (preco, _c, _d, aliq = 0) => tarifa(preco, 10, aliq));
     aliquotas.data = { nacional: 8, importado: 16, confirmada: true };
     familiaBase.data.variacoes = [peca('Preto', 20), peca('Branco', 25), peca('Marrom', 40)];
+    familiaBase.isError = false;
     useFamiliaMock.mockClear();
   });
 
@@ -139,5 +140,25 @@ describe('SimuladorKit', () => {
     await screen.findByText(/dá prejuízo/);
     expect(screen.getByLabelText('Seguir mesmo assim')).not.toBeChecked();
     expect(onPodeSeguir.mock.calls.slice(antes).some(([v]) => v === true)).toBe(false);
+  });
+
+  it('peça excluída da publicação bloqueia como sku_inexistente, sem "Seguir mesmo assim"', async () => {
+    familiaBase.data.variacoes = [peca('Preto', 20), { ...peca('Branco', 25), excluidaDaPublicacao: true } as ReturnType<typeof peca>, peca('Marrom', 40)];
+    const { onPodeSeguir } = renderSim(100);
+    expect(await screen.findByText(/não tem uma das peças/)).toBeInTheDocument();
+    expect(screen.queryByText(/Pior combinação/)).toBeNull();
+    expect(screen.queryByLabelText('Seguir mesmo assim')).toBeNull();
+    expect(onPodeSeguir).toHaveBeenLastCalledWith(false);
+  });
+
+  it('falha na releitura da base não deixa número antigo na expansão', async () => {
+    const { mudarPreco } = renderSim(100);
+    await userEvent.click(await screen.findByRole('button', { name: /Ver lucro de cada combinação/ }));
+    expect(screen.getByText(/lucro R\$ 25,00/)).toBeInTheDocument();
+    familiaBase.isError = true; // react-query conserva o data anterior
+    mudarPreco(100);
+    expect(await screen.findByText(/Não foi possível ler custos/)).toBeInTheDocument();
+    expect(screen.queryByText(/R\$/)).toBeNull();
+    expect(screen.queryByText('(pior)')).toBeNull();
   });
 });

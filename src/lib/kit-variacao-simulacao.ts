@@ -14,6 +14,8 @@ export interface PecaBase {
   alturaCm: number | null;
   larguraCm: number | null;
   comprimentoCm: number | null;
+  /** A edge lê só `excluida_da_publicacao=false`: peça excluída não existe para o kit. */
+  excluidaDaPublicacao?: boolean;
 }
 
 export interface SkuKit { rotulo: string; tamanho: string; custo: number | null; dim: DimensoesFrete }
@@ -31,7 +33,7 @@ export function skuDoKit(variacoes: PecaBase[], marcadas: string[], cores: strin
   if (!cs) return null;
   const pecas: PecaBase[] = [];
   for (const cor of cs) {
-    const v = variacoes.find((x) => texto(x.cor) === texto(cor) && texto(x.tamanho) === texto(tamanho));
+    const v = variacoes.find((x) => !x.excluidaDaPublicacao && texto(x.cor) === texto(cor) && texto(x.tamanho) === texto(tamanho));
     if (!v) return null;
     pecas.push(v);
   }
@@ -49,6 +51,8 @@ export function skuDoKit(variacoes: PecaBase[], marcadas: string[], cores: strin
   };
 }
 
+const PECA_INEXISTENTE = 'A base não tem uma das peças neste tamanho.';
+
 /** Uma cotação por dimensões distintas: combinações de pesos diferentes podem mudar de faixa de frete. */
 export const chaveDimensoes = (d: DimensoesFrete) => [d.alturaCm, d.larguraCm, d.comprimentoCm, d.pesoGramas].join('|');
 
@@ -65,7 +69,8 @@ export function aliquotaDoKit(
 
 export interface LinhaSimulada extends SkuKit { resumo: ResumoLucro | null; motivo: string | null }
 /** `sem_custo`: peça da base sem custo. A edge recusa (`base_sem_custo`), então bloqueia sem confirmação. */
-export type EstadoSimulacao = 'calculando' | 'sem_custo' | 'indisponivel' | 'prejuizo' | 'ok';
+/** `peca_inexistente`: combinação sem peça elegível na base; a edge recusa com `sku_inexistente`. Também bloqueia. */
+export type EstadoSimulacao = 'calculando' | 'peca_inexistente' | 'sem_custo' | 'indisponivel' | 'prejuizo' | 'ok';
 export interface SimulacaoKit {
   linhas: LinhaSimulada[];
   /** Menor lucro. Só existe quando todas as combinações têm conta (senão não dá para afirmar a pior). */
@@ -105,7 +110,7 @@ export function simularKit(p: {
     if (!(q.quantidade > 0) || q.cores.length !== p.pecas) continue;
     const sku = skuDoKit(p.variacoes, p.cores, q.cores, q.tamanho);
     if (!sku) {
-      linhas.push({ rotulo: rotuloCombinacao(q.cores), tamanho: q.tamanho, custo: null, dim: { pesoGramas: null, alturaCm: null, larguraCm: null, comprimentoCm: null }, resumo: null, motivo: 'A base não tem uma das peças neste tamanho.' });
+      linhas.push({ rotulo: rotuloCombinacao(q.cores), tamanho: q.tamanho, custo: null, dim: { pesoGramas: null, alturaCm: null, larguraCm: null, comprimentoCm: null }, resumo: null, motivo: PECA_INEXISTENTE });
       continue;
     }
     const t = p.cotacoes.get(chaveDimensoes(sku.dim));
@@ -118,6 +123,9 @@ export function simularKit(p: {
   const semAliquota = p.aliquotaPct == null;
   const faltaConta = linhas.some((l) => l.resumo == null && l.motivo != null);
   // Custo vem da base (o que a edge soma); sem ele a criação é recusada, não adianta cotar nem confirmar.
+  if (linhas.some((l) => l.motivo === PECA_INEXISTENTE)) {
+    return { linhas, pior: null, estado: 'peca_inexistente', semAliquota, precisaConfirmar: false };
+  }
   if (linhas.some((l) => l.custo == null && l.motivo === 'Peça sem custo na base.')) {
     return { linhas, pior: null, estado: 'sem_custo', semAliquota, precisaConfirmar: false };
   }
