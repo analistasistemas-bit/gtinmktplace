@@ -37,6 +37,27 @@ insert into public.variacoes (familia_id, user_id, org_id, codigo, nome, cor, ta
   ('97300000-0000-0000-0000-000000000301', '97300000-0000-0000-0000-000000000101',
    '97300000-0000-0000-0000-000000000001', '09700001', 'Preto', 'Preto', 'M', 50, 0);
 
+-- Rodada 2: empate exato de `criado_em` entre duas cópias do mesmo código (lotes diferentes). A canônica é a de maior
+-- `familias.id` em todo lugar: entrada, trava e a RPC de saldo. A de menor id recebe a variação primeiro.
+insert into public.lotes (id, user_id, org_id, status, origem) values
+  ('97300000-0000-0000-0000-000000000203', '97300000-0000-0000-0000-000000000101',
+   '97300000-0000-0000-0000-000000000001', 'processando', 'manual');
+insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai, operacao, origem, chave_cadastro, criado_em) values
+  ('97300000-0000-0000-0000-000000000310', '97300000-0000-0000-0000-000000000200',
+   '97300000-0000-0000-0000-000000000101', '97300000-0000-0000-0000-000000000001',
+   '09790000', 'Empate', 'CREATE', 'nacional', gen_random_uuid(), '2026-11-01 12:00:00+00'),
+  ('97300000-0000-0000-0000-000000000311', '97300000-0000-0000-0000-000000000203',
+   '97300000-0000-0000-0000-000000000101', '97300000-0000-0000-0000-000000000001',
+   '09790000', 'Empate', 'CREATE', 'nacional', gen_random_uuid(), '2026-11-01 12:00:00+00');
+insert into public.variacoes (familia_id, user_id, org_id, codigo, nome, cor, tamanho, preco, estoque) values
+  ('97300000-0000-0000-0000-000000000310', '97300000-0000-0000-0000-000000000101',
+   '97300000-0000-0000-0000-000000000001', '09790001', 'Preto', 'Preto', 'M', 50, 0);
+insert into public.variacoes (familia_id, user_id, org_id, codigo, nome, cor, tamanho, preco, estoque) values
+  ('97300000-0000-0000-0000-000000000311', '97300000-0000-0000-0000-000000000101',
+   '97300000-0000-0000-0000-000000000001', '09790001', 'Preto', 'Preto', 'M', 50, 0);
+select public.registrar_entrada('97300000-0000-0000-0000-000000000001', '09790001', 3, null, null, null,
+  '97300000-0000-0000-0000-000000000101', 'kit-correcoes:empate');
+
 create function pg_temp.afirmar(p_cond boolean, p_msg text) returns void language plpgsql as $$
 begin
   if p_cond is not true then raise exception 'FALHA: %', p_msg; end if;
@@ -65,6 +86,18 @@ select ('97300000-0000-0000-0001-' || lpad(i::text, 12, '0'))::uuid, '97300000-0
 from generate_series(1, 501) i
 cross join lateral (values ('A'), (case when i = 501 then 'C' else 'B' end)) x(p);
 
+-- `kit_sku_travado` é interna (só o executor): conferida como ele, dentro da transação desfeita.
+grant estoque_rpc_executor to postgres;
+set local role estoque_rpc_executor;
+do $$
+begin
+  if (select p_id from public.kit_sku_travado('97300000-0000-0000-0000-000000000001', '09790001'))
+     is distinct from (select id from public.variacoes where familia_id = '97300000-0000-0000-0000-000000000311') then
+    raise exception 'FALHA: kit_sku_travado escolheu outra cópia';
+  end if;
+end $$;
+reset role;
+
 set local role service_role;
 do $$
 declare o constant uuid := '97300000-0000-0000-0000-000000000001'; r jsonb;
@@ -79,6 +112,13 @@ begin
   -- Achado 1: a vigente (F1, 0) ganha da cópia antiga (F0, 9), em qualquer ordem física.
   r := public.kit_saldo_canonico(o, array['09700001', 'X']);
   perform pg_temp.afirmar(r = '{"09700001": 0}'::jsonb, 'saldo canônico: ' || r::text);
+
+  -- Rodada 2: empate de `criado_em`; todos escolhem a família de maior id.
+  perform pg_temp.afirmar((select estoque from public.variacoes where familia_id = '97300000-0000-0000-0000-000000000311') = 3
+                          and (select estoque from public.variacoes where familia_id = '97300000-0000-0000-0000-000000000310') = 0,
+    'entrada caiu na cópia de menor id');
+  r := public.kit_saldo_canonico(o, array['09790001']);
+  perform pg_temp.afirmar(r = '{"09790001": 3}'::jsonb, 'saldo canônico no empate: ' || r::text);
 
   -- Achado 4: a segunda chamada (outros códigos, mesmas combinações) reaproveita os da primeira.
   r := public.kit_variacao_gravar_variacoes(o, K, '[

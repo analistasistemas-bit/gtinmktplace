@@ -87,7 +87,7 @@ function portas(admin: SupabaseClient, orgId: string, userId: string): DepsCriar
         .eq('id', familiaId).eq('org_id', orgId).maybeSingle(), 'família-base') as Linha | null;
       if (!familia) return null;
       const [ultima] = await lerUm(admin.from('familias').select('id').eq('org_id', orgId)
-        .eq('codigo_pai', familia.codigo_pai as string).order('criado_em', { ascending: false }).limit(1), 'versão da base');
+        .eq('codigo_pai', familia.codigo_pai as string).order('criado_em', { ascending: false }).order('id', { ascending: false }).limit(1), 'versão da base');
       const variacoes = await ler(admin.from('variacoes').select('*')
         .eq('familia_id', familiaId).eq('excluida_da_publicacao', false), 'variações da base') as Linha[];
       const vinculos = await ler(admin.from('anuncios_externos_itens')
@@ -200,7 +200,7 @@ function portas(admin: SupabaseClient, orgId: string, userId: string): DepsCriar
           .eq('id', kitId).eq('org_id', orgId).maybeSingle(), 'kit');
         if (!kit) return null;
         const canonica = async (pai: string, onde: string) => (await lerUm(admin.from('familias').select('id').eq('org_id', orgId)
-          .eq('codigo_pai', pai).order('criado_em', { ascending: false }).limit(1), onde))[0]?.id as string | undefined;
+          .eq('codigo_pai', pai).order('criado_em', { ascending: false }).order('id', { ascending: false }).limit(1), onde))[0]?.id as string | undefined;
         const baseId = await canonica(kit.codigo_pai_base as string, 'base do kit');
         const familiaKitId = await canonica(kit.codigo_pai_kit as string, 'família do kit');
         if (!baseId || !familiaKitId) return null;

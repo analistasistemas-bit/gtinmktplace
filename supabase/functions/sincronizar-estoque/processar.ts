@@ -266,7 +266,7 @@ async function lerFamiliaComSaldo(
 ): Promise<FamiliaComSaldo | null> {
   const { data: familia } = await admin.from('familias')
     .select('id, nome_pai, ml_permalink').eq('org_id', orgId).eq('codigo_pai', codigoPai)
-    .order('criado_em', { ascending: false }).limit(1).maybeSingle();
+    .order('criado_em', { ascending: false }).order('id', { ascending: false }).limit(1).maybeSingle();
   if (!familia) return null;
 
   const { data: variacoes } = await admin.from('variacoes')
@@ -424,7 +424,7 @@ export async function processarSincronizacao(
   const { data: familiaDoJob, error: erroFamiliaDoJob } = await admin.from('familias')
     .select(`kit_base_codigo_pai, kit_multiplicador, ${EMBED_MODULOS}`)
     .eq('org_id', org_id).eq('codigo_pai', codigo_pai)
-    .order('criado_em', { ascending: false }).limit(1).maybeSingle();
+    .order('criado_em', { ascending: false }).order('id', { ascending: false }).limit(1).maybeSingle();
   if (erroFamiliaDoJob) throw new Error(`familias: ${erroFamiliaDoJob.message}`);
   if (familiaDoJob?.kit_multiplicador != null && familiaDoJob.kit_base_codigo_pai) {
     console.log('estoque_push_job_de_kit_redirecionado', codigo_pai, '->', familiaDoJob.kit_base_codigo_pai);
