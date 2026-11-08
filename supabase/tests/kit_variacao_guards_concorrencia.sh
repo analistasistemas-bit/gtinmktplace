@@ -52,7 +52,7 @@ corrida() {
   set +e; B_OUT=$(psql_ -v VERBOSITY=verbose -c "$3" 2>&1); set -e
   DT=$(( $(date +%s) - t0 ))
   wait "$pid" || { cat "$OUT_A"; falha "$nome: sessão A falhou"; }
-  A_OUT=$(grep -v '^$' "$OUT_A" | head -1)
+  A_OUT=$(grep -v '^$' "$OUT_A" | head -1 || true)
   echo "$nome: A=$A_OUT | B=$B_OUT | B esperou ${DT}s"
   [ "$DT" -ge 1 ] || falha "$nome: B não bloqueou no lock de A"
   if echo "$B_OUT" | grep -q '40P01'; then falha "$nome: deadlock"; fi

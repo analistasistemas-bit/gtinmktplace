@@ -12,8 +12,9 @@ Em produção desde 2026-11-08 (main `a3e180dc`; `cadastrar-produto` v44, `adici
 ## Kit com variação (ADR-0200) — 2026-11-08
 
 **Estado:** no ar desde 2026-11-08 (main `3ee59923`; Tasks 0–16 aprovadas por revisão externa): 14 migrations aplicadas
-e 75 edges implantadas. **Módulos `kit_variacao` e `imagem_ia` desligados em todas as orgs** até o portão de concorrência
-(scripts `supabase/tests/*concorrencia*.sh` em Postgres local) e o piloto. Spec `docs/superpowers/specs/2026-11-06-kit-com-variacao-design.md`; plano
+e 75 edges implantadas. **Módulos `kit_variacao` e `imagem_ia` desligados em todas as orgs** até o piloto. Portão de concorrência
+verde em 2026-11-08: os 4 scripts `supabase/tests/kit_*_concorrencia.sh` e `platform_imagem_ia_concorrencia.sh`,
+2 rodadas cada, em Postgres local carregado com o schema de produção (`supabase db dump`). Spec `docs/superpowers/specs/2026-11-06-kit-com-variacao-design.md`; plano
 `docs/superpowers/plans/2026-11-07-kit-com-variacao.md`; ADR [0200](decisions/0200-kit-com-variacao.md).
 
 - [x] Schema, RPCs e saga de transferência (pausa, reduz, aumenta, confirma no ML), política por SKU, guards de saldo e composição.
