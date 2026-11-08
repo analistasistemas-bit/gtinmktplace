@@ -36,7 +36,7 @@ grant execute on function public.kit_sku_em_transferencia(uuid, text) to postgre
 create or replace function public.kit_variacao_saldo_copia()
 returns trigger language plpgsql security definer set search_path = ''
 as $$
-declare v_modulos text[]; v_sku record;
+declare v_modulos text[]; v_sku record; v_canonica uuid;
 begin
   if not exists (select 1 from public.kit_variacao_skus s where s.org_id = new.org_id and s.codigo = new.codigo)
      and not exists (select 1 from public.kit_variacao_componentes c where c.org_id = new.org_id and c.codigo = new.codigo) then
@@ -48,7 +48,16 @@ begin
     return new;
   end if;
 
-  select * into v_sku from public.kit_sku_travado(new.org_id, new.codigo);
+  -- `kit_sku_travado` resolve o id antes de esperar o lock. Se outra cópia commitou nessa espera, a linha
+  -- travada já não é a canônica: trava a nova e confere de novo. Sem isto, uma cópia concorrente copiaria o
+  -- saldo velho e, sendo a mais recente, apagaria uma venda já baixada na cópia intermediária.
+  loop
+    select * into v_sku from public.kit_sku_travado(new.org_id, new.codigo);
+    exit when v_sku.p_id is null;
+    select v.id into v_canonica from public.variacoes v join public.familias f on f.id = v.familia_id
+    where v.org_id = new.org_id and v.codigo = new.codigo order by f.criado_em desc limit 1;
+    exit when v_canonica = v_sku.p_id;
+  end loop;
   if public.kit_sku_em_transferencia(new.org_id, new.codigo) then
     raise exception 'sku_em_transferencia: % está em transferência de kit com variação. Repita depois que ela terminar.', new.codigo
       using errcode = '23514';

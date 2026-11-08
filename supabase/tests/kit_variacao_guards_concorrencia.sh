@@ -116,4 +116,36 @@ SOMA=$(psql_ -c "select coalesce(sum(versao), 0) from public.sku_politica_kit wh
 [ "$(psql_ -c "select versao_politica from public.kit_transferencias where org_id = '$ORG' and estado = 'ativa'")" != "$SOMA" ] \
   || falha "3: a transferência devia nascer com a versão anterior à republicação"
 
+# 4. Fix round 2: duas cópias concorrentes + venda. A insere V1 e segura 3 s; B (t=1) insere V2 e espera a canônica
+#    V0; ao acordar, B revalida, trava V1 (agora canônica) e segura mais 3 s; a venda S (t=4.5) resolve V1 e espera
+#    B. Depois do commit de B, S recebe canonica_trocou e a repetição baixa V2. Sem a revalidação, B copiaria o
+#    saldo de V0 e S teria baixado V1 sozinha: o saldo final voltaria ao valor anterior à venda.
+F3=97300000-0000-0000-0000-0000000000f3
+F4=97300000-0000-0000-0000-0000000000f4
+psql_ -c "update public.kit_transferencias set estado = 'abortada' where org_id = '$ORG';
+          delete from public.kit_exclusoes where org_id = '$ORG';
+          insert into public.lotes (id, user_id, org_id, status, origem) values
+            ('$F3', '$USR', '$ORG', 'processando', 'planilha'), ('$F4', '$USR', '$ORG', 'processando', 'planilha');" > /dev/null
+ANTES=$(saldo 09950002)
+copia() {
+  echo "begin;
+    insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai, operacao, origem, chave_cadastro, criado_em, ml_item_id, status)
+      values ('$1', '$1', '$USR', '$ORG', '09950000', 'Base conc', 'UPDATE', 'nacional', gen_random_uuid(), now() + interval '$2', 'MLB9950', 'pronto');
+    insert into public.variacoes (familia_id, user_id, org_id, codigo, nome, cor, preco, estoque)
+      values ('$1', '$USR', '$ORG', '09950002', 'B', 'B', 50, 999);
+    select pg_sleep(3); commit;"
+}
+psql_ -c "$(copia "$F3" '1 hour')" > /dev/null 2>&1 &
+PA=$!
+sleep 1
+psql_ -c "$(copia "$F4" '2 hours')" > /dev/null 2>&1 &
+PB=$!
+sleep 3.5
+set +e; S_OUT=$(psql_ -c "select public.baixar_estoque('$ORG', '09950002', 1, 'mercado_livre', 'conc-4')" 2>&1); set -e
+wait "$PA" || falha "4: cópia A falhou"
+wait "$PB" || falha "4: cópia B falhou"
+echo "$S_OUT" | grep -q 'canonica_trocou' || falha "4: a venda devia esperar B e receber canonica_trocou ($S_OUT)"
+psql_ -c "select public.baixar_estoque('$ORG', '09950002', 1, 'mercado_livre', 'conc-4')" > /dev/null
+[ "$(saldo 09950002)" = $((ANTES - 1)) ] || falha "4: saldo final $(saldo 09950002), esperado $((ANTES - 1))"
+
 echo "kit_variacao_guards_concorrencia: OK"

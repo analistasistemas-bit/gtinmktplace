@@ -285,7 +285,9 @@ export async function atualizarComposicao(
   }
 
   // 1. persistir o novo conjunto + ligar o marcador transitório ANTES de qualquer chamada remota.
-  await portas.iniciarComposicao([...desejados, ...mantidosKit]);
+  // `mantidosKit` fica fora de skus_esperados de propósito: a retomada (convergência) exige dado fonte de todo
+  // esperado, e o participante ausente não tem. Ela não o retira porque recalcula os participantes da raiz.
+  await portas.iniciarComposicao(desejados);
 
   const acharFilho = (sku: string) => filhos.find((f) => f.sku === sku);
 

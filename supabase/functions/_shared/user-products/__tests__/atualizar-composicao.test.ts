@@ -154,15 +154,39 @@ describe('atualizarComposicao — kit com variação (ADR-0197)', () => {
     expect(w.chamadas.repor.map((c) => c.id)).toEqual(['MLB1']);
   });
 
-  it('com outra mudança de composição: o participante ausente fica em skus_esperados', async () => {
+  // Fix round 2: o participante mantido NÃO entra em skus_esperados (a retomada exige dado fonte de todo esperado).
+  it('com outra mudança de composição: participante ausente fica fora de skus_esperados e não é retirado', async () => {
     const w = fakeMundo({ seed: [filho('A', 'MLB1'), filho('B', 'MLB2'), filho('D', 'MLB4')] });
     const r = await atualizarComposicao(w.portas, entrada({
       skusDesejados: ['A'], estoquePorSku: { A: 10 }, participantes: new Set(['B']),
     }));
     expect(r).toMatchObject({ tipo: 'concluido', mantidosKit: ['B'] });
-    expect(w.chamadas.iniciarComposicao).toEqual([['A', 'B']]);
+    expect(w.chamadas.iniciarComposicao).toEqual([['A']]);
     expect(w.chamadas.pausar).toEqual(['MLB4']);
     expect(w.db.get('B')!.retirado).toBe(false);
+  });
+
+  it('interrupção + retomada (convergência com skus_esperados da raiz): conclui sem retirar o participante', async () => {
+    const opts: Parameters<typeof fakeMundo>[0] = {
+      seed: [filho('A', 'MLB1'), filho('B', 'MLB2'), filho('D', 'MLB4')], confirmarFalhaNoItem: 'MLB4',
+    };
+    const w = fakeMundo(opts);
+    const r1 = await atualizarComposicao(w.portas, entrada({
+      skusDesejados: ['A'], estoquePorSku: { A: 10 }, participantes: new Set(['B']),
+    }));
+    expect(r1.tipo).toBe('incompleto');
+    expect(w.raiz()).toEqual({ skusEsperados: ['A'], mudandoComposicao: true });
+
+    // Retomada: a convergência usa os esperados da raiz como desejados; só A tem dado fonte, e basta.
+    opts.confirmarFalhaNoItem = undefined;
+    const r2 = await atualizarComposicao(w.portas, entrada({
+      skusDesejados: w.raiz().skusEsperados!, estoquePorSku: { A: 10 }, participantes: new Set(['B']),
+    }));
+    expect(r2).toMatchObject({ mantidosKit: ['B'] });
+    expect(['concluido', 'sem_mudanca']).toContain(r2.tipo);
+    expect(w.raiz().mudandoComposicao).toBe(false);
+    expect(w.db.get('B')!.retirado).toBe(false);
+    expect(w.db.get('D')!.retirado).toBe(true);
   });
 });
 

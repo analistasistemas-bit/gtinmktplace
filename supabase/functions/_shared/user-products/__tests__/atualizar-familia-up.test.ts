@@ -460,6 +460,31 @@ describe('atualizarFamiliaUP — Fix 5: efeitos pós-composição', () => {
     expect(sem.fam.every((p) => p.erro_mensagem === undefined)).toBe(true);
   });
 
+  it('Fix round 2: retomada da convergência (override = skus_esperados sem o participante) ainda o reconhece', async () => {
+    const filhos = [
+      { sku: 'A', status: 'ativo', retirado: false, item_externo_id: 'MLB1', family_id: 'F' },
+      { sku: 'B', status: 'ativo', retirado: false, item_externo_id: 'MLB2', family_id: 'F' },
+    ];
+    const { admin } = fakeAdmin(filhos);
+    const kitAdmin = {
+      ...(admin as Record<string, unknown>),
+      from: (t: string) => (t.startsWith('kit_variacao_')
+        ? { select: () => ({ eq: () => ({ in: async (_c: string, cods: string[]) => ({
+          data: t === 'kit_variacao_componentes' ? cods.filter((c) => c === 'B').map((codigo) => ({ codigo })) : [], error: null,
+        }) }) }) }
+        : (admin as { from: (t: string) => unknown }).from(t)),
+    };
+    let entradaVista: Parameters<typeof atualizarComposicao>[1] | null = null;
+    await atualizarFamiliaUP(args({
+      admin: kitAdmin as never, skusDesejadosOverride: ['A'],
+      variacoes: [{ codigo: 'A', cor: 'A', estoque: 3, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: null }] as never,
+      familia: { ...FAMILIA, organizations: { modulos_habilitados: ['kit_variacao'] } } as never,
+      executarSaga: async (_p, e) => { entradaVista = e; return { tipo: 'concluido', criadas: [], mantidosKit: ['B'] }; },
+    }));
+    expect(entradaVista!.skusDesejados).toEqual(['A']);
+    expect(entradaVista!.participantes?.has('B')).toBe(true);
+  });
+
   it('sem preservarPublicadas o UPDATE comum segue empurrando preço em todas', async () => {
     let entradaVista: Parameters<typeof atualizarComposicao>[1] | null = null;
     const { admin } = fakeAdmin([
