@@ -23,6 +23,8 @@ A. `src/**` e `supabase/functions/<função>/**` nunca se importam. São runtime
    importa e EXECUTA `resumirMercadoQualificado()` de `_shared/concorrencia/qualificacao.ts`
    (ADR-0130). Por isso `_shared/` tem área própria (`shared`) e nenhuma aresta que o envolva
    é podada por A — só o Deno puro, específico de uma Edge Function, é.
+   Testes em `supabase/functions/<função>/__tests__/` também ficam fora de A: rodam no vitest
+   (Node), não no Deno, e podem importar `src/` de verdade.
 
 B. Nada de produção importa de arquivo de teste. Testes importam produção, nunca o contrário.
    Uma aresta de chamada cujo ALVO está em `__tests__/`/`*.test.*` e cuja ORIGEM não está é
@@ -97,6 +99,10 @@ def area(sf: str) -> str:
     # para nunca formar o par {'app','deno'} da regra A.
     if sf.startswith('supabase/functions/_shared/'):
         return 'shared'
+    # Teste de Edge Function roda no vitest (Node), não no Deno: pode importar `src/` de
+    # verdade (ex.: `usuarios/__tests__/modulos-org.test.ts` confere o registry do front).
+    if sf.startswith('supabase/functions/') and eh_teste(sf):
+        return 'outro'
     if sf.startswith('supabase/functions/'):
         return 'deno'
     if sf.startswith('src/') or sf.startswith('tests/'):
@@ -127,6 +133,7 @@ def reverificar_premissas() -> None:
         _grep(r"^\s*import .*from ['\"][^'\"]*supabase/functions", 'src'))
     a2 = _sem_shared(
         _grep(r"^\s*import .*from ['\"][^'\"]*\.\./src/", 'supabase/functions'))
+    a2 = [l for l in a2 if not eh_teste(l.split(':')[0])]  # teste vitest: ver area()
     b = [l for l in _grep(r"^\s*import .*from ['\"][^'\"]*(__tests__|\.test)",
                           'src', 'supabase/functions', 'scripts')
          if '__tests__/' not in l.split(':')[0] and '.test.' not in l.split(':')[0]]

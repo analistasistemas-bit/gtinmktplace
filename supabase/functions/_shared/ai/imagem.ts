@@ -1,9 +1,8 @@
 // ADR-0200 (Task 15): foto da combinação do kit com variação por IA. Teste real de 07/11: o pedido que descreve a
-// construção da peça manteve a modelagem (gola, barra e punhos) no Nano Banana 2.1. Aqui a descrição vem de uma
-// leitura por visão das fotos de origem, nunca do cliente. Nada aqui grava ou publica: é a edge `gerar-foto-kit`.
+// construção da peça manteve a modelagem (gola, barra e punhos) no Nano Banana 2.1. Desde o Adendo 1 (08/11) o
+// pedido vem da ficha estruturada (`foto-kit-fiel.ts`), nunca do cliente. Nada aqui grava ou publica.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { openrouterClient } from './client.ts';
-import { MODELO_VISION } from './modelos.ts';
 import { PRECOS } from './tokens.ts';
 
 /** Padrão decidido pelo Diego em 07/11. Igual ao primeiro de `src/lib/ai-modelos.ts::MODELOS_IMAGEM`. */
@@ -18,22 +17,6 @@ export async function resolverModeloImagem(admin: SupabaseClient, orgId: string)
   } catch {
     return MODELO_IMAGEM_PADRAO;
   }
-}
-
-const PEDIDO_DESCRICAO = 'These photos show the same product in different colors. In English, in up to 80 words, '
-  + 'describe only how the product is built, so an image model can reproduce it exactly: type of product, length and '
-  + 'cut, collar or neckline, sleeves, cuffs, hem, closures, fabric thickness and texture, distinctive details. Ignore '
-  + 'colors, background, people, mannequins and any text. Answer with the description only.';
-
-/** Pedido de imagem: a descrição da peça vai junto, senão o modelo muda a modelagem (teste de 07/11). */
-export function montarPedidoImagem(p: { cores: string[]; descricao: string }): string {
-  const n = p.cores.length;
-  return `Using the reference photos (one per color, in this order: ${p.cores.join(', ')}), create ONE e-commerce `
-    + `product photo of a ${n}-piece kit: exactly ${n} pieces of this same product, one in each of these colors: `
-    + `${p.cores.join(', ')}. Laid flat side by side, no person, no mannequin. Preserve the product exactly as in the `
-    + `photos and as described: ${p.descricao.trim()} Keep the exact colors of the reference photos. Plain white `
-    + `background, soft studio light, all ${n} pieces fully visible and centered, vertical portrait framing. `
-    + 'No text, no logos, no labels, no watermark, no extra items.';
 }
 
 interface UsoProvedor { prompt_tokens?: number; completion_tokens?: number; cost?: number }
@@ -86,38 +69,19 @@ export function adequadaAoML(d: { largura: number; altura: number } | null): boo
   return !!d && d.altura >= d.largura && Math.min(d.largura, d.altura) >= 500;
 }
 
-/** Descrição da construção da peça, lida por visão das fotos de origem (data URLs). */
-export async function descreverPeca(fotos: string[], timeoutMs = 25_000): Promise<{ texto: string; custoUsd: number }> {
-  const resp = await openrouterClient().chat.completions.create({
-    model: MODELO_VISION,
-    messages: [{
-      role: 'user',
-      content: [{ type: 'text', text: PEDIDO_DESCRICAO }, ...fotos.map((url) => ({ type: 'image_url', image_url: { url } }))],
-    }],
-    max_tokens: 200,
-    temperature: 0,
-    usage: { include: true },
-    // deno-lint-ignore no-explicit-any
-  } as any, { signal: AbortSignal.timeout(timeoutMs) });
-  // deno-lint-ignore no-explicit-any
-  const r = resp as any;
-  const texto = String(r.choices?.[0]?.message?.content ?? '').trim();
-  if (!texto) throw new Error('visão sem descrição');
-  return { texto, custoUsd: custoImagemUsd(MODELO_VISION, r.usage) };
-}
-
-/** Gera a foto do kit. Lança em falha do provedor ou resposta sem imagem (nada a cobrar). O timeout vem do prazo global
- * da edge (`gerar-foto-kit`), repartido entre moderação, downloads, visão e geração. */
-export async function gerarImagem(modelo: string, pedido: string, fotos: string[], timeoutMs = 100_000) {
+/** Gera a foto do kit. `textos`: instruções e dados em partes separadas. Lança em falha do provedor ou resposta sem
+ * imagem (nada a cobrar). O timeout vem do prazo global da edge (`gerar-foto-kit`). */
+export async function gerarImagem(modelo: string, textos: string[], fotos: string[], timeoutMs = 100_000, extra: Record<string, unknown> = {}) {
   const resp = await openrouterClient().chat.completions.create({
     model: modelo,
     modalities: ['image', 'text'],
-    // Vertical, como no teste de 07/11 (896×1200). O ML aceita vertical ou quadrada.
-    image_config: { aspect_ratio: '3:4' },
+    // Quadrada: N peças lado a lado numa linha (Adendo 1). O ML aceita vertical ou quadrada.
+    // `extra`: opções do modelo (ex.: `quality` no gpt-5.4-image-2), só na medição por enquanto.
+    image_config: { aspect_ratio: '1:1', ...extra },
     usage: { include: true },
     messages: [{
       role: 'user',
-      content: [{ type: 'text', text: pedido }, ...fotos.map((url) => ({ type: 'image_url', image_url: { url } }))],
+      content: [...textos.map((text) => ({ type: 'text', text })), ...fotos.map((url) => ({ type: 'image_url', image_url: { url } }))],
     }],
     // deno-lint-ignore no-explicit-any
   } as any, { signal: AbortSignal.timeout(timeoutMs) });

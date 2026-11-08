@@ -447,6 +447,19 @@ describe('Relâmpago: faixa e sugerido da visão por item', () => {
     expect(comOfertaRelampago(item({ preco_promo: 28.13, preco_min: null }), o).preco_min).toBe(5.8);
   });
 
+  it('comOfertaRelampago: price do convite abaixo do máximo vira teto e limita o sugerido', () => {
+    // LGH-MLB1000 08/11: PRICE_DISCOUNT 52,90 → convite 51,31; item traz max 55,76 e sugerido 52,66.
+    const lgh = { preco_min: 12.39, preco_max: 55.76, preco_sugerido: 52.66 };
+    expect(comOfertaRelampago(item({ preco_promo: 51.31, preco_min: 18.58 }), lgh)).toMatchObject({
+      preco_promo: null, preco_min: 18.58, preco_max: 51.31, preco_sugerido: 51.31,
+    });
+  });
+
+  it('comOfertaRelampago: teto do convite abaixo do mínimo → sem faixa (⚪), nunca faixa invertida', () => {
+    expect(comOfertaRelampago(item({ preco_promo: 29.1, preco_min: 30 }), { preco_min: 20, preco_max: 90, preco_sugerido: 85 }))
+      .toMatchObject({ preco_promo: null, preco_min: 30, preco_max: null, preco_sugerido: null });
+  });
+
   it('comOfertaRelampago null degrada: sem faixa nem preço', () => {
     expect(comOfertaRelampago(item({ preco_promo: 28.13, preco_min: 8.7 }), null)).toMatchObject({
       preco_promo: null, preco_min: 8.7, preco_max: null, preco_sugerido: null,

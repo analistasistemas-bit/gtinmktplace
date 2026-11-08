@@ -22,7 +22,7 @@ function tokens(s: string): string[] {
 const ATONAS = new Set(['de', 'da', 'do', 'das', 'dos', 'e', 'em', 'no', 'na', 'com', 'sem', 'para', 'por', 'a', 'o']);
 
 // Regra do Diego: promessa, adjetivo vazio e logística nunca entram — por PALAVRA, qualquer slot.
-const PROIBIDOS = new Set([
+export const PROIBIDOS = new Set([
   'promocao', 'imperdivel', 'barato', 'barata', 'frete', 'gratis', 'original', 'originais',
   'garantido', 'garantida', 'garantia', 'milagroso', 'milagrosa', 'lindo', 'linda', 'maravilhoso',
   'maravilhosa', 'perfeito', 'perfeita', 'premium', 'melhor', 'envio', 'pagamento', 'top',

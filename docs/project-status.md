@@ -4,7 +4,7 @@
 
 **Ultima atualizacao:** 2026-11-08
 
-## Kit com variação: antes de ligar o módulo (nada abaixo foi executado)
+## Kit com variação: antes de ligar o módulo (histórico: tudo executado em 2026-11-08)
 
 1. **Migrations.** `supabase db push` com 13 migrations novas do kit (`20261107190209` a `20261108094500`). Pode exigir
    `--include-all`: `20261107190209` e `20261107192458` são anteriores a migrations da main já aplicadas
@@ -35,7 +35,7 @@
 
 ## Snapshot
 
-- **Kit com variação (ADR-0200) — NO AR DESDE 2026-11-08 (main `3ee59923`), MÓDULOS DESLIGADOS até o piloto (portão de concorrência verde em 2026-11-08).** Cores combinadas × tamanho numa família User Products, com saldo próprio do kit, escrita de quantidade só com o anúncio pausado (saga `kit-transferencia`), política por SKU, reposição "Vender só em kit", texto por IA, foto por IA (módulo `imagem_ia`) e cobrança por imagem na fatura. 16 tasks aprovadas por revisão externa; módulos `kit_variacao` e `imagem_ia` desligados, 13 migrations (`20261107190209` a `20261108094500`) e 6 edges novas (`kit-transferencia`, `kit-reposicao`, `criar-kit-variacao`, `gerenciar-kit-variacao`, `gerar-texto-kit`, `gerar-foto-kit`) não aplicadas. **Portões abertos:** `db push` (talvez `--include-all`), deploy do manifesto de edges com prova por hash, portão 4b (scripts `*concorrencia*.sh` em Postgres local, não rodado) e piloto com 1 combinação, ver "Antes de ligar o módulo" em `docs/TASKS.md`. Ver `docs/TASKS.md`.
+- **Kit com variação (ADR-0200) — NO AR DESDE 2026-11-08 (main `3ee59923`; melhorias até `f9a462d5`), PILOTO OK NA ZAVEN (única org com `kit_variacao`/`imagem_ia` ligados).** Cores combinadas × tamanho numa família User Products, com saldo próprio do kit, escrita de quantidade só com o anúncio pausado (saga `kit-transferencia`), política por SKU, reposição "Vender só em kit", texto por IA, foto por IA (módulo `imagem_ia`) e cobrança por imagem na fatura. Entregues em 08/11 depois do piloto: estoque por cor e "máx N" por célula; texto automático a partir da descrição da base (`gerar-texto-kit`); preço editável na etapa Conferir; acompanhamento da montagem em Publicados com aviso de fim no app e Telegram e fim do alarme falso (carência de 3 min); Encerrar kit (saga `encerrar`, teste real na Zaven em ~14 s); foto por IA com ficha, verificação automática e até 3 tentativas (a aprovação humana no Ampliar continua a trava: na conferência de 12 fotos aprovadas, 3 fiéis, 7 em dúvida, 2 não fiéis). **Pendências:** inspetor da foto cobra etiqueta não visível; Telegram com falha no aviso com chave não é reenviado; "Atualizar anúncio" num kit reescreve CORES DISPONÍVEIS; `src/lib/database.types.ts` sem as colunas novas. Ver `docs/TASKS.md`.
 
 - **Anexo nas mensagens pós-venda do ML (emendas ADR-0067 e ADR-0192) — em produção desde 2026-11-07 (main `3236f39a`; `responder-mensagem` v42, `posvenda-anexo` v7, migration `20261107163534`); primeiro envio real pelo app pendente.** Foto ou PDF até 5 MB junto com o texto; anexos enviados e recebidos no histórico, sem storage próprio; envio protegido por trava por pack em `ml_posvenda_acoes`, com "Conferir no Mercado Livre" e "Já conferi, liberar envio". Contrato do ML medido em pedido real. Ver `docs/TASKS.md`.
 

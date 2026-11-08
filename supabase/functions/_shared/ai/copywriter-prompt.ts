@@ -343,7 +343,7 @@ export function garantirConteudoEmbalagem(
 // Fato sobre a exibição, não sobre o produto: nenhuma tela reproduz cor com fidelidade. Texto
 // FIXO e determinístico, por isso não é invenção — e é a classe de observação que mais evita
 // devolução em família com variação visual.
-const DISCLAIMER_TONALIDADE =
+export const DISCLAIMER_TONALIDADE =
   'A tonalidade pode variar conforme a tela do dispositivo.';
 
 /**
@@ -370,8 +370,8 @@ export function garantirDisclaimerTonalidade(descricao: string): string {
 
 // 📏 = guia de tamanhos da grade (ADR-0183), só existe em família grade.
 const EMOJIS_CABECALHO = '[🧵✅📌🎯❓🎨📦🚚📏]';
-const ehCabecalho = (linha: string) => new RegExp(`^${EMOJIS_CABECALHO}\\s*\\S`, 'u').test(linha.trim());
-const ehBullet = (linha: string) => /^[✔•▪-]\s+/.test(linha.trim());
+export const ehCabecalho = (linha: string) => new RegExp(`^${EMOJIS_CABECALHO}\\s*\\S`, 'u').test(linha.trim());
+export const ehBullet = (linha: string) => /^[✔•▪-]\s+/.test(linha.trim());
 
 /**
  * O schema garante texto, mas não garante que o modelo respeite as linhas em branco do
@@ -448,7 +448,7 @@ const SECAO_GUIA = '📏 GUIA DE TAMANHOS';
 // Sem número de medida na descrição (decisão do Diego): as medidas de cada peça estão nas fotos,
 // e a tabela do chart do ML é de CORPO, não de peça.
 const AVISO_FOTOS = 'Confira nas fotos as medidas em centímetros de cada peça antes de escolher o tamanho.';
-const PERGUNTA_TAMANHO = '▪ Como escolher o tamanho? Confira nas fotos do anúncio as medidas em centímetros de cada peça.';
+export const PERGUNTA_TAMANHO = '▪ Como escolher o tamanho? Confira nas fotos do anúncio as medidas em centímetros de cada peça.';
 // Emenda ADR-0183 (2026-10-18): fonte só com composição dava 1 derivada + fixa = 2 e a ❓ sumia
 // inteira. O gênero do cadastro (ADR-0182) é dado estruturado e não muda no UPDATE (cor mudaria).
 const PUBLICO_POR_GENERO: Record<string, string> = {
@@ -462,7 +462,7 @@ function perguntaPublico(genero?: string | null): string[] {
 
 /** Remove a seção do emoji. `ateProximoCabecalho=false` leva só cabeçalho + bullets/linhas vazias,
  *  preservando a frase de fechamento em prosa que vem depois de 📦 (última seção do template). */
-function removerSecao(descricao: string, emoji: string, ateProximoCabecalho: boolean): string {
+export function removerSecao(descricao: string, emoji: string, ateProximoCabecalho: boolean): string {
   const linhas = descricao.split('\n');
   const ini = linhas.findIndex((l) => l.trim().startsWith(emoji));
   if (ini === -1) return descricao;
@@ -496,7 +496,7 @@ function removerBulletsDeMedida(descricao: string): string {
 
 /** Pergunta fixa no fim da lista de ❓ (antes da de tamanho, se já houver), se a seção existir e
  *  ainda não a tiver. */
-function garantirPerguntaFixa(descricao: string, pergunta: string): string {
+export function garantirPerguntaFixa(descricao: string, pergunta: string): string {
   if (!descricao.includes(SECAO_PERGUNTAS) || descricao.includes(pergunta)) return descricao;
   const linhas = descricao.split('\n');
   const ini = linhas.findIndex((l) => l.includes(SECAO_PERGUNTAS));
@@ -513,7 +513,7 @@ const garantirPerguntaTamanho = (d: string) => garantirPerguntaFixa(d, PERGUNTA_
 /** Guia logo após a lista de 📌 (ordem do infográfico: specs → guia → FAQ). Ancorar no fim da
  *  lista, e não no próximo cabeçalho, evita cair depois da frase final quando a ❓ foi recriada
  *  no fim do texto. Sem 📌: antes do primeiro cabeçalho posterior, senão no fim. */
-function inserirGuiaTamanhos(descricao: string, tamanhos: string[]): string {
+export function inserirGuiaTamanhos(descricao: string, tamanhos: string[]): string {
   const bloco = `${SECAO_GUIA}\n\n${linhaTamanhos(tamanhos)}\n\n${AVISO_FOTOS}`;
   const linhas = descricao.split('\n');
   const ini = linhas.findIndex((l) => l.includes(SECAO_ESPECIFICACOES));

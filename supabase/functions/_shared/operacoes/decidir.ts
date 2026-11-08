@@ -21,7 +21,8 @@ function aderirRelampago(
   // min conservador: o maior das duas visões (diferem no spike: campanha 8,70 × item 5,80).
   const mins = [fresco.preco_min, oferta.preco_min].filter((n): n is number => n !== null);
   const min = mins.length ? Math.max(...mins) : null;
-  const max = oferta.preco_max;
+  // Teto crível (08/11): o price do convite = 97% do preço próprio (com PRICE_DISCOUNT); acima → ERROR_CREDIBILITY.
+  const max = oferta.preco_max === null ? null : Math.min(oferta.preco_max, fresco.preco ?? Infinity);
   if (min === null || max === null) return fim('erro', 'O ML não informou a faixa de preço deste anúncio');
   if (p === null || p < min || p > max) return faixaMudou(min, max);
   if (p < PRECO_MIN_PROMOCAO) return fim('bloqueado', MSG_PISO_PROMOCAO);

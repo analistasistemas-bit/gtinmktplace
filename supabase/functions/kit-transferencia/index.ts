@@ -9,8 +9,9 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import type { ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { humanizarErroML, MLApiError } from '../_shared/ml/erro-ml.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
-import { importarPedidosDoItem, lerOferta, listarPendentes } from '../_shared/kit-variacao/ml-oferta.ts';
+import { importarPedidosDoItem, lerItens, lerOferta, listarPendentes } from '../_shared/kit-variacao/ml-oferta.ts';
 import { avancarSaga, PRAZO_PASSO_S, quarentenaDoEnv, type DepsSaga } from '../_shared/kit-variacao/saga.ts';
+import { avisarKitsEncerrados } from '../_shared/kit-variacao/encerrar.ts';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { getConnector } from '../_shared/canais/registry.ts';
 import { montarAnuncioCanonico } from '../_shared/anuncios/montar-canonico.ts';
@@ -20,11 +21,12 @@ import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
 import { enfileirarSincronizacaoFiscal } from '../_shared/queue.ts';
 import { talvezFinalizarLote } from '../_shared/lote/finalizar.ts';
 import { alertarZeradosConfirmados } from '../sincronizar-estoque/processar.ts';
+import { avisarFimTransferencia, comLinkDoKit } from '../_shared/kit-variacao/aviso-fim.ts';
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-function deps(orgId: string): DepsSaga {
+function deps(orgId: string, transferenciaId: string): DepsSaga {
   const admin = adminClient();
   // Toda chamada ao ML desta invocação morre no prazo do passo, antes de o lease do claim vencer.
   const prazo = AbortSignal.timeout(PRAZO_PASSO_S * 1000);
@@ -66,7 +68,7 @@ function deps(orgId: string): DepsSaga {
       },
       async carregar(id) {
         const transferencia = exigir(await admin.from('kit_transferencias')
-          .select('id, org_id, tipo, passo, estado, versao_politica, passo_em, alerta')
+          .select('id, org_id, tipo, passo, estado, versao_politica, passo_em, alerta, alerta_desde, alerta_enviado')
           .eq('id', id).eq('org_id', orgId).single(), 'ler transferência');
         const alvos = exigir(await admin.from('kit_transferencia_alvos').select('*')
           .eq('transferencia_id', id).eq('org_id', orgId).order('up_id'), 'ler alvos');
@@ -75,6 +77,8 @@ function deps(orgId: string): DepsSaga {
       async salvarTransferencia(id, token, patch) {
         exigir(await admin.rpc('kit_saga_salvar_transferencia', {
           ...base(id, token), p_passo: patch.passo ?? null, p_alerta: patch.alerta ?? null, p_travar: patch.travar ?? false,
+          p_alerta_desde: patch.alertaDesde ?? null, p_limpar_alerta_desde: patch.limparAlertaDesde ?? false,
+          p_alerta_enviado: patch.alertaEnviado ?? null,
         }), 'gravar transferência');
       },
       async salvarAlvo(id, token, upId, patch) {
@@ -119,6 +123,7 @@ function deps(orgId: string): DepsSaga {
     },
     ml: {
       lerOferta: async (upId, esperados) => lerOferta((await ml()).token, upId, esperados, f),
+      lerItens: async (upId, ids) => lerItens((await ml()).token, upId, ids, f),
       listarPendentes: async () => { const c = await ml(); return listarPendentes(c.token, c.seller, f); },
       importarPedidos: async (itemIds, desde, idsPasso1, antesDeBaixar) => {
         const c = await ml();
@@ -171,11 +176,27 @@ function deps(orgId: string): DepsSaga {
       },
     },
     enfileirar: (id, delayS) => enfileirarSaga(id, orgId, delayS),
-    alertar: async (texto) => { await notificarCategoria(admin, orgId, 'estoque', texto); },
+    // Todo alerta da saga (travada, bloqueada, abortada) leva o kit e o link do Gerenciar kit no PubliAI.
+    alertar: async (texto, chave) => {
+      const { data } = await admin.from('kit_transferencias').select('kit_id, kits_variacao(codigo_pai_kit)')
+        .eq('id', transferenciaId).eq('org_id', orgId).maybeSingle();
+      const k = (data as { kits_variacao?: { codigo_pai_kit?: string } | null } | null)?.kits_variacao;
+      await notificarCategoria(admin, orgId, 'estoque',
+        comLinkDoKit(texto, Deno.env.get('APP_URL'), { id: (data?.kit_id as string | null) ?? null, codigoPai: k?.codigo_pai_kit }),
+        chave ? { chave } : undefined);
+    },
     avisarZerados: (codigos) => alertarZeradosConfirmados(admin, notificarCategoria, orgId, codigos),
     agora: () => new Date(),
     quarentenaS: quarentenaDoEnv(Deno.env.get('KIT_QUARENTENA_S')),
     novoToken: () => crypto.randomUUID(),
+    encerramento: {
+      async finalizar(id, token) {
+        exigir(await admin.rpc('kit_encerrar_finalizar', base(id, token)), 'encerrar kit');
+      },
+      avisar: async (texto, chave) => { await notificarCategoria(admin, orgId, 'estoque', texto, { chave }); },
+      // Depois do commit; a varredura diária repete o que faltar (marca `encerrado_avisado_em`).
+      avisarConcluidos: async () => { await avisarKitsEncerrados(admin, notificarCategoria, orgId); },
+    },
   };
 }
 
@@ -315,9 +336,14 @@ Deno.serve(async (req) => {
   if (!job?.transferencia_id || !job.org_id) return new Response('Body inválido', { status: 400, headers: corsHeaders });
 
   try {
-    const r = await avancarSaga(deps(job.org_id), job.transferencia_id);
+    const r = await avancarSaga(deps(job.org_id, job.transferencia_id), job.transferencia_id);
     await fecharCriacao(adminClient(), job.org_id, job.transferencia_id, r.acao);
     await reporDepois(adminClient(), job.org_id, job.transferencia_id, r.acao);
+    // Aviso de fim com chave: falha só loga e fica sem marca para a varredura diária; a saga já terminou.
+    if (r.acao === 'concluida') {
+      await avisarFimTransferencia(adminClient(), notificarCategoria, job.org_id, job.transferencia_id)
+        .catch((e) => console.error('kit_aviso_fim_falhou', job.transferencia_id, String(e)));
+    }
     // Ocupada: outra invocação tem o claim, ou a anterior morreu e o prazo ainda não venceu. O QStash
     // repete; se a outra estava viva, a repetição só executa um passo já idempotente.
     return json(r.acao === 'ocupada' ? 409 : 200, r);

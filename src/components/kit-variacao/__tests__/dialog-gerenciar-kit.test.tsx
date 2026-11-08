@@ -27,13 +27,16 @@ vi.mock('@/lib/kit-variacao-edge', () => ({
 }));
 const modulos = { data: ['kit_variacao'] as string[] };
 vi.mock('@/hooks/useModulosHabilitados', () => ({ useModulosHabilitados: () => modulos }));
-// Base: Preto, Branco e Marrom em M, G e GG. Preto M tem só 3 peças.
-const peca = (codigo: string, cor: string, tamanho: string, estoque: number) => ({ codigo, cor, tamanho, estoque, excluidaDaPublicacao: false });
+// Base: Preto, Branco e Marrom em M, G e GG. Preto M tem só 3 peças; Marrom GG está zerado (a cópia excluída não conta).
+const peca = (codigo: string, cor: string, tamanho: string, estoque: number, excluidaDaPublicacao = false) => ({ codigo, cor, tamanho, estoque, excluidaDaPublicacao });
 const base = {
   data: {
-    variacoes: ['M', 'G', 'GG'].flatMap((t) => [
-      peca(`P-${t}`, 'Preto', t, t === 'M' ? 3 : 9), peca(`B-${t}`, 'Branco', t, 9), peca(`M-${t}`, 'Marrom', t, 9),
-    ]),
+    variacoes: [
+      peca('M-GG-OLD', 'Marrom', 'GG', 50, true),
+      ...['M', 'G', 'GG'].flatMap((t) => [
+        peca(`P-${t}`, 'Preto', t, t === 'M' ? 3 : 9), peca(`B-${t}`, 'Branco', t, 9), peca(`M-${t}`, 'Marrom', t, t === 'GG' ? 0 : 9),
+      ]),
+    ],
   },
   isLoading: false, isError: false,
 };
@@ -240,6 +243,35 @@ describe('DialogGerenciarKit', () => {
       expect(screen.getByRole('button', { name: 'Montar mais' })).toBeEnabled();
     });
 
+    it('cada célula nova mostra o máximo, que cai com o que Montar mais já usa da mesma cor', async () => {
+      const user = userEvent.setup();
+      await abrirNovo(user);
+      expect(screen.getByLabelText('Máximo nova Preto e Marrom M')).toHaveTextContent('máx 3');
+      expect(screen.getByLabelText('Máximo montar Preto e Branco M')).toHaveTextContent('monta até 3');
+      await user.type(screen.getByLabelText('Quantidade Preto e Branco M'), '2');
+      expect(screen.getByLabelText('Máximo nova Preto e Marrom M')).toHaveTextContent('máx 1');
+      await user.type(screen.getByLabelText('Nova Preto e Marrom M'), '1');
+      expect(screen.getByLabelText('Máximo montar Preto e Branco M')).toHaveTextContent('monta até 2');
+    });
+
+    it('célula nova com máximo 0 fica desabilitada e diz qual cor falta; a cópia excluída não conta', async () => {
+      const user = userEvent.setup();
+      await abrirNovo(user);
+      const campo = screen.getByLabelText('Nova Preto e Marrom GG');
+      expect(campo).toBeDisabled();
+      expect(campo.closest('td')).toHaveAttribute('title', 'Sem peça livre de Marrom em GG');
+      expect(screen.getByLabelText('Nova Preto e Branco GG')).toBeEnabled();
+    });
+
+    it('célula nova acima do máximo fica vermelha', async () => {
+      const user = userEvent.setup();
+      await abrirNovo(user);
+      const campo = screen.getByLabelText('Nova Preto e Marrom M');
+      await user.type(campo, '4');
+      expect(campo).toHaveAttribute('aria-invalid', 'true');
+      expect(campo.className).toMatch(/text-danger/);
+    });
+
     it('antes de montar confere as peças da base: falta avisa e bloqueia', async () => {
       const user = userEvent.setup();
       await abrirNovo(user);
@@ -305,5 +337,69 @@ describe('DialogGerenciarKit', () => {
     await user.click(screen.getByRole('switch', { name: 'Reposição automática' }));
     await waitFor(() => expect(gerenciarKitEdge).toHaveBeenCalledTimes(2));
     expect(vi.mocked(gerenciarKitEdge).mock.calls[1][0]).toMatchObject({ versao: 7 });
+  });
+
+  describe('Encerrar kit', () => {
+    const zerar = () => { for (const s of detalhe.data.skus) s.saldo = 0; };
+    const restaurar = () => { detalhe.data.skus[0].saldo = 2; detalhe.data.skus[1].saldo = 0; };
+
+    it('com saldo: "Desmonte antes", botão desabilitado e "Desmontar tudo" preenche o saldo inteiro', async () => {
+      const user = userEvent.setup();
+      abrir();
+      expect(screen.getByRole('button', { name: 'Encerrar kit' })).toBeDisabled();
+      expect(screen.getByText(/Desmonte antes/)).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Desmontar tudo' }));
+      expect(screen.getByRole('heading', { name: 'Desmontar 2 kits?' })).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Desmontar kits' }));
+      await waitFor(() => expect(gerenciarKitEdge).toHaveBeenCalledWith(expect.objectContaining({
+        acao: 'desmontar', itens: [{ codigo: 'KPB-M', quantidade: 2 }],
+      })));
+    });
+
+    it('saldo 0 e sem transferência: confirmação explícita e chama a edge com a versão lida', async () => {
+      zerar();
+      try {
+        const user = userEvent.setup();
+        abrir();
+        await user.click(screen.getByRole('button', { name: 'Encerrar kit' }));
+        expect(screen.getByText('Encerra os anúncios do kit no Mercado Livre. Não dá para desfazer.')).toBeInTheDocument();
+        expect(gerenciarKitEdge).not.toHaveBeenCalled();
+        await user.click(screen.getByRole('button', { name: 'Encerrar anúncios' }));
+        await waitFor(() => expect(gerenciarKitEdge).toHaveBeenCalledWith({ kitId: 'K1', acao: 'encerrar', versao: 7 }));
+      } finally { restaurar(); }
+    });
+
+    it('transferência aberta bloqueia o encerramento', () => {
+      zerar();
+      try {
+        detalhe.data.abertas = [{ id: 'T1', tipo: 'desmontar', estado: 'ativa', passo: 'aguardar', alerta: null, criadoEm: '2026-11-08T10:00:00Z' }];
+        abrir();
+        expect(screen.getByRole('button', { name: 'Encerrar kit' })).toBeDisabled();
+      } finally { restaurar(); }
+    });
+
+    it('quem não é admin não vê a ação', () => {
+      zerar();
+      try {
+        abrir({}, false);
+        expect(screen.queryByRole('button', { name: 'Encerrar kit' })).not.toBeInTheDocument();
+      } finally { restaurar(); }
+    });
+
+    it('encerrando mostra o andamento; encerrado fica só leitura, sem montar nem política', () => {
+      detalhe.data.abertas = [{ id: 'T9', tipo: 'encerrar', estado: 'ativa', passo: 'fechar', alerta: 'encerramento pendente: MLB1', criadoEm: '2026-11-08T10:00:00Z' }];
+      const { unmount } = abrir({ status: 'encerrando' });
+      expect(screen.getByText('Encerramento')).toBeInTheDocument();
+      expect(screen.getByText(/encerramento pendente: MLB1/)).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Montar mais' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Encerrar kit' })).not.toBeInTheDocument();
+      unmount();
+      detalhe.data.abertas = [];
+      abrir({ status: 'encerrado' });
+      expect(screen.getAllByText('Encerrado').length).toBeGreaterThan(0);
+      expect(screen.queryByRole('button', { name: 'Montar mais' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('switch', { name: 'Vender só em kit' })).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Quantidade Preto e Branco M')).not.toBeInTheDocument();
+    });
   });
 });

@@ -72,6 +72,12 @@ Opção B do Diego (07/11): grade própria com página única e risco residual a
     (ADR-0055) ou sem cotação, avisa e não presume número.
 11. **Texto por IA em etapa própria** (`gerar-texto-kit`): título e descrição dizem que é kit e quantas peças. Não usa
     `process-familia`. Reprocessar não pode reescrever o kit.
+    *Emenda 08/11:* o texto parte da `descricao_ml` da base canônica, no padrão de seções da copy do anúncio novo. A
+    IA reescreve só a abertura ("KIT N …") e a frase final; quantidade, guia de tamanhos (só os tamanhos com
+    quantidade), cores (só as do kit) e o resto das seções são editados por código, e trecho da IA com número, cor ou
+    seção fora da base é descartado. Base sem descrição no padrão: gera antes pelo prompt do anúncio novo. A etapa 2
+    gera sozinha uma vez por pedido (cores, peças, tamanhos); texto editado só é trocado com confirmação. Medição no
+    `gpt-6-luna`: 12 bases × 4 execuções, 48/48 nas checagens.
 12. **Escopo:** só user product, só `selling_address`, sem Full, sem Kit Virtual ou kit vinculado na base, peças por
     kit de 2 a 6, cores distintas. Tudo atrás do módulo `kit_variacao`: organização sem o módulo não muda de
     comportamento.
@@ -132,3 +138,216 @@ inexistente.
 - A imagem deixa de ser dormente no ADR-0074 quando a Fase 4 for entregue (emenda).
 - Ainda a medir: tempo de quarentena e efeito das pausas no ranking do ML; individual pausado em campanha de
   promoção.
+
+## Emenda 2026-11-08 — Encerrar kit
+
+**Contexto.** "Desmontar" devolve as peças e deixa os itens do kit pausados com 0; não havia como fechar o kit de vez,
+e a lixeira é bloqueada de propósito para kit com variação (Task 7). Caso real: Zaven, kit 00000223 (SKU 00000224,
+MLB7959912198), desmontado em 08/11. "Encerrar kit" fecha os itens do kit no ML (`status=closed`, irreversível), tira o
+kit de Publicados e devolve as peças da base ao estado Normal, sem apagar variação, composição, ledger nem histórico.
+
+**Decisão.**
+
+1. **Ação no Gerenciar kit**, só admin (ADR-0060) e módulo `kit_variacao` ligado, com confirmação explícita "Encerra
+   os anúncios do kit no Mercado Livre. Não dá para desfazer." Habilitada só com saldo 0 em todos os SKUs do kit e
+   nenhuma transferência do kit aberta (ativa ou travada). Com saldo, a tela diz "Desmonte antes" e oferece desmontar
+   tudo (o Desmontar de sempre, com todo o saldo).
+2. **RPC `kit_variacao_encerrar(p_org, p_kit, p_versao)`**, uma transação, com a ordem de locks org (`for share`, módulo
+   revalidado: contrato de `set_modulos_org_seguro`), kit (`for update`, CAS de `versao`), exclusões de todos os SKUs
+   do kit e só então o saldo (a republicação pega exclusão e depois variação; a ordem inversa fecharia um ciclo);
+   recusa `saldo` (variação canônica de cada SKU do kit lida `for share`, desempate `criado_em desc, id desc`), `transferencia_aberta` (do kit, ou que
+   liste um SKU do kit) e `up_ocupado` (exclusão de outro dono). Repetição com o kit já `encerrando` devolve a
+   transferência existente; já `encerrado`, ok sem efeito. Grava `status='encerrando'`, `reposicao_auto=false` e
+   `versao+1` (invalida jobs e telas antigas) e cria a transferência `encerrar` por `kit_criar_transferencia`, sem
+   redefini-la: alvos calculados no SQL a partir de `anuncios_externos_itens` (um por SKU do kit com
+   `user_product_id`: item + cópia de catálogo), nunca vindos da edge. SKU do kit sem UP fica fora dos alvos, mas a
+   exclusão dele é adquirida com o mesmo dono na mesma transação. Kit sem nenhum alvo (nada chegou ao ML) encerra ali
+   mesmo, na mesma transação (passo 4), depois de adquirir a exclusão de todos os SKUs com um dono só da transação
+   (publicação em curso recusa com `up_ocupado`) e soltá-la no fim. Kit `publicado` sem nenhum vínculo recusa
+   (`sem_vinculo`): o vínculo sumiu (republicação) e os itens antigos não seriam fechados.
+3. **Worker.** `kit-transferencia` despacha `tipo='encerrar'` para um módulo próprio (`_shared/kit-variacao/encerrar.ts`)
+   antes do pipeline de quantidade, com o mesmo claim por `execucao_token` e as mesmas RPCs validadas por token,
+   prazo e exclusão. Cada invocação, para cada alvo ainda não confirmado: grava o início da obrigação
+   (`intencao_escrita_em`, uma vez, ANTES de qualquer leitura: leitura que falha sempre também conta o prazo); lê o
+   UP (`lerOferta`: todos os itens do UP, inclusive cópias de catálogo); nenhum item aberto = confirmado
+   (`escrita_em`, que neste tipo significa "fechamento confirmado por leitura"; `confirmada_em` não é usado porque
+   avançaria a marca d'água do SKU); senão `PUT /items/{id} status=closed` em cada item aberto. Erro de leitura ou de
+   PUT num alvo/item não interrompe os demais (lição da Task 10); erro de leitura nunca vira confirmação. Resultado
+   incerto nunca reenvia às cegas: a próxima invocação relê, `closed` confirma, aberto recebe novo PUT (fechar é
+   idempotente; o GET antes evita o 400 de item já fechado). 4xx conta em `recusas` e entra no mesmo backoff. Sem
+   `travada`: o kit não pode ficar preso em `encerrando` sem caminho de saída. Backoff pelo tempo desde a primeira
+   intenção (5 s, 30 s, 60 s, 5 min) e alerta (app + Telegram, chave por faixa) só depois de 15 min de carência,
+   repetido a cada faixa (15 min, 1 h, 6 h, depois diário), com o motivo estável (itens pendentes, se a leitura
+   está falhando e a faixa), que a tela mostra no andamento.
+4. **Conclusão numa transação** (`kit_encerrar_finalizar`, validada pelo token e com todos os alvos confirmados; e a
+   mesma `kit_encerrar_aplicar` no caminho sem alvos do passo 2): `status='encerrado'`, `encerrado_em`;
+   `kit_reposicao_desligar` (remove as reivindicações do kit; peça sem outra reivindicação volta a Normal com
+   `versao+1`, `so_em_kit=false`); apaga `kit_pausas_automaticas` dos itens do kit (fechados); marca os filhos do kit
+   em `anuncios_externos_itens` como `retirado=true, status='pausado'` (padrão de retirar; o check de status não tem
+   "encerrado"); no caminho da saga, solta as exclusões e
+   fecha a transferência (`kit_saga_finalizar`); no caminho sem alvos não há transferência nem exclusão a soltar. Não
+   apaga variações, composição, `estoque_movimentos` nem vendas. Família e raiz do kit não mudam (`familia_status` e
+   `anuncios_externos.status` não têm "encerrado"): o padrão destrutivo do Remover não serve. Publicados esconde a
+   família do kit pelo `kits_variacao.status`. Reposição depois do commit: o `reporDepois` do worker (caminho da
+   saga) ou a edge (caminho sem alvos) enfileira a rodada do kit, que desfaz só as pausas da automação das peças fora
+   de Guardado, pelo caminho com exclusão e CAS (regra da Task 14). Rede durável: a rodada diária já dispara pelos
+   SKUs com `kit_pausas_automaticas` pendente.
+5. **Participante depois do encerramento.** Regra única em SQL (`kit_participante`):
+   - SKU de kit (`kit_variacao_skus`) participa sempre, inclusive de kit encerrado: preserva a identidade estável da
+     venda (Task 8), a recusa de excluir a última cópia (venda tardia baixa e estorna pelo caminho normal) e a
+     proteção do crédito de cancelamento.
+   - Peça da base (`kit_variacao_componentes`) participa enquanto (a) um kit **não encerrado** a usa, ou (b) a
+     política persistida ainda a restringe (`estado <> 'normal'` ou qualquer `bloqueio_*`), ou (c) há pausa da
+     automação a desfazer (`kit_pausas_automaticas`). Assim a pausa do operador e a moderação continuam valendo
+     depois do encerramento (o push comum reativaria sem olhar os bloqueios), e a reativação da reposição segue pelo
+     caminho com exclusão e CAS; a peça só vira SKU comum quando nada mais a prende.
+   Usam a regra: `kit_skus_participantes` (guardas de edge das Tasks 5 e 6, Remover, publicação, cancelamento), os
+   triggers da Task 7 (`kit_variacao_saldo_copia`, `kit_variacao_conferir_update`, `kit_variacao_preservar_*`) e a
+   triagem diária (`reconciliar-estoque`), que além disso pula SKU de kit encerrado (itens fechados, não "sem user
+   product"). `limpar_movimentos_orfaos` não muda (preserva todo movimento de SKU em composição). A transferência
+   `encerrar` segura só os SKUs do kit: `kit_sku_em_transferencia`/`kit_reposicao_pendente` não expandem os
+   componentes dela.
+6. **Kit encerrando ou encerrado não muda mais.** Triggers de rede. Os de `kit_transferencias` e `kit_exclusoes`
+   travam os kits envolvidos (`for share`, em ordem de id) antes de ler o status: quem esperou o `for update` de
+   `kit_variacao_encerrar` lê o status já commitado, e nenhuma publicação nova passa no meio. Exceção: a exclusão da
+   republicação não trava o kit (ela segura `familias` FOR UPDATE e `kit_variacao_adicionar` faz kit → família:
+   deadlock); contra o encerramento ela é serializada pela própria linha de exclusão. Em `kit_exclusoes` são duas
+   etapas: BEFORE INSERT trava o kit (publicação e ativação, na ordem kit → exclusão do encerramento) e AFTER INSERT
+   confere o status (roda depois da espera pelo índice único e lê o commit esperado); a republicação que termina
+   antes deixa o kit sem vínculo, que o encerramento recusa.
+   - `kits_variacao`: recusa sair de `encerrando`/`encerrado` (só `encerrando → encerrado`) e ligar
+     `so_em_kit`/`reposicao_auto` (cobre ligar, adicionar com SKU novo, montar via gerenciar);
+   - `kit_transferencias` (`security definer`: o executor não lê `kits_variacao`): recusa transferência que não seja a
+     `encerrar` quando o kit, explícito em `kit_id` ou inferido pelos SKUs de `itens` (`entrada`, `sair_sobra`,
+     `cancelamento` com `kit_id` nulo ou snapshot antigo), está `encerrando`/`encerrado`; e `encerrar` só com o kit
+     em `encerrando`;
+   - `kit_exclusoes`: recusa dono que não seja `transferencia` em SKU de kit `encerrando`/`encerrado`. Cobre
+     publicação e ativação (`kit_adquirir_exclusao`) e a republicação (`preparar_republicacao` insere a exclusão
+     antes de apagar vínculos e virar CREATE: a recusa desfaz tudo).
+   A tela esconde as ações; a recusa por trigger só aparece numa corrida, como erro.
+7. **Avisos duráveis.** `kits_variacao.encerrado_avisado_em` marca o aviso de conclusão. `avisarKitsEncerrados`
+   (org com o módulo) envia, com chave idempotente: a conclusão de cada kit `encerrado` ainda sem marca
+   (`kit_encerrado:<kit>`), marcando depois do envio; e, para cada SKU de kit encerrado com saldo diferente de 0, o
+   aviso de saldo preso (`kit_encerrado_saldo:<codigo>:<último movimento>`: crédito que chegou durante
+   `encerrando` ou estorno depois de `encerrado`), pedindo ajuste manual. Nada remonta sozinho. Roda depois do
+   commit da conclusão (worker), depois de todo crédito de cancelamento em SKU de kit e na reconciliação diária,
+   então não depende de `aplicados` nem do claim da transferência. Cancelamento em SKU de kit encerrando/encerrado
+   não tenta criar transferência.
+8. **Tela.** `encerrando` mostra o andamento na seção de transferências do Gerenciar (a mesma leitura que repete a
+   cada 10 s, com o motivo do passo 3) e o kit segue relido enquanto `encerrando`; `encerrado` some de Publicados e
+   aparece "Encerrado" no bloco "Kits com variação" da base, sem ações. Org sem o módulo não lê nada novo.
+9. **Deploy, nesta ordem.** (1) Migration `20261108170711_kit_variacao_encerrar` (sozinha não muda comportamento:
+   nenhum kit está `encerrando`/`encerrado`, então nenhuma peça sai da regra de participante e as guardas não
+   disparam). (2) Edges `gerenciar-kit-variacao`, `kit-transferencia`, `kit-reposicao`, `reconciliar-estoque`,
+   `reconciliar-faturamento`, `sincronizar-estoque` e `sync-venda` (importam `encerrar.ts`, `saga.ts`, `reposicao.ts`
+   ou `cancelamento.ts`); `reconciliar-estoque` chama `kit_codigos_triagem` e lê `encerrado_avisado_em`, por isso
+   depois da migration. A tela vai ao ar no merge; até `gerenciar-kit-variacao` subir, o botão recebe `acao_invalida`.
+
+**Riscos aceitos.** Se o módulo for desligado depois de um encerramento, a família do kit (itens fechados) volta a
+aparecer em Publicados, como qualquer anúncio fechado no ML. Peça com bloqueio de moderação ou retirada que nunca é
+limpo segue participante (entradas pela saga), como hoje com o kit vivo. Kit sem nenhum item no ML encerra sem aviso
+no Telegram além da resposta na tela e do aviso de conclusão da varredura.
+
+**Junção com o adendo de acompanhamento (08/11).** O encerramento usa a carência única `CARENCIA_ALERTA_MS` (3 min)
+da saga como início das faixas de alerta (3 min, 15 min, 1 h, 6 h, diário). O aviso de fim genérico (`kit_fim:`)
+não vale para `encerrar`: a conclusão do encerramento sai só por `avisarKitsEncerrados` (`kit_encerrado:<kit>`). Na
+tela, a transferência `encerrar` aparece como "Encerramento", etapa "Fechando os anúncios do kit no Mercado Livre".
+
+## Adendo (2026-11-08): acompanhar a transferência na tela e avisar ao terminar
+
+Criar o kit só mostrava um toast; a saga leva de 10 a 15 min e ninguém era avisado ao fim.
+
+- **Na tela.** Depois de criar, Montar mais ou Desmontar, o diálogo fecha e Publicados leva à linha da base (página
+  atual, outra página do mesmo filtro ou busca pelo código; base fora da lista abre o Gerenciar kit), expande e destaca
+  o bloco "Kits com variação" por 2,5 s. Com transferência ativa, o bloco mostra a etapa em linguagem simples, "passo X
+  de 9", na ordem real de `PassoSaga`, com a contagem da quarentena (último `passo1_em` + 300 s; o front não lê
+  `KIT_QUARENTENA_S`). Travada: borda vermelha parada, com o alerta. Sem transferência: link "Ver anúncio no ML"
+  (`familias.ml_permalink` do kit). O Gerenciar kit usa o mesmo indicador. Polling de 5 s em `useKitsVariacao`
+  enquanto há transferência ativa (não há padrão Realtime nesta tela). `alerta` de transferência ativa não aparece:
+  guarda motivo de reagendamento (ex.: `quarentena`) por `coalesce`.
+- **Aviso ao terminar.** Montagem, desmontagem e reposição concluídas avisam no app e no Telegram (categoria
+  `estoque`, que já tem assinantes) com o nome do kit, as combinações e tamanhos, a quantidade, a URL do anúncio do kit
+  e o aviso do seletor do ML. Mesmo padrão do aviso de kit zerado: `notificarCategoria` com chave
+  `kit_fim:<transferência>` e `kit_transferencias.aviso_fim_enviado_em` gravado só depois do envio. O worker avisa logo
+  depois da saga; falha só loga, nunca reabre nem trava a saga, e a varredura diária (`reconciliar-estoque`) repete o
+  que ficou sem marca. A migration marca como avisado tudo o que já tinha terminado.
+- **Travada** continua com o alerta imediato da própria saga (um só, como os testes da saga exigem), agora com o
+  código do kit e o link do Gerenciar kit (`APP_URL/#/publicados?kit=<id>`, que abre o diálogo). Esse alerta segue
+  sem chave nem nova tentativa, como antes; a linha vermelha na tela e no Gerenciar fica até alguém resolver.
+
+## Adendo (2026-11-08): alerta com carência e "resolvido"
+
+Caso Zaven (kit 00000224): o Telegram recebeu "Transferência de kit bloqueada: … pausa do item criado não confirmada"
+e a saga resolveu sozinha 20 s depois; o texto ficou em `kit_transferencias.alerta` da concluída.
+
+- **Carência única.** Todo reagendamento com alerta escalonado (pausa do item criado ou busca do UP ainda indexando,
+  pedidos sem baixa, preparo ou recusa do CREATE) só alerta se o problema persistir 3 min (`CARENCIA_ALERTA_MS`),
+  contados da intenção do CREATE ou de `alerta_desde` (primeiro registro do problema; avançar de passo zera). A
+  janela de 5 min da busca vazia virou esta carência. Até 15 min (`BLOQUEIO_MS`) o texto é de espera ("… em espera
+  (tentando de novo)" ou "Aguardando o Mercado Livre confirmar a pausa…"); depois, "bloqueada". Cada texto sai uma
+  vez (`alerta_enviado`, gravado só depois do envio: falha na fila ou no Telegram reenvia na tentativa seguinte e
+  nunca vira "resolvido" falso). Travada, abortada, venda acima do saldo e repausa que falha seguem imediatos.
+- **Resolvido.** Concluída com `alerta_enviado` ganha "O alerta anterior desta transferência foi resolvido." no aviso
+  de fim; tipos sem aviso de fim (entrada, cancelamento, guardar peças) ganham um aviso curto. Mesma chave
+  `kit_fim:<transferência>` e mesma marca `aviso_fim_enviado_em`, gravada só depois do envio.
+- **Concluída sem alerta velho.** `kit_saga_finalizar` grava na concluída o alerta recebido (a saga manda null, ou o
+  "política não autoriza reativar"); abortada segue com `coalesce`.
+
+## Adendo 1 (08/11) — foto por IA fiel à peça, com verificação automática
+
+**Por quê.** Falha real em 08/11 (Zaven, "Short Bermuda Linho Mauricinho", kit Bege Cru + Cinza Escuro): detalhes
+fiéis, mas a peça saiu longa (bermuda no joelho; o original é short no meio da coxa) e o Cinza Escuro saiu mais
+escuro. A descrição livre por visão não captou comprimento nem proporção. Regra do Diego: zero falha de fidelidade
+(comprimento, modelagem, cor, textura, detalhes).
+
+**Decisão.**
+
+1. **Ficha estruturada antes de gerar**, por visão, com todas as fotos de cada cor (variações da cor, fora de item
+   moderado, até 3 por cor): tipo e comprimento relativo ao corpo, proporção altura/largura, modelagem e caimento,
+   cós, cordão, bolsos, etiquetas, barra, textura e cor por cor do kit. Fotos repetidas por conteúdo (o mesmo
+   arquivo em um caminho por tamanho) contam uma vez. **Sem hex amostrado em código**: medido em 08/11 em 7 kits
+   reais, a foto vestida e o cenário contaminam a média mesmo dentro da caixa da peça apontada pelo modelo e com
+   filtro de pele (o preto saiu marrom), e o hex errado no pedido puxou a geração para o marrom (falso positivo no
+   kit Preto Mesclado). A cor fica com as fotos, o nome do tom e o inspetor; voltar ao hex só com segmentação da
+   peça. As capas da família ficam fora: não têm cor declarada.
+2. **Geração ancorada**: fotos de cada cor + a ficha (como dado, separado das instruções); o pedido proíbe alongar,
+   encurtar, trocar modelagem ou inventar detalhe. Enquadramento do kit: N peças lado a lado, mesma escala, numa
+   linha, fundo claro neutro, quadrada.
+3. **Verificação automática**: 2ª chamada de visão compara a gerada com as originais item a item da ficha e devolve
+   JSON estruturado; o veredito é calculado em código (nunca um "aprovado" do modelo). Comprimento comparado direto
+   com a original (mais longa, igual, mais curta) e proporção altura/largura da original e da gerada lidas na mesma
+   resposta, com tolerância de 15% (a categoria absoluta lida numa foto estendida contra uma vestida deu ruído na
+   medição de 08/11); cor por matiz e escurecimento contra as originais da cor (cinza que puxa para o marrom é
+   divergência).
+   Erro ou resposta ilegível na verificação reprova (fail-closed). Foto gerada horizontal ou pequena também reprova
+   a tentativa.
+4. **Até 3 tentativas por `request_id`** (1 + 2 automáticas), cada uma numa linha de `kit_variacao_imagens`
+   (`tentativa` 1..3). A reprovada vira `recusada` com o custo real e os motivos (`verificacao`) e não é cobrada; a
+   seguinte recebe os motivos no pedido. Uma linha viva por pedido (índice único parcial fora de `recusada`) e uma
+   `gerada` no máximo: a cobrança continua uma por `(org, request_id)`. **Emenda a decisão 9**: só a imagem
+   aprovada pela verificação é cobrada (a descartada pelo operador depois de aprovada continua cobrada).
+5. **Prazo de 145 s: uma tentativa por chamada.** Cada chamada faz no máximo uma geração + verificação; a ficha é
+   calculada na 1ª e guardada na linha. A tela repete o mesmo `request_id` enquanto a resposta trouxer
+   `proxima: true`. A repetição de uma tentativa já decidida devolve o estado gravado, sem IA. 3 reprovações: a tela
+   mostra "A IA não conseguiu uma foto fiel" com os motivos, sugere enviar foto própria e não oferece
+   "Usar esta foto" (resposta reprovada nunca traz `path`).
+
+**Ainda a medir:** taxa de aprovação na 1ª tentativa, falso positivo (aprovada não fiel na conferência humana) e
+tolerância de proporção (15%) com produtos reais (`scripts/medir-foto-kit-fiel.ts`). A base tem só 9 roupas com
+2+ cores fotografadas (2 lojas; a "Camisa" é uma camiseta gola careca), e em todas o dedupe deixou 1 foto distinta
+por cor (o mesmo arquivo em cada tamanho): frente/costas separadas não ocorreram nesta base.
+
+**Medição de 08/11 (12 kits, 6 de 2 cores e 6 de 3; Nano Banana 2.1 + gpt-4o; ~US$ 0,05–0,06 por tentativa).**
+A verificação aprovou os 12 em até 3 tentativas (7 na 1ª). Na conferência humana das 12 aprovadas: 3 fiéis
+(inclusive o caso Zaven), 7 em dúvida (etiqueta de gola inventada em 6; tom de Cáqui/Caramelo) e 2 não fiéis
+(etiqueta inventada no cós; decote quadrado no lugar do arredondado). A verificação reduz a falha, não a elimina:
+a aprovação humana ("Usar esta foto", depois de ampliar e comparar com as originais) continua sendo a trava.
+Reteste de 6 desses kits já com a proibição de etiqueta inventada no pedido e no inspetor: 4 aprovados (1 na 1ª);
+o inspetor passou a cobrar etiqueta "ausente" quando a ficha descreve etiqueta não visível (ponto a ajustar na
+ficha). Ficha levou até 29 s, verificação até 36 s e geração de 9 a 82 s: fatias de ficha e verificação de 35 s; uma
+geração acima de ~60 s na 1ª tentativa estoura o prazo e a chamada falha sem cobrança (o mesmo pedido repete).
+
+**Modelo mais forte (08/11):** `openai/gpt-5.4-image-2` (catálogo: imagem na entrada e na saída) não gerou imagem
+pelo OpenRouter em nenhuma qualidade (low, medium, high): `Complexity '…' is not supported for this image model`
+(`provider_unavailable`), como em 07/11. `google/gemini-3-pro-image` ficou fora por decisão do Diego (~3× o custo).
+Fica o Nano Banana 2.1; o script de medição aceita `--modelo` e `--qualidade` para repetir a comparação.

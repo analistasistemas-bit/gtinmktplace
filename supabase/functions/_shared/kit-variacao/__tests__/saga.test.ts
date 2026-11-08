@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { MLApiError } from '../../ml/erro-ml.ts';
 import {
-  avancarSaga, criarTransferencia, quarentenaDoEnv,
+  avancarSaga, CARENCIA_ALERTA_MS, criarTransferencia, quarentenaDoEnv,
   type AlvoSaga, type DepsSaga, type PassoSaga, type ResultadoPasso, type TransferenciaSaga,
 } from '../saga.ts';
 import type { PedidoPago, PedidoPendente } from '../conciliacao.ts';
@@ -34,7 +34,7 @@ function cenario() {
   const saldo: Record<string, number> = { P: 5, B: 5, K: 2 };
   const t: TransferenciaSaga = {
     id: 'T1', org_id: 'ORG', tipo: 'montar', passo: 'pausar', estado: 'ativa', versao_politica: 7,
-    passo_em: new Date(INICIO).toISOString(), alerta: null,
+    passo_em: new Date(INICIO).toISOString(), alerta: null, alerta_desde: null, alerta_enviado: null,
   };
   const alvos = [
     alvo('UP-P', 'P', 'origem', -1, ['MLB-P']),
@@ -94,6 +94,10 @@ function cenario() {
     aoRegistrar: () => {},
     falhaPreparar: null as Error | null,
     copiaNoCriado: false,
+    /** Buscas por UP que ainda voltam vazias (indexação do ML logo depois do CREATE), por UP. */
+    buscaVazia: {} as Record<string, number>,
+    /** Itens lidos direto (`GET /items`), sem a busca por UP. */
+    lidosDireto: [] as string[],
     criados: {} as Record<string, { itemId: string; upId: string }>,
     /** Ledger falso: só o que a marca d'água olha. */
     movs: [] as Array<{ codigo: string; ordem: number; qtd: number; motivo: string; transf: string | null }>,
@@ -141,6 +145,10 @@ function cenario() {
         if (patch.passo) s.t.passo = patch.passo;
         if (patch.alerta) s.t.alerta = patch.alerta;
         if (patch.travar) s.t.estado = 'travada';
+        // Espelho de kit_saga_salvar_transferencia: o primeiro início vale; avançar zera.
+        if (patch.limparAlertaDesde) s.t.alerta_desde = null;
+        else if (patch.alertaDesde) s.t.alerta_desde ??= patch.alertaDesde;
+        if (patch.alertaEnviado) s.t.alerta_enviado = patch.alertaEnviado;
       },
       async salvarAlvo(_id, token, upId, patch) {
         const erro = s.falhaSalvarAlvo(patch);
@@ -163,7 +171,8 @@ function cenario() {
         s.rpcs.push('finalizar');
         s.pausas.push(...(pausas ?? []));
         s.exclusaoSolta = true;
-        Object.assign(s.t, { estado, passo: 'fim', alerta: alerta ?? s.t.alerta });
+        // Concluída grava o alerta recebido (null limpa); abortada mantém o velho sem um novo.
+        Object.assign(s.t, { estado, passo: 'fim', alerta: estado === 'concluida' ? alerta : alerta ?? s.t.alerta, alerta_desde: null });
         s.token = null;
       },
       async ledger(_id, token, op) {
@@ -207,6 +216,10 @@ function cenario() {
     ml: {
       async lerOferta(upId, esperados) {
         s.aoLer(upId);
+        if ((s.buscaVazia[upId] ?? 0) > 0) {
+          s.buscaVazia[upId]--;
+          throw Object.assign(new Error(`UP ${upId}: 0 de 0 itens lidos`), { buscaVazia: true });
+        }
         const u = ups[upId];
         for (const id of esperados) if (!u.itens.some((i) => i.id === id)) throw new Error(`sem ${id}`);
         const locais = (u.locais ?? ['selling_address']).map((type) => ({ type, quantity: u.quantidade }));
@@ -215,6 +228,11 @@ function cenario() {
           itens: structuredClone(u.itens),
           somenteSellingAddress: locais.every((l) => l.type === 'selling_address'),
         };
+      },
+      async lerItens(upId, ids) {
+        s.lidosDireto.push(...ids);
+        for (const id of ids) if (!ups[upId]?.itens.some((i) => i.id === id)) throw new Error(`${id} fora de ${upId}`);
+        return structuredClone(ids.map(itemPorId));
       },
       async listarPendentes() {
         return s.pendentes;
@@ -421,6 +439,11 @@ describe('avancarSaga', () => {
     expect((await passo(c)).acao).toBe('reagendada');
     expect(c.s.t.passo).toBe('conciliar');
     expect(c.s.rpcs).toEqual([]);
+    // Carência: o alerta só sai se a falha persistir (3 min).
+    expect(c.s.alertas).toEqual([]);
+    for (let i = 0; i < 3; i++) expect((await passo(c)).acao).toBe('reagendada');
+    expect(c.s.t.passo).toBe('conciliar');
+    expect(c.s.rpcs).toEqual([]);
     expect(c.s.alertas.join()).toMatch(/fora do catálogo/);
   });
 
@@ -457,6 +480,8 @@ describe('avancarSaga', () => {
     c.s.falhasImportacao = ['pedido O-1159: P: timeout'];
     await passo(c);   // pausa
     await passo(c);   // confirma a pausa; a baixa falha
+    expect(c.s.alertas).toEqual([]);   // carência
+    for (let i = 0; i < 3; i++) await passo(c);   // a falha persiste 3 min
     const p = c.s.alvos.find((a) => a.codigo === 'P')!;
     expect(c.s.t.passo).toBe('pausar');
     expect([p.passo1_em, p.qtd_passo1, p.pagos_passo1]).toEqual([null, null, undefined]);
@@ -1162,8 +1187,14 @@ describe('avancarSaga: destino sem item (CREATE do kit)', () => {
     expect(c.s.ups['UP-NOVO1'].itens[1].subStatus).toContain('paused_by_seller');
     expect(c.s.ups['UP-NOVO1'].itens[0].subStatus).not.toContain('paused_by_seller');
     expect(c.s.registros).toEqual([]);
-    expect(c.s.alertas.some((a) => /pausa do item criado não confirmada .*MLB-NOVO1.*pausa recusada/.test(a))).toBe(true);
     expect(c.s.filas.at(-1)).toBe(5);
+    // Carência: a recusa só alerta se persistir (3 min desde a intenção); a obrigação segue sem registrar.
+    expect(c.s.alertas).toEqual([]);
+    await rodar(c, (x) => x.s.alertas.length > 0);
+    expect(c.s.registros).toEqual([]);
+    expect(c.s.ups['UP-NOVO1'].itens[0].subStatus).not.toContain('paused_by_seller');
+    expect(c.s.alertas.some((a) => /pausa do item criado não confirmada .*MLB-NOVO1.*pausa recusada/.test(a))).toBe(true);
+    expect(c.s.filas.at(-1)).toBe(30);
     recusa = false;
     await rodar(c, undefined, 80);
     expect(c.s.t.estado).toBe('concluida');
@@ -1186,18 +1217,84 @@ describe('avancarSaga: destino sem item (CREATE do kit)', () => {
 
   it('leitura do UP criado que lança: o principal já foi pausado, nada é registrado e sai alerta com backoff', async () => {
     const c = cenarioCriar();
-    let falhas = 3;
-    c.s.aoLer = (up) => { if (up === 'UP-NOVO1' && falhas-- > 0) throw new Error('busca do UP com 0 itens'); };
-    await rodar(c, (x) => criacoes(x) === 1 && falhas === 2);
+    let falha = true;
+    c.s.aoLer = (up) => { if (up === 'UP-NOVO1' && falha) throw new Error('busca do UP com 0 itens'); };
+    await rodar(c, (x) => criacoes(x) === 1);
     const iPausa = c.s.chamadas.indexOf('paused MLB-NOVO1');
     expect(iPausa).toBeGreaterThan(c.s.chamadas.indexOf('criar K 1'));
     expect(c.s.ups['UP-NOVO1'].itens[0].subStatus).toContain('paused_by_seller');
     expect(c.s.registros).toEqual([]);
-    expect(c.s.alertas.filter((a) => /K: pausa do item criado não confirmada .*busca do UP com 0 itens/.test(a))).toHaveLength(1);
     expect(c.s.filas.at(-1)).toBe(5);
+    // Carência: a leitura que segue falhando por 3 min alerta uma vez.
+    expect(c.s.alertas).toEqual([]);
+    await rodar(c, (x) => x.s.alertas.length > 0);
+    expect(c.s.registros).toEqual([]);
+    expect(c.s.alertas.filter((a) => /K: pausa do item criado não confirmada .*busca do UP com 0 itens/.test(a))).toHaveLength(1);
+    falha = false;
     await rodar(c, undefined, 80);
     expect(c.s.t.estado).toBe('concluida');
     expect(c.s.registros).toHaveLength(1);
+  });
+
+  it('busca do UP vazia logo depois do CREATE (indexação): pausa confirmada por GET do item, sem alerta, conclui depois', async () => {
+    const c = cenarioCriar();
+    c.s.buscaVazia['UP-NOVO1'] = 2;
+    await rodar(c, (x) => criacoes(x) === 1);
+    // A pausa do principal se confirma pela leitura direta, mesmo sem a busca: nada registrado enquanto a busca
+    // não mostrar o UP (as cópias de catálogo só aparecem nela).
+    expect(c.s.lidosDireto).toContain('MLB-NOVO1');
+    expect(c.s.ups['UP-NOVO1'].itens[0].subStatus).toContain('paused_by_seller');
+    expect(c.s.registros).toEqual([]);
+    expect(c.s.alvos[2].escrita_em).toBeNull();
+    expect(c.s.filas.at(-1)).toBe(5);
+    expect(c.s.alertas).toEqual([]);
+    await rodar(c, undefined, 80);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(c.s.registros).toEqual(['K MLB-NOVO1 UP-NOVO1']);
+    expect(c.s.alertas).toEqual([]);
+  });
+
+  it('busca do UP vazia e GET do item ainda ativo: não registra, reagenda e avisa que está aguardando (sem "bloqueada")', async () => {
+    const c = cenarioCriar();
+    c.s.buscaVazia['UP-NOVO1'] = Infinity;
+    c.s.pausaIgnorada.add('MLB-NOVO1');
+    await rodar(c, (x) => criacoes(x) === 1);
+    expect(c.s.lidosDireto).toContain('MLB-NOVO1');
+    expect(c.s.registros).toEqual([]);
+    expect(c.s.alvos[2].escrita_em).toBeNull();
+    expect(c.s.t.estado).toBe('ativa');
+    expect(c.s.filas.at(-1)).toBe(5);
+    // Carência: nada no início; persistindo 3 min, um aviso de espera.
+    expect(c.s.alertas).toEqual([]);
+    await rodar(c, (x) => x.s.alertas.length > 0);
+    expect(c.s.registros).toEqual([]);
+    expect(c.s.alvos[2].escrita_em).toBeNull();
+    expect(c.s.t.estado).toBe('ativa');
+    expect(c.s.alertas).toHaveLength(1);
+    expect(c.s.alertas[0]).toMatch(/^Aguardando o Mercado Livre confirmar a pausa do anúncio novo do kit \(tentando de novo\): K: pausa do item criado não confirmada \(MLB-NOVO1 ainda vendável/);
+    expect(c.s.alertas.join()).not.toMatch(/bloqueada/);
+    c.s.pausaIgnorada.delete('MLB-NOVO1');
+    c.s.buscaVazia['UP-NOVO1'] = 0;
+    await rodar(c, undefined, 80);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(c.s.registros).toHaveLength(1);
+  });
+
+  it('busca do UP que nunca mostra o item: o silêncio da indexação tem prazo; depois alerta, e só vira "bloqueada" com 15 min', async () => {
+    const c = cenarioCriar();
+    c.s.buscaVazia['UP-NOVO1'] = Infinity;
+    await rodar(c, (x) => criacoes(x) === 1);
+    expect(c.s.alertas).toEqual([]);
+    for (let i = 0; i < 40; i++) await passo(c);
+    expect(c.s.registros).toEqual([]);
+    expect(c.s.t.passo).toBe('aumentar');
+    const alertas = c.s.alertas.filter((a) => a.includes('K: pausa do item criado não confirmada'));
+    expect(alertas.length).toBeGreaterThanOrEqual(2);
+    expect(alertas[0]).toMatch(/^Aguardando o Mercado Livre confirmar a pausa do anúncio novo do kit \(tentando de novo\): .*busca do UP ainda sem o item/);
+    expect(alertas.at(-1)).toMatch(/^Transferência de kit bloqueada: .*busca do UP ainda sem o item/);
+    c.s.buscaVazia['UP-NOVO1'] = 0;
+    await rodar(c, undefined, 80);
+    expect(c.s.t.estado).toBe('concluida');
   });
 
   it('registro que lança: o item criado é pausado e confirmado antes; a retomada não deixa vendável', async () => {
@@ -1260,6 +1357,138 @@ describe('avancarSaga: destino sem item (CREATE do kit)', () => {
     await rodar(c);
     expect(c.s.t.estado).toBe('concluida');
     expect(criacoes(c)).toBe(1);
+  });
+});
+
+describe('avancarSaga: alerta com carência (alarme falso de "bloqueada")', () => {
+  it('Zaven 08/11: pausa do item criado que o ML confirma 20 s depois não alerta, e a concluída não guarda alerta', async () => {
+    const c = cenarioCriar();
+    c.s.pausaIgnorada.add('MLB-NOVO1');
+    await rodar(c, (x) => criacoes(x) === 1);
+    const criado = c.s.agora;
+    c.s.aoLer = () => { if (c.s.agora - criado >= 20_000) c.s.pausaIgnorada.delete('MLB-NOVO1'); };
+    await rodar(c, undefined, 80);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(c.s.registros).toEqual(['K MLB-NOVO1 UP-NOVO1']);
+    expect(c.s.alertas).toEqual([]);
+    expect(c.s.t.alerta).toBeNull();
+    expect(c.s.t.alerta_enviado).toBeNull();
+  });
+
+  it('problema que persiste: nada antes da carência; depois um alerta de espera, e "bloqueada" só com 15 min, sem repetir', async () => {
+    const c = cenario();
+    await rodar(c, noPasso('conciliar'));
+    c.s.falhasImportacao = ['pedido 1: SKU fora do catálogo: X'];
+    const inicio = c.s.agora;
+    while (c.s.agora - inicio < CARENCIA_ALERTA_MS) await passo(c);
+    expect(c.s.alertas).toEqual([]);
+    await passo(c);
+    await passo(c);
+    expect(c.s.alertas).toHaveLength(1);
+    expect(c.s.alertas[0]).toMatch(/^Transferência de kit em espera \(tentando de novo\): pedidos sem baixa: .*fora do catálogo/);
+    expect(c.s.alertas[0]).not.toMatch(/bloqueada/);
+    while (c.s.agora - inicio < 25 * 60_000) await passo(c);
+    expect(c.s.alertas).toHaveLength(2);
+    expect(c.s.alertas[1]).toMatch(/^Transferência de kit bloqueada: pedidos sem baixa: .*fora do catálogo/);
+    expect(c.s.t.estado).toBe('ativa');
+    // Resolvido: conclui, a marca do alerta enviado fica (aviso de fim) e o alerta da tela sai.
+    c.s.falhasImportacao = [];
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(c.s.alertas).toHaveLength(2);
+    expect(c.s.t.alerta).toBeNull();
+    expect(c.s.t.alerta_enviado).toBe(c.s.alertas[1]);
+  });
+
+  it('a carência recomeça quando a transferência avança: dois problemas curtos em passos diferentes não alertam', async () => {
+    const c = cenario();
+    c.s.falhasImportacao = ['pedido 1: timeout'];
+    for (let i = 0; i < 4; i++) await passo(c);   // pausa + 3 tentativas do passo 1 (≈ 2 min)
+    expect(c.s.t.passo).toBe('pausar');
+    expect(c.s.t.alerta_desde).not.toBeNull();
+    c.s.falhasImportacao = [];
+    await rodar(c, noPasso('conciliar'));
+    c.s.falhasImportacao = ['pedido 2: timeout'];
+    for (let i = 0; i < 3; i++) await passo(c);
+    expect(c.s.t.passo).toBe('conciliar');
+    expect(c.s.alertas).toEqual([]);
+    c.s.falhasImportacao = [];
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(c.s.alertas).toEqual([]);
+    expect(c.s.t.alerta_desde).toBeNull();
+  });
+
+  it('concluir limpa o motivo velho de reagendamento do alerta', async () => {
+    const c = cenario();
+    await rodar(c, noPasso('conciliar'));
+    expect(c.s.t.alerta).toBe('confirmando a pausa');
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(c.s.t.alerta).toBeNull();
+  });
+
+  it('fila que falha depois da carência não perde o alerta nem grava a marca (revisão Codex)', async () => {
+    const c = cenario();
+    await rodar(c, noPasso('conciliar'));
+    c.s.falhasImportacao = ['pedido 1: sem SKU'];
+    await passo(c);
+    c.s.agora += 4 * 60_000;
+    const enfileirar = c.deps.enfileirar;
+    let falhar = true;
+    c.deps.enfileirar = async (id, d) => { if (falhar) { falhar = false; throw new Error('QStash fora'); } return enfileirar(id, d); };
+    await passo(c);
+    expect(c.s.alertas).toEqual([]);
+    expect(c.s.t.alerta_enviado).toBeNull();
+    await passo(c);
+    expect(c.s.alertas).toHaveLength(1);
+    expect(c.s.t.alerta_enviado).toBe(c.s.alertas[0]);
+    await passo(c);
+    expect(c.s.alertas).toHaveLength(1);
+  });
+
+  it('alerta escalonado vai com chave estável por transferência e texto: a repetição não duplica o aviso (revisão Grok)', async () => {
+    const c = cenario();
+    await rodar(c, noPasso('conciliar'));
+    c.s.falhasImportacao = ['pedido 1: sem SKU'];
+    await passo(c);
+    c.s.agora += 4 * 60_000;
+    const chaves: Array<string | undefined> = [];
+    let fora = true;
+    c.deps.alertar = async (texto, chave) => { chaves.push(chave); if (fora) throw new Error('leitura de assinantes falhou'); c.s.alertas.push(texto); };
+    await passo(c);
+    fora = false;
+    await passo(c);
+    expect(chaves).toHaveLength(2);
+    expect(chaves[0]).toMatch(new RegExp(`^kit_alerta:${c.s.t.id}:`));
+    expect(chaves[1]).toBe(chaves[0]);
+    expect(c.s.t.alerta_enviado).toBe(c.s.alertas[0]);
+  });
+
+  it('Telegram que falha não grava a marca: a tentativa seguinte reenvia uma vez', async () => {
+    const c = cenario();
+    await rodar(c, noPasso('conciliar'));
+    c.s.falhasImportacao = ['pedido 1: sem SKU'];
+    await passo(c);
+    c.s.agora += 4 * 60_000;
+    let fora = true;
+    c.deps.alertar = async (texto) => { if (fora) throw new Error('telegram fora'); c.s.alertas.push(texto); };
+    await passo(c);
+    expect(c.s.t.alerta_enviado).toBeNull();
+    fora = false;
+    await passo(c);
+    await passo(c);
+    expect(c.s.alertas).toHaveLength(1);
+    expect(c.s.t.alerta_enviado).toBe(c.s.alertas[0]);
+  });
+
+  it('travada continua alertando na hora, sem carência', async () => {
+    const c = cenario();
+    c.s.ups['UP-P'].locais = ['selling_address', 'warehouse'];
+    await passo(c);
+    expect(c.s.t.estado).toBe('travada');
+    expect(c.s.alertas).toHaveLength(1);
+    expect(c.s.alertas[0]).toMatch(/^Transferência de kit travada/);
   });
 });
 

@@ -6,6 +6,7 @@ import type { CriarKitVariacaoInput } from '@/lib/kit-variacao';
 import { effectiveOrgId, useSupportStore } from '@/stores/support-store';
 import { storageOwnerForUpload } from '@/hooks/useUploadLote';
 import { buildStoragePath, uploadFile } from '@/lib/storage';
+import { quarentenaAte } from '@/lib/kit-transferencia-etapa';
 
 export type Resultado<T> = ({ ok: true } & T) | { ok: false; motivo?: string; mensagem: string };
 
@@ -51,22 +52,24 @@ export async function enviarFotoKit(pasta: string, rotulo: string, file: File): 
   return uploadFile('imagens', buildStoragePath(dono, pasta, `${rotulo}-${file.name}`), file);
 }
 
-export function gerarTextoKitEdge(p: { familiaBaseId: string; pecasPorKit: number; cores: string[] }) {
+/** `tamanhos`: os do kit (com quantidade > 0); sem eles, o guia do texto lista todos os da base. */
+export function gerarTextoKitEdge(p: { familiaBaseId: string; pecasPorKit: number; cores: string[]; tamanhos?: string[] }) {
   return invocar<{ titulo: string; descricao: string; previa_id?: string }>('gerar-texto-kit', {
     familia_base_id: p.familiaBaseId, pecas_por_kit: p.pecasPorKit, cores: p.cores,
+    ...(p.tamanhos ? { tamanhos: p.tamanhos } : {}),
   });
 }
 
 /** Foto da combinação por IA (Task 15). Mesmo `requestId` repete sem gerar de novo; a foto só vale aprovada na tela. */
 export function gerarFotoKitEdge(p: { requestId: string; familiaBaseId: string; cores: string[] }) {
-  return invocar<{ path: string; url: string | null }>('gerar-foto-kit', {
+  return invocar<RespostaFotoKit>('gerar-foto-kit', {
     request_id: p.requestId, familia_base_id: p.familiaBaseId, cores: p.cores,
   });
 }
 
 export type AcaoKit =
   | 'ligar_so_em_kit' | 'desligar_so_em_kit' | 'ligar_reposicao' | 'desligar_reposicao' | 'alterar_meta'
-  | 'montar' | 'desmontar';
+  | 'montar' | 'desmontar' | 'encerrar';
 
 export function gerenciarKitEdge(p: {
   kitId: string; acao: AcaoKit; versao: number; meta?: number; itens?: Array<{ codigo: string; quantidade: number }>;
@@ -75,7 +78,11 @@ export function gerenciarKitEdge(p: {
   /** Desmontar: desliga também "Vender só em kit", na mesma transação. */
   desligarSoEmKit?: boolean;
 }) {
-  return invocar<{ transferenciaId?: string; reposicaoDesligada?: boolean; soEmKit?: boolean; existente?: boolean; versao?: number }>(
+  return invocar<{
+    transferenciaId?: string; reposicaoDesligada?: boolean; soEmKit?: boolean; existente?: boolean; versao?: number;
+    /** Encerrar sem nada no ML: encerrado na hora, sem transferência. */
+    encerrado?: boolean;
+  }>(
     'gerenciar-kit-variacao',
     {
       kit_id: p.kitId, acao: p.acao, versao: p.versao, meta: p.meta, itens: p.itens, chave: p.chave,
@@ -96,18 +103,56 @@ export interface KitVariacaoResumo {
   reposicaoAuto: boolean;
   meta: number;
   versao: number;
-  /** `publicando` (saga montando), `publicado`, `erro` (saga travou: combinações podem faltar). */
+  /** `publicando` (saga montando), `publicado`, `erro` (saga travou: combinações podem faltar), `encerrando` (fechando
+   *  os anúncios no ML) e `encerrado` (fora de Publicados, só leitura). */
   status: string;
+  /** Transferência aberta (ativa ou travada) mais recente do kit, para o indicador em Publicados. */
+  transferencia?: TransferenciaAberta | null;
+  /** Anúncio do kit no ML (família do kit). */
+  permalink?: string | null;
+}
+
+// Alvos embutidos: fim da quarentena (último passo 1) e se é a criação do anúncio do kit.
+const SEL_TRANSFERENCIA = 'id, kit_id, tipo, estado, passo, alerta, criado_em, kit_transferencia_alvos(passo1_em, criar)';
+type LinhaTransferencia = {
+  id: string; kit_id: string | null; tipo: string; estado: string; passo: string; alerta: string | null; criado_em: string;
+  kit_transferencia_alvos?: Array<{ passo1_em: string | null; criar: boolean }> | null;
+};
+function transferenciaDe(t: LinhaTransferencia): TransferenciaAberta {
+  const alvos = t.kit_transferencia_alvos ?? [];
+  return {
+    id: t.id, tipo: t.tipo, estado: t.estado, passo: t.passo, alerta: t.alerta, criadoEm: t.criado_em,
+    quarentenaAte: quarentenaAte(alvos.map((a) => a.passo1_em)), criacao: alvos.some((a) => a.criar),
+  };
 }
 
 export async function fetchKitsVariacao(): Promise<KitVariacaoResumo[]> {
-  const { data, error } = await supabase.from('kits_variacao')
-    .select('id, codigo_pai_base, codigo_pai_kit, pecas_por_kit, so_em_kit, reposicao_auto, meta, versao, status')
-    .order('criado_em', { ascending: true });
-  if (error) throw error;
-  return (data ?? []).map((k) => ({
+  const [kitsR, transR] = await Promise.all([
+    supabase.from('kits_variacao')
+      .select('id, codigo_pai_base, codigo_pai_kit, pecas_por_kit, so_em_kit, reposicao_auto, meta, versao, status')
+      .order('criado_em', { ascending: true }),
+    supabase.from('kit_transferencias').select(SEL_TRANSFERENCIA)
+      .in('estado', ['ativa', 'travada']).not('kit_id', 'is', null).order('criado_em', { ascending: true }),
+  ]);
+  if (kitsR.error) throw kitsR.error;
+  if (transR.error) throw transR.error;
+  const kits = kitsR.data ?? [];
+  const aberta = new Map<string, TransferenciaAberta>();
+  for (const t of (transR.data ?? []) as LinhaTransferencia[]) if (t.kit_id) aberta.set(t.kit_id, transferenciaDe(t));
+  const permalink = new Map<string, { url: string; em: string }>();
+  if (kits.length > 0) {
+    const { data, error } = await supabase.from('familias').select('codigo_pai, ml_permalink, criado_em')
+      .in('codigo_pai', kits.map((k) => k.codigo_pai_kit)).not('ml_permalink', 'is', null);
+    if (error) throw error;
+    for (const f of data ?? []) {
+      const atual = permalink.get(f.codigo_pai);
+      if (!atual || f.criado_em > atual.em) permalink.set(f.codigo_pai, { url: f.ml_permalink as string, em: f.criado_em });
+    }
+  }
+  return kits.map((k) => ({
     id: k.id, codigoPaiBase: k.codigo_pai_base, codigoPaiKit: k.codigo_pai_kit, pecasPorKit: k.pecas_por_kit,
     soEmKit: k.so_em_kit, reposicaoAuto: k.reposicao_auto, meta: k.meta, versao: k.versao, status: k.status,
+    transferencia: aberta.get(k.id) ?? null, permalink: permalink.get(k.codigo_pai_kit)?.url ?? null,
   }));
 }
 
@@ -116,7 +161,10 @@ export interface SkuKitSaldo {
   /** Peças por kit (SKU individual × quantidade), para conferir o saldo da base antes de montar. */
   componentes: Array<{ codigo: string; quantidade: number }>;
 }
-export interface TransferenciaAberta { id: string; tipo: string; estado: string; passo: string; alerta: string | null; criadoEm: string }
+export interface TransferenciaAberta {
+  id: string; tipo: string; estado: string; passo: string; alerta: string | null; criadoEm: string;
+  quarentenaAte?: string | null; criacao?: boolean;
+}
 
 export async function fetchDetalheKitVariacao(kitId: string, codigoPaiBase: string): Promise<{
   skus: SkuKitSaldo[]; abertas: TransferenciaAberta[]; baseFamiliaId: string | null;
@@ -124,10 +172,10 @@ export async function fetchDetalheKitVariacao(kitId: string, codigoPaiBase: stri
   const [skusR, transR, baseR] = await Promise.all([
     supabase.from('kit_variacao_skus').select('codigo, tamanho, rotulo_cor, cores, kit_variacao_componentes(codigo, quantidade)')
       .eq('kit_id', kitId),
-    supabase.from('kit_transferencias').select('id, tipo, estado, passo, alerta, criado_em')
+    supabase.from('kit_transferencias').select(SEL_TRANSFERENCIA)
       .eq('kit_id', kitId).in('estado', ['ativa', 'travada']).order('criado_em', { ascending: true }),
     // Base canônica (a mais recente do PAI): cores, tamanhos e saldo das peças para Montar mais.
-    supabase.from('familias').select('id').eq('codigo_pai', codigoPaiBase).order('criado_em', { ascending: false }).limit(1),
+    supabase.from('familias').select('id').eq('codigo_pai', codigoPaiBase).order('criado_em', { ascending: false }).order('id', { ascending: false }).limit(1),
   ]);
   if (baseR.error) throw baseR.error;
   if (skusR.error) throw skusR.error;
@@ -150,9 +198,22 @@ export async function fetchDetalheKitVariacao(kitId: string, codigoPaiBase: stri
       codigo: s.codigo, tamanho: s.tamanho, rotulo: s.rotulo_cor, cores: s.cores, saldo: saldo.get(s.codigo)?.estoque ?? null,
       componentes: ((s as { kit_variacao_componentes?: Array<{ codigo: string; quantidade: number }> }).kit_variacao_componentes ?? []),
     })).sort((a, b) => a.rotulo.localeCompare(b.rotulo) || a.tamanho.localeCompare(b.tamanho)),
-    abertas: (transR.data ?? []).map((t) => ({
-      id: t.id, tipo: t.tipo, estado: t.estado, passo: t.passo, alerta: t.alerta, criadoEm: t.criado_em,
-    })),
+    abertas: ((transR.data ?? []) as LinhaTransferencia[]).map(transferenciaDe),
     baseFamiliaId: baseR.data?.[0]?.id ?? null,
   };
+}
+
+/** Resposta 200 de `gerar-foto-kit` (ADR-0200, Adendo 1). `path` só vem na aprovada pela verificação. */
+export interface ItemVerificado { campo: string; rotulo: string; ok: boolean; nota: string }
+export interface RespostaFotoKit {
+  path?: string;
+  url?: string | null;
+  tentativa?: number;
+  /** false = reprovada pela verificação; `proxima` diz se a edge tenta de novo com o mesmo request_id. */
+  aprovado?: boolean;
+  proxima?: boolean;
+  verificacao?: { aprovado: boolean; itens: ItemVerificado[]; motivos: string[] } | null;
+  motivos?: string[];
+  previa_url?: string | null;
+  originais?: Array<{ cor: string; urls: string[] }>;
 }

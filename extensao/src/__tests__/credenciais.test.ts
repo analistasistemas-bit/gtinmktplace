@@ -15,13 +15,15 @@ const bearerDoLogout = () => fetchFalso.mock.calls.find(([u]) => String(u) === L
 
 let sessao: Record<string, unknown>;
 beforeEach(() => {
+  // Só o Date congelado: 'agoraSeg()' do teste e o 'Date.now()' do código caíam em segundos diferentes no runner lento do CI.
+  vi.useFakeTimers({ toFake: ['Date'] });
   sessao = instalarChromeFalso();
   vi.stubGlobal('fetch', fetchFalso);
   vi.stubEnv('VITE_SUPABASE_URL', 'https://proj.supabase.co');
   vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'anon-publica');
   fetchFalso.mockReset();
 });
-afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe('entrar', () => {
   it('grava o par num único set, depois do setAccessLevel, e nunca grava a senha', async () => {

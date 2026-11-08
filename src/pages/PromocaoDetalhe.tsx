@@ -25,7 +25,7 @@ import { fmtBRL, fmtMarkup, fmtPct } from '@/lib/formato';
 import { formatarNomeProduto } from '@/lib/texto';
 import { ehTipoOperavel, type AcaoPromocao } from '@/lib/operacoes';
 import {
-  URL_PROMOCOES_ML, ehTipoSoSellerCenter, ateQuantoDaLinha, convidadoAbaixoDoPiso, corDeReferencia, descontoPct, emLeitura, filtrarItens, mlbExibido, rotuloMlb, rotuloSemLiquido, rotuloTipo,
+  URL_PROMOCOES_ML, ehOfertaFixa, ehTipoSoSellerCenter, ateQuantoDaLinha, convidadoAbaixoDoPiso, corDeReferencia, descontoPct, emLeitura, filtrarItens, mlbExibido, rotuloMlb, rotuloSemLiquido, rotuloTipo,
   type ItemPromocao, type PaiDoItem, type SemaforoPromo,
 } from '@/lib/promocoes';
 import { ChipFiltro, ContagemSemaforo, SEMAFORO_UI } from '@/components/promocoes/contagem-semaforo';
@@ -77,8 +77,19 @@ function markupCel(r: ItemPromocao) {
   return <span className={markup < 0 ? 'text-danger' : undefined}>{fmtMarkup(markup)}</span>;
 }
 
-function ateQuanto(r: ItemPromocao, { tooltip }: { tooltip: boolean }) {
-  if (r.preco_min == null || r.preco_max == null) return '—';
+function ateQuanto(r: ItemPromocao, { tooltip, precoFixo = false }: { tooltip: boolean; precoFixo?: boolean }) {
+  if (r.preco_min == null || r.preco_max == null) {
+    // Campanha de preço fixo não tem faixa: rotula o convidado com líquido; sem líquido o motivo é outro (custo/cadastro).
+    if (!precoFixo || r.status !== 'candidate' || !corDeReferencia(r)) return '—';
+    const classe = 'text-xs text-muted-foreground';
+    if (!tooltip) return <span className={classe}>Preço fixo</span>;
+    return (
+      <Tooltip>
+        <TooltipTrigger className={classe}>Preço fixo</TooltipTrigger>
+        <TooltipContent>O ML define o preço desta campanha; não dá para descer.</TooltipContent>
+      </Tooltip>
+    );
+  }
   const a = ateQuantoDaLinha(r);
   if (a.motivo === 'nenhum') {
     // O alvo é max(piso, custo): com custo acima do piso, o que falta cobrir é o custo, não o mínimo cadastrado.
@@ -127,6 +138,7 @@ export default function PromocaoDetalhe() {
   // SMART: preço do ML; Relâmpago participando: o ML exige sair e entrar de novo.
   const podeSimular = podeSelecionar && (participando ? promo.tipo === 'DEAL' : promo.tipo === 'DEAL' || promo.tipo === 'LIGHTNING');
   const podeAlterar = podeSelecionar && promo.tipo === 'DEAL';
+  const precoFixo = promo?.tipo === 'SMART' || ehOfertaFixa(promo?.tipo);
   // Achado Codex (diff): sobre o item ATUAL (refetch traz status/faixa/reserva novos), só preço, projeção e semáforo
   // simulados — e só enquanto o item mantém o status de quando foi simulado (mudou → a simulação não vale mais).
   // Piso sobre o preço do sync, antes da simulação: simular abaixo de R$ 19 avisa, não some com a linha.
@@ -263,7 +275,7 @@ export default function PromocaoDetalhe() {
     },
     {
       key: 'ate', header: 'Até quanto descer', className: 'whitespace-normal w-40 text-right leading-tight',
-      cell: (r) => ateQuanto(r, { tooltip: true }),
+      cell: (r) => ateQuanto(r, { tooltip: true, precoFixo }),
     },
     {
       key: 'ml', header: <span className="sr-only">Abrir no Mercado Livre</span>, stickyRight: true,

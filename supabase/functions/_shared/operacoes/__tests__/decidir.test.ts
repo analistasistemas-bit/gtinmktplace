@@ -112,6 +112,14 @@ describe('decidir — LIGHTNING', () => {
     expect(aderir(24.65)).toEqual({ tipo: 'post',
       body: { promotion_id: 'LGH-1', promotion_type: 'LIGHTNING', deal_price: 24.65, stock: 5 } });
   });
+  // 08/11 (LGH-MLB1000): com PRICE_DISCOUNT ativo, o price do convite (97% do preço próprio) é o teto crível;
+  // acima dele o ML devolve ERROR_CREDIBILITY_DISCOUNTED_PRICE.
+  it('price do convite abaixo do máximo vira o teto', () => {
+    const f = { ...fresco, preco: 22.5 };
+    expect(aderir(24.65, f)).toEqual(fim('mudou', 'A faixa de preço mudou: agora 8,70 a 22,50'));
+    expect(aderir(22.5, f)).toMatchObject({ tipo: 'post', body: { deal_price: 22.5 } });
+    expect(aderir(24.65, { ...fresco, preco: 28.13 })).toMatchObject({ tipo: 'post' });
+  });
   it('min efetivo é o maior das duas visões', () => {
     expect(aderir(8)).toEqual(fim('mudou', 'A faixa de preço mudou: agora 8,70 a 26,10'));
   });

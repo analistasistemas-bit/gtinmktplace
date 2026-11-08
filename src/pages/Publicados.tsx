@@ -78,6 +78,8 @@ import {
   carregarKitVirtualParaRefazer, prefillAposEncerrarKitVirtual, type KitVirtualParaRefazer,
 } from '@/lib/kit-virtual';
 import { useSupportStore } from '@/stores/support-store';
+import { useFocoKitStore } from '@/stores/foco-kit-store';
+import { AuraTransferencia, EtapaTransferencia } from '@/components/kit-variacao/transferencia-andamento';
 import { DialogCriarKitVirtual } from '@/components/kit-virtual/DialogCriarKitVirtual';
 import { DialogCriarKitVariacao } from '@/components/kit-variacao/dialog-criar-kit-variacao';
 import { DialogGerenciarKit } from '@/components/kit-variacao/dialog-gerenciar-kit';
@@ -242,27 +244,78 @@ function KitsVinculados({ codigoPai, ativo }: { codigoPai: string; ativo: boolea
   );
 }
 
+/** Estado do kit no bloco da base. Encerrado continua listado (histórico), sem ação de montar. */
+const SUFIXO_KIT: Record<string, string> = {
+  erro: ' (com erro)', publicando: ' (montando…)', encerrando: ' (encerrando…)', encerrado: ' · Encerrado',
+};
+
 /** ADR-0200: kits com variação feitos a partir do produto. Mostra também o kit ainda montando ou com erro, que
- *  pode nem ter linha própria na tabela. */
-function KitsComVariacao({ kits, onGerenciar }: { kits: KitVariacaoResumo[]; onGerenciar: (k: KitVariacaoResumo) => void }) {
-  if (kits.length === 0) return null;
+ *  pode nem ter linha própria na tabela. Transferência aberta (adendo 08/11): etapa ao vivo com aura + raio; travada
+ *  em vermelho; sem transferência, o link do anúncio. `foco`: veio de criar/montar/desmontar, rola até aqui e destaca. */
+function KitsComVariacao({ kits, onGerenciar, foco }: {
+  kits: KitVariacaoResumo[]; onGerenciar: (k: KitVariacaoResumo) => void; foco?: number | null;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [destaque, setDestaque] = useState(false);
+  // Kit recém-criado pode chegar depois do foco (releitura em voo): o foco só é consumido com o bloco na tela.
+  const consumido = useRef<number | null>(null);
+  const temKits = kits.length > 0;
+  useEffect(() => {
+    if (!foco || !temKits || consumido.current === foco) return;
+    consumido.current = foco;
+    const reduzido = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    ref.current?.scrollIntoView({ block: 'center', behavior: reduzido ? 'auto' : 'smooth' });
+    setDestaque(true);
+  }, [foco, temKits]);
+  useEffect(() => {
+    if (!destaque) return;
+    const id = setTimeout(() => setDestaque(false), 2500);
+    return () => clearTimeout(id);
+  }, [destaque]);
+  if (!temKits) return null;
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-md border bg-background px-3 py-2 text-xs">
+    <div
+      ref={ref}
+      data-destaque={destaque || undefined}
+      aria-label="Kits com variação"
+      className={cn(
+        'space-y-2 rounded-md border bg-background px-3 py-2 text-xs motion-safe:transition-shadow motion-safe:duration-(--motion-duration-state)',
+        destaque && 'ring-2 ring-primary ring-offset-2 ring-offset-background',
+      )}
+    >
       <span className="font-medium">Kits com variação:</span>
-      {kits.map((k) => (
-        <button
-          key={k.id}
-          type="button"
-          onClick={() => onGerenciar(k)}
-          className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 hover:bg-muted"
-          title="Gerenciar kit"
-        >
-          {k.status === 'erro' && <AlertTriangle className="h-3 w-3 text-danger" />}
-          {k.status === 'publicando' && <Loader2 className="h-3 w-3 animate-spin" />}
-          Kit {k.pecasPorKit} · {k.codigoPaiKit}
-          {k.status === 'erro' ? ' (com erro)' : k.status === 'publicando' ? ' (montando…)' : ''}
-        </button>
-      ))}
+      <ul className="grid gap-2">
+        {kits.map((k) => {
+          const t = k.transferencia ?? null;
+          return (
+            <li key={k.id}>
+              <AuraTransferencia
+                estado={t?.estado}
+                className={cn('flex flex-wrap items-center gap-x-3 gap-y-1', t ? 'px-2 py-1.5' : 'border-transparent')}
+              >
+                <button
+                  type="button"
+                  onClick={() => onGerenciar(k)}
+                  className="inline-flex items-center gap-1 rounded border bg-background px-1.5 py-0.5 hover:bg-muted"
+                  title="Gerenciar kit"
+                >
+                  {!t && k.status === 'erro' && <AlertTriangle className="h-3 w-3 text-danger" />}
+                  {!t && (k.status === 'publicando' || k.status === 'encerrando') && <Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" />}
+                  Kit {k.pecasPorKit} · {k.codigoPaiKit}
+                  {!t && (SUFIXO_KIT[k.status] ?? '')}
+                </button>
+                {t ? (
+                  <EtapaTransferencia t={t} />
+                ) : k.permalink && k.status === 'publicado' ? (
+                  <a href={k.permalink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline">
+                    <ExternalLink className="h-3 w-3" aria-hidden />Ver anúncio no ML
+                  </a>
+                ) : null}
+              </AuraTransferencia>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -294,6 +347,8 @@ interface LinhaProps {
   kitsVariacaoDaBase: KitVariacaoResumo[];
   onCriarKitVariacao: (familiaId: string) => void;
   onGerenciarKit: (kit: KitVariacaoResumo) => void;
+  /** Foco pedido depois de criar/montar/desmontar (seq): expande a linha e destaca "Kits com variação". */
+  focoKit?: number | null;
   onMigrarPrecoPorVariacao: (familiaId: string) => Promise<void>;
   migrando: boolean;
   selecionado: boolean;
@@ -327,12 +382,13 @@ function LinhaTabela({
   item, onRemover, removendo, onRepublicar, republicando, onPausarReativar, pausando,
   onRetentarCatalogo, retentandoCatalogo, isAdmin, temFiscal, onPreencherFiscal,
   temModuloEstoque, onCriarKit, onMigrarPrecoPorVariacao, migrando,
-  temKitVariacao, kitVariacao, kitsVariacaoDaBase, onCriarKitVariacao, onGerenciarKit,
+  temKitVariacao, kitVariacao, kitsVariacaoDaBase, onCriarKitVariacao, onGerenciarKit, focoKit,
   selecionado, onSelecionar, motivoNaoSelecionavel: motivoSelecao,
 }: LinhaProps) {
   // Expansão persistida (sobrevive a ordenar/filtrar/paginar, que remonta a linha), como o sort.
   // Chave por anúncio (mlItemId): familiaId é compartilhado entre anúncios split (ADR-0048).
   const [aberto, setAberto] = useSessionState(`expand:publicados:${item.mlItemId}`, false);
+  useEffect(() => { if (focoKit) setAberto(true); }, [focoKit, setAberto]);
   const { data: familia, isLoading: carregandoFamilia, isError: erroFamilia } = useFamilia(item.familiaId, aberto, true);
 
   // Toggle só faz sentido entre ativo⇄pausado (ADR-0060). Moderado/encerrado/etc. ficam desabilitados.
@@ -786,6 +842,10 @@ function LinhaTabela({
     {aberto && (
       <TableRow className="hover:bg-transparent">
         <TableCell colSpan={temFiscal ? 11 : 10} className="whitespace-normal bg-muted/30 p-3">
+          {/* Fora da análise: o andamento do kit não espera (nem depende de) carregar a família da linha. */}
+          <div className={cn(kitsVariacaoDaBase.length > 0 && 'mb-3')}>
+            <KitsComVariacao kits={kitsVariacaoDaBase} onGerenciar={onGerenciarKit} foco={focoKit} />
+          </div>
           {carregandoFamilia ? (
             <p className="text-xs text-muted-foreground">carregando análise…</p>
           ) : erroFamilia || !familia ? (
@@ -799,7 +859,6 @@ function LinhaTabela({
                 </div>
               )}
               {!ehKitVinculado && <KitsVinculados codigoPai={item.codigoPai} ativo={aberto} />}
-              <KitsComVariacao kits={kitsVariacaoDaBase} onGerenciar={onGerenciarKit} />
               <PainelAnalise
                 familia={familia}
                 precoOverride={item.precoAtual ?? item.precoPublicacao}
@@ -1121,7 +1180,7 @@ export default function Publicados() {
 
 function AbaAnuncios({ abas }: { abas: ReactNode }) {
   const navigate = useNavigate();
-  const { data: publicados = [], isLoading: loadingPublicados, error: erroPublicados, refetch: refetchPublicados } = usePublicados();
+  const { data: publicadosTodos = [], isLoading: loadingPublicados, error: erroPublicados, refetch: refetchPublicados } = usePublicados();
   const { data: statusData, isFetching: fetchingStatus, refetch: refetchStatus } = useStatusPublicados();
   const { data: familiasRisco } = useCatalogoEmRisco();
   // Fase 3 (2026-08-13): só os anúncios com a tag catalog_forewarning do ML entram no card — o
@@ -1150,6 +1209,11 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
   const temKitVariacao = !!modulos?.includes('kit_variacao');
   const { data: kitsVariacao } = useKitsVariacao(temKitVariacao);
   const kitPorCodigo = useMemo(() => new Map((kitsVariacao ?? []).map((k) => [k.codigoPaiKit, k])), [kitsVariacao]);
+  // Kit com variação encerrado sai de Publicados (itens fechados no ML); segue no bloco "Kits com variação" da base.
+  const publicados = useMemo(
+    () => publicadosTodos.filter((p) => kitPorCodigo.get(p.codigoPai)?.status !== 'encerrado'),
+    [publicadosTodos, kitPorCodigo],
+  );
   const [criarKitVariacaoDe, setCriarKitVariacaoDe] = useState<string | null>(null);
   const [kitGerenciado, setKitGerenciado] = useState<KitVariacaoResumo | null>(null);
   // id da família aberta no DialogFiscalProduto (T13) — null = fechado. Fila vazia: edição
@@ -1430,6 +1494,47 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
     [doCanal, filtro, ord],
   );
   const pag = useMemo(() => paginar(itensExibidos, pagina, tamanho), [itensExibidos, pagina, tamanho]);
+
+  // ADR-0200 (adendo 08/11): depois de criar, montar mais ou desmontar, leva à linha da base: na página atual,
+  // em outra página do mesmo filtro, pela busca do código, ou (base fora da lista) abre o Gerenciar kit.
+  const focoPedido = useFocoKitStore((st) => st.alvo);
+  const limparFoco = useFocoKitStore((st) => st.limpar);
+  const [focoLinha, setFocoLinha] = useState<{ mlItemId: string; seq: number } | null>(null);
+  useEffect(() => {
+    if (!focoPedido || loadingPublicados) return;
+    const ehBase = (i: PublicadoItem) => i.codigoPai === focoPedido.codigoPaiBase && !i.publicacaoIncompleta && !i.ehKitVirtual;
+    const naPagina = pag.itensPagina.find(ehBase);
+    if (naPagina) {
+      setFocoLinha({ mlItemId: naPagina.mlItemId, seq: focoPedido.seq });
+      limparFoco();
+      return;
+    }
+    const idx = itensExibidos.findIndex(ehBase);
+    if (idx >= 0) { aplicar(() => ({ pagina: Math.floor(idx / tamanho) + 1 })); return; }
+    if (doCanal.some(ehBase) && filtro.busca !== focoPedido.codigoPaiBase) {
+      aplicar((a) => ({ filtro: { busca: focoPedido.codigoPaiBase, fornecedor: null, status: null, tipo: null }, ord: a.ord, pagina: 1 }));
+      return;
+    }
+    const kit = (kitsVariacao ?? []).find((k) => k.id === focoPedido.kitId)
+      ?? [...(kitsVariacao ?? [])].reverse().find((k) => k.codigoPaiBase === focoPedido.codigoPaiBase);
+    if (kit) setKitGerenciado(kit);
+    limparFoco();
+  }, [focoPedido, loadingPublicados, pag.itensPagina, itensExibidos, doCanal, filtro.busca, tamanho, aplicar, kitsVariacao, limparFoco]);
+  useEffect(() => {
+    if (!focoLinha) return;
+    // Prazo para o bloco montar (kit recém-criado chegando na releitura); o destaque em si dura 2,5 s no bloco.
+    const id = setTimeout(() => setFocoLinha(null), 15_000);
+    return () => clearTimeout(id);
+  }, [focoLinha]);
+
+  // Link do aviso de transferência travada (`?kit=<id>`): abre o Gerenciar kit direto e tira o parâmetro.
+  const kitDoLink = searchParams.get('kit');
+  useEffect(() => {
+    if (!kitDoLink || !kitsVariacao) return;
+    const kit = kitsVariacao.find((k) => k.id === kitDoLink);
+    if (kit) setKitGerenciado(kit);
+    setSearchParams((prev) => { const p = new URLSearchParams(prev); p.delete('kit'); return p; }, { replace: true });
+  }, [kitDoLink, kitsVariacao, setSearchParams]);
 
   // ADR-0174 emenda: seleção em massa (pausar/reativar). Sobrevive a paginar/ordenar; zera só quando o
   // FILTRO muda. `filtro` é recriado a cada mudança de searchParams (inclusive página/ordem), então a
@@ -1861,6 +1966,7 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
                         kitsVariacaoDaBase={(kitsVariacao ?? []).filter((k) => k.codigoPaiBase === item.codigoPai)}
                         onCriarKitVariacao={setCriarKitVariacaoDe}
                         onGerenciarKit={setKitGerenciado}
+                        focoKit={focoLinha?.mlItemId === item.mlItemId ? focoLinha.seq : null}
                         onMigrarPrecoPorVariacao={handleMigrarPrecoPorVariacao}
                         migrando={migrando && migrandoId === item.familiaId}
                         selecionado={selecao.has(item.mlItemId)}
