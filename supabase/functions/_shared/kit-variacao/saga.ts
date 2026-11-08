@@ -563,24 +563,39 @@ async function criarDestino(ctx: Ctx, alvo: AlvoSaga): Promise<'criou' | 'pronto
   const abertosSoltos = (o: OfertaUP) => o.itens.filter((i) => !encerrado(i) && !moderado(i) && !pausadoPeloVendedor(i));
   // A pausa antecipada do principal é best-effort: recusada (ex.: `closed`) ou falha, a descoberta segue para pausar
   // as cópias. O que decide o registro é a leitura: nenhum item aberto sem `paused_by_seller` (closed não vende).
-  let falhaPrincipal: string | null = null;
-  try {
-    await putStatus(ctx, alvo.item_criado!, 'paused');
-  } catch (e) {
-    falhaPrincipal = mensagem(e);
-  }
+  // Erro por item: nenhuma falha (PUT recusado, gravação local) impede tentar os demais itens abertos. Os erros se
+  // acumulam no alerta; só a leitura decide o registro.
+  const erros: string[] = [];
+  const tentados = new Set<string>();
+  const pausar = async (id: string) => {
+    tentados.add(id);
+    try {
+      await putStatus(ctx, id, 'paused');
+    } catch (e) {
+      erros.push(`${id}: ${mensagem(e)}`);
+    }
+  };
+  await pausar(alvo.item_criado!);
+  let ainda: string[];
   try {
     const soltos = abertosSoltos(await ler(ctx, alvo)).map((i) => i.id);
-    if (soltos.length > 0) {
-      const novos = soltos.filter((id) => !alvo.pausado_pela_saga.includes(id));
-      if (novos.length > 0) await salvarAlvo(ctx, alvo, { pausado_pela_saga: [...alvo.pausado_pela_saga, ...novos] });
-      for (const id of soltos) await putStatus(ctx, id, 'paused');
-      const ainda = abertosSoltos(await ler(ctx, alvo)).map((i) => i.id);
-      if (ainda.length > 0) return aguardarPausaCriada(ctx, alvo, ainda);
+    const novos = soltos.filter((id) => !alvo.pausado_pela_saga.includes(id));
+    if (novos.length > 0) {
+      // Sem a gravação, a pausa vale assim mesmo: item pausado fora de `pausado_pela_saga` só não é reativado.
+      try {
+        await salvarAlvo(ctx, alvo, { pausado_pela_saga: [...alvo.pausado_pela_saga, ...novos] });
+      } catch (e) {
+        erros.push(`pausado_pela_saga: ${mensagem(e)}`);
+      }
     }
+    for (const id of soltos) if (!tentados.has(id)) await pausar(id);
+    ainda = soltos.length > 0 ? abertosSoltos(await ler(ctx, alvo)).map((i) => i.id) : [];
   } catch (e) {
-    const principal = falhaPrincipal ? `; pausa do principal: ${falhaPrincipal}` : '';
-    return aguardarPausaCriada(ctx, alvo, [`${alvo.item_criado} (${mensagem(e)}${principal})`]);
+    erros.push(`leitura do UP: ${mensagem(e)}`);
+    ainda = [alvo.item_criado!];
+  }
+  if (ainda.length > 0) {
+    return aguardarPausaCriada(ctx, alvo, [`${ainda.join(', ')}${erros.length > 0 ? ` (${erros.join('; ')})` : ''}`]);
   }
   vivo(ctx);
   const reg = await ctx.deps.repo.registrarItem(alvo.codigo, alvo.item_criado!, alvo.up_criado!);

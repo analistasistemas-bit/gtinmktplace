@@ -1026,6 +1026,24 @@ describe('avancarSaga: destino sem item (CREATE do kit)', () => {
     expect(c.s.t.estado).toBe('concluida');
   });
 
+  it('principal ativo que recusa a pausa: a cópia é pausada na mesma rodada, nada é registrado, alerta e backoff', async () => {
+    const c = cenarioCriar();
+    c.s.copiaNoCriado = true;
+    let recusa = true;
+    c.s.falhaStatus = (id, st) => (recusa && id === 'MLB-NOVO1' && st === 'paused'
+      ? { erro: new MLApiError(400, 'pausa recusada'), aplica: false } : null);
+    await rodar(c, (x) => criacoes(x) === 1);
+    expect(c.s.ups['UP-NOVO1'].itens[1].subStatus).toContain('paused_by_seller');
+    expect(c.s.ups['UP-NOVO1'].itens[0].subStatus).not.toContain('paused_by_seller');
+    expect(c.s.registros).toEqual([]);
+    expect(c.s.alertas.some((a) => /pausa do item criado não confirmada .*MLB-NOVO1.*pausa recusada/.test(a))).toBe(true);
+    expect(c.s.filas.at(-1)).toBe(5);
+    recusa = false;
+    await rodar(c, undefined, 80);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(c.s.registros).toHaveLength(1);
+  });
+
   it('principal closed que recusa a pausa não impede descobrir e pausar a cópia ativa antes do registro', async () => {
     const c = cenarioCriar();
     c.s.copiaNoCriado = true;
