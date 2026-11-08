@@ -9,4 +9,4 @@ update public.kit_transferencias set aviso_fim_enviado_em = now()
 
 create index if not exists kit_transferencias_aviso_fim_pendente_idx
   on public.kit_transferencias (org_id)
-  where estado = 'concluida' and aviso_fim_enviado_em is null;
+  where estado = 'concluida' and aviso_fim_enviado_em is null and tipo in ('montar', 'desmontar', 'repor');

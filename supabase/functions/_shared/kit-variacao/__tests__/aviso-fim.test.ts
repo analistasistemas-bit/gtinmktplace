@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { avisarFimTransferencia, avisarFinsPendentes, linkGerenciarKit } from '../aviso-fim.ts';
+import { avisarFimTransferencia, avisarFinsPendentes, comLinkDoKit, linkGerenciarKit } from '../aviso-fim.ts';
 
 // ADR-0200 (adendo 08/11): aviso de fim de montagem/desmontagem/reposição. Envio com chave por transferência e marca
 // gravada só depois do sucesso: retry não duplica, falha fica para a varredura.
@@ -148,5 +148,15 @@ describe('linkGerenciarKit', () => {
     expect(linkGerenciarKit('', 'k1')).toBeNull();
     expect(linkGerenciarKit(undefined, 'k1')).toBeNull();
     expect(linkGerenciarKit('https://x', null)).toBeNull();
+  });
+});
+
+describe('comLinkDoKit', () => {
+  it('alerta de travada leva o código do kit e o link do Gerenciar kit; sem kit fica igual', () => {
+    const t = 'Transferência de kit travada no passo aumentar: leitura divergente.';
+    expect(comLinkDoKit(t, 'https://app.x', { id: 'k1', codigoPai: '00000223' }))
+      .toBe(`${t}\n\nKit 00000223. Abrir o Gerenciar kit: https://app.x/#/publicados?kit=k1`);
+    expect(comLinkDoKit(t, '', { id: 'k1', codigoPai: '00000223' })).toBe(`${t}\n\nKit 00000223.`);
+    expect(comLinkDoKit(t, 'https://app.x', { id: null })).toBe(t);
   });
 });

@@ -23,6 +23,13 @@ export function linkGerenciarKit(appUrl: string | undefined, kitId: string | nul
   return base && kitId ? `${base}/#/publicados?kit=${encodeURIComponent(kitId)}` : null;
 }
 
+/** Alerta da saga (travada, bloqueada, abortada) com o código do kit e o link do Gerenciar kit, quando houver. */
+export function comLinkDoKit(texto: string, appUrl: string | undefined, kit: { id: string | null; codigoPai?: string | null }): string {
+  const link = linkGerenciarKit(appUrl, kit.id);
+  const sufixo = [kit.codigoPai ? `Kit ${kit.codigoPai}.` : '', link ? `Abrir o Gerenciar kit: ${link}` : ''].filter(Boolean);
+  return sufixo.length ? `${texto}\n\n${sufixo.join(' ')}` : texto;
+}
+
 const kits = (n: number) => `${n} ${n === 1 ? 'kit' : 'kits'}`;
 
 /**

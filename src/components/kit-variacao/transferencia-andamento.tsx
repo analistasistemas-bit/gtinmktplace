@@ -53,7 +53,7 @@ export function EtapaTransferencia({ t }: { t: TransferenciaAberta }) {
   const e = etapaTransferencia(t, agora);
   const travada = t.estado === 'travada';
   return (
-    <div className="text-xs" role="status">
+    <div className="text-xs">
       <p>
         <span className="font-medium">{TIPO[t.tipo] ?? t.tipo}</span>{' '}
         <span className={travada ? 'text-danger' : 'text-muted-foreground'}>
