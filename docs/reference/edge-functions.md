@@ -39,6 +39,7 @@
 | **Remoção / reprocessamento** ||||
 | remover-publicado | false | HTTP (JWT manual) | sim (guarded) |
 | excluir-lote | true | HTTP (frontend) | não |
+| excluir-familia | true | HTTP (frontend) | não (DELETE condicional) |
 | reprocessar-familia | false | HTTP (JWT manual) | sim (guard de status) |
 | retentar-catalogo | false | HTTP (JWT manual) | sim (re-enfileira vincular-catalogo) |
 | invalidar-cache-cor | true | HTTP (frontend) | não |
@@ -896,6 +897,7 @@ mesmo por engano.
   (`familias_bloquear_remocao_com_kit`) é a última linha; esta é a primeira, com mensagem clara —
   a mensagem distingue "Corrigir e republicar" (`preservar_familia`, nunca apaga a base) de
   remoção de verdade (que também exige `excluir-produto`, ADR-0113, para o vínculo sumir de vez).
+- **excluir-familia** — body `{ familia_id }`; "Tirar da revisão" (ADR-0199). Só sai família com `publicado_em` nulo e status `pronto`/`erro`; decisão pura em `decidir.ts` (`decidirExclusaoFamilia`): recusa 409 `publicada`, `em_voo`, `vinculada` (única linha que representa anúncio vivo), `kit`, `pxv` e `nao_conferido` (trava fechada). Mesma permissão do `excluir-lote`; DELETE condicional fecha a corrida com o worker; limpa movimentos órfãos, fecha o lote e apaga Storage best-effort. Não chama o ML.
 - **excluir-lote** — exclui o lote; preserva publicados (ADR-0019); bloqueia se processando/publicando.
   **Guard anti-órfão (2026-08-13):** `publicado_em` sozinho não basta — o UPDATE pode ter criado a
   cor no ML e **não** marcar a família como publicada (guard de `update-familia-ml`: cor nova sem

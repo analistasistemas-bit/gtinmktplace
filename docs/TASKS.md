@@ -7459,3 +7459,5 @@ Espaço para observações, decisões pendentes pequenas, ideias durante a imple
 - [x] **`openai/gpt-6-luna` como modelo de texto padrão** (2026-11-07, adendo ADR-0074) — medido contra o `gpt-4.1-mini`: 76 de 76 copies sem falha, nome comercial 40 de 40, menos da metade do custo. Limite da copy sobe para 45 s. Vale para todas as orgs. `gpt-4.1-mini` fica como saída de emergência.
 
 - [x] **Metragem com ponto de milhar no título** (2026-11-07) — "LINHA DE COST 10.000MT" virava "000m": as regras de número liam só o fim. `NUM` em `_shared/ai/titulo.ts` aceita milhar e vale para metragem, contagem, medida ancorada e conversão de unidade. Nenhum título publicado tinha o erro (os 18 desse tipo são do modelo antigo de título). Deploy: funções que importam `titulo-guards.ts`.
+
+- [x] **Tirar da revisão** (2026-11-08, [ADR-0199](decisions/0199-tirar-familia-da-revisao.md)) — botão por família na tela Revisão (`src/components/tirar-da-revisao.tsx`) e edge nova `excluir-familia`. Só sai família não publicada em `pronto`/`erro` sem vínculo vivo no ML que ela represente sozinha. Sem migration. Deploy: `supabase functions deploy excluir-familia`.
