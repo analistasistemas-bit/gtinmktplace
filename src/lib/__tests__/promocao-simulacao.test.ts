@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { aplicarSimulacao, detalheLiquido, filtrarPorBusca, filtrarPorPai, foraDaFaixa, opcoesPai, precoAlvo, resumoLucro, sobreporSimulacao } from '@/lib/promocao-simulacao';
-import type { ItemPromocao, PaiDoItem } from '@/lib/promocoes';
+import { chaveSku, type ItemPromocao, type PaiDoItem } from '@/lib/promocoes';
 
 const item = (o: Partial<ItemPromocao> & { ml_item_id: string }): ItemPromocao => ({
   status: 'candidate', preco_original: 71.9, preco_promo: null, preco_min: 40, preco_max: 70, preco_sugerido: 62.55,
@@ -146,11 +146,11 @@ describe('sobreporSimulacao', () => {
 describe('filtro por produto PAI', () => {
   const short = { codigo_pai: '100', nome: 'Short Linho' };
   const bermuda = { codigo_pai: '200', nome: 'Bermuda Sarja' };
-  const mapa = new Map<string, PaiDoItem>([['MLB1', short], ['MLB2', short], ['MLB3', bermuda], ['MLB9', bermuda], ['sku:00777', short]]);
+  const mapa = new Map<string, PaiDoItem>([['MLB1', short], ['MLB2', short], ['MLB3', bermuda], ['MLB9', bermuda], [chaveSku('00777'), short]]);
   const cor = (sku: string) => ({ sku } as ItemPromocao['projecao'][number]);
   // MLB4: catálogo cujo normal do par é MLB9; MLB5: sem vínculo local; MLB6: só o SKU resolve.
   const itens = ['MLB1', 'MLB2', 'MLB3', 'MLB5'].map((id) => item({ ml_item_id: id }))
-    .concat(item({ ml_item_id: 'MLB4', anuncio_normal_id: 'MLB9' }), item({ ml_item_id: 'MLB6', projecao: [cor('00777')] }));
+    .concat(item({ ml_item_id: 'MLB4', anuncio_normal_id: 'MLB9' }), item({ ml_item_id: 'MLB6', projecao: [cor('777')] })); // ML sem os zeros do cadastro
 
   it('lista os PAIs em ordem alfabética com a quantidade de anúncios', () => {
     expect(opcoesPai(itens, mapa)).toEqual([{ ...bermuda, qtd: 2 }, { ...short, qtd: 3 }]);

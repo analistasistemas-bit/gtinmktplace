@@ -2,6 +2,7 @@
 import { supabase } from '@/lib/supabase';
 import { buscarTodasPaginas } from '@/lib/paginacao-supabase';
 import { formatarNomeProduto } from '@/lib/texto';
+import { normGtin } from '@/lib/gtin';
 
 export type SemaforoPromo = 'verde' | 'amarelo' | 'vermelho' | 'indisponivel';
 export interface ContagemPromo {
@@ -194,6 +195,8 @@ export async function fetchItensPromocao(promocaoId: string): Promise<ItemPromoc
 }
 
 export interface PaiDoItem { codigo_pai: string; nome: string }
+/** Chave do SKU no mapa de PAIs: sem zeros à esquerda, como `resolverCor` no servidor. */
+export const chaveSku = (sku: string) => `sku:${normGtin(sku.trim())}`;
 
 /** `MLB -> produto PAI` de todos os anúncios ML da org: anúncio (Legacy/partição) e cada SKU UP (ADR-0174 filtro por PAI). */
 export async function fetchPaisPorItem(): Promise<Map<string, PaiDoItem>> {
@@ -208,7 +211,8 @@ export async function fetchPaisPorItem(): Promise<Map<string, PaiDoItem>> {
       supabase.from('familias').select('codigo_pai, nome_pai, ml_item_id').not('ml_item_id', 'is', null)
         .order('publicado_em', { ascending: false }).order('id').range(de, ate) as never),
     buscarTodasPaginas<{ codigo: string; familias: { codigo_pai: string } | null }>((de, ate) =>
-      supabase.from('variacoes').select('codigo, familias(codigo_pai)').order('id').range(de, ate) as never),
+      // Mais antigo primeiro: SKU repetido em PAIs diferentes fica com o cadastro mais recente.
+      supabase.from('variacoes').select('codigo, familias(codigo_pai)').order('criado_em').order('id').range(de, ate) as never),
   ]);
   const nomes = new Map<string, string>();
   for (const f of familias) if (!nomes.has(f.codigo_pai)) nomes.set(f.codigo_pai, formatarNomeProduto(f.nome_pai) || f.codigo_pai);
@@ -218,7 +222,7 @@ export async function fetchPaisPorItem(): Promise<Map<string, PaiDoItem>> {
   for (const a of anuncios) mapa.set(a.item_externo_id, pai(a.codigo_pai));
   for (const i of itensUp) if (i.anuncios_externos?.canal === 'mercado_livre') mapa.set(i.item_externo_id, pai(i.anuncios_externos.codigo_pai));
   // Fallback por SKU (mesma ordem do servidor em `resolverCor`): chave prefixada para não colidir com MLB.
-  for (const v of variacoes) if (v.familias) mapa.set(`sku:${v.codigo}`, pai(v.familias.codigo_pai));
+  for (const v of variacoes) if (v.familias) mapa.set(chaveSku(v.codigo), pai(v.familias.codigo_pai));
   return mapa;
 }
 
