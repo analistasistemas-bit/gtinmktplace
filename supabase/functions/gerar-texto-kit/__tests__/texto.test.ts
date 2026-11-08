@@ -214,6 +214,15 @@ describe('montarTextoKit — bases antigas (medição 08/11)', () => {
     expect(d.indexOf('📏')).toBeLessThan(d.indexOf('❓'));
   });
 
+  it('grade: 📦 e 🎯 da base antiga saem (aviso e frase final logo depois de 🎨)', () => {
+    const base = BASE.replace('\n\nRenove', '\n\n📦 O QUE VOCÊ RECEBE\n\n• 1 unidade\n\nRenove')
+      .replace('📌 ESPECIFICAÇÕES', '🎯 INDICAÇÕES DE USO\n\n✔ Passeios\n\n📌 ESPECIFICAÇÕES');
+    const d = montarTextoKit(dados({ descricaoBase: base }), IA_BOA).descricao;
+    expect(d).not.toContain('📦');
+    expect(d).not.toContain('🎯');
+    expect(d.trim().endsWith(`A tonalidade pode variar conforme a tela do dispositivo.\n\n${IA_BOA.fechamento}`)).toBe(true);
+  });
+
   it('bullet "vendida em unidade" sai (contradiz o kit)', () => {
     const base = BASE.replace('✔ Bolsos funcionais', '✔ Vendida em unidade, facilitando a escolha da cor desejada\n✔ Bolsos funcionais');
     const d = montarTextoKit(dados({ descricaoBase: base }), IA_BOA).descricao;
@@ -230,6 +239,10 @@ describe('montarTextoKit — título', () => {
   it('tira cor da base do título', () => {
     const { titulo } = montarTextoKit(dados({ tituloBase: 'Short Bermuda Mauricinho Masculino Preto Mesclado' }), IA_BOA);
     expect(titulo).toBe('Kit 2 Short Bermuda Mauricinho Masculino');
+  });
+  it('palavra proibida pelas regras de título (Premium) sai; "Top" peça fica', () => {
+    expect(montarTextoKit(dados({ tituloBase: 'Jaqueta Corta Vento Premium' }), IA_BOA).titulo).toBe('Kit 2 Jaqueta Corta Vento');
+    expect(montarTextoKit(dados({ tituloBase: 'Top Feminino Poliamida' }), IA_BOA).titulo).toBe('Kit 2 Top Feminino Poliamida');
   });
   it('título longo corta palavra inteira e mantém "Kit N"', () => {
     const { titulo } = montarTextoKit(dados({

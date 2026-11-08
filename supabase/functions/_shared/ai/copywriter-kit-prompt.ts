@@ -9,10 +9,11 @@
 // aqui é "N unidades (kit)". Os guards de seção reaproveitados são os do próprio copywriter-prompt.ts.
 import {
   atualizarSecaoTamanhos, DISCLAIMER_TONALIDADE, ehBullet, ehCabecalho, formatarDescricao, garantirDisclaimerTonalidade,
-  garantirPerguntaFixa, garantirPerguntas, inserirGuiaTamanhos, PERGUNTA_TAMANHO,
+  garantirPerguntaFixa, garantirPerguntas, inserirGuiaTamanhos, PERGUNTA_TAMANHO, removerSecao,
 } from './copywriter-prompt.ts';
 import { atualizarSecaoCores } from '../ml/criar-item.ts';
 import { rotuloCombinacao } from '../kit-variacao/combinacoes.ts';
+import { PROIBIDOS } from './titulo-grade.ts';
 
 export const LIMITE_TITULO_KIT = 60;
 export const LIMITE_TEXTO = 1500;
@@ -113,7 +114,12 @@ function semCores(titulo: string, cores: string[]): string {
   for (const c of [...cores].sort((a, b) => b.length - a.length)) {
     t = t.replace(new RegExp(`(?<![\\p{L}\\d])${escapar(c.trim())}(?![\\p{L}\\d])`, 'giu'), ' ');
   }
-  return t.replace(/\s+/g, ' ').trim();
+  // Regras de título do anúncio novo (titulo-grade.ts): palavra proibida sai inteira — título legado da
+  // base pode trazer "Premium" (medição 08/11). "Top" é peça de roupa, fica.
+  return t.split(/\s+/).filter((w) => {
+    const k = norm(w).replace(/[^a-z0-9%]/g, '');
+    return k === 'top' || !PROIBIDOS.has(k);
+  }).join(' ').trim();
 }
 
 const linhasDe = (s: string) => String(s ?? '').replace(/\r\n?/g, '\n').split('\n').map((l) => l.trim());
@@ -204,6 +210,9 @@ function editarCorpo(corpo: string[], d: DadosTextoKit): string {
   linhas = linhas.map((l) => (/^•\s*1\s+(unidade|pe[çc]a)/i.test(l) ? `• Kit com ${d.pecas} unidades` : l));
 
   let texto = linhas.join('\n');
+  // Grade: 🎯 e 📦 não existem no anúncio novo (posProcessarGrade); em base antiga ficavam entre o aviso de
+  // tonalidade e a frase final. O 📦 só repetia a quantidade, que já está em 📌.
+  if (d.tamanhosKit.length > 0) texto = removerSecao(removerSecao(texto, '🎯', false), '📦', false);
   // ❓: pergunta de quantidade do kit no lugar da unitária; sem ela, entra no fim da lista (ou cria a seção).
   const l2 = texto.split('\n');
   if (trocarNaSecao(l2, '❓', /^▪.*(quantas unidades|unidade de venda|o que (vem|acompanha))/i, PERGUNTA_QTD(d.pecas))) {

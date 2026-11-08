@@ -7,6 +7,7 @@ import {
   montarTextoKit, montarUserPromptKit, SYSTEM_KIT_VARIACAO, type DadosTextoKit,
 } from '../supabase/functions/_shared/ai/copywriter-kit-prompt.ts';
 import { linhaTamanhos, tamanhosDaGradeCopy } from '../supabase/functions/_shared/ai/copywriter-prompt.ts';
+import { PROIBIDOS } from '../supabase/functions/_shared/ai/titulo-grade.ts';
 
 const ENV = process.env.ENV_FILE ?? '/Users/diego/Desktop/IA/Anuncios MktPlace/.env.local';
 const env = Object.fromEntries(fs.readFileSync(ENV, 'utf8').split('\n')
@@ -100,7 +101,10 @@ function conferir(c: Caso, ia: { cabecalho?: string; paragrafos?: string[]; fech
   return {
     titulo, descricao,
     ordem: pos.every((p) => p > -1) && pos.every((p, k) => k === 0 || p > pos[k - 1]) && descricao.startsWith(`🧵 KIT ${d.pecas} `),
-    tituloOk: titulo.startsWith(`Kit ${d.pecas} `) && titulo.length <= 60,
+    tituloOk: titulo.startsWith(`Kit ${d.pecas} `) && titulo.length <= 60
+      && !titulo.split(' ').some((w) => w.toLowerCase() !== 'top' && PROIBIDOS.has(norm(w).replace(/[^a-z0-9%]/g, ''))),
+    // Depois do aviso de tonalidade, só a frase final (uma linha de prosa).
+    fimOk: descricao.slice(descricao.indexOf('A tonalidade pode variar')).trim().split('\n').filter(Boolean).length === 2,
     coresOk: JSON.stringify([...listaCores].sort()) === JSON.stringify([...d.coresKit].sort()) && corFora.length === 0,
     tamanhosOk: descricao.includes(linhaTamanhos(d.tamanhosKit)) && (descricao.match(/Tamanhos disponíveis:/g) ?? []).length === 1,
     qtdOk: descricao.includes(`• Quantidade: Kit com ${d.pecas} unidades`)
@@ -124,16 +128,16 @@ const resultados = await Promise.all(tarefas.map(async (c) => {
 
 fs.writeFileSync('/tmp/medir-texto-kit.json', JSON.stringify(resultados.map((r) => ({ ...r, c: { codigo: r.c.base.codigo_pai, dados: { ...r.c.dados, descricaoBase: undefined } } })), null, 2));
 console.log(`modelo ${MODELO} · ${casos.length} produtos × ${EXECUCOES}\n`);
-console.log('| PAI | org | N | cores kit | tamanhos | ordem | título | cores | tamanhos | qtd | números | IA cab/par/fim | ms méd | erros |');
-console.log('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
+console.log('| PAI | org | N | cores kit | tamanhos | ordem | título | cores | tamanhos | qtd | números | fim | IA cab/par/fim | ms méd | erros |');
+console.log('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
 for (const c of casos) {
   const rs = resultados.filter((r) => r.c === c);
   const ok = rs.filter((r) => !r.erro) as Array<ReturnType<typeof conferir> & { ms: number }>;
   const n = (f: (r: (typeof ok)[number]) => boolean) => `${ok.filter(f).length}/${rs.length}`;
   const ms = ok.length ? Math.round(ok.reduce((s, r) => s + r.ms, 0) / ok.length) : 0;
-  console.log(`| ${c.base.codigo_pai} | ${c.base.org_id.slice(0, 4)} | ${c.dados.pecas} | ${c.dados.coresKit.join(', ')} | ${c.dados.tamanhosKit.join(' ')} | ${n((r) => r.ordem)} | ${n((r) => r.tituloOk)} | ${n((r) => r.coresOk)} | ${n((r) => r.tamanhosOk)} | ${n((r) => r.qtdOk)} | ${n((r) => r.numerosOk)} | ${n((r) => r.iaCab)} / ${ok.reduce((s, r) => s + r.iaPar, 0)} par / ${n((r) => r.iaFim)} | ${ms} | ${rs.length - ok.length} |`);
+  console.log(`| ${c.base.codigo_pai} | ${c.base.org_id.slice(0, 4)} | ${c.dados.pecas} | ${c.dados.coresKit.join(', ')} | ${c.dados.tamanhosKit.join(' ')} | ${n((r) => r.ordem)} | ${n((r) => r.tituloOk)} | ${n((r) => r.coresOk)} | ${n((r) => r.tamanhosOk)} | ${n((r) => r.qtdOk)} | ${n((r) => r.numerosOk)} | ${n((r) => r.fimOk)} | ${n((r) => r.iaCab)} / ${ok.reduce((s, r) => s + r.iaPar, 0)} par / ${n((r) => r.iaFim)} | ${ms} | ${rs.length - ok.length} |`);
 }
-const falhas = resultados.filter((r) => r.erro || !r.ordem || !r.tituloOk || !r.coresOk || !r.tamanhosOk || !r.qtdOk || !r.numerosOk);
+const falhas = resultados.filter((r) => r.erro || !r.ordem || !r.tituloOk || !r.coresOk || !r.tamanhosOk || !r.qtdOk || !r.numerosOk || !r.fimOk);
 console.log(`\nfalhas: ${falhas.length}`);
 for (const f of falhas.slice(0, 10)) console.log(f.c.base.codigo_pai, f.erro || JSON.stringify({ corFora: f.corFora, numFora: f.numFora, titulo: f.titulo }));
 const novas = resultados.flatMap((r) => (r.novas ?? []).map((w: string) => `${r.c.base.codigo_pai}:${w}`));

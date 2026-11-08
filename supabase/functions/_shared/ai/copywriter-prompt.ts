@@ -462,7 +462,7 @@ function perguntaPublico(genero?: string | null): string[] {
 
 /** Remove a seção do emoji. `ateProximoCabecalho=false` leva só cabeçalho + bullets/linhas vazias,
  *  preservando a frase de fechamento em prosa que vem depois de 📦 (última seção do template). */
-function removerSecao(descricao: string, emoji: string, ateProximoCabecalho: boolean): string {
+export function removerSecao(descricao: string, emoji: string, ateProximoCabecalho: boolean): string {
   const linhas = descricao.split('\n');
   const ini = linhas.findIndex((l) => l.trim().startsWith(emoji));
   if (ini === -1) return descricao;
