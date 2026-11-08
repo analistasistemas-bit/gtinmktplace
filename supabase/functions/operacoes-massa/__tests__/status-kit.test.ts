@@ -82,6 +82,7 @@ vi.mock('../../_shared/notificacoes/config.ts', () => ({ notificarCategoria: asy
 vi.mock('../../_shared/operacoes/ml-status.ts', () => ({
   SemAcessoStatusML: class extends Error {},
   lerStatusML: async () => 'pausado',
+  lerStatusMLEstrito: async () => 'pausado',
 }));
 vi.mock('../../_shared/canais/registry.ts', () => ({
   getConnector: () => ({

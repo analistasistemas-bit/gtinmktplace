@@ -6,7 +6,6 @@
 // 3. Exclusão de publicação parada (resultado não confirmado) gera alerta: só o Reenviar a solta.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { paginarTudo } from '../_shared/pagina.ts';
-import { soltarExclusao } from '../_shared/kit-variacao/politica.ts';
 import { criarTransferencia } from '../_shared/kit-variacao/saga.ts';
 
 const PARADA_MS = 30 * 60 * 1000;
@@ -150,31 +149,41 @@ export async function alertarPublicacoesParadas(
   return porOrg.size;
 }
 
-/** Ativação mais nova que isto pode ter o PUT em voo (a retomada renova `criado_em`): não é lida. */
-const ATIVACAO_EM_VOO_MS = 10 * 60 * 1000;
+/** Mesmo prazo da geração do clique (`PRAZO_ATIVACAO_S` em politica.ts). */
+const PRAZO_CONFERENCIA_S = 600;
 
 /**
- * Task 6 (achado 1): ativação do operador sem confirmação segura a exclusão `ativacao`. Aqui a conferência lê no
- * ML todos os alvos (item e cópias de catálogo); só com todas as leituras certas solta a exclusão e apaga a
- * intenção. Leitura que falha mantém e alerta. Nunca libera por idade.
+ * Task 6 (achado 1 e fix round 2): ativação do operador sem confirmação segura a exclusão `ativacao`. Só entra
+ * intenção com o prazo da geração vencido (nenhum PUT em voo). A conferência reivindica a execução com geração
+ * própria (`kit_ativacao_reivindicar`, atômico; outra execução viva recusa), lê no ML todos os alvos e libera
+ * só se a geração examinada ainda for a dona (`kit_ativacao_liberar`). Leitura que falha mantém e alerta.
+ * Nunca libera por idade nem pelo snapshot da seleção.
  */
 export async function conferirAtivacoesPendentes(
   admin: SupabaseClient,
   deps: { lerStatus: (orgId: string, itemId: string) => Promise<unknown>; alertar: (orgId: string, texto: string) => Promise<void> },
   agoraMs = Date.now(),
 ): Promise<number> {
-  const limite = new Date(agoraMs - ATIVACAO_EM_VOO_MS).toISOString();
+  const agora = new Date(agoraMs).toISOString();
   const linhas = await paginarTudo<{ org_id: string; dono_id: string; ml_item_id: string; alvos: string[]; codigos: string[] }>(
     (de, ate) => admin.from('kit_ativacoes').select('org_id, dono_id, ml_item_id, alvos, codigos')
-      .lt('criado_em', limite).order('org_id').order('dono_id').range(de, ate));
+      .lt('ate', agora).order('org_id').order('dono_id').range(de, ate));
   let liberadas = 0;
   for (const l of linhas) {
     try {
+      const geracao = crypto.randomUUID();
+      const { data: claim, error: e1 } = await admin.rpc('kit_ativacao_reivindicar', {
+        p_org: l.org_id, p_dono: l.dono_id, p_item: l.ml_item_id, p_alvos: null, p_codigos: null,
+        p_geracao: geracao, p_prazo_s: PRAZO_CONFERENCIA_S,
+      });
+      if (e1) throw new Error(`kit_ativacao_reivindicar: ${e1.message}`);
+      if ((claim as { ok?: boolean } | null)?.ok !== true) continue;   // outra execução assumiu
       for (const id of l.alvos) await deps.lerStatus(l.org_id, id);   // lança = não confirmado
-      await soltarExclusao(admin, l.org_id, l.dono_id);
-      const { error } = await admin.from('kit_ativacoes').delete().eq('org_id', l.org_id).eq('dono_id', l.dono_id);
-      if (error) throw new Error(`kit_ativacoes: ${error.message}`);
-      liberadas++;
+      const { data: ok, error: e2 } = await admin.rpc('kit_ativacao_liberar', {
+        p_org: l.org_id, p_dono: l.dono_id, p_geracao: geracao, p_apagar: true,
+      });
+      if (e2) throw new Error(`kit_ativacao_liberar: ${e2.message}`);
+      if (ok === true) liberadas++;
     } catch (e) {
       console.error('reconciliar_kit_ativacao_sem_confirmacao', l.org_id, l.ml_item_id, String(e));
       await deps.alertar(l.org_id, `Kit com variação: a reativação de ${l.ml_item_id} (${l.codigos.join(', ')}) segue sem `

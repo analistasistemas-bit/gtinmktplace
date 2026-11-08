@@ -108,6 +108,9 @@ export const MSG_KIT_EM_TRANSFERENCIA =
 export const MSG_KIT_POLITICA_MUDOU = 'A política do kit deste SKU mudou agora. Tente de novo.';
 export const MSG_KIT_MODERADO = 'Anúncio moderado ou encerrado no Mercado Livre: não é reativado.';
 export const MSG_KIT_SEM_LEITURA = 'Não foi possível consultar o anúncio no Mercado Livre. Tente de novo.';
+export const MSG_KIT_ATIVACAO_EM_CURSO = 'Reativação deste anúncio já em andamento. Tente de novo em alguns minutos.';
+/** Prazo da geração: maior que o tempo de parede de uma edge, para a geração vencida estar de fato morta. */
+const PRAZO_ATIVACAO_S = 600;
 
 /** Resultado do PUT de status (`ResultadoCanal`): `erro.status` ausente = sem resposta HTTP. */
 export interface ResultadoPutStatus { ok: boolean; erro?: { status?: number } }
@@ -126,7 +129,7 @@ export interface OpcoesStatusOperador {
   ligado: boolean;
   /** Operação em massa que pausa: `criouBloqueio` diz se o bloqueio é dela (Reverter). */
   origem?: string;
-  /** Status vivo estrito de um item (`lerStatusML`): lança `SemAcessoStatusML` em 401/403 e erro em falha. */
+  /** Status vivo estrito (`lerStatusMLEstrito`): null só em 404; 401/403 lança `SemAcessoStatusML`; o resto lança. */
   lerStatus: (itemId: string) => Promise<StatusAnuncioCanal | null>;
   /** Alerta durável ao operador (Telegram) quando a ativação fica sem confirmação. */
   alertar: (texto: string) => Promise<unknown>;
@@ -160,9 +163,9 @@ const ambiguo = (r: ResultadoPutStatus) => !r.ok
  * Pausar/reativar pelo operador (individual, massa e Reverter), só para SKU participante.
  * - Pausar grava `bloqueio_operador` e incrementa a versão ANTES do PUT: a saga em curso perde a reativação.
  * - Reativar passa por `podeReativar` (origem operador), pela leitura viva estrita (moderado nunca; falha de
- *   leitura recusa com a causa), grava a intenção (`kit_ativacoes`), pega a exclusão `ativacao` com dono estável
- *   e limpa o bloqueio só se a versão não mudou. Depois do PUT, `concluir` libera a exclusão só com resposta
- *   do ML (não ambígua) e leitura de todos os alvos (item e cópias de catálogo); senão mantém e alerta.
+ *   leitura recusa com a causa), reivindica a execução (`kit_ativacao_reivindicar`: dono estável, geração própria),
+ *   pega a exclusão `ativacao` e limpa o bloqueio só se a versão não mudou. Depois do PUT, `concluir` libera
+ *   (só a geração dona) com resposta do ML não ambígua e leitura de todos os alvos; senão mantém e alerta.
  * Falha de leitura do banco lança: nada é ativado. Participante é sempre user product (Task 10).
  */
 export async function prepararStatusOperador(admin: SupabaseClient, o: OpcoesStatusOperador): Promise<PreparoStatus> {
@@ -197,22 +200,27 @@ export async function prepararStatusOperador(admin: SupabaseClient, o: OpcoesSta
   const dono = await donoAtivacao(orgId, mlItemId);
   const alvos = [...new Set([mlItemId, ...linhas.flatMap((r) => [r.item_externo_id, r.catalog_listing_id])
     .filter((x): x is string => !!x)])];
-  const intencao = () => admin.from('kit_ativacoes').select('dono_id').eq('org_id', orgId).eq('dono_id', dono).maybeSingle();
-  const { data: anterior, error: e1 } = await intencao();
-  if (e1) throw new Error(`kit_ativacoes: ${e1.message}`);
-  // Intenção antes da exclusão: invocação morta deixa rastro para a conferência diária. `criado_em` renovado
-  // na retomada, para a conferência não ler o ML com este PUT em voo.
-  const { error: e2 } = await admin.from('kit_ativacoes').upsert({
-    org_id: orgId, dono_id: dono, ml_item_id: mlItemId, alvos, codigos, criado_em: new Date().toISOString(),
-  }, { onConflict: 'org_id,dono_id' });
-  if (e2) throw new Error(`kit_ativacoes: ${e2.message}`);
-  const liberar = async () => {
-    await soltarExclusao(admin, orgId, dono);
-    const { error: e } = await admin.from('kit_ativacoes').delete().eq('org_id', orgId).eq('dono_id', dono);
-    if (e) throw new Error(`kit_ativacoes: ${e.message}`);
+  // Reivindica a execução: o dono é estável (recuperação), a geração é desta tentativa. Outra execução viva do
+  // mesmo dono recusa, então dois PUTs nunca correm juntos. A intenção nasce aqui, antes da exclusão: invocação
+  // morta deixa rastro para a conferência diária, que só assume depois do prazo.
+  const geracao = crypto.randomUUID();
+  const { data: reiv, error: e1 } = await admin.rpc('kit_ativacao_reivindicar', {
+    p_org: orgId, p_dono: dono, p_item: mlItemId, p_alvos: alvos, p_codigos: codigos, p_geracao: geracao,
+    p_prazo_s: PRAZO_ATIVACAO_S,
+  });
+  if (e1) throw new Error(`kit_ativacao_reivindicar: ${e1.message}`);
+  const claim = reiv as { ok?: boolean; anterior?: boolean } | null;
+  if (claim?.ok !== true) return { recusa: MSG_KIT_ATIVACAO_EM_CURSO };
+  /** Só a geração dona age: `apagar` solta exclusão e intenção juntas; senão só encerra o prazo. */
+  const liberar = async (apagar: boolean): Promise<boolean> => {
+    const { data: ok, error: e } = await admin.rpc('kit_ativacao_liberar', {
+      p_org: orgId, p_dono: dono, p_geracao: geracao, p_apagar: apagar,
+    });
+    if (e) throw new Error(`kit_ativacao_liberar: ${e.message}`);
+    return ok === true;
   };
   // Nada foi ao ML nesta tentativa; uma ativação anterior ainda incerta (mesmo dono) continua retida.
-  const desistir = () => (anterior ? Promise.resolve() : liberar());
+  const desistir = () => liberar(!claim.anterior);
 
   try {
     if (!(await adquirirExclusao(admin, orgId, codigos, 'ativacao', dono)).ok) {
@@ -235,8 +243,10 @@ export async function prepararStatusOperador(admin: SupabaseClient, o: OpcoesSta
       if (!ambiguo(r)) {
         try {
           for (const id of alvos) await o.lerStatus(id);   // lança = resultado não confirmado
-          await liberar();
-          return true;
+          if (await liberar(true)) return true;
+          // Outra geração assumiu (prazo vencido): ela confirma e libera.
+          console.error('kit_ativacao_geracao_perdida', orgId, mlItemId, geracao);
+          return false;
         } catch (e) {
           console.error('kit_ativacao_sem_confirmacao', orgId, mlItemId, String(e));
         }

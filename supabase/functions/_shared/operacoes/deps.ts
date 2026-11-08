@@ -15,7 +15,7 @@ import type { ProjecaoExata } from './simular.ts';
 import type { DepsExecutar, ItemRow, OperacaoRow } from './executar.ts';
 import type { DepsLaco } from './laco.ts';
 import type { DepsStatus, OperacaoStatusRow } from './executar-status.ts';
-import { lerStatusML } from './ml-status.ts';
+import { lerStatusML, lerStatusMLEstrito } from './ml-status.ts';
 import { getConnector } from '../canais/registry.ts';
 import { motivoMigracaoPxvPorItem } from '../user-products/guard-migracao-pxv.ts';
 import { prepararStatusOperador } from '../kit-variacao/politica.ts';
@@ -239,7 +239,7 @@ export function depsStatus(admin: SupabaseClient, cx: Cx, op: OperacaoStatusRow,
     atualizarStatus: (mlItemId, alvo) => conn.atualizarStatus(ctx, mlItemId, alvo),
     prepararKit: (mlItemId, alvo) => prepararStatusOperador(admin, {
       orgId: op.org_id, mlItemId, alvo, ligado: kitLigado, origem: op.id,
-      lerStatus: (id) => lerStatusML(cx.token, id),
+      lerStatus: (id) => lerStatusMLEstrito(cx.token, id),
       alertar: (texto) => notificarCategoria(admin, op.org_id, 'estoque', texto),
     }),
     async encerrarRestantes(mensagem) {

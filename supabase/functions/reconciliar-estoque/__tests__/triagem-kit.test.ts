@@ -13,7 +13,7 @@ interface Banco {
   itens: Linha[];
   exclusoes?: Linha[];
   ativacoes?: Linha[];
-  rpc?: (args: Record<string, unknown>) => unknown;
+  rpc?: (args: Record<string, unknown>, nome: string) => unknown;
 }
 
 function falso(b: Banco) {
@@ -42,11 +42,13 @@ function falso(b: Banco) {
     };
     return api;
   };
-  const rpc = async (_n: string, args: Record<string, unknown>) => {
+  const nomes: string[] = [];
+  const rpc = async (n: string, args: Record<string, unknown>) => {
     rpcs.push(args);
-    return { data: b.rpc ? b.rpc(args) : { ok: true, id: `T-${rpcs.length}` }, error: null };
+    nomes.push(n);
+    return { data: b.rpc ? b.rpc(args, n) : { ok: true, id: `T-${rpcs.length}` }, error: null };
   };
-  return { admin: { from, rpc } as never, rpcs, tabelas };
+  return { admin: { from, rpc } as never, rpcs, nomes, tabelas };
 }
 
 const fam = (criado_em: string) => ({ criado_em });
@@ -153,25 +155,48 @@ describe('alertarPublicacoesParadas', () => {
   });
 });
 
-describe('conferirAtivacoesPendentes (Task 6, achado 1)', () => {
+describe('conferirAtivacoesPendentes (Task 6, achado 1 e fix round 2)', () => {
   const AGORA = Date.parse('2026-11-07T12:00:00.000Z');
-  const banco = () => falso({
-    ...BANCO,
-    exclusoes: [
-      { org_id: 'O', codigo: 'P1', dono_tipo: 'ativacao', dono_id: 'D1', criado_em: '2026-11-01T00:00:00.000Z' },
-      { org_id: 'O', codigo: 'P2', dono_tipo: 'ativacao', dono_id: 'D2', criado_em: '2026-11-01T00:00:00.000Z' },
-      { org_id: 'O', codigo: 'P3', dono_tipo: 'ativacao', dono_id: 'D3', criado_em: '2026-11-07T11:58:00.000Z' },
-    ],
-    ativacoes: [
-      { org_id: 'O', dono_id: 'D1', ml_item_id: 'MLB1', alvos: ['MLB1', 'MLB1C'], codigos: ['P1'], criado_em: '2026-11-01T00:00:00.000Z' },
-      { org_id: 'O', dono_id: 'D2', ml_item_id: 'MLB2', alvos: ['MLB2'], codigos: ['P2'], criado_em: '2026-11-01T00:00:00.000Z' },
-      // Recente: o PUT pode estar em voo, não é lida.
-      { org_id: 'O', dono_id: 'D3', ml_item_id: 'MLB3', alvos: ['MLB3'], codigos: ['P3'], criado_em: '2026-11-07T11:58:00.000Z' },
-    ],
-  });
+  const VENCIDO = '2026-11-01T00:00:00.000Z';
+  const banco = () => {
+    const ref: { t?: Record<string, Linha[]> } = {};
+    const ativacao = (dono: string) => ref.t!.kit_ativacoes.find((r) => r.dono_id === dono);
+    const f = falso({
+      ...BANCO,
+      exclusoes: [
+        { org_id: 'O', codigo: 'P1', dono_tipo: 'ativacao', dono_id: 'D1' },
+        { org_id: 'O', codigo: 'P2', dono_tipo: 'ativacao', dono_id: 'D2' },
+        { org_id: 'O', codigo: 'P3', dono_tipo: 'ativacao', dono_id: 'D3' },
+      ],
+      ativacoes: [
+        { org_id: 'O', dono_id: 'D1', ml_item_id: 'MLB1', alvos: ['MLB1', 'MLB1C'], codigos: ['P1'], geracao: 'G1', ate: VENCIDO },
+        { org_id: 'O', dono_id: 'D2', ml_item_id: 'MLB2', alvos: ['MLB2'], codigos: ['P2'], geracao: 'G2', ate: VENCIDO },
+        // Geração viva (PUT em voo ou outra conferência): não é lida.
+        { org_id: 'O', dono_id: 'D3', ml_item_id: 'MLB3', alvos: ['MLB3'], codigos: ['P3'], geracao: 'G3', ate: '2026-11-07T12:05:00.000Z' },
+      ],
+      // Emula kit_ativacao_reivindicar / kit_ativacao_liberar sobre as tabelas do falso.
+      rpc: (a, nome) => {
+        const r = ativacao(a.p_dono as string);
+        if (nome === 'kit_ativacao_reivindicar') {
+          if (!r || (r.geracao !== a.p_geracao && String(r.ate) > new Date(AGORA).toISOString())) return { ok: false };
+          r.geracao = a.p_geracao;
+          return { ok: true, anterior: true };
+        }
+        if (nome === 'kit_ativacao_liberar') {
+          if (!r || r.geracao !== a.p_geracao) return false;
+          ref.t!.kit_ativacoes = ref.t!.kit_ativacoes.filter((x) => x !== r);
+          ref.t!.kit_exclusoes = ref.t!.kit_exclusoes.filter((x) => x.dono_id !== a.p_dono);
+          return true;
+        }
+        return null;
+      },
+    });
+    ref.t = f.tabelas;
+    return { f, ativacao };
+  };
 
-  it('libera só o que confirmou no ML; leitura que falha mantém e alerta; nunca por idade', async () => {
-    const f = banco();
+  it('reivindica, lê todos os alvos e libera só a confirmada; leitura que falha mantém e alerta; viva não é lida', async () => {
+    const { f } = banco();
     const lidos: string[] = [];
     const alertar = vi.fn(async () => {});
     const n = await conferirAtivacoesPendentes(f.admin, {
@@ -180,15 +205,39 @@ describe('conferirAtivacoesPendentes (Task 6, achado 1)', () => {
     }, AGORA);
     expect(n).toBe(1);
     expect(lidos).toEqual(['MLB1', 'MLB1C', 'MLB2']);
-    expect(f.rpcs).toEqual([{ p_org: 'O', p_dono_id: 'D1' }]);
     expect(f.tabelas.kit_ativacoes.map((r) => r.dono_id)).toEqual(['D2', 'D3']);
+    expect(f.tabelas.kit_exclusoes.map((r) => r.dono_id)).toEqual(['D2', 'D3']);
     expect(alertar).toHaveBeenCalledWith('O', expect.stringContaining('MLB2'));
+    // Cada reivindicação traz geração nova e não reescreve alvos.
+    const reiv = f.rpcs.filter((_r, i) => f.nomes[i] === 'kit_ativacao_reivindicar');
+    expect(reiv.map((r) => [r.p_dono, r.p_alvos])).toEqual([['D1', null], ['D2', null]]);
+    expect(reiv[0].p_geracao).not.toBe('G1');
   });
 
-  it('a limpeza por idade não existe mais: exclusão `ativacao` velha sem confirmação fica', async () => {
-    const f = banco();
+  it('P1-2: geração que mudou durante a conferência (retomada) não é liberada pelo snapshot', async () => {
+    const { f, ativacao } = banco();
+    const n = await conferirAtivacoesPendentes(f.admin, {
+      lerStatus: async (_o, id) => { if (id === 'MLB1C') ativacao('D1')!.geracao = 'CLIQUE'; return 'ativo'; },
+      alertar: async () => {},
+    }, AGORA);
+    expect(f.tabelas.kit_exclusoes.map((r) => r.dono_id)).toContain('D1');
+    expect(f.tabelas.kit_ativacoes.map((r) => r.dono_id)).toContain('D1');
+    expect(n).toBe(1);   // só D2
+  });
+
+  it('reivindicação recusada (outra execução assumiu): não lê nem libera', async () => {
+    const { f, ativacao } = banco();
+    ativacao('D1')!.ate = '2026-11-07T12:09:00.000Z';
+    const lidos: string[] = [];
+    await conferirAtivacoesPendentes(f.admin, { lerStatus: async (_o, id) => { lidos.push(id); return 'ativo'; }, alertar: async () => {} }, AGORA);
+    expect(lidos).toEqual(['MLB2']);
+    expect(f.tabelas.kit_exclusoes.map((r) => r.dono_id)).toContain('D1');
+  });
+
+  it('nunca libera por idade: exclusão velha sem confirmação fica', async () => {
+    const { f } = banco();
     await conferirAtivacoesPendentes(f.admin, { lerStatus: async () => { throw new Error('fora'); }, alertar: async () => {} }, AGORA);
     expect(f.tabelas.kit_exclusoes).toHaveLength(3);
-    expect(f.rpcs).toEqual([]);
+    expect(f.nomes).not.toContain('kit_ativacao_liberar');
   });
 });

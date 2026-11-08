@@ -3,7 +3,7 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { SemAcessoStatusML } from '../../operacoes/ml-status.ts';
 import {
   prepararStatusOperador, donoAtivacao, MSG_KIT_EM_TRANSFERENCIA, MSG_KIT_POLITICA_MUDOU, MSG_KIT_SEM_LEITURA,
-  MSG_KIT_MODERADO, type OpcoesStatusOperador,
+  MSG_KIT_MODERADO, MSG_KIT_ATIVACAO_EM_CURSO, type OpcoesStatusOperador,
   skusParticipantes, podeEscreverQuantidade, podeReativar, adquirirExclusao, soltarExclusao, kitLigado, lerPoliticas,
   type PoliticaSku,
 } from '../politica.ts';
@@ -190,7 +190,10 @@ describe('prepararStatusOperador (Task 6: pausar/reativar pelo operador)', () =>
   ];
   const banco = (x: Partial<Banco> = {}): Banco => ({
     modulos: ['kit_variacao'], itens: ITENS, componentes: [{ org_id: 'O', codigo: 'P1' }],
-    rpc: { kit_adquirir_exclusao: { ok: true }, kit_politica_operador: { ok: true } }, ...x,
+    rpc: {
+      kit_adquirir_exclusao: { ok: true }, kit_politica_operador: { ok: true },
+      kit_ativacao_reivindicar: { ok: true, anterior: false }, kit_ativacao_liberar: true,
+    }, ...x,
   });
   const pol = (x: Record<string, unknown> = {}) => ({
     org_id: 'O', codigo: 'P1', estado: 'normal', versao: 4, bloqueio_operador: false,
@@ -268,20 +271,45 @@ describe('prepararStatusOperador (Task 6: pausar/reativar pelo operador)', () =>
     expect(f.eventos).toEqual([]);
   });
 
-  it('reativa a pausa do operador: intenção, exclusão com dono estável, limpa o bloqueio; confirmado, libera', async () => {
+  const RPC = {
+    kit_adquirir_exclusao: { ok: true }, kit_politica_operador: { ok: true },
+    kit_ativacao_reivindicar: { ok: true, anterior: false }, kit_ativacao_liberar: true,
+  };
+  const args = (f: ReturnType<typeof falso>, nome: string) => f.rpcs.filter((x) => x.nome === nome).map((x) => x.args);
+
+  it('reativa a pausa do operador: reivindica a geração, exclusão com dono estável, limpa o bloqueio; confirmado, libera a geração', async () => {
     const f = falso(banco({ politicas: [pol({ bloqueio_operador: true })] }));
     const { r, lidos } = preparar(f);
     const p = await r;
     if (!('concluir' in p)) throw new Error('recusou');
     const dono = await donoAtivacao('O', 'MLB1');
-    expect(f.eventos).toEqual(['upsert:kit_ativacoes', 'rpc:kit_adquirir_exclusao', 'rpc:kit_politica_operador']);
-    expect(f.banco.ativacoes).toEqual([expect.objectContaining({ dono_id: dono, alvos: ['MLB1', 'MLB1C'], codigos: ['P1'] })]);
-    expect(f.rpcs[0].args).toMatchObject({ p_codigos: ['P1'], p_dono_tipo: 'ativacao', p_dono_id: dono });
-    expect(f.rpcs[1].args).toEqual({ p_org: 'O', p_codigos: ['P1'], p_bloquear: false, p_versoes: { P1: 4 } });
+    expect(f.eventos).toEqual(['rpc:kit_ativacao_reivindicar', 'rpc:kit_adquirir_exclusao', 'rpc:kit_politica_operador']);
+    const [reiv] = args(f, 'kit_ativacao_reivindicar');
+    expect(reiv).toMatchObject({ p_org: 'O', p_dono: dono, p_item: 'MLB1', p_alvos: ['MLB1', 'MLB1C'], p_codigos: ['P1'], p_prazo_s: 600 });
+    expect(args(f, 'kit_adquirir_exclusao')[0]).toMatchObject({ p_codigos: ['P1'], p_dono_tipo: 'ativacao', p_dono_id: dono });
+    expect(args(f, 'kit_politica_operador')[0]).toEqual({ p_org: 'O', p_codigos: ['P1'], p_bloquear: false, p_versoes: { P1: 4 } });
     expect(await p.concluir({ ok: true })).toBe(true);
     expect(lidos).toEqual(['MLB1', 'MLB1', 'MLB1C']);   // pré-checagem + os dois alvos
-    expect(f.eventos.slice(3)).toEqual(['rpc:kit_soltar_exclusao', 'delete:kit_ativacoes']);
-    expect(f.banco.ativacoes).toEqual([]);
+    expect(args(f, 'kit_ativacao_liberar')).toEqual([{ p_org: 'O', p_dono: dono, p_geracao: reiv.p_geracao, p_apagar: true }]);
+    expect(f.eventos).not.toContain('rpc:kit_soltar_exclusao');
+  });
+
+  it('fix 2 (P1-1): mesmo dono com outra execução viva: recusa sem exclusão nem PUT', async () => {
+    const f = falso(banco({ rpc: { ...RPC, kit_ativacao_reivindicar: { ok: false } } }));
+    expect(await preparar(f).r).toEqual({ recusa: MSG_KIT_ATIVACAO_EM_CURSO });
+    expect(f.eventos).toEqual(['rpc:kit_ativacao_reivindicar']);
+  });
+
+  it('fix 2 (P1-1): cada execução tem geração própria; geração que perdeu a vez não libera', async () => {
+    const f = falso(banco({ rpc: { ...RPC, kit_ativacao_liberar: false } }));
+    const p1 = await preparar(f).r;
+    const p2 = await preparar(f).r;
+    if (!('concluir' in p1) || !('concluir' in p2)) throw new Error('recusou');
+    const [a, b] = args(f, 'kit_ativacao_reivindicar');
+    expect(a.p_dono).toBe(b.p_dono);
+    expect(a.p_geracao).not.toBe(b.p_geracao);
+    expect(await p1.concluir({ ok: true })).toBe(false);
+    expect(args(f, 'kit_ativacao_liberar')[0].p_geracao).toBe(a.p_geracao);
   });
 
   it('achado 1: recusa 4xx definitiva também confirma pela leitura antes de liberar', async () => {
@@ -289,7 +317,7 @@ describe('prepararStatusOperador (Task 6: pausar/reativar pelo operador)', () =>
     const p = await preparar(f).r;
     if (!('concluir' in p)) throw new Error('recusou');
     expect(await p.concluir({ ok: false, erro: { status: 400 } })).toBe(true);
-    expect(f.banco.ativacoes).toEqual([]);
+    expect(args(f, 'kit_ativacao_liberar')[0]).toMatchObject({ p_apagar: true });
   });
 
   it.each([
@@ -297,14 +325,13 @@ describe('prepararStatusOperador (Task 6: pausar/reativar pelo operador)', () =>
     ['408', { ok: false, erro: { status: 408 } }],
     ['429', { ok: false, erro: { status: 429 } }],
     ['502', { ok: false, erro: { status: 502 } }],
-  ])('achado 1: resultado ambíguo (%s) mantém exclusão e intenção, e alerta', async (_n, put) => {
+  ])('achado 1: resultado ambíguo (%s) mantém a geração viva (sem liberar) e alerta', async (_n, put) => {
     const f = falso(banco());
     const { r, alertas } = preparar(f);
     const p = await r;
     if (!('concluir' in p)) throw new Error('recusou');
     expect(await p.concluir(put)).toBe(false);
-    expect(f.eventos).not.toContain('rpc:kit_soltar_exclusao');
-    expect(f.banco.ativacoes).toHaveLength(1);
+    expect(args(f, 'kit_ativacao_liberar')).toEqual([]);
     expect(alertas).toEqual([expect.stringContaining('não foi confirmada')]);
   });
 
@@ -315,34 +342,28 @@ describe('prepararStatusOperador (Task 6: pausar/reativar pelo operador)', () =>
     const p = await r;
     if (!('concluir' in p)) throw new Error('recusou');
     expect(await p.concluir({ ok: true })).toBe(false);
-    expect(f.banco.ativacoes).toHaveLength(1);
+    expect(args(f, 'kit_ativacao_liberar')).toEqual([]);
     expect(alertas).toHaveLength(1);
   });
 
-  it('achado 1: retomada reconhece o mesmo dono; recusa nesta tentativa não apaga a intenção anterior incerta', async () => {
-    const dono = await donoAtivacao('O', 'MLB1');
-    const f = falso(banco({
-      ativacoes: [{ org_id: 'O', dono_id: dono, ml_item_id: 'MLB1', alvos: ['MLB1'], codigos: ['P1'] }],
-      rpc: { kit_adquirir_exclusao: { ok: true }, kit_politica_operador: { ok: false, codigo: 'P1' } },
-    }));
+  it('achado 1: retomada com intenção anterior incerta: recusa nesta tentativa só encerra a geração (não apaga)', async () => {
+    const f = falso(banco({ rpc: { ...RPC, kit_ativacao_reivindicar: { ok: true, anterior: true }, kit_politica_operador: { ok: false } } }));
     expect(await preparar(f).r).toEqual({ recusa: MSG_KIT_POLITICA_MUDOU });
-    expect(f.rpcs[0].args.p_dono_id).toBe(dono);
-    expect(f.eventos).not.toContain('rpc:kit_soltar_exclusao');
-    expect(f.banco.ativacoes).toHaveLength(1);
+    expect(args(f, 'kit_ativacao_liberar')).toEqual([expect.objectContaining({ p_apagar: false })]);
   });
 
-  it('SKU em transferência (exclusão ocupada): recusa, sem mexer na política e sem deixar intenção', async () => {
-    const f = falso(banco({ rpc: { kit_adquirir_exclusao: { ok: false, codigo: 'P1' } } }));
+  it('SKU em transferência (exclusão ocupada): recusa, sem mexer na política, apaga a intenção desta tentativa', async () => {
+    const f = falso(banco({ rpc: { ...RPC, kit_adquirir_exclusao: { ok: false, codigo: 'P1' } } }));
     expect(await preparar(f).r).toEqual({ recusa: MSG_KIT_EM_TRANSFERENCIA });
-    expect(f.rpcs.map((x) => x.nome)).toEqual(['kit_adquirir_exclusao', 'kit_soltar_exclusao']);
-    expect(f.banco.ativacoes).toEqual([]);
+    expect(f.eventos).toEqual(['rpc:kit_ativacao_reivindicar', 'rpc:kit_adquirir_exclusao', 'rpc:kit_ativacao_liberar']);
+    expect(args(f, 'kit_ativacao_liberar')[0]).toMatchObject({ p_apagar: true });
   });
 
-  it('política mudou entre a leitura e a escrita: recusa, solta a exclusão e apaga a intenção', async () => {
-    const f = falso(banco({ rpc: { kit_adquirir_exclusao: { ok: true }, kit_politica_operador: { ok: false, codigo: 'P1' } } }));
+  it('política mudou entre a leitura e a escrita: recusa e libera a geração (apaga intenção e exclusão)', async () => {
+    const f = falso(banco({ rpc: { ...RPC, kit_politica_operador: { ok: false, codigo: 'P1' } } }));
     expect(await preparar(f).r).toEqual({ recusa: MSG_KIT_POLITICA_MUDOU });
-    expect(f.rpcs.map((x) => x.nome)).toEqual(['kit_adquirir_exclusao', 'kit_politica_operador', 'kit_soltar_exclusao']);
-    expect(f.banco.ativacoes).toEqual([]);
+    expect(f.eventos.at(-1)).toBe('rpc:kit_ativacao_liberar');
+    expect(args(f, 'kit_ativacao_liberar')[0]).toMatchObject({ p_apagar: true });
   });
 
   it('falha de leitura do banco lança (não ativa)', async () => {

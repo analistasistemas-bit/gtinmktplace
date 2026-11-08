@@ -7,7 +7,7 @@ import { mapearConexao } from '../_shared/canais/conexao.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import { motivoMigracaoPxvPorItem } from '../_shared/user-products/guard-migracao-pxv.ts';
 import { EMBED_MODULOS, kitLigado, prepararStatusOperador } from '../_shared/kit-variacao/politica.ts';
-import { lerStatusML } from '../_shared/operacoes/ml-status.ts';
+import { lerStatusMLEstrito } from '../_shared/operacoes/ml-status.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 
 Deno.serve(async (req) => {
@@ -60,7 +60,7 @@ Deno.serve(async (req) => {
   // (409); a pausa do operador fica gravada antes do PUT; a exclusão da ativação só sai com o resultado confirmado.
   const kit = await prepararStatusOperador(admin, {
     orgId, mlItemId: ml_item_id, alvo: status, ligado: kitLigado(linhaConexao),
-    lerStatus: async (id) => lerStatusML(await ctx.getToken(), id),
+    lerStatus: async (id) => lerStatusMLEstrito(await ctx.getToken(), id),
     alertar: (texto) => notificarCategoria(admin, orgId, 'estoque', texto),
   });
   if ('recusa' in kit) {

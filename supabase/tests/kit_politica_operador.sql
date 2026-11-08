@@ -82,6 +82,42 @@ begin
   perform pg_temp.afirmar((select relrowsecurity from pg_class where oid = 'public.kit_ativacoes'::regclass), 'RLS ligada');
 end $$;
 
+-- Fix round 2 (P1-1/P1-2): reivindicação exclusiva da execução por geração com prazo; liberação só da geração dona.
+do $$
+declare o uuid := '97200000-0000-0000-0000-000000000001'; d uuid := gen_random_uuid();
+  g1 uuid := gen_random_uuid(); g2 uuid := gen_random_uuid(); g3 uuid := gen_random_uuid(); r jsonb;
+begin
+  r := public.kit_ativacao_reivindicar(o, d, 'MLB1', array['MLB1'], array['A'], g1, 600);
+  perform pg_temp.afirmar(r = '{"ok": true, "anterior": false}'::jsonb, 'primeira geração: ' || r::text);
+  r := public.kit_ativacao_reivindicar(o, d, 'MLB1', array['MLB1'], array['A'], g2, 600);
+  perform pg_temp.afirmar(r = '{"ok": false}'::jsonb, 'mesmo dono com geração viva recusa: ' || r::text);
+  insert into public.kit_exclusoes (org_id, codigo, dono_tipo, dono_id) values (o, 'A', 'ativacao', d);
+
+  -- Geração que não é a dona não libera nem encerra.
+  perform pg_temp.afirmar(not public.kit_ativacao_liberar(o, d, g2, true), 'geração alheia não apaga');
+  perform pg_temp.afirmar(not public.kit_ativacao_liberar(o, d, g2, false), 'geração alheia não encerra');
+  perform pg_temp.afirmar(exists (select 1 from public.kit_exclusoes where dono_id = d), 'exclusão continua');
+
+  -- Prazo vencido: outra geração (retomada ou conferência) assume; a antiga perde o direito de liberar.
+  perform pg_temp.afirmar(public.kit_ativacao_liberar(o, d, g1, false), 'dona encerra o prazo');
+  r := public.kit_ativacao_reivindicar(o, d, 'MLB1', null, null, g3, 600);
+  perform pg_temp.afirmar(r = '{"ok": true, "anterior": true}'::jsonb, 'vencida é reivindicada: ' || r::text);
+  perform pg_temp.afirmar((select alvos from public.kit_ativacoes where dono_id = d) = array['MLB1'], 'alvos preservados');
+  perform pg_temp.afirmar(not public.kit_ativacao_liberar(o, d, g1, true), 'geração antiga não libera a nova');
+  perform pg_temp.afirmar(exists (select 1 from public.kit_exclusoes where dono_id = d), 'exclusão segue da nova');
+  perform pg_temp.afirmar(public.kit_ativacao_liberar(o, d, g3, true), 'dona libera');
+  perform pg_temp.afirmar(not exists (select 1 from public.kit_ativacoes where dono_id = d)
+    and not exists (select 1 from public.kit_exclusoes where dono_id = d), 'intenção e exclusão apagadas');
+  r := public.kit_ativacao_reivindicar(o, d, 'MLB1', null, null, gen_random_uuid(), 600);
+  perform pg_temp.afirmar(r = '{"ok": false}'::jsonb and not exists (select 1 from public.kit_ativacoes where dono_id = d),
+    'conferência sem intenção não cria intenção');
+
+  perform pg_temp.afirmar(not has_function_privilege('authenticated',
+    'public.kit_ativacao_reivindicar(uuid, uuid, text, text[], text[], uuid, integer)', 'execute'), 'reivindicar só service_role');
+  perform pg_temp.afirmar(not has_function_privilege('authenticated',
+    'public.kit_ativacao_liberar(uuid, uuid, uuid, boolean)', 'execute'), 'liberar só service_role');
+end $$;
+
 -- Só o service role executa. E o embed `organizations(modulos_habilitados)` que as edges acrescentam às leituras
 -- de marketplace_connections e operacoes_massa precisa de exatamente uma FK para organizations em cada tabela.
 do $$

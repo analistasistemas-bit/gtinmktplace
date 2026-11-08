@@ -43,7 +43,7 @@ vi.mock('../../_shared/supabase.ts', () => ({
     from: (t: string) => builder(t),
     rpc: async (nome: string, args: Record<string, unknown>) => {
       f.eventos.push(`rpc:${nome}${nome === 'kit_politica_operador' ? `:${args.p_bloquear}` : ''}`);
-      return { data: { ok: true }, error: null };
+      return { data: nome === 'kit_ativacao_liberar' ? true : { ok: true, anterior: false }, error: null };
     },
   }),
 }));
@@ -59,7 +59,9 @@ vi.mock('../../_shared/operacoes/ml-status.ts', () => {
   class SemAcessoStatusML extends Error {}
   return {
     SemAcessoStatusML,
-    lerStatusML: async (_t: string, id: string) => {
+    // A frouxa devolve null para envelope 500: o kit nunca pode usá-la (fix round 2).
+    lerStatusML: async (_t: string, id: string) => { f.eventos.push(`lerStatusFrouxo:${id}`); return f.statusVivo; },
+    lerStatusMLEstrito: async (_t: string, id: string) => {
       f.eventos.push(`lerStatus:${id}`);
       if (f.statusVivo === '403') throw new SemAcessoStatusML('ML 403');
       return f.statusVivo;
@@ -120,8 +122,8 @@ describe('atualizar-status-publicado × kit com variação', () => {
     const r = await chamar('ativo');
     expect(r.status).toBe(200);
     expect(f.eventos).toEqual([
-      'lerStatus:MLB1', 'upsert:kit_ativacoes', 'rpc:kit_adquirir_exclusao', 'rpc:kit_politica_operador:false',
-      'put:MLB1:ativo', 'lerStatus:MLB1', 'rpc:kit_soltar_exclusao', 'delete:kit_ativacoes',
+      'lerStatus:MLB1', 'rpc:kit_ativacao_reivindicar', 'rpc:kit_adquirir_exclusao', 'rpc:kit_politica_operador:false',
+      'put:MLB1:ativo', 'lerStatus:MLB1', 'rpc:kit_ativacao_liberar',
     ]);
   });
 
@@ -129,7 +131,7 @@ describe('atualizar-status-publicado × kit com variação', () => {
     f.put = { ok: false, erro: { codigo: 'DESCONHECIDO', mensagemOperador: 'fetch failed', retentavel: false } };
     const r = await chamar('ativo');
     expect(r.status).toBe(502);
-    expect(f.eventos).not.toContain('rpc:kit_soltar_exclusao');
+    expect(f.eventos).not.toContain('rpc:kit_ativacao_liberar');
     expect(f.eventos).toContain('alerta');
   });
 

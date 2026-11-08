@@ -14,6 +14,10 @@ create table if not exists public.kit_ativacoes (
   alvos      text[] not null,
   codigos    text[] not null,
   criado_em  timestamptz not null default now(),
+  -- Execução que detém a ativação agora (clique, retry ou conferência diária) e até quando. Prazo maior que o
+  -- tempo de parede de uma edge: vencido, a geração anterior está morta e outra pode assumir.
+  geracao    uuid not null,
+  ate        timestamptz not null,
   primary key (org_id, dono_id)
 );
 alter table public.kit_ativacoes enable row level security;
@@ -24,6 +28,56 @@ revoke all on public.kit_ativacoes from anon;
 revoke insert, update, delete, truncate, references, trigger on public.kit_ativacoes from authenticated;
 grant select on public.kit_ativacoes to authenticated;
 grant all on public.kit_ativacoes to service_role;
+
+-- Reivindicação exclusiva da execução. O dono é estável por item (recuperação); a geração é desta execução.
+-- Outra geração com prazo vivo recusa. `p_alvos`/`p_codigos` nulos mantêm os gravados (conferência diária).
+create or replace function public.kit_ativacao_reivindicar(
+  p_org uuid, p_dono uuid, p_item text, p_alvos text[], p_codigos text[], p_geracao uuid, p_prazo_s integer
+) returns jsonb language plpgsql set search_path = ''
+as $$
+declare v_geracao uuid; v_ate timestamptz;
+begin
+  -- Sem alvos (conferência diária) nunca cria intenção: só assume a que existe.
+  if p_alvos is not null then
+    insert into public.kit_ativacoes (org_id, dono_id, ml_item_id, alvos, codigos, geracao, ate)
+    values (p_org, p_dono, p_item, p_alvos, p_codigos, p_geracao, clock_timestamp() + make_interval(secs => p_prazo_s))
+    on conflict (org_id, dono_id) do nothing;
+    if found then return jsonb_build_object('ok', true, 'anterior', false); end if;
+  end if;
+
+  select geracao, ate into v_geracao, v_ate from public.kit_ativacoes
+  where org_id = p_org and dono_id = p_dono for update;
+  if not found or (v_geracao <> p_geracao and v_ate > clock_timestamp()) then
+    return jsonb_build_object('ok', false);
+  end if;
+  update public.kit_ativacoes
+  set geracao = p_geracao, ate = clock_timestamp() + make_interval(secs => p_prazo_s),
+      alvos = coalesce(p_alvos, alvos), codigos = coalesce(p_codigos, codigos)
+  where org_id = p_org and dono_id = p_dono;
+  return jsonb_build_object('ok', true, 'anterior', true);
+end $$;
+
+-- Só a geração dona age. `p_apagar`: resultado confirmado (ou nada foi ao ML e não havia intenção anterior) →
+-- apaga intenção e exclusão juntas. Senão só encerra o prazo da geração (intenção anterior incerta fica retida).
+create or replace function public.kit_ativacao_liberar(p_org uuid, p_dono uuid, p_geracao uuid, p_apagar boolean)
+returns boolean language plpgsql set search_path = ''
+as $$
+begin
+  if p_apagar then
+    delete from public.kit_ativacoes where org_id = p_org and dono_id = p_dono and geracao = p_geracao;
+    if not found then return false; end if;
+    delete from public.kit_exclusoes where org_id = p_org and dono_id = p_dono;
+    return true;
+  end if;
+  update public.kit_ativacoes set ate = clock_timestamp()
+  where org_id = p_org and dono_id = p_dono and geracao = p_geracao;
+  return found;
+end $$;
+
+revoke all on function public.kit_ativacao_reivindicar(uuid, uuid, text, text[], text[], uuid, integer) from public, anon, authenticated;
+grant execute on function public.kit_ativacao_reivindicar(uuid, uuid, text, text[], text[], uuid, integer) to service_role;
+revoke all on function public.kit_ativacao_liberar(uuid, uuid, uuid, boolean) from public, anon, authenticated;
+grant execute on function public.kit_ativacao_liberar(uuid, uuid, uuid, boolean) to service_role;
 
 -- Pausar grava `bloqueio_operador` e incrementa `versao`: a reativação de uma saga em curso deixa de valer.
 -- Reativar só limpa o bloqueio se a versão vigente for a que o chamador leu ao decidir (`podeReativar`).
