@@ -86,6 +86,7 @@ function fakeAdmin(db: DB) {
       in: (c: string, vs: unknown[]) => { filtros.push((r: any) => vs.includes(r[c])); return api; },
       not: () => { buscandoKits = true; return api; },
       order: () => api,
+      range: () => api,
       limit: () => api,
       maybeSingle: async () => ler(),
       then: (resolve: (v: { data: unknown; error: null }) => unknown) => resolve(ler()),

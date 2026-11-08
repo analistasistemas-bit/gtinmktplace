@@ -16,6 +16,7 @@ import { criarTransferencia } from '../_shared/kit-variacao/saga.ts';
 import type { SincronizarEstoqueJob } from '../_shared/queue.ts';
 import type { ChannelConnector, ContextoCanal } from '../_shared/canais/contrato.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
+import { paginarTudo } from '../_shared/pagina.ts';
 import {
   montarMensagemEstoqueZerado, montarMensagemTetoAnuncio, montarMensagemVoltaAoAr, type VariacaoZerada,
 } from '../_shared/notificacoes/estoque.ts';
@@ -171,25 +172,29 @@ interface ContextoAlerta {
  *
  * Best-effort: falha aqui é logada e não derruba o push, que já cumpriu seu papel.
  *
- * ADR-0199: `incluir` restringe os códigos. O push tira daqui os participantes de kit com variação (o zero deles
- * vai ao ML pela saga, que pode bloquear); a saga avisa esses só depois de confirmar a redução no ML.
+ * ADR-0199: o aviso acompanha o envio confirmado. `fora`: SKUs cujo alvo saiu do push sem PUT (kit com variação),
+ * nem marcados nem anunciados. `so` e `soLocais`: caminho da saga, só os códigos com a redução confirmada e só
+ * movimentos locais (o da própria transferência — montar, repor, sair_sobra — não é "estoque zerado").
+ * `pausadoConfirmado: false`: algum SKU do anúncio ainda não teve o zero confirmado, então o texto não afirma
+ * "anúncio pausado". Filtros no servidor e leitura paginada: pendentes deliberados não escondem elegíveis.
  */
 async function alertarEstoqueZerado(
   admin: SupabaseClient, notificar: typeof notificarCategoria, ctx: ContextoAlerta,
-  incluir: (codigo: string) => boolean = () => true,
-  soLocais = false,
+  f: { fora?: string[]; so?: string[]; soLocais?: boolean; pausadoConfirmado?: boolean } = {},
 ): Promise<void> {
   try {
-    let q = admin.from('estoque_movimentos')
-      .select('id, codigo')
-      .eq('org_id', ctx.orgId).eq('codigo_pai', ctx.codigoPai)
-      .eq('estoque_resultante', 0).gt('estoque_anterior', 0)
-      .is('alertado_em', null);
-    // Caminho da saga: só os movimentos locais encaminhados a ela; o próprio movimento da transferência
-    // (montar, repor, sair_sobra) não é "estoque zerado".
-    if (soLocais) q = q.is('transferencia_id', null);
-    const { data: candidatos } = await q;
-    const ids = (candidatos ?? []).filter((m) => incluir(m.codigo as string)).map((m) => m.id as string);
+    const candidatos = await paginarTudo<{ id: string }>((de, ate) => {
+      let q = admin.from('estoque_movimentos')
+        .select('id')
+        .eq('org_id', ctx.orgId).eq('codigo_pai', ctx.codigoPai)
+        .eq('estoque_resultante', 0).gt('estoque_anterior', 0)
+        .is('alertado_em', null);
+      if (f.so) q = q.in('codigo', f.so);
+      if (f.fora && f.fora.length > 0) q = q.not('codigo', 'in', `(${f.fora.map((c) => `"${c}"`).join(',')})`);
+      if (f.soLocais) q = q.is('transferencia_id', null);
+      return q.order('id').range(de, ate);
+    });
+    const ids = candidatos.map((m) => m.id);
     if (ids.length === 0) return;
 
     const { data: marcados } = await admin.from('estoque_movimentos')
@@ -212,7 +217,7 @@ async function alertarEstoqueZerado(
       produto: ctx.produto,
       codigoPai: ctx.codigoPai,
       zeradas,
-      produtoInteiroZerado: totais.length > 0 && totais.every((q) => q <= 0),
+      produtoInteiroZerado: (f.pausadoConfirmado ?? true) && totais.length > 0 && totais.every((q) => q <= 0),
       permalink: ctx.permalink,
     }));
   } catch (e) {
@@ -237,10 +242,14 @@ export async function alertarZeradosConfirmados(
     for (const codigoPai of new Set((data ?? []).map((m) => m.codigo_pai as string))) {
       const f = await lerFamiliaComSaldo(admin, orgId, codigoPai);
       if (!f) continue;
+      // "Anúncio pausado" só se todo participante zerado do produto teve o zero confirmado agora; o SKU comum
+      // recebe o zero pelo push direto.
+      const participantes = await skusParticipantes(admin, orgId, Object.keys(f.estoquePorSku), true);
+      const pausadoConfirmado = [...participantes].every((c) => (f.estoquePorSku[c] ?? 0) > 0 || so.has(c));
       await alertarEstoqueZerado(admin, notificar, {
         orgId, codigoPai, produto: f.nome, permalink: f.permalink,
         rotuloPorSku: f.rotuloPorSku, estoquePorSku: f.estoquePorSku, temAnuncio: true,
-      }, (c) => so.has(c), true);
+      }, { so: codigos, soLocais: true, pausadoConfirmado });
     }
   } catch (e) {
     console.error('kit_alerta_zerado_confirmado_falhou', orgId, String(e));
@@ -504,9 +513,9 @@ export async function processarSincronizacao(
   // 3) ADR-0199: SKU de kit com variação só recebe quantidade pela saga, com o anúncio pausado. O alvo
   // sai inteiro: num item com variações o conector regravaria as demais com a quantidade lida.
   const retentaveis: string[] = [];
-  // Participantes encaminhados à saga: o zero deles não foi ao ML nesta execução (ADR-0134); a saga avisa ao
-  // confirmar a redução. SKU comum segue no aviso como hoje.
-  const daSaga = new Set<string>();
+  // SKUs cujo alvo saiu do push sem PUT (participantes e SKU comum preso no mesmo item): o zero deles não foi ao
+  // ML nesta execução (ADR-0134). O do participante a saga avisa ao confirmar a redução.
+  const semPush = new Set<string>();
   // Filho de participante fora de `ativo` no vínculo local também entra: o push o descartaria em silêncio.
   if (alvos.length + inativos.length > 0) {
     const participantes = await skusParticipantes(
@@ -517,7 +526,7 @@ export async function processarSincronizacao(
       a.estoques.some((e) => !podeEscreverQuantidade({ participa: participantes.has(e.sku), origem: 'outro' }));
     const fora = [...alvos.filter(naoEscreve), ...inativos.filter(naoEscreve)];
     if (fora.length > 0) {
-      for (const a of fora) for (const e of a.estoques) if (participantes.has(e.sku)) daSaga.add(e.sku);
+      for (const a of fora) for (const e of a.estoques) semPush.add(e.sku);
       alvos.splice(0, alvos.length, ...alvos.filter((a) => !naoEscreve(a)));
       if (!job.sem_transferencia_kit) {
         const r = await transferirParaSaga(deps, org_id, fora, participantes);
@@ -539,7 +548,7 @@ export async function processarSincronizacao(
   if (alvos.length === 0 && retentaveis.length > 0) return { status: 500, body: { retry: retentaveis } };
   if (alvos.length === 0) {
     // Sem canal publicado o saldo não pausa anúncio nenhum: fecha os movimentos sem avisar.
-    await alertarEstoqueZerado(admin, notificar, ctxAlerta, (c) => !daSaga.has(c));
+    await alertarEstoqueZerado(admin, notificar, ctxAlerta, { fora: [...semPush], pausadoConfirmado: semPush.size === 0 });
     return { status: 200, body: { ok: true, alvos: 0 } };
   }
 
@@ -632,6 +641,6 @@ export async function processarSincronizacao(
   // zero seria mentira (ADR-0134).
   if (retentaveis.length > 0) return { status: 500, body: { retry: retentaveis } };
 
-  await alertarEstoqueZerado(admin, notificar, ctxAlerta, (c) => !daSaga.has(c));
+  await alertarEstoqueZerado(admin, notificar, ctxAlerta, { fora: [...semPush], pausadoConfirmado: semPush.size === 0 });
   return { status: 200, body: { ok: true, alvos: alvos.length } };
 }

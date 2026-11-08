@@ -20,6 +20,7 @@ function fakeAdmin(dados: {
       in: () => api,
       not: () => api,
       order: () => api,
+      range: () => api,
       is: () => api,
       gt: () => api,
       limit: () => api,

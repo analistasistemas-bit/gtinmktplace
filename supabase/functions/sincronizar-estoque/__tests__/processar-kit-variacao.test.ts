@@ -21,6 +21,10 @@ interface Banco {
   zerados?: boolean;
   /** P1 e P2 como variações de um item Legacy só (sem filhos UP). */
   mesmoItem?: boolean;
+  /** Saldo local de P1 e P2 (padrão 4 e 6). */
+  saldos?: { P1: number; P2: number };
+  /** Movimentos zerados de P1 ainda sem alerta, antes de z2 (pendentes deliberados da saga). */
+  pendentesP1?: number;
 }
 
 const ITENS = [
@@ -42,6 +46,8 @@ function fakeAdmin(b: Banco) {
     mov('m3', 'P1', 3, '2026-11-07T11:00:00Z', { push_canal_origem: 'mercado_livre' }),
     mov('m4', 'P1', 4, '2026-11-07T11:10:00Z', { transferencia_id: 'T0' }),
     mov('m9', 'P2', 5, '2026-11-07T11:30:00Z'),
+    ...Array.from({ length: b.pendentesP1 ?? 0 }, (_, i) =>
+      mov(`p${i}`, 'P1', 10 + i, '2026-11-07T11:00:00Z', { estoque_anterior: 1, estoque_resultante: 0, alertado_em: null })),
     ...(b.zerados ? [
       mov('z1', 'P1', 6, '2026-11-07T11:40:00Z', { estoque_anterior: 2, estoque_resultante: 0, alertado_em: null }),
       mov('z2', 'P2', 7, '2026-11-07T11:41:00Z', { estoque_anterior: 1, estoque_resultante: 0, alertado_em: null }),
@@ -56,6 +62,7 @@ function fakeAdmin(b: Banco) {
     const filtros: Array<(r: Record<string, unknown>) => boolean> = [];
     let kitsVinculados = false;
     let patch: Record<string, unknown> | null = null;
+    let faixa: [number, number] = [0, 999];   // PostgREST corta em 1.000 sem `range`
     const ler = () => {
       if (b.falhar === tabela) return { data: null, error: { message: 'boom' } };
       if (kitsVinculados) return { data: [], error: null };
@@ -63,7 +70,8 @@ function fakeAdmin(b: Banco) {
         // ADR-0199: o módulo chega embutido na leitura de família que o caminho já faz.
         case 'familias':
           return { data: { id: 'F', nome_pai: 'Blusa', ml_permalink: null, organizations: { modulos_habilitados: b.modulos } }, error: null };
-        case 'variacoes': return { data: [{ codigo: 'P1', estoque: 4 }, { codigo: 'P2', estoque: 6 }], error: null };
+        case 'variacoes':
+          return { data: [{ codigo: 'P1', estoque: b.saldos?.P1 ?? 4 }, { codigo: 'P2', estoque: b.saldos?.P2 ?? 6 }], error: null };
         case 'anuncios_externos':
           return { data: [b.mesmoItem
             ? { id: 'A', canal: 'fake', item_externo_id: 'MLB-X', variacoes_externas: { P1: 1, P2: 2 } }
@@ -77,7 +85,7 @@ function fakeAdmin(b: Banco) {
         case 'kit_variacao_componentes':
           return { data: b.componentes.map((codigo) => ({ codigo, org_id: 'O' })).filter((r) => filtros.every((f) => f(r))), error: null };
         case 'estoque_movimentos': {
-          const alvo = movs.filter((r) => filtros.every((f) => f(r)));
+          const alvo = movs.filter((r) => filtros.every((f) => f(r))).slice(faixa[0], faixa[1] + 1);
           if (patch) alvo.forEach((r) => Object.assign(r, patch));
           return { data: alvo.map((r) => ({ ...r })), error: null };
         }
@@ -90,7 +98,14 @@ function fakeAdmin(b: Banco) {
       eq: (c: string, v: unknown) => { filtros.push((r) => r[c] === v); return api; },
       in: (c: string, vs: unknown[]) => { filtros.push((r) => vs.includes(r[c])); return api; },
       is: (c: string, v: unknown) => { filtros.push((r) => !(c in r) || (r[c] ?? null) === v); return api; },
-      gt: () => api, not: () => { kitsVinculados = true; return api; },
+      gt: () => api,
+      not: (c: string, _op: string, lista: string) => {
+        if (tabela !== 'estoque_movimentos') { kitsVinculados = true; return api; }
+        const fora = lista.slice(1, -1).split(',').map((x) => x.replace(/"/g, ''));
+        filtros.push((r) => !fora.includes(r[c] as string));
+        return api;
+      },
+      range: (de: number, ate: number) => { faixa = [de, ate]; return api; },
       order: () => api, limit: () => api,
       maybeSingle: async () => ler(),
       then: (res: (v: unknown) => unknown) => Promise.resolve(ler()).then(res),
@@ -234,15 +249,40 @@ describe('sincronizar-estoque × kit com variação', () => {
     expect(m.notificar).not.toHaveBeenCalled();
   });
 
-  it('SKU comum no mesmo item do participante: fora do push, mas o zero dele segue no aviso como hoje', async () => {
+  it('SKU comum no mesmo item do participante: saiu do push sem PUT, então não é marcado nem anunciado (rodada 2)', async () => {
     const m = montar({ modulos: ['kit_variacao'], componentes: ['P1'], zerados: true, mesmoItem: true });
     expect((await processarSincronizacao(m.deps, JOB)).status).toBe(200);
     expect(pushes()).toEqual([]);
     expect(m.movs.find((x) => x.id === 'z1')!.alertado_em).toBeNull();
-    expect(m.movs.find((x) => x.id === 'z2')!.alertado_em).not.toBeNull();
+    expect(m.movs.find((x) => x.id === 'z2')!.alertado_em).toBeNull();
+    const zerado = m.notificar.mock.calls.map((c) => String((c as unknown[])[3])).filter((x) => x.includes('Estoque zerado'));
+    expect(zerado).toEqual([]);
+  });
+
+  it('UPs separados: P2 comum recebe o zero, P1 vai à saga; o aviso de P2 não diz "anúncio pausado" (rodada 2)', async () => {
+    const m = montar({ modulos: ['kit_variacao'], componentes: ['P1'], zerados: true, saldos: { P1: 0, P2: 0 } });
+    expect((await processarSincronizacao(m.deps, JOB)).status).toBe(200);
+    expect(pushes()).toEqual(['MLB-P2']);
     const zerado = m.notificar.mock.calls.map((c) => String((c as unknown[])[3])).filter((x) => x.includes('Estoque zerado'));
     expect(zerado).toHaveLength(1);
     expect(zerado[0]).toContain('P2');
+    expect(zerado[0]).not.toContain('Anúncio pausado');
+  });
+
+  it('1.000 pendentes deliberados de P1 não escondem o zero elegível de P2 (rodada 2)', async () => {
+    const m = montar({ modulos: ['kit_variacao'], componentes: ['P1'], zerados: true, pendentesP1: 1000 });
+    expect((await processarSincronizacao(m.deps, JOB)).status).toBe(200);
+    expect(m.movs.find((x) => x.id === 'z2')!.alertado_em).not.toBeNull();
+    expect(m.movs.filter((x) => x.codigo === 'P1' && x.alertado_em !== null && x.alertado_em !== undefined)).toEqual([]);
+  });
+
+  it('saga: só afirma "anúncio pausado" quando todo participante zerado do produto foi confirmado (rodada 2)', async () => {
+    const parcial = montar({ modulos: ['kit_variacao'], componentes: ['P1', 'P2'], zerados: true, saldos: { P1: 0, P2: 0 } });
+    await alertarZeradosConfirmados(parcial.admin, parcial.notificar as never, 'O', ['P1']);
+    expect(String((parcial.notificar.mock.calls[0] as unknown[])[3])).not.toContain('Anúncio pausado');
+    const todos = montar({ modulos: ['kit_variacao'], componentes: ['P1', 'P2'], zerados: true, saldos: { P1: 0, P2: 0 } });
+    await alertarZeradosConfirmados(todos.admin, todos.notificar as never, 'O', ['P1', 'P2']);
+    expect(String((todos.notificar.mock.calls[0] as unknown[])[3])).toContain('Anúncio pausado');
   });
 
   it('SKU comum zerado em org sem o módulo: alerta como hoje', async () => {
