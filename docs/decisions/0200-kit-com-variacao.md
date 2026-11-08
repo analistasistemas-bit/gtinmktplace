@@ -155,7 +155,8 @@ kit de Publicados e devolve as peças da base ao estado Normal, sem apagar varia
    redefini-la: alvos calculados no SQL a partir de `anuncios_externos_itens` (um por SKU do kit com
    `user_product_id`: item + cópia de catálogo), nunca vindos da edge. SKU do kit sem UP fica fora dos alvos, mas a
    exclusão dele é adquirida com o mesmo dono na mesma transação. Kit sem nenhum alvo (nada chegou ao ML) encerra ali
-   mesmo, na mesma transação (passo 4).
+   mesmo, na mesma transação (passo 4), depois de adquirir a exclusão de todos os SKUs com um dono só da transação
+   (publicação em curso recusa com `up_ocupado`) e soltá-la no fim.
 3. **Worker.** `kit-transferencia` despacha `tipo='encerrar'` para um módulo próprio (`_shared/kit-variacao/encerrar.ts`)
    antes do pipeline de quantidade, com o mesmo claim por `execucao_token` e as mesmas RPCs validadas por token,
    prazo e exclusão. Cada invocação, para cada alvo ainda não confirmado: grava o início da obrigação
@@ -174,7 +175,8 @@ kit de Publicados e devolve as peças da base ao estado Normal, sem apagar varia
    mesma `kit_encerrar_aplicar` no caminho sem alvos do passo 2): `status='encerrado'`, `encerrado_em`;
    `kit_reposicao_desligar` (remove as reivindicações do kit; peça sem outra reivindicação volta a Normal com
    `versao+1`, `so_em_kit=false`); apaga `kit_pausas_automaticas` dos itens do kit (fechados); marca os filhos do kit
-   em `anuncios_externos_itens` como `retirado=true, status='encerrado'`; no caminho da saga, solta as exclusões e
+   em `anuncios_externos_itens` como `retirado=true, status='pausado'` (padrão de retirar; o check de status não tem
+   "encerrado"); no caminho da saga, solta as exclusões e
    fecha a transferência (`kit_saga_finalizar`); no caminho sem alvos não há transferência nem exclusão a soltar. Não
    apaga variações, composição, `estoque_movimentos` nem vendas. Família e raiz do kit não mudam (`familia_status` e
    `anuncios_externos.status` não têm "encerrado"): o padrão destrutivo do Remover não serve. Publicados esconde a
@@ -197,7 +199,9 @@ kit de Publicados e devolve as peças da base ao estado Normal, sem apagar varia
    product"). `limpar_movimentos_orfaos` não muda (preserva todo movimento de SKU em composição). A transferência
    `encerrar` segura só os SKUs do kit: `kit_sku_em_transferencia`/`kit_reposicao_pendente` não expandem os
    componentes dela.
-6. **Kit encerrando ou encerrado não muda mais.** Triggers de rede, sob o lock da linha que cada caminho já escreve:
+6. **Kit encerrando ou encerrado não muda mais.** Triggers de rede. Os de `kit_transferencias` e `kit_exclusoes`
+   travam os kits envolvidos (`for share`, em ordem de id) antes de ler o status: quem esperou o `for update` de
+   `kit_variacao_encerrar` lê o status já commitado, e nenhuma publicação nova passa no meio.
    - `kits_variacao`: recusa sair de `encerrando`/`encerrado` (só `encerrando → encerrado`) e ligar
      `so_em_kit`/`reposicao_auto` (cobre ligar, adicionar com SKU novo, montar via gerenciar);
    - `kit_transferencias` (`security definer`: o executor não lê `kits_variacao`): recusa transferência que não seja a
