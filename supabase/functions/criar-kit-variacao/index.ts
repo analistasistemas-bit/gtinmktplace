@@ -22,7 +22,8 @@ import { lerOferta } from '../_shared/kit-variacao/ml-oferta.ts';
 import { AVISO_SELETOR_ML } from '../_shared/kit-variacao/combinacoes.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import {
-  criarKitVariacao, itensPorFoto, moderadosDoBulk, type CriarKitVariacaoInput, type DepsCriarKitVariacao,
+  adicionarAoKit, criarKitVariacao, itensPorFoto, moderadosDoBulk, type AdicionarKitInput, type CriarKitVariacaoInput,
+  type DepsCriarKitVariacao,
 } from './processar.ts';
 
 function json(body: unknown, status = 200): Response {
@@ -36,6 +37,7 @@ const STATUS_POR_MOTIVO: Record<string, number> = {
   base_multi_origem: 409, base_moderada: 409, foto_moderada: 409, peca_insuficiente: 409,
   baseline_divergente: 409, up_ocupado: 409, pedido_diferente: 409, cadastro_parcial_divergente: 409,
   foto_nao_autorizada: 403, previa_usada: 409, previa_divergente: 409, previa_invalida: 400,
+  kit_nao_encontrado: 404, sku_sem_anuncio: 409, combinacao_existente: 409, sku_inexistente: 409,
 };
 
 type Linha = Record<string, unknown>;
@@ -230,6 +232,69 @@ function portas(admin: SupabaseClient, orgId: string, userId: string): DepsCriar
         return r as { ok: boolean; motivo?: string };
       },
     },
+
+    // Task 13 (ajuste): Montar mais com SKU novo no kit existente.
+    adicao: {
+      async existente(chave) {
+        const t = await ler(admin.from('kit_transferencias').select('id, kit_id, pedido_hash').eq('org_id', orgId)
+          .eq('chave_cadastro', chave).maybeSingle(), 'adição existente');
+        return t ? { kitId: t.kit_id as string, transferenciaId: t.id as string, pedidoHash: (t.pedido_hash as string | null) ?? null } : null;
+      },
+      async lerKit(kitId) {
+        const kit = await ler(admin.from('kits_variacao').select('id, codigo_pai_base, codigo_pai_kit, pecas_por_kit, preco')
+          .eq('id', kitId).eq('org_id', orgId).maybeSingle(), 'kit');
+        if (!kit) return null;
+        const canonica = async (pai: string, onde: string) => (await lerUm(admin.from('familias').select('id').eq('org_id', orgId)
+          .eq('codigo_pai', pai).order('criado_em', { ascending: false }).limit(1), onde))[0]?.id as string | undefined;
+        const baseId = await canonica(kit.codigo_pai_base as string, 'base do kit');
+        const familiaKitId = await canonica(kit.codigo_pai_kit as string, 'família do kit');
+        if (!baseId || !familiaKitId) return null;
+        const skus = await ler(admin.from('kit_variacao_skus').select('codigo, cores, tamanho, rotulo_cor')
+          .eq('kit_id', kitId).eq('org_id', orgId), 'SKUs do kit') ?? [];
+        const vs = await ler(admin.from('variacoes').select('codigo, cor, tamanho, imagem_path, ml_picture_id')
+          .eq('familia_id', familiaKitId), 'variações do kit') ?? [];
+        const vinculos = await ler(admin.from('anuncios_externos_itens')
+          .select('sku, item_externo_id, user_product_id, catalog_listing_id, anuncios_externos!inner(codigo_pai)')
+          .eq('org_id', orgId).eq('anuncios_externos.codigo_pai', kit.codigo_pai_kit as string).eq('retirado', false), 'vínculos do kit') ?? [];
+        return {
+          kitId, baseId, familiaKitId, pecasPorKit: Number(kit.pecas_por_kit), preco: Number(kit.preco),
+          skus: skus.map((x) => ({ codigo: x.codigo as string, cores: x.cores as string[], tamanho: x.tamanho as string, rotulo: x.rotulo_cor as string })),
+          variacoes: vs.map((v) => ({
+            codigo: v.codigo as string, cor: String(v.cor ?? ''), tamanho: String(v.tamanho ?? ''),
+            imagemPath: (v.imagem_path as string | null) ?? null, pictureId: (v.ml_picture_id as string | null) ?? null,
+          })),
+          vinculos: vinculos.map((v) => ({
+            sku: v.sku as string, item_externo_id: v.item_externo_id as string | null,
+            user_product_id: v.user_product_id as string | null, catalog_listing_id: v.catalog_listing_id as string | null,
+          })),
+        };
+      },
+      gravar: async (a) => await lerUm(admin.rpc('kit_variacao_adicionar', {
+        p_org: orgId, p_kit: a.kitId, p_chave: a.chave, p_hash: a.hash, p_novos: a.novos, p_existentes: a.existentes,
+        p_baseline: a.baseline, p_alvos: a.alvos,
+      }), 'kit_variacao_adicionar'),
+      async atualizarFoto(familiaId, codigo, path, pictureId) {
+        const { error } = await admin.from('variacoes').update({ imagem_path: path, ml_picture_id: pictureId })
+          .eq('familia_id', familiaId).eq('codigo', codigo);
+        if (error) throw new Error(`foto da variação: ${error.message}`);
+      },
+      async desfazerVariacoes(familiaId, codigos) {
+        const { error } = await admin.from('variacoes').delete().eq('familia_id', familiaId).in('codigo', codigos);
+        if (error) console.error('kit_adicionar_desfazer_falhou', familiaId, error.message);
+      },
+    },
+  };
+}
+
+function parseAdicionar(body: Linha): AdicionarKitInput | null {
+  const quantidades = Array.isArray(body.quantidades) ? body.quantidades as Linha[] : null;
+  if (typeof body.kit_id !== 'string' || !quantidades || typeof body.chave_cadastro !== 'string' || !body.chave_cadastro
+    || (body.fotos != null && typeof body.fotos !== 'object')) return null;
+  return {
+    kitId: body.kit_id, chaveCadastro: body.chave_cadastro, fotos: (body.fotos ?? {}) as Record<string, string>,
+    quantidades: quantidades.map((q) => ({
+      cores: Array.isArray(q.cores) ? q.cores.map(String) : [], tamanho: String(q.tamanho ?? ''), quantidade: Number(q.quantidade),
+    })),
   };
 }
 
@@ -271,13 +336,19 @@ Deno.serve(async (req) => {
     return json({ error: 'Kit com variação não habilitado para esta organização.' }, 403);
   }
 
-  let input: CriarKitVariacaoInput | null;
-  try { input = parse(await req.json()); } catch { return json({ error: 'JSON inválido' }, 400); }
+  // `kit_id` presente: Montar mais num kit existente (SKU novo no mesmo kit); senão, criação.
+  let input: CriarKitVariacaoInput | AdicionarKitInput | null;
+  try {
+    const body = await req.json() as Linha;
+    input = typeof body?.kit_id === 'string' ? parseAdicionar(body) : parse(body);
+  } catch { return json({ error: 'JSON inválido' }, 400); }
   if (!input) return json({ error: 'Payload inválido.' }, 400);
-  const target = { type: 'familia', id: input.familiaBaseId };
+  const target = 'kitId' in input ? { type: 'kit_variacao', id: input.kitId } : { type: 'familia', id: input.familiaBaseId };
 
   try {
-    const r = await criarKitVariacao(portas(admin, orgId, userId), input);
+    const r = 'kitId' in input
+      ? await adicionarAoKit(portas(admin, orgId, userId), input)
+      : await criarKitVariacao(portas(admin, orgId, userId), input);
     if (!r.ok) {
       await auditarOperacaoSuporte(admin, context, target, 'failed');
       return json({ error: r.mensagem ?? r.motivo, motivo: r.motivo }, STATUS_POR_MOTIVO[r.motivo] ?? 400);

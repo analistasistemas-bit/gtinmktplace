@@ -1346,6 +1346,7 @@ export type Database = {
       kit_transferencias: {
         Row: {
           alerta: string | null
+          chave_cadastro: string | null
           criado_em: string
           estado: string
           execucao_ate: string | null
@@ -1356,11 +1357,13 @@ export type Database = {
           org_id: string
           passo: string
           passo_em: string
+          pedido_hash: string | null
           tipo: string
           versao_politica: number
         }
         Insert: {
           alerta?: string | null
+          chave_cadastro?: string | null
           criado_em?: string
           estado?: string
           execucao_ate?: string | null
@@ -1371,11 +1374,13 @@ export type Database = {
           org_id: string
           passo?: string
           passo_em?: string
+          pedido_hash?: string | null
           tipo: string
           versao_politica: number
         }
         Update: {
           alerta?: string | null
+          chave_cadastro?: string | null
           criado_em?: string
           estado?: string
           execucao_ate?: string | null
@@ -1386,6 +1391,7 @@ export type Database = {
           org_id?: string
           passo?: string
           passo_em?: string
+          pedido_hash?: string | null
           tipo?: string
           versao_politica?: number
         }
@@ -5753,6 +5759,19 @@ export type Database = {
       }
       kit_criar_transferencia: {
         Args: { p_alvos: Json; p_itens: Json; p_kit: string; p_org: string; p_tipo: string }
+        Returns: Json
+      }
+      kit_variacao_adicionar: {
+        Args: {
+          p_alvos: Json
+          p_baseline: Json
+          p_chave: string
+          p_existentes: Json
+          p_hash: string
+          p_kit: string
+          p_novos: Json
+          p_org: string
+        }
         Returns: Json
       }
       kit_variacao_criar: {

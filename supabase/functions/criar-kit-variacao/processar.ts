@@ -100,7 +100,48 @@ export interface DepsCriarKitVariacao {
     ler(id: string): Promise<{ baseId: string; pecas: number; kitId: string | null } | null>;
     /** Associa a prévia ao kit uma vez só e soma o custo na família do kit (RPC atômica). */
     consumir(a: { previaId: string; kitId: string; chave: string; baseId: string; pecas: number }): Promise<{ ok: boolean; motivo?: string }>;
-  };
+  };  /** Montar mais com SKU novo no kit existente (`adicionarAoKit`). */
+  adicao?: DepsAdicao;
+}
+
+/** Montar mais: quantidades por combinação × tamanho; o que já é SKU do kit só aumenta, o resto vira SKU novo. */
+export interface AdicionarKitInput {
+  kitId: string;
+  quantidades: { cores: string[]; tamanho: string; quantidade: number }[];
+  /** Foto por rótulo da combinação nova. Tamanho novo de combinação publicada reaproveita a foto dela. */
+  fotos: Record<string, string>;
+  chaveCadastro: string;
+}
+
+export interface KitParaAdicionar {
+  kitId: string;
+  /** Família canônica da base (a mais recente do PAI da base). */
+  baseId: string;
+  /** Família canônica do kit: onde as variações novas entram (a saga lê o SKU nela). */
+  familiaKitId: string;
+  pecasPorKit: number;
+  preco: number;
+  skus: Array<{ codigo: string; cores: string[]; tamanho: string; rotulo: string }>;
+  /** Variações da família do kit (inclui órfã de tentativa anterior, sem SKU de kit). */
+  variacoes: Array<{ codigo: string; cor: string; tamanho: string; imagemPath: string | null; pictureId: string | null }>;
+  /** Vínculo ML dos SKUs do kit (raiz do PAI do kit). */
+  vinculos: Array<{ sku: string; item_externo_id: string | null; user_product_id: string | null; catalog_listing_id: string | null }>;
+}
+
+export interface DepsAdicao {
+  /** Transferência já criada por esta chave (`kit_transferencias.chave_cadastro`). */
+  existente(chave: string): Promise<{ kitId: string; transferenciaId: string; pedidoHash: string | null } | null>;
+  /** Por id E org. */
+  lerKit(kitId: string): Promise<KitParaAdicionar | null>;
+  /** `kit_variacao_adicionar`. */
+  gravar(a: {
+    kitId: string; chave: string; hash: string; novos: Linha[]; existentes: Array<{ codigo: string; quantidade: number }>;
+    baseline: Array<{ codigo: string; ml: number }>; alvos: Linha[];
+  }): Promise<ResultadoRpcKit>;
+  /** Variação órfã reaproveitada recebe a foto deste pedido (senão a saga postaria a antiga). */
+  atualizarFoto(familiaId: string, codigo: string, path: string, pictureId: string): Promise<void>;
+  /** Recusa definitiva: as variações novas saem da família publicada do kit. */
+  desfazerVariacoes(familiaId: string, codigos: string[]): Promise<void>;
 }
 
 export interface SkuKitCriado { codigo: string; rotulo: string; tamanho: string; quantidade: number }
@@ -288,6 +329,81 @@ export function montarVariacaoKitVariacao(
   };
 }
 
+/**
+ * Peças das combinações: custo, peso e saldo somado; só user product, um local só (sem Full), nenhum item moderado. A
+ * leitura do ML vira o baseline da marca inicial.
+ */
+async function conferirPecas(
+  deps: DepsCriarKitVariacao, base: BaseKit, combinacoes: Combinacao[],
+): Promise<{ alvos: Linha[]; baseline: Array<{ codigo: string; ml: number }> } | ResultadoCriarKitVariacao> {
+  const pecas = new Map<string, Linha>();
+  const precisa = new Map<string, number>();
+  for (const c of combinacoes) {
+    for (const v of c.componentes) {
+      const codigo = v.codigo as string;
+      pecas.set(codigo, v);
+      precisa.set(codigo, (precisa.get(codigo) ?? 0) + c.quantidade);
+    }
+  }
+  for (const [codigo, v] of pecas) {
+    if (!(Number(v.custo) > 0)) return recusa('base_sem_custo', `${codigo} sem custo.`);
+    if (!(Number(v.peso_gramas) > 0)) return recusa('base_sem_peso', `${codigo} sem peso.`);
+    if (Number(v.estoque) < precisa.get(codigo)!) {
+      return recusa('peca_insuficiente', `${codigo}: precisa de ${precisa.get(codigo)}, há ${v.estoque}.`);
+    }
+  }
+
+  // Só user product (o `/stock` dá 404 em Legacy), um local só (sem Full), nenhum item moderado.
+  const alvos: Linha[] = [];
+  const baseline: Array<{ codigo: string; ml: number }> = [];
+  for (const codigo of pecas.keys()) {
+    const vinculo = base.vinculos.find((x) => x.sku === codigo && x.item_externo_id);
+    if (!vinculo?.user_product_id) return recusa('base_legacy', `${codigo} não está publicado como user product.`);
+    const itemIds = [vinculo.item_externo_id!, ...(vinculo.catalog_listing_id ? [vinculo.catalog_listing_id] : [])];
+    const oferta = await deps.lerOferta(vinculo.user_product_id, itemIds);
+    if (oferta.locais.some((l) => l.type === 'meli_facility')) return recusa('base_full', `${codigo} está no Full.`);
+    if (!oferta.somenteSellingAddress) return recusa('base_multi_origem', `${codigo} tem estoque fora do selling_address.`);
+    const mod = oferta.itens.find(itemModerado);
+    if (mod) return recusa('base_moderada', `${codigo}: item ${mod.id} moderado no Mercado Livre.`);
+    alvos.push({ codigo, up_id: vinculo.user_product_id, item_ids: itemIds });
+    baseline.push({ codigo, ml: oferta.quantidade });
+  }
+
+  return { alvos, baseline };
+}
+
+/** Fotos: da própria org, fora de anúncio moderado, e sobem ao ML agora (só as de `subir`; as outras já têm id). */
+async function conferirFotos(
+  deps: DepsCriarKitVariacao, paths: string[], subir: string[],
+): Promise<Map<string, string> | ResultadoCriarKitVariacao> {
+  // O caminho vem do cliente e a edge assina com service role: só foto da própria org (prefixo do bucket).
+  const usuarios = new Set(await deps.usuariosDaOrg());
+  const alheia = paths.find((path) => !fotoDaOrg(path, deps.orgId, usuarios));
+  if (alheia) return recusa('foto_nao_autorizada', `A foto ${alheia} não pertence a esta empresa.`);
+  let moderadas: string[];
+  try {
+    moderadas = await deps.fotosEmItemModerado(paths);
+  } catch (e) {
+    // Sem leitura completa não há prova de que a foto não está em anúncio moderado: recusa.
+    return recusa('foto_moderacao_ilegivel', `Não foi possível conferir as fotos no Mercado Livre: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  if (moderadas.length > 0) {
+    return recusa('foto_moderada', `Foto usada em anúncio moderado no Mercado Livre: ${moderadas.join(', ')}. Use outra.`);
+  }
+
+  // A foto sobe agora: depois das reduções da saga, um caminho inválido deixaria as peças sem oferta.
+  const pictureIds = new Map<string, string>();
+  for (const path of subir) {
+    try {
+      pictureIds.set(path, await deps.subirFoto(path));
+    } catch (e) {
+      return recusa('foto_invalida', `Foto ${path}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  return pictureIds;
+}
+
 export async function criarKitVariacao(
   deps: DepsCriarKitVariacao, input: CriarKitVariacaoInput,
 ): Promise<ResultadoCriarKitVariacao> {
@@ -345,66 +461,15 @@ export async function criarKitVariacao(
     }
     combinacoes.push({ ...c, componentes });
   }
-  const pecas = new Map<string, Linha>();
-  const precisa = new Map<string, number>();
-  for (const c of combinacoes) {
-    for (const v of c.componentes) {
-      const codigo = v.codigo as string;
-      pecas.set(codigo, v);
-      precisa.set(codigo, (precisa.get(codigo) ?? 0) + c.quantidade);
-    }
-  }
-  for (const [codigo, v] of pecas) {
-    if (!(Number(v.custo) > 0)) return recusa('base_sem_custo', `${codigo} sem custo.`);
-    if (!(Number(v.peso_gramas) > 0)) return recusa('base_sem_peso', `${codigo} sem peso.`);
-    if (Number(v.estoque) < precisa.get(codigo)!) {
-      return recusa('peca_insuficiente', `${codigo}: precisa de ${precisa.get(codigo)}, há ${v.estoque}.`);
-    }
-  }
-
-  // Só user product (o `/stock` dá 404 em Legacy), um local só (sem Full), nenhum item moderado.
-  const alvos: Linha[] = [];
-  const baseline: Array<{ codigo: string; ml: number }> = [];
-  for (const codigo of pecas.keys()) {
-    const vinculo = base.vinculos.find((x) => x.sku === codigo && x.item_externo_id);
-    if (!vinculo?.user_product_id) return recusa('base_legacy', `${codigo} não está publicado como user product.`);
-    const itemIds = [vinculo.item_externo_id!, ...(vinculo.catalog_listing_id ? [vinculo.catalog_listing_id] : [])];
-    const oferta = await deps.lerOferta(vinculo.user_product_id, itemIds);
-    if (oferta.locais.some((l) => l.type === 'meli_facility')) return recusa('base_full', `${codigo} está no Full.`);
-    if (!oferta.somenteSellingAddress) return recusa('base_multi_origem', `${codigo} tem estoque fora do selling_address.`);
-    const mod = oferta.itens.find(itemModerado);
-    if (mod) return recusa('base_moderada', `${codigo}: item ${mod.id} moderado no Mercado Livre.`);
-    alvos.push({ codigo, up_id: vinculo.user_product_id, item_ids: itemIds });
-    baseline.push({ codigo, ml: oferta.quantidade });
-  }
+  const conferidas = await conferirPecas(deps, base, combinacoes);
+  if ('ok' in conferidas) return conferidas;
+  const { alvos, baseline } = conferidas;
 
   const faltaFoto = combinacoes.find((c) => !texto(input.fotos?.[c.rotulo]));
   if (faltaFoto) return recusa('sem_foto', `Falta a foto de ${faltaFoto.rotulo}.`);
   const paths = [...new Set(combinacoes.map((c) => input.fotos[c.rotulo]))];
-  // O caminho vem do cliente e a edge assina com service role: só foto da própria org (prefixo do bucket).
-  const usuarios = new Set(await deps.usuariosDaOrg());
-  const alheia = paths.find((path) => !fotoDaOrg(path, deps.orgId, usuarios));
-  if (alheia) return recusa('foto_nao_autorizada', `A foto ${alheia} não pertence a esta empresa.`);
-  let moderadas: string[];
-  try {
-    moderadas = await deps.fotosEmItemModerado(paths);
-  } catch (e) {
-    // Sem leitura completa não há prova de que a foto não está em anúncio moderado: recusa.
-    return recusa('foto_moderacao_ilegivel', `Não foi possível conferir as fotos no Mercado Livre: ${e instanceof Error ? e.message : String(e)}`);
-  }
-  if (moderadas.length > 0) {
-    return recusa('foto_moderada', `Foto usada em anúncio moderado no Mercado Livre: ${moderadas.join(', ')}. Use outra.`);
-  }
-
-  // A foto sobe agora: depois das reduções da saga, um caminho inválido deixaria as peças sem oferta.
-  const pictureIds = new Map<string, string>();
-  for (const path of paths) {
-    try {
-      pictureIds.set(path, await deps.subirFoto(path));
-    } catch (e) {
-      return recusa('foto_invalida', `Foto ${path}: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  }
+  const pictureIds = await conferirFotos(deps, paths, paths);
+  if ('ok' in pictureIds) return pictureIds;
 
   try {
     await deps.exigirFiscal(familia);
@@ -514,5 +579,172 @@ export async function criarKitVariacao(
   return {
     ok: true, kitId: r.kit_id, transferenciaId: r.transferencia_id, existente: !!r.existente, codigoPai,
     skus: combinacoes.map((c, i) => ({ codigo: codigos[i], rotulo: c.rotulo, tamanho: c.tamanho, quantidade: c.quantidade })),
+  };
+}
+
+const conjunto = (cores: string[]) => [...cores].map(texto).sort().join('|');
+
+/**
+ * ADR-0197 (Task 13, ajuste): Montar mais. Combinação × tamanho já publicado só aumenta o saldo; nunca publicado vira
+ * SKU novo no MESMO kit e na família do kit, criado pela saga (alvo `criar`, passo `aumentar`), como na criação. Uma
+ * transferência só para os dois (`kit_variacao_adicionar`), com as mesmas garantias: peças conferidas no ML, foto da
+ * org fora de moderação, guia, fiscal, marca inicial, `comRetryConcorrencia` e chave idempotente com o hash.
+ *
+ * Combinação = conjunto de cores + tamanho. Tamanho novo de combinação publicada usa as cores e o rótulo gravados
+ * (o COLOR em texto precisa ser idêntico para o seletor) e a foto dela.
+ */
+export async function adicionarAoKit(deps: DepsCriarKitVariacao, input: AdicionarKitInput): Promise<ResultadoCriarKitVariacao> {
+  const ad = deps.adicao;
+  if (!ad) throw new Error('adicionarAoKit sem as portas de adição');
+
+  const vistas = new Set<string>();
+  const pedidos: Array<{ cores: string[]; tamanho: string; quantidade: number }> = [];
+  for (const q of input.quantidades ?? []) {
+    const cs = (q.cores ?? []).map(texto);
+    if (cs.some((c) => !c) || new Set(cs).size !== cs.length || !texto(q.tamanho) || !Number.isInteger(q.quantidade) || q.quantidade < 0) {
+      return recusa('combinacao_invalida');
+    }
+    const chave = `${conjunto(cs)}#${texto(q.tamanho)}`;
+    if (vistas.has(chave)) return recusa('combinacao_repetida');
+    vistas.add(chave);
+    if (q.quantidade > 0) pedidos.push({ cores: cs, tamanho: texto(q.tamanho), quantidade: q.quantidade });
+  }
+  if (pedidos.length === 0) return recusa('sem_kit');
+
+  const canonico = JSON.stringify([
+    input.kitId,
+    pedidos.map((p) => [conjunto(p.cores), p.tamanho, p.quantidade]).sort((a, b) => String(a).localeCompare(String(b))),
+    Object.entries(input.fotos ?? {}).sort(([a], [b]) => a.localeCompare(b)),
+  ]);
+  const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonico)))]
+    .map((b) => b.toString(16).padStart(2, '0')).join('');
+
+  const ja = await ad.existente(input.chaveCadastro);
+  if (ja && (ja.pedidoHash !== hash || ja.kitId !== input.kitId)) return recusa('pedido_diferente', MSG_PEDIDO_DIFERENTE);
+  if (ja) {
+    await deps.enfileirarSaga(ja.transferenciaId);
+    return { ok: true, kitId: ja.kitId, transferenciaId: ja.transferenciaId, existente: true };
+  }
+
+  const kit = await ad.lerKit(input.kitId);
+  if (!kit) return recusa('kit_nao_encontrado', 'Kit não encontrado.');
+  if (pedidos.some((p) => p.cores.length !== kit.pecasPorKit)) return recusa('combinacao_invalida');
+  const base = await deps.lerBase(kit.baseId);
+  if (!base) return recusa('base_nao_encontrada');
+  const { familia } = base;
+  if (!kitLigado(familia)) return recusa('modulo_desligado');
+  if (!familia.categoria_ml_id) return recusa('base_sem_categoria');
+  const coresBase = [...new Set(base.variacoes.map((v) => texto(v.cor)))];
+
+  // Publicado (SKU do kit) ou novo. Novo reaproveita cores e rótulo de combinação já publicada em outro tamanho.
+  const existentes: Array<{ codigo: string; quantidade: number }> = [];
+  const novas: Combinacao[] = [];
+  const todas: Combinacao[] = [];
+  for (const p of pedidos) {
+    const doKit = kit.skus.find((s) => conjunto(s.cores) === conjunto(p.cores) && texto(s.tamanho) === p.tamanho);
+    const irmao = kit.skus.find((s) => conjunto(s.cores) === conjunto(p.cores));
+    const cores = doKit?.cores ?? irmao?.cores ?? coresBase.filter((c) => p.cores.includes(c));
+    if (cores.length !== kit.pecasPorKit) return recusa('sku_inexistente', `A base não tem as cores ${p.cores.join(', ')}.`);
+    const componentes: Linha[] = [];
+    for (const cor of cores) {
+      const v = base.variacoes.find((x) => texto(x.cor) === texto(cor) && texto(x.tamanho) === p.tamanho);
+      if (!v) return recusa('sku_inexistente', `A base não tem ${cor} no tamanho ${p.tamanho}.`);
+      componentes.push(v);
+    }
+    const c: Combinacao = {
+      cores, rotulo: doKit?.rotulo ?? irmao?.rotulo ?? rotuloCombinacao(cores), tamanho: p.tamanho, quantidade: p.quantidade, componentes,
+    };
+    todas.push(c);
+    if (doKit) existentes.push({ codigo: doKit.codigo, quantidade: p.quantidade });
+    else novas.push(c);
+  }
+
+  const conferidas = await conferirPecas(deps, base, todas);
+  if ('ok' in conferidas) return conferidas;
+  const alvos = [...conferidas.alvos];
+  for (const e of existentes) {
+    const v = kit.vinculos.find((x) => x.sku === e.codigo && x.item_externo_id);
+    if (!v?.user_product_id) return recusa('sku_sem_anuncio', `${e.codigo} sem anúncio no Mercado Livre.`);
+    alvos.push({ codigo: e.codigo, up_id: v.user_product_id, item_ids: [v.item_externo_id!, ...(v.catalog_listing_id ? [v.catalog_listing_id] : [])] });
+  }
+
+  // Foto: combinação nova exige a dela; tamanho novo de combinação publicada usa a foto da combinação.
+  const fotoDe = new Map<string, { path: string; pictureId: string | null }>();
+  for (const c of novas) {
+    const enviada = texto(input.fotos?.[c.rotulo]);
+    const publicada = kit.variacoes.find((v) => v.cor === c.rotulo && kit.skus.some((s) => s.codigo === v.codigo) && v.imagemPath);
+    if (enviada) fotoDe.set(c.rotulo, { path: enviada, pictureId: null });
+    else if (publicada) fotoDe.set(c.rotulo, { path: publicada.imagemPath!, pictureId: publicada.pictureId });
+    else return recusa('sem_foto', `Falta a foto de ${c.rotulo}.`);
+  }
+  const fotos = [...fotoDe.values()];
+  const subir = [...new Set(fotos.filter((f) => !f.pictureId).map((f) => f.path))];
+  const pictureIds = await conferirFotos(deps, [...new Set(fotos.map((f) => f.path))], subir);
+  if ('ok' in pictureIds) return pictureIds;
+
+  if (novas.length > 0) {
+    try {
+      await deps.exigirFiscal(familia);
+    } catch (e) {
+      return recusa('fiscal_incompleto', e instanceof Error ? e.message : String(e));
+    }
+    // Mesma guia para todos os tamanhos da família do kit.
+    const tamanhos = [...new Set([...kit.skus.map((s) => s.tamanho), ...novas.map((c) => c.tamanho)])];
+    if (!familia.genero || !gradeDaFamilia((familia.grade_tamanho as string | null) ?? null, tamanhos)) {
+      return recusa('sem_guia_tamanho', 'A base precisa de gênero e grade de tamanho para a guia de medidas.');
+    }
+    try {
+      await deps.garantirGuia(familia, tamanhos);
+    } catch (e) {
+      return recusa('sem_guia_tamanho', e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  // Variação órfã (tentativa anterior sem SKU de kit) com a mesma combinação e tamanho é reaproveitada.
+  const orfa = (c: Combinacao) => kit.variacoes.find((v) => v.cor === c.rotulo && texto(v.tamanho) === c.tamanho
+    && !kit.skus.some((s) => s.codigo === v.codigo));
+  const faltam = novas.filter((c) => !orfa(c));
+  const reserva = faltam.length > 0 ? await deps.reservarCodigos(faltam.length + 1) : null;   // o PAI reservado sobra
+  const livres = [...(reserva?.codigos ?? [])];
+  const codigos = novas.map((c) => orfa(c)?.codigo ?? livres.shift()!);
+  try {
+    for (const [i, c] of novas.entries()) {
+      const f = fotoDe.get(c.rotulo)!;
+      const pictureId = f.pictureId ?? pictureIds.get(f.path)!;
+      if (orfa(c)) {
+        await ad.atualizarFoto(kit.familiaKitId, codigos[i], f.path, pictureId);
+        continue;
+      }
+      await deps.gravar.variacao(montarVariacaoKitVariacao(c, {
+        familiaId: kit.familiaKitId, codigo: codigos[i], preco: kit.preco, foto: f.path, pictureId, pecas: kit.pecasPorKit,
+      }));
+    }
+  } catch (e) {
+    return recusa('falha_gravar', `${e instanceof Error ? e.message : String(e)}. Tente de novo: o pedido é retomado.`);
+  }
+
+  let r: ResultadoRpcKit;
+  try {
+    r = await ad.gravar({
+      kitId: kit.kitId, chave: input.chaveCadastro, hash, existentes, baseline: conferidas.baseline, alvos,
+      novos: novas.map((c, i) => ({
+        codigo: codigos[i], tamanho: c.tamanho, cores: c.cores, rotulo_cor: c.rotulo, quantidade: c.quantidade,
+        componentes: c.componentes.map((v) => ({ codigo: v.codigo, quantidade: 1 })),
+      })),
+    });
+  } catch (e) {
+    const outra = await ad.existente(input.chaveCadastro).catch(() => null);
+    if (!outra) return recusa('falha_gravar', `${e instanceof Error ? e.message : String(e)}. Tente de novo: o pedido é retomado.`);
+    if (outra.pedidoHash !== hash) return recusa('pedido_diferente', MSG_PEDIDO_DIFERENTE);
+    r = { ok: true, kit_id: outra.kitId, transferencia_id: outra.transferenciaId, existente: true };
+  }
+  if (!r.ok || !r.transferencia_id) {
+    if (codigos.length > 0) await ad.desfazerVariacoes(kit.familiaKitId, codigos);
+    return recusa(r.motivo ?? 'falha_gravar', r.mensagem ?? r.codigo);
+  }
+  await deps.enfileirarSaga(r.transferencia_id);
+  return {
+    ok: true, kitId: kit.kitId, transferenciaId: r.transferencia_id, existente: !!r.existente,
+    skus: novas.map((c, i) => ({ codigo: codigos[i], rotulo: c.rotulo, tamanho: c.tamanho, quantidade: c.quantidade })),
   };
 }
