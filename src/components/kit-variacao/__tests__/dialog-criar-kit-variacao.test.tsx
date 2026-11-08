@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
@@ -140,6 +140,9 @@ describe('DialogCriarKitVariacao', () => {
     const [a, b] = vi.mocked(gerarFotoKitEdge).mock.calls.map((c) => c[0].requestId);
     expect(a).not.toBe(b);
 
+    // Prévia ainda não carregou: não dá para aprovar.
+    expect(screen.getByRole('button', { name: 'Usar foto gerada Preto e Branco' })).toBeDisabled();
+    fireEvent.load(screen.getByRole('img', { name: 'Foto gerada Preto e Branco' }));
     await user.click(screen.getByRole('button', { name: 'Usar foto gerada Preto e Branco' }));
     expect(screen.getByRole('button', { name: 'Próximo' })).toBeEnabled();
     await user.click(screen.getByRole('button', { name: 'Próximo' }));
@@ -147,6 +150,42 @@ describe('DialogCriarKitVariacao', () => {
     await vi.waitFor(() => expect(criarKitVariacaoEdge).toHaveBeenCalled());
     expect(vi.mocked(criarKitVariacaoEdge).mock.calls[0][0].fotos).toEqual({ 'Preto e Branco': `ORG/kit-variacao-ia/${b}.png` });
     expect(enviarFotoKit).not.toHaveBeenCalled();
+  });
+
+  it('falha incerta (sem motivo) repete o mesmo pedido: recupera a geração existente em vez de gerar outra', async () => {
+    modulos.data = ['kit_variacao', 'imagem_ia'];
+    vi.mocked(gerarFotoKitEdge).mockClear();
+    vi.mocked(gerarFotoKitEdge).mockResolvedValueOnce({ ok: false, mensagem: 'Falha ao registrar a geração.' });
+    const user = userEvent.setup();
+    abrir();
+    await montar(user, ['Preto', 'Branco'], { 'Preto e Branco M': '1' });
+    await user.click(screen.getByRole('button', { name: 'Próximo' }));
+    const botao = () => screen.getByRole('button', { name: 'Gerar foto Preto e Branco' });
+    await user.click(botao());
+    await vi.waitFor(() => expect(botao()).toBeEnabled());
+    await user.click(botao());
+    await screen.findByRole('img', { name: 'Foto gerada Preto e Branco' });
+    const [a, b] = vi.mocked(gerarFotoKitEdge).mock.calls.map((x) => x[0].requestId);
+    expect(b).toBe(a);
+  });
+
+  it('prévia sem URL não deixa aprovar; "Recarregar prévia" usa o mesmo pedido, sem gerar outra', async () => {
+    modulos.data = ['kit_variacao', 'imagem_ia'];
+    vi.mocked(gerarFotoKitEdge).mockClear();
+    vi.mocked(gerarFotoKitEdge).mockResolvedValueOnce({ ok: true, path: 'ORG/kit-variacao-ia/x.png', url: null });
+    const user = userEvent.setup();
+    abrir();
+    await montar(user, ['Preto', 'Branco'], { 'Preto e Branco M': '1' });
+    await user.click(screen.getByRole('button', { name: 'Próximo' }));
+    await user.click(screen.getByRole('button', { name: 'Gerar foto Preto e Branco' }));
+    await screen.findByRole('button', { name: 'Recarregar prévia Preto e Branco' });
+    expect(screen.getByRole('button', { name: 'Usar foto gerada Preto e Branco' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Recarregar prévia Preto e Branco' }));
+    const img = await screen.findByRole('img', { name: 'Foto gerada Preto e Branco' });
+    fireEvent.load(img);
+    expect(screen.getByRole('button', { name: 'Usar foto gerada Preto e Branco' })).toBeEnabled();
+    const [a, b] = vi.mocked(gerarFotoKitEdge).mock.calls.map((x) => x[0].requestId);
+    expect(b).toBe(a);
   });
 
   it('falha definitiva da geração libera um pedido novo; falha de rede repete o mesmo', async () => {

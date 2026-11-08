@@ -1,7 +1,8 @@
 // ADR-0197 (Task 15): foto de uma combinação do kit (Criar e Gerenciar). Sempre dá para enviar a foto; com o módulo
 // `imagem_ia`, também gerar por IA. A foto gerada fica como candidata e só vira a foto da combinação quando o operador
-// clica "Usar esta foto": sem aprovação, nada publica. Cada geração é um pedido novo (`requestId`); depois de falha de
-// rede a repetição usa o mesmo, e a edge devolve a imagem já gerada em vez de gerar (e cobrar) de novo.
+// clica "Usar esta foto", que só libera depois que a prévia carregou: sem aprovação, nada publica. Cada geração é um
+// pedido novo (`requestId`); depois de falha incerta a repetição usa o mesmo, e a edge devolve a imagem já gerada em vez
+// de gerar (e cobrar) de novo. Prévia sem URL: "Recarregar prévia" pede a mesma geração, sem gerar outra.
 import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -9,6 +10,9 @@ import { Loader2, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { gerarFotoKitEdge } from '@/lib/kit-variacao-edge';
 import { cn } from '@/lib/utils';
+
+/** Falha definitiva: o mesmo pedido falharia de novo; o próximo clique é pedido novo. */
+const DEFINITIVAS = new Set(['imagem_inadequada', 'pedido_diferente']);
 
 export interface FotoGerada { path: string; url: string | null }
 /** Arquivo enviado pelo operador ou foto gerada por IA já aprovada. */
@@ -23,22 +27,27 @@ export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, 
   valor: FotoKit | undefined;
   onChange: (f: FotoKit) => void;
 }) {
-  const [candidata, setCandidata] = useState<FotoGerada | null>(null);
+  const [candidata, setCandidata] = useState<(FotoGerada & { requestId: string }) | null>(null);
+  const [carregada, setCarregada] = useState(false);
+  const [erroPrevia, setErroPrevia] = useState(false);
   const requestId = useRef('');
   const gerar = useMutation({
-    mutationFn: () => {
-      requestId.current ||= crypto.randomUUID();
-      return gerarFotoKitEdge({ requestId: requestId.current, familiaBaseId, cores });
+    // `recarregar`: o mesmo pedido da candidata, só para obter a URL de novo (a edge devolve a geração existente).
+    mutationFn: async (recarregar?: string) => {
+      const id = recarregar ?? (requestId.current ||= crypto.randomUUID());
+      return { id, r: await gerarFotoKitEdge({ requestId: id, familiaBaseId, cores }) };
     },
-    onSuccess: (r) => {
+    onSuccess: ({ id, r }) => {
       if (!r.ok) {
-        // Desfecho desconhecido (rede) ou em andamento: repete o mesmo pedido. Falha definitiva: o próximo é outro.
-        if (r.motivo !== 'rede' && r.motivo !== 'em_andamento') requestId.current = '';
+        // Só falha definitiva libera pedido novo. Desfecho incerto (rede, 5xx sem motivo, em andamento) repete o mesmo,
+        // e a edge devolve a geração já registrada em vez de gerar e cobrar outra.
+        if (r.motivo && DEFINITIVAS.has(r.motivo)) requestId.current = '';
         toast.error('Não foi possível gerar a foto', { description: r.mensagem });
         return;
       }
-      requestId.current = '';
-      setCandidata({ path: r.path, url: r.url });
+      if (id === requestId.current) requestId.current = '';
+      setCarregada(false); setErroPrevia(false);
+      setCandidata({ path: r.path, url: r.url, requestId: id });
     },
     onError: (e) => toast.error('Não foi possível gerar a foto', { description: (e as Error).message }),
   });
@@ -64,16 +73,33 @@ export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, 
       {temImagemIA && (
         candidata ? (
           <div className="flex items-center gap-3 rounded-md bg-muted/40 p-2">
-            {candidata.url
-              ? <img src={candidata.url} alt={`Foto gerada ${rotulo}`} className="h-24 w-18 shrink-0 rounded object-cover" />
-              : <span role="img" aria-label={`Foto gerada ${rotulo}`} className="h-24 w-18 shrink-0 rounded bg-muted" />}
+            {candidata.url && !erroPrevia
+              ? <img
+                  key={candidata.url} src={candidata.url} alt={`Foto gerada ${rotulo}`}
+                  className="h-24 w-18 shrink-0 rounded object-cover"
+                  onLoad={() => setCarregada(true)} onError={() => { setCarregada(false); setErroPrevia(true); }}
+                />
+              : <span aria-hidden className="h-24 w-18 shrink-0 rounded bg-muted" />}
             <div className="grid min-w-0 gap-1.5">
-              <span className="text-xs text-muted-foreground">Confira se a peça não mudou antes de usar.</span>
+              <span className="text-xs text-muted-foreground">
+                {carregada ? 'Confira se a peça não mudou antes de usar.' : 'A prévia precisa aparecer antes de usar a foto.'}
+              </span>
               <div className="flex flex-wrap gap-1.5">
-                <Button size="sm" aria-label={`Usar foto gerada ${rotulo}`} onClick={() => { onChange(candidata); setCandidata(null); }}>
+                <Button
+                  size="sm" aria-label={`Usar foto gerada ${rotulo}`} disabled={!carregada}
+                  onClick={() => { onChange({ path: candidata.path, url: candidata.url }); setCandidata(null); }}
+                >
                   Usar esta foto
                 </Button>
-                <Button size="sm" variant="outline" aria-label={`Gerar outra ${rotulo}`} disabled={gerar.isPending} onClick={() => gerar.mutate()}>
+                {(!candidata.url || erroPrevia) && (
+                  <Button
+                    size="sm" variant="outline" aria-label={`Recarregar prévia ${rotulo}`} disabled={gerar.isPending}
+                    onClick={() => gerar.mutate(candidata.requestId)}
+                  >
+                    Recarregar prévia
+                  </Button>
+                )}
+                <Button size="sm" variant="outline" aria-label={`Gerar outra ${rotulo}`} disabled={gerar.isPending} onClick={() => gerar.mutate(undefined)}>
                   {gerar.isPending && <Loader2 className="size-3.5 animate-spin" />} Gerar outra
                 </Button>
               </div>
@@ -82,7 +108,7 @@ export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, 
         ) : (
           <Button
             size="sm" variant="outline" className="justify-self-start" aria-label={`Gerar foto ${rotulo}`}
-            disabled={gerar.isPending} onClick={() => gerar.mutate()}
+            disabled={gerar.isPending} onClick={() => gerar.mutate(undefined)}
           >
             {gerar.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
             {gerar.isPending ? 'Gerando…' : 'Gerar foto'}

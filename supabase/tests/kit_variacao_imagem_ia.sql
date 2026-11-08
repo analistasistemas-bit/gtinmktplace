@@ -13,17 +13,18 @@ declare
   r uuid := gen_random_uuid();
   recusou boolean;
 begin
-  -- check do modelo: padrão novo aceito, lixo recusado (numa linha real qualquer; tudo é desfeito).
+  -- check do modelo: padrão novo aceito, lixo recusado. Só a configuração da org do fixture (nunca dado real).
+  insert into public.configuracoes (org_id) values (o) on conflict (org_id) do nothing;
   -- Erro capturado com mensagem própria: o DETAIL do check_violation traria a linha inteira (inclui segredo).
   begin
     update public.configuracoes set ai_model_imagem = 'google/gemini-nano-banana-2.1'
-     where org_id = (select org_id from public.configuracoes where org_id is not null limit 1);
+     where org_id = o;
     perform pg_temp.afirmar(found, 'sem linha de configuracoes para testar o check');
   exception when check_violation then raise exception 'FALHA: check recusou o modelo padrão';
   end;
   begin
     update public.configuracoes set ai_model_imagem = 'google/qualquer'
-     where org_id = (select org_id from public.configuracoes where org_id is not null limit 1);
+     where org_id = o;
     recusou := false;
   exception when check_violation then recusou := true;
   end;
@@ -49,6 +50,13 @@ begin
   exception when check_violation then recusou := true;
   end;
   perform pg_temp.afirmar(recusou, 'gerada sem caminho nem custo aceita');
+  -- caminho preenchido e custo nulo: o CHECK não pode virar NULL (aceito).
+  begin
+    update public.kit_variacao_imagens set status = 'gerada', storage_path = o || '/kit-variacao-ia/x.png' where request_id = r;
+    recusou := false;
+  exception when check_violation then recusou := true;
+  end;
+  perform pg_temp.afirmar(recusou, 'gerada com custo nulo aceita');
   update public.kit_variacao_imagens set status = 'gerada', storage_path = o || '/kit-variacao-ia/x.png', custo_usd = 0.041
    where request_id = r;
   perform pg_temp.afirmar(found, 'gerada completa recusada');

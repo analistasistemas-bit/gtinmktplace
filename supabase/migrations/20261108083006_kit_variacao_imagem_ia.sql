@@ -36,7 +36,7 @@ create table if not exists public.kit_variacao_imagens (
   criado_em       timestamptz not null default now(),
   atualizado_em   timestamptz not null default now(),
   unique (org_id, request_id),
-  check (status <> 'gerada' or (storage_path is not null and custo_usd > 0))
+  check (status <> 'gerada' or (storage_path is not null and custo_usd is not null and custo_usd > 0))
 );
 create index if not exists kit_variacao_imagens_cobranca_idx
   on public.kit_variacao_imagens (org_id, criado_em) where status = 'gerada';

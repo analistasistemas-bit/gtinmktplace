@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DialogGerenciarKit } from '../dialog-gerenciar-kit';
@@ -223,6 +223,7 @@ describe('DialogGerenciarKit', () => {
       await screen.findByRole('img', { name: 'Foto gerada Preto e Marrom' });
       expect(vi.mocked(gerarFotoKitEdge).mock.calls.at(-1)![0]).toMatchObject({ familiaBaseId: 'FAM-BASE', cores: ['Preto', 'Marrom'] });
       expect(screen.getByRole('button', { name: 'Montar mais' })).toBeDisabled();
+      fireEvent.load(screen.getByRole('img', { name: 'Foto gerada Preto e Marrom' }));
       await user.click(screen.getByRole('button', { name: 'Usar foto gerada Preto e Marrom' }));
       await user.click(screen.getByRole('button', { name: 'Montar mais' }));
       await user.click(screen.getByRole('button', { name: 'Montar' }));

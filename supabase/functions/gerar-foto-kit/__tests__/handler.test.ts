@@ -13,6 +13,10 @@ const f = vi.hoisted(() => ({
   moderadas: [] as string[],
   moderacaoFalha: false,
   imagemFalha: false,
+  erroImagem: 'provedor caiu',
+  auditoriaFalha: false,
+  atrasoModeracaoMs: 0,
+  deslocamento: 0,
   imagemB64: '',
   custo: 0.041 as number | undefined,
   chamadasImagem: [] as Array<Record<string, unknown>>,
@@ -27,11 +31,14 @@ vi.mock('../../_shared/cors.ts', () => ({ corsHeaders: {}, handleOptions: () => 
 vi.mock('../../_shared/auth.ts', () => ({
   requireUserOrg: vi.fn(async () => ({ userId: 'u1', orgId: 'org-1', isAdmin: f.admin })),
 }));
-vi.mock('../../_shared/support-audit.ts', () => ({ auditarOperacaoSuporte: vi.fn(async () => {}) }));
+vi.mock('../../_shared/support-audit.ts', () => ({
+  auditarOperacaoSuporte: vi.fn(async () => { if (f.auditoriaFalha) throw new Error('auditoria caiu'); }),
+}));
 vi.mock('../../_shared/canais/conexao.ts', () => ({ resolverConexaoEstrita: vi.fn(async () => ({ id: 'cx' })) }));
 vi.mock('../../_shared/ml/token.ts', () => ({ getValidAccessTokenConexao: vi.fn(async () => 'tok') }));
 vi.mock('../../criar-kit-variacao/fotos-moderadas.ts', () => ({
   fotosEmItemModerado: vi.fn(async () => {
+    f.deslocamento += f.atrasoModeracaoMs;
     if (f.moderacaoFalha) throw new Error('ML /items/bulk 500');
     return f.moderadas;
   }),
@@ -41,7 +48,7 @@ vi.mock('../../_shared/ai/client.ts', () => ({
     chat: { completions: { create: async (a: Record<string, unknown>) => {
       if (a.modalities) {
         f.chamadasImagem.push(a);
-        if (f.imagemFalha) throw new Error('provedor caiu');
+        if (f.imagemFalha) throw Object.assign(new Error(f.erroImagem), { status: 500, headers: { authorization: 'Bearer sk-or-v1-SEGREDO' } });
         return {
           choices: [{ message: { images: [{ image_url: { url: `data:image/png;base64,${f.imagemB64}` } }] } }],
           usage: { prompt_tokens: 3000, completion_tokens: 1290, ...(f.custo !== undefined ? { cost: f.custo } : {}) },
@@ -114,7 +121,9 @@ vi.mock('../../_shared/supabase.ts', () => ({
 }));
 
 let handler: (req: Request) => Promise<Response>;
+const agoraReal = Date.now.bind(Date);
 beforeAll(async () => {
+  vi.spyOn(Date, 'now').mockImplementation(() => agoraReal() + f.deslocamento);
   vi.stubGlobal('Deno', { serve: f.serve, env: { get: () => undefined } });
   await import('../index.ts');
   handler = f.serve.mock.calls[0][0] as (req: Request) => Promise<Response>;
@@ -122,7 +131,7 @@ beforeAll(async () => {
 const REQ = '11111111-1111-4111-8111-111111111111';
 beforeEach(() => {
   f.admin = true; f.modulos = ['kit_variacao', 'imagem_ia']; f.moderadas = []; f.moderacaoFalha = false;
-  f.imagemFalha = false; f.imagemB64 = PNG_VERTICAL; f.custo = 0.041; f.chamadasImagem = []; f.chamadasVisao = 0;
+  f.imagemFalha = false; f.erroImagem = 'provedor caiu'; f.auditoriaFalha = false; f.atrasoModeracaoMs = 0; f.deslocamento = 0; f.imagemB64 = PNG_VERTICAL; f.custo = 0.041; f.chamadasImagem = []; f.chamadasVisao = 0;
   f.linhas = []; f.uploads = []; f.downloads = []; f.escritasProibidas = [];
   f.base = {
     nome_pai: 'Jaqueta', titulo_ml: 'Jaqueta Corta Vento',
@@ -187,14 +196,55 @@ describe('gerar-foto-kit', () => {
     expect(f.linhas).toHaveLength(1);
   });
 
+  it('repetição com outra família base (mesmas cores) → 409 pedido_diferente, sem devolver a foto anterior', async () => {
+    expect((await post(ok)).status).toBe(200);
+    const r = await post({ ...ok, familia_base_id: 'fam-2' });
+    expect(r.status).toBe(409);
+    expect((await r.json()).motivo).toBe('pedido_diferente');
+    expect(f.chamadasImagem).toHaveLength(1);
+  });
+
+  it('repetição com as mesmas cores em outra ordem → 409 pedido_diferente', async () => {
+    expect((await post(ok)).status).toBe(200);
+    expect((await post({ ...ok, cores: ['Branco', 'Preto'] })).status).toBe(409);
+  });
+
+  it('auditoria que falha depois do registro não vira erro: a geração já é cobrável', async () => {
+    f.auditoriaFalha = true;
+    expect((await post(ok)).status).toBe(200);
+    expect(f.linhas[0]).toMatchObject({ status: 'gerada' });
+  });
+
+  it('prazo global: moderação lenta consome o tempo e a IA não é chamada (sem reserva)', async () => {
+    f.atrasoModeracaoMs = 130_000;
+    const r = await post(ok);
+    expect(r.status).toBe(503);
+    expect((await r.json()).motivo).toBe('prazo');
+    expect(f.chamadasImagem).toHaveLength(0);
+    expect(f.chamadasVisao).toBe(0);
+    expect(f.linhas).toHaveLength(0);
+  });
+
+  it('log de erro externo não leva payload, headers nem segredo', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    f.imagemFalha = true;
+    f.erroImagem = 'falhou com Authorization: Bearer sk-or-v1-SEGREDO e data:image/png;base64,' + 'A'.repeat(500);
+    await post(ok);
+    const saida = JSON.stringify(spy.mock.calls);
+    spy.mockRestore();
+    expect(saida).not.toContain('SEGREDO');
+    expect(saida).not.toContain('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
+    expect(saida).toContain('500');
+  });
+
   it('request_id em andamento → 409, sem IA', async () => {
-    f.linhas.push({ org_id: 'org-1', request_id: REQ, status: 'pendente', rotulo: 'Preto e Branco', criado_em: new Date().toISOString() });
+    f.linhas.push({ org_id: 'org-1', request_id: REQ, status: 'pendente', rotulo: 'Preto e Branco', familia_base_id: 'fam-1', cores: ['Preto', 'Branco'], criado_em: new Date().toISOString() });
     expect((await post(ok)).status).toBe(409);
     expect(f.chamadasImagem).toHaveLength(0);
   });
 
   it('reserva pendente abandonada (edge morreu) não trava o request_id: gera de novo', async () => {
-    f.linhas.push({ org_id: 'org-1', request_id: REQ, status: 'pendente', rotulo: 'Preto e Branco', criado_em: new Date(Date.now() - 10 * 60_000).toISOString() });
+    f.linhas.push({ org_id: 'org-1', request_id: REQ, status: 'pendente', rotulo: 'Preto e Branco', familia_base_id: 'fam-1', cores: ['Preto', 'Branco'], criado_em: new Date(Date.now() - 10 * 60_000).toISOString() });
     expect((await post(ok)).status).toBe(200);
     expect(f.chamadasImagem).toHaveLength(1);
     expect(f.linhas).toHaveLength(1);

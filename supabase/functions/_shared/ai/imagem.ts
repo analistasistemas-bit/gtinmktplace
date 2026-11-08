@@ -87,7 +87,7 @@ export function adequadaAoML(d: { largura: number; altura: number } | null): boo
 }
 
 /** Descrição da construção da peça, lida por visão das fotos de origem (data URLs). */
-export async function descreverPeca(fotos: string[]): Promise<{ texto: string; custoUsd: number }> {
+export async function descreverPeca(fotos: string[], timeoutMs = 25_000): Promise<{ texto: string; custoUsd: number }> {
   const resp = await openrouterClient().chat.completions.create({
     model: MODELO_VISION,
     messages: [{
@@ -98,7 +98,7 @@ export async function descreverPeca(fotos: string[]): Promise<{ texto: string; c
     temperature: 0,
     usage: { include: true },
     // deno-lint-ignore no-explicit-any
-  } as any, { signal: AbortSignal.timeout(25_000) });
+  } as any, { signal: AbortSignal.timeout(timeoutMs) });
   // deno-lint-ignore no-explicit-any
   const r = resp as any;
   const texto = String(r.choices?.[0]?.message?.content ?? '').trim();
@@ -106,9 +106,9 @@ export async function descreverPeca(fotos: string[]): Promise<{ texto: string; c
   return { texto, custoUsd: custoImagemUsd(MODELO_VISION, r.usage) };
 }
 
-/** Gera a foto do kit. Lança em falha do provedor ou resposta sem imagem (nada a cobrar). Timeouts: visão 25 s + geração
- * 100 s cabem nos 150 s de requisição sem resposta da edge, com folga para download e leitura do ML. */
-export async function gerarImagem(modelo: string, pedido: string, fotos: string[]) {
+/** Gera a foto do kit. Lança em falha do provedor ou resposta sem imagem (nada a cobrar). O timeout vem do prazo global
+ * da edge (`gerar-foto-kit`), repartido entre moderação, downloads, visão e geração. */
+export async function gerarImagem(modelo: string, pedido: string, fotos: string[], timeoutMs = 100_000) {
   const resp = await openrouterClient().chat.completions.create({
     model: modelo,
     modalities: ['image', 'text'],
@@ -120,7 +120,7 @@ export async function gerarImagem(modelo: string, pedido: string, fotos: string[
       content: [{ type: 'text', text: pedido }, ...fotos.map((url) => ({ type: 'image_url', image_url: { url } }))],
     }],
     // deno-lint-ignore no-explicit-any
-  } as any, { signal: AbortSignal.timeout(100_000) });
+  } as any, { signal: AbortSignal.timeout(timeoutMs) });
   // deno-lint-ignore no-explicit-any
   const usage = (resp as any).usage as UsoProvedor | undefined;
   return { ...extrairImagem(resp), custoUsd: custoImagemUsd(modelo, usage) };
