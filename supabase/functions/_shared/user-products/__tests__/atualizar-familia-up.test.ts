@@ -414,7 +414,50 @@ describe('atualizarFamiliaUP — Fix 5: efeitos pós-composição', () => {
     expect([...(sem.entradaVista.participantes ?? [])]).toEqual([]);
     expect(sem.r.estado === 'ok' && sem.r.enviados?.map((e) => e.itemExternoId)).toEqual(['MLB1', 'MLB2']);
     expect(sem.lidas.filter((t) => t.startsWith('kit_') || t === 'organizations')).toEqual([]);
-    expect(sem.lidas.length).toBe(com.lidas.length - 2);
+    // Com o módulo: organizations não (embed), kit_variacao_skus/componentes e os SKUs da raiz (Task 7).
+    expect(sem.lidas.length).toBe(com.lidas.length - 3);
+  });
+
+  it('Task 7: participante fora da planilha vai como participante à saga e o lote ganha aviso; sem módulo, nada', async () => {
+    const filhos = [
+      { sku: 'A', status: 'ativo', retirado: false, item_externo_id: 'MLB1', family_id: 'F' },
+      { sku: 'B', status: 'ativo', retirado: false, item_externo_id: 'MLB2', family_id: 'F' },
+    ];
+    const variacoes = [{ codigo: 'A', cor: 'A', estoque: 3, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: null }];
+    const rodar = async (modulos: string[]) => {
+      const { admin, writes } = fakeAdmin(filhos);
+      const kitAdmin = {
+        ...(admin as Record<string, unknown>),
+        from: (t: string) => {
+          if (t.startsWith('kit_variacao_')) {
+            return { select: () => ({ eq: () => ({ in: async (_c: string, cods: string[]) => ({
+              data: t === 'kit_variacao_componentes' ? cods.filter((c) => c === 'B').map((codigo) => ({ codigo })) : [], error: null,
+            }) }) }) };
+          }
+          return (admin as { from: (t: string) => unknown }).from(t);
+        },
+      };
+      let entradaVista: Parameters<typeof atualizarComposicao>[1] | null = null;
+      await atualizarFamiliaUP(args({
+        admin: kitAdmin as never, variacoes: variacoes as never,
+        familia: { ...FAMILIA, organizations: { modulos_habilitados: modulos } } as never,
+        executarSaga: async (_p, e) => {
+          entradaVista = e;
+          return e.participantes?.has('B') ? { tipo: 'sem_mudanca', mantidosKit: ['B'] } : { tipo: 'sem_mudanca' };
+        },
+      }));
+      const fam = writes.filter((w) => w.table === 'familias').map((w) => w.payload);
+      return { entradaVista: entradaVista!, fam };
+    };
+
+    const com = await rodar(['kit_variacao']);
+    expect(com.entradaVista.participantes?.has('B')).toBe(true);
+    expect(com.fam).toContainEqual(expect.objectContaining({
+      status: 'publicado', erro_mensagem: expect.stringMatching(/kit com variação \(B\).*Gerenciar kit/),
+    }));
+
+    const sem = await rodar([]);
+    expect(sem.fam.every((p) => p.erro_mensagem === undefined)).toBe(true);
   });
 
   it('sem preservarPublicadas o UPDATE comum segue empurrando preço em todas', async () => {

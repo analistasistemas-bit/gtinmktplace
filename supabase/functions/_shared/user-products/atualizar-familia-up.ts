@@ -133,7 +133,17 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   for (const v of variacoes) estoquePorSku[v.codigo] = v.estoque;
   // ADR-0197: quantidade de SKU de kit com variação só a saga escreve. Vale também para a convergência,
   // que chega aqui. Falha de leitura lança antes de qualquer escrita no ML.
-  const participantes = await skusParticipantes(admin, familia.org_id, skusDesejados, kitLigado(familia));
+  // Task 7: também os SKUs já na raiz — participante que sumiu da planilha não é retirado (atualizarComposicao).
+  const ligadoKit = kitLigado(familia);
+  let skusDaRaiz: string[] = [];
+  if (ligadoKit) {
+    const { data, error } = await admin.from(ITENS).select('sku').eq('anuncio_externo_id', raiz.id);
+    if (error) throw new Error(`${ITENS} (SKUs da raiz): ${error.message}`);
+    skusDaRaiz = ((data ?? []) as Array<{ sku: string }>).map((r) => r.sku);
+  }
+  const participantes = await skusParticipantes(
+    admin, familia.org_id, [...new Set([...skusDesejados, ...skusDaRaiz])], ligadoKit,
+  );
   // ADR-0160: preço POR SKU. Antes daqui saía `variacoes.find(v => v.preco_publicacao != null)` —
   // o primeiro preço não-nulo virava "o preço da família" e era empurrado a todos os itens irmãos,
   // achatando qualquer diferenciação. Sob User Products cada cor é um item ML próprio: preço
@@ -667,7 +677,14 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
     const criadas = resultado.tipo === 'concluido' ? resultado.criadas : [];
     // Fix 5: efeitos que o UPDATE Legacy já faz — best-effort, não derrubam o desfecho ok.
     await efeitosPosComposicao(criadas, resultado.tipo === 'concluido');
-    await admin.from('familias').update({ status: 'publicado', publicado_em: now() }).eq('id', familia.id);
+    const mantidos = resultado.mantidosKit ?? [];
+    await admin.from('familias').update({
+      status: 'publicado', publicado_em: now(),
+      // ADR-0197: aviso no lote (Relatório), não erro — a publicação seguiu.
+      ...(mantidos.length > 0
+        ? { erro_mensagem: `SKU em kit com variação (${mantidos.join(', ')}) ficou no anúncio mesmo fora da planilha: remova pelo Gerenciar kit.` }
+        : {}),
+    }).eq('id', familia.id);
     const enviados = args.preservarPublicadas ? undefined : await itensEnviados();
     return { estado: 'ok', adicionadas, ...(enviados?.length ? { enviados } : {}) };
   }

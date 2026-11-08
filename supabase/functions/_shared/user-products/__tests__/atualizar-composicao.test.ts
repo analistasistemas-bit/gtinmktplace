@@ -140,6 +140,30 @@ describe('atualizarComposicao — kit com variação (ADR-0197)', () => {
     expect(w.chamadas.ativar).toEqual([]);
     expect(w.chamadas.repor).toEqual([]);
   });
+
+  // Task 7 (fix round 1): sumir da planilha não retira participante — só o Gerenciar kit remove.
+  it('participante fora da planilha: não é pausado nem retirado e volta em mantidosKit', async () => {
+    const w = fakeMundo({ seed: [filho('A', 'MLB1'), filho('B', 'MLB2')] });
+    const r = await atualizarComposicao(w.portas, entrada({
+      skusDesejados: ['A'], estoquePorSku: { A: 10 }, participantes: new Set(['B']),
+    }));
+    expect(r).toEqual({ tipo: 'sem_mudanca', mantidosKit: ['B'] });
+    expect(w.chamadas.pausar).toEqual([]);
+    expect(w.chamadas.iniciarComposicao).toEqual([]);
+    expect(w.db.get('B')!.retirado).toBe(false);
+    expect(w.chamadas.repor.map((c) => c.id)).toEqual(['MLB1']);
+  });
+
+  it('com outra mudança de composição: o participante ausente fica em skus_esperados', async () => {
+    const w = fakeMundo({ seed: [filho('A', 'MLB1'), filho('B', 'MLB2'), filho('D', 'MLB4')] });
+    const r = await atualizarComposicao(w.portas, entrada({
+      skusDesejados: ['A'], estoquePorSku: { A: 10 }, participantes: new Set(['B']),
+    }));
+    expect(r).toMatchObject({ tipo: 'concluido', mantidosKit: ['B'] });
+    expect(w.chamadas.iniciarComposicao).toEqual([['A', 'B']]);
+    expect(w.chamadas.pausar).toEqual(['MLB4']);
+    expect(w.db.get('B')!.retirado).toBe(false);
+  });
 });
 
 describe('atualizarComposicao — reposição pura (sem mudança de composição)', () => {

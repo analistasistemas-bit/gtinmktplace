@@ -120,8 +120,9 @@ export interface EntradaComposicao {
 }
 
 export type ResultadoComposicao =
-  | { tipo: 'sem_mudanca' }              // nenhuma mudança de composição — só reposição rodou
-  | { tipo: 'concluido'; criadas: string[] } // composição aplicada; `criadas` = cores GENUINAMENTE
+  // `mantidosKit` (ADR-0197): participantes ausentes do conjunto desejado que NÃO foram retirados (aviso ao lote).
+  | { tipo: 'sem_mudanca'; mantidosKit?: string[] } // nenhuma mudança de composição — só reposição rodou
+  | { tipo: 'concluido'; criadas: string[]; mantidosKit?: string[] } // composição aplicada; `criadas` = cores GENUINAMENTE
                                         // novas (POST/adoção, não readd) — base do reenfileirar catálogo
   | { tipo: 'incompleto' }              // transiente (confirmação não obtida) — flag persiste, retoma depois
   // 3 membros separados (não `codigo: 'a' | 'b' | 'c'` num só) — com um `codigo` de tipo união dentro
@@ -221,7 +222,12 @@ export async function atualizarComposicao(
   const soRepor = entrada.somenteEstoque;
 
   // paraRetirar: filho não-retirado cujo SKU saiu do conjunto desejado.
-  const paraRetirar = soRepor ? [] : naoRetirados.filter((f) => !desejadosSet.has(f.sku));
+  // ADR-0197: participante de kit com variação nunca sai por aqui — só pelo Gerenciar kit. Fica intacto e é
+  // devolvido em `mantidosKit` para o aviso do lote.
+  const ausentes = soRepor ? [] : naoRetirados.filter((f) => !desejadosSet.has(f.sku));
+  const mantidosKit = ausentes.filter((f) => entrada.participantes?.has(f.sku)).map((f) => f.sku);
+  const paraRetirar = ausentes.filter((f) => !entrada.participantes?.has(f.sku));
+  const comMantidos = mantidosKit.length > 0 ? { mantidosKit } : {};
 
   // Estados de um filho NÃO-retirado que NÃO podem ser reativados/retomados em silêncio: são
   // terminais/administrativos, exigem intervenção manual (a saga de CRIAÇÃO já produz `erro`/
@@ -275,11 +281,11 @@ export async function atualizarComposicao(
 
   if (paraRetirar.length === 0 && paraAdicionar.length === 0) {
     await reposicao(portas, entrada, desejadosSet);
-    return { tipo: 'sem_mudanca' };
+    return { tipo: 'sem_mudanca', ...comMantidos };
   }
 
   // 1. persistir o novo conjunto + ligar o marcador transitório ANTES de qualquer chamada remota.
-  await portas.iniciarComposicao(desejados);
+  await portas.iniciarComposicao([...desejados, ...mantidosKit]);
 
   const acharFilho = (sku: string) => filhos.find((f) => f.sku === sku);
 
@@ -374,5 +380,5 @@ export async function atualizarComposicao(
   await portas.limparComposicao();
 
   await reposicao(portas, entrada, desejadosSet);
-  return { tipo: 'concluido', criadas };
+  return { tipo: 'concluido', criadas, ...comMantidos };
 }
