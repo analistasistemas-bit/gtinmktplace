@@ -166,6 +166,15 @@ topo somava um terceiro efeito sobreposto (reclamação do operador no modal de 
 A barra continua montada com `role="progressbar"`/`aria-label`, mas com `sr-only`: só o leitor de
 tela a recebe. No modo destrutivo, que não tem aura nem raio, ela segue visível como único sinal.
 
+## Emenda (2026-11-08): andamento de saga longa fora de modal
+
+O recorte de 17/09 tirou o modo "fora de modal" porque a espera ali era curta ou já tinha sinal. A transferência de kit
+com variação (ADR-0200) é outro caso: uma saga de 10 a 15 min que continua depois que o diálogo fecha. O bloco "Kits
+com variação" de Publicados e a seção "Transferências em andamento" do Gerenciar kit reusam a aura
+(`glow-effect-sombra`, alcance reduzido) e o raio (`BorderTrail`) do cartão de Operações em massa, sem animação nova,
+enquanto a transferência está ativa, com a etapa escrita ao lado. Travada é borda vermelha parada. O CSS dos dois
+efeitos já respeita `prefers-reduced-motion`.
+
 ## Consequências
 
 - Um único componente e um único par de props cobre 18 pontos (lista acima) — sem modo "fora de

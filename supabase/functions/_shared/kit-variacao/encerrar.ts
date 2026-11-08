@@ -11,7 +11,7 @@
 //   aviso de conclusão sai de `avisarKitsEncerrados`, durável pela marca `encerrado_avisado_em`.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import type { CategoriaNotificacao } from '../notificacoes/categorias.ts';
-import type { AlvoSaga, DepsSaga, ResultadoPasso, TransferenciaSaga } from './saga.ts';
+import { type AlvoSaga, CARENCIA_ALERTA_MS, type DepsSaga, type ResultadoPasso, type TransferenciaSaga } from './saga.ts';
 
 export interface DepsEncerramento {
   /** `kit_encerrar_finalizar`: valida o token e exige todos os alvos confirmados. */
@@ -24,8 +24,6 @@ export interface DepsEncerramento {
 
 interface Ctx { deps: DepsSaga; t: TransferenciaSaga; alvos: AlvoSaga[]; token: string; limite: number }
 
-/** Sem alerta antes disto: ML lento para refletir o fechamento é normal. */
-const CARENCIA_MS = 15 * 60_000;
 
 /** Backoff pelo tempo desde a primeira intenção: 5 s, 30 s, 60 s, 5 min (teto). */
 export function atrasoEncerrar(decorridoMs: number): number {
@@ -33,10 +31,12 @@ export function atrasoEncerrar(decorridoMs: number): number {
   return min < 1 ? 5 : min < 5 ? 30 : min < 15 ? 60 : 300;
 }
 
-/** Faixa do alerta (muda o motivo e a chave): nula na carência; 15 min, 1 h, 6 h, depois por dia. */
+/** Faixa do alerta (muda o motivo e a chave): nula na carência única da saga; 3 min, 15 min, 1 h, 6 h, depois por dia. */
 export function faixaEncerrar(decorridoMs: number): string | null {
   const h = decorridoMs / 3_600_000;
-  if (decorridoMs < CARENCIA_MS) return null;
+  // Lido na chamada (ciclo de import com saga.ts): nunca no carregamento do módulo.
+  if (decorridoMs < CARENCIA_ALERTA_MS) return null;
+  if (decorridoMs < 15 * 60_000) return '3 min';
   if (h < 1) return '15 min';
   if (h < 6) return '1 h';
   if (h < 24) return '6 h';

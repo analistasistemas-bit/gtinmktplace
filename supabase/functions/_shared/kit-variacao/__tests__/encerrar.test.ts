@@ -83,6 +83,7 @@ function cenario() {
         return { upId, versao: 1, locais: [{ type: 'selling_address', quantity: 0 }], quantidade: 0, somenteSellingAddress: true,
           itens: structuredClone(itens) };
       },
+      lerItens: async () => { throw new Error('leitura direta inesperada'); },
       listarPendentes: async () => { throw new Error('pendentes inesperado'); },
       importarPedidos: async () => { throw new Error('importação inesperada'); },
       putQuantidade: async () => { throw new Error('PUT de quantidade inesperado'); },
@@ -191,28 +192,28 @@ describe('Encerrar kit (saga, tipo encerrar)', () => {
     expect(s.finalizadas).toBe(0);
   });
 
-  it('ML ignora o fechamento: backoff crescente e alerta só depois da carência, uma vez por faixa', async () => {
+  it('ML ignora o fechamento: backoff crescente e alerta só depois da carência única da saga, uma vez por faixa', async () => {
     const { s, rodar } = cenario();
     s.ignora.add('MLB-2');
     await rodar();
     expect(s.avisos).toEqual([]);
-    // Carência: 14 min sem alerta.
-    for (const passo of [60_000, 4 * 60_000, 9 * 60_000]) {
-      s.agora += passo;
-      await rodar();
-    }
+    s.agora += 2 * 60_000;              // 2 min: dentro da carência (CARENCIA_ALERTA_MS = 3 min)
+    await rodar();
     expect(s.avisos).toEqual([]);
     expect(s.t.estado).toBe('ativa');   // nunca trava
-    s.agora += 2 * 60_000;              // 16 min
+    s.agora += 2 * 60_000;              // 4 min
     await rodar();
-    expect(s.avisos.map((a) => a.chave)).toEqual(['kit_encerrar_pendente:T1:15 min']);
+    expect(s.avisos.map((a) => a.chave)).toEqual(['kit_encerrar_pendente:T1:3 min']);
     expect(s.avisos[0].texto).toContain('MLB-2');
-    s.agora += 5 * 60_000;              // mesma faixa: não repete
+    s.agora += 5 * 60_000;              // 9 min, mesma faixa: não repete
     await rodar();
     expect(s.avisos).toHaveLength(1);
-    s.agora += 45 * 60_000;             // 1 h
+    s.agora += 7 * 60_000;              // 16 min
     await rodar();
-    expect(s.avisos.map((a) => a.chave)).toEqual(['kit_encerrar_pendente:T1:15 min', 'kit_encerrar_pendente:T1:1 h']);
+    s.agora += 45 * 60_000;             // 61 min
+    await rodar();
+    expect(s.avisos.map((a) => a.chave)).toEqual([
+      'kit_encerrar_pendente:T1:3 min', 'kit_encerrar_pendente:T1:15 min', 'kit_encerrar_pendente:T1:1 h']);
     expect(s.filas.at(-1)).toBe(300);
     expect(s.finalizadas).toBe(0);
   });
@@ -232,7 +233,9 @@ describe('Encerrar kit (saga, tipo encerrar)', () => {
 
   it('backoff e faixas', () => {
     expect([0, 59_000, 60_000, 299_000, 300_000, 899_000, 900_000].map(atrasoEncerrar)).toEqual([5, 5, 30, 30, 60, 60, 300]);
-    expect(faixaEncerrar(14 * 60_000)).toBeNull();
+    expect(faixaEncerrar(2 * 60_000)).toBeNull();
+    expect(faixaEncerrar(3 * 60_000)).toBe('3 min');
+    expect(faixaEncerrar(14 * 60_000)).toBe('3 min');
     expect(faixaEncerrar(15 * 60_000)).toBe('15 min');
     expect(faixaEncerrar(60 * 60_000)).toBe('1 h');
     expect(faixaEncerrar(6 * 3600_000)).toBe('6 h');

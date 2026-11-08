@@ -29,14 +29,12 @@ import { cn } from '@/lib/utils';
 import { ExplicacaoReposicao } from '@/components/kit-variacao/explicacao-reposicao';
 import { FotoCombinacao, type FotoKit } from '@/components/kit-variacao/foto-combinacao';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
+import { AuraTransferencia, EtapaTransferencia } from '@/components/kit-variacao/transferencia-andamento';
+import { useFocoKitStore } from '@/stores/foco-kit-store';
 
 const inteiro = (s: string | undefined) => (s && /^\d+$/.test(s) ? Number(s) : 0);
 /** Combinação = conjunto de cores: a ordem em que foram marcadas não cria outra. */
 const conjunto = (cores: string[]) => [...cores].sort().join('|');
-const TIPO: Record<string, string> = {
-  montar: 'Montagem', desmontar: 'Desmontagem', repor: 'Reposição', cancelamento: 'Cancelamento', sair_sobra: 'Guardar peças', entrada: 'Entrada',
-  encerrar: 'Encerramento',
-};
 const STATUS: Record<string, { rotulo: string; tom: 'success' | 'warning' | 'danger' | 'neutral' }> = {
   publicado: { rotulo: 'Publicado', tom: 'success' },
   publicando: { rotulo: 'Montando', tom: 'warning' },
@@ -172,6 +170,9 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin: ehAdmin }
     }
   }
 
+  // Fecha e Publicados leva até a linha da base, onde o andamento aparece.
+  const acompanharNaTabela = () => { onOpenChange(false); useFocoKitStore.getState().focar(kit.codigoPaiBase, kit.id); };
+
   const montar = () => executar(async () => {
     let ok: boolean;
     if (novos.length === 0) {
@@ -206,6 +207,7 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin: ehAdmin }
       toast.success(`Montagem de ${totalKits} ${totalKits === 1 ? 'kit' : 'kits'} começou`, {
         description: 'Os anúncios das peças ficam pausados alguns minutos enquanto elas vão para o kit.',
       });
+      acompanharNaTabela();
     }
   });
 
@@ -223,6 +225,7 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin: ehAdmin }
         desligar ? '"Vender só em kit" desligado: os anúncios individuais voltam a vender.' : '',
       ].filter(Boolean).join(' ') || undefined,
     });
+    acompanharNaTabela();
   });
 
   // Desmontar tudo (caminho do "Desmonte antes"): todo o saldo de cada combinação, pela confirmação de sempre.
@@ -288,13 +291,9 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin: ehAdmin }
             {abertas.length > 0 && (
               <section aria-label="Transferências em andamento" className="grid gap-1.5">
                 {abertas.map((t) => (
-                  <div key={t.id} className={cn('rounded-md border px-3 py-2 text-xs', t.estado === 'travada' && 'border-danger/20 bg-danger/10')}>
-                    <span className="font-medium">{TIPO[t.tipo] ?? t.tipo}</span>{' '}
-                    <span className="text-muted-foreground">
-                      {t.estado === 'travada' ? 'travada' : 'em andamento'} · etapa {t.passo}
-                    </span>
-                    {t.alerta && <p className={cn('mt-1', t.estado === 'travada' ? 'text-danger' : 'text-muted-foreground')}>{t.alerta}</p>}
-                  </div>
+                  <AuraTransferencia key={t.id} estado={t.estado} className={cn('px-3 py-2', t.estado === 'travada' && 'bg-danger/10')}>
+                    <EtapaTransferencia t={t} />
+                  </AuraTransferencia>
                 ))}
                 <p className="text-xs text-muted-foreground">
                   Montar e desmontar ficam bloqueados até a transferência terminar (leva alguns minutos de quarentena).
