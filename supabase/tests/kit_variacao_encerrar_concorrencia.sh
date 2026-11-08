@@ -3,7 +3,7 @@
 # começa 1 s depois, tem de ESPERAR e decidir sobre o que A commitou. Mesmo arranjo de kit_variacao_guards_concorrencia.sh.
 #
 # Uso: bash supabase/tests/kit_variacao_encerrar_concorrencia.sh [container]
-# Postgres LOCAL, nunca remoto, com o schema de produção e a migration 20261108154241 aplicada.
+# Postgres LOCAL, nunca remoto, com o schema de produção e a migration 20261108170711 aplicada.
 set -euo pipefail
 C="${1:-$(docker ps --format '{{.Names}}' | grep '^supabase_db_' | head -1)}"
 ORG=97600000-0000-0000-0000-0000000000c1
