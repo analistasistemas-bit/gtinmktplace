@@ -5,10 +5,19 @@ import { adminClient } from '../_shared/supabase.ts';
 import { enfileirarSaga, verificarAssinatura, type KitTransferenciaJob } from '../_shared/queue.ts';
 import { resolverConexaoEstrita } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
+import type { ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { humanizarErroML, MLApiError } from '../_shared/ml/erro-ml.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { importarPedidosDoItem, lerOferta, listarPendentes } from '../_shared/kit-variacao/ml-oferta.ts';
 import { avancarSaga, PRAZO_PASSO_S, quarentenaDoEnv, type DepsSaga } from '../_shared/kit-variacao/saga.ts';
+import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+import { getConnector } from '../_shared/canais/registry.ts';
+import { montarAnuncioCanonico } from '../_shared/anuncios/montar-canonico.ts';
+import { familyNameDe, prepararPayloadUP } from '../_shared/user-products/publicar-familia-up.ts';
+import { buscarItemPorSku, buscarItemUP, type FetchLike } from '../_shared/ml/buscar-item.ts';
+import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
+import { enfileirarSincronizacaoFiscal } from '../_shared/queue.ts';
+import { talvezFinalizarLote } from '../_shared/lote/finalizar.ts';
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -20,13 +29,16 @@ function deps(orgId: string): DepsSaga {
   const f: typeof fetch = (url, init) =>
     fetch(url, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, prazo]) : prazo });
 
-  let conexao: Promise<{ token: string; seller: string }> | null = null;
+  let conexao: Promise<{ token: string; seller: string; cx: ConexaoCanal }> | null = null;
   // Só resolve token quando um passo lê o ML; falha lança e a saga reagenda.
   const ml = () => conexao ??= (async () => {
     const cx = await resolverConexaoEstrita(admin, orgId, 'mercado_livre');
     if (!cx?.contaExternaId) throw new Error('org sem conexão com o Mercado Livre');
-    return { token: await getValidAccessTokenConexao(cx), seller: cx.contaExternaId };
+    return { token: await getValidAccessTokenConexao(cx), seller: cx.contaExternaId, cx };
   })();
+  const fetchLike: FetchLike = (url, init) => f(url, init) as unknown as ReturnType<FetchLike>;
+  const ctxCanal = { getToken: async () => (await ml()).token };
+  const conn = getConnector('mercado_livre');
 
   // PUT parcial no item. Erro HTTP carrega `status` (4xx = recusa); rede e prazo lançam sem status (incerto).
   const putItem = async (itemId: string, corpo: Record<string, unknown>) => {
@@ -91,6 +103,10 @@ function deps(orgId: string): DepsSaga {
         return exigir(await admin.rpc('kit_saga_conferir_saldo', { ...base(id, token), p_codigo: codigo }), 'conferir saldo') as
           { saldo: number; marca: number | null; pendente: number; ordem: number };
       },
+      registrarItem: (codigo, itemId, upId) => registrarItemKit(admin, orgId, codigo, itemId, upId, {
+        lerItem: async (id) => buscarItemUP(fetchLike, { accessToken: (await ml()).token }, id),
+        garantirDescricao: (id, texto) => conn.garantirDescricao(ctxCanal, id, texto),
+      }),
     },
     ml: {
       lerOferta: async (upId, esperados) => lerOferta((await ml()).token, upId, esperados, f),
@@ -102,6 +118,48 @@ function deps(orgId: string): DepsSaga {
       },
       putQuantidade: (itemId, quantidade) => putItem(itemId, { available_quantity: quantidade }),
       putStatus: (itemId, status) => putItem(itemId, { status }),
+      async prepararItem(codigo, quantidade) {
+        const { familia, variacao } = await kitDoSku(admin, orgId, codigo);
+        const { token, cx } = await ml();
+        const categoriaId = familia.categoria_ml_id as string;
+        let aceitaEmptyGtin: boolean | undefined;
+        try {
+          const schema = await lerSchemaAtributos(token, categoriaId);
+          if (schema.length) aceitaEmptyGtin = schema.some((a) => a.id === 'EMPTY_GTIN_REASON');
+        } catch { /* fallback do montarPayloadItem, como em publish-familia-ml */ }
+        // Sobe a foto da combinação (ou reusa o picture_id) e resolve a guia de tamanhos da própria conta.
+        const anuncio = await montarAnuncioCanonico(admin, conn, ctxCanal, familia as never, [variacao as never]);
+        const { montar } = await prepararPayloadUP({
+          admin, ctx: ctxCanal, conexao: cx, familia: familia as never, anuncio, categoriaId, aceitaEmptyGtin,
+        });
+        const payload = montar({ ...anuncio.variacoes[0], estoque: quantidade });
+        return async () => {
+          const resp = await f('https://api.mercadolibre.com/items', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          const corpo = await resp.json().catch(() => ({}));
+          if (!resp.ok) throw new MLApiError(resp.status, humanizarErroML(resp.status, corpo));
+          // Sem o UP lido, lança sem status: a saga trata como incerto e a retomada adota pela busca.
+          const item = await buscarItemUP(fetchLike, { accessToken: token }, corpo.id);
+          if (!item?.userProductId) throw new Error(`item ${corpo.id} criado, user_product_id ainda não lido`);
+          return { itemId: corpo.id as string, upId: item.userProductId };
+        };
+      },
+      async buscarItemCriado(codigo) {
+        const { familia } = await kitDoSku(admin, orgId, codigo);
+        const { token, seller } = await ml();
+        const b = await buscarItemPorSku(fetchLike, {
+          accessToken: token, sellerId: seller, categoriaId: familia.categoria_ml_id as string,
+          familyName: familyNameDe(familia as never), desdeMs: 0,
+        }, codigo);
+        if (b.tipo === 'nenhum') return { tipo: 'nenhum' };
+        if (b.tipo !== 'um') return { tipo: 'ambiguo' };
+        const item = await buscarItemUP(fetchLike, { accessToken: token }, b.itemExternoId);
+        if (!item?.userProductId) throw new Error(`item ${b.itemExternoId} sem user_product_id na leitura`);
+        return { tipo: 'um', itemId: b.itemExternoId, upId: item.userProductId };
+      },
     },
     enfileirar: (id, delayS) => enfileirarSaga(id, orgId, delayS),
     alertar: async (texto) => { await notificarCategoria(admin, orgId, 'estoque', texto); },
@@ -109,6 +167,105 @@ function deps(orgId: string): DepsSaga {
     quarentenaS: quarentenaDoEnv(Deno.env.get('KIT_QUARENTENA_S')),
     novoToken: () => crypto.randomUUID(),
   };
+}
+
+/** Família canônica do kit (a mais recente do PAI do kit) e a variação do SKU nela. */
+async function kitDoSku(admin: SupabaseClient, orgId: string, codigo: string) {
+  const ler = async <T>(q: PromiseLike<{ data: T; error: { message: string } | null }>, onde: string): Promise<NonNullable<T>> => {
+    const { data, error } = await q;
+    if (error || data == null) throw new Error(`${onde}: ${error?.message ?? 'não encontrado'}`);
+    return data;
+  };
+  const sku = await ler(admin.from('kit_variacao_skus').select('kit_id').eq('org_id', orgId).eq('codigo', codigo).single(), 'SKU de kit');
+  const kit = await ler(admin.from('kits_variacao').select('id, codigo_pai_kit').eq('id', sku.kit_id).single(), 'kit');
+  const familia = await ler(admin.from('familias').select('*').eq('org_id', orgId).eq('codigo_pai', kit.codigo_pai_kit)
+    .order('criado_em', { ascending: false }).limit(1).single(), 'família do kit') as Record<string, unknown>;
+  const variacao = await ler(admin.from('variacoes').select('*').eq('familia_id', familia.id as string).eq('codigo', codigo).single(),
+    'variação do kit') as Record<string, unknown>;
+  const skus = await ler(admin.from('kit_variacao_skus').select('codigo').eq('kit_id', kit.id), 'SKUs do kit');
+  return { kitId: kit.id as string, familia, variacao, skus: skus.map((x) => x.codigo as string) };
+}
+
+/**
+ * ADR-0197 (Task 10): vínculo local do item que a saga criou ou adotou. Idempotente: a retomada repete.
+ * Grava a raiz e o filho (a venda acha o SKU por `anuncios_externos_itens`), publica a família do kit e
+ * dispara descrição, fiscal por SKU e o fechamento do lote. `family_id` diferente dos irmãos recusa: o
+ * seletor do ML não juntaria os itens.
+ */
+async function registrarItemKit(
+  admin: SupabaseClient, orgId: string, codigo: string, itemId: string, upId: string,
+  ml: {
+    lerItem(id: string): Promise<{ familyId?: string; permalink?: string } | null>;
+    garantirDescricao(id: string, texto: string): Promise<void>;
+  },
+): Promise<{ ok: boolean; motivo?: string }> {
+  const { familia, variacao, skus } = await kitDoSku(admin, orgId, codigo);
+  const item = await ml.lerItem(itemId);
+  if (!item?.familyId) throw new Error(`item ${itemId} sem family_id na leitura`);
+  const exigir = (r: { error: { message: string } | null }, onde: string) => {
+    if (r.error) throw new Error(`${onde}: ${r.error.message}`);
+  };
+
+  const raiz = await admin.from('anuncios_externos').upsert({
+    user_id: familia.user_id, org_id: orgId, canal: 'mercado_livre', codigo_pai: familia.codigo_pai, particao: 0,
+    status: 'publicado', titulo: familyNameDe(familia as never), item_externo_id: null, skus_esperados: skus,
+    estado_desejado: null, erro_mensagem: null,
+  }, { onConflict: 'org_id,canal,codigo_pai,particao' }).select('id').single();
+  exigir(raiz, 'raiz do kit');
+  const rootId = (raiz.data as { id: string }).id;
+
+  const irmaos = await admin.from('anuncios_externos_itens').select('sku, family_id')
+    .eq('anuncio_externo_id', rootId).neq('sku', codigo).not('family_id', 'is', null);
+  exigir(irmaos, 'filhos do kit');
+  const outra = (irmaos.data ?? []).find((x) => x.family_id !== item.familyId);
+  if (outra) return { ok: false, motivo: `family_id ${item.familyId} diferente do de ${outra.sku} (${outra.family_id})` };
+
+  exigir(await admin.from('anuncios_externos_itens').upsert({
+    anuncio_externo_id: rootId, org_id: orgId, sku: codigo, item_externo_id: itemId, user_product_id: upId,
+    family_id: item.familyId, permalink: item.permalink ?? null, status: 'ativo',
+  }, { onConflict: 'anuncio_externo_id,sku' }), 'filho do kit');
+
+  if (!familia.ml_item_id) {
+    exigir(await admin.from('familias').update({
+      ml_item_id: itemId, ml_permalink: item.permalink ?? null, status: 'publicado',
+      publicado_em: new Date().toISOString(), erro_mensagem: null,
+    }).eq('id', familia.id as string), 'família do kit');
+  }
+  exigir(await admin.from('variacoes').update({
+    ml_variation_id: null, preco_publicado_ml: variacao.preco_publicacao == null ? null : Number(variacao.preco_publicacao),
+  }).eq('id', variacao.id as string), 'variação do kit');
+
+  // Best-effort, como na publicação UP: o item já existe; o operador vê a falta no anúncio.
+  if (familia.descricao_ml) {
+    await ml.garantirDescricao(itemId, familia.descricao_ml as string)
+      .catch((e) => console.error('kit_descricao_falhou', itemId, String(e)));
+  }
+  await enfileirarSincronizacaoFiscal(familia.id as string).catch((e) => console.error('kit_fiscal_falhou', familia.id, String(e)));
+  await talvezFinalizarLote(admin, familia.lote_id as string);
+  return { ok: true };
+}
+
+/** Fim da saga de criação: kit `publicado`, ou `erro` com família em erro quando nada foi criado. Best-effort. */
+async function fecharCriacao(admin: SupabaseClient, orgId: string, transferenciaId: string, acao: string): Promise<void> {
+  if (!['concluida', 'travada', 'abortada'].includes(acao)) return;
+  try {
+    const { data: t } = await admin.from('kit_transferencias').select('kit_id, tipo, alerta').eq('id', transferenciaId).single();
+    const { data: criar } = await admin.from('kit_transferencia_alvos').select('codigo')
+      .eq('transferencia_id', transferenciaId).eq('criar', true);
+    if (!t?.kit_id || !criar?.length) return;
+    const ok = acao === 'concluida';
+    await admin.from('kits_variacao').update({ status: ok ? 'publicado' : 'erro' }).eq('id', t.kit_id).eq('status', 'publicando');
+    if (ok) return;
+    const { data: kit } = await admin.from('kits_variacao').select('codigo_pai_kit').eq('id', t.kit_id).single();
+    const { data: fams } = await admin.from('familias').select('id, lote_id').eq('org_id', orgId)
+      .eq('codigo_pai', kit?.codigo_pai_kit ?? '').is('ml_item_id', null);
+    for (const fam of fams ?? []) {
+      await admin.from('familias').update({ status: 'erro', erro_mensagem: `Kit com variação: ${t.alerta ?? acao}` }).eq('id', fam.id);
+      await talvezFinalizarLote(admin, fam.lote_id as string);
+    }
+  } catch (e) {
+    console.error('kit_fechar_criacao_falhou', transferenciaId, String(e));
+  }
 }
 
 Deno.serve(async (req) => {
@@ -128,6 +285,7 @@ Deno.serve(async (req) => {
 
   try {
     const r = await avancarSaga(deps(job.org_id), job.transferencia_id);
+    await fecharCriacao(adminClient(), job.org_id, job.transferencia_id, r.acao);
     // Ocupada: outra invocação tem o claim, ou a anterior morreu e o prazo ainda não venceu. O QStash
     // repete; se a outra estava viva, a repetição só executa um passo já idempotente.
     return json(r.acao === 'ocupada' ? 409 : 200, r);

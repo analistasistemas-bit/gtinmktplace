@@ -11,6 +11,8 @@
 //   execução para sozinha antes do prazo, para não fazer efeito remoto depois que outra pegou o claim.
 // - A saga só reativa o que ela pausou, nunca item moderado, e só com a política autorizando na hora.
 // - Travada mantém a exclusão: o UP segue ocupado até o operador resolver.
+// - Destino sem item (`criar`, SKU de kit novo): o CREATE é o passo `aumentar`, com o saldo no payload, só
+//   depois de todas as reduções confirmadas. Busca por SKU antes de todo POST; criação incerta nunca reenvia.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import type { ResultadoBaixaVenda } from '../estoque/baixa.ts';
 import { parseStatusML } from '../ml/status.ts';
@@ -60,7 +62,14 @@ export interface AlvoSaga {
   fase: 'reducao' | 'aumento' | 'nenhuma' | null;
   /** `estoque_movimentos.ordem` lida sob o lock do saldo no cálculo; vira a marca d'água do SKU na confirmação. */
   marca_ordem: number | null;
+  /** Destino sem item (SKU de kit novo): `up_id` é sintético (`criar:<codigo>`) até o CREATE gravar estes dois. */
+  criar: boolean;
+  up_criado: string | null;
+  item_criado: string | null;
 }
+
+export type BuscaItemCriado =
+  | { tipo: 'nenhum' } | { tipo: 'ambiguo' } | { tipo: 'um'; itemId: string; upId: string };
 
 /** Saldo do SKU com o efeito local pendente desde a marca d'água (`kit_saga_conferir_saldo`). */
 export interface SaldoConferido {
@@ -101,6 +110,9 @@ export interface DepsSaga {
     versaoPolitica(codigos: string[]): Promise<number>;
     /** Saldo travado, marca d'água e efeito pendente do SKU; valida token, prazo e exclusão. */
     conferirSaldo(id: string, token: string, codigo: string): Promise<SaldoConferido>;
+    /** Vínculo local do item criado (raiz e filho do anúncio, família publicada). Idempotente. `ok:false` (ex.:
+     * `family_id` diferente dos irmãos) trava a saga. */
+    registrarItem(codigo: string, itemId: string, upId: string): Promise<{ ok: boolean; motivo?: string }>;
   };
   ml: {
     lerOferta(upId: string, esperados: string[]): Promise<OfertaUP>;
@@ -109,6 +121,13 @@ export interface DepsSaga {
     importarPedidos(itemIds: string[], desde: string, idsPasso1: string[], antesDeBaixar: () => void): Promise<ResultadoImportacao>;
     putQuantidade(itemId: string, quantidade: number): Promise<void>;
     putStatus(itemId: string, status: 'paused' | 'active'): Promise<void>;
+    /**
+     * Prepara o CREATE do item do SKU de kit (foto, guia de tamanhos, payload com `available_quantity = quantidade`)
+     * e devolve o POST, que a saga só chama depois de gravar a intenção. Erro do POST com `status` 4xx é recusa.
+     */
+    prepararItem(codigo: string, quantidade: number): Promise<() => Promise<{ itemId: string; upId: string }>>;
+    /** Item do SKU já criado no ML (SKU + `family_name` do kit). */
+    buscarItemCriado(codigo: string): Promise<BuscaItemCriado>;
   };
   enfileirar(id: string, delayS: number): Promise<void>;
   alertar(texto: string): Promise<void>;
@@ -133,6 +152,10 @@ export const REAGENDAR_S = 60;
 export const MAX_RECUSAS = 5;
 /** Leitura de confirmação logo depois da escrita. */
 const CONFIRMAR_APOS_S = 5;
+/** Criação incerta: quanto tempo a busca por SKU tem para mostrar o item antes de travar (indexação do ML). */
+export const JANELA_BUSCA_CRIADO_MS = 15 * 60_000;
+/** Folga mínima de prazo para gravar a intenção e postar: sem ela, o corte do prazo vira criação incerta. */
+const FOLGA_CRIAR_MS = 60_000;
 /** Varredura de pedidos criados perto do passo 1; os anteriores vêm por `ids_passo1` (Task 3). */
 const JANELA_PEDIDOS_MS = 60 * 60_000;
 /** `date_closed` chega até 39 s depois do pagamento (medido 07/11): margem conservadora. */
@@ -209,6 +232,15 @@ function recusaDefinitiva(e: unknown): boolean {
   return typeof status === 'number' && status >= 400 && status < 500 && status !== 408;
 }
 
+/** UP e itens reais do alvo: no alvo `criar`, os do item criado (vazio antes do CREATE). */
+const upDe = (a: AlvoSaga) => (a.criar ? a.up_criado : a.up_id);
+const itensDe = (a: AlvoSaga) => (a.criar ? (a.item_criado ? [a.item_criado] : []) : a.item_ids);
+function ler(ctx: Ctx, alvo: AlvoSaga): Promise<OfertaUP> {
+  const up = upDe(alvo);
+  if (!up) throw new Error(`${alvo.codigo}: item do kit ainda não criado`);
+  return ctx.deps.ml.lerOferta(up, itensDe(alvo));
+}
+
 type ItemOferta = OfertaUP['itens'][number];
 const encerrado = (i: ItemOferta) => i.status === 'closed';
 const pausadoPeloVendedor = (i: ItemOferta) => i.subStatus.includes('paused_by_seller');
@@ -219,7 +251,7 @@ function moderado(i: ItemOferta): boolean {
 
 /** Motivo para travar, ou null. `exigirPausa` vale depois do passo `pausar`. */
 function problemaDaOferta(alvo: AlvoSaga, o: OfertaUP, exigirPausa: boolean): string | null {
-  if (o.upId !== alvo.up_id) return `${alvo.codigo}: leitura de outro UP (${o.upId})`;
+  if (o.upId !== upDe(alvo)) return `${alvo.codigo}: leitura de outro UP (${o.upId})`;
   if (!o.somenteSellingAddress) return `${alvo.codigo}: UP ${alvo.up_id} com estoque fora do selling_address`;
   const abertos = o.itens.filter((i) => !encerrado(i));
   if (abertos.length === 0) return `${alvo.codigo}: UP ${alvo.up_id} sem item aberto`;
@@ -282,10 +314,12 @@ const MOTIVO_POLITICA = 'a política de um SKU mudou durante a transferência';
 
 async function pausar(ctx: Ctx): Promise<ResultadoPasso> {
   if (await politicaMudou(ctx)) return abortarSemReativar(ctx, MOTIVO_POLITICA);
-  const ofertas: OfertaUP[] = [];
+  const ofertas: Array<OfertaUP | null> = [];
   let pausou = false;
   for (const alvo of ctx.alvos) {
-    const oferta = await ctx.deps.ml.lerOferta(alvo.up_id, alvo.item_ids);
+    // Item ainda não existe: nada a pausar nem a conciliar. Nasce na fase de aumento.
+    if (alvo.criar) { ofertas.push(null); continue; }
+    const oferta = await ler(ctx, alvo);
     const problema = problemaDaOferta(alvo, oferta, false);
     if (problema) return travar(ctx, problema);
     // Sem `paused_by_seller` conta como ativo: `out_of_stock` sozinho religa quando o saldo sobe.
@@ -308,9 +342,9 @@ async function pausar(ctx: Ctx): Promise<ResultadoPasso> {
   for (const [i, alvo] of ctx.alvos.entries()) {
     const oferta = ofertas[i];
     await salvarAlvo(ctx, alvo, {
-      qtd_passo1: oferta.quantidade,
+      qtd_passo1: oferta?.quantidade ?? 0,
       passo1_em: agora,
-      ids_passo1: idsDoItem(oferta.itens.map((x) => x.id), pendentes),
+      ids_passo1: oferta ? idsDoItem(oferta.itens.map((x) => x.id), pendentes) : [],
     });
   }
   return avancar(ctx, 'aguardar', ctx.deps.quarentenaS);
@@ -328,7 +362,13 @@ function aguardar(ctx: Ctx): Promise<ResultadoPasso> {
 async function conciliar(ctx: Ctx): Promise<ResultadoPasso> {
   const pendentes = await ctx.deps.ml.listarPendentes();
   for (const alvo of ctx.alvos) {
-    const oferta = await ctx.deps.ml.lerOferta(alvo.up_id, alvo.item_ids);
+    if (alvo.criar) {
+      // Sem item, o ML tem 0: o local também precisa ter (efeito pendente desta transferência à parte).
+      const div = divergencia(alvo, await conferirSaldo(ctx, alvo.codigo), 0);
+      if (div) return travar(ctx, div);
+      continue;
+    }
+    const oferta = await ler(ctx, alvo);
     const problema = problemaDaOferta(alvo, oferta, true);
     if (problema) return travar(ctx, problema);
 
@@ -385,17 +425,23 @@ async function calcular(ctx: Ctx): Promise<ResultadoPasso> {
   // Valor final gravado uma vez: na origem, o saldo local já sem a reserva; no destino, o local mais o que chega.
   // Local à frente do ML é efeito local pendente (entrada, ajuste, estorno): vira aumento, nunca antes das reduções.
   for (const alvo of pendentes) {
-    const oferta = await ctx.deps.ml.lerOferta(alvo.up_id, alvo.item_ids);
-    const problema = problemaDaOferta(alvo, oferta, true);
-    if (problema) return travar(ctx, problema);
+    let ml = 0;
+    if (!alvo.criar) {
+      const oferta = await ler(ctx, alvo);
+      const problema = problemaDaOferta(alvo, oferta, true);
+      if (problema) return travar(ctx, problema);
+      ml = oferta.quantidade;
+    }
     // Depois da reserva o pendente inclui o próprio kit_saida, e o saldo também: a conta segue fechando.
     const c = await conferirSaldo(ctx, alvo.codigo);
-    const div = divergencia(alvo, c, oferta.quantidade);
+    const div = divergencia(alvo, c, ml);
     if (div) return travar(ctx, div);
     const valorAlvo = alvo.papel === 'destino' ? c.saldo + alvo.delta : c.saldo;
     if (valorAlvo < 0) return travar(ctx, `${alvo.codigo}: valor final negativo (${valorAlvo})`);
-    const fase = valorAlvo < oferta.quantidade ? 'reducao' : valorAlvo > oferta.quantidade ? 'aumento' : 'nenhuma';
-    await salvarAlvo(ctx, alvo, { valor_anterior: oferta.quantidade, valor_alvo: valorAlvo, fase, marca_ordem: c.ordem });
+    // Item novo com 0 não existe no ML: o CREATE exige saldo inicial.
+    if (alvo.criar && valorAlvo <= 0) return travar(ctx, `${alvo.codigo}: item novo sem saldo a criar (${valorAlvo})`);
+    const fase = valorAlvo < ml ? 'reducao' : valorAlvo > ml ? 'aumento' : 'nenhuma';
+    await salvarAlvo(ctx, alvo, { valor_anterior: ml, valor_alvo: valorAlvo, fase, marca_ordem: c.ordem });
   }
   return avancar(ctx, 'reduzir');
 }
@@ -409,10 +455,17 @@ async function escrever(ctx: Ctx, fase: Fase, proximo: PassoSaga): Promise<Resul
   const recusas: string[] = [];
   for (const alvo of ctx.alvos.filter((a) => naFase(a, fase))) {
     if (alvo.confirmada_em || alvo.valor_alvo === null || alvo.valor_alvo === alvo.valor_anterior) continue;
+    if (alvo.criar) {
+      const r = await criarDestino(ctx, alvo);
+      // Um CREATE por invocação: cada um sobe foto, monta o payload e posta, e o prazo é de 120 s.
+      if (r === 'criou' && ctx.alvos.some((a) => a.criar && !a.item_criado)) return avancar(ctx, ctx.t.passo, 0);
+      if (r !== 'pronto' && r !== 'criou') return r;
+      continue;
+    }
     if (alvo.intencao_escrita_em && !alvo.recusa_definitiva_em) continue;
 
     // A pausa e a quantidade valem para esta escrita, não para a do cálculo.
-    const oferta = await ctx.deps.ml.lerOferta(alvo.up_id, alvo.item_ids);
+    const oferta = await ler(ctx, alvo);
     const problema = problemaDaOferta(alvo, oferta, true);
     if (problema) return travar(ctx, problema);
     if (oferta.quantidade !== alvo.valor_anterior) {
@@ -443,10 +496,66 @@ async function escrever(ctx: Ctx, fase: Fase, proximo: PassoSaga): Promise<Resul
   return avancar(ctx, proximo, CONFIRMAR_APOS_S);
 }
 
+/**
+ * CREATE do item do SKU de kit (exceção da spec: saldo inicial no payload, depois das reduções confirmadas).
+ * Busca por SKU antes de todo POST: achou, adota. Criação incerta (intenção sem recusa) nunca posta de novo:
+ * espera a busca mostrar o item até `JANELA_BUSCA_CRIADO_MS` e depois trava. Só a recusa 4xx deixa repetir.
+ * Criado ou adotado: registra o vínculo local e pausa (item em `pausado_pela_saga` antes do PUT); a
+ * confirmação lê a quantidade e a reativação devolve o item, se a política deixar.
+ */
+async function criarDestino(ctx: Ctx, alvo: AlvoSaga): Promise<'criou' | 'pronto' | ResultadoPasso> {
+  let criou = false;
+  if (!alvo.item_criado) {
+    const busca = await ctx.deps.ml.buscarItemCriado(alvo.codigo);
+    if (busca.tipo === 'ambiguo') return travar(ctx, `${alvo.codigo}: busca por SKU ambígua; nenhum item novo é criado`);
+    if (busca.tipo === 'um') {
+      await salvarAlvo(ctx, alvo, {
+        item_criado: busca.itemId, up_criado: busca.upId, escrita_em: iso(ctx),
+        pausado_pela_saga: [...new Set([...alvo.pausado_pela_saga, busca.itemId])],
+      });
+    } else if (alvo.intencao_escrita_em && !alvo.recusa_definitiva_em) {
+      if (ctx.deps.agora().getTime() - Date.parse(alvo.intencao_escrita_em) < JANELA_BUSCA_CRIADO_MS) {
+        return reagendar(ctx, `${alvo.codigo}: criação incerta, procurando o item antes de qualquer nova tentativa`);
+      }
+      return travar(ctx, `${alvo.codigo}: criação incerta e o item não apareceu na busca; nenhum outro é criado`);
+    } else {
+      // Foto, guia e payload antes da intenção: o que demora não come o prazo entre a intenção e o POST.
+      const postar = await ctx.deps.ml.prepararItem(alvo.codigo, alvo.valor_alvo!);
+      if (ctx.limite - ctx.deps.agora().getTime() < FOLGA_CRIAR_MS) return avancar(ctx, ctx.t.passo, 0);
+      await salvarAlvo(ctx, alvo, { intencao_escrita_em: iso(ctx), recusa_definitiva_em: null });
+      let criado: { itemId: string; upId: string };
+      try {
+        vivo(ctx);
+        criado = await postar();
+      } catch (e) {
+        if (!recusaDefinitiva(e)) {
+          return reagendar(ctx, `${alvo.codigo}: criação incerta (${mensagem(e)}); a próxima tentativa só procura o item`);
+        }
+        const n = alvo.recusas + 1;
+        await salvarAlvo(ctx, alvo, { recusa_definitiva_em: iso(ctx), recusas: n });
+        if (n >= MAX_RECUSAS) return travar(ctx, `${alvo.codigo}: ML recusou criar o item ${n} vezes: ${mensagem(e)}`);
+        return reagendar(ctx, `${alvo.codigo}: ML recusou criar o item: ${mensagem(e)}`, REAGENDAR_S, true);
+      }
+      await salvarAlvo(ctx, alvo, {
+        item_criado: criado.itemId, up_criado: criado.upId, escrita_em: iso(ctx),
+        pausado_pela_saga: [...new Set([...alvo.pausado_pela_saga, criado.itemId])],
+      });
+      criou = true;
+    }
+  }
+  vivo(ctx);
+  const reg = await ctx.deps.repo.registrarItem(alvo.codigo, alvo.item_criado!, alvo.up_criado!);
+  if (!reg.ok) return travar(ctx, `${alvo.codigo}: item ${alvo.item_criado} criado, mas ${reg.motivo}`);
+  // O ML cria ativo: pausa até confirmar a quantidade; a reativação é da política, como nos outros alvos.
+  await putStatus(ctx, alvo.item_criado!, 'paused');
+  return criou ? 'criou' : 'pronto';
+}
+
 /** Leitura igual ao valor gravado conclui. Outro número, inclusive o anterior, trava (spec, passo 6). */
 async function confirmar(ctx: Ctx, fase: Fase, proximo: PassoSaga): Promise<ResultadoPasso> {
   for (const alvo of ctx.alvos.filter((a) => naFase(a, fase) && !a.confirmada_em)) {
-    const oferta = await ctx.deps.ml.lerOferta(alvo.up_id, alvo.item_ids);
+    if (alvo.criar && !alvo.item_criado) return travar(ctx, `${alvo.codigo}: confirmação sem item criado`);
+    const oferta = await ler(ctx, alvo);
     const problema = problemaDaOferta(alvo, oferta, true);
     if (problema) return travar(ctx, problema);
     if (oferta.quantidade !== alvo.valor_alvo) {
@@ -480,7 +589,7 @@ async function reativar(ctx: Ctx): Promise<ResultadoPasso> {
 
   for (const alvo of ctx.alvos) {
     if (alvo.pausado_pela_saga.length === 0 && alvo.repausar.length === 0) continue;
-    const oferta = await ctx.deps.ml.lerOferta(alvo.up_id, alvo.item_ids);
+    const oferta = await ler(ctx, alvo);
     for (const item of oferta.itens) {
       const pendente = alvo.repausar.includes(item.id);
       if (!alvo.pausado_pela_saga.includes(item.id) && !pendente) continue;

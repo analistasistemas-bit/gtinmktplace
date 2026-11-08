@@ -8,7 +8,7 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import type { AnuncioCanonico, ChannelConnector, ContextoCanal, FaixaAtacado } from '../canais/contrato.ts';
 import { aplicarAtacadoPorItem } from './atacado-por-item.ts';
 import type { ConexaoCanal } from '../canais/conexao.ts';
-import { montarPayloadItem } from '../ml/publicar.ts';
+import { montarPayloadItem, type PayloadItem } from '../ml/publicar.ts';
 import { publicarGrupo, type ResultadoSaga, type CodigoErroSaga } from './publicar-grupo.ts';
 import { criarPortasSupabase } from './portas-supabase.ts';
 import { enfileirarVinculacaoCatalogo } from '../queue.ts';
@@ -97,15 +97,24 @@ async function confirmarNoMl(
   }
 }
 
-/** Recusa definitiva da política do kit: vira `erro` com a mensagem, nunca `compensacao_pendente`. */
-class RecusaKit extends Error {}
+/** family_name da partição 0: o ML agrupa por ele e o exibe ao comprador; recusa acima de 60 caracteres. */
+export function familyNameDe(familia: { titulo_ml: string | null; nome_pai: string | null; codigo_pai: string }): string {
+  return (familia.titulo_ml ?? familia.nome_pai ?? familia.codigo_pai).slice(0, 60).trimEnd();
+}
 
-export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<ResultadoUP> {
-  const { admin, conn, ctx, conexao, familia, anuncio, categoriaId } = args;
-  const executarSaga = args.executarSaga ?? publicarGrupo;
+/**
+ * Payload plano por SKU de uma família User Products: guia de tamanhos da própria conta (ADR-0167), GENDER,
+ * dicionário de COLOR e family_name. Usado pela publicação e pelo CREATE do kit com variação na saga (ADR-0197),
+ * que passa a variação com o saldo inicial calculado por ela.
+ */
+export async function prepararPayloadUP(args: {
+  admin: SupabaseClient; ctx: ContextoCanal; conexao: ConexaoCanal;
+  familia: PublicarFamiliaUPArgs['familia']; anuncio: AnuncioCanonico; categoriaId: string;
+  aceitaEmptyGtin?: boolean; garantirChartFn?: typeof garantirChart; lerSchemaAtributosFn?: typeof lerSchemaAtributos;
+}): Promise<{ familyName: string; montar: (v: AnuncioCanonico['variacoes'][number]) => PayloadItem }> {
+  const { admin, ctx, conexao, familia, anuncio, categoriaId } = args;
   const garantirChartFn = args.garantirChartFn ?? garantirChart;
   const lerSchemaAtributosFn = args.lerSchemaAtributosFn ?? lerSchemaAtributos;
-  const now = args.now ?? (() => new Date().toISOString());
 
   // ADR-0167: família com tamanho precisa da guia de medidas ANTES de montar qualquer payload —
   // resolvida uma vez por família (nunca por SKU: SIZE_GRID_ID é o mesmo chart para todas as
@@ -177,9 +186,44 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
   // saga UP — Fase 2) — então nenhum sufixo é necessário. O ML também rejeita family_name > 60
   // chars ("Family Name length is over of 60 character", achado real em produção); trunca por
   // segurança mesmo sem sufixo, já que o título pode já vir no limite.
-  const LIMITE_FAMILY_NAME = 60;
-  const baseTitulo = familia.titulo_ml ?? familia.nome_pai ?? familia.codigo_pai;
-  const familyName = baseTitulo.slice(0, LIMITE_FAMILY_NAME).trimEnd();
+  const familyName = familyNameDe(familia);
+  const familiaInput = { titulo_ml: familyName, descricao_ml: anuncio.descricao, categoria_ml_id: categoriaId, atributos_ml: atributosComGenero };
+  const montar = (v: AnuncioCanonico['variacoes'][number]): PayloadItem => {
+    // Achado real de produção (2026-09-19, sandália): item.attributes[SIZE] tem que bater com o
+    // RÓTULO da linha do chart ("37 BR"), não com `v.tamanho` cru ("37") — /items/validate real
+    // devolveu invalid.fashion_grid.size.values com o valor cru. `montarPayloadItem` recebe os
+    // dois: sizeLabel (o que vai no payload) e tamanho (só usado pro guard "sem grid resolvido").
+    const grid = chart && 'chartId' in chart ? chart : null;
+    const linha = v.tamanho ? grid?.linhaPorTamanho.get(v.tamanho) ?? null : null;
+    return montarPayloadItem(
+      familiaInput,
+      [{
+        codigo: v.sku, cor: v.cor, estoque: v.estoque, preco_publicacao: v.preco, gtin: v.gtin, ml_picture_id: v.fotoId,
+        tamanho: v.tamanho ?? null, sizeLabel: linha?.sizeLabel ?? null,
+        sizeGridId: grid?.chartId ?? null, sizeGridRowId: linha?.rowId ?? null,
+        tamanhoSemGuia: v.tamanho && chart && 'semGuia' in chart ? chart.semGuia : null,
+        corValueId: resolverCorValueId(v.cor, valoresCor),
+      }],
+      anuncio.capaFotoId, anuncio.capa2FotoId, anuncio.capa3FotoId,
+      anuncio.listingTypeId, anuncio.dimensoes, args.aceitaEmptyGtin, 'plano',
+    );
+  };
+
+  return { familyName, montar };
+}
+
+/** Recusa definitiva da política do kit: vira `erro` com a mensagem, nunca `compensacao_pendente`. */
+class RecusaKit extends Error {}
+
+export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<ResultadoUP> {
+  const { admin, conn, ctx, conexao, familia, anuncio, categoriaId } = args;
+  const executarSaga = args.executarSaga ?? publicarGrupo;
+  const now = args.now ?? (() => new Date().toISOString());
+
+  const { familyName, montar } = await prepararPayloadUP({
+    admin, ctx, conexao, familia, anuncio, categoriaId, aceitaEmptyGtin: args.aceitaEmptyGtin,
+    garantirChartFn: args.garantirChartFn, lerSchemaAtributosFn: args.lerSchemaAtributosFn,
+  });
   const skus = anuncio.variacoes.map((v) => v.sku);
 
   // 1. Grava a raiz lógica ANTES da saga (ADR §4): status=publicando, titulo=family_name,
@@ -194,9 +238,7 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
   if (raizErr || !raiz) throw new Error(`anuncios_externos upsert (raiz UP): ${raizErr?.message ?? 'sem id'}`);
   const rootId = (raiz as { id: string }).id;
 
-  // 2. Portas reais. Payload plano por SKU: mesma montarPayloadItem que o conector usa, com o
-  //    titulo_ml substituído pelo family_name da partição (vira family_name no payload plano).
-  const familiaInput = { titulo_ml: familyName, descricao_ml: anuncio.descricao, categoria_ml_id: categoriaId, atributos_ml: atributosComGenero };
+  // 2. Portas reais. Payload plano por SKU (`prepararPayloadUP`).
   const varPorSku = new Map(anuncio.variacoes.map((v) => [v.sku, v]));
 
   // ADR-0197: SKU de kit com variação. Só CREATE de item novo segue por aqui, com a exclusão do SKU
@@ -272,27 +314,7 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
     }
   }
 
-  const montarPayloadPlano = (sku: string) => {
-    const v = varPorSku.get(sku)!;
-    // Achado real de produção (2026-09-19, sandália): item.attributes[SIZE] tem que bater com o
-    // RÓTULO da linha do chart ("37 BR"), não com `v.tamanho` cru ("37") — /items/validate real
-    // devolveu invalid.fashion_grid.size.values com o valor cru. `montarPayloadItem` recebe os
-    // dois: sizeLabel (o que vai no payload) e tamanho (só usado pro guard "sem grid resolvido").
-    const grid = chart && 'chartId' in chart ? chart : null;
-    const linha = v.tamanho ? grid?.linhaPorTamanho.get(v.tamanho) ?? null : null;
-    return montarPayloadItem(
-      familiaInput,
-      [{
-        codigo: v.sku, cor: v.cor, estoque: v.estoque, preco_publicacao: v.preco, gtin: v.gtin, ml_picture_id: v.fotoId,
-        tamanho: v.tamanho ?? null, sizeLabel: linha?.sizeLabel ?? null,
-        sizeGridId: grid?.chartId ?? null, sizeGridRowId: linha?.rowId ?? null,
-        tamanhoSemGuia: v.tamanho && chart && 'semGuia' in chart ? chart.semGuia : null,
-        corValueId: resolverCorValueId(v.cor, valoresCor),
-      }],
-      anuncio.capaFotoId, anuncio.capa2FotoId, anuncio.capa3FotoId,
-      anuncio.listingTypeId, anuncio.dimensoes, args.aceitaEmptyGtin, 'plano',
-    );
-  };
+  const montarPayloadPlano = (sku: string) => montar(varPorSku.get(sku)!);
 
   const criadoEm = (raiz as { criado_em?: string }).criado_em;
   const desdeMs = criadoEm ? Date.parse(criadoEm) - 60 * 60 * 1000 : Date.now() - 24 * 60 * 60 * 1000;

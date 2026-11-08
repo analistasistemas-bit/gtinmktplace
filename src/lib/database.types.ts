@@ -1233,10 +1233,12 @@ export type Database = {
         Row: {
           codigo: string | null
           confirmada_em: string | null
+          criar: boolean
           delta: number | null
           escrita_em: string | null
           fase: string | null
           ids_passo1: string[] | null
+          item_criado: string | null
           item_escrita: string | null
           intencao_escrita_em: string | null
           item_ids: string[]
@@ -1250,6 +1252,7 @@ export type Database = {
           recusas: number
           repausar: string[]
           transferencia_id: string
+          up_criado: string | null
           up_id: string
           valor_alvo: number | null
           valor_anterior: number | null
@@ -1257,10 +1260,12 @@ export type Database = {
         Insert: {
           codigo?: string | null
           confirmada_em?: string | null
+          criar?: boolean
           delta?: number | null
           escrita_em?: string | null
           fase?: string | null
           ids_passo1?: string[] | null
+          item_criado?: string | null
           item_escrita?: string | null
           intencao_escrita_em?: string | null
           item_ids?: string[]
@@ -1274,6 +1279,7 @@ export type Database = {
           recusas?: number
           repausar?: string[]
           transferencia_id: string
+          up_criado?: string | null
           up_id: string
           valor_alvo?: number | null
           valor_anterior?: number | null
@@ -1281,10 +1287,12 @@ export type Database = {
         Update: {
           codigo?: string | null
           confirmada_em?: string | null
+          criar?: boolean
           delta?: number | null
           escrita_em?: string | null
           fase?: string | null
           ids_passo1?: string[] | null
+          item_criado?: string | null
           item_escrita?: string | null
           intencao_escrita_em?: string | null
           item_ids?: string[]
@@ -1298,6 +1306,7 @@ export type Database = {
           recusas?: number
           repausar?: string[]
           transferencia_id?: string
+          up_criado?: string | null
           up_id?: string
           valor_alvo?: number | null
           valor_anterior?: number | null
@@ -1465,6 +1474,7 @@ export type Database = {
       }
       kits_variacao: {
         Row: {
+          chave_cadastro: string | null
           codigo_pai_base: string
           codigo_pai_kit: string
           criado_em: string
@@ -1479,6 +1489,7 @@ export type Database = {
           versao: number
         }
         Insert: {
+          chave_cadastro?: string | null
           codigo_pai_base: string
           codigo_pai_kit: string
           criado_em?: string
@@ -1493,6 +1504,7 @@ export type Database = {
           versao?: number
         }
         Update: {
+          chave_cadastro?: string | null
           codigo_pai_base?: string
           codigo_pai_kit?: string
           criado_em?: string
@@ -5720,6 +5732,10 @@ export type Database = {
       }
       kit_criar_transferencia: {
         Args: { p_alvos: Json; p_itens: Json; p_kit: string; p_org: string; p_tipo: string }
+        Returns: Json
+      }
+      kit_variacao_criar: {
+        Args: { p_alvos: Json; p_baseline: Json; p_chave: string; p_kit: Json; p_org: string; p_skus: Json }
         Returns: Json
       }
       kit_reivindicar_execucao: {

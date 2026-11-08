@@ -1612,7 +1612,8 @@ Chave de vínculo é `(org_id, codigo)`. Toda tabela tem `org_id`, com FK compos
 
 ### `kits_variacao`
 `codigo_pai_base`, `codigo_pai_kit` (único por org), `pecas_por_kit` (2 a 6), `preco`, `so_em_kit`,
-`reposicao_auto`, `meta` (`>= 0`), `versao`, `status` (default `rascunho`, sem check), `criado_em`.
+`reposicao_auto`, `meta` (`>= 0`), `versao`, `status` (default `rascunho`, sem check; a criação grava `publicando`, e o
+worker da saga muda para `publicado` ou `erro`), `criado_em`, `chave_cadastro` (idempotência da criação, único por org).
 
 ### `kit_variacao_skus`
 `kit_id`, `codigo` (único por org), `tamanho`, `cores text[]`, `rotulo_cor`.
@@ -1648,7 +1649,9 @@ incerta), `recusas` (4xx recebidos; na 5ª a saga trava), `repausar text[]` (ite
 um PUT `active`, gravados antes dele; `kit_saga_finalizar` recusa com `kit_repausa_pendente` enquanto houver), `fase`
 (`reducao|aumento|nenhuma`, pelo sinal de `valor_alvo` − ML lido no cálculo, gravada uma vez; aumento só depois de todas as
 reduções confirmadas), `marca_ordem` (maior `estoque_movimentos.ordem` do SKU lida sob o lock do saldo no cálculo; vira a
-marca d'água na confirmação). Escrita só por `kit_saga_salvar_alvo`.
+marca d'água na confirmação), `criar` (destino sem item: SKU de kit novo; `up_id` sintético `criar:<codigo>` e `item_ids`
+vazio; só destino de `montar`), `up_criado` e `item_criado` (o item que o passo `aumentar` criou ou adotou, gravados uma vez).
+Escrita só por `kit_saga_salvar_alvo`. *Migration `20261108040001_kit_variacao_criacao.sql`.*
 
 ### `kit_marca_ml`
 Marca d'água por SKU participante: PK `(org_id, codigo)`, `ordem` (maior `estoque_movimentos.ordem` já incluída num valor
@@ -1674,6 +1677,12 @@ Todas só `service_role`. As de transferência são `security definer`, dono `es
   o módulo e, numa transação, cria transferência, alvos e exclusão (com `up_id`). `versao_politica` é a
   soma das `sku_politica_kit.versao` dos códigos dos alvos. Devolve `{ok, id}` ou `{ok:false, motivo}`:
   `modulo_desligado`, `alvos_invalidos` ou `up_ocupado` (com `codigo`), sem gravar nada.
+- `kit_variacao_criar(p_org, p_chave, p_kit, p_skus, p_baseline, p_alvos)` (Task 10, só `service_role`): numa transação,
+  recusa base com kit vinculado ou Kit Virtual (`kit_variacao_base_em_kit`), grava kit, SKUs e composição, a marca
+  d'água inicial de cada participante sem marca (saldo travado igual ao ML lido em `p_baseline`; SKU de kit = 0) e a
+  transferência `montar` com os SKUs de kit como alvo `criar`. A mesma chave devolve o kit já criado. Recusa sem gravar:
+  `modulo_desligado`, `base_em_kit`, `baseline_incompleto`, `baseline_divergente`, `sku_nao_encontrado`, `alvos_invalidos`,
+  `up_ocupado`.
 - `kit_reivindicar_execucao(p_org, p_transferencia, p_token, p_prazo_s)`: claim de uma invocação da saga
   no relógio do banco; só em `ativa` e com prazo anterior vencido.
 - Escritas da saga, todas por `kit_saga_validar` (transferência `ativa`, token do claim, prazo vigente pelo

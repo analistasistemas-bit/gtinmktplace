@@ -19,6 +19,7 @@ function alvo(up_id: string, codigo: string, papel: 'origem' | 'destino', delta:
     up_id, codigo, papel, delta, item_ids, qtd_passo1: null, passo1_em: null, ids_passo1: null,
     valor_anterior: null, valor_alvo: null, pausado_pela_saga: [], intencao_escrita_em: null,
     recusa_definitiva_em: null, escrita_em: null, confirmada_em: null, item_escrita: null, recusas: 0, repausar: [], fase: null, marca_ordem: null,
+    criar: false, up_criado: null, item_criado: null,
   };
 }
 
@@ -76,6 +77,14 @@ function cenario() {
     pausaIgnorada: new Set<string>(),
     falhaSalvarAlvo: (_patch: Partial<AlvoSaga>): Error | null => null,
     seq: 0,
+    /** CREATE do item de kit (alvo `criar`): falha injetada por tentativa (1, 2, …) e o que a busca enxerga. */
+    falhaCriar: (_n: number): { erro: Error; aplica: boolean } | null => null,
+    criacoes: 0,
+    buscaVe: true,
+    buscaAmbigua: false,
+    aoBuscar: () => {},
+    registros: [] as string[],
+    registroFalha: null as string | null,
     /** Ledger falso: só o que a marca d'água olha. */
     movs: [] as Array<{ codigo: string; ordem: number; qtd: number; motivo: string; transf: string | null }>,
     ordemSeq: 100,
@@ -175,6 +184,10 @@ function cenario() {
         validar(token);
         return s.conferir(codigo);
       },
+      async registrarItem(codigo, itemId, upId) {
+        s.registros.push(`${codigo} ${itemId} ${upId}`);
+        return s.registroFalha ? { ok: false, motivo: s.registroFalha } : { ok: true };
+      },
     },
     ml: {
       async lerOferta(upId, esperados) {
@@ -204,6 +217,25 @@ function cenario() {
         const f = s.falhaPut(itemId, q);
         if (!f || f.aplica) upDoItem(itemId).quantidade = q;
         if (f) throw f.erro;
+      },
+      prepararItem: async (codigo, quantidade) => async () => {
+        s.chamadas.push(`criar ${codigo} ${quantidade}`);
+        const f = s.falhaCriar(++s.criacoes);
+        if (!f || f.aplica) {
+          const n = Object.keys(ups).filter((u) => u.startsWith('UP-NOVO')).length + 1;
+          ups[`UP-NOVO${n}`] = { quantidade, itens: [ativo(`MLB-NOVO${n}`)] };
+        }
+        if (f) throw f.erro;
+        const n = Object.keys(ups).filter((u) => u.startsWith('UP-NOVO')).length;
+        return { itemId: `MLB-NOVO${n}`, upId: `UP-NOVO${n}` };
+      },
+      async buscarItemCriado(_codigo) {
+        s.aoBuscar();
+        if (s.buscaAmbigua) return { tipo: 'ambiguo' as const };
+        const ids = Object.keys(ups).filter((u) => u.startsWith('UP-NOVO'));
+        if (ids.length === 0 || !s.buscaVe) return { tipo: 'nenhum' as const };
+        if (ids.length > 1) return { tipo: 'ambiguo' as const };
+        return { tipo: 'um' as const, itemId: ups[ids[0]].itens[0].id, upId: ids[0] };
       },
       async putStatus(itemId, status) {
         s.chamadas.push(`${status} ${itemId}`);
@@ -829,6 +861,138 @@ describe('avancarSaga', () => {
     c.s.t.estado = 'travada';
     expect(await passo(c)).toMatchObject({ acao: 'ocupada' });
     expect(c.s.chamadas).toEqual([]);
+  });
+});
+
+/** Kit novo: o destino K ainda não tem item no ML. O passo `aumentar` cria com o saldo, depois das reduções. */
+function cenarioCriar() {
+  const c = cenario();
+  delete c.s.ups['UP-K'];
+  c.s.saldo.K = 0;
+  c.s.alvos[2] = { ...alvo('criar:K', 'K', 'destino', 1, []), criar: true };
+  return c;
+}
+const criacoes = (c: Cenario) => c.s.chamadas.filter((x) => x.startsWith('criar ')).length;
+
+describe('avancarSaga: destino sem item (CREATE do kit)', () => {
+  it('cria só depois das reduções confirmadas, com o saldo, pausado, registrado e depois reativado', async () => {
+    const c = cenarioCriar();
+    await rodar(c);
+    expect(c.s.t).toMatchObject({ estado: 'concluida', passo: 'fim' });
+    expect(c.s.chamadas).toEqual([
+      'paused MLB-P', 'paused MLB-B', 'paused MLB-BC',
+      'qtd MLB-P 4', 'qtd MLB-B 4',
+      'criar K 1', 'paused MLB-NOVO1',
+      'active MLB-P', 'active MLB-B', 'active MLB-BC', 'active MLB-NOVO1',
+    ]);
+    expect(c.s.ups['UP-NOVO1'].quantidade).toBe(1);
+    expect(c.s.registros).toContain('K MLB-NOVO1 UP-NOVO1');
+    expect(c.s.alvos[2]).toMatchObject({ item_criado: 'MLB-NOVO1', up_criado: 'UP-NOVO1', valor_anterior: 0, valor_alvo: 1, fase: 'aumento' });
+    expect(c.s.rpcs).toEqual(['reservar', 'creditar', 'finalizar']);
+    expect(c.s.saldo).toEqual({ P: 4, B: 4, K: 1 });
+  });
+
+  it('origem não confirmada impede o CREATE', async () => {
+    const c = cenarioCriar();
+    c.s.falhaPut = (id) => (id === 'MLB-P' ? { erro: new TypeError('network timeout'), aplica: false } : null);
+    await rodar(c);
+    expect(c.s.t.estado).toBe('travada');
+    expect(criacoes(c)).toBe(0);
+    expect(c.s.rpcs).not.toContain('creditar');
+
+    // Mesmo forçando o passo, sem `confirmada_em` em todas as origens não há POST.
+    const d = cenarioCriar();
+    await rodar(d, noPasso('aumentar'));
+    d.s.alvos[0].confirmada_em = null;
+    await passo(d);
+    expect(d.s.t.estado).toBe('travada');
+    expect(criacoes(d)).toBe(0);
+  });
+
+  it('CREATE repetido não duplica: reentrega de cada passo', async () => {
+    const c = cenarioCriar();
+    for (let i = 0; i < 60 && c.s.t.estado === 'ativa'; i++) {
+      const anterior = c.s.t.passo;
+      await passo(c);
+      if (c.s.t.estado === 'ativa') c.s.t.passo = anterior;
+      await passo(c);
+    }
+    expect(c.s.t.estado).toBe('concluida');
+    expect(criacoes(c)).toBe(1);
+    expect(Object.keys(c.s.ups).filter((u) => u.startsWith('UP-NOVO'))).toEqual(['UP-NOVO1']);
+    expect(c.s.saldo.K).toBe(1);
+  });
+
+  it('criação incerta: a retomada busca, acha e adota, sem novo POST', async () => {
+    const c = cenarioCriar();
+    c.s.falhaCriar = (n) => (n === 1 ? { erro: new TypeError('network timeout'), aplica: true } : null);
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(criacoes(c)).toBe(1);
+    expect(c.s.alvos[2]).toMatchObject({ item_criado: 'MLB-NOVO1', up_criado: 'UP-NOVO1' });
+    expect(c.s.chamadas).toContain('paused MLB-NOVO1');
+  });
+
+  it('criação incerta que a busca ainda não enxerga: espera sem reenviar e adota quando aparece', async () => {
+    const c = cenarioCriar();
+    c.s.falhaCriar = (n) => (n === 1 ? { erro: new TypeError('network timeout'), aplica: true } : null);
+    c.s.buscaVe = false;
+    await rodar(c, (x) => criacoes(x) === 1 && x.s.t.passo === 'aumentar' && x.s.filas.length > 12, 60);
+    expect(c.s.t.estado).toBe('ativa');
+    c.s.buscaVe = true;
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(criacoes(c)).toBe(1);
+  });
+
+  it('criação incerta sem item na busca não reenvia: depois da janela trava', async () => {
+    const c = cenarioCriar();
+    c.s.falhaCriar = (n) => (n === 1 ? { erro: new TypeError('network timeout'), aplica: false } : null);
+    await rodar(c, undefined, 80);
+    expect(c.s.t.estado).toBe('travada');
+    expect(c.s.t.alerta).toMatch(/K: criação incerta/);
+    expect(criacoes(c)).toBe(1);
+    expect(c.s.rpcs).not.toContain('creditar');
+  });
+
+  it('recusa 4xx permite repetir, depois de buscar, sem criar dois itens', async () => {
+    const c = cenarioCriar();
+    c.s.falhaCriar = (n) => (n === 1 ? { erro: new MLApiError(400, 'invalid picture'), aplica: false } : null);
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(criacoes(c)).toBe(2);
+    expect(Object.keys(c.s.ups).filter((u) => u.startsWith('UP-NOVO'))).toEqual(['UP-NOVO1']);
+    expect(c.s.alvos[2].recusas).toBe(1);
+  });
+
+  it('busca ambígua trava sem criar', async () => {
+    const c = cenarioCriar();
+    c.s.buscaAmbigua = true;
+    await rodar(c);
+    expect(c.s.t.estado).toBe('travada');
+    expect(criacoes(c)).toBe(0);
+  });
+
+  it('registro recusado (family_id divergente) trava sem creditar', async () => {
+    const c = cenarioCriar();
+    c.s.registroFalha = 'family_id divergente';
+    await rodar(c);
+    expect(c.s.t.estado).toBe('travada');
+    expect(c.s.t.alerta).toMatch(/family_id divergente/);
+    expect(c.s.rpcs).not.toContain('creditar');
+  });
+
+  it('pouco prazo na invocação não grava intenção nem posta', async () => {
+    const c = cenarioCriar();
+    await rodar(c, noPasso('aumentar'));
+    let uma = true;
+    c.s.aoBuscar = () => { if (uma) { uma = false; c.s.agora += 70_000; } };
+    await passo(c);
+    expect(criacoes(c)).toBe(0);
+    expect(c.s.alvos[2].intencao_escrita_em).toBeNull();
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(criacoes(c)).toBe(1);
   });
 });
 
