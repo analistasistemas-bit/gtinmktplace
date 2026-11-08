@@ -165,6 +165,19 @@ describe('Organizacoes', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/admin/organizacoes/avil?mes=2026-09');
   });
 
+  it('carteira: coluna Imagens IA com quantidade e valor; — quando a prévia não respondeu', () => {
+    usePlatformWallet.mockReturnValue(makeWallet([
+      makeOrg({ id: 'a', nome: 'Alfa', image_units: 3, image_cents: 150 }),
+      makeOrg({ id: 'b', nome: 'Beta', image_units: null, image_cents: null }),
+    ]));
+    renderPage();
+    expect(screen.getByText('Imagens IA')).toBeInTheDocument();
+    const cell = screen.getByTestId('imagens-ia-a');
+    expect(cell).toHaveTextContent('3');
+    expect(cell).toHaveTextContent(/1,50/);
+    expect(screen.getByTestId('imagens-ia-b')).toHaveTextContent('—');
+  });
+
   it('hero: variação vem do total da carteira (previous_gross_cents), não das linhas da página', () => {
     usePlatformWallet.mockReturnValue({
       ...makeWallet([makeOrg({ metrics: { ...makeOrg().metrics, previous: { gross_cents: 1, orders: 1, markup: 1 } } })]),

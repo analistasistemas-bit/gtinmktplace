@@ -109,7 +109,7 @@ describe('createPlatformAdminRepository', () => {
     ];
     const db = fakeDb(
       { organizations: { rows: organizations }, ml_vendas: { rows: [sale('sale-1', 'org-a', 100), sale('sale-2', 'org-b', 300)] }, variacoes: {}, configuracoes: {}, platform_sonar_searches: {} },
-      { 'org-a': preview(10), 'org-b': preview(0, [{ code: 'commercial_terms_required' }], null) },
+      { 'org-a': { ...preview(10), image_units: 3, image_cents: 150 }, 'org-b': preview(0, [{ code: 'commercial_terms_required' }], null) },
     );
     const repository = createPlatformAdminRepository(db as never, () => new Date('2026-09-06T12:00:00Z'));
     const wallet = await repository.wallet('actor', { month: '2026-08', page: 1, page_size: 1, sort: 'gross_desc' });
@@ -121,6 +121,9 @@ describe('createPlatformAdminRepository', () => {
     });
     // Pendência é bloqueio da prévia (ADR-0158 §2): sem contrato → 1; consumo é contável sem contrato.
     expect(wallet.rows[0]).toMatchObject({ modality: null, forecast_cents: null, billable_units: 2, pending_count: 1 });
+    // Imagens IA (Task 16): quantidade e valor da prévia; prévia antiga sem os campos → null.
+    expect(wallet.rows[1]).toMatchObject({ image_units: 3, image_cents: 150 });
+    expect(wallet.rows[0]).toMatchObject({ image_units: null, image_cents: null });
     expect(wallet.totals).toEqual({
       gross_cents: 40_000, forecast_cents: 10, orgs_without_terms: 1, orgs_future_terms: 0, org_count: 2,
       pending_count: 1, orders: 2, previous_gross_cents: 0, previous_available: true, warnings: [],

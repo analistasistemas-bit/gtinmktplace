@@ -7,16 +7,17 @@
 --    na mesma transação, com `on conflict do nothing` (repetir o request_id não cobra de novo). pendente,
 --    pendente_upload e recusada nunca cobram; a imagem descartada pelo operador continua 'gerada' e cobra.
 --    Org sem o módulo imagem_ia ou sem condição comercial: entrega com units = 0 (registrada, não cobrada).
---    O mês é now(), não criado_em: recuperação tardia de pendente_upload nunca cai em mês já fechado.
+--    Virada do mês: o gatilho toma o MESMO lock da org que platform_billing_close (antes de ler módulo,
+--    competência e termo), calcula a competência com clock_timestamp() depois do lock e, se ela já estiver
+--    fechada, grava na competência aberta seguinte. A imagem nunca se perde nem cobra mês fechado.
 -- 4. platform_save_terms aceita image_unit_cents (opcional; ausente = 0).
 -- 5. platform_billing_preview soma as imagens no total, no crédito e em v_sources (revisão), e mostra a
 --    linha "Imagens IA" só com preço > 0 ou uso no mês. Efeito colateral aceito (o mesmo da 20261103004908):
 --    a coluna nova muda to_jsonb(v_terms) e v_sources ganha chaves, então a revisão de toda prévia ABERTA muda
 --    uma vez (409 e recarrega). Mês fechado não muda: platform_billing_close devolve o snapshot gravado.
 --
--- platform_billing_close não é redefinido. ponytail: sem `lock platform_image_deliveries in share mode` no
--- close — a entrega sempre cai no mês corrente e só mês passado fecha; a única corrida (transação aberta na
--- virada do mês) cobra a menos, nunca a mais. Adicionar o lock se isso virar problema.
+-- platform_billing_close não é redefinido: o lock da org (passo 3) já serializa entrega e fechamento nas
+-- duas ordens (supabase/tests/platform_imagem_ia_concorrencia.sh).
 --
 -- Sem begin/commit: o db push já envolve a migration numa transação.
 
@@ -49,12 +50,21 @@ create trigger platform_image_deliveries_append_only before update or delete on 
 
 create function public.platform_image_delivery_on_generated() returns trigger
 language plpgsql security definer set search_path = '' as $$
-declare v_month date := date_trunc('month', now() at time zone 'America/Fortaleza')::date;
+declare v_month date;
 declare v_terms public.platform_commercial_terms%rowtype;
 declare v_modulo boolean;
 declare v_units smallint;
 begin
-  select 'imagem_ia' = any(o.modulos_habilitados) into v_modulo from public.organizations o where o.id = new.org_id;
+  -- Mesmo lock da org que platform_billing_close toma (`for update`); `no key update` conflita com ele e
+  -- não trava os FKs (key share) das demais tabelas da org. Depois do lock, cada comando enxerga o que
+  -- o fechamento concorrente commitou (read committed).
+  select 'imagem_ia' = any(o.modulos_habilitados) into v_modulo
+    from public.organizations o where o.id = new.org_id for no key update;
+  -- Relógio atual (não o início da transação) e nunca uma competência já fechada: vai para a seguinte aberta.
+  v_month := date_trunc('month', clock_timestamp() at time zone 'America/Fortaleza')::date;
+  while exists (select 1 from public.platform_billing_statements s where s.org_id = new.org_id and s.month = v_month) loop
+    v_month := (v_month + interval '1 month')::date;
+  end loop;
   select * into v_terms from public.platform_resolve_terms(new.org_id, v_month);
   v_units := case when coalesce(v_modulo, false) and v_terms.id is not null then 1 else 0 end;
   insert into public.platform_image_deliveries (org_id, request_id, terms_id, month, unit_cents, units, total_cents, cost_usd, reason)

@@ -100,6 +100,8 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
     return { ...org, modality: preview?.terms?.modality ?? null, metrics: metricsResult.value,
       forecast_cents: preview && preview.terms && preview.blockers.length === 0 ? preview.total_cents : null,
       billable_units: preview?.sonar_units ?? null,
+      image_units: preview?.image_units ?? null,
+      image_cents: preview?.image_cents ?? null,
       daludi_searches: daludi,
       // Só afirma vigência futura quando a prévia respondeu e provou que não há condição vigente.
       next_terms_starts_on: preview && !preview.terms ? nextStartsOn : null,

@@ -472,6 +472,19 @@ export default function Organizacoes() {
         : <span className={o.billable_units === 0 ? 'text-muted-foreground' : undefined}>{fmtInt(o.billable_units)}</span>,
     },
     {
+      key: 'imagens', header: 'Imagens IA', className: 'w-[7rem] text-right tabular-nums hidden lg:table-cell',
+      cell: (o) => (
+        <div data-testid={`imagens-ia-${o.id}`}>
+          {o.image_units == null
+            ? '—'
+            : <>
+                <span className={o.image_units === 0 ? 'text-muted-foreground' : undefined}>{fmtInt(o.image_units)}</span>
+                <div className="text-xs text-muted-foreground">{fmtBRL((o.image_cents ?? 0) / 100)}</div>
+              </>}
+        </div>
+      ),
+    },
+    {
       key: 'forecast', header: 'Previsão', className: 'w-[8.5rem] text-right tabular-nums max-sm:hidden',
       cell: (o) => {
         if (o.forecast_cents == null) {

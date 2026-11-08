@@ -149,6 +149,10 @@ export type OrgSummary = {
   forecast_cents: Cents | null;
   /** Consumo Sonar do mês; contável mesmo sem contrato (ADR-0158 §3). */
   billable_units: number | null;
+  /** Imagens IA cobradas no mês (quantidade e valor da prévia). `null` = prévia indisponível. Opcional
+   *  pelo mesmo motivo de `next_terms_starts_on`: a edge vai ao ar antes do frontend. */
+  image_units?: number | null;
+  image_cents?: Cents | null;
   daludi_searches: number | null;
   /** Bloqueios da prévia do mês (ADR-0158 §2), não buscas Sonar em voo. `null` = prévia indisponível. */
   pending_count: number | null;
