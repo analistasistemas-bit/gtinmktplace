@@ -19,6 +19,7 @@ import { buscarItemPorSku, buscarItemUP, type FetchLike } from '../_shared/ml/bu
 import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
 import { enfileirarSincronizacaoFiscal } from '../_shared/queue.ts';
 import { talvezFinalizarLote } from '../_shared/lote/finalizar.ts';
+import { alertarZeradosConfirmados } from '../sincronizar-estoque/processar.ts';
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -171,6 +172,7 @@ function deps(orgId: string): DepsSaga {
     },
     enfileirar: (id, delayS) => enfileirarSaga(id, orgId, delayS),
     alertar: async (texto) => { await notificarCategoria(admin, orgId, 'estoque', texto); },
+    avisarZerados: (codigos) => alertarZeradosConfirmados(admin, notificarCategoria, orgId, codigos),
     agora: () => new Date(),
     quarentenaS: quarentenaDoEnv(Deno.env.get('KIT_QUARENTENA_S')),
     novoToken: () => crypto.randomUUID(),

@@ -141,6 +141,8 @@ export interface DepsSaga {
   };
   enfileirar(id: string, delayS: number): Promise<void>;
   alertar(texto: string): Promise<void>;
+  /** Aviso de "estoque zerado" (ADR-0134) dos SKUs cuja redução para 0 a saga acabou de confirmar no ML. */
+  avisarZerados?(codigos: string[]): Promise<void>;
   agora(): Date;
   quarentenaS: number;
   novoToken(): string;
@@ -679,6 +681,15 @@ async function confirmar(ctx: Ctx, fase: Fase, proximo: PassoSaga): Promise<Resu
       return travar(ctx, `${alvo.codigo}: ML com ${oferta.quantidade}, esperado ${alvo.valor_alvo}, anterior ${alvo.valor_anterior}`);
     }
     await salvarAlvo(ctx, alvo, { confirmada_em: iso(ctx) });
+  }
+  if (fase === 'reducao') {
+    // Só depois da leitura que confirmou o zero: o push tira esses SKUs do aviso. Nunca derruba o passo; a marca
+    // `alertado_em` deduplica a reentrega.
+    const zerados = ctx.alvos.filter((a) => naFase(a, 'reducao') && a.confirmada_em && a.valor_alvo === 0).map((a) => a.codigo);
+    if (zerados.length > 0) {
+      await ctx.deps.avisarZerados?.(zerados)
+        .catch((e) => console.error(`kit-transferencia ${ctx.t.id}: aviso de zerado falhou: ${mensagem(e)}`));
+    }
   }
   if (fase === 'aumento') {
     const r = await ledger(ctx, 'creditar');

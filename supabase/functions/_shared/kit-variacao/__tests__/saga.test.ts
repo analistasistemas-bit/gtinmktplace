@@ -462,6 +462,30 @@ describe('avancarSaga', () => {
     expect(c.s.chamadas.filter((x) => x.startsWith('qtd '))).toEqual([]);
   });
 
+  it('redução para 0 confirmada no ML dispara o aviso de zerado, nunca antes (achado 5)', async () => {
+    const c = cenario();
+    c.s.ups['UP-P'].quantidade = 1;
+    c.s.saldo.P = 1;
+    const avisos: Array<{ codigos: string[]; confirmado: boolean; ml: number }> = [];
+    c.deps.avisarZerados = async (codigos) => {
+      avisos.push({ codigos, confirmado: !!c.s.alvos.find((a) => a.codigo === 'P')!.confirmada_em, ml: c.s.ups['UP-P'].quantidade });
+    };
+    await rodar(c, noPasso('confirmar_reducao'));
+    expect(avisos).toEqual([]);
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(avisos).toEqual([{ codigos: ['P'], confirmado: true, ml: 0 }]);
+  });
+
+  it('aviso de zerado que falha não derruba a saga (achado 5)', async () => {
+    const c = cenario();
+    c.s.ups['UP-P'].quantidade = 1;
+    c.s.saldo.P = 1;
+    c.deps.avisarZerados = async () => { throw new Error('telegram fora'); };
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
+  });
+
   it('pedido pendente do UP bloqueia até sair da lista, sem reservar nem escrever (achado 1)', async () => {
     // Pendente conhecido que paga antes do PUT: local cai, ML cai, e o alvo congelado ofereceria uma peça a mais.
     const c = cenario();

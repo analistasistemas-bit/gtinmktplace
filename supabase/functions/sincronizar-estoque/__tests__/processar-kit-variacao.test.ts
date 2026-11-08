@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // ml/token.ts importa _shared/supabase.ts (jsr real), irresolúvel no vitest.
 vi.mock('../../_shared/ml/token.ts', () => ({ getValidAccessTokenConexao: async () => 'fake-token' }));
 
-import { processarSincronizacao, type DepsSincronizacao } from '../processar.ts';
+import { alertarZeradosConfirmados, processarSincronizacao, type DepsSincronizacao } from '../processar.ts';
 import { fakeConnector } from '../../_shared/canais/fake';
 import type { ChannelConnector } from '../../_shared/canais/contrato';
 
@@ -17,6 +17,8 @@ interface Banco {
   semUp?: boolean;
   /** Item local de P1 fora de `ativo` (pausado no vínculo): `resolverAlvosPush` o descartaria. */
   p1Pausado?: boolean;
+  /** Movimentos >0 → 0 de P1 (z1) e P2 (z2), ainda sem alerta. */
+  zerados?: boolean;
 }
 
 const ITENS = [
@@ -38,6 +40,10 @@ function fakeAdmin(b: Banco) {
     mov('m3', 'P1', 3, '2026-11-07T11:00:00Z', { push_canal_origem: 'mercado_livre' }),
     mov('m4', 'P1', 4, '2026-11-07T11:10:00Z', { transferencia_id: 'T0' }),
     mov('m9', 'P2', 5, '2026-11-07T11:30:00Z'),
+    ...(b.zerados ? [
+      mov('z1', 'P1', 6, '2026-11-07T11:40:00Z', { estoque_anterior: 2, estoque_resultante: 0, alertado_em: null }),
+      mov('z2', 'P2', 7, '2026-11-07T11:41:00Z', { estoque_anterior: 1, estoque_resultante: 0, alertado_em: null }),
+    ] : []),
   ];
   const consultas: string[] = [];
   const rpcs: Array<{ nome: string; args: Record<string, unknown> }> = [];
@@ -187,6 +193,36 @@ describe('sincronizar-estoque × kit com variação', () => {
     const m = montar({ modulos: ['kit_variacao'], componentes: ['P1'] });
     await processarSincronizacao(m.deps, JOB);
     expect(m.movs.every((x) => x.push_enfileirado_em !== null)).toBe(true);
+  });
+
+  it('zero de participante não é anunciado nem marcado pelo push: fica para a saga (achado 5 da revisão final)', async () => {
+    const m = montar({ modulos: ['kit_variacao'], componentes: ['P1'], zerados: true });
+    expect((await processarSincronizacao(m.deps, JOB)).status).toBe(200);
+    expect(m.movs.find((x) => x.id === 'z1')!.alertado_em).toBeNull();
+    expect(m.movs.find((x) => x.id === 'z2')!.alertado_em).not.toBeNull();
+    const zerado = m.notificar.mock.calls.map((c) => String((c as unknown[])[3])).filter((t) => t.includes('Estoque zerado'));
+    expect(zerado).toHaveLength(1);
+    expect(zerado[0]).toContain('P2');
+    expect(zerado[0]).not.toContain('P1');
+  });
+
+  it('confirmação da saga: marca e anuncia só os códigos confirmados (achado 5)', async () => {
+    const m = montar({ modulos: ['kit_variacao'], componentes: ['P1'], zerados: true });
+    await alertarZeradosConfirmados(m.admin, m.notificar as never, 'O', ['P1']);
+    expect(m.movs.find((x) => x.id === 'z1')!.alertado_em).not.toBeNull();
+    expect(m.movs.find((x) => x.id === 'z2')!.alertado_em).toBeNull();
+    expect(m.notificar).toHaveBeenCalledTimes(1);
+    expect(String((m.notificar.mock.calls[0] as unknown[])[3])).toMatch(/Estoque zerado[\s\S]*P1/);
+    // Reentrega: a marca deduplica.
+    await alertarZeradosConfirmados(m.admin, m.notificar as never, 'O', ['P1']);
+    expect(m.notificar).toHaveBeenCalledTimes(1);
+  });
+
+  it('SKU comum zerado em org sem o módulo: alerta como hoje', async () => {
+    const m = montar({ modulos: [], componentes: ['P1'], zerados: true });
+    expect((await processarSincronizacao(m.deps, JOB)).status).toBe(200);
+    expect(m.movs.filter((x) => x.alertado_em === null).map((x) => x.id)).toEqual([]);
+    expect(m.consultas).not.toContain('kit_skus_participantes');
   });
 
   it('criarTransferencia que lança também devolve a intenção ao outbox e relança', async () => {
