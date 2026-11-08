@@ -32,6 +32,10 @@ export interface TransferenciaSaga {
   versao_politica: number;
   passo_em: string;
   alerta: string | null;
+  /** Início do problema que pede alerta no passo atual (carência); avançar zera. */
+  alerta_desde?: string | null;
+  /** Último alerta escalonado enviado: dedup, e a marca do "resolvido" no aviso de fim. */
+  alerta_enviado?: string | null;
 }
 
 export interface AlvoSaga {
@@ -93,6 +97,16 @@ export interface ResultadoImportacao {
   baixas: Array<{ orderId: string; resultado: Pick<ResultadoBaixaVenda, 'vendaAcimaSaldo' | 'desyncMl'> }>;
 }
 
+export interface PatchTransferencia {
+  passo?: PassoSaga;
+  alerta?: string;
+  travar?: boolean;
+  /** Grava só se ainda não houver início (o primeiro vale). */
+  alertaDesde?: string;
+  limparAlertaDesde?: boolean;
+  alertaEnviado?: string;
+}
+
 /** Portas estreitas: o worker liga no Supabase e no ML; o teste, em memória. */
 export interface DepsSaga {
   repo: {
@@ -100,7 +114,7 @@ export interface DepsSaga {
     reivindicar(id: string, token: string, prazoS: number): Promise<boolean>;
     carregar(id: string): Promise<{ transferencia: TransferenciaSaga; alvos: AlvoSaga[] }>;
     // As cinco abaixo validam token, prazo, estado `ativa` e exclusão no banco, e lançam se não valer.
-    salvarTransferencia(id: string, token: string, patch: { passo?: PassoSaga; alerta?: string; travar?: boolean }): Promise<void>;
+    salvarTransferencia(id: string, token: string, patch: PatchTransferencia): Promise<void>;
     salvarAlvo(id: string, token: string, upId: string, patch: Partial<AlvoSaga>): Promise<void>;
     /**
      * Estado final e exclusões numa transação. `pausas`: itens que esta saga pausou e deixou pausados pela política;
@@ -125,7 +139,10 @@ export interface DepsSaga {
     registrarItem(codigo: string, itemId: string, upId: string): Promise<{ ok: boolean; motivo?: string }>;
   };
   ml: {
+    /** Lança erro com `buscaVazia: true` quando a busca por UP não traz item nenhum (indexação logo depois do CREATE). */
     lerOferta(upId: string, esperados: string[]): Promise<OfertaUP>;
+    /** Leitura direta dos itens (`GET /items`), sem a busca por UP; lança se algum não for do UP. */
+    lerItens(upId: string, ids: string[]): Promise<OfertaUP['itens']>;
     listarPendentes(): Promise<PedidoPendente[]>;
     /** `antesDeBaixar` roda logo antes de cada baixa e lança se o prazo venceu. */
     importarPedidos(itemIds: string[], desde: string, idsPasso1: string[], antesDeBaixar: () => void): Promise<ResultadoImportacao>;
@@ -164,6 +181,14 @@ export const REAGENDAR_S = 60;
 export const MAX_RECUSAS = 5;
 /** Leitura de confirmação logo depois da escrita. */
 const CONFIRMAR_APOS_S = 5;
+/**
+ * Carência do alerta escalonado: problema que some sozinho (pausa que o ML aplica segundos depois, busca do UP ainda
+ * indexando o item novo, pedido que baixa na tentativa seguinte) não vai ao Telegram nem ao app. Uma só para tudo,
+ * contada do início do problema (`alerta_desde`, ou a intenção do CREATE na pausa do item criado).
+ */
+export const CARENCIA_ALERTA_MS = 3 * 60_000;
+/** Ainda tentando depois disto, a transferência está bloqueada de fato: o texto deixa de ser de espera. */
+export const BLOQUEIO_MS = 15 * 60_000;
 /** Criação incerta: quanto tempo a busca por SKU tem para mostrar o item antes de travar (indexação do ML). */
 export const JANELA_BUSCA_CRIADO_MS = 15 * 60_000;
 /** Folga mínima de prazo para gravar a intenção e postar: sem ela, o corte do prazo vira criação incerta. */
@@ -201,7 +226,7 @@ async function salvarAlvo(ctx: Ctx, alvo: AlvoSaga, patch: Partial<AlvoSaga>): P
   await ctx.deps.repo.salvarAlvo(ctx.t.id, ctx.token, alvo.up_id, patch);
   Object.assign(alvo, patch);
 }
-async function salvarTransferencia(ctx: Ctx, patch: { passo?: PassoSaga; alerta?: string; travar?: boolean }): Promise<void> {
+async function salvarTransferencia(ctx: Ctx, patch: PatchTransferencia): Promise<void> {
   vivo(ctx);
   await ctx.deps.repo.salvarTransferencia(ctx.t.id, ctx.token, patch);
 }
@@ -278,31 +303,58 @@ function problemaDaOferta(alvo: AlvoSaga, o: OfertaUP, exigirPausa: boolean): st
 
 /** Alerta nunca derruba o passo: o registro durável é a coluna `alerta`, e um erro aqui reagendaria
  * por cima de travada ou abortada, ou perderia o alerta de uma baixa já aplicada. */
-async function alertar(ctx: Ctx, texto: string): Promise<void> {
+async function alertar(ctx: Ctx, texto: string): Promise<boolean> {
   try {
     await ctx.deps.alertar(texto);
+    return true;
   } catch (e) {
     console.error(`kit-transferencia ${ctx.t.id}: alerta não enviado: ${mensagem(e)}: ${texto}`);
+    return false;
   }
 }
 
-async function mudar(ctx: Ctx, passo: PassoSaga, delayS: number, alerta?: string): Promise<void> {
-  await salvarTransferencia(ctx, { passo, alerta });
+async function mudar(ctx: Ctx, passo: PassoSaga, delayS: number, patch: Omit<PatchTransferencia, 'passo'> = {}): Promise<void> {
+  await salvarTransferencia(ctx, { passo, ...patch });
   vivo(ctx);
   await ctx.deps.enfileirar(ctx.t.id, delayS);
 }
 
+/** Avançar (inclusive para o mesmo passo, entre um CREATE e outro) encerra o problema: a carência recomeça. */
 async function avancar(ctx: Ctx, passo: PassoSaga, delayS = 0): Promise<ResultadoPasso> {
-  await mudar(ctx, passo, delayS);
+  await mudar(ctx, passo, delayS, { limparAlertaDesde: true });
   return { passo, acao: 'avancou' };
 }
 
-/** `avisar`: manda alerta só quando o motivo é novo, para bloqueio longo não repetir a cada minuto. */
-async function reagendar(ctx: Ctx, motivo: string, delayS = REAGENDAR_S, avisar = false): Promise<ResultadoPasso> {
-  await mudar(ctx, ctx.t.passo, delayS, motivo);
-  if (avisar && ctx.t.alerta !== motivo) await alertar(ctx, `Transferência de kit bloqueada: ${motivo}.`);
+async function reagendar(ctx: Ctx, motivo: string, delayS = REAGENDAR_S): Promise<ResultadoPasso> {
+  await mudar(ctx, ctx.t.passo, delayS, { alerta: motivo });
   return { passo: ctx.t.passo, acao: 'reagendada', motivo };
 }
+
+/**
+ * Reagendamento com alerta escalonado. Antes de `CARENCIA_ALERTA_MS` nada sai; até `BLOQUEIO_MS`, texto de espera;
+ * depois, "bloqueada". Cada texto sai uma vez (dedup por `alerta_enviado`): espera → bloqueada manda de novo, e o
+ * motivo que muda (faixa de tempo da pausa) também. `desdeMs`: início do problema quando o alvo já o tem gravado.
+ */
+async function reagendarComAlerta(
+  ctx: Ctx, motivo: string, delayS: number, espera: string, desdeMs?: number,
+): Promise<ResultadoPasso> {
+  const agora = ctx.deps.agora().getTime();
+  const gravado = Date.parse(ctx.t.alerta_desde ?? '');
+  const desde = desdeMs ?? (Number.isNaN(gravado) ? agora : gravado);
+  const decorrido = agora - desde;
+  const texto = decorrido < CARENCIA_ALERTA_MS ? null
+    : decorrido < BLOQUEIO_MS ? `${espera}: ${motivo}.` : `Transferência de kit bloqueada: ${motivo}.`;
+  await mudar(ctx, ctx.t.passo, delayS, { alerta: motivo, alertaDesde: new Date(desde).toISOString() });
+  // Marca só depois do envio: falha na fila ou no Telegram deixa o alerta pendente para a próxima tentativa, e o
+  // "resolvido" nunca fala de alerta que não saiu. Falha ao gravar a marca só repete o alerta; não derruba o passo.
+  if (texto !== null && texto !== ctx.t.alerta_enviado && await alertar(ctx, texto)) {
+    await salvarTransferencia(ctx, { alertaEnviado: texto })
+      .catch((e) => console.error(`kit-transferencia ${ctx.t.id}: marca do alerta não gravada: ${mensagem(e)}`));
+  }
+  return { passo: ctx.t.passo, acao: 'reagendada', motivo };
+}
+
+const ESPERA = 'Transferência de kit em espera (tentando de novo)';
 
 /** Sem reenvio e sem soltar a exclusão: a peça fica sem oferta até o operador resolver. */
 async function travar(ctx: Ctx, motivo: string): Promise<ResultadoPasso> {
@@ -364,7 +416,7 @@ async function pausar(ctx: Ctx): Promise<ResultadoPasso> {
     const oferta = ofertas[i];
     const ids = oferta ? idsDoItem(oferta.itens.map((x) => x.id), pendentes) : [];
     const pagos = oferta ? await pagosIncorporados(ctx, alvo, oferta, agora, ids) : [];
-    if ('falhas' in pagos) return reagendar(ctx, `pedidos sem baixa no passo 1: ${pagos.falhas.join('; ')}`, REAGENDAR_S, true);
+    if ('falhas' in pagos) return reagendarComAlerta(ctx, `pedidos sem baixa no passo 1: ${pagos.falhas.join('; ')}`, REAGENDAR_S, ESPERA);
     passo1.push({ alvo, patch: { qtd_passo1: oferta?.quantidade ?? 0, passo1_em: agora, ids_passo1: ids, pagos_passo1: pagos } });
   }
   for (const { alvo, patch } of passo1) await salvarAlvo(ctx, alvo, patch);
@@ -430,7 +482,7 @@ async function conciliar(ctx: Ctx): Promise<ResultadoPasso> {
     const imp = await ctx.deps.ml.importarPedidos(
       itemIds, new Date(passo1 - JANELA_PEDIDOS_MS).toISOString(), alvo.ids_passo1, () => vivo(ctx));
     await alertarBaixas(ctx, imp);
-    if (imp.falhas.length > 0) return reagendar(ctx, `pedidos sem baixa: ${imp.falhas.join('; ')}`, REAGENDAR_S, true);
+    if (imp.falhas.length > 0) return reagendarComAlerta(ctx, `pedidos sem baixa: ${imp.falhas.join('; ')}`, REAGENDAR_S, ESPERA);
 
     const reserva = calcularReserva({
       itemIds,
@@ -465,7 +517,7 @@ async function calcular(ctx: Ctx): Promise<ResultadoPasso> {
   if (await politicaMudou(ctx)) return abortarSemReativar(ctx, MOTIVO_POLITICA);
   const r = await ledger(ctx, 'reservar');
   if (!r.ok) {
-    await mudar(ctx, 'reativar', 0, `reserva recusada: ${r.motivo}`);
+    await mudar(ctx, 'reativar', 0, { alerta: `reserva recusada: ${r.motivo}`, limparAlertaDesde: true });
     return { passo: 'reativar', acao: 'avancou', motivo: r.motivo };
   }
 
@@ -576,7 +628,7 @@ async function criarDestino(ctx: Ctx, alvo: AlvoSaga): Promise<'criou' | 'pronto
       try {
         postar = await ctx.deps.ml.prepararItem(alvo.codigo, alvo.valor_alvo!);
       } catch (e) {
-        return reagendar(ctx, `${alvo.codigo}: não foi possível preparar o item: ${mensagem(e)}`, REAGENDAR_S, true);
+        return reagendarComAlerta(ctx, `${alvo.codigo}: não foi possível preparar o item: ${mensagem(e)}`, REAGENDAR_S, ESPERA);
       }
       if (ctx.limite - ctx.deps.agora().getTime() < FOLGA_CRIAR_MS) return avancar(ctx, ctx.t.passo, 0);
       await salvarAlvo(ctx, alvo, { intencao_escrita_em: iso(ctx), recusa_definitiva_em: null });
@@ -591,7 +643,7 @@ async function criarDestino(ctx: Ctx, alvo: AlvoSaga): Promise<'criou' | 'pronto
         const n = alvo.recusas + 1;
         await salvarAlvo(ctx, alvo, { recusa_definitiva_em: iso(ctx), recusas: n });
         if (n >= MAX_RECUSAS) return travar(ctx, `${alvo.codigo}: ML recusou criar o item ${n} vezes: ${mensagem(e)}`);
-        return reagendar(ctx, `${alvo.codigo}: ML recusou criar o item: ${mensagem(e)}`, REAGENDAR_S, true);
+        return reagendarComAlerta(ctx, `${alvo.codigo}: ML recusou criar o item: ${mensagem(e)}`, REAGENDAR_S, ESPERA);
       }
       await salvarAlvo(ctx, alvo, {
         item_criado: criado.itemId, up_criado: criado.upId,
@@ -605,9 +657,24 @@ async function criarDestino(ctx: Ctx, alvo: AlvoSaga): Promise<'criou' | 'pronto
   // é durável: `item_criado` sem `escrita_em` faz toda retomada repetir isto, e falha ou recusa do registro nunca
   // deixa item vendável. Cada item entra em `pausado_pela_saga` antes do PUT; a reativação segue a política.
   // O principal (já em `pausado_pela_saga`) é pausado antes de qualquer leitura: a descoberta do UP pode lançar logo
-  // depois do CREATE (busca ainda sem o item, stock, multiget). Toda falha desta obrigação, inclusive de leitura,
-  // entra no backoff com alerta escalonado, nunca no reagendamento genérico.
-  const abertosSoltos = (o: OfertaUP) => o.itens.filter((i) => !encerrado(i) && !moderado(i) && !pausadoPeloVendedor(i));
+  // depois do CREATE (stock, multiget). Toda falha desta obrigação, inclusive de leitura, entra no backoff com
+  // alerta escalonado, nunca no reagendamento genérico. Exceção: a busca por UP vazia (o ML leva segundos para
+  // indexar o item novo). Aí a pausa do principal se confirma por leitura direta do item (o id veio no POST) e,
+  // pausado, a saga espera a busca no mesmo backoff, com a mesma carência de alerta: as cópias de catálogo só
+  // aparecem na busca, então nada é registrado antes dela.
+  const abertosSoltos = (itens: ItemOferta[]) => itens.filter((i) => !encerrado(i) && !moderado(i) && !pausadoPeloVendedor(i));
+  let indexando = false;
+  const lerCriado = async () => {
+    if (!indexando) {
+      try {
+        return (await ler(ctx, alvo)).itens;
+      } catch (e) {
+        if ((e as { buscaVazia?: unknown } | null)?.buscaVazia !== true) throw e;
+        indexando = true;
+      }
+    }
+    return ctx.deps.ml.lerItens(alvo.up_criado!, [alvo.item_criado!]);
+  };
   // A pausa antecipada do principal é best-effort: recusada (ex.: `closed`) ou falha, a descoberta segue para pausar
   // as cópias. O que decide o registro é a leitura: nenhum item aberto sem `paused_by_seller` (closed não vende).
   // Erro por item: nenhuma falha (PUT recusado, gravação local) impede tentar os demais itens abertos. Os erros se
@@ -625,7 +692,7 @@ async function criarDestino(ctx: Ctx, alvo: AlvoSaga): Promise<'criou' | 'pronto
   await pausar(alvo.item_criado!);
   let ainda: string[];
   try {
-    const soltos = abertosSoltos(await ler(ctx, alvo)).map((i) => i.id);
+    const soltos = abertosSoltos(await lerCriado()).map((i) => i.id);
     const novos = soltos.filter((id) => !alvo.pausado_pela_saga.includes(id));
     if (novos.length > 0) {
       // Sem a gravação, a pausa vale assim mesmo: item pausado fora de `pausado_pela_saga` só não é reativado.
@@ -636,13 +703,16 @@ async function criarDestino(ctx: Ctx, alvo: AlvoSaga): Promise<'criou' | 'pronto
       }
     }
     for (const id of soltos) if (!tentados.has(id)) await pausar(id);
-    ainda = soltos.length > 0 ? abertosSoltos(await ler(ctx, alvo)).map((i) => i.id) : [];
+    ainda = soltos.length > 0 ? abertosSoltos(await lerCriado()).map((i) => i.id) : [];
   } catch (e) {
     erros.push(`leitura do UP: ${mensagem(e)}`);
     ainda = [alvo.item_criado!];
   }
-  if (ainda.length > 0) {
-    return aguardarPausaCriada(ctx, alvo, [`${ainda.join(', ')}${erros.length > 0 ? ` (${erros.join('; ')})` : ''}`]);
+  const comErros = erros.length > 0 ? ` (${erros.join('; ')})` : '';
+  if (ainda.length > 0) return aguardarPausaCriada(ctx, alvo, `${ainda.join(', ')}${comErros} ainda vendável`);
+  if (indexando) {
+    return aguardarPausaCriada(ctx, alvo,
+      `${alvo.item_criado} pausado, mas busca do UP ainda sem o item: cópias de catálogo não conferidas${comErros}`);
   }
   vivo(ctx);
   const reg = await ctx.deps.repo.registrarItem(alvo.codigo, alvo.item_criado!, alvo.up_criado!);
@@ -657,18 +727,24 @@ export function atrasoPausaCriada(decorridoMs: number): number {
   return min < 1 ? CONFIRMAR_APOS_S : min < 5 ? 30 : min < 15 ? REAGENDAR_S : 300;
 }
 
+function decorridoPausa(ctx: Ctx, alvo: AlvoSaga): number {
+  const inicio = Date.parse(alvo.intencao_escrita_em ?? '');
+  return Number.isNaN(inicio) ? 0 : Math.max(0, ctx.deps.agora().getTime() - inicio);
+}
+
 /**
- * Pausa do item criado ainda não confirmada: a obrigação continua (nada é registrado), com backoff, e o alerta se
+ * Pausa do item criado (ou busca do UP) ainda não confirmada: a obrigação continua (nada é registrado), com backoff.
+ * Carência e espera/bloqueada de `reagendarComAlerta`, contadas da intenção do CREATE; depois da carência o alerta se
  * repete a cada faixa de tempo (1, 5 e 15 min, depois a cada hora), porque o motivo muda com a faixa.
  */
-function aguardarPausaCriada(ctx: Ctx, alvo: AlvoSaga, soltos: string[]): Promise<ResultadoPasso> {
-  const inicio = Date.parse(alvo.intencao_escrita_em ?? '');
-  const decorrido = Number.isNaN(inicio) ? 0 : Math.max(0, ctx.deps.agora().getTime() - inicio);
+function aguardarPausaCriada(ctx: Ctx, alvo: AlvoSaga, detalhe: string): Promise<ResultadoPasso> {
+  const decorrido = decorridoPausa(ctx, alvo);
   const min = Math.floor(decorrido / 60_000);
   const faixa = min < 1 ? 'agora' : min < 5 ? 'há 1 min' : min < 15 ? 'há 5 min' : min < 60 ? 'há 15 min'
     : `há ${Math.floor(min / 60)} h`;
-  return reagendar(ctx, `${alvo.codigo}: pausa do item criado não confirmada (${soltos.join(', ')} ainda vendável, ${faixa})`,
-    atrasoPausaCriada(decorrido), true);
+  return reagendarComAlerta(ctx, `${alvo.codigo}: pausa do item criado não confirmada (${detalhe}, ${faixa})`,
+    atrasoPausaCriada(decorrido), 'Aguardando o Mercado Livre confirmar a pausa do anúncio novo do kit (tentando de novo)',
+    ctx.deps.agora().getTime() - decorrido);
 }
 
 /** Leitura igual ao valor gravado conclui. Outro número, inclusive o anterior, trava (spec, passo 6). */
@@ -757,7 +833,8 @@ async function reativar(ctx: Ctx): Promise<ResultadoPasso> {
     ? await ctx.deps.repo.guardados([...new Set(seguem.map((x) => x.codigo))])
     : new Set<string>();
   const inesperados = seguem.filter((x) => !guardados.has(x.codigo)).map((x) => x.itemId);
-  let alerta = ctx.t.alerta;
+  // Concluída não guarda motivo velho de reagendamento (o Gerenciar kit mostraria aviso resolvido); abortada mantém.
+  let alerta = estado === 'concluida' ? null : ctx.t.alerta;
   if (inesperados.length > 0) {
     alerta = `política não autoriza reativar: ${inesperados.join(', ')} seguem pausados`;
     await alertar(ctx, `Transferência de kit terminou, mas ${alerta}.`);
