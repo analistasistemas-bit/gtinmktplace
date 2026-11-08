@@ -41,10 +41,10 @@ export async function excluirFamilia(
   const filtroIrmas = [`codigo_pai.eq."${alvo.codigo_pai}"`, ...(alvo.ml_item_id ? [`ml_item_id.eq."${alvo.ml_item_id}"`] : [])].join(',');
   // Leitura que falha vira `undefined` → `nao_conferido` (trava fechada).
   const [irmas, externos, kits] = await Promise.all([
-    admin.from('familias').select('ml_item_id, variacoes(ml_variation_id)')
+    admin.from('familias').select('ml_item_id, variacoes(codigo, ml_variation_id)')
       .eq('org_id', orgId).neq('id', alvo.id).or(filtroIrmas),
     admin.from('anuncios_externos')
-      .select('status, item_externo_id, anuncios_externos_itens(status, item_externo_id)')
+      .select('status, item_externo_id, anuncios_externos_itens(status, item_externo_id, sku)')
       .eq('org_id', orgId).eq('codigo_pai', alvo.codigo_pai),
     admin.from('familias').select('id')
       .eq('org_id', orgId).eq('kit_base_codigo_pai', alvo.codigo_pai).not('kit_multiplicador', 'is', null),

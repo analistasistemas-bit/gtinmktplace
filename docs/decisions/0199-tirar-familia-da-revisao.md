@@ -26,6 +26,7 @@ O risco de apagar uma família isolada é o mesmo do ADR-0019: a linha pode ser 
    4. Raiz em `pendente`/`publicando`, ou filho em `pendente`/`criacao_incerta`/`compensacao_pendente`/`remocao_pendente` → `em_voo` (fan-out em voo, saga UP interrompida, janela de idempotência do ADR-0088).
    5. Evidência remota (`item_externo_id` na raiz ou num filho, ou raiz `publicado`) sem irmã → `vinculada`. Com irmã, a linha sai: a irmã continua representando o produto.
    6. Anti-órfão de variação: um `ml_item_id|ml_variation_id` da família que nenhuma irmã cobre → `vinculada`.
+      Em User Products (`chaveVinculo` sempre null): filho com `item_externo_id` cujo `sku` (= `variacoes.codigo`) nenhuma irmã tem → `vinculada` — cor criada só na reposição que caiu em erro depois do POST.
    7. Sem irmã e com kit dependente → `kit`.
    8. Senão → pode sair.
 

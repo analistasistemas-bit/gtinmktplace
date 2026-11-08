@@ -41,11 +41,38 @@ describe('decidirExclusaoFamilia (ADR-0199)', () => {
     },
   );
 
-  it('UPDATE UP: filho com item_externo_id e irmã presente → ok', () => {
+  it('UPDATE UP: filho com item_externo_id e sku coberto pela irmã → ok', () => {
     expect(decidirExclusaoFamilia(base({
       alvo: alvo({ status: 'erro' }),
-      irmas: [{ ml_item_id: null, variacoes: [{ ml_variation_id: null }] }],
-      externos: [{ status: 'erro', item_externo_id: null, anuncios_externos_itens: [{ status: 'ativo', item_externo_id: 'MLB1' }] }],
+      irmas: [{ ml_item_id: null, variacoes: [{ codigo: 'A1', ml_variation_id: null }] }],
+      externos: [{ status: 'erro', item_externo_id: null, anuncios_externos_itens: [{ status: 'ativo', item_externo_id: 'MLB1', sku: 'A1' }] }],
+    }))).toEqual({ ok: true });
+  });
+
+  it('UP: filho com item e sku que nenhuma irmã tem → vinculada (mesmo com irmã)', () => {
+    // Reposição criou a cor nova (só na família do lote) e caiu em erro depois do POST.
+    expect(decidirExclusaoFamilia(base({
+      alvo: alvo({ status: 'erro' }),
+      irmas: [{ ml_item_id: null, variacoes: [{ codigo: 'A1', ml_variation_id: null }] }],
+      externos: [{ status: 'erro', item_externo_id: null, anuncios_externos_itens: [
+        { status: 'ativo', item_externo_id: 'MLB1', sku: 'A1' },
+        { status: 'criado', item_externo_id: 'MLB9', sku: 'A2' },
+      ] }],
+    }))).toEqual(recusa('vinculada'));
+  });
+
+  it('UP: filhos com item e todos os skus presentes nas irmãs → ok', () => {
+    expect(decidirExclusaoFamilia(base({
+      alvo: alvo({ status: 'erro' }),
+      irmas: [
+        { ml_item_id: null, variacoes: [{ codigo: 'A1', ml_variation_id: null }] },
+        { ml_item_id: null, variacoes: [{ codigo: 'A2', ml_variation_id: null }] },
+      ],
+      externos: [{ status: 'erro', item_externo_id: null, anuncios_externos_itens: [
+        { status: 'ativo', item_externo_id: 'MLB1', sku: 'A1' },
+        { status: 'ativo', item_externo_id: 'MLB2', sku: 'A2' },
+        { status: 'erro', item_externo_id: null, sku: 'A3' },
+      ] }],
     }))).toEqual({ ok: true });
   });
 

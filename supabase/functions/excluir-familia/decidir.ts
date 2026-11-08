@@ -3,15 +3,16 @@ import { chaveVinculo } from '../_shared/lote/exclusao.ts';
 
 export type MotivoRecusa = 'publicada' | 'em_voo' | 'vinculada' | 'kit' | 'nao_conferido';
 type Variacoes = { ml_variation_id: string | null }[];
+type VariacoesIrma = { codigo?: string | null; ml_variation_id: string | null }[];
 export interface EntradaDecisao {
   alvo: { status: string | null; publicado_em: string | null; ml_item_id: string | null; variacoes: Variacoes };
   /** Outras famílias da org com o mesmo `codigo_pai` ou o mesmo `ml_item_id`. */
-  irmas: { ml_item_id: string | null; variacoes: Variacoes }[] | undefined;
+  irmas: { ml_item_id: string | null; variacoes: VariacoesIrma }[] | undefined;
   /** `anuncios_externos` da org com o `codigo_pai`, com os filhos (User Products). */
   externos: {
     status: string | null;
     item_externo_id: string | null;
-    anuncios_externos_itens?: { status: string | null; item_externo_id: string | null }[];
+    anuncios_externos_itens?: { status: string | null; item_externo_id: string | null; sku?: string | null }[];
   }[] | undefined;
   /** Famílias que usam o `codigo_pai` como base de kit vinculado. */
   kitsDependentes: number | undefined;
@@ -46,6 +47,11 @@ export function decidirExclusaoFamilia(e: EntradaDecisao): { ok: true } | { ok: 
     const k = chaveVinculo(alvo.ml_item_id, v.ml_variation_id);
     return k !== null && !cobertos.has(k);
   })) return recusa('vinculada');
+
+  // UP: `chaveVinculo` é sempre null. A cor criada só na reposição (sku = variacoes.codigo) que
+  // nenhuma irmã carrega ficaria viva no ML sem representante.
+  const codigosIrmas = new Set(irmas.flatMap((i) => i.variacoes.map((v) => v.codigo)));
+  if (filhos.some((f) => f.item_externo_id != null && !codigosIrmas.has(f.sku))) return recusa('vinculada');
 
   if (!representada && kitsDependentes > 0) return recusa('kit');
   return { ok: true };

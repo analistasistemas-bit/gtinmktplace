@@ -120,6 +120,17 @@ describe('excluirFamilia (ADR-0199)', () => {
     expect(efeitos).toEqual([]);
   });
 
+  it('cor UP criada só na reposição (sku sem irmã) → recusada vinculada, sem delete', async () => {
+    const { admin, efeitos } = fakeAdmin(filasOk([], {
+      familias: [{ ...ALVO, status: 'erro' }, [{ ml_item_id: null, variacoes: [{ codigo: 'A1', ml_variation_id: null }] }], []],
+      anuncios_externos: [null, [{ status: 'erro', item_externo_id: null, anuncios_externos_itens: [
+        { status: 'criado', item_externo_id: 'MLB9', sku: 'A2' },
+      ] }]],
+    }));
+    expect(await excluirFamilia(admin, INPUT)).toEqual({ tipo: 'recusada', motivo: 'vinculada' });
+    expect(efeitos).toEqual([]);
+  });
+
   it('DELETE devolve 0 linhas → recusada em_voo, sem limpar movimentos', async () => {
     // Corrida com o worker: a família virou `publicando` entre a leitura e o DELETE condicional.
     const { admin, efeitos, removidos } = fakeAdmin(filasOk([], { 'familias:delete': [[]] }));
