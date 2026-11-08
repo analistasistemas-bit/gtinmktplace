@@ -156,11 +156,14 @@ corrida "encerrar×republicação (sem vínculo)" \
   "insert into public.kit_exclusoes (org_id, codigo, dono_tipo, dono_id) values ('$ORG', '09984001', 'republicacao', gen_random_uuid())"
 echo "$B_OUT" | grep -q kit_encerrado || falha "republicação depois do encerramento devia recusar ($B_OUT)"
 [ "$(status_kit "$(kit 4)")" = encerrado ] || falha "kit 4 devia estar encerrado"
-# 7. Encerrar × publicação (rodada 6 do Codex): A encerra o kit 5 (kit FOR UPDATE, depois exclusões) e segura; B pega a
-# exclusão de publicação do SKU do kit: a trava BEFORE espera o kit antes de pôr a linha (sem ciclo) e, depois do
-# commit, a linha da transferência `encerrar` já está lá: B recusa sem deadlock.
+# 7. Encerrar × publicação (rodada 6 do Codex): B pega a exclusão de publicação do SKU do kit enquanto A já tem o kit e
+# ainda não tem as exclusões. A trava BEFORE faz B esperar o kit antes de pôr a linha (sem ciclo); depois do commit, a
+# linha da transferência `encerrar` já está lá e B recusa sem deadlock.
+# A trava o kit e só pega as exclusões 2 s depois: B entra nesse intervalo (com a trava só no AFTER, B poria a linha
+# e esperaria o kit enquanto A esperaria a linha de B: deadlock).
 corrida "encerrar×publicação" \
-  "select public.kit_variacao_encerrar('$ORG', '$(kit 5)', $(versao "$(kit 5)"))->>'ok'" \
+  "select 1 from public.kits_variacao where id = '$(kit 5)' for update; select pg_sleep(2);
+   select public.kit_variacao_encerrar('$ORG', '$(kit 5)', $(versao "$(kit 5)"))->>'ok'" \
   "select public.kit_adquirir_exclusao('$ORG', array['09985001'], 'publicacao', gen_random_uuid())->>'ok'"
 [ "$B_OUT" = false ] || falha "encerrar×publicação: B devia recusar ($B_OUT)"
 [ "$(status_kit "$(kit 5)")" = encerrando ] || falha "kit 5 devia estar encerrando"

@@ -118,7 +118,8 @@ export async function passoEncerrar(ctx: Ctx): Promise<ResultadoPasso> {
   await deps.repo.salvarTransferencia(t.id, ctx.token, { passo: t.passo, alerta: motivo });
   vivo();
   await deps.enfileirar(t.id, atrasoEncerrar(decorrido));
-  if (faixa && t.alerta !== motivo) {
+  // Envio a cada rodada da faixa: a chave por faixa deduplica, e um envio que falhou é repetido na rodada seguinte.
+  if (faixa) {
     await enc.avisar(
       `⚠️ Encerramento de kit pendente há ${faixa}\n\nO Mercado Livre ainda não fechou: ${itens}${causa}. `
         + 'O PubliAI segue tentando sozinho. Confira esses anúncios no Mercado Livre.',

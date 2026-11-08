@@ -37,6 +37,7 @@ function cenario() {
     alertas: [] as string[],
     finalizadas: 0,
     concluidos: 0,
+    falhaAviso: false,
     token: null as string | null,
     ate: 0,
     /** Falha injetada no PUT: o erro e se o ML aplicou mesmo assim. */
@@ -108,7 +109,11 @@ function cenario() {
         s.t.estado = 'concluida';
         s.t.passo = 'fim';
       },
-      async avisar(texto, chave) { s.avisos.push({ texto, chave }); },
+      // Idempotente pela chave, como notificarCategoria com chave; `falhaAviso` simula envio que falhou.
+      async avisar(texto, chave) {
+        if (s.falhaAviso) { s.falhaAviso = false; throw new Error('telegram fora'); }
+        if (!s.avisos.some((a) => a.chave === chave)) s.avisos.push({ texto, chave });
+      },
       async avisarConcluidos() { s.concluidos++; },
     },
   };
@@ -210,6 +215,19 @@ describe('Encerrar kit (saga, tipo encerrar)', () => {
     expect(s.avisos.map((a) => a.chave)).toEqual(['kit_encerrar_pendente:T1:15 min', 'kit_encerrar_pendente:T1:1 h']);
     expect(s.filas.at(-1)).toBe(300);
     expect(s.finalizadas).toBe(0);
+  });
+
+  it('aviso da faixa que falhou é repetido na rodada seguinte (a chave deduplica)', async () => {
+    const { s, rodar } = cenario();
+    s.ignora.add('MLB-2');
+    await rodar();
+    s.agora += 16 * 60_000;
+    s.falhaAviso = true;
+    await rodar();
+    expect(s.avisos).toEqual([]);
+    s.agora += 5 * 60_000;
+    await rodar();
+    expect(s.avisos.map((a) => a.chave)).toEqual(['kit_encerrar_pendente:T1:15 min']);
   });
 
   it('backoff e faixas', () => {
