@@ -443,5 +443,23 @@ describe('DialogCriarKitVariacao', () => {
       await waitFor(() => expect(criarKitVariacaoEdge).toHaveBeenCalledTimes(1));
       expect(vi.mocked(criarKitVariacaoEdge).mock.calls[0][0]).toMatchObject({ pecasPorKit: 3, previaId: undefined });
     });
+
+    it('texto de outro pedido não segue: geração nova falhou, Próximo trava até gerar ou editar', async () => {
+      const user = userEvent.setup();
+      abrir();
+      await ateEtapa2(user);
+      await user.upload(screen.getByLabelText('Foto Preto e Branco'), new File(['x'], 'pb.jpg', { type: 'image/jpeg' }));
+      expect(screen.getByRole('button', { name: 'Próximo' })).toBeEnabled();
+      await user.click(screen.getByRole('button', { name: 'Voltar' }));
+      await montar(user, [], { 'Preto e Branco M': '0', 'Preto e Branco G': '1' });
+      gerar().mockResolvedValueOnce({ ok: false, mensagem: 'modelo fora do ar' } as never);
+      await user.click(screen.getByRole('button', { name: 'Próximo' }));
+      await screen.findByText(/Não foi possível gerar o texto/);
+      expect(screen.getByLabelText('Título')).toHaveValue('Kit 2 Blusas Canelada');
+      expect(screen.getByRole('button', { name: 'Próximo' })).toBeDisabled();
+      expect(screen.getByText(/texto é de outra montagem/)).toBeInTheDocument();
+      await user.type(screen.getByLabelText('Título'), ' G');
+      expect(screen.getByRole('button', { name: 'Próximo' })).toBeEnabled();
+    });
   });
 });

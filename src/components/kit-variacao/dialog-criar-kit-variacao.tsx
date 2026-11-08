@@ -138,7 +138,6 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
   const semFoto = combinacoesPublicadas.filter((c) => !fotos[rotuloCombinacao(c)]);
   const tituloOk = titulo.trim().length > 0 && titulo.length <= TITULO_MAX;
   const podeMontagem = marcadas.length >= pecas && totalKits > 0 && !excesso;
-  const podeAnuncio = precoNum > 0 && tituloOk && descricao.trim().length > 0 && semFoto.length === 0;
 
   function irParaAnuncio() {
     if (!preco) {
@@ -171,6 +170,9 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
     },
     onError: (e, p) => { falhouEm.current = p.pedido; setErroTexto((e as Error).message); },
   });
+  // O texto precisa ser deste pedido (gerado para ele ou editado nele) e nada pode estar gerando.
+  const textoDoPedido = textoDe === pedidoTexto && !texto.isPending;
+  const podeAnuncio = precoNum > 0 && tituloOk && descricao.trim().length > 0 && semFoto.length === 0 && textoDoPedido;
   function gerarTexto() {
     setErroTexto(null);
     texto.mutate({ pedido: pedidoTexto, cores: coresTexto, pecas, tamanhos: tamanhosUsados });
@@ -459,6 +461,11 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
                     <Loader2 className="h-3 w-3 animate-spin" />Gerando título e descrição a partir do anúncio da base…
                   </p>
                 )}
+                {!texto.isPending && textoDe !== pedidoTexto && (titulo || descricao) && (
+                  <p className="text-xs text-danger">
+                    Este texto é de outra montagem (cores, peças ou tamanhos mudaram). Gere de novo ou edite para seguir.
+                  </p>
+                )}
                 {erroTexto && !texto.isPending && (
                   <p className="text-xs text-danger" role="alert">
                     Não foi possível gerar o texto: {erroTexto}. Escreva o título e a descrição ou tente de novo.
@@ -466,14 +473,14 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
                 )}
                 <Input
                   aria-label="Título" value={titulo} disabled={texto.isPending} placeholder="Gere por IA ou escreva"
-                  onChange={(e) => { setTitulo(e.target.value); setEditado(true); }}
+                  onChange={(e) => { setTitulo(e.target.value); setEditado(true); setTextoDe(pedidoTexto); }}
                 />
                 <span className={cn('text-xs', titulo.length > TITULO_MAX ? 'text-danger' : 'text-muted-foreground')}>
                   {titulo.length}/{TITULO_MAX} caracteres
                 </span>
                 <Textarea
                   aria-label="Descrição" rows={12} value={descricao} disabled={texto.isPending}
-                  onChange={(e) => { setDescricao(e.target.value); setEditado(true); }}
+                  onChange={(e) => { setDescricao(e.target.value); setEditado(true); setTextoDe(pedidoTexto); }}
                 />
               </section>
 
