@@ -9,7 +9,7 @@ vi.mock('../../_shared/operacoes/ml-status.ts', () => ({
 }));
 import { triarParticipantes, alertarPublicacoesParadas, conferirAtivacoesPendentes, type DepsTriagem } from '../transferencias.ts';
 
-// ADR-0199 (Task 5, ruling da dúvida 2): todo SKU participante, sem filtro de status local nem janela de
+// ADR-0200 (Task 5, ruling da dúvida 2): todo SKU participante, sem filtro de status local nem janela de
 // 24 h, é comparado com o ML; só a diferença vira transferência `entrada`.
 
 type Linha = Record<string, unknown>;

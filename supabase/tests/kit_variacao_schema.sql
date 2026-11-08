@@ -1,5 +1,5 @@
 \set ON_ERROR_STOP on
--- ADR-0199 (migration kit_variacao_schema): composição imutável, exclusão única por SKU, faixas,
+-- ADR-0200 (migration kit_variacao_schema): composição imutável, exclusão única por SKU, faixas,
 -- ledger com transferencia_id, RLS por org e recusa de desligar o módulo.
 -- Fixtures só dentro da transação desfeita (scripts/teste-sql-desfeito.py).
 begin;

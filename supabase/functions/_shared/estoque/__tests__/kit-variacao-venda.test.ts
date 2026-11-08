@@ -4,7 +4,7 @@ import { avisarKitsZerados, classificarItensKit, gravarIdentidades } from '../..
 import { tratarPedidoCancelado, type DepsCancelamento } from '../cancelamento.ts';
 import { agendarCancelamentoKit } from '../cancelamento.ts';
 
-// ADR-0199 (Task 8): venda e cancelamento de SKU de kit com variação. O kit tem saldo próprio, então a
+// ADR-0200 (Task 8): venda e cancelamento de SKU de kit com variação. O kit tem saldo próprio, então a
 // venda baixa o próprio SKU (o predicado do ADR-0151 é `kit_multiplicador`, nulo aqui).
 
 interface Chamada { tabela: string; op: string; filtros: Array<[string, string, unknown]>; patch?: unknown }

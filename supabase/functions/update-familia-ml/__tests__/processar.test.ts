@@ -61,7 +61,7 @@ function fakeAdmin(over: {
   reajusteAtivo?: string | null; // rpc reajuste_ativo_produto (spec reajuste C2)
   reajusteErro?: boolean;         // rpc reajuste_ativo_produto falha (timeout, função ausente)
   ncm?: 'vigente' | 'vencido' | 'inexistente' | 'erro'; // rpc ncm_consultar (ADR-0187)
-  kitComponentes?: string[]; // ADR-0199: SKUs usados em kit com variação
+  kitComponentes?: string[]; // ADR-0200: SKUs usados em kit com variação
 } = {}) {
   const writes: Array<{ table: string; payload: Record<string, unknown>; filters: Record<string, unknown> }> = [];
   const familia = over.familia === undefined ? { ...FAMILIA_BASE } : over.familia;
@@ -110,7 +110,7 @@ function fakeAdmin(over: {
   }
   const storage = { from: () => ({ createSignedUrl: async () => ({ data: { signedUrl: 'x' }, error: null }) }) };
   const rpc = async (fn: string, args?: { p_codigos?: string[] }) => {
-    // ADR-0199: participação de kit com variação (RPC agregada).
+    // ADR-0200: participação de kit com variação (RPC agregada).
     if (fn === 'kit_skus_participantes') {
       return { data: (over.kitComponentes ?? []).filter((c) => (args?.p_codigos ?? []).includes(c)), error: null };
     }
@@ -858,7 +858,7 @@ describe('pesoLiquidoGramas do kit vinculado no UPDATE (ADR-0151, bug MLB7585283
   });
 });
 
-describe('UPDATE Legacy × kit com variação (ADR-0199)', () => {
+describe('UPDATE Legacy × kit com variação (ADR-0200)', () => {
   const skusSemQuantidade = () =>
     (fakeConnector.chamadas.find((c) => c.metodo === 'atualizarAnuncio')?.args as { skusSemQuantidade?: string[] }).skusSemQuantidade;
 

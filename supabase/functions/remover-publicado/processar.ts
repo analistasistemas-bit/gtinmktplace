@@ -49,11 +49,11 @@ export type ResultadoRemocao =
    *  espelha `kit_vinculado_ativo` acima; a trigger `familias_bloquear_remocao_componente_kit_virtual`
    *  (migration 20260906140450) é a última linha, esta é a mensagem clara ANTES da mutação. */
   | { tipo: 'kit_virtual_publicado'; kits: string[] }
-  /** ADR-0199: Remover apagaria saldo e composição de SKU em kit com variação (exclusão física bloqueada). */
+  /** ADR-0200: Remover apagaria saldo e composição de SKU em kit com variação (exclusão física bloqueada). */
   | { tipo: 'kit_com_variacao'; skus: string[] }
-  /** ADR-0199: republicar com transferência de kit aberta — o vínculo que ela usa não pode sumir. */
+  /** ADR-0200: republicar com transferência de kit aberta — o vínculo que ela usa não pode sumir. */
   | { tipo: 'kit_em_transferencia' }
-  /** ADR-0199: exclusão de publicação pendente (dono = raiz antiga). Republicar apagaria o único dono capaz de
+  /** ADR-0200: exclusão de publicação pendente (dono = raiz antiga). Republicar apagaria o único dono capaz de
    *  soltá-la, e ela pode ser criação remota incerta: o operador reenvia a publicação pendente primeiro. */
   | { tipo: 'kit_publicacao_pendente' }
   /** ADR-0168: sold_quantity > 0 em qualquer MLB do codigo_pai — zero mutação ML, zero delete local. */
@@ -220,7 +220,7 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
     }
   }
 
-  // ADR-0199: SKU de qualquer cópia do pai em kit com variação. Antes de qualquer mutação no ML. Remover
+  // ADR-0200: SKU de qualquer cópia do pai em kit com variação. Antes de qualquer mutação no ML. Remover
   // recusa sempre (spec, item 15); republicar recusa com a exclusão do SKU tomada — transferência ou ativação
   // (o vínculo que ela usa não pode sumir) ou publicação pendente. A RPC disputa a mesma exclusão de novo,
   // na transação. Org sem o módulo não consulta nada.

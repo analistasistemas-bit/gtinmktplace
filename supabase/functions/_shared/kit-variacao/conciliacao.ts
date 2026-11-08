@@ -1,4 +1,4 @@
-// ADR-0199: conta da reserva antes de escrever quantidade em anúncio pausado. Pura; a leitura do ML
+// ADR-0200: conta da reserva antes de escrever quantidade em anúncio pausado. Pura; a leitura do ML
 // fica em ml-oferta.ts. `duvida: true` bloqueia a operação, e então `reservado` não vale nada.
 import type { PedidoML } from '../faturamento/venda.ts';
 

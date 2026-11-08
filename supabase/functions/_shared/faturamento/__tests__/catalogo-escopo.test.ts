@@ -64,7 +64,7 @@ describe('carregarCatalogo — estrito', () => {
   });
 });
 
-// ADR-0199 (Task 8): o sync-venda segue tolerante, mas precisa saber que o catálogo veio incompleto para
+// ADR-0200 (Task 8): o sync-venda segue tolerante, mas precisa saber que o catálogo veio incompleto para
 // não gerar outra referência de baixa num SKU participante.
 describe('carregarCatalogo — incompleto e módulo de kit', () => {
   function admin(o: { falha?: boolean; modulos?: string[] | null; erroModulo?: boolean }) {

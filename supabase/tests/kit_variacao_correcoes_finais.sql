@@ -1,5 +1,5 @@
 \set ON_ERROR_STOP on
--- ADR-0199 (migration kit_variacao_correcoes_finais): participantes sem truncamento, saldo da canônica e
+-- ADR-0200 (migration kit_variacao_correcoes_finais): participantes sem truncamento, saldo da canônica e
 -- variações do kit sob o lock da família. Fixtures só dentro da transação desfeita, em org própria.
 begin;
 

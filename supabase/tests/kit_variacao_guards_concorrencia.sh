@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ADR-0199 (Task 7, fix round 1): corridas reais (duas sessões) dos guards de saldo e composição. A sessão A
+# ADR-0200 (Task 7, fix round 1): corridas reais (duas sessões) dos guards de saldo e composição. A sessão A
 # executa e SEGURA a transação 3 s; a B começa 1 s depois, tem de ESPERAR e decidir sobre o que A commitou.
 # Mesmo arranjo de kit_politica_operador_concorrencia.sh. Portão da Task 17 (Step 4b): NÃO executado nesta task.
 # O mesmo cenário roda sequencial em kit_variacao_guards.sql (blocos 1b e 5b).

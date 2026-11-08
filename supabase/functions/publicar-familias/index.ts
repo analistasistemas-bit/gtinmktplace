@@ -101,7 +101,7 @@ try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write'
     const codigosPorFamilia = new Map<string, string[]>();
     let kitNaOrg = false;
     if (idsParaEnfileirar.length > 0) {
-      // ADR-0199: `codigo` e o módulo da org (embed, sem consulta nova) para capturar a versão da política do kit.
+      // ADR-0200: `codigo` e o módulo da org (embed, sem consulta nova) para capturar a versão da política do kit.
       const { data: vrs, error: errVrs } = await admin.from('variacoes')
         .select(`familia_id, codigo, preco_publicacao, tamanho, estoque, ${EMBED_MODULOS}`)
         .in('familia_id', idsParaEnfileirar).eq('excluida_da_publicacao', false);
@@ -118,7 +118,7 @@ try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write'
         if (kitLigado(v)) kitNaOrg = true;
       }
     }
-    // ADR-0199: versão da política de cada SKU de kit do CREATE, comparada pela publicação sob a exclusão.
+    // ADR-0200: versão da política de cada SKU de kit do CREATE, comparada pela publicação sob a exclusão.
     let versoes: Record<string, number> = {};
     try {
       const codigosNovos = (novos ?? []).flatMap((f) => codigosPorFamilia.get(f.id as string) ?? []);

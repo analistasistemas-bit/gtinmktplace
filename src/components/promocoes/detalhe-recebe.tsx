@@ -10,7 +10,7 @@ const pctInt = (n: number) => `${Math.round(n * 100)}%`;
 
 export function DetalheRecebe({ r, preco, original, listingType, variasCores, rotuloPreco = 'preço na campanha' }: {
   r: ResumoLucro; preco: number; original: number | null; listingType?: string | null; variasCores: boolean;
-  /** Kit com variação (ADR-0199) reaproveita o card fora de campanha. */
+  /** Kit com variação (ADR-0200) reaproveita o card fora de campanha. */
   rotuloPreco?: string;
 }) {
   const desconto = original != null && original > preco ? Math.round((1 - preco / original) * 100) : null;

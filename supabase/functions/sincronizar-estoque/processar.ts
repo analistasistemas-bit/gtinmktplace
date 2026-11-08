@@ -43,7 +43,7 @@ export interface DepsSincronizacao {
   fabricarToken: (canal: string, conexao: unknown) => (() => Promise<string>) | null;
   /** Injetável para o teste ver o texto do alerta sem Telegram nem tabela (ADR-0134). */
   notificar?: typeof notificarCategoria;
-  /** ADR-0199: `enfileirarSaga` de queue.ts (injetado: o qstash não carrega no vitest). */
+  /** ADR-0200: `enfileirarSaga` de queue.ts (injetado: o qstash não carrega no vitest). */
   enfileirarSaga: (transferenciaId: string, orgId: string) => Promise<void>;
 }
 
@@ -172,7 +172,7 @@ interface ContextoAlerta {
  *
  * Best-effort: falha aqui é logada e não derruba o push, que já cumpriu seu papel.
  *
- * ADR-0199: o aviso acompanha o envio confirmado. `fora`: SKUs cujo alvo saiu do push sem PUT (kit com variação),
+ * ADR-0200: o aviso acompanha o envio confirmado. `fora`: SKUs cujo alvo saiu do push sem PUT (kit com variação),
  * nem marcados nem anunciados. `so` e `soLocais`: caminho da saga, só os códigos com a redução confirmada e só
  * movimentos locais (o da própria transferência — montar, repor, sair_sobra — não é "estoque zerado").
  * `pausadoConfirmado: false`: algum SKU do anúncio ainda não teve o zero confirmado, então o texto não afirma
@@ -228,7 +228,7 @@ async function alertarEstoqueZerado(
 }
 
 /**
- * ADR-0199 (revisão final, achado 5): a saga confirmou no ML a redução destes SKUs para zero. Só agora o aviso de
+ * ADR-0200 (revisão final, achado 5): a saga confirmou no ML a redução destes SKUs para zero. Só agora o aviso de
  * "estoque zerado" (ADR-0134) sai para eles, com a mesma marca `alertado_em` e por produto. Best-effort.
  */
 export async function alertarZeradosConfirmados(
@@ -299,7 +299,7 @@ async function lerFamiliaComSaldo(
 
 /** Alvos de push de UMA família. `resolverAlvosPush` roda com o mapa só dela.
  *  `inativos`: filho UP que o push descarta só pelo status local (não retirado, com item). Só interessa ao
- *  kit com variação (ADR-0199): participante nessa situação vira transferência, não some em silêncio. */
+ *  kit com variação (ADR-0200): participante nessa situação vira transferência, não some em silêncio. */
 async function alvosDaFamilia(
   admin: SupabaseClient, orgId: string, codigoPai: string,
   estoquePorSku: Record<string, number>, canalOrigem: string | null,
@@ -330,7 +330,7 @@ async function alvosDaFamilia(
 }
 
 /**
- * ADR-0199: a transferência não nasceu (recusa retentável ou erro). Zera `push_enfileirado_em` do último
+ * ADR-0200: a transferência não nasceu (recusa retentável ou erro). Zera `push_enfileirado_em` do último
  * movimento de cada SKU, para o outbox (sync-venda e reconciliação) enfileirar o push de novo, independente
  * dos 3 retries da fila. Não enfileira nada aqui: o ritmo é o do outbox, sem laço quente. A triagem diária
  * segue como rede. Falha aqui só loga: o job já vai devolver 500.
@@ -358,7 +358,7 @@ async function devolverAoOutbox(admin: SupabaseClient, orgId: string, codigos: s
 }
 
 /**
- * ADR-0199: entrada, ajuste e estorno de SKU participante viram transferência `entrada`, que escreve o
+ * ADR-0200: entrada, ajuste e estorno de SKU participante viram transferência `entrada`, que escreve o
  * saldo local só com o UP pausado e conciliado. Devolve a chave retentável, ou null.
  * `up_ocupado`: outra transferência ou publicação tem o SKU; a fila repete.
  */
@@ -429,7 +429,7 @@ export async function processarSincronizacao(
   // entrada/ajuste em SKU de kit são recusados no banco), mas se acontecesse, o kit seria
   // tratado como produto e o push mandaria a coluna crua `estoque = 0` para um anúncio vivo.
   let codigoPaiBase = codigo_pai;
-  // ADR-0199: o módulo da org vem embutido nesta leitura, para org sem kit não ganhar consulta nova.
+  // ADR-0200: o módulo da org vem embutido nesta leitura, para org sem kit não ganhar consulta nova.
   // Erro aqui lança: sem saber o módulo, nenhum push.
   const { data: familiaDoJob, error: erroFamiliaDoJob } = await admin.from('familias')
     .select(`kit_base_codigo_pai, kit_multiplicador, ${EMBED_MODULOS}`)
@@ -511,7 +511,7 @@ export async function processarSincronizacao(
     temAnuncio = temAnuncio || r.temAnuncio;
   }
 
-  // 3) ADR-0199: SKU de kit com variação só recebe quantidade pela saga, com o anúncio pausado. O alvo
+  // 3) ADR-0200: SKU de kit com variação só recebe quantidade pela saga, com o anúncio pausado. O alvo
   // sai inteiro: num item com variações o conector regravaria as demais com a quantidade lida.
   const retentaveis: string[] = [];
   // SKUs cujo alvo saiu do push sem PUT (participantes e SKU comum preso no mesmo item): o zero deles não foi ao

@@ -1,4 +1,4 @@
-// ADR-0199 (Task 15): foto da combinação do kit com variação por IA. Teste real de 07/11: o pedido que descreve a
+// ADR-0200 (Task 15): foto da combinação do kit com variação por IA. Teste real de 07/11: o pedido que descreve a
 // construção da peça manteve a modelagem (gola, barra e punhos) no Nano Banana 2.1. Aqui a descrição vem de uma
 // leitura por visão das fotos de origem, nunca do cliente. Nada aqui grava ou publica: é a edge `gerar-foto-kit`.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';

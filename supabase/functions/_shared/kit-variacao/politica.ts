@@ -1,4 +1,4 @@
-// ADR-0199: quem pode escrever quantidade e reativar anúncio de SKU que participa de kit com variação.
+// ADR-0200: quem pode escrever quantidade e reativar anúncio de SKU que participa de kit com variação.
 // Participa o SKU de kit (`kit_variacao_skus`) e o individual usado em kit (`kit_variacao_componentes`).
 // Org sem o módulo `kit_variacao` não faz consulta nova: o estado do módulo vem embutido na leitura de
 // família que o caminho já faz (`EMBED_MODULOS`), e `skusParticipantes` sai antes de tocar o banco.

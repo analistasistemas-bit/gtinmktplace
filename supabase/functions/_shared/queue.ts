@@ -34,7 +34,7 @@ export interface ProcessFamiliaJob {
   // ADR-0078 F1: quando true, o worker de update/split repõe só estoque (não empurra preço).
   // `enfileirarPublicacoes` serializa o job inteiro no body → propaga sozinho.
   somenteEstoque?: boolean;
-  /** ADR-0199: versão da política de cada SKU de kit com variação no enfileiramento (só CREATE). */
+  /** ADR-0200: versão da política de cada SKU de kit com variação no enfileiramento (só CREATE). */
   versoes_kit?: Record<string, number>;
 }
 
@@ -213,7 +213,7 @@ export interface SincronizarEstoqueJob {
    */
   skus?: string[];
   /**
-   * ADR-0199: a reconciliação diária reempurra todo produto com movimento recente. Em SKU de kit com
+   * ADR-0200: a reconciliação diária reempurra todo produto com movimento recente. Em SKU de kit com
    * variação isso viraria uma transferência (pausa de T) por dia sem nada a escrever: o job só tira o
    * SKU do push. Entrada, ajuste e estorno chegam sem o campo e criam a transferência.
    */
@@ -354,7 +354,7 @@ export async function enfileirarSincronizacaoMarca(job: SincronizarMarcaJobFila,
   return messageId;
 }
 
-/** ADR-0199 (Task 14): rodada de reposição de um kit com "Vender só em kit" (worker kit-reposicao). */
+/** ADR-0200 (Task 14): rodada de reposição de um kit com "Vender só em kit" (worker kit-reposicao). */
 export interface KitReposicaoJob { org_id: string; kit_id: string }
 
 /** Janela de agrupamento: eventos do mesmo kit dentro dela viram uma rodada só. */
@@ -377,7 +377,7 @@ export async function enfileirarReposicao(orgId: string, kitId: string): Promise
   });
 }
 
-/** ADR-0199: um passo da saga de transferência de kit (worker kit-transferencia). */
+/** ADR-0200: um passo da saga de transferência de kit (worker kit-transferencia). */
 export interface KitTransferenciaJob { transferencia_id: string; org_id: string }
 
 /**

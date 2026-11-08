@@ -1,4 +1,4 @@
-// ADR-0199 (contrato de segurança, item 5): reconciliação diária do kit com variação.
+// ADR-0200 (contrato de segurança, item 5): reconciliação diária do kit com variação.
 // 1. Transferência pendente é reconciliada sem limite de 24 h.
 // 2. Triagem: todo SKU participante, sem filtro de status local nem janela de movimento, tem o saldo
 //    local comparado com o ML (só leitura, sem pausar). Diferença vira transferência `entrada`, que é o

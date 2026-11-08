@@ -1,4 +1,4 @@
-// ADR-0199: saga que move peças entre anúncios ML só com eles pausados (spec "Escrita de estoque com
+// ADR-0200: saga que move peças entre anúncios ML só com eles pausados (spec "Escrita de estoque com
 // anúncio pausado"). Um passo por invocação do worker `kit-transferencia`; o que vale entre invocações
 // é só o que ficou gravado em `kit_transferencias` e `kit_transferencia_alvos`.
 //

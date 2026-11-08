@@ -125,7 +125,7 @@ export async function carregarGtinsFallback(
 }
 
 /**
- * ADR-0199 (portão da Task 3, sync-venda): com o módulo de kit, GTIN estrito. A falha não derruba a venda: devolve
+ * ADR-0200 (portão da Task 3, sync-venda): com o módulo de kit, GTIN estrito. A falha não derruba a venda: devolve
  * mapa vazio e `incerto`, e quem chama não baixa nem estorna nesta execução. Sem o módulo, tolerante como sempre.
  */
 export async function carregarGtinsDaVenda(

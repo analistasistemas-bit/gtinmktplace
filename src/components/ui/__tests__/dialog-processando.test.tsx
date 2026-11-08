@@ -31,6 +31,8 @@ describe('DialogContent — sinal de processamento', () => {
     expect(conteudo()).toHaveClass('glow-effect-sombra');
     expect(conteudo()).toHaveAttribute('aria-busy', 'true');
     expect(screen.getByRole('progressbar')).toHaveAccessibleName('Salvando produto');
+    // Só aura + raio na tela: a barra fica apenas para leitor de tela.
+    expect(screen.getByRole('progressbar')).toHaveClass('sr-only');
   });
 
   it('destrutivo suprime a aura mas mantém a barra', () => {
@@ -43,7 +45,7 @@ describe('DialogContent — sinal de processamento', () => {
     );
     expect(conteudo()).not.toHaveClass('glow-effect-sombra');
     expect(conteudo()).toHaveAttribute('aria-busy', 'true');
-    expect(screen.getByRole('progressbar')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar')).not.toHaveClass('sr-only');
   });
 
   it('a barra sem rótulo explícito ainda tem nome acessível', () => {
@@ -70,6 +72,7 @@ describe('AlertDialogContent — sinal de processamento', () => {
     expect(conteudo()).toHaveClass('glow-effect-sombra');
     expect(conteudo()).toHaveAttribute('aria-busy', 'true');
     expect(screen.getByRole('progressbar')).toHaveAccessibleName('Pausando anúncio');
+    expect(screen.getByRole('progressbar')).toHaveClass('sr-only');
   });
 
   it('destrutivo suprime a aura mas mantém a barra', () => {

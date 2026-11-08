@@ -107,7 +107,7 @@ interface LinhaKit {
   atualizado_em: string;
 }
 
-// ADR-0199: o módulo da org vem embutido na leitura do kit (org sem `kit_variacao` não consulta nada a mais).
+// ADR-0200: o módulo da org vem embutido na leitura do kit (org sem `kit_variacao` não consulta nada a mais).
 const COLUNAS_KIT = `id, status, ml_item_id, ml_user_product_id, ml_permalink, foto_storage_path, foto_ml_picture_id, listing_type_id, atualizado_em, ${EMBED_MODULOS}`;
 
 /**
@@ -366,7 +366,7 @@ async function recusaFiscalComponentes(
 }
 
 /**
- * ADR-0199: peça de kit com variação só muda de oferta pela transferência; o Kit Virtual daria a ela outra
+ * ADR-0200: peça de kit com variação só muda de oferta pela transferência; o Kit Virtual daria a ela outra
  * oferta fora desse controle. `codigo` do componente é best-effort (D-12), então o SKU também sai do user
  * product do anúncio local. Falha de leitura recusa (`falha_leitura`).
  */
@@ -463,7 +463,7 @@ export async function criarKitVirtual(
     };
   }
 
-  // ── 1a. Kit com variação (ADR-0199): mesmo ponto e mesma liberação de lease do fiscal ────────
+  // ── 1a. Kit com variação (ADR-0200): mesmo ponto e mesma liberação de lease do fiscal ────────
   const recusaKit = await recusaKitVariacao(deps, input.componentes, kitLigado(kit));
   if (recusaKit) {
     await marcarErro(deps, kit.id, recusaKit.mensagem);

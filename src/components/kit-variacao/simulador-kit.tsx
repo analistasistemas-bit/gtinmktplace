@@ -1,4 +1,4 @@
-// ADR-0199: "Você recebe por venda" do kit com variação, antes de confirmar. Mesmo card de Promoções
+// ADR-0200: "Você recebe por venda" do kit com variação, antes de confirmar. Mesmo card de Promoções
 // (`DetalheRecebe`), com a cotação oficial no preço, categoria, dimensões e peso do kit.
 import { useEffect, useMemo, useState } from 'react';
 import { useQueries } from '@tanstack/react-query';

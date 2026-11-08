@@ -14,7 +14,7 @@ export const PRECOS: Record<string, PrecoModelo> = {
   'openai/gpt-4.1-mini': { input: 0.0004, output: 0.0016 },
   // DeepSeek V4 Flash saiu da lista (ADR-0098): devolvia JSON truncado sob json_schema
   // strict, e gerarCopy é a única etapa de IA sem fallback resiliente (ADR-0030).
-  // Modelos de imagem (ADR-0199, Task 15), preços de GET openrouter.ai/api/v1/models em 08/11/2026. `output` usa o
+  // Modelos de imagem (ADR-0200, Task 15), preços de GET openrouter.ai/api/v1/models em 08/11/2026. `output` usa o
   // preço do token de IMAGEM de saída (US$ 30/1M), não o de texto: a saída é quase só imagem (~1290 tokens).
   // Só fallback: o custo gravado vem de `usage.cost` do OpenRouter (_shared/ai/imagem.ts::custoImagemUsd).
   'google/gemini-nano-banana-2.1': { input: 0.0015, output: 0.03 },

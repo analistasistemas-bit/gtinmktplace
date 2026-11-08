@@ -738,7 +738,7 @@ describe('criarKitVirtual — gate fiscal dos componentes (A8)', () => {
   });
 });
 
-// ── ADR-0199 (Task 7): peça de kit com variação não entra em Kit Virtual ─────────────────────
+// ── ADR-0200 (Task 7): peça de kit com variação não entra em Kit Virtual ─────────────────────
 
 /**
  * Admin que embute o módulo na linha do kit (`organizations(modulos_habilitados)`) e atende as leituras do
@@ -783,7 +783,7 @@ function adminKit(st: EstadoFake, o: { modulos: string[]; skuPorUp: Record<strin
   return { admin, leituras };
 }
 
-describe('criarKitVirtual — componente em kit com variação (ADR-0199)', () => {
+describe('criarKitVirtual — componente em kit com variação (ADR-0200)', () => {
   it('componente sem `codigo` casa pelo user product do anúncio local: recusa, nada vai ao ML, lease liberado', async () => {
     const st = novoEstado();
     const criarKitML = vi.fn();

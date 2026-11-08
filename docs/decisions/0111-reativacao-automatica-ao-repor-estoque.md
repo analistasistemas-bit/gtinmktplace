@@ -75,4 +75,4 @@ componentes tenham saldo. Ver a emenda de 2026-10-28 no ADR-0154.
 
 ## Emenda 2026-11-07 — SKU Guardado não reativa
 
-SKU em estado Guardado de um kit com variação (ADR-0199) não é reativado pela reposição de estoque: a entrada alimenta a reposição do kit até a meta. Vale só para SKUs participantes de kit com variação; os demais seguem este ADR.
+SKU em estado Guardado de um kit com variação (ADR-0200) não é reativado pela reposição de estoque: a entrada alimenta a reposição do kit até a meta. Vale só para SKUs participantes de kit com variação; os demais seguem este ADR.

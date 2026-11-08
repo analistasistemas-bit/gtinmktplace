@@ -130,7 +130,7 @@ describe('publicar-familias — CREATE acima do teto (ADR-0195)', () => {
   });
 });
 
-// ADR-0199 (Task 5): a versão da política de cada SKU de kit é capturada no enfileiramento, e a publicação
+// ADR-0200 (Task 5): a versão da política de cada SKU de kit é capturada no enfileiramento, e a publicação
 // a compara sob a exclusão. Org sem o módulo: nenhuma leitura de kit e job igual ao de hoje.
 describe('publicar-familias — versão da política do kit no job', () => {
   const comModulo = (codigo: string, modulos: string[]): Linha => ({

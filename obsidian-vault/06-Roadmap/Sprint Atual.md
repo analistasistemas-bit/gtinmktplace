@@ -15,7 +15,7 @@ setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > Monitor de Frete ✅ → Central de Promoções (MVP só leitura) ✅ → Operações em Massa ✅ → Promoções V2
 > (adesão em massa) ✅ — as duas últimas entregues juntas em 28/09 ([[0174-operacoes-em-massa-promocoes-v2|ADR-0174]]) → Painel de Ads (se a Avil investir em Ads). E5 Shopee entra quando houver conta.
 >
-> **🟡 Kit com variação ([[Índice de ADRs|ADR-0199]]) — implementado na branch `worktree-kit-com-variacao-design`, NÃO implantado (2026-11-08).**
+> **🟡 Kit com variação ([[Índice de ADRs|ADR-0200]]) — implementado na branch `worktree-kit-com-variacao-design`, NÃO implantado (2026-11-08).**
 > Tasks 0–16 aprovadas; módulos `kit_variacao` e `imagem_ia` desligados, 13 migrations e 6 edges novas sem aplicar. Falta: `db push`, deploy com prova por hash, portão 4b (concorrência em Postgres local) e piloto com 1 combinação (DSA ou Daludi). Roteiro em `docs/TASKS.md` ("Antes de ligar o módulo").
 >
 > **🟢 Central premium + relatório mensal do cliente + fechamento automático ([[0193-relatorio-mensal-do-cliente-e-fechamento-automatico|ADR-0193]]) — em produção (2026-11-03, main `ae4072cf`, 5 fatias).**

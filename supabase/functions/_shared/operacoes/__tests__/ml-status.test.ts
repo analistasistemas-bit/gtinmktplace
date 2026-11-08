@@ -41,7 +41,7 @@ describe('lerStatusML', () => {
   });
 });
 
-// ADR-0199 (Task 6, fix round 2): variante só para kit com variação. A original segue igual (testes acima).
+// ADR-0200 (Task 6, fix round 2): variante só para kit com variação. A original segue igual (testes acima).
 describe('lerStatusMLEstrito', () => {
   const env = (x: unknown) => vi.fn().mockResolvedValue(resp(200, x));
   it('200 com o id pedido → status; 404 confirmado → null', async () => {

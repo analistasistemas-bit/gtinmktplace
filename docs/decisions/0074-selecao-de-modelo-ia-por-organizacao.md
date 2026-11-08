@@ -187,4 +187,4 @@ Consequências: a copy passa de 30 s para 45 s de limite (`TIMEOUT_COPY_MS`), e 
 
 ## Emenda 2026-11-07 — Imagem deixa de ser dormente
 
-Quando a Fase 4 do kit com variação for entregue (ADR-0199), `ai_model_imagem` passa a ser usado, para empresas com o módulo `imagem_ia`. Modelo padrão `google/gemini-nano-banana-2.1`. Até lá o campo segue dormente.
+Quando a Fase 4 do kit com variação for entregue (ADR-0200), `ai_model_imagem` passa a ser usado, para empresas com o módulo `imagem_ia`. Modelo padrão `google/gemini-nano-banana-2.1`. Até lá o campo segue dormente.

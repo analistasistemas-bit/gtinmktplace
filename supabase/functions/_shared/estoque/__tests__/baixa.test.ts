@@ -236,7 +236,7 @@ describe('registrarBaixaVenda — SKU desconhecido pelo catálogo', () => {
     expect(r.skuDesconhecido).toEqual([]);
   });
 
-  // ADR-0199 (Task 7, fix 1): a cópia canônica do SKU de kit com variação trocou enquanto a baixa esperava o
+  // ADR-0200 (Task 7, fix 1): a cópia canônica do SKU de kit com variação trocou enquanto a baixa esperava o
   // lock. A RPC recusa sem gravar nada; repetir resolve a cópia nova.
   it('canonica_trocou: repete a RPC na hora e baixa', async () => {
     const admin = adminFake({ aplicado: true, motivo: 'venda' });

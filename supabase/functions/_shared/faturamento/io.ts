@@ -39,9 +39,9 @@ export interface Catalogo {
   infoPorGtin: Map<string, { codigo: string | null; ean: string | null }>;
   /** ADR-0109 — custo vigente do item, para congelar na venda. null = não casou no catálogo. */
   custoVigenteResolver: (item: ItemParaCusto) => number | null;
-  /** ADR-0199: modo tolerante e alguma página falhou. O código resolvido pode divergir do de uma leitura completa. */
+  /** ADR-0200: modo tolerante e alguma página falhou. O código resolvido pode divergir do de uma leitura completa. */
   incompleto: boolean;
-  /** ADR-0199: módulo `kit_variacao` da org. Com `incompleto` e módulo ilegível, `true` (conservador). */
+  /** ADR-0200: módulo `kit_variacao` da org. Com `incompleto` e módulo ilegível, `true` (conservador). */
   kitLigado: boolean;
 }
 
@@ -94,7 +94,7 @@ export async function carregarCatalogo(
   let incompleto = false;
   const marcar = () => { incompleto = true; };
 
-  // ADR-0199: o módulo vem embutido nesta leitura (`EMBED_MODULOS`), sem consulta nova.
+  // ADR-0200: o módulo vem embutido nesta leitura (`EMBED_MODULOS`), sem consulta nova.
   const familias = await paginarTudo<{ id: string; ml_item_id: string | null; codigo_pai: string | null }>(
     (de, ate) => admin.from('familias')
       .select(`id, ml_item_id, codigo_pai, ${EMBED_MODULOS}`).eq(colEscopo, valEscopo)

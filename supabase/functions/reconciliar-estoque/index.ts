@@ -109,7 +109,7 @@ Deno.serve(async (req) => {
   for (const chave of alvos) {
     const [orgId, codigoPai] = chave.split('|');
     try {
-      // ADR-0199: SKU de kit com variação sai do reempurrão sem abrir transferência (a saga é o push dele).
+      // ADR-0200: SKU de kit com variação sai do reempurrão sem abrir transferência (a saga é o push dele).
       await enfileirarSincronizacaoEstoque(
         { org_id: orgId, codigo_pai: codigoPai, canal_origem: null, sem_transferencia_kit: true }, orgId,
       );
@@ -119,7 +119,7 @@ Deno.serve(async (req) => {
     }
   }
 
-  // 3) ADR-0199: kit com variação. Transferência parada volta para a fila; todo SKU participante tem o
+  // 3) ADR-0200: kit com variação. Transferência parada volta para a fila; todo SKU participante tem o
   //    saldo comparado com o ML (só leitura) e a diferença vira transferência `entrada`; publicação que
   //    segura a exclusão sem confirmação gera alerta.
   const alertar = async (orgId: string, texto: string) => { await notificarCategoria(admin, orgId, 'estoque', texto); };
@@ -159,10 +159,10 @@ Deno.serve(async (req) => {
     token,
     alertar,
   }).catch((e) => console.error('reconciliar_kit_ativacoes_falhou', e));
-  // ADR-0199 (Task 8): aviso de kit zerado que não saiu (envio falhou ou nenhuma venda nova desde então).
+  // ADR-0200 (Task 8): aviso de kit zerado que não saiu (envio falhou ou nenhuma venda nova desde então).
   const avisosKit = await avisarKitsZeradosDasOrgs(admin, { notificar: notificarCategoria })
     .catch((e) => { console.error('reconciliar_kit_avisos_zerado_falhou', e); return 0; });
-  // ADR-0199 (Task 14): rede da reposição automática (gatilho perdido, pausa da automação a desfazer).
+  // ADR-0200 (Task 14): rede da reposição automática (gatilho perdido, pausa da automação a desfazer).
   const reposicoesKit = await dispararReposicaoDiaria(admin, enfileirarReposicao)
     .catch((e) => { console.error('reconciliar_kit_reposicao_falhou', e); return 0; });
 

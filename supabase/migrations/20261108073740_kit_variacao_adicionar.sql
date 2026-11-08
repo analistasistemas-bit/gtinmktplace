@@ -1,4 +1,4 @@
--- ADR-0199 (Task 13): operações da tela Gerenciar kit, cada uma numa RPC (CAS de versão + efeito na mesma transação).
+-- ADR-0200 (Task 13): operações da tela Gerenciar kit, cada uma numa RPC (CAS de versão + efeito na mesma transação).
 --
 -- 1. `kit_variacao_gerenciar`: meta, reposição, "Vender só em kit", montar e desmontar. Confere `kits_variacao.versao`
 --    sob o lock do kit, relê o estado e aplica política e transferência juntas; toda decisão aceita incrementa a versão.

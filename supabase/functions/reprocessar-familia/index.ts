@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
     .select('id, lote_id')
     .eq('status', 'erro')
     .is('kit_multiplicador', null)
-    // Kit com variação (ADR-0199): o texto vem de gerar-texto-kit; reprocessar o reescreveria.
+    // Kit com variação (ADR-0200): o texto vem de gerar-texto-kit; reprocessar o reescreveria.
     .is('kit_variacao_pedido', null)
     .eq('org_id', orgId);
   q = body.familia_id ? q.eq('id', body.familia_id) : q.eq('lote_id', body.lote_id!);

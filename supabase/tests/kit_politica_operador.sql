@@ -1,5 +1,5 @@
 \set ON_ERROR_STOP on
--- ADR-0199 (migration kit_politica_operador): pausa e reativação do operador na política do SKU.
+-- ADR-0200 (migration kit_politica_operador): pausa e reativação do operador na política do SKU.
 -- Fixtures só dentro da transação desfeita (scripts/teste-sql-desfeito.py), em org própria.
 begin;
 

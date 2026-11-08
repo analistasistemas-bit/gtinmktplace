@@ -181,7 +181,7 @@ export async function buscarClaimsSeller(token: string): Promise<ClaimML[]> {
  *  Sem `extras` não toca nas colunas do pós-venda. `lidoEm` = instante ANTES dos GETs ao ML (guarda
  *  de versão do RPC). Lança em erro do banco; `linha` = a linha que ficou no banco. */
 /**
- * Linha mapeada do claim e o pedido dele, SEM gravar a devolução. ADR-0199: a reconciliação de claims precisa do
+ * Linha mapeada do claim e o pedido dele, SEM gravar a devolução. ADR-0200: a reconciliação de claims precisa do
  * pedido antes de gravar a devolução (que tira o claim do filtro) quando o crédito de kit pode não persistir.
  */
 export async function resolverPedidoDoClaim(

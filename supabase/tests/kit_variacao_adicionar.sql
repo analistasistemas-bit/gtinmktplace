@@ -1,5 +1,5 @@
 \set ON_ERROR_STOP on
--- ADR-0199 (Task 13, ajuste): Montar mais em kit existente com combinação/tamanho nunca publicado. SKU novo no MESMO
+-- ADR-0200 (Task 13, ajuste): Montar mais em kit existente com combinação/tamanho nunca publicado. SKU novo no MESMO
 -- kit, numa transferência `montar` só, com alvo `criar` para o novo e alvo normal para o já publicado.
 -- Fixtures só dentro da transação desfeita (scripts/teste-sql-desfeito.py), em org própria.
 begin;

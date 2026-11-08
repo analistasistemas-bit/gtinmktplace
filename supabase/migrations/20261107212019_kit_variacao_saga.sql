@@ -1,4 +1,4 @@
--- ADR-0199: saga da transferência de kit (Task 4). Criação atômica, claim da execução e `itens` imutável.
+-- ADR-0200: saga da transferência de kit (Task 4). Criação atômica, claim da execução e `itens` imutável.
 --
 -- `kit_criar_transferencia` cumpre o contrato de set_modulos_org_seguro: trava a org com `for share`,
 -- revalida o módulo e, na mesma transação, cria transferência, alvos e exclusão. Qualquer recusa
@@ -174,7 +174,7 @@ create or replace function public.kit_transferencias_imutavel()
 returns trigger language plpgsql set search_path = ''
 as $$
 begin
-  raise exception 'itens, tipo e kit_id da transferência % são imutáveis (ADR-0199).', old.id
+  raise exception 'itens, tipo e kit_id da transferência % são imutáveis (ADR-0200).', old.id
     using errcode = 'restrict_violation';
 end $$;
 

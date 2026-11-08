@@ -52,17 +52,17 @@ Modo: subagentes **sequenciais**, com revisão bloqueante do Codex por task e re
 
 ## Fase 0 — Portão e ADR
 
-### Task 0: Testes restantes e ADR-0199
+### Task 0: Testes restantes e ADR-0200
 
 **Files:**
-- Create: `docs/decisions/0199-kit-com-variacao.md`
+- Create: `docs/decisions/0200-kit-com-variacao.md`
 - Modify: `docs/decisions/0151-*.md`, `docs/decisions/0074-*.md`, `docs/decisions/0111-*.md`, `docs/decisions/README.md`, spec
 
 - [ ] **Step 1:** Rebase da branch sobre `origin/main`; `git fetch` e conferir que 0197 segue livre.
 - [ ] **Step 2:** Com autorização do Diego, rodar os testes de "Testes antes de construir" ainda abertos: `POST /items/validate` em MLB3112 com `COLOR` combinada e `MAIN_COLOR`; 2 combinações × 2 tamanhos reais conferindo seletor e agrupamento; política do ML sobre imagem por IA; qualidade e custo real por imagem.
 - [ ] **Step 3:** Falha em COLOR ou agrupamento: parar e voltar ao Diego. Falha na imagem: Fase 4 sai do escopo e toda empresa envia foto.
-- [ ] **Step 4:** Escrever ADR-0199 com o quarto sentido de "kit" e as decisões da spec. Emendas: ADR-0151 (texto por IA), ADR-0074 (imagem deixa de ser dormente), ADR-0111 (exceção de SKU Guardado).
-- [ ] **Step 5:** Commit `docs(kit): ADR-0199 e resultado dos testes`.
+- [ ] **Step 4:** Escrever ADR-0200 com o quarto sentido de "kit" e as decisões da spec. Emendas: ADR-0151 (texto por IA), ADR-0074 (imagem deixa de ser dormente), ADR-0111 (exceção de SKU Guardado).
+- [ ] **Step 5:** Commit `docs(kit): ADR-0200 e resultado dos testes`.
 
 ---
 

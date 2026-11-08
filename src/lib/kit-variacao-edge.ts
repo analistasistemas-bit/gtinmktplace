@@ -1,4 +1,4 @@
-// ADR-0199 (Task 13): chamadas da tela às edges do kit com variação e leituras (RLS por org). Corpo das edges em
+// ADR-0200 (Task 13): chamadas da tela às edges do kit com variação e leituras (RLS por org). Corpo das edges em
 // snake_case; `functions.invoke` não popula `data` em não-2xx, o motivo vem de `corpoDoErroDaEdge`.
 import { supabase } from '@/lib/supabase';
 import { corpoDoErroDaEdge } from '@/lib/edge-erro';

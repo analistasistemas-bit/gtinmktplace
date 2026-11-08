@@ -34,7 +34,7 @@ Deno.serve(async (req) => {
 
   const admin = adminClient();
   // Token da conexão ML da org (E7), não a do chamador, igual status-publicados.
-  // = `resolverConexao`, com o módulo da org embutido (ADR-0199): org sem kit não ganha consulta nova.
+  // = `resolverConexao`, com o módulo da org embutido (ADR-0200): org sem kit não ganha consulta nova.
   const { data: linhaConexao } = await admin.from('marketplace_connections')
     .select(`id, org_id, canal, conta_externa_id, expires_at, ${EMBED_MODULOS}`)
     .eq('org_id', orgId).eq('canal', 'mercado_livre').maybeSingle();
@@ -56,7 +56,7 @@ Deno.serve(async (req) => {
 
   const conn = getConnector('mercado_livre');
   const ctx = { getToken: () => getValidAccessTokenConexao(conexao) };
-  // ADR-0199: SKU de kit com variação. Guardado, moderado, em transferência ou sem leitura no ML não reativa
+  // ADR-0200: SKU de kit com variação. Guardado, moderado, em transferência ou sem leitura no ML não reativa
   // (409); a pausa do operador fica gravada antes do PUT; a exclusão da ativação só sai com o resultado confirmado.
   const kit = await prepararStatusOperador(admin, {
     orgId, mlItemId: ml_item_id, alvo: status, ligado: kitLigado(linhaConexao),

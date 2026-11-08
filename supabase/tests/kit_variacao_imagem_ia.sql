@@ -1,5 +1,5 @@
 \set ON_ERROR_STOP on
--- ADR-0199 (migration kit_variacao_imagem_ia): modelo de imagem padrão aceito; geração idempotente por (org, request_id).
+-- ADR-0200 (migration kit_variacao_imagem_ia): modelo de imagem padrão aceito; geração idempotente por (org, request_id).
 begin;
 insert into public.organizations (id, nome, slug, modulos_habilitados, is_test) values
   ('97400000-0000-0000-0000-000000000001', 'Imagem IA', 'imagem-ia-teste', array['kit_variacao', 'imagem_ia'], true);

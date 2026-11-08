@@ -378,7 +378,7 @@ describe('atualizarFamiliaUP — Fix 5: efeitos pós-composição', () => {
     expect(entradaVista!.atributosFamilia).toBeUndefined();
   });
 
-  it('ADR-0199: participante de kit chega à saga e fica fora da conferência; org sem módulo, nenhum', async () => {
+  it('ADR-0200: participante de kit chega à saga e fica fora da conferência; org sem módulo, nenhum', async () => {
     const filhos = [
       { sku: 'A', status: 'ativo', retirado: false, item_externo_id: 'MLB1', family_id: 'F' },
       { sku: 'B', status: 'ativo', retirado: false, item_externo_id: 'MLB2', family_id: 'F' },

@@ -1,4 +1,4 @@
-// ADR-0199 (Task 14): "Vender só em kit". Estados por SKU individual (Normal, Guardado, Sobra) e reposição
+// ADR-0200 (Task 14): "Vender só em kit". Estados por SKU individual (Normal, Guardado, Sobra) e reposição
 // automática até a meta, sempre por transferência da saga. Spec: "Vender só em kit", "Reposição" e o contrato
 // de segurança, itens 12 a 14.
 //

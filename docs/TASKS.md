@@ -9,12 +9,12 @@ Em produção desde 2026-11-08 (main `a3e180dc`; `cadastrar-produto` v44, `adici
 - [x] Deploy das edges `cadastrar-produto` e `adicionar-variacoes-familia` (código conferido por download).
 - [ ] Validar com uma nota real (campo vazio trava o Cadastrar; marca chega ao ML).
 
-## Kit com variação (ADR-0199) — 2026-11-08
+## Kit com variação (ADR-0200) — 2026-11-08
 
 **Estado:** implementado na branch `worktree-kit-com-variacao-design` (Tasks 0–16, todas aprovadas por revisão externa);
 **NÃO implantado**: módulos `kit_variacao` e `imagem_ia` desligados em todas as orgs, 13 migrations não aplicadas, 6 edges
 novas não deployadas. Spec `docs/superpowers/specs/2026-11-06-kit-com-variacao-design.md`; plano
-`docs/superpowers/plans/2026-11-07-kit-com-variacao.md`; ADR [0199](decisions/0199-kit-com-variacao.md).
+`docs/superpowers/plans/2026-11-07-kit-com-variacao.md`; ADR [0200](decisions/0200-kit-com-variacao.md).
 
 - [x] Schema, RPCs e saga de transferência (pausa, reduz, aumenta, confirma no ML), política por SKU, guards de saldo e composição.
 - [x] Venda e cancelamento com identidade estável por item de pedido; inventário em peças; reposição "Vender só em kit".
@@ -7501,3 +7501,5 @@ Espaço para observações, decisões pendentes pequenas, ideias durante a imple
 - [x] **`openai/gpt-6-luna` como modelo de texto padrão** (2026-11-07, adendo ADR-0074) — medido contra o `gpt-4.1-mini`: 76 de 76 copies sem falha, nome comercial 40 de 40, menos da metade do custo. Limite da copy sobe para 45 s. Vale para todas as orgs. `gpt-4.1-mini` fica como saída de emergência.
 
 - [x] **Metragem com ponto de milhar no título** (2026-11-07) — "LINHA DE COST 10.000MT" virava "000m": as regras de número liam só o fim. `NUM` em `_shared/ai/titulo.ts` aceita milhar e vale para metragem, contagem, medida ancorada e conversão de unidade. Nenhum título publicado tinha o erro (os 18 desse tipo são do modelo antigo de título). Deploy: funções que importam `titulo-guards.ts`.
+
+- [x] **Tirar da revisão** (2026-11-08, [ADR-0199](decisions/0199-tirar-familia-da-revisao.md)) — botão por família na tela Revisão (`src/components/tirar-da-revisao.tsx`) e edge nova `excluir-familia`. Só sai família não publicada em `pronto`/`erro` sem vínculo vivo no ML que ela represente sozinha. Sem migration. Deploy: `supabase functions deploy excluir-familia`.

@@ -87,7 +87,7 @@ describe('temPendenciaAtiva', () => {
   });
 });
 
-// ADR-0199 (Task 8, rodada 3): a leitura das obrigações é filtrada pelos pedidos do lote, em blocos, e nunca
+// ADR-0200 (Task 8, rodada 3): a leitura das obrigações é filtrada pelos pedidos do lote, em blocos, e nunca
 // depende do teto de linhas do PostgREST: pedido com obrigação omitido viraria "ok" e apagaria a obrigação.
 describe('lerPendenciasKit', () => {
   function adminObrigacoes(total: number) {

@@ -27,7 +27,7 @@ export async function lerStatusML(token: string, itemId: string, f: typeof fetch
 }
 
 /**
- * ADR-0199: variante só para kit com variação, que trata a leitura como confirmação de resultado. Só 404 é
+ * ADR-0200: variante só para kit com variação, que trata a leitura como confirmação de resultado. Só 404 é
  * ausência confirmada (null); envelope com outro código, resposta incompleta ou id divergente lança.
  */
 export async function lerStatusMLEstrito(token: string, itemId: string, f: typeof fetch = fetch): Promise<StatusAnuncioCanal | null> {

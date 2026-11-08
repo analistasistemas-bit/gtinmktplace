@@ -1,4 +1,4 @@
--- ADR-0199: RPCs de transferência do kit com variação. A saga (Task 4) chama estas funções.
+-- ADR-0200: RPCs de transferência do kit com variação. A saga (Task 4) chama estas funções.
 --
 -- Contrato de `kit_transferencias.itens`: `[{"codigo": <SKU>, "quantidade": <n>}]`.
 --   - montar, repor, desmontar: `codigo` é SKU de kit e `quantidade` é em KITS. Origem e destino saem
@@ -391,7 +391,7 @@ begin
   delete from public.kit_exclusoes where org_id = p_org and dono_id = p_dono_id;
 end $$;
 
--- Corpo de 20260903002527 mais o guard do ADR-0199. O guard vem depois do insert e do lock: retry de
+-- Corpo de 20260903002527 mais o guard do ADR-0200. O guard vem depois do insert e do lock: retry de
 -- referência já aplicada segue devolvendo null, e a transferência aberta antes do lock é vista.
 create or replace function public.registrar_entrada(
   p_org uuid, p_codigo text, p_qtd integer, p_custo numeric,
@@ -441,7 +441,7 @@ begin
 
   select estoque into v_antes from public.variacoes where id = v_var for update;
 
-  -- ADR-0199: a exceção derruba também o insert acima.
+  -- ADR-0200: a exceção derruba também o insert acima.
   if public.kit_sku_em_transferencia(p_org, p_codigo) then
     raise exception 'sku_em_transferencia: % está em transferência de kit. Repita a entrada depois.', p_codigo
       using errcode = '23514';
@@ -506,7 +506,7 @@ begin
 
   select estoque into v_antes from public.variacoes where id = v_var for update;
 
-  -- ADR-0199: a exceção derruba também o insert acima.
+  -- ADR-0200: a exceção derruba também o insert acima.
   if public.kit_sku_em_transferencia(p_org, p_codigo) then
     raise exception 'sku_em_transferencia: % está em transferência de kit. Repita o ajuste depois.', p_codigo
       using errcode = '23514';

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ADR-0199 (Task 6, achado 2): corridas reais (duas sessões) de `kit_politica_operador` sobre SKU SEM linha de
+# ADR-0200 (Task 6, achado 2): corridas reais (duas sessões) de `kit_politica_operador` sobre SKU SEM linha de
 # política. A sessão A executa e SEGURA a transação 3 s; a B começa 1 s depois, tem de ESPERAR e decidir sobre o
 # que A commitou. Mesmo arranjo de kit_variacao_rpc_concorrencia.sh. Portão da Task 17 (Step 4b): NÃO executado
 # nesta task.

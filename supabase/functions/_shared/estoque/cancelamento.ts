@@ -53,17 +53,17 @@ export interface DepsCancelamento {
   notificarCategoria: (
     admin: SupabaseClient, orgId: string, categoria: CategoriaNotificacao, texto: string,
   ) => Promise<unknown>;
-  /** ADR-0199: `skusParticipantes` de `kit-variacao/politica.ts`. Só chamado com o módulo ligado. */
+  /** ADR-0200: `skusParticipantes` de `kit-variacao/politica.ts`. Só chamado com o módulo ligado. */
   skusParticipantes: (admin: SupabaseClient, orgId: string, skus: string[], ligado: boolean) => Promise<Set<string>>;
-  /** ADR-0199: `agendarCancelamentoKit` com `enfileirarSaga`. Devolve os movimentos de estorno já cobertos. */
+  /** ADR-0200: `agendarCancelamentoKit` com `enfileirarSaga`. Devolve os movimentos de estorno já cobertos. */
   agendarCancelamentoKit: (
     admin: SupabaseClient, p: { orgId: string; canal: string; orderId: string | number; codigos: string[] },
   ) => Promise<string[]>;
-  /** ADR-0199: `classificarItensKit` (identidade do item vendido). Lança em erro de leitura. */
+  /** ADR-0200: `classificarItensKit` (identidade do item vendido). Lança em erro de leitura. */
   classificarItensKit: typeof classificarItensKit;
-  /** ADR-0199: `gravarIdentidades` (a primeira resolução do item vence). Lança em erro. */
+  /** ADR-0200: `gravarIdentidades` (a primeira resolução do item vence). Lança em erro. */
   gravarIdentidades: typeof gravarIdentidades;
-  /** ADR-0199: RPC `registrar_pendencia_kit` (worker_pendencias obrigatória, sem descarte). Lança em erro. */
+  /** ADR-0200: RPC `registrar_pendencia_kit` (worker_pendencias obrigatória, sem descarte). Lança em erro. */
   registrarPendenciaKit: (admin: SupabaseClient, orgId: string, orderId: string, erro: string) => Promise<void>;
 }
 
@@ -77,9 +77,9 @@ export interface PedidoCancelado {
   /** `null` = o shipment não pôde ser lido. NUNCA equivale a "não despachado". */
   shipmentStatus: string | null;
   temEnvio: boolean;
-  /** ADR-0199: módulo `kit_variacao` (`Catalogo.kitLigado`). Ausente = desligado, comportamento de hoje. */
+  /** ADR-0200: módulo `kit_variacao` (`Catalogo.kitLigado`). Ausente = desligado, comportamento de hoje. */
   kitLigado?: boolean;
-  /** ADR-0199: o catálogo que resolveu os códigos veio incompleto (`Catalogo.incompleto`). */
+  /** ADR-0200: o catálogo que resolveu os códigos veio incompleto (`Catalogo.incompleto`). */
   catalogoIncompleto?: boolean;
 }
 
@@ -88,13 +88,13 @@ export type ResultadoCancelamento =
   | 'avisado'
   | 'sem-baixa' // cancelado, mas o estoque nunca desceu por este pedido — nada a conferir
   | 'silenciado' // aviso já dado antes (a reconciliação revisita o pedido de hora em hora)
-  | 'pendente' // ADR-0199: crédito de SKU de kit com variação não confirmado; obrigação gravada em worker_pendencias
-  | 'repetir' // ADR-0199: obrigação de crédito NÃO gravada; quem chama tem de repetir (502 / falha do pedido)
+  | 'pendente' // ADR-0200: crédito de SKU de kit com variação não confirmado; obrigação gravada em worker_pendencias
+  | 'repetir' // ADR-0200: obrigação de crédito NÃO gravada; quem chama tem de repetir (502 / falha do pedido)
   | 'ignorado'
   | 'erro';
 
 /**
- * ADR-0199: o pedido cai no crédito de kit com variação (cancelado, comprovadamente antes do despacho, módulo
+ * ADR-0200: o pedido cai no crédito de kit com variação (cancelado, comprovadamente antes do despacho, módulo
  * ligado). É o único caminho que pode devolver `pendente`/`repetir`.
  */
 export function entraNoCreditoKit(p: PedidoCancelado): boolean {
@@ -166,7 +166,7 @@ export async function tratarPedidoCancelado(
 }
 
 /**
- * ADR-0199 (spec, contrato de segurança 9): pré-despacho com o módulo ligado. Credita como hoje; para SKU de kit
+ * ADR-0200 (spec, contrato de segurança 9): pré-despacho com o módulo ligado. Credita como hoje; para SKU de kit
  * com variação creditado agora, cria a transferência `cancelamento` (escrita no ML só com o kit pausado), mesmo
  * com reposição automática desligada. Componente individual segue pelo outbox, que já vira transferência `entrada`.
  *
@@ -267,7 +267,7 @@ async function pendente(
 }
 
 /**
- * ADR-0199: cria a transferência `cancelamento` de cada kit cujo SKU foi creditado, com os alvos do push
+ * ADR-0200: cria a transferência `cancelamento` de cada kit cujo SKU foi creditado, com os alvos do push
  * (`transferirParaSaga`: UP + cópia de catálogo), enfileira a saga e marca o estorno desses SKUs como entregue
  * no outbox. Sem a marca, o push criaria uma `entrada` que disputa a exclusão e pausaria o kit outra vez.
  *

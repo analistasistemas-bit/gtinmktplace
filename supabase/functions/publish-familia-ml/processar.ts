@@ -33,7 +33,7 @@ import { EMBED_MODULOS, kitLigado, skusParticipantes } from '../_shared/kit-vari
 
 export interface Job {
   familia_id: string; lote_id: string; listing_type_id?: string;
-  /** ADR-0199: versão da política dos SKUs de kit, capturada no enfileiramento (publicar-familias). */
+  /** ADR-0200: versão da política dos SKUs de kit, capturada no enfileiramento (publicar-familias). */
   versoes_kit?: Record<string, number>;
 }
 
@@ -111,7 +111,7 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
   const finalizarLote = deps.finalizarLote ?? ((loteId: string) => talvezFinalizarLote(admin, loteId));
   const { tentativas } = opts;
 
-  // ADR-0199: o módulo da org vem embutido (sem consulta nova); `publicarFamiliaUP` lê o mesmo embed.
+  // ADR-0200: o módulo da org vem embutido (sem consulta nova); `publicarFamiliaUP` lê o mesmo embed.
   const { data: familia } = await admin.from('familias').select(`*, ${EMBED_MODULOS}`).eq('id', job.familia_id).single();
   if (!familia) return { tipo: 'familia_inexistente' };
 
@@ -269,7 +269,7 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
     // saída: publicar uniforme uma vez semeia o cache, e a partir daí a categoria roteia para UP.
     garantirPrecoUniforme(variacoes, 'CREATE');
 
-    // ADR-0199: o CREATE Legacy (inclusive o item plano de 1 SKU) publicaria quantidade de SKU de kit com
+    // ADR-0200: o CREATE Legacy (inclusive o item plano de 1 SKU) publicaria quantidade de SKU de kit com
     // variação fora da exclusão e da política. Só a saga UP é protegida: aqui recusa antes do POST.
     const participantes = await skusParticipantes(
       admin, familia.org_id as string, anuncio.variacoes.map((v) => v.sku), kitLigado(familia),

@@ -1,4 +1,4 @@
-// ADR-0199: simulador de lucro do kit com variação, antes de confirmar. Nenhuma fórmula nova: comissão,
+// ADR-0200: simulador de lucro do kit com variação, antes de confirmar. Nenhuma fórmula nova: comissão,
 // frete e imposto vêm de `calcularTarifaML` (recebe já líquido), lucro e markup de `calcularMarkup`, e a
 // margem é a mesma régua de `detalheLiquido` (Promoções): lucro ÷ preço.
 import { normalizarCombinacao, rotuloCombinacao } from '@/lib/kit-variacao';

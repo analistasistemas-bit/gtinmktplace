@@ -64,7 +64,7 @@ export interface AtualizarFamiliaUPArgs {
     genero?: string | null;
     /** ADR-0182 D2. null = família legada (inferência só Letras/Calçado). */
     grade_tamanho?: string | null;
-    /** ADR-0199: embed `EMBED_MODULOS` da leitura da família; ausente = módulo desligado. */
+    /** ADR-0200: embed `EMBED_MODULOS` da leitura da família; ausente = módulo desligado. */
     organizations?: { modulos_habilitados: string[] | null } | null;
   };
   raiz: RaizUP;
@@ -131,7 +131,7 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   const skusDesejados = args.skusDesejadosOverride ?? variacoes.map((v) => v.codigo);
   const estoquePorSku: Record<string, number> = {};
   for (const v of variacoes) estoquePorSku[v.codigo] = v.estoque;
-  // ADR-0199: quantidade de SKU de kit com variação só a saga escreve. Vale também para a convergência,
+  // ADR-0200: quantidade de SKU de kit com variação só a saga escreve. Vale também para a convergência,
   // que chega aqui. Falha de leitura lança antes de qualquer escrita no ML.
   // Task 7: também os SKUs já na raiz — participante que sumiu da planilha não é retirado (atualizarComposicao).
   const ligadoKit = kitLigado(familia);
@@ -680,7 +680,7 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
     const mantidos = resultado.mantidosKit ?? [];
     await admin.from('familias').update({
       status: 'publicado', publicado_em: now(),
-      // ADR-0199: aviso no lote (Relatório), não erro — a publicação seguiu.
+      // ADR-0200: aviso no lote (Relatório), não erro — a publicação seguiu.
       ...(mantidos.length > 0
         ? { erro_mensagem: `SKU em kit com variação (${mantidos.join(', ')}) ficou no anúncio mesmo fora da planilha: remova pelo Gerenciar kit.` }
         : {}),

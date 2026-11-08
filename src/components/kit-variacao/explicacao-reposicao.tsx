@@ -1,4 +1,4 @@
-// ADR-0199: explicação de "Vender só em kit", meta e reposição, com os valores que o operador digitou. Texto e tabela
+// ADR-0200: explicação de "Vender só em kit", meta e reposição, com os valores que o operador digitou. Texto e tabela
 // da spec ("Reposição"), pedido do Diego: "bem explicado, para não ficar confuso".
 import { rotuloCombinacao } from '@/lib/kit-variacao';
 

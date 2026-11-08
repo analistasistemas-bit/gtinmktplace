@@ -172,7 +172,7 @@ describe('tratarPedidoCancelado — guarda de status', () => {
   });
 });
 
-// ADR-0199 (Task 8): SKU participante de kit com variação. Só com o módulo ligado; o resto segue como hoje.
+// ADR-0200 (Task 8): SKU participante de kit com variação. Só com o módulo ligado; o resto segue como hoje.
 describe('tratarPedidoCancelado — kit com variação', () => {
   const KIT = { ...BASE, itens: [{ codigo: 'KIT-PB-M', quantity: 1 }], shipmentStatus: 'ready_to_ship', kitLigado: true };
   const PENDENTES = [

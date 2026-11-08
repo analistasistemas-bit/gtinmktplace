@@ -1,5 +1,5 @@
 \set ON_ERROR_STOP on
--- ADR-0199 (Task 8): identidade de item vendido e pendência obrigatória de crédito.
+-- ADR-0200 (Task 8): identidade de item vendido e pendência obrigatória de crédito.
 begin;
 insert into public.organizations (id, nome, slug) values
   ('97800000-0000-0000-0000-000000000001', 'Kit venda test', 'kit-venda-test');

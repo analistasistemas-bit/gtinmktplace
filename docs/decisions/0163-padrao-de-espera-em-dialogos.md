@@ -159,6 +159,13 @@ ML/storage/fila/IA) ficaria fora da própria regra que o mantém na lista.
 O Grupo B (modal que segura aberto até a resposta) fica com **6 modais**, todos em
 `Publicados.tsx`.
 
+## Emenda (2026-11-08): barra só no destrutivo
+
+Na ação normal, a aura (neon) e o raio na borda já sinalizam a espera, e o traço reto da barra no
+topo somava um terceiro efeito sobreposto (reclamação do operador no modal de publicar da Revisão).
+A barra continua montada com `role="progressbar"`/`aria-label`, mas com `sr-only`: só o leitor de
+tela a recebe. No modo destrutivo, que não tem aura nem raio, ela segue visível como único sinal.
+
 ## Consequências
 
 - Um único componente e um único par de props cobre 18 pontos (lista acima) — sem modo "fora de

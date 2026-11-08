@@ -23,6 +23,7 @@ import { resultadoPublicacao } from '@/lib/jornada';
 import { DropZoneImagensExistente } from '@/components/drop-zone-imagens-existente';
 import { useFamilias } from '@/hooks/useFamilias';
 import { useLote } from '@/hooks/useLotes';
+import { useAuth } from '@/hooks/useAuth';
 import { useLoteRealtime } from '@/hooks/useLoteRealtime';
 import { uploadImagensLote } from '@/lib/upload-imagens';
 import { QK, fetchConexoes, fetchKitsDosProdutos } from '@/lib/queries';
@@ -129,6 +130,7 @@ function BadgeKitsAguardando({ qtd }: { qtd: number }) {
 export default function Revisao() {
   const { loteId } = useParams();
   const nav = useNavigate();
+  const { user } = useAuth();
   useLoteRealtime(loteId);
   // Polling de fallback do realtime (mesma corrida de Progresso): o cadastro de produto
   // entra aqui direto com a família 'pendente' — se o evento de conclusão se perde, a tela
@@ -292,6 +294,13 @@ export default function Revisao() {
     } finally {
       setProgresso(null);
     }
+  }
+
+  function tirarDaSelecao(id: string) {
+    const sem = (s: Set<string>) => { const n = new Set(s); n.delete(id); return n; };
+    setSelecionadas(sem);
+    setSomenteEstoqueOverrides(sem);
+    setExpandidas((e) => e.filter((x) => x !== id));
   }
 
   function toggleSelecao(id: string, valor: boolean) {
@@ -618,6 +627,7 @@ export default function Revisao() {
                   onSelecionar={toggleSelecao}
                   onExpandir={toggleExpansao}
                   onIrParaCritica={irParaCritica}
+                  onTirada={lote?.userId && lote.userId === user?.id ? tirarDaSelecao : undefined}
                 />
                 <BadgeKitsAguardando qtd={kitsAguardandoPorPai.get(familia.codigoPai) ?? 0} />
                 {/* Radix Collapsible: mede a altura real e mantém o conteúdo montado só

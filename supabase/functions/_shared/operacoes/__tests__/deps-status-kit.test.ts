@@ -1,4 +1,4 @@
-// ADR-0199 (Task 6, fix round 3): a massa usa a leitura ESTRITA para a reativação de SKU de kit (pré-checagem e
+// ADR-0200 (Task 6, fix round 3): a massa usa a leitura ESTRITA para a reativação de SKU de kit (pré-checagem e
 // confirmação). A frouxa devolve null para envelope 500 e confirmaria uma leitura que falhou.
 import { describe, expect, it, vi } from 'vitest';
 

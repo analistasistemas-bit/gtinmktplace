@@ -56,16 +56,16 @@ verify_jwt = true
 # ADR-0151: criação de kit vinculado. Chamada pelo APP com o JWT do admin.
 [functions.criar-kit-vinculado]
 verify_jwt = true
-# ADR-0199: criação do kit com variação em Publicados. Chamada pelo APP com o JWT do admin.
+# ADR-0200: criação do kit com variação em Publicados. Chamada pelo APP com o JWT do admin.
 [functions.criar-kit-variacao]
 verify_jwt = true
-# ADR-0199: título e descrição do kit com variação por IA (prévia). Chamada pelo APP com o JWT do admin.
+# ADR-0200: título e descrição do kit com variação por IA (prévia). Chamada pelo APP com o JWT do admin.
 [functions.gerar-texto-kit]
 verify_jwt = true
-# ADR-0199 (Task 15): foto da combinação do kit por IA (módulo imagem_ia), prévia para aprovação. APP com o JWT do admin.
+# ADR-0200 (Task 15): foto da combinação do kit por IA (módulo imagem_ia), prévia para aprovação. APP com o JWT do admin.
 [functions.gerar-foto-kit]
 verify_jwt = true
-# ADR-0199: tela Gerenciar kit (montar, desmontar, meta, reposição, "Vender só em kit"). APP com o JWT do admin.
+# ADR-0200: tela Gerenciar kit (montar, desmontar, meta, reposição, "Vender só em kit"). APP com o JWT do admin.
 [functions.gerenciar-kit-variacao]
 verify_jwt = true
 # ADR-0154: busca de componentes candidatos a Kit Virtual. Chamada pelo APP com o JWT do admin.
@@ -156,6 +156,8 @@ verify_jwt = true
 [functions.publicar-familias]
 verify_jwt = true
 [functions.excluir-lote]
+verify_jwt = true
+[functions.excluir-familia]
 verify_jwt = true
 [functions.status-publicados]
 verify_jwt = true

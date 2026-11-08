@@ -1,4 +1,4 @@
-// ADR-0199 (Task 14): worker QStash da reposição automática de um kit ("Vender só em kit"). Casca fina: liga
+// ADR-0200 (Task 14): worker QStash da reposição automática de um kit ("Vender só em kit"). Casca fina: liga
 // `executarReposicao` no banco (decisões versionadas), no ML (reativar a pausa da automação) e no Telegram.
 // Disparado em lote por kit (`enfileirarReposicao`) depois de venda, fim de transferência (entrada, ajuste,
 // estorno, cancelamento) e desligar a opção. 500 = algo ficou para depois; o QStash repete.

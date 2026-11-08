@@ -1,4 +1,4 @@
--- ADR-0199 (Task 9): inventário (ADR-0181) em peças com kit com variação. Corpo de
+-- ADR-0200 (Task 9): inventário (ADR-0181) em peças com kit com variação. Corpo de
 -- 20261016233218 (inventario_calcular) mais o kit; assinatura e retorno iguais (a foto grava as colunas).
 --
 -- Invariante 2: o total de um componente C é individual + Σ (saldo do kit K × peças de C em K) + trânsito.
@@ -28,7 +28,7 @@ as $$
        and exists (select 1 from public.variacoes v where v.familia_id = f.id)
      order by f.codigo_pai, f.criado_em desc
   ),
-  -- ADR-0199: componente C → membros do grupo (o próprio C com peso 1 e cada SKU de kit com C, com o
+  -- ADR-0200: componente C → membros do grupo (o próprio C com peso 1 e cada SKU de kit com C, com o
   -- número de peças de C por kit). Org sem kit: vazio.
   grupo as (
     select c.codigo as alvo, s.codigo as membro, c.quantidade as w

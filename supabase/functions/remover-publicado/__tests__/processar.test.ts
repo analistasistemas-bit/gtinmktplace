@@ -72,7 +72,7 @@ function fakeAdmin(filas: Record<string, unknown[]>) {
     from: (tabela: string) => chain(tabela),
     storage: { from: () => ({ remove: async (paths: string[]) => { removidos.push(paths); return { error: null }; } }) },
     rpc: async (nome: string, args: unknown) => {
-      // ADR-0199: participação é leitura (fila `rpc:kit_skus_participantes`), não entra em `rpcs`.
+      // ADR-0200: participação é leitura (fila `rpc:kit_skus_participantes`), não entra em `rpcs`.
       if (nome === 'kit_skus_participantes') {
         const v = proximo(`rpc:${nome}`);
         return ehErro(v) ? { data: null, error: { message: v.__erro } } : { data: v, error: null };
@@ -1302,7 +1302,7 @@ describe('removerPublicado — precheck em_processamento no fallback UP (revisã
   });
 });
 
-describe('removerPublicado — SKU em kit com variação (ADR-0199, Task 7)', () => {
+describe('removerPublicado — SKU em kit com variação (ADR-0200, Task 7)', () => {
   afterEach(() => { vi.unstubAllGlobals(); });
 
   const ALVO_KIT = {

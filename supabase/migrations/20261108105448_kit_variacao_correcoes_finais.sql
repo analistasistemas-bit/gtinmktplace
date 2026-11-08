@@ -1,4 +1,4 @@
--- ADR-0199: correções da revisão final do kit com variação (Codex, 08/11).
+-- ADR-0200: correções da revisão final do kit com variação (Codex, 08/11).
 -- `db push` não roda em transação: cada statement é re-executável.
 
 -- 1. Participantes (achado 2). Códigos distintos já agregados num escalar: a leitura de linhas pelo PostgREST
@@ -328,7 +328,7 @@ begin
 
   select estoque into v_antes from public.variacoes where id = v_var for update;
 
-  -- ADR-0199: a exceção derruba também o insert acima.
+  -- ADR-0200: a exceção derruba também o insert acima.
   if public.kit_sku_em_transferencia(p_org, p_codigo) then
     raise exception 'sku_em_transferencia: % está em transferência de kit. Repita a entrada depois.', p_codigo
       using errcode = '23514';
@@ -394,7 +394,7 @@ begin
 
   select estoque into v_antes from public.variacoes where id = v_var for update;
 
-  -- ADR-0199: a exceção derruba também o insert acima.
+  -- ADR-0200: a exceção derruba também o insert acima.
   if public.kit_sku_em_transferencia(p_org, p_codigo) then
     raise exception 'sku_em_transferencia: % está em transferência de kit. Repita o ajuste depois.', p_codigo
       using errcode = '23514';
@@ -858,7 +858,7 @@ as $$
        and exists (select 1 from public.variacoes v where v.familia_id = f.id)
      order by f.codigo_pai, f.criado_em desc, f.id desc
   ),
-  -- ADR-0199: componente C → membros do grupo (o próprio C com peso 1 e cada SKU de kit com C, com o
+  -- ADR-0200: componente C → membros do grupo (o próprio C com peso 1 e cada SKU de kit com C, com o
   -- número de peças de C por kit). Org sem kit: vazio.
   grupo as (
     select c.codigo as alvo, s.codigo as membro, c.quantidade as w

@@ -39,6 +39,7 @@
 | **Remoção / reprocessamento** ||||
 | remover-publicado | false | HTTP (JWT manual) | sim (guarded) |
 | excluir-lote | true | HTTP (frontend) | não |
+| excluir-familia | true | HTTP (frontend) | não (DELETE condicional) |
 | reprocessar-familia | false | HTTP (JWT manual) | sim (guard de status) |
 | retentar-catalogo | false | HTTP (JWT manual) | sim (re-enfileira vincular-catalogo) |
 | invalidar-cache-cor | true | HTTP (frontend) | não |
@@ -68,7 +69,7 @@
 | criar-kit-virtual | **true** | HTTP (frontend, **admin**) | sim (idempotência por `chave_cadastro`) |
 | encerrar-kit-virtual | **true** | HTTP (frontend, **admin**) | sim (kit já `closed` responde sucesso) |
 | subir-foto-kit-virtual | **true** | HTTP (frontend, **admin**) | sim (upload puro, sem escrita em banco) |
-| **Kit com variação (ADR-0199) — implementado na branch, módulo `kit_variacao` desligado** ||||
+| **Kit com variação (ADR-0200) — implementado na branch, módulo `kit_variacao` desligado** ||||
 | criar-kit-variacao | **true** | HTTP (frontend, **admin**, módulo `kit_variacao`) | sim (idempotência por `chave_cadastro` + `pedido_hash`) |
 | gerenciar-kit-variacao | **true** | HTTP (frontend, **admin**, módulo `kit_variacao`) | sim (`chave_cadastro` + `pedido_hash` + CAS de `kits_variacao.versao`) |
 | gerar-texto-kit | **true** | HTTP (frontend, **admin**, módulo `kit_variacao`) | não (cada chamada consome IA e grava uma prévia) |
@@ -903,6 +904,7 @@ mesmo por engano.
   (`familias_bloquear_remocao_com_kit`) é a última linha; esta é a primeira, com mensagem clara —
   a mensagem distingue "Corrigir e republicar" (`preservar_familia`, nunca apaga a base) de
   remoção de verdade (que também exige `excluir-produto`, ADR-0113, para o vínculo sumir de vez).
+- **excluir-familia** — body `{ familia_id }`; "Tirar da revisão" (ADR-0199). Só sai família com `publicado_em` nulo e status `pronto`/`erro`; decisão pura em `decidir.ts` (`decidirExclusaoFamilia`): recusa 409 `publicada`, `em_voo`, `vinculada` (única linha que representa anúncio vivo), `kit`, `pxv` e `nao_conferido` (trava fechada). Mesma permissão do `excluir-lote`; DELETE condicional fecha a corrida com o worker; limpa movimentos órfãos, fecha o lote e apaga Storage best-effort. Não chama o ML.
 - **excluir-lote** — exclui o lote; preserva publicados (ADR-0019); bloqueia se processando/publicando.
   **Guard anti-órfão (2026-08-13):** `publicado_em` sozinho não basta — o UPDATE pode ter criado a
   cor no ML e **não** marcar a família como publicada (guard de `update-familia-ml`: cor nova sem
@@ -1367,7 +1369,7 @@ mutação. **Pendência de verificação:** a query (`.eq('status', ...).in(...)
 contra um fake em memória nos testes desta branch, que não filtra por `status` de verdade — falta
 um smoke test contra Postgres real antes do primeiro deploy.
 
-### Kit com variação (ADR-0199)
+### Kit com variação (ADR-0200)
 
 > **Estado:** implementado na branch `worktree-kit-com-variacao-design`, **não implantado**. Módulos `kit_variacao` e
 > `imagem_ia` desligados em todas as orgs; migrations e edges ainda não aplicadas. Roteiro em

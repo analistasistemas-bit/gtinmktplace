@@ -1,4 +1,4 @@
-// ADR-0199: combinações de cores do kit com variação. Puro, sem import: a tela (`src/lib/kit-variacao.ts`)
+// ADR-0200: combinações de cores do kit com variação. Puro, sem import: a tela (`src/lib/kit-variacao.ts`)
 // reexporta daqui, e a edge recalcula o rótulo em vez de confiar no que vem do cliente.
 
 /** Todas as combinações de `pecas` cores distintas, sem repetição, na ordem em que as cores foram marcadas. */

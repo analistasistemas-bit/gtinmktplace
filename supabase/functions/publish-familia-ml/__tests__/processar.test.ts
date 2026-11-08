@@ -28,7 +28,7 @@ function fakeAdmin(over: {
   ncm?: 'vigente' | 'vencido' | 'inexistente' | 'erro'; // rpc ncm_consultar (ADR-0187)
   filhosUP?: Record<string, unknown>[]; // anuncios_externos_itens (família UP já publicada)
   filhosErro?: boolean;
-  kitComponentes?: string[]; // ADR-0199: SKUs usados em kit com variação
+  kitComponentes?: string[]; // ADR-0200: SKUs usados em kit com variação
 } = {}) {
   const writes: Array<{ table: string; payload: Record<string, unknown>; filters: Record<string, unknown> }> = [];
   const familia = over.familia ?? { ...FAMILIA_BASE };
@@ -82,7 +82,7 @@ function fakeAdmin(over: {
     return api;
   }
   const rpc = async (fn: string, args?: { p_codigos?: string[] }) => {
-    // ADR-0199: participação de kit com variação (RPC agregada).
+    // ADR-0200: participação de kit com variação (RPC agregada).
     if (fn === 'kit_skus_participantes') {
       return { data: (over.kitComponentes ?? []).filter((c) => (args?.p_codigos ?? []).includes(c)), error: null };
     }
@@ -312,7 +312,7 @@ describe('processarFamiliaML — roteamento CREATE + ADR-0088 (saga UP)', () => 
     expect(r.tipo).toBe('ok');
   });
 
-  // ADR-0199 (Task 5, crítico 3): o desvio de item plano criaria o participante com available_quantity
+  // ADR-0200 (Task 5, crítico 3): o desvio de item plano criaria o participante com available_quantity
   // fora da saga e da exclusão. Recusa antes do POST.
   it('1 SKU sem tamanho participante de kit com variação: recusa antes do POST', async () => {
     const { admin } = fakeAdmin({
