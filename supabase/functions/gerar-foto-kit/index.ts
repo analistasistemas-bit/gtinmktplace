@@ -36,9 +36,10 @@ const PRAZO_MS = 140_000;
 const RESERVA_FINAL_MS = 10_000;
 const LIMITE_RESPOSTA_MS = 145_000;
 const MINIMO_IA_MS = 90_000;
-// Fatias da IA dentro do prazo: ficha (só na 1ª tentativa) e verificação; a geração fica com o resto.
-const FICHA_MS = 25_000;
-const VERIFICACAO_MS = 25_000;
+// Fatias da IA dentro do prazo: ficha (só na 1ª tentativa) e verificação; a geração fica com o resto. Medido em
+// 08/11 (12 kits reais, gpt-4o): ficha até 29 s e verificação até 30 s; geração de 9 a 82 s.
+const FICHA_MS = 35_000;
+const VERIFICACAO_MS = 35_000;
 // Fotos de origem por cor e no total (tamanho do pedido e CPU da edge).
 const MAX_FOTOS_COR = 3;
 const MAX_FOTOS = 12;

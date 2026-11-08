@@ -72,6 +72,7 @@ describe('montarPedidoFiel', () => {
     expect(instr).toMatch(/exactly 2 pieces/);
     expect(instr).toMatch(/Never lengthen or shorten/);
     expect(instr).toMatch(/side by side in a single row/);
+    expect(instr).toMatch(/never invent logos, text, or clothing labels\/tags/);   // medição 08/11: etiqueta inventada
     expect(instr).not.toContain('meio da coxa');   // dado da ficha não entra nas instruções
     expect(dados).toContain('"comprimento_descricao":"short curto, termina no meio da coxa"');
     expect(dados).toContain('"nome_tom":"cinza grafite médio"');
