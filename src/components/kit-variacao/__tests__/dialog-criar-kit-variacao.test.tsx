@@ -468,7 +468,6 @@ describe('DialogCriarKitVariacao', () => {
   async function irParaConferir(user: ReturnType<typeof userEvent.setup>) {
     await montar(user, ['Preto', 'Branco'], { 'Preto e Branco M': '1' });
     await user.click(screen.getByRole('button', { name: 'Próximo' }));
-    await user.click(screen.getByRole('button', { name: /Gerar título e descrição/ }));
     await screen.findByDisplayValue('Kit 2 Blusas Canelada');
     await user.upload(screen.getByLabelText('Foto Preto e Branco'), new File(['x'], 'pb.jpg', { type: 'image/jpeg' }));
     await user.click(screen.getByRole('button', { name: 'Próximo' }));

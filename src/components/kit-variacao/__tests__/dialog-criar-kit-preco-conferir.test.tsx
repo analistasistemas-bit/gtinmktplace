@@ -62,7 +62,6 @@ describe('DialogCriarKitVariacao: preço na etapa Conferir', () => {
     await user.click(screen.getByRole('button', { name: 'Próximo' }));
     await user.clear(screen.getByLabelText('Preço do kit'));
     await user.type(screen.getByLabelText('Preço do kit'), '100');
-    await user.click(screen.getByRole('button', { name: /Gerar título e descrição/ }));
     await screen.findByDisplayValue('Kit 2 Blusas');
     await user.upload(screen.getByLabelText('Foto Preto e Branco'), new File(['x'], 'pb.jpg', { type: 'image/jpeg' }));
     await user.click(screen.getByRole('button', { name: 'Próximo' }));
