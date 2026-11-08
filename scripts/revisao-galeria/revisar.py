@@ -1,0 +1,19 @@
+"""Revisão do plano da Galeria da cor por Codex e Grok (read-only).
+
+Uso (a partir da raiz do worktree):
+    python3 -I scripts/revisao-galeria/revisar.py codex scripts/revisao-galeria/brief.md /tmp/codex.txt
+    python3 -I scripts/revisao-galeria/revisar.py grok  scripts/revisao-galeria/brief.md /tmp/grok.txt
+Rodar os dois em paralelo (em background). Edite em brief.md a versão do plano e o número da rodada.
+"""
+import subprocess
+import sys
+
+quem, brief, saida = sys.argv[1], sys.argv[2], sys.argv[3]
+prompt = open(brief, encoding='utf-8').read()
+cmd = {
+    # codex: -i é variádico; se anexar imagem, o prompt vem ANTES dos -i
+    'codex': ['codex', 'exec', '-m', 'gpt-6.1-sol', '-c', 'model_reasoning_effort=high', '-s', 'read-only', prompt],
+    'grok': ['cursor-agent', '-p', '--mode', 'ask', '--model', 'grok-4.7-xhigh', prompt],
+}[quem]
+with open(saida, 'w') as out:
+    subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, timeout=1800)
