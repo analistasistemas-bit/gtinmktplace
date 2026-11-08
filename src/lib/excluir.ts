@@ -20,6 +20,9 @@ export interface ResultadoExcluirLote {
 export const excluirLote = (loteId: string) =>
   chamarEdge<ResultadoExcluirLote>('excluir-lote', { lote_id: loteId });
 
+export const excluirFamilia = (familiaId: string) =>
+  chamarEdge<{ ok: true; lote_removido: boolean }>('excluir-familia', { familia_id: familiaId });
+
 export const removerPublicado = (familiaId: string) =>
   chamarEdge<{ ok: true; familias_removidas: number; lotes_removidos: number }>(
     'remover-publicado',

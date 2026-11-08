@@ -11,6 +11,7 @@ import { useImageUrl } from '@/hooks/useImageUrl';
 import { useReprocessar, useUpdateFamiliaAtacado } from '@/hooks/useFamiliaMutations';
 import { temAlteracaoPreco } from '@/lib/preco-alterado';
 import { validarFaixas, type FaixaAtacado } from '@/lib/atacado';
+import { TirarDaRevisao } from '@/components/tirar-da-revisao';
 import { AtacadoEditor } from '@/components/atacado-editor';
 import { ConfigGruposPreco } from '@/components/config-grupos-preco';
 import { familiaEhUP } from '@/lib/grupos-preco';
@@ -36,6 +37,8 @@ interface FamiliaRowProps {
   onSelecionar: (id: string, valor: boolean) => void;
   onExpandir: (id: string) => void;
   onIrParaCritica?: (familiaId: string, codigo: string) => void;
+  /** Presente só para o dono do lote; habilita "Tirar da revisão" em pronto/erro. */
+  onTirada?: (id: string) => void;
 }
 
 function AtacadoControle({ familia }: { familia: Familia }) {
@@ -86,7 +89,7 @@ function AtacadoControle({ familia }: { familia: Familia }) {
   );
 }
 
-export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onExpandir, onIrParaCritica }: FamiliaRowProps) {
+export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onExpandir, onIrParaCritica, onTirada }: FamiliaRowProps) {
   const { data: capaUrl } = useImageUrl(familia.capaStoragePath ?? familia.fotoCapaPath);
   const reprocessar = useReprocessar(familia.loteId);
   // ADR-0151: kit em erro se recupera republicando — reprocessar jogaria o kit no process-familia,
@@ -206,6 +209,9 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
         <div className="font-medium truncate">{familia.titulo}</div>
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mt-1">
           <span>PAI {familia.codigoPai} · {familiaProdutoSimples(familia) ? 'Produto único' : `${familia.variacoes.length} cores`}</span>
+          {onTirada && (familia.status === 'pronto' || familia.status === 'erro') && (
+            <TirarDaRevisao familia={familia} onTirada={onTirada} />
+          )}
           <span className="sm:hidden font-medium text-foreground flex items-center gap-1 border rounded px-1.5 py-0.5">
             {familia.operacao} · R$ {fmtBRLSemSimbolo(precoVendaMin)}
           </span>

@@ -89,6 +89,8 @@ export interface Lote {
   anomalias: AnomaliasPlanilha;
   /** E6b: de onde vieram as famílias deste lote — planilha ou cadastro manual. */
   origem: 'planilha' | 'manual';
+  /** Dono do lote — a ação "Tirar da revisão" só aparece para ele (a edge é a trava real). */
+  userId?: string;
 }
 
 import type { FaixaAtacado } from './atacado';

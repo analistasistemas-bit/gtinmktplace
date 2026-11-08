@@ -408,6 +408,7 @@ export function loteFromRow(r: LoteRow): Lote {
     totalErros: r.total_erros,
     anomalias: parseAnomalias(r.anomalias_planilha),
     origem: r.origem === 'manual' ? 'manual' : 'planilha',
+    userId: r.user_id,
   };
 }
 
