@@ -57,6 +57,13 @@ export function gerarTextoKitEdge(p: { familiaBaseId: string; pecasPorKit: numbe
   });
 }
 
+/** Foto da combinação por IA (Task 15). Mesmo `requestId` repete sem gerar de novo; a foto só vale aprovada na tela. */
+export function gerarFotoKitEdge(p: { requestId: string; familiaBaseId: string; cores: string[] }) {
+  return invocar<{ path: string; url: string | null }>('gerar-foto-kit', {
+    request_id: p.requestId, familia_base_id: p.familiaBaseId, cores: p.cores,
+  });
+}
+
 export type AcaoKit =
   | 'ligar_so_em_kit' | 'desligar_so_em_kit' | 'ligar_reposicao' | 'desligar_reposicao' | 'alterar_meta'
   | 'montar' | 'desmontar';

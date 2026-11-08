@@ -32,7 +32,9 @@ vi.mock('@/lib/kit-variacao-edge', () => ({
   criarKitVariacaoEdge: vi.fn(async () => ({ ok: true, kit_id: 'K1' })),
   enviarFotoKit: vi.fn(async (pasta: string, rotulo: string) => `ORG/${pasta}/${rotulo}.jpg`),
   gerarTextoKitEdge: vi.fn(async () => ({ ok: true, titulo: 'Kit 2 Blusas Canelada', descricao: 'Kit com 2 peças.', previa_id: 'PV1' })),
+  gerarFotoKitEdge: vi.fn(async (p: { requestId: string }) => ({ ok: true, path: `ORG/kit-variacao-ia/${p.requestId}.png`, url: `https://x/${p.requestId}.png` })),
 }));
+import { criarKitVariacaoEdge, enviarFotoKit, gerarFotoKitEdge } from '@/lib/kit-variacao-edge';
 
 function abrir(isAdmin = true) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -104,6 +106,47 @@ describe('DialogCriarKitVariacao', () => {
     const arquivo = new File(['x'], 'pb.jpg', { type: 'image/jpeg' });
     await user.upload(screen.getByLabelText('Foto Preto e Branco'), arquivo);
     expect(screen.getByRole('button', { name: 'Próximo' })).toBeEnabled();
+  });
+
+  it('sem o módulo imagem_ia não há "Gerar foto"', async () => {
+    const user = userEvent.setup();
+    abrir();
+    await montar(user, ['Preto', 'Branco'], { 'Preto e Branco M': '1' });
+    await user.click(screen.getByRole('button', { name: 'Próximo' }));
+    expect(screen.queryByRole('button', { name: /Gerar foto/ })).toBeNull();
+  });
+
+  it('foto gerada por IA só vale depois de aprovada; a aprovada vai como caminho, sem novo envio', async () => {
+    modulos.data = ['kit_variacao', 'imagem_ia'];
+    vi.mocked(gerarFotoKitEdge).mockClear();
+    vi.mocked(enviarFotoKit).mockClear();
+    vi.mocked(criarKitVariacaoEdge).mockClear();
+    const user = userEvent.setup();
+    abrir();
+    await montar(user, ['Preto', 'Branco'], { 'Preto e Branco M': '1' });
+    await user.click(screen.getByRole('button', { name: 'Próximo' }));
+    await user.click(screen.getByRole('button', { name: /Gerar título e descrição/ }));
+    await screen.findByDisplayValue('Kit 2 Blusas Canelada');
+
+    await user.click(screen.getByRole('button', { name: 'Gerar foto Preto e Branco' }));
+    await screen.findByRole('img', { name: 'Foto gerada Preto e Branco' });
+    expect(vi.mocked(gerarFotoKitEdge).mock.calls[0][0]).toMatchObject({ familiaBaseId: 'FAM', cores: ['Preto', 'Branco'] });
+    // Gerada, mas não aprovada: não publica.
+    expect(screen.getByRole('button', { name: 'Próximo' })).toBeDisabled();
+
+    // Gerar outra usa outro request_id.
+    await user.click(screen.getByRole('button', { name: 'Gerar outra Preto e Branco' }));
+    await screen.findByRole('img', { name: 'Foto gerada Preto e Branco' });
+    const [a, b] = vi.mocked(gerarFotoKitEdge).mock.calls.map((c) => c[0].requestId);
+    expect(a).not.toBe(b);
+
+    await user.click(screen.getByRole('button', { name: 'Usar foto gerada Preto e Branco' }));
+    expect(screen.getByRole('button', { name: 'Próximo' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Próximo' }));
+    await user.click(screen.getByRole('button', { name: 'Criar kit' }));
+    await vi.waitFor(() => expect(criarKitVariacaoEdge).toHaveBeenCalled());
+    expect(vi.mocked(criarKitVariacaoEdge).mock.calls[0][0].fotos).toEqual({ 'Preto e Branco': `ORG/kit-variacao-ia/${b}.png` });
+    expect(enviarFotoKit).not.toHaveBeenCalled();
   });
 
   it('a explicação da reposição usa a meta digitada', async () => {

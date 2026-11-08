@@ -26,6 +26,8 @@ import {
 } from '@/lib/kit-variacao-edge';
 import { cn } from '@/lib/utils';
 import { ExplicacaoReposicao } from '@/components/kit-variacao/explicacao-reposicao';
+import { FotoCombinacao, type FotoKit } from '@/components/kit-variacao/foto-combinacao';
+import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 
 const inteiro = (s: string | undefined) => (s && /^\d+$/.test(s) ? Number(s) : 0);
 /** Combinação = conjunto de cores: a ordem em que foram marcadas não cria outra. */
@@ -64,7 +66,9 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
   // Montar mais com combinação × tamanho nunca publicado (vira SKU novo no mesmo kit).
   const [novoAberto, setNovoAberto] = useState(false);
   const [novaQtd, setNovaQtd] = useState<Record<string, string>>({});
-  const [fotos, setFotos] = useState<Record<string, File>>({});
+  const [fotos, setFotos] = useState<Record<string, FotoKit>>({});
+  const { data: modulos } = useModulosHabilitados();
+  const temImagemIA = !!modulos?.includes('imagem_ia');
   // Chave estável por operação: o mesmo pedido repetido (resposta perdida, falha de rede) usa a mesma chave, e a RPC
   // devolve a transferência original. Pedido diferente = chave nova. Sai a cada sucesso e a cada abertura.
   const operacao = useRef<{ assinatura: string; chave: string } | null>(null);
@@ -155,11 +159,13 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
     if (novos.length === 0) {
       ok = (await acao('montar', { itens, chave: chaveDe(JSON.stringify(['montar', itens])) })).ok;
     } else {
-      const chave = chaveDe(JSON.stringify(['adicionar', itens, novos, rotulosNovos.map((r) => [r, fotos[r]?.name, fotos[r]?.size])]));
+      const chave = chaveDe(JSON.stringify(['adicionar', itens, novos, rotulosNovos.map((r) => { const f = fotos[r]; return [r, f instanceof File ? [f.name, f.size] : f?.path]; })]));
       // Foto já enviada nesta abertura reaproveita o caminho: a repetição mantém o pedido (hash) da chave.
       const caminhos: Record<string, string> = {};
       for (const rotulo of rotulosNovos) {
         const file = fotos[rotulo];
+        // Foto gerada por IA e aprovada já está no storage da org.
+        if (!(file instanceof File)) { caminhos[rotulo] = file.path; continue; }
         const ja = enviadas.current.get(rotulo);
         if (ja?.file === file) { caminhos[rotulo] = ja.path; continue; }
         const path = await enviarFotoKit(`kit-variacao-${chave}`, rotulo, file);
@@ -383,19 +389,12 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
                       {rotulosNovos.length > 0 && (
                         <div className="grid gap-2 sm:grid-cols-2">
                           {rotulosNovos.map((rotulo) => (
-                            <label key={rotulo} className={cn('flex items-center gap-3 rounded-md border p-2 text-sm', !fotos[rotulo] && 'border-dashed')}>
-                              <span className="min-w-0 flex-1">
-                                <span className="block truncate font-medium">Foto de {rotulo}</span>
-                                <span className="block text-xs text-muted-foreground">{fotos[rotulo]?.name ?? 'Escolher arquivo'}</span>
-                              </span>
-                              <input
-                                type="file" accept="image/*" className="sr-only" aria-label={`Foto ${rotulo}`}
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0];
-                                  if (file) setFotos((p) => ({ ...p, [rotulo]: file }));
-                                }}
-                              />
-                            </label>
+                            <FotoCombinacao
+                              key={rotulo} rotulo={rotulo} titulo={`Foto de ${rotulo}`}
+                              cores={novos.find((n) => n.rotulo === rotulo)!.cores} familiaBaseId={baseId}
+                              temImagemIA={temImagemIA} valor={fotos[rotulo]}
+                              onChange={(f) => setFotos((p) => ({ ...p, [rotulo]: f }))}
+                            />
                           ))}
                         </div>
                       )}

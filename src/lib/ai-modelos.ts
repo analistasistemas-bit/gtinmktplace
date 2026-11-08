@@ -15,8 +15,10 @@ export const MODELOS_TEXTO: OpcaoModeloIA[] = [
   { slug: 'openai/gpt-4o-mini', label: 'GPT-4o-mini (mais barato)', precoLabel: '$0,15 / $0,60 por 1M tokens' },
 ];
 
-// Dormente: nenhuma feature consome geração de imagem ainda (ADR-0074).
+// Geração da foto do kit com variação (ADR-0197, Task 15). O primeiro é o padrão (org sem escolha). Todo slug aqui
+// precisa estar no check `configuracoes_ai_model_imagem_check` e em PRECOS (teste em _shared/ai/__tests__/imagem.test.ts).
+// Teste de 07/11 (mesmas fotos e pedido): Nano Banana 2.1 manteve a modelagem; o 2.5 Flash Image mudou a peça.
 export const MODELOS_IMAGEM: OpcaoModeloIA[] = [
-  { slug: 'google/gemini-2.5-flash-image', label: 'Gemini 2.5 Flash Image (Nano Banana)', precoLabel: '$0,30 / $2,50 por 1M tokens' },
-  { slug: 'google/gemini-3.1-flash-image-preview', label: 'Gemini 3.1 Flash Image Preview', precoLabel: 'Novo (Preview)' },
+  { slug: 'google/gemini-nano-banana-2.1', label: 'Gemini Nano Banana 2.1 (padrão)', precoLabel: '~US$ 0,041 por imagem' },
+  { slug: 'google/gemini-2.5-flash-image', label: 'Gemini 2.5 Flash Image (pode alterar a peça)', precoLabel: '~US$ 0,039 por imagem' },
 ];

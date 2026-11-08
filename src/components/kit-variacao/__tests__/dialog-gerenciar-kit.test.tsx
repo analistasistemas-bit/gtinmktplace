@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DialogGerenciarKit } from '../dialog-gerenciar-kit';
-import { adicionarAoKitEdge, enviarFotoKit, gerenciarKitEdge, type KitVariacaoResumo } from '@/lib/kit-variacao-edge';
+import { adicionarAoKitEdge, enviarFotoKit, gerarFotoKitEdge, gerenciarKitEdge, type KitVariacaoResumo } from '@/lib/kit-variacao-edge';
 
 const detalhe = {
   data: {
@@ -23,7 +23,10 @@ vi.mock('@/lib/kit-variacao-edge', () => ({
   gerenciarKitEdge: vi.fn(async () => ({ ok: true })),
   adicionarAoKitEdge: vi.fn(async () => ({ ok: true })),
   enviarFotoKit: vi.fn(async (pasta: string, rotulo: string) => `ORG/${pasta}/${rotulo}.jpg`),
+  gerarFotoKitEdge: vi.fn(async (p: { requestId: string }) => ({ ok: true, path: `ORG/kit-variacao-ia/${p.requestId}.png`, url: 'https://x/g.png' })),
 }));
+const modulos = { data: ['kit_variacao'] as string[] };
+vi.mock('@/hooks/useModulosHabilitados', () => ({ useModulosHabilitados: () => modulos }));
 // Base: Preto, Branco e Marrom em M, G e GG. Preto M tem só 3 peças.
 const peca = (codigo: string, cor: string, tamanho: string, estoque: number) => ({ codigo, cor, tamanho, estoque, excluidaDaPublicacao: false });
 const base = {
@@ -56,6 +59,7 @@ describe('DialogGerenciarKit', () => {
     vi.mocked(adicionarAoKitEdge).mockClear();
     vi.mocked(enviarFotoKit).mockClear();
     detalhe.data.abertas = [];
+    modulos.data = ['kit_variacao'];
   });
 
   it('mostra o saldo por combinação e tamanho', () => {
@@ -208,6 +212,23 @@ describe('DialogGerenciarKit', () => {
       });
       expect(chamada.chaveCadastro).toBeTruthy();
       expect(gerenciarKitEdge).not.toHaveBeenCalled();
+    });
+
+    it('com imagem_ia, a combinação nova pode usar foto gerada, só depois de aprovada', async () => {
+      modulos.data = ['kit_variacao', 'imagem_ia'];
+      const user = userEvent.setup();
+      await abrirNovo(user);
+      await user.type(screen.getByLabelText('Nova Preto e Marrom M'), '1');
+      await user.click(screen.getByRole('button', { name: 'Gerar foto Preto e Marrom' }));
+      await screen.findByRole('img', { name: 'Foto gerada Preto e Marrom' });
+      expect(vi.mocked(gerarFotoKitEdge).mock.calls.at(-1)![0]).toMatchObject({ familiaBaseId: 'FAM-BASE', cores: ['Preto', 'Marrom'] });
+      expect(screen.getByRole('button', { name: 'Montar mais' })).toBeDisabled();
+      await user.click(screen.getByRole('button', { name: 'Usar foto gerada Preto e Marrom' }));
+      await user.click(screen.getByRole('button', { name: 'Montar mais' }));
+      await user.click(screen.getByRole('button', { name: 'Montar' }));
+      await waitFor(() => expect(adicionarAoKitEdge).toHaveBeenCalledTimes(1));
+      expect(vi.mocked(adicionarAoKitEdge).mock.calls[0][0].fotos['Preto e Marrom']).toMatch(/^ORG\/kit-variacao-ia\//);
+      expect(enviarFotoKit).not.toHaveBeenCalled();
     });
 
     it('tamanho novo de combinação publicada usa a foto dela (sem envio)', async () => {

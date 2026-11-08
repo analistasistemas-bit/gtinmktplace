@@ -14,7 +14,7 @@ export function SecaoIA() {
   return (
     <SettingsGroup
       titulo="Modelo de IA"
-      descricao="Modelo usado para gerar título, descrição, categoria e atributos dos anúncios (via OpenRouter)."
+      descricao="Modelos usados para gerar o conteúdo dos anúncios e a foto do kit com variação (via OpenRouter)."
       aviso={!podeEditarConfig && <AvisoLeitura>Só um administrador troca o modelo.</AvisoLeitura>}
     >
       <SettingsRow
@@ -40,16 +40,16 @@ export function SecaoIA() {
 
       <SettingsRow
         titulo="Imagem"
-        descricao="Ainda não é usado por nenhuma feature — fica reservado para quando a geração de imagem existir."
+        descricao="Gera a foto de cada combinação do kit com variação, em empresa com a geração de imagem por IA habilitada."
         estado={<EstadoSalvo estado={estadoDeMutation(salvarImagem)} />}
       >
         <Select
-          value={modeloImagem ?? undefined}
+          value={modeloImagem ?? MODELOS_IMAGEM[0].slug}
           onValueChange={(v) => salvarImagem.mutate(v)}
           disabled={!podeEditarConfig}
         >
           <SelectTrigger aria-label="Modelo de imagem" className="h-8 w-[300px] max-w-full text-sm">
-            <SelectValue placeholder="Selecione um modelo" />
+            <SelectValue />
           </SelectTrigger>
           <SelectContent>
             {MODELOS_IMAGEM.map((m) => (

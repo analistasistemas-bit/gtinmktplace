@@ -15,16 +15,16 @@ import { gradeDaFamilia } from '../_shared/produto/tipos-produto-valores.ts';
 import { exigirFiscalCompletoSePreciso, type FamiliaFiscalRow } from '../_shared/fiscal/gate.ts';
 import { derivarCodigos, codigosJaUsados } from '../_shared/produto/codigos.ts';
 import { comRetryConcorrencia } from '../_shared/estoque/baixa.ts';
-import { caminhoMultiget, comoEnvelopeAntigo } from '../_shared/ml/multiget.ts';
 import { enfileirarSaga } from '../_shared/queue.ts';
 import { EMBED_MODULOS } from '../_shared/kit-variacao/politica.ts';
 import { lerOferta } from '../_shared/kit-variacao/ml-oferta.ts';
 import { AVISO_SELETOR_ML } from '../_shared/kit-variacao/combinacoes.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import {
-  adicionarAoKit, criarKitVariacao, itensPorFoto, moderadosDoBulk, type AdicionarKitInput, type CriarKitVariacaoInput,
+  adicionarAoKit, criarKitVariacao, type AdicionarKitInput, type CriarKitVariacaoInput,
   type DepsCriarKitVariacao, type ResultadoRpcKit,
 } from './processar.ts';
+import { fotosEmItemModerado } from './fotos-moderadas.ts';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -117,57 +117,8 @@ function portas(admin: SupabaseClient, orgId: string, userId: string): DepsCriar
 
     lerOferta: async (upId, itemIds) => lerOferta((await ml()).token, upId, itemIds),
 
-    // Foto → itens que a usam (`itensPorFoto`: Legacy, principal e cópias de catálogo) → status lido no ML agora,
-    // com leitura completa (`moderadosDoBulk` lança se faltar item). Qualquer falha lança e a edge recusa.
-    async fotosEmItemModerado(paths) {
-      const vs = await ler(admin.from('variacoes').select('codigo, imagem_path, catalog_listing_id, familias!inner(ml_item_id)')
-        .eq('org_id', orgId).in('imagem_path', paths), 'fotos de variação') ?? [];
-      const capas: Array<{ path: string; codigo_pai: string; ml_item_id: string | null }> = [];
-      for (const coluna of ['capa_storage_path', 'capa2_storage_path', 'capa3_storage_path']) {
-        const fs = await ler(admin.from('familias').select('*').eq('org_id', orgId).in(coluna, paths), 'fotos de capa') as Linha[] | null;
-        capas.push(...(fs ?? []).map((f) => ({
-          path: f[coluna] as string, codigo_pai: f.codigo_pai as string, ml_item_id: (f.ml_item_id as string | null) ?? null,
-        })));
-      }
-      const skus = [...new Set(vs.map((v) => v.codigo as string))];
-      const pais = [...new Set(capas.map((f) => f.codigo_pai))];
-      const filhos: Linha[] = [];
-      const colunas = 'sku, item_externo_id, catalog_listing_id, anuncios_externos!inner(codigo_pai)';
-      if (skus.length > 0) {
-        filhos.push(...await ler(admin.from('anuncios_externos_itens').select(colunas).eq('org_id', orgId)
-          .in('sku', skus), 'itens das fotos de variação') ?? []);
-      }
-      if (pais.length > 0) {
-        filhos.push(...await ler(admin.from('anuncios_externos_itens').select(colunas).eq('org_id', orgId)
-          .in('anuncios_externos.codigo_pai', pais), 'itens das fotos de capa') ?? []);
-      }
-      const umDe = (x: unknown) => (Array.isArray(x) ? x[0] : x) as Linha | null | undefined;
-      const itensPorPath = itensPorFoto({
-        variacoes: vs.map((v) => ({
-          imagem_path: v.imagem_path as string, codigo: v.codigo as string,
-          familia_ml_item_id: (umDe(v.familias)?.ml_item_id as string | null) ?? null,
-          catalog_listing_id: (v.catalog_listing_id as string | null) ?? null,
-        })),
-        capas,
-        filhos: filhos.map((f) => ({
-          sku: f.sku as string, codigo_pai: (umDe(f.anuncios_externos)?.codigo_pai as string | null) ?? null,
-          item_externo_id: (f.item_externo_id as string | null) ?? null, catalog_listing_id: (f.catalog_listing_id as string | null) ?? null,
-        })),
-      });
-      const ids = [...new Set([...itensPorPath.values()].flatMap((x) => [...x]))];
-      if (ids.length === 0) return [];
-      const { token } = await ml();
-      const moderados = new Set<string>();
-      for (let i = 0; i < ids.length; i += 20) {
-        const bloco = ids.slice(i, i + 20);
-        const resp = await fetch(`https://api.mercadolibre.com${caminhoMultiget(bloco, 'id,status,sub_status')}`, {
-          headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000),
-        });
-        if (!resp.ok) throw new Error(`ML /items/bulk ${resp.status}`);
-        for (const id of moderadosDoBulk(bloco, comoEnvelopeAntigo(await resp.json(), bloco))) moderados.add(id);
-      }
-      return [...itensPorPath].filter(([, itens]) => [...itens].some((id) => moderados.has(id))).map(([p]) => p);
-    },
+    // Foto → itens que a usam → status lido no ML agora (`fotos-moderadas.ts`, compartilhado com `gerar-foto-kit`).
+    fotosEmItemModerado: (paths) => fotosEmItemModerado(admin, orgId, async () => (await ml()).token, paths),
 
     exigirFiscal: async (familia) => { await exigirFiscalCompletoSePreciso(admin, familia as unknown as FamiliaFiscalRow); },
     lerSchema: async (categoriaId) => lerSchemaAtributos((await ml()).token, categoriaId),

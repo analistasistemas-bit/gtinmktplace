@@ -25,6 +25,7 @@ import {
 import { criarKitVariacaoEdge, enviarFotoKit, gerarTextoKitEdge } from '@/lib/kit-variacao-edge';
 import { SimuladorKit } from '@/components/kit-variacao/simulador-kit';
 import { ExplicacaoReposicao } from '@/components/kit-variacao/explicacao-reposicao';
+import { FotoCombinacao, type FotoKit } from '@/components/kit-variacao/foto-combinacao';
 
 const PECAS = [2, 3, 4, 5, 6];
 const TITULO_MAX = 60;
@@ -64,7 +65,7 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
   const [titulo, setTitulo] = useState('');
   const [descricao, setDescricao] = useState('');
   const [previaId, setPreviaId] = useState<string | undefined>();
-  const [fotos, setFotos] = useState<Record<string, File>>({});
+  const [fotos, setFotos] = useState<Record<string, FotoKit>>({});
   const [soEmKit, setSoEmKit] = useState(false);
   const [meta, setMeta] = useState('3');
   const [podeSeguir, setPodeSeguir] = useState(false);
@@ -139,6 +140,8 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
       for (const c of combinacoesPublicadas) {
         const rotulo = rotuloCombinacao(c);
         const file = fotos[rotulo];
+        // Foto gerada por IA e aprovada já está no storage da org.
+        if (!(file instanceof File)) { caminhos[rotulo] = file.path; continue; }
         const ja = enviadas.current.get(rotulo);
         if (ja?.file === file) { caminhos[rotulo] = ja.path; continue; }
         const path = await enviarFotoKit(`kit-variacao-${chave.current}`, rotulo, file);
@@ -376,27 +379,16 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
                 <span className="text-sm font-medium">Foto de cada combinação</span>
                 <p className="text-xs text-muted-foreground">
                   No Mercado Livre a cor define a foto: cada combinação precisa da sua.
-                  {temImagemIA && ' A geração da foto por IA ainda não está disponível nesta tela; envie a foto.'}
+                  {temImagemIA && ' Gere por IA a partir das fotos das cores ou envie a sua. A foto gerada só vale depois de aprovada.'}
                 </p>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {combinacoesPublicadas.map((c) => {
                     const rotulo = rotuloCombinacao(c);
-                    const f = fotos[rotulo];
                     return (
-                      <label key={rotulo} className={cn('flex items-center gap-3 rounded-md border p-2 text-sm', !f && 'border-dashed')}>
-                        <FotoMiniatura file={f} />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate font-medium">{rotulo}</span>
-                          <span className="block text-xs text-muted-foreground">{f ? f.name : 'Escolher arquivo'}</span>
-                        </span>
-                        <input
-                          type="file" accept="image/*" className="sr-only" aria-label={`Foto ${rotulo}`}
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) setFotos((p) => ({ ...p, [rotulo]: file }));
-                          }}
-                        />
-                      </label>
+                      <FotoCombinacao
+                        key={rotulo} rotulo={rotulo} cores={c} familiaBaseId={familiaBaseId} temImagemIA={temImagemIA}
+                        valor={fotos[rotulo]} onChange={(f) => setFotos((p) => ({ ...p, [rotulo]: f }))}
+                      />
                     );
                   })}
                 </div>
@@ -448,17 +440,4 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
       </DialogContent>
     </Dialog>
   );
-}
-
-function FotoMiniatura({ file }: { file?: File }) {
-  const [url, setUrl] = useState<string | null>(null);
-  useEffect(() => {
-    if (!file || typeof URL.createObjectURL !== 'function') { setUrl(null); return; }
-    const u = URL.createObjectURL(file);
-    setUrl(u);
-    return () => URL.revokeObjectURL(u);
-  }, [file]);
-  return url
-    ? <img src={url} alt="" className="h-12 w-12 shrink-0 rounded object-cover" />
-    : <span aria-hidden className="h-12 w-12 shrink-0 rounded bg-muted" />;
 }
