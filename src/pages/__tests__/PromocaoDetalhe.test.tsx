@@ -112,17 +112,21 @@ describe('PromocaoDetalhe', () => {
     expect(screen.getAllByText('Já participa em outro horário').length).toBeGreaterThan(0);
   });
 
-  it('convite de outro horário marcado em Convidados segue Aderir ao trocar de aba, nunca vira Sair (revisão Gemini)', async () => {
+  it('convite de outro horário marcado em Convidados segue Aderir ao trocar de aba e no Selecionar todos (revisões Gemini e Grok)', async () => {
     const user = userEvent.setup();
     vi.mocked(usePromocoes).mockReturnValue({ data: [{ ...promo, tipo: 'LIGHTNING' }], isLoading: false } as never);
     const comConvite = { ...item, ml_item_id: 'MLB9', titulo: 'Máscara', status: 'pending', convite_aberto: true } as ItemPromocao;
-    vi.mocked(useItensPromocao).mockReturnValue({ data: [comConvite], isLoading: false } as never);
+    const outro = { ...item, ml_item_id: 'MLB8', titulo: 'Shampoo', status: 'pending' } as ItemPromocao;
+    vi.mocked(useItensPromocao).mockReturnValue({ data: [comConvite, outro], isLoading: false } as never);
     renderDetalhe();
     await user.click(screen.getAllByRole('checkbox', { name: /Selecionar.*MLB9/ })[0]);
     expect(screen.getByRole('button', { name: /Aderir 1/ })).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'Participando' }));
     expect(screen.queryByRole('button', { name: /Sair 1/ })).toBeNull();
     expect(screen.getByRole('button', { name: /Aderir 1/ })).toBeInTheDocument();
+    await user.click(screen.getAllByRole('checkbox', { name: 'Selecionar todos' })[0]);
+    expect(screen.getByRole('button', { name: /Aderir 1/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Sair 1/ })).toBeInTheDocument();
   });
 
   it('renderiza a tabela com uma linha que tem ml_pct sem erro de TooltipProvider', () => {

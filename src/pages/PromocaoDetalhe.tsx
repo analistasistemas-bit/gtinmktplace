@@ -210,7 +210,8 @@ export default function PromocaoDetalhe() {
     });
   }
   function alternarTodos(marcar: boolean) {
-    marcarConvites(linhas.map((r) => r.ml_item_id), marcar);
+    // Só quem muda de estado: o convite já marcado na outra aba mantém a ação dela (revisão Grok).
+    marcarConvites(linhas.filter((r) => marcar !== selecionados.has(r.ml_item_id)).map((r) => r.ml_item_id), marcar);
     setSelecionados((prev) => {
       const novo = new Set(prev);
       for (const r of linhas) { if (marcar) novo.add(r.ml_item_id); else novo.delete(r.ml_item_id); }

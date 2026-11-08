@@ -97,7 +97,8 @@ export function criarClienteML(token: string, f: typeof fetch = fetch, esperar: 
       const da = lista(await lerComRetry(path, '/seller-promotions/items', (j) => j))
         .filter((p) => p.id === promocaoId && p.type === 'LIGHTNING');
       // Um horário participando e outro convidado: faixa e stock.min são os do convite.
-      const x = (offerId ? da.find((p) => p.ref_id === offerId) : undefined) ?? da.find((p) => p.status === 'candidate') ?? da[0];
+      // Depois do POST, só a oferta criada: ainda não visível → sem janela, nunca a de outro horário (revisão Grok).
+      const x = offerId ? da.find((p) => p.ref_id === offerId) : da.find((p) => p.status === 'candidate') ?? da[0];
       if (!x) return null;
       return { preco_min: num(x.min_discounted_price), preco_max: num(x.max_discounted_price),
         preco_sugerido: num(x.suggested_discounted_price), estoque_min: num(obj(x.stock).min),

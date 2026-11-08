@@ -178,8 +178,10 @@ describe('lerOfertaNoItem', () => {
       { id: 'LGH-1', type: 'LIGHTNING', status: 'candidate', ref_id: 'CANDIDATE-MLB1-9', max_discounted_price: 25 },
       { id: 'LGH-1', type: 'LIGHTNING', status: 'pending', ref_id: 'OFFER-MLB1-2', start_date: '2026-11-12T00:00:00', finish_date: '2026-11-12T11:59:59' },
     ];
-    const ml = criarClienteML('tok', vi.fn().mockResolvedValue(resp(200, corpo)), semEspera());
+    const ml = criarClienteML('tok', vi.fn(async () => resp(200, corpo)), semEspera());
     expect(await ml.lerOfertaNoItem('LGH-1', 'MLB1', 'OFFER-MLB1-2')).toMatchObject({ inicio: '2026-11-12T00:00:00', fim: '2026-11-12T11:59:59' });
+    // Oferta criada ainda não visível: sem janela, nunca a de outro horário (revisão Grok).
+    expect(await ml.lerOfertaNoItem('LGH-1', 'MLB1', 'OFFER-MLB1-3')).toBeNull();
   });
 
   it('filtra a Relâmpago pelo id e tipo; URL da visão por item', async () => {
