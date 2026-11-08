@@ -328,7 +328,7 @@ create or replace function public.kit_variacao_encerrar(p_org uuid, p_kit uuid, 
 returns jsonb language plpgsql set search_path = ''
 as $$
 declare v_kit public.kits_variacao%rowtype; v_skus text[]; v_alvos jsonb; v_sem_alvo text[]; v_cod text;
-        v_t jsonb; v_id uuid; v_r jsonb; v_antes text;
+        v_t jsonb; v_id uuid; v_r jsonb; v_antes text; v_tmp uuid;
 begin
   perform 1 from public.organizations where id = p_org and 'kit_variacao' = any(modulos_habilitados) for share;
   if not found then
@@ -358,29 +358,37 @@ begin
     return jsonb_build_object('ok', false, 'motivo', 'transferencia_aberta');
   end if;
 
-  -- Saldo da variação canônica de cada SKU, travado contra baixa/estorno em voo (que travam a mesma linha).
-  select c into v_cod from unnest(v_skus) c
-  where coalesce((select v.estoque from public.variacoes v join public.familias f on f.id = v.familia_id
-                  where v.org_id = p_org and v.codigo = c order by f.criado_em desc, f.id desc limit 1
-                  for share of v), 0) <> 0
-  order by c limit 1;
-  if v_cod is not null then
-    return jsonb_build_object('ok', false, 'motivo', 'saldo', 'codigo', v_cod);
-  end if;
-
-  -- Alvos do vínculo local, nunca da edge: um por SKU com UP, item + cópia de catálogo.
-  v_alvos := coalesce((
-    select jsonb_agg(jsonb_build_object('codigo', i.sku, 'up_id', i.user_product_id,
-             'item_ids', to_jsonb(array_remove(array[i.item_externo_id, i.catalog_listing_id], null))) order by i.sku)
-    from (select distinct on (x.sku) x.sku, x.user_product_id, x.item_externo_id, x.catalog_listing_id
-          from public.anuncios_externos_itens x
-          where x.org_id = p_org and x.sku = any(v_skus) and x.user_product_id is not null and x.item_externo_id is not null
-          order by x.sku, x.retirado, x.atualizado_em desc) i), '[]'::jsonb);
-  v_sem_alvo := array(select c from unnest(v_skus) c
-                      where not exists (select 1 from jsonb_array_elements(v_alvos) a where a->>'codigo' = c) order by c);
-
   v_antes := v_kit.status;
   begin
+    -- Ordem de locks: org, kit, EXCLUSÕES, só então o saldo. A republicação pega a exclusão e depois a variação; pegar
+    -- a variação antes da exclusão aqui fecharia um ciclo. Dono só desta transação; a transferência pega as dela.
+    v_tmp := gen_random_uuid();
+    v_r := public.kit_adquirir_exclusao(p_org, v_skus, 'transferencia', v_tmp);
+    if not coalesce((v_r->>'ok')::boolean, false) then
+      raise exception 'up_ocupado:%', coalesce(v_r->>'codigo', v_r->>'motivo') using errcode = 'KX040';
+    end if;
+
+    -- Saldo da variação canônica de cada SKU, travado contra baixa/estorno em voo (que travam a mesma linha).
+    select c into v_cod from unnest(v_skus) c
+    where coalesce((select v.estoque from public.variacoes v join public.familias f on f.id = v.familia_id
+                    where v.org_id = p_org and v.codigo = c order by f.criado_em desc, f.id desc limit 1
+                    for share of v), 0) <> 0
+    order by c limit 1;
+    if v_cod is not null then
+      raise exception 'saldo:%', v_cod using errcode = 'KX040';
+    end if;
+
+    -- Alvos do vínculo local, lidos sob a exclusão e nunca vindos da edge: um por SKU com UP, item + cópia de catálogo.
+    v_alvos := coalesce((
+      select jsonb_agg(jsonb_build_object('codigo', i.sku, 'up_id', i.user_product_id,
+               'item_ids', to_jsonb(array_remove(array[i.item_externo_id, i.catalog_listing_id], null))) order by i.sku)
+      from (select distinct on (x.sku) x.sku, x.user_product_id, x.item_externo_id, x.catalog_listing_id
+            from public.anuncios_externos_itens x
+            where x.org_id = p_org and x.sku = any(v_skus) and x.user_product_id is not null and x.item_externo_id is not null
+            order by x.sku, x.retirado, x.atualizado_em desc) i), '[]'::jsonb);
+    v_sem_alvo := array(select c from unnest(v_skus) c
+                        where not exists (select 1 from jsonb_array_elements(v_alvos) a where a->>'codigo' = c) order by c);
+
     update public.kits_variacao set status = 'encerrando', reposicao_auto = false, versao = versao + 1
     where id = p_kit returning * into v_kit;
 
@@ -390,19 +398,16 @@ begin
       if v_antes = 'publicado' then
         raise exception 'sem_vinculo' using errcode = 'KX040';
       end if;
-      -- Nada chegou ao ML: encerra aqui mesmo. A exclusão de todos os SKUs (dono só desta transação) recusa
-      -- publicação em curso, que a segura até confirmar o resultado; a nova espera o lock do kit (guarda acima).
-      v_id := gen_random_uuid();
-      v_r := public.kit_adquirir_exclusao(p_org, v_skus, 'transferencia', v_id);
-      if not coalesce((v_r->>'ok')::boolean, false) then
-        raise exception 'up_ocupado:%', coalesce(v_r->>'codigo', v_r->>'motivo') using errcode = 'KX040';
-      end if;
+      -- Nada chegou ao ML: encerra aqui mesmo, sob a exclusão (publicação em curso já recusou acima).
       v_r := public.kit_encerrar_aplicar(p_org, p_kit);
-      delete from public.kit_exclusoes where org_id = p_org and dono_id = v_id;
+      delete from public.kit_exclusoes where org_id = p_org and dono_id = v_tmp;
       return jsonb_build_object('ok', true, 'encerrado', true, 'normais', v_r->'normais',
         'versao', (select versao from public.kits_variacao where id = p_kit));
     end if;
 
+    -- A transferência pega as exclusões com o próprio id. As desta transação saem antes, na mesma transação: quem
+    -- esperava por elas continua esperando o commit e então vê as da transferência.
+    delete from public.kit_exclusoes where org_id = p_org and dono_id = v_tmp;
     v_t := public.kit_criar_transferencia(p_org, p_kit, 'encerrar',
       (select jsonb_agg(jsonb_build_object('codigo', a->>'codigo', 'quantidade', 0) order by a->>'codigo')
        from jsonb_array_elements(v_alvos) a),
@@ -420,7 +425,7 @@ begin
     end if;
     update public.kit_transferencias set passo = 'fechar' where id = v_id;
   exception when sqlstate 'KX040' then
-    -- Tudo desta operação é desfeito (status, versão, transferência e exclusões).
+    -- Tudo desta operação é desfeito (exclusões, status, versão e transferência).
     return jsonb_build_object('ok', false, 'motivo', split_part(sqlerrm, ':', 1), 'codigo', nullif(split_part(sqlerrm, ':', 2), ''));
   end;
 

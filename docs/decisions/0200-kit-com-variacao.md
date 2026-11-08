@@ -146,9 +146,10 @@ kit de Publicados e devolve as peças da base ao estado Normal, sem apagar varia
    os anúncios do kit no Mercado Livre. Não dá para desfazer." Habilitada só com saldo 0 em todos os SKUs do kit e
    nenhuma transferência do kit aberta (ativa ou travada). Com saldo, a tela diz "Desmonte antes" e oferece desmontar
    tudo (o Desmontar de sempre, com todo o saldo).
-2. **RPC `kit_variacao_encerrar(p_org, p_kit, p_versao)`**, uma transação: org `for share` com o módulo revalidado
-   (contrato de `set_modulos_org_seguro`), kit `for update` com CAS de `versao`; recusa `saldo` (variação canônica de
-   cada SKU do kit lida `for share`, desempate `criado_em desc, id desc`), `transferencia_aberta` (do kit, ou que
+2. **RPC `kit_variacao_encerrar(p_org, p_kit, p_versao)`**, uma transação, com a ordem de locks org (`for share`, módulo
+   revalidado: contrato de `set_modulos_org_seguro`), kit (`for update`, CAS de `versao`), exclusões de todos os SKUs
+   do kit e só então o saldo (a republicação pega exclusão e depois variação; a ordem inversa fecharia um ciclo);
+   recusa `saldo` (variação canônica de cada SKU do kit lida `for share`, desempate `criado_em desc, id desc`), `transferencia_aberta` (do kit, ou que
    liste um SKU do kit) e `up_ocupado` (exclusão de outro dono). Repetição com o kit já `encerrando` devolve a
    transferência existente; já `encerrado`, ok sem efeito. Grava `status='encerrando'`, `reposicao_auto=false` e
    `versao+1` (invalida jobs e telas antigas) e cria a transferência `encerrar` por `kit_criar_transferencia`, sem
