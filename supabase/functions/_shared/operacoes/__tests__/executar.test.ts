@@ -1082,6 +1082,7 @@ describe('ofertas de preço fixo', () => {
       expect(itens[0]).toMatchObject({ status: 'mudou', mensagem: 'O ML ainda mostra este anúncio como convidado. Se aderiu agora há pouco, aguarde 2 minutos e tente de novo.' });
       expect(ml.del).not.toHaveBeenCalled();
       expect(deps.espelharStatusCentral).not.toHaveBeenCalled();
+      expect(deps.espelharPreco).not.toHaveBeenCalled();
     });
 
     it('4xx claro → erro com a mensagem do ML', async () => {

@@ -230,7 +230,7 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar, p
       if (!(await encerrar({ status: d.status, mensagem: d.mensagem }))) return;
       // Oferta fixa com preço novo no ML: a Central (fonte do preview) recebe o preço vivo, senão toda nova
       // tentativa sai com o preço velho e cai em `mudou` de novo até o sync do dia seguinte.
-      if (fixa && d.status === 'mudou' && fresco?.status === 'candidate' && fresco.preco != null) {
+      if (op.acao === 'aderir' && fixa && d.status === 'mudou' && fresco?.status === 'candidate' && fresco.preco != null) {
         await deps.espelharPreco(op.promocao_id, id, fresco.preco, ['candidate']).catch(() => {});
       }
       return;
