@@ -62,7 +62,7 @@ do $$
 declare
   c record; r jsonb; r2 jsonb; t uuid; tok uuid := gen_random_uuid(); o bigint;
   P constant text := '09900001'; B constant text := '09900002'; K constant text := '09910001';
-  kit jsonb := '{"codigo_pai_base":"09900000","codigo_pai_kit":"09910000","pecas_por_kit":2,"preco":99.9,"meta":0,"listing_type_id":"gold_pro"}';
+  kit jsonb := '{"codigo_pai_base":"09900000","codigo_pai_kit":"09910000","pecas_por_kit":2,"preco":99.9,"meta":0,"listing_type_id":"gold_pro","pedido_hash":"H1"}';
   skus jsonb := '[{"codigo":"09910001","tamanho":"M","cores":["Preto","Branco"],"rotulo_cor":"Preto e Branco",
                    "quantidade":2,"componentes":[{"codigo":"09900001","quantidade":1},{"codigo":"09900002","quantidade":1}]}]';
   alvos jsonb := '[{"codigo":"09900001","up_id":"UP-P","item_ids":["MLB-P"]},
@@ -115,6 +115,11 @@ begin
   perform pg_temp.afirmar((r2->>'existente')::boolean and r2->>'kit_id' = r->>'kit_id' and r2->>'transferencia_id' = t::text,
     'idempotência: ' || r2::text);
   perform pg_temp.afirmar(pg_temp.linhas(c.org) = '1/1/3/1/3', 'repetição gravou de novo');
+  -- Mesma chave com outro pedido: recusa sem tocar no kit.
+  r2 := public.kit_variacao_criar(c.org, c.chave, kit || '{"pedido_hash":"H2","preco":109.9}', skus,
+    '[{"codigo":"09900001","ml":5},{"codigo":"09900002","ml":5}]', alvos);
+  perform pg_temp.afirmar(r2->>'motivo' = 'pedido_diferente', 'pedido diferente aceito: ' || r2::text);
+  perform pg_temp.afirmar((select preco = 99.9 and pedido_hash = 'H1' from public.kits_variacao where org_id = c.org), 'kit alterado');
 
   -- Item criado gravado uma vez só: a segunda gravação não troca o item.
   perform pg_temp.afirmar(public.kit_reivindicar_execucao(c.org, t, tok, 60), 'claim');

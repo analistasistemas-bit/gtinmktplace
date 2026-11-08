@@ -56,6 +56,8 @@ export interface ResultadoRpcKit {
 
 /** Cadastro parcial de uma tentativa anterior com a mesma chave (família gravada, kit não). */
 export interface CadastroParcial {
+  /** `familias.kit_variacao_pedido`: hash do pedido da tentativa que gravou. */
+  pedidoHash: string | null;
   familiaId: string;
   loteId: string;
   codigoPai: string;
@@ -70,7 +72,7 @@ export interface DepsCriarKitVariacao {
   lerBase(familiaId: string): Promise<BaseKit | null>;
   /** Família do kit já gravada por uma tentativa anterior com a mesma chave (`familias.chave_cadastro`). */
   parcial(chave: string): Promise<CadastroParcial | null>;
-  existente(chave: string): Promise<{ kitId: string; transferenciaId: string | null } | null>;
+  existente(chave: string): Promise<{ kitId: string; transferenciaId: string | null; pedidoHash: string | null } | null>;
   lerOferta(upId: string, itemIds: string[]): Promise<OfertaUP>;
   /** Caminhos de foto usados por algum item moderado (`under_review`, `forbidden`, `waiting_for_patch`), lido no ML. */
   fotosEmItemModerado(paths: string[]): Promise<string[]>;
@@ -164,6 +166,26 @@ export function fotoDaOrg(path: string, orgId: string, usuariosDaOrg: Set<string
   return partes[0] === orgId || usuariosDaOrg.has(partes[0]);
 }
 
+export const MSG_PEDIDO_DIFERENTE = 'Pedido diferente para a mesma chave: este cadastro já foi iniciado com outros dados. '
+  + 'Recarregue a tela e confira o kit antes de criar de novo.';
+
+/**
+ * Hash do pedido (SHA-256 de JSON canônico): base, cores, peças, preço, combinações com quantidade (como conjunto),
+ * título, descrição, fotos, meta, tipo de anúncio e "Vender só em kit".
+ */
+export async function pedidoHash(
+  input: CriarKitVariacaoInput, combinacoes: Array<{ rotulo: string; tamanho: string; quantidade: number }>,
+): Promise<string> {
+  const canonico = JSON.stringify([
+    input.familiaBaseId, input.cores, input.pecasPorKit, input.preco,
+    combinacoes.map((c) => [c.rotulo, c.tamanho, c.quantidade]).sort((a, b) => String(a).localeCompare(String(b))),
+    input.titulo.trim(), input.descricao, Object.entries(input.fotos ?? {}).sort(([a], [b]) => a.localeCompare(b)),
+    input.meta, input.listingTypeId ?? 'gold_special', input.soEmKit,
+  ]);
+  const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonico)));
+  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 interface Combinacao { cores: string[]; rotulo: string; tamanho: string; quantidade: number; componentes: Linha[] }
 
 function validarPedido(input: CriarKitVariacaoInput): string | { combinacoes: Omit<Combinacao, 'componentes'>[] } {
@@ -248,8 +270,11 @@ export async function criarKitVariacao(
   const pedido = validarPedido(input);
   if (typeof pedido === 'string') return recusa(pedido);
 
+  // A chave fica presa ao pedido: retomar com outro preço, foto ou quantidade misturaria as duas tentativas.
+  const hash = await pedidoHash(input, pedido.combinacoes);
   // Mesmo clique repetido: o kit e a transferência já existem; reenfileirar a saga é inofensivo (claim).
   const ja = await deps.existente(input.chaveCadastro);
+  if (ja && ja.pedidoHash !== hash) return recusa('pedido_diferente', MSG_PEDIDO_DIFERENTE);
   if (ja) {
     if (ja.transferenciaId) await deps.enfileirarSaga(ja.transferenciaId);
     return { ok: true, kitId: ja.kitId, transferenciaId: ja.transferenciaId ?? '', existente: true };
@@ -370,6 +395,7 @@ export async function criarKitVariacao(
   // Retomada: a mesma chave reaproveita a família e as variações que uma tentativa anterior gravou (a família
   // tem `chave_cadastro` única por org). Só o que falta é gravado; nada é apagado sem resultado definitivo.
   const parcial = await deps.parcial(input.chaveCadastro);
+  if (parcial && parcial.pedidoHash !== hash) return recusa('pedido_diferente', MSG_PEDIDO_DIFERENTE);
   if (parcial) {
     const pedidos = new Set(combinacoes.map((c) => `${c.rotulo}#${c.tamanho}`));
     const sobra = parcial.variacoes.find((v) => !pedidos.has(`${v.cor}#${v.tamanho}`));
@@ -386,9 +412,12 @@ export async function criarKitVariacao(
   const loteId = parcial?.loteId ?? await deps.gravar.lote();
   let familiaId: string | null = parcial?.familiaId ?? null;
   try {
-    familiaId ??= await deps.gravar.familia(montarFamiliaKitVariacao(familia, {
-      loteId, codigoPai, chave: input.chaveCadastro, titulo: input.titulo.trim(), descricao: input.descricao, atributos,
-    }));
+    familiaId ??= await deps.gravar.familia({
+      ...montarFamiliaKitVariacao(familia, {
+        loteId, codigoPai, chave: input.chaveCadastro, titulo: input.titulo.trim(), descricao: input.descricao, atributos,
+      }),
+      kit_variacao_pedido: hash,
+    });
     for (const [i, c] of combinacoes.entries()) {
       if (existentes.has(`${c.rotulo}#${c.tamanho}`)) continue;
       await deps.gravar.variacao(montarVariacaoKitVariacao(c, {
@@ -407,7 +436,7 @@ export async function criarKitVariacao(
     chave: input.chaveCadastro,
     kit: {
       codigo_pai_base: familia.codigo_pai, codigo_pai_kit: codigoPai, pecas_por_kit: input.pecasPorKit,
-      preco: input.preco, meta: input.meta, listing_type_id: input.listingTypeId ?? 'gold_special',
+      preco: input.preco, meta: input.meta, listing_type_id: input.listingTypeId ?? 'gold_special', pedido_hash: hash,
     },
     skus: combinacoes.map((c, i) => ({
       codigo: codigos[i], tamanho: c.tamanho, cores: c.cores, rotulo_cor: c.rotulo, quantidade: c.quantidade,
@@ -421,6 +450,7 @@ export async function criarKitVariacao(
     if (!ja?.transferenciaId) {
       return recusa('falha_gravar', `${e instanceof Error ? e.message : String(e)}. Tente de novo: o cadastro é retomado.`);
     }
+    if (ja.pedidoHash !== hash) return recusa('pedido_diferente', MSG_PEDIDO_DIFERENTE);
     r = { ok: true, kit_id: ja.kitId, transferencia_id: ja.transferenciaId, existente: true };
   }
   if (r.ok && r.existente && r.kit_id) {

@@ -44,6 +44,8 @@ function cenario() {
     schema: [] as AtributoSchema[],
     moderadas: [] as string[],
     existente: null as { kitId: string; transferenciaId: string | null } | null,
+    /** Hash gravado no kit pela RPC falsa (espelho de `kits_variacao.pedido_hash`). */
+    ultimoHash: null as string | null,
     rpc: { ok: true, kit_id: 'KIT1', transferencia_id: 'T1' } as ResultadoRpcKit,
     erroFiscal: null as string | null,
     erroModeracao: null as string | null,
@@ -61,12 +63,13 @@ function cenario() {
     orgId: 'ORG',
     usuariosDaOrg: async () => ['U1'],
     lerBase: async () => s.base,
-    existente: async () => s.existente,
+    existente: async () => (s.existente ? { ...s.existente, pedidoHash: s.ultimoHash } : null),
     // Espelho de `familias.chave_cadastro` + variações gravadas nela.
     async parcial(chave) {
       const f = s.familias.find((x) => x.chave_cadastro === chave);
       if (!f) return null;
       return {
+        pedidoHash: (f.kit_variacao_pedido as string | null) ?? null,
         familiaId: 'FAM-KIT', loteId: f.lote_id as string, codigoPai: f.codigo_pai as string,
         variacoes: s.variacoesGravadas.map((v) => ({ codigo: v.codigo as string, cor: v.cor as string, tamanho: v.tamanho as string })),
       };
@@ -96,6 +99,7 @@ function cenario() {
       variacao: async (l) => { s.variacoesGravadas.push(l); },
       async kit(a) {
         s.kits.push(a);
+        s.ultimoHash = a.kit.pedido_hash as string;
         if (s.falhasKit > 0) {
           s.falhasKit--;
           // Resultado incerto: a RPC pode ter gravado (kitGravadoNaFalha) ou não.
@@ -322,9 +326,31 @@ describe('criarKitVariacao', () => {
 
   it('mesma chave devolve o kit já criado e reenfileira, sem gravar de novo', async () => {
     const c = cenario();
+    await criarKitVariacao(c.deps, pedido());
     c.s.existente = { kitId: 'KIT1', transferenciaId: 'T1' };
     expect(await criarKitVariacao(c.deps, pedido())).toEqual({ ok: true, kitId: 'KIT1', transferenciaId: 'T1', existente: true });
-    expect(c.s.familias).toEqual([]);
+    expect(c.s.familias).toHaveLength(1);
+    expect(c.s.sagas).toEqual(['T1', 'T1']);
+  });
+
+  it('chave presa ao pedido: retomada com preço 99,90 sobre 89,90 recusa; o pedido idêntico retoma', async () => {
+    const c = cenario();
+    c.s.falhasKit = 1;
+    expect(await criarKitVariacao(c.deps, pedido({ preco: 89.9 }))).toMatchObject({ motivo: 'falha_gravar' });
+    expect(c.s.familias[0].kit_variacao_pedido).toMatch(/^[0-9a-f]{64}$/);
+    expect(await criarKitVariacao(c.deps, pedido({ preco: 99.9 }))).toMatchObject({ ok: false, motivo: 'pedido_diferente' });
+    expect(await criarKitVariacao(c.deps, pedido({ preco: 89.9, fotos: { 'Preto e Branco': 'ORG/outra.jpg' } })))
+      .toMatchObject({ motivo: 'pedido_diferente' });
+    expect([c.s.familias.length, c.s.variacoesGravadas.length, c.s.kits.length]).toEqual([1, 2, 1]);
+    expect(await criarKitVariacao(c.deps, pedido({ preco: 89.9 }))).toMatchObject({ ok: true, kitId: 'KIT1' });
+    expect(c.s.kits[1].kit).toMatchObject({ preco: 89.9, pedido_hash: c.s.familias[0].kit_variacao_pedido });
+  });
+
+  it('kit já criado: a mesma chave com outro pedido recusa sem reenfileirar', async () => {
+    const c = cenario();
+    await criarKitVariacao(c.deps, pedido({ preco: 89.9 }));
+    c.s.existente = { kitId: 'KIT1', transferenciaId: 'T1' };
+    expect(await criarKitVariacao(c.deps, pedido({ preco: 99.9 }))).toMatchObject({ ok: false, motivo: 'pedido_diferente' });
     expect(c.s.sagas).toEqual(['T1']);
   });
 });

@@ -18,6 +18,10 @@ alter table public.kits_variacao add column if not exists chave_cadastro uuid;
 alter table public.kits_variacao add column if not exists listing_type_id text not null default 'gold_special'
   check (listing_type_id in ('gold_special', 'gold_pro'));
 create unique index if not exists kits_variacao_chave_idx on public.kits_variacao (org_id, chave_cadastro);
+-- Hash do pedido que a chave criou (cores, peças, preço, quantidades, textos, fotos, meta, tipo). A mesma chave com outro
+-- pedido é recusada: a retomada nunca mistura dados de duas tentativas. Na família do kit, para a retomada do parcial.
+alter table public.kits_variacao add column if not exists pedido_hash text;
+alter table public.familias add column if not exists kit_variacao_pedido text;
 
 alter table public.kit_transferencia_alvos add column if not exists criar boolean not null default false;
 alter table public.kit_transferencia_alvos add column if not exists up_criado text;
@@ -174,6 +178,9 @@ begin
 
   select id into v_kit from public.kits_variacao where org_id = p_org and chave_cadastro = p_chave;
   if found then
+    if (select pedido_hash from public.kits_variacao where id = v_kit) is distinct from p_kit->>'pedido_hash' then
+      return jsonb_build_object('ok', false, 'motivo', 'pedido_diferente');
+    end if;
     return jsonb_build_object('ok', true, 'existente', true, 'kit_id', v_kit, 'transferencia_id',
       (select id from public.kit_transferencias where org_id = p_org and kit_id = v_kit and tipo = 'montar'
        order by criado_em limit 1));
@@ -191,10 +198,10 @@ begin
 
   begin
     insert into public.kits_variacao
-      (org_id, codigo_pai_base, codigo_pai_kit, pecas_por_kit, preco, meta, status, chave_cadastro, listing_type_id)
+      (org_id, codigo_pai_base, codigo_pai_kit, pecas_por_kit, preco, meta, status, chave_cadastro, listing_type_id, pedido_hash)
     values (p_org, p_kit->>'codigo_pai_base', p_kit->>'codigo_pai_kit', (p_kit->>'pecas_por_kit')::smallint,
             (p_kit->>'preco')::numeric, coalesce((p_kit->>'meta')::integer, 0), 'publicando', p_chave,
-            coalesce(p_kit->>'listing_type_id', 'gold_special'))
+            coalesce(p_kit->>'listing_type_id', 'gold_special'), p_kit->>'pedido_hash')
     returning id into v_kit;
 
     for v_s in select * from jsonb_array_elements(p_skus) loop

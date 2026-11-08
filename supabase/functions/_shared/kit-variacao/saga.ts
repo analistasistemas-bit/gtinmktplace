@@ -514,6 +514,8 @@ async function criarDestino(ctx: Ctx, alvo: AlvoSaga): Promise<'criou' | 'pronto
       await salvarAlvo(ctx, alvo, {
         item_criado: busca.itemId, up_criado: busca.upId,
         pausado_pela_saga: [...new Set([...alvo.pausado_pela_saga, busca.itemId])],
+        // Início da obrigação de pausa (backoff e alerta escalonado contam daqui).
+        intencao_escrita_em: alvo.intencao_escrita_em ?? iso(ctx),
       });
     } else if (alvo.intencao_escrita_em && !alvo.recusa_definitiva_em) {
       if (ctx.deps.agora().getTime() - Date.parse(alvo.intencao_escrita_em) < JANELA_BUSCA_CRIADO_MS) {
@@ -551,21 +553,44 @@ async function criarDestino(ctx: Ctx, alvo: AlvoSaga): Promise<'criou' | 'pronto
       criou = true;
     }
   }
-  // O ML cria ativo. Antes de qualquer passo local que possa falhar, a pausa é feita e confirmada pela leitura
-  // (`paused_by_seller`). A obrigação é durável: `item_criado` sem `escrita_em` faz toda retomada repetir isto,
-  // e falha ou recusa do registro nunca deixa o item vendável. A reativação é da política, como nos outros alvos.
-  await putStatus(ctx, alvo.item_criado!, 'paused');
-  const oferta = await ler(ctx, alvo);
-  const item = oferta.itens.find((i) => i.id === alvo.item_criado);
-  if (!item || !pausadoPeloVendedor(item)) {
-    // Alerta uma vez (motivo repetido não realerta): o item pode estar vendável enquanto a pausa não pega.
-    return reagendar(ctx, `${alvo.codigo}: confirmando a pausa do item criado ${alvo.item_criado}`, CONFIRMAR_APOS_S, true);
+  // O ML cria ativo. Antes de qualquer passo local que possa falhar, TODOS os itens abertos do UP criado (o item e
+  // a cópia de catálogo que o ML anexar) são pausados e confirmados pela leitura (`paused_by_seller`). A obrigação
+  // é durável: `item_criado` sem `escrita_em` faz toda retomada repetir isto, e falha ou recusa do registro nunca
+  // deixa item vendável. Cada item entra em `pausado_pela_saga` antes do PUT; a reativação segue a política.
+  const abertosSoltos = (o: OfertaUP) => o.itens.filter((i) => !encerrado(i) && !moderado(i) && !pausadoPeloVendedor(i));
+  const soltos = abertosSoltos(await ler(ctx, alvo)).map((i) => i.id);
+  if (soltos.length > 0) {
+    const novos = soltos.filter((id) => !alvo.pausado_pela_saga.includes(id));
+    if (novos.length > 0) await salvarAlvo(ctx, alvo, { pausado_pela_saga: [...alvo.pausado_pela_saga, ...novos] });
+    for (const id of soltos) await putStatus(ctx, id, 'paused');
+    const ainda = abertosSoltos(await ler(ctx, alvo)).map((i) => i.id);
+    if (ainda.length > 0) return aguardarPausaCriada(ctx, alvo, ainda);
   }
   vivo(ctx);
   const reg = await ctx.deps.repo.registrarItem(alvo.codigo, alvo.item_criado!, alvo.up_criado!);
   if (!reg.ok) return travar(ctx, `${alvo.codigo}: item ${alvo.item_criado} criado (pausado), mas ${reg.motivo}`);
   await salvarAlvo(ctx, alvo, { escrita_em: iso(ctx) });
   return criou ? 'criou' : 'pronto';
+}
+
+/** Backoff da pausa do item criado que o ML não aplica, pelo tempo desde a intenção: 5 s, 30 s, 60 s e 5 min (teto). */
+export function atrasoPausaCriada(decorridoMs: number): number {
+  const min = decorridoMs / 60_000;
+  return min < 1 ? CONFIRMAR_APOS_S : min < 5 ? 30 : min < 15 ? REAGENDAR_S : 300;
+}
+
+/**
+ * Pausa do item criado ainda não confirmada: a obrigação continua (nada é registrado), com backoff, e o alerta se
+ * repete a cada faixa de tempo (1, 5 e 15 min, depois a cada hora), porque o motivo muda com a faixa.
+ */
+function aguardarPausaCriada(ctx: Ctx, alvo: AlvoSaga, soltos: string[]): Promise<ResultadoPasso> {
+  const inicio = Date.parse(alvo.intencao_escrita_em ?? '');
+  const decorrido = Number.isNaN(inicio) ? 0 : Math.max(0, ctx.deps.agora().getTime() - inicio);
+  const min = Math.floor(decorrido / 60_000);
+  const faixa = min < 1 ? 'agora' : min < 5 ? 'há 1 min' : min < 15 ? 'há 5 min' : min < 60 ? 'há 15 min'
+    : `há ${Math.floor(min / 60)} h`;
+  return reagendar(ctx, `${alvo.codigo}: pausa do item criado não confirmada (${soltos.join(', ')} ainda vendável, ${faixa})`,
+    atrasoPausaCriada(decorrido), true);
 }
 
 /** Leitura igual ao valor gravado conclui. Outro número, inclusive o anterior, trava (spec, passo 6). */

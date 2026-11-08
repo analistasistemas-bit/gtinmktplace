@@ -34,7 +34,8 @@ const STATUS_POR_MOTIVO: Record<string, number> = {
   falha_gravar: 500, sku_nao_encontrado: 500, baseline_incompleto: 500,
   base_desatualizada: 409, base_e_kit: 409, base_em_kit: 409, base_legacy: 409, base_full: 409,
   base_multi_origem: 409, base_moderada: 409, foto_moderada: 409, peca_insuficiente: 409,
-  baseline_divergente: 409, up_ocupado: 409,
+  baseline_divergente: 409, up_ocupado: 409, pedido_diferente: 409, cadastro_parcial_divergente: 409,
+  foto_nao_autorizada: 403,
 };
 
 type Linha = Record<string, unknown>;
@@ -67,11 +68,12 @@ function portas(admin: SupabaseClient, orgId: string, userId: string): DepsCriar
     },
 
     async parcial(chave) {
-      const f = await ler(admin.from('familias').select('id, lote_id, codigo_pai').eq('org_id', orgId)
+      const f = await ler(admin.from('familias').select('id, lote_id, codigo_pai, kit_variacao_pedido').eq('org_id', orgId)
         .eq('chave_cadastro', chave).maybeSingle(), 'cadastro parcial');
       if (!f) return null;
       const vs = await ler(admin.from('variacoes').select('codigo, cor, tamanho').eq('familia_id', f.id), 'variações do parcial') ?? [];
       return {
+        pedidoHash: (f.kit_variacao_pedido as string | null) ?? null,
         familiaId: f.id as string, loteId: f.lote_id as string, codigoPai: f.codigo_pai as string,
         variacoes: vs.map((v) => ({ codigo: v.codigo as string, cor: v.cor as string | null, tamanho: v.tamanho as string | null })),
       };
@@ -99,12 +101,15 @@ function portas(admin: SupabaseClient, orgId: string, userId: string): DepsCriar
     },
 
     async existente(chave) {
-      const kit = await ler(admin.from('kits_variacao').select('id').eq('org_id', orgId).eq('chave_cadastro', chave)
+      const kit = await ler(admin.from('kits_variacao').select('id, pedido_hash').eq('org_id', orgId).eq('chave_cadastro', chave)
         .maybeSingle(), 'kit existente');
       if (!kit) return null;
       const t = await ler(admin.from('kit_transferencias').select('id').eq('org_id', orgId).eq('kit_id', kit.id)
         .eq('tipo', 'montar').order('criado_em').limit(1), 'transferência do kit');
-      return { kitId: kit.id as string, transferenciaId: (t?.[0]?.id as string | undefined) ?? null };
+      return {
+        kitId: kit.id as string, transferenciaId: (t?.[0]?.id as string | undefined) ?? null,
+        pedidoHash: (kit.pedido_hash as string | null) ?? null,
+      };
     },
 
     lerOferta: async (upId, itemIds) => lerOferta((await ml()).token, upId, itemIds),

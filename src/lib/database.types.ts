@@ -765,6 +765,7 @@ export type Database = {
           grade_tamanho: string | null
           id: string
           kit_base_codigo_pai: string | null
+          kit_variacao_pedido: string | null
           kit_multiplicador: number | null
           lote_id: string
           marca: string | null
@@ -854,6 +855,7 @@ export type Database = {
           grade_tamanho?: string | null
           id?: string
           kit_base_codigo_pai?: string | null
+          kit_variacao_pedido?: string | null
           kit_multiplicador?: number | null
           lote_id: string
           marca?: string | null
@@ -943,6 +945,7 @@ export type Database = {
           grade_tamanho?: string | null
           id?: string
           kit_base_codigo_pai?: string | null
+          kit_variacao_pedido?: string | null
           kit_multiplicador?: number | null
           lote_id?: string
           marca?: string | null
@@ -1483,6 +1486,7 @@ export type Database = {
           meta: number
           org_id: string
           pecas_por_kit: number
+          pedido_hash: string | null
           preco: number
           reposicao_auto: boolean
           so_em_kit: boolean
@@ -1499,6 +1503,7 @@ export type Database = {
           meta?: number
           org_id: string
           pecas_por_kit: number
+          pedido_hash?: string | null
           preco: number
           reposicao_auto?: boolean
           so_em_kit?: boolean
@@ -1515,6 +1520,7 @@ export type Database = {
           meta?: number
           org_id?: string
           pecas_por_kit?: number
+          pedido_hash?: string | null
           preco?: number
           reposicao_auto?: boolean
           so_em_kit?: boolean

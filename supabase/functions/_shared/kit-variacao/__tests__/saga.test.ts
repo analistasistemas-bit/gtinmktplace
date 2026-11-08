@@ -87,6 +87,7 @@ function cenario() {
     registroFalha: null as string | null,
     aoRegistrar: () => {},
     falhaPreparar: null as Error | null,
+    copiaNoCriado: false,
     criados: {} as Record<string, { itemId: string; upId: string }>,
     /** Ledger falso: só o que a marca d'água olha. */
     movs: [] as Array<{ codigo: string; ordem: number; qtd: number; motivo: string; transf: string | null }>,
@@ -231,6 +232,8 @@ function cenario() {
             const n = Object.keys(ups).filter((u) => u.startsWith('UP-NOVO')).length + 1;
             ups[`UP-NOVO${n}`] = { quantidade, itens: [ativo(`MLB-NOVO${n}`)] };
             s.criados[codigo] = { itemId: `MLB-NOVO${n}`, upId: `UP-NOVO${n}` };
+            // O ML pode anexar uma cópia de catálogo ativa ao UP recém-criado.
+            if (s.copiaNoCriado) ups[`UP-NOVO${n}`].itens.push(ativo(`MLB-NOVO${n}C`));
           }
           if (f) throw f.erro;
           return s.criados[codigo];
@@ -988,6 +991,39 @@ describe('avancarSaga: destino sem item (CREATE do kit)', () => {
     expect(c.s.rpcs).not.toContain('creditar');
     // Estado remoto: o item criado ficou pausado pelo vendedor antes do registro que recusou.
     expect(c.s.ups['UP-NOVO1'].itens[0]).toMatchObject({ status: 'paused', subStatus: ['paused_by_seller'] });
+  });
+
+  it('cópia de catálogo ativa no UP criado também é pausada e confirmada antes do registro (que recusa)', async () => {
+    const c = cenarioCriar();
+    c.s.copiaNoCriado = true;
+    c.s.registroFalha = 'family_id divergente';
+    await rodar(c);
+    expect(c.s.t.estado).toBe('travada');
+    for (const item of c.s.ups['UP-NOVO1'].itens) {
+      expect(item).toMatchObject({ status: 'paused', subStatus: ['paused_by_seller'] });
+    }
+    expect(c.s.alvos[2].pausado_pela_saga).toEqual(['MLB-NOVO1', 'MLB-NOVO1C']);
+  });
+
+  it('cópia de catálogo que não pausa: não registra; backoff 5 s → 30 s → 60 s → 5 min e alerta por faixa de tempo', async () => {
+    const c = cenarioCriar();
+    c.s.copiaNoCriado = true;
+    c.s.pausaIgnorada.add('MLB-NOVO1C');
+    await rodar(c, (x) => criacoes(x) === 1);
+    const desde = c.s.filas.length;
+    for (let i = 0; i < 40; i++) await passo(c);
+    expect(c.s.registros).toEqual([]);
+    expect(c.s.t.passo).toBe('aumentar');
+    const atrasos = new Set(c.s.filas.slice(desde));
+    expect([...atrasos].sort((a, b) => a - b)).toEqual([5, 30, 60, 300]);
+    const alertas = c.s.alertas.filter((a) => a.includes('pausa do item criado não confirmada'));
+    // Uma por faixa (agora, 1, 5, 15 min, horas): repete, mas não a cada tentativa.
+    expect(alertas.length).toBeGreaterThanOrEqual(4);
+    expect(alertas.length).toBeLessThan(10);
+    // A obrigação segue: liberada a pausa, conclui.
+    c.s.pausaIgnorada.delete('MLB-NOVO1C');
+    await rodar(c, undefined, 80);
+    expect(c.s.t.estado).toBe('concluida');
   });
 
   it('registro que lança: o item criado é pausado e confirmado antes; a retomada não deixa vendável', async () => {
