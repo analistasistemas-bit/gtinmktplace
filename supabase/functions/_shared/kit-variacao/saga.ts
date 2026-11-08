@@ -561,8 +561,15 @@ async function criarDestino(ctx: Ctx, alvo: AlvoSaga): Promise<'criou' | 'pronto
   // depois do CREATE (busca ainda sem o item, stock, multiget). Toda falha desta obrigação, inclusive de leitura,
   // entra no backoff com alerta escalonado, nunca no reagendamento genérico.
   const abertosSoltos = (o: OfertaUP) => o.itens.filter((i) => !encerrado(i) && !moderado(i) && !pausadoPeloVendedor(i));
+  // A pausa antecipada do principal é best-effort: recusada (ex.: `closed`) ou falha, a descoberta segue para pausar
+  // as cópias. O que decide o registro é a leitura: nenhum item aberto sem `paused_by_seller` (closed não vende).
+  let falhaPrincipal: string | null = null;
   try {
     await putStatus(ctx, alvo.item_criado!, 'paused');
+  } catch (e) {
+    falhaPrincipal = mensagem(e);
+  }
+  try {
     const soltos = abertosSoltos(await ler(ctx, alvo)).map((i) => i.id);
     if (soltos.length > 0) {
       const novos = soltos.filter((id) => !alvo.pausado_pela_saga.includes(id));
@@ -572,7 +579,8 @@ async function criarDestino(ctx: Ctx, alvo: AlvoSaga): Promise<'criou' | 'pronto
       if (ainda.length > 0) return aguardarPausaCriada(ctx, alvo, ainda);
     }
   } catch (e) {
-    return aguardarPausaCriada(ctx, alvo, [`${alvo.item_criado} (${mensagem(e)})`]);
+    const principal = falhaPrincipal ? `; pausa do principal: ${falhaPrincipal}` : '';
+    return aguardarPausaCriada(ctx, alvo, [`${alvo.item_criado} (${mensagem(e)}${principal})`]);
   }
   vivo(ctx);
   const reg = await ctx.deps.repo.registrarItem(alvo.codigo, alvo.item_criado!, alvo.up_criado!);

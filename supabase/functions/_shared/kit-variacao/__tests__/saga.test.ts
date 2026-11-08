@@ -1026,6 +1026,20 @@ describe('avancarSaga: destino sem item (CREATE do kit)', () => {
     expect(c.s.t.estado).toBe('concluida');
   });
 
+  it('principal closed que recusa a pausa não impede descobrir e pausar a cópia ativa antes do registro', async () => {
+    const c = cenarioCriar();
+    c.s.copiaNoCriado = true;
+    c.s.falhaStatus = (id, st) => {
+      if (id !== 'MLB-NOVO1' || st !== 'paused') return null;
+      c.s.ups['UP-NOVO1'].itens[0] = { id: 'MLB-NOVO1', status: 'closed', subStatus: [] };
+      return { erro: new MLApiError(400, 'item closed'), aplica: false };
+    };
+    await rodar(c, (x) => x.s.registros.length > 0);
+    expect(c.s.chamadas).toContain('paused MLB-NOVO1C');
+    expect(c.s.ups['UP-NOVO1'].itens[1].subStatus).toContain('paused_by_seller');
+    expect(c.s.registros).toEqual(['K MLB-NOVO1 UP-NOVO1']);
+  });
+
   it('leitura do UP criado que lança: o principal já foi pausado, nada é registrado e sai alerta com backoff', async () => {
     const c = cenarioCriar();
     let falhas = 3;
