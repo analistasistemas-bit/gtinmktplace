@@ -7,6 +7,10 @@
 //   senão a decisão é velha e a rodada repete (`kit_reposicao_sobra`, `_guardar`, `_repor`).
 // - A automação só desfaz a pausa que fez (`kit_pausas_automaticas`, gravada pela saga ao finalizar).
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+import type { StatusAnuncioCanal } from '../canais/contrato.ts';
+import {
+  lerPoliticas, MSG_KIT_MODERADO, podeReativar, prepararStatusOperador, type ResultadoPutStatus,
+} from './politica.ts';
 
 export type EstadoSku = 'normal' | 'guardado' | 'sobra';
 
@@ -44,7 +48,11 @@ export interface FotoKit {
   skus: SkuFoto[];
   /** Pausas que a automação fez e ainda não desfez. */
   pausas: Array<{ codigo: string; itemId: string }>;
+  /** Avisos de Sobra pendentes, gravados na transição (`kit_avisos_sobra`). `resultado` gravado antes do envio. */
+  avisos: Array<{ codigo: string; versao: number; resultado: ResultadoAviso | null }>;
 }
+
+export type ResultadoAviso = 'reativado' | 'pausado' | 'sem_pausa';
 
 export interface Move { kitId: string; codigo: string; quantidade: number }
 
@@ -143,7 +151,17 @@ export interface DepsReposicao {
   esquecerPausa(codigo: string, itemId: string): Promise<void>;
   /** Telegram (estoque), idempotente pela chave. */
   avisar(texto: string, chave: string): Promise<void>;
+  /** Grava o resultado da reativação na pendência do aviso, antes do envio (só se ainda não houver). */
+  registrarAviso(codigo: string, versao: number, resultado: ResultadoAviso): Promise<void>;
+  /** Aviso enviado: a pendência sai. */
+  concluirAviso(codigo: string, versao: number): Promise<void>;
 }
+
+const TEXTO_SOBRA: Record<ResultadoAviso, string> = {
+  reativado: 'O anúncio individual foi reativado e vende sozinho até a peça que falta entrar; aí volta a ficar guardado para o kit.',
+  pausado: 'O anúncio individual segue pausado (pausa do operador, moderação ou recusa do Mercado Livre). Confira em Publicados.',
+  sem_pausa: 'O anúncio individual não estava pausado pelo kit e segue como está.',
+};
 
 /**
  * Uma rodada para o kit do job. A fotografia é da org (a peça pode servir a vários kits), mas a rodada só age no kit:
@@ -158,12 +176,20 @@ export async function executarReposicao(deps: DepsReposicao, kitId: string): Pro
   const componentes = new Set(kit.skus.flatMap((s) => s.componentes.map((x) => x.codigo)));
   const doKit = new Set([...componentes, ...kit.skus.map((s) => s.codigo)]);
   let retentar = false;
+  /** Resultado de cada pausa desfeita nesta rodada, por código: decide o texto do aviso de Sobra. */
+  const resultados = new Map<string, string[]>();
+  const resolvidas = new Set<string>();
 
   const desfazer = async (pausas: FotoKit['pausas']) => {
     for (const p of [...pausas].sort((a, b) => porCodigo(a, b) || (a.itemId < b.itemId ? -1 : 1))) {
       const r = await deps.reativar(p.codigo, p.itemId);
-      if (r === 'manter') retentar = true;
-      else await deps.esquecerPausa(p.codigo, p.itemId);
+      resultados.set(p.codigo, [...(resultados.get(p.codigo) ?? []), r]);
+      if (r === 'manter') {
+        retentar = true;
+        continue;
+      }
+      await deps.esquecerPausa(p.codigo, p.itemId);
+      resolvidas.add(p.itemId);
     }
   };
   /** Versões de que a decisão depende: os códigos e todo componente das combinações que os contêm. */
@@ -181,16 +207,41 @@ export async function executarReposicao(deps: DepsReposicao, kitId: string): Pro
   const plano = planejarReposicao(f);
   // 2. Guardado → Sobra: reativa o individual e avisa.
   const sobras = plano.sobras.filter((c) => componentes.has(c));
+  const avisos = f.avisos.filter((a) => componentes.has(a.codigo));
   if (sobras.length > 0) {
+    // A RPC grava a pendência do aviso na mesma transação da transição.
     const r = await deps.sobra(sobras, versoesDe(sobras));
     if (!r.ok) return { retentar: true };   // decisão velha: nada mudou; a próxima rodada fotografa de novo
     for (const c of sobras) {
-      await deps.avisar(
-        `🧩 Sobra de kit: ${c}\n\nNão há peça das outras cores no mesmo tamanho para montar kit. O anúncio individual `
-        + 'foi reativado e vende sozinho até a peça que falta entrar; aí volta a ficar guardado para o kit.',
-        `kit_sobra:${c}:${(estado.get(c)?.versao ?? 0) + 1}`,
-      );
       await desfazer(f.pausas.filter((p) => p.codigo === c));
+      avisos.push({ codigo: c, versao: (estado.get(c)?.versao ?? 0) + 1, resultado: null });
+    }
+  }
+
+  // 2b. Aviso de Sobra só com o resultado da reativação conhecido; retomado em qualquer rodada, qualquer que seja o
+  // estado atual. Resultado gravado antes do envio: a retomada não troca "reativado" por "sem pausa".
+  for (const a of avisos.sort((x, y) => porCodigo(x, y) || x.versao - y.versao)) {
+    let resultado = a.resultado;
+    if (!resultado) {
+      if (estado.get(a.codigo)?.estado === 'guardado' && !sobras.includes(a.codigo)) {
+        await deps.concluirAviso(a.codigo, a.versao);   // já voltou a Guardado: o aviso perdeu o sentido
+        continue;
+      }
+      const rs = resultados.get(a.codigo) ?? [];
+      const restantes = f.pausas.some((p) => p.codigo === a.codigo && !resolvidas.has(p.itemId));
+      if (restantes) continue;   // reativação incerta ou ainda não tentada: avisa depois
+      resultado = rs.includes('reativado') ? 'reativado' : rs.includes('abandonar') ? 'pausado' : 'sem_pausa';
+      await deps.registrarAviso(a.codigo, a.versao, resultado);
+    }
+    try {
+      await deps.avisar(
+        `🧩 Sobra de kit: ${a.codigo}\n\nNão há peça das outras cores no mesmo tamanho para montar kit. ${TEXTO_SOBRA[resultado]}`,
+        `kit_sobra:${a.codigo}:${a.versao}`,
+      );
+      await deps.concluirAviso(a.codigo, a.versao);
+    } catch (e) {
+      console.error('kit_sobra_aviso_falhou', a.codigo, String(e));
+      retentar = true;
     }
   }
 
@@ -250,7 +301,7 @@ const decisao = (d: { ok?: boolean; transferencia_id?: string | null; motivo?: s
 /** Fotografia e decisões no banco. `reativar` e `avisar` vêm do worker (ML e Telegram). */
 export function depsBanco(
   admin: SupabaseClient, orgId: string, kitId: string,
-): Pick<DepsReposicao, 'foto' | 'sobra' | 'guardar' | 'repor' | 'esquecerPausa'> {
+): Pick<DepsReposicao, 'foto' | 'sobra' | 'guardar' | 'repor' | 'esquecerPausa' | 'registrarAviso' | 'concluirAviso'> {
   return {
     foto: () => rpc<FotoKit>(admin, 'kit_reposicao_foto', { p_org: orgId, p_kit: kitId }),
     async sobra(codigos, versoes) {
@@ -263,10 +314,13 @@ export function depsBanco(
       }));
     },
     async repor(kit, itens, versoes) {
-      const { data, error } = await admin.from('kit_variacao_skus').select('codigo').eq('kit_id', kit)
-        .in('codigo', itens.map((i) => i.codigo));
+      // Alvos = exatamente o que a transferência movimenta (SKUs de kit pedidos e seus componentes). As versões
+      // conferidas podem incluir mais SKUs (as combinações vizinhas da decisão) e vão separadas.
+      const { data, error } = await admin.from('kit_variacao_skus').select('codigo, kit_variacao_componentes(codigo)')
+        .eq('kit_id', kit).in('codigo', itens.map((i) => i.codigo));
       if (error) throw new Error(`kit_variacao_skus: ${error.message}`);
-      const codigos = [...(data ?? []).map((x) => x.codigo as string), ...Object.keys(versoes)];
+      const codigos = [...new Set((data ?? []).flatMap((x) => [x.codigo as string,
+        ...((x as { kit_variacao_componentes?: Array<{ codigo: string }> }).kit_variacao_componentes ?? []).map((c) => c.codigo)]))];
       return decisao(await rpc(admin, 'kit_reposicao_repor', {
         p_org: orgId, p_kit: kit, p_itens: itens, p_versoes: versoes, p_alvos: await alvosDe(admin, orgId, codigos),
       }));
@@ -275,7 +329,54 @@ export function depsBanco(
       const { error } = await admin.from('kit_pausas_automaticas').delete().eq('org_id', orgId).eq('item_id', itemId);
       if (error) throw new Error(`kit_pausas_automaticas: ${error.message}`);
     },
+    async registrarAviso(codigo, versao, resultado) {
+      const { error } = await admin.from('kit_avisos_sobra').update({ resultado })
+        .eq('org_id', orgId).eq('codigo', codigo).eq('versao', versao).is('resultado', null);
+      if (error) throw new Error(`kit_avisos_sobra: ${error.message}`);
+    },
+    async concluirAviso(codigo, versao) {
+      const { error } = await admin.from('kit_avisos_sobra').delete()
+        .eq('org_id', orgId).eq('codigo', codigo).eq('versao', versao);
+      if (error) throw new Error(`kit_avisos_sobra: ${error.message}`);
+    },
   };
+}
+
+/**
+ * Desfaz UMA pausa da automação (Task 14). Mesmo caminho da reativação do operador (exclusão `ativacao`, CAS da versão,
+ * confirmação por leitura de todos os alvos), como automação: pausa do operador, moderação e retirada nunca são
+ * desfeitas. O PUT vai só no item registrado: o ML não propaga status entre item e cópia de catálogo, e a cópia pausada
+ * à mão (fora de `kit_pausas_automaticas`) fica pausada.
+ */
+export async function reativarPausaAutomatica(admin: SupabaseClient, o: {
+  orgId: string; codigo: string; itemId: string;
+  lerStatus: (itemId: string) => Promise<StatusAnuncioCanal | null>;
+  /** PUT `status=active` só neste item. `erro.status` ausente = sem resposta HTTP. */
+  putAtivo: (itemId: string) => Promise<ResultadoPutStatus>;
+  alertar: (texto: string) => Promise<unknown>;
+}): Promise<'reativado' | 'abandonar' | 'manter'> {
+  const politica = (await lerPoliticas(admin, o.orgId, [o.codigo])).get(o.codigo) ?? null;
+  if (!podeReativar({ politica, origem: 'automatico' }).pode) return politica?.estado === 'guardado' ? 'manter' : 'abandonar';
+  const prep = await prepararStatusOperador(admin, {
+    orgId: o.orgId, mlItemId: o.itemId, alvo: 'ativo', ligado: true, automatico: true, lerStatus: o.lerStatus, alertar: o.alertar,
+  });
+  if ('recusa' in prep) return prep.recusa === MSG_KIT_MODERADO ? 'abandonar' : 'manter';
+  let r: ResultadoPutStatus = { ok: false };   // exceção = ambíguo
+  let confirmado = false;
+  try {
+    r = await o.putAtivo(o.itemId);
+  } finally {
+    confirmado = await prep.concluir(r);
+  }
+  if (r.ok) return confirmado ? 'reativado' : 'manter';
+  const st = r.erro?.status;
+  if (st !== undefined && st >= 400 && st < 500 && st !== 408 && st !== 429) {
+    // Recusa definitiva do ML: repetir não muda nada; o operador decide.
+    await o.alertar(`Kit com variação: o Mercado Livre recusou reativar ${o.itemId} (${o.codigo}), pausado pela reposição. `
+      + 'Confira o anúncio e reative em Publicados.').catch((e) => console.error('kit_reposicao_alerta_falhou', String(e)));
+    return 'abandonar';
+  }
+  return 'manter';
 }
 
 /**

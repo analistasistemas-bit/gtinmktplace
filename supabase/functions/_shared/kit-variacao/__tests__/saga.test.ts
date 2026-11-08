@@ -757,6 +757,19 @@ describe('avancarSaga', () => {
     expect(c.s.rpcs).toEqual(['cancelar', 'finalizar']);
   });
 
+  it('Fix 1 (P1-2): abortar por política registra as pausas que a saga fez, para a reposição recuperar', async () => {
+    const c = cenario();
+    c.s.ups['UP-B'].itens[1] = { id: 'MLB-BC', status: 'paused', subStatus: ['paused_by_seller'] };   // manual, anterior
+    await rodar(c, noPasso('conciliar'));   // pausa confirmada (ligar → sair_sobra)
+    c.s.versaoPolitica = 8;                 // operador desliga na quarentena
+    await rodar(c);
+    expect(c.s.t.estado).toBe('abortada');
+    expect(c.s.chamadas.some((x) => x.startsWith('active'))).toBe(false);
+    expect(c.s.pausas).toEqual([
+      { codigo: 'P', itemId: 'MLB-P' }, { codigo: 'B', itemId: 'MLB-B' }, { codigo: 'K', itemId: 'MLB-K' },
+    ]);
+  });
+
   it('política que muda antes do início aborta sem pausar nada', async () => {
     const c = cenario();
     c.s.versaoPolitica = 8;

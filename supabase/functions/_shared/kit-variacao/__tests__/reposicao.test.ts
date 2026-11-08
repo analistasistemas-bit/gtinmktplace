@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import {
-  executarReposicao, parceirosDe, planejarReposicao,
+  depsBanco, executarReposicao, parceirosDe, planejarReposicao,
   type DepsReposicao, type FotoKit, type KitFoto, type SkuFoto,
 } from '../reposicao.ts';
 
@@ -11,7 +12,8 @@ const combo = (codigo: string, saldo: number, cores: string[], extra: Partial<Ki
   ({ codigo, saldo, publicado: true, pendente: false, componentes: cores.map((c) => ({ codigo: c, quantidade: 1 })), ...extra });
 const kit = (id: string, skus: KitFoto['skus'], extra: Partial<KitFoto> = {}): KitFoto =>
   ({ id, meta: 3, reposicaoAuto: true, soEmKit: true, skus, ...extra });
-const foto = (kits: KitFoto[], skus: SkuFoto[], pausas: FotoKit['pausas'] = []): FotoKit => ({ kits, skus, pausas });
+const foto = (kits: KitFoto[], skus: SkuFoto[], pausas: FotoKit['pausas'] = [], avisos: FotoKit['avisos'] = []): FotoKit =>
+  ({ kits, skus, pausas, avisos });
 
 describe('planejarReposicao', () => {
   it('meta 3 com saldo 2 move 1', () => {
@@ -160,6 +162,7 @@ function cenario(f: FotoKit) {
     sagas: [] as string[],
     recusar: {} as Record<string, string>,
     reativar: {} as Record<string, 'reativado' | 'abandonar' | 'manter'>,
+    falhaAvisar: false,
   };
   const deps: DepsReposicao = {
     foto: async () => structuredClone(s.foto),
@@ -181,7 +184,12 @@ function cenario(f: FotoKit) {
       return s.reativar[itemId] ?? 'reativado';
     },
     async esquecerPausa(codigo, itemId) { s.chamadas.push(`esquecer ${codigo} ${itemId}`); },
-    async avisar(texto) { s.avisos.push(texto); },
+    async avisar(texto) {
+      if (s.falhaAvisar) throw new Error('telegram fora');
+      s.avisos.push(texto);
+    },
+    async registrarAviso(codigo, versao, resultado) { s.chamadas.push(`aviso ${codigo} ${versao} ${resultado}`); },
+    async concluirAviso(codigo, versao) { s.chamadas.push(`concluir aviso ${codigo} ${versao}`); },
   };
   return { s, deps };
 }
@@ -199,9 +207,62 @@ describe('executarReposicao', () => {
     const c = cenario(foto([kit('K1', [combo('KPB', 1, ['P', 'B'])])], [sku('P', 0), sku('B', 2, 'guardado', { versao: 4 })],
       [{ codigo: 'B', itemId: 'MLB-B' }]));
     await executarReposicao(c.deps, 'K1');
-    expect(c.s.chamadas).toEqual(['sobra B {"B":4,"P":1}', 'reativar B MLB-B', 'esquecer B MLB-B']);
+    expect(c.s.chamadas).toEqual([
+      'sobra B {"B":4,"P":1}', 'reativar B MLB-B', 'esquecer B MLB-B', 'aviso B 5 reativado', 'concluir aviso B 5',
+    ]);
     expect(c.s.avisos).toHaveLength(1);
     expect(c.s.avisos[0]).toContain('B');
+    expect(c.s.avisos[0]).toContain('foi reativado');
+  });
+
+  it('Fix 1 (P2): aviso de Sobra só depois da reativação confirmada; incerta não avisa e repete', async () => {
+    const c = cenario(foto([kit('K1', [combo('KPB', 1, ['P', 'B'])])], [sku('P', 0), sku('B', 2, 'guardado', { versao: 4 })],
+      [{ codigo: 'B', itemId: 'MLB-B' }]));
+    c.s.reativar = { 'MLB-B': 'manter' };
+    const r = await executarReposicao(c.deps, 'K1');
+    expect(c.s.chamadas).toEqual(['sobra B {"B":4,"P":1}', 'reativar B MLB-B']);
+    expect(c.s.avisos).toEqual([]);
+    expect(r.retentar).toBe(true);
+  });
+
+  it('Fix 1 (P2): aviso pendente é retomado com o SKU já em Sobra, sem afirmar reativação que não houve', async () => {
+    const c = cenario(foto([kit('K1', [combo('KPB', 1, ['P', 'B'])])], [sku('P', 0), sku('B', 2, 'sobra', { versao: 5 })], [],
+      [{ codigo: 'B', versao: 5, resultado: null }]));
+    await executarReposicao(c.deps, 'K1');
+    expect(c.s.chamadas).toEqual(['aviso B 5 sem_pausa', 'concluir aviso B 5']);
+    expect(c.s.avisos[0]).not.toContain('foi reativado');
+  });
+
+  it('Fix 1 (P2): resultado gravado antes do envio; falha no envio mantém a pendência com ele', async () => {
+    const c = cenario(foto([kit('K1', [combo('KPB', 1, ['P', 'B'])])], [sku('P', 0), sku('B', 2, 'guardado', { versao: 4 })],
+      [{ codigo: 'B', itemId: 'MLB-B' }]));
+    c.s.falhaAvisar = true;
+    const r = await executarReposicao(c.deps, 'K1');
+    expect(c.s.chamadas).toEqual(['sobra B {"B":4,"P":1}', 'reativar B MLB-B', 'esquecer B MLB-B', 'aviso B 5 reativado']);
+    expect(r.retentar).toBe(true);
+    // Retomada: usa o resultado gravado, não o "sem pausa" de agora.
+    const d = cenario(foto([kit('K1', [combo('KPB', 1, ['P', 'B'])])], [sku('P', 0), sku('B', 2, 'sobra', { versao: 5 })], [],
+      [{ codigo: 'B', versao: 5, resultado: 'reativado' }]));
+    await executarReposicao(d.deps, 'K1');
+    expect(d.s.chamadas).toEqual(['concluir aviso B 5']);
+    expect(d.s.avisos[0]).toContain('foi reativado');
+  });
+
+  it('Fix 1 (P2): pausa do operador ou moderação: o aviso diz que o individual segue pausado', async () => {
+    const c = cenario(foto([kit('K1', [combo('KPB', 1, ['P', 'B'])])], [sku('P', 0), sku('B', 2, 'guardado', { versao: 4 })],
+      [{ codigo: 'B', itemId: 'MLB-B' }]));
+    c.s.reativar = { 'MLB-B': 'abandonar' };
+    await executarReposicao(c.deps, 'K1');
+    expect(c.s.chamadas).toContain('aviso B 5 pausado');
+    expect(c.s.avisos[0]).toContain('segue pausado');
+  });
+
+  it('Fix 1 (P2-2): ligar → pausa → desligar → saga abortada registra a pausa → a rodada reativa', async () => {
+    // A saga abortada (saga.test) entrega MLB-P a kit_pausas_automaticas; com P de volta a Normal, a rodada desfaz.
+    const c = cenario(foto([kit('K1', [combo('KPB', 0, ['P', 'B'])], { soEmKit: false })],
+      [sku('P', 2, 'normal'), sku('B', 2, 'normal')], [{ codigo: 'P', itemId: 'MLB-P' }]));
+    await executarReposicao(c.deps, 'K1');
+    expect(c.s.chamadas).toEqual(['reativar P MLB-P', 'esquecer P MLB-P']);
   });
 
   it('decisão velha é rejeitada por versão: nada é reativado e a rodada repete', async () => {
@@ -258,5 +319,47 @@ describe('executarReposicao', () => {
     c.s.recusar.repor = 'up_ocupado';
     expect((await executarReposicao(c.deps, 'K1')).retentar).toBe(true);
     expect(c.s.sagas).toEqual([]);
+  });
+});
+
+// Fix 1 (P1-1): adaptador real de `repor`, com banco falso.
+function bancoFalso() {
+  const rpcs: Array<{ nome: string; args: Record<string, unknown> }> = [];
+  const tabelas: Record<string, Array<Record<string, unknown>>> = {
+    kit_variacao_skus: [
+      { kit_id: 'K1', codigo: 'KPB', kit_variacao_componentes: [{ codigo: 'P' }, { codigo: 'B' }] },
+      { kit_id: 'K1', codigo: 'KPA', kit_variacao_componentes: [{ codigo: 'P' }, { codigo: 'A' }] },
+    ],
+    anuncios_externos_itens: ['P', 'B', 'A', 'KPB', 'KPA'].map((c) => ({
+      org_id: 'O', sku: c, item_externo_id: `MLB-${c}`, user_product_id: `UP-${c}`, catalog_listing_id: null,
+    })),
+  };
+  const from = (t: string) => {
+    const filtros: Array<(r: Record<string, unknown>) => boolean> = [];
+    const api: Record<string, unknown> = {
+      select: () => api,
+      eq: (c: string, v: unknown) => { filtros.push((r) => r[c] === v); return api; },
+      in: (c: string, vs: unknown[]) => { filtros.push((r) => vs.includes(r[c])); return api; },
+      not: (c: string) => { filtros.push((r) => r[c] != null); return api; },
+      then: (res: (v: unknown) => unknown) =>
+        Promise.resolve({ data: (tabelas[t] ?? []).filter((r) => filtros.every((f) => f(r))), error: null }).then(res),
+    };
+    return api;
+  };
+  const rpc = async (nome: string, args: Record<string, unknown>) => {
+    rpcs.push({ nome, args });
+    return { data: { ok: true, transferencia_id: 'TR' }, error: null };
+  };
+  return { admin: { from, rpc } as unknown as SupabaseClient, rpcs };
+}
+
+describe('depsBanco.repor (Fix 1, P1-1)', () => {
+  it('kit PB+PA repondo só PB: alvos só dos SKUs movimentados; a versão de A segue conferida à parte', async () => {
+    const b = bancoFalso();
+    const r = await depsBanco(b.admin, 'O', 'K1').repor('K1', [{ codigo: 'KPB', quantidade: 1 }], { A: 1, B: 1, P: 1 });
+    expect(r).toEqual({ ok: true, transferenciaId: 'TR' });
+    const args = b.rpcs[0].args as { p_alvos: Array<{ codigo: string }>; p_versoes: Record<string, number> };
+    expect(args.p_alvos.map((a) => a.codigo).sort()).toEqual(['B', 'KPB', 'P']);
+    expect(args.p_versoes).toEqual({ A: 1, B: 1, P: 1 });
   });
 });

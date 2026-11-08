@@ -158,10 +158,16 @@ begin
   -- Guardado → Sobra: decisão velha recusa sem mudar nada; atual muda e incrementa.
   r := public.kit_reposicao_sobra(c.org, array[B], '{"09900002":0,"09900001":1}');
   perform pg_temp.afirmar(r->>'motivo' = 'versao' and pg_temp.pol(B) = 'guardado/1', 'sobra velha: ' || r::text);
+  perform pg_temp.afirmar(not exists (select 1 from public.kit_avisos_sobra where org_id = c.org), 'decisão velha não avisa');
   r := public.kit_reposicao_sobra(c.org, array[B], '{"09900001":1}');
   perform pg_temp.afirmar(r->>'motivo' = 'versao_ausente', 'sobra sem a versão do próprio: ' || r::text);
   r := public.kit_reposicao_sobra(c.org, array[B], '{"09900002":1,"09900001":1}');
   perform pg_temp.afirmar((r->>'ok')::boolean and pg_temp.pol(B) = 'sobra/2', 'sobra: ' || r::text || ' ' || pg_temp.pol(B));
+  -- Fix 1 (P2): a pendência do aviso nasce na mesma transação, com a versão nova, e aparece na fotografia.
+  perform pg_temp.afirmar((select count(*) = 1 and bool_and(versao = 2 and resultado is null) from public.kit_avisos_sobra
+                           where org_id = c.org and codigo = B), 'aviso de Sobra pendente');
+  perform pg_temp.afirmar(public.kit_reposicao_foto(c.org, c.k1)->'avisos' = '[{"codigo":"09900002","versao":2,"resultado":null}]',
+    'foto traz o aviso');
   r := public.kit_reposicao_sobra(c.org, array[B], '{"09900002":2}');
   perform pg_temp.afirmar(r->>'motivo' = 'estado', 'sobra de quem já é sobra: ' || r::text);
 
@@ -209,6 +215,17 @@ begin
     'repor: tipo, kit e versão');
   perform pg_temp.finalizar(t, '[]');
   perform pg_temp.finalizar(te, '[]');
+
+  -- Fix 1 (P1-2): finalização abortada também grava as pausas da saga (recuperação pela política vigente).
+  r := public.kit_criar_transferencia(c.org, null, 'sair_sobra', '[{"codigo":"09900003","quantidade":0}]',
+    '[{"codigo":"09900003","up_id":"UP-A","item_ids":["MLB-A"]}]');
+  update public.kit_transferencia_alvos set pausado_pela_saga = array['MLB-A'] where transferencia_id = (r->>'id')::uuid;
+  update public.kit_transferencias set execucao_token = c.k1, execucao_ate = clock_timestamp() + interval '1 minute'
+  where id = (r->>'id')::uuid;
+  perform public.kit_saga_finalizar(c.org, (r->>'id')::uuid, c.k1, 'abortada', 'política mudou',
+    '[{"codigo":"09900003","itemId":"MLB-A"}]');
+  perform pg_temp.afirmar(exists (select 1 from public.kit_pausas_automaticas where org_id = c.org and item_id = 'MLB-A'),
+    'abortada registra a pausa');
 
   -- Origem fora de Guardado recusa: P vira Sobra e a reposição não pode usá-lo.
   perform public.kit_reposicao_sobra(c.org, array[P], jsonb_build_object(P, 1));

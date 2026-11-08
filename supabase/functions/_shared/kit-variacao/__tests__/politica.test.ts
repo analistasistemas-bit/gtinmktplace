@@ -7,6 +7,7 @@ import {
   skusParticipantes, podeEscreverQuantidade, podeReativar, adquirirExclusao, soltarExclusao, kitLigado, lerPoliticas,
   type PoliticaSku,
 } from '../politica.ts';
+import { reativarPausaAutomatica } from '../reposicao.ts';
 
 interface Banco {
   modulos: string[] | null;
@@ -284,6 +285,34 @@ describe('prepararStatusOperador (Task 6: pausar/reativar pelo operador)', () =>
     // Sem bloqueio, a automática segue o mesmo caminho da manual.
     const g = falso(banco({ politicas: [pol()] }));
     expect('concluir' in await preparar(g, { automatico: true }).r).toBe(true);
+  });
+
+  it('Fix 1 (P1-3): reativação automática faz PUT só no item registrado; o catálogo pausado à mão fica pausado', async () => {
+    const f = falso(banco({ politicas: [pol({ estado: 'sobra' })] }));
+    const puts: string[] = [];
+    const lidos: string[] = [];
+    const r = await reativarPausaAutomatica(f.admin, {
+      orgId: 'O', codigo: 'P1', itemId: 'MLB1',
+      lerStatus: async (id) => { lidos.push(id); return 'pausado'; },
+      putAtivo: async (id) => { puts.push(id); return { ok: true }; },
+      alertar: async () => {},
+    });
+    expect(r).toBe('reativado');
+    expect(puts).toEqual(['MLB1']);
+    expect(f.eventos).toContain('rpc:kit_adquirir_exclusao');           // exclusão e CAS da política mantidos
+    expect(f.eventos).toContain('rpc:kit_ativacao_liberar');            // confirmado pela leitura
+    expect(lidos).toEqual(['MLB1', 'MLB1', 'MLB1C']);
+  });
+
+  it('Fix 1 (P1-3): pausa do operador abandona sem PUT; Guardado mantém', async () => {
+    const opcoes = (puts: string[]) => ({
+      orgId: 'O', codigo: 'P1', itemId: 'MLB1', lerStatus: async () => 'pausado' as const,
+      putAtivo: async (id: string) => { puts.push(id); return { ok: true }; }, alertar: async () => {},
+    });
+    const puts: string[] = [];
+    expect(await reativarPausaAutomatica(falso(banco({ politicas: [pol({ bloqueio_operador: true })] })).admin, opcoes(puts))).toBe('abandonar');
+    expect(await reativarPausaAutomatica(falso(banco({ politicas: [pol({ estado: 'guardado' })] })).admin, opcoes(puts))).toBe('manter');
+    expect(puts).toEqual([]);
   });
 
   it('reativa a pausa do operador: reivindica a geração, exclusão com dono estável, limpa o bloqueio; confirmado, libera a geração', async () => {

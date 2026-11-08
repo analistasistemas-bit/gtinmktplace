@@ -28,6 +28,25 @@ revoke insert, update, delete, truncate, references, trigger on public.kit_pausa
 grant select on public.kit_pausas_automaticas to authenticated;
 grant all on public.kit_pausas_automaticas to service_role;
 
+-- Aviso de Sobra pendente: nasce na mesma transação da transição (kit_reposicao_sobra) e só sai depois do envio.
+-- `resultado` (reativado | pausado | sem_pausa) é gravado antes do envio: a retomada repete o mesmo texto.
+create table if not exists public.kit_avisos_sobra (
+  org_id    uuid not null references public.organizations(id),
+  codigo    text not null,
+  versao    integer not null,
+  resultado text check (resultado in ('reativado', 'pausado', 'sem_pausa')),
+  criado_em timestamptz not null default now(),
+  primary key (org_id, codigo, versao)
+);
+alter table public.kit_avisos_sobra enable row level security;
+drop policy if exists "kit_avisos_sobra: select org" on public.kit_avisos_sobra;
+create policy "kit_avisos_sobra: select org" on public.kit_avisos_sobra for select to authenticated
+  using (org_id = (select public.current_org_id()));
+revoke all on public.kit_avisos_sobra from anon;
+revoke insert, update, delete, truncate, references, trigger on public.kit_avisos_sobra from authenticated;
+grant select on public.kit_avisos_sobra to authenticated;
+grant all on public.kit_avisos_sobra to service_role;
+
 -- Corpo de 20261107212019 mais `p_pausas`. Assinatura nova: a antiga sai.
 drop function if exists public.kit_saga_finalizar(uuid, uuid, uuid, text, text);
 create or replace function public.kit_saga_finalizar(
@@ -124,7 +143,10 @@ as $$
         'pendente', public.kit_reposicao_pendente(p_org, x.codigo)) order by x.codigo)
       from cods x left join public.sku_politica_kit p on p.org_id = p_org and p.codigo = x.codigo), '[]'::jsonb),
     'pausas', coalesce((select jsonb_agg(jsonb_build_object('codigo', codigo, 'itemId', item_id) order by codigo, item_id)
-                        from pausas), '[]'::jsonb)
+                        from pausas), '[]'::jsonb),
+    'avisos', coalesce((select jsonb_agg(jsonb_build_object('codigo', a.codigo, 'versao', a.versao, 'resultado', a.resultado)
+                                         order by a.codigo, a.versao)
+                        from public.kit_avisos_sobra a where a.org_id = p_org), '[]'::jsonb)
   )
 $$;
 
@@ -171,8 +193,14 @@ begin
   if v_cod is not null then
     return jsonb_build_object('ok', false, 'motivo', 'estado', 'codigo', v_cod);
   end if;
-  update public.sku_politica_kit set estado = 'sobra', versao = versao + 1
-  where org_id = p_org and codigo = any(p_codigos);
+  with u as (
+    update public.sku_politica_kit set estado = 'sobra', versao = versao + 1
+    where org_id = p_org and codigo = any(p_codigos)
+    returning codigo, versao
+  )
+  insert into public.kit_avisos_sobra (org_id, codigo, versao)
+  select p_org, codigo, versao from u
+  on conflict do nothing;
   return jsonb_build_object('ok', true);
 end $$;
 

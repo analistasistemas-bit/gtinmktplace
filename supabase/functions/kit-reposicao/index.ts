@@ -7,13 +7,12 @@ import { adminClient } from '../_shared/supabase.ts';
 import { enfileirarSaga, verificarAssinatura, type KitReposicaoJob } from '../_shared/queue.ts';
 import { resolverConexaoEstrita } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
-import { getConnector } from '../_shared/canais/registry.ts';
+import { atualizarStatusML } from '../_shared/ml/atualizar-item.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { lerStatusMLEstrito } from '../_shared/operacoes/ml-status.ts';
 import {
-  lerPoliticas, MSG_KIT_MODERADO, podeReativar, prepararStatusOperador,
-} from '../_shared/kit-variacao/politica.ts';
-import { depsBanco, executarReposicao, type DepsReposicao } from '../_shared/kit-variacao/reposicao.ts';
+  depsBanco, executarReposicao, reativarPausaAutomatica, type DepsReposicao,
+} from '../_shared/kit-variacao/reposicao.ts';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 
 const json = (status: number, body: unknown) =>
@@ -26,41 +25,25 @@ function deps(admin: SupabaseClient, orgId: string, kitId: string): DepsReposica
     if (!cx) throw new Error('org sem conexão com o Mercado Livre');
     return await getValidAccessTokenConexao(cx);
   })();
-  const conn = getConnector('mercado_livre');
-  const alertar = (texto: string) => notificarCategoria(admin, orgId, 'estoque', texto);
 
   return {
     ...depsBanco(admin, orgId, kitId),
     enfileirarSaga: (id) => enfileirarSaga(id, orgId),
     avisar: async (texto, chave) => { await notificarCategoria(admin, orgId, 'estoque', texto, { chave }); },
-    // Mesmo caminho da reativação do operador (exclusão `ativacao`, CAS da versão, confirmação por leitura), mas
-    // como automação: pausa do operador, moderação e retirada nunca são desfeitas.
-    async reativar(codigo, itemId) {
-      const politica = (await lerPoliticas(admin, orgId, [codigo])).get(codigo) ?? null;
-      if (!podeReativar({ politica, origem: 'automatico' }).pode) return politica?.estado === 'guardado' ? 'manter' : 'abandonar';
-      const prep = await prepararStatusOperador(admin, {
-        orgId, mlItemId: itemId, alvo: 'ativo', ligado: true, automatico: true,
-        lerStatus: async (id) => lerStatusMLEstrito(await getToken(), id),
-        alertar,
-      });
-      if ('recusa' in prep) return prep.recusa === MSG_KIT_MODERADO ? 'abandonar' : 'manter';
-      let r: Awaited<ReturnType<typeof conn.atualizarStatus>> = { ok: false };   // exceção = ambíguo
-      let confirmado = false;
-      try {
-        r = await conn.atualizarStatus({ getToken }, itemId, 'ativo');
-      } finally {
-        confirmado = await prep.concluir(r);
-      }
-      if (r.ok) return confirmado ? 'reativado' : 'manter';
-      const st = r.erro?.status;
-      if (st !== undefined && st >= 400 && st < 500 && st !== 408 && st !== 429) {
-        // Recusa definitiva do ML: repetir não muda nada; o operador decide.
-        await alertar(`Kit com variação: o Mercado Livre recusou reativar ${itemId} (${codigo}), pausado pela reposição. `
-          + 'Confira o anúncio e reative em Publicados.').catch((e) => console.error('kit_reposicao_alerta_falhou', String(e)));
-        return 'abandonar';
-      }
-      return 'manter';
-    },
+    reativar: (codigo, itemId) => reativarPausaAutomatica(admin, {
+      orgId, codigo, itemId,
+      lerStatus: async (id) => lerStatusMLEstrito(await getToken(), id),
+      // PUT só neste item, sem a propagação do conector aos relacionados (cópia de catálogo pausada à mão fica).
+      putAtivo: async (id) => {
+        try {
+          await atualizarStatusML(await getToken(), id, 'active');
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, erro: { status: (e as { status?: number }).status } };
+        }
+      },
+      alertar: (texto) => notificarCategoria(admin, orgId, 'estoque', texto),
+    }),
   };
 }
 

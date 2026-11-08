@@ -307,11 +307,15 @@ async function travar(ctx: Ctx, motivo: string): Promise<ResultadoPasso> {
   return { passo: ctx.t.passo, acao: 'travada', motivo };
 }
 
-/** Política mudou antes da reserva: devolve a peça, se uma invocação anterior chegou a reservar, e não reativa. */
+/**
+ * Política mudou antes da reserva: devolve a peça, se uma invocação anterior chegou a reservar, e não reativa. O que a
+ * saga pausou vira pausa da automação (Task 14): a reposição desfaz conforme a política vigente (ex.: desligar no meio).
+ */
 async function abortarSemReativar(ctx: Ctx, motivo: string): Promise<ResultadoPasso> {
   const r = await ledger(ctx, 'cancelar');
   if (!r.ok) throw new Error(`cancelar: ${r.motivo}`);
-  await finalizar(ctx, 'abortada', motivo);
+  await finalizar(ctx, 'abortada', motivo,
+    ctx.alvos.flatMap((a) => a.pausado_pela_saga.map((itemId) => ({ codigo: a.codigo, itemId }))));
   await alertar(ctx, `Transferência de kit abortada: ${motivo}. Nada foi reativado.`);
   return { passo: 'fim', acao: 'abortada', motivo };
 }

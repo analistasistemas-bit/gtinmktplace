@@ -1203,6 +1203,12 @@ export type Database = {
           },
         ]
       }
+      kit_avisos_sobra: {
+        Row: { codigo: string; criado_em: string; org_id: string; resultado: string | null; versao: number }
+        Insert: { codigo: string; criado_em?: string; org_id: string; resultado?: string | null; versao: number }
+        Update: { codigo?: string; criado_em?: string; org_id?: string; resultado?: string | null; versao?: number }
+        Relationships: []
+      }
       kit_pausas_automaticas: {
         Row: { codigo: string; criado_em: string; item_id: string; org_id: string; transferencia_id: string }
         Insert: { codigo: string; criado_em?: string; item_id: string; org_id: string; transferencia_id: string }
