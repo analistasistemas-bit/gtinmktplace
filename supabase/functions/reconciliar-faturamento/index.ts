@@ -499,7 +499,9 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
       const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver, incompleto, kitLigado } = await catalogoDe(userId, org);
       const { gtinPorItem, incerto: gtinIncerto } = await carregarGtinsDaVenda(token, pedidos, idsPubliai, kitLigado);
       // ADR-0197: pedidos com obrigação de kit (baixa adiada ou crédito). Só com o módulo; lança → a etapa falha.
-      const obrigacoesKit = kitLigado ? await lerPendenciasKit(admin, org) : new Set<string>();
+      const obrigacoesKit = kitLigado
+        ? await lerPendenciasKit(admin, org, pedidos.map((x) => String(x.id)))
+        : new Set<string>();
       const r = resultadoVazio();
       for (const lote of chunk(pedidos, PARALELAS)) {
         await Promise.all(lote.map(async (pedido) => {
@@ -535,6 +537,7 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
             const baixaOk = !(obrigacoesKit.has(String(pedido.id)) && pedido.status === 'paid') || await refazerBaixaAdiada(admin, {
               registrarPendenciaKit,
               despachar: (pend) => despacharPushPendente(admin, org, pend, enfileirarSincronizacaoEstoque),
+              alertar: (texto, chave) => notificarCategoria(admin, org, 'vendas', texto, { chave }),
             }, { orgId: org, canal: 'mercado_livre', orderId: pedido.id, itens, incerto: incompleto || gtinIncerto });
             return desfechoKit({ mpLido: liquidoPorPayment !== null, cancelamento, baixaOk });
           });

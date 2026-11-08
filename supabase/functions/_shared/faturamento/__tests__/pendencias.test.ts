@@ -1,6 +1,6 @@
 // ADR-0173: fiação fina sobre worker_pendencias (Task 1) — filas de retry por org, por order_id.
 import { describe, it, expect, vi } from 'vitest';
-import { lerPendencias, registrarPendencias, temPendenciaAtiva } from '../pendencias';
+import { lerPendencias, lerPendenciasKit, registrarPendencias, temPendenciaAtiva } from '../pendencias';
 
 describe('lerPendencias', () => {
   function criarAdmin(data: unknown, error: { message: string } | null = null) {
@@ -84,5 +84,45 @@ describe('temPendenciaAtiva', () => {
   it('error → rejeita', async () => {
     const { admin } = criarAdmin(null, { message: 'boom' });
     await expect(temPendenciaAtiva(admin, 'org-1')).rejects.toThrow('boom');
+  });
+});
+
+// ADR-0197 (Task 8, rodada 3): a leitura das obrigações é filtrada pelos pedidos do lote, em blocos, e nunca
+// depende do teto de linhas do PostgREST: pedido com obrigação omitido viraria "ok" e apagaria a obrigação.
+describe('lerPendenciasKit', () => {
+  function adminObrigacoes(total: number) {
+    const todas = Array.from({ length: total }, (_, i) => String(i));
+    const consultas: string[][] = [];
+    const admin = {
+      from: () => {
+        let ids: string[] = [];
+        // deno-lint-ignore no-explicit-any
+        const q: any = {
+          select: () => q, eq: () => q, is: () => q,
+          in: (_k: string, v: string[]) => { ids = v; consultas.push(v); return q; },
+          // Teto do PostgREST: no máximo 1000 linhas por resposta.
+          then: (res: (v: unknown) => unknown) => Promise.resolve({
+            data: todas.filter((o) => ids.includes(o)).slice(0, 1000).map((order_id) => ({ order_id })), error: null,
+          }).then(res),
+        };
+        return q;
+      },
+    };
+    return { admin: admin as never, consultas };
+  }
+
+  it('lote com 2500 pedidos com obrigação: todos voltam, em blocos', async () => {
+    const lote = Array.from({ length: 2500 }, (_, i) => String(i));
+    const { admin, consultas } = adminObrigacoes(3000);
+    const r = await lerPendenciasKit(admin, 'org-1', lote);
+    expect(r.size).toBe(2500);
+    expect(consultas.every((c) => c.length <= 200)).toBe(true);
+  });
+
+  it('só os pedidos do lote; lote vazio não consulta', async () => {
+    const { admin, consultas } = adminObrigacoes(10);
+    expect([...await lerPendenciasKit(admin, 'org-1', ['3', '99'])]).toEqual(['3']);
+    expect((await lerPendenciasKit(admin, 'org-1', [])).size).toBe(0);
+    expect(consultas).toEqual([['3', '99']]);
   });
 });

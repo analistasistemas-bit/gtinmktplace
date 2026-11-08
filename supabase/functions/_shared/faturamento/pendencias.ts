@@ -40,12 +40,21 @@ export async function registrarPendenciaKit(
   if (error) throw new Error(`registrar pendência de kit: ${error.message}`);
 }
 
-/** ADR-0197: pedidos com obrigação de kit ativa (crédito ou baixa adiada). Lança em erro. */
-export async function lerPendenciasKit(admin: SupabaseClient, orgId: string): Promise<Set<string>> {
-  const { data, error } = await admin.from('worker_pendencias')
-    .select('order_id').eq('org_id', orgId).eq('obrigatoria', true).is('descartado_em', null);
-  if (error) throw new Error(`ler pendências de kit: ${error.message}`);
-  return new Set(((data ?? []) as Array<{ order_id: string }>).map((r) => r.order_id));
+/**
+ * ADR-0197: dos pedidos do lote, os com obrigação de kit ativa (crédito ou baixa adiada). Filtrado pelos ids do
+ * lote, em blocos de 200 (abaixo do teto de linhas do PostgREST): pedido com obrigação omitido viraria "ok" e a
+ * obrigação seria apagada. Lança em erro.
+ */
+export async function lerPendenciasKit(admin: SupabaseClient, orgId: string, orderIds: string[]): Promise<Set<string>> {
+  const out = new Set<string>();
+  for (let i = 0; i < orderIds.length; i += 200) {
+    const { data, error } = await admin.from('worker_pendencias')
+      .select('order_id').eq('org_id', orgId).eq('obrigatoria', true).is('descartado_em', null)
+      .in('order_id', orderIds.slice(i, i + 200));
+    if (error) throw new Error(`ler pendências de kit: ${error.message}`);
+    for (const r of (data ?? []) as Array<{ order_id: string }>) out.add(r.order_id);
+  }
+  return out;
 }
 
 /** Há pendência ativa na org? (decide `parcial` no fim da rodada). Lança em erro. */

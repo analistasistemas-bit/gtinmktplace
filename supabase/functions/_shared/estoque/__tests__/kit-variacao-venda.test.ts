@@ -324,6 +324,20 @@ describe('refazerBaixaAdiada (reconciliação, rodada 2)', () => {
     expect([...b.refs]).toEqual([refBaixa('mercado_livre', 400, 'COMP-P')]);
   });
 
+  it('retomada sem SKU resolvido: mantém a obrigação e alerta (nunca some em silêncio)', async () => {
+    const b = bancoKit({});
+    const obrigacoes: string[] = [];
+    const alertas: Array<{ texto: string; chave: string }> = [];
+    const ok = await refazerBaixaAdiada(b.admin, {
+      registrarPendenciaKit: (_a, _o, id, erro) => { obrigacoes.push(`${id}|${erro}`); return Promise.resolve(); },
+      despachar: () => Promise.resolve(),
+      alertar: (texto, chave) => { alertas.push({ texto, chave }); return Promise.resolve(); },
+    }, { ...P, itens: [{ codigo: null, quantity: 1, ml_item_id: 'MLB-SEM', titulo: 'Blusa' }], incerto: false });
+    expect(ok).toBe(false);
+    expect(obrigacoes).toEqual([expect.stringContaining('sem SKU')]);
+    expect(alertas).toEqual([{ texto: expect.stringContaining('pedido 400'), chave: 'kit_baixa_adiada:400' }]);
+  });
+
   it('obrigação não gravada: lança (o pedido conta como falha)', async () => {
     const b = bancoKit({});
     await expect(refazerBaixaAdiada(b.admin, {

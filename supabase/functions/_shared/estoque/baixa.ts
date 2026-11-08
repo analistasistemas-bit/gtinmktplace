@@ -487,16 +487,31 @@ export async function refazerBaixaAdiada(
   deps: {
     registrarPendenciaKit: (admin: SupabaseClient, orgId: string, orderId: string, erro: string) => Promise<void>;
     despachar: (pendentes: MovimentoPendente[]) => Promise<unknown>;
+    /** Aviso durável ao operador (`notificarCategoria` com chave): só o operador resolve SKU ausente. */
+    alertar: (texto: string, chave: string) => Promise<unknown>;
   },
   p: { orgId: string; canal: string; orderId: string | number; itens: ItemVendaBaixa[]; incerto: boolean },
 ): Promise<boolean> {
   const r = await registrarBaixaVenda(admin, p, { kit: { incerto: p.incerto } });
   await deps.despachar(r.pendentesDePush);
+  // Sem SKU ou SKU fora do catálogo: nada baixou. Mantém a obrigação e avisa; nunca some em silêncio.
+  const operador = [
+    ...r.semSku.map((s) => `sem SKU: ${s.mlItemId ?? s.titulo ?? 'item'}`),
+    ...r.skuDesconhecido.map((s) => `SKU fora do catálogo: ${s.codigo}`),
+  ];
   const resto = [
     ...r.adiados.map((i) => `adiado ${i.ml_item_id ?? i.codigo}`),
     ...r.falhas.map((f) => `${f.codigo}: ${f.mensagem}`),
+    ...operador,
   ];
   if (resto.length === 0) return true;
   await deps.registrarPendenciaKit(admin, p.orgId, String(p.orderId), `kit_baixa_adiada: ${resto.join('; ')}`);
+  if (operador.length > 0) {
+    await deps.alertar(
+      `⚠️ Baixa adiada do pedido ${p.orderId} não fecha sozinha\n\n${operador.map((o) => `• ${o}`).join('\n')}\n\n`
+      + 'Vincule o anúncio a um produto do PubliAI (ou corrija o SKU). A baixa é refeita na próxima reconciliação.',
+      `kit_baixa_adiada:${p.orderId}`,
+    );
+  }
   return false;
 }
