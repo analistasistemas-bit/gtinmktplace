@@ -54,6 +54,8 @@ function cenario() {
     fotoQuebrada: null as string | null,
     familias: [] as Linha[],
     variacoesGravadas: [] as Linha[],
+    /** Roda dentro de `gravar.variacoes`, antes da releitura: a outra requisição da mesma chave grava aqui. */
+    antesDeGravarVariacoes: () => {},
     kits: [] as Array<Parameters<DepsCriarKitVariacao['gravar']['kit']>[0]>,
     desfeitos: [] as Array<[string, string | null]>,
     sagas: [] as string[],
@@ -98,7 +100,16 @@ function cenario() {
     gravar: {
       lote: async () => 'LOTE1',
       familia: async (l) => { s.familias.push(l); return 'FAM-KIT'; },
-      variacao: async (l) => { s.variacoesGravadas.push(l); },
+      // Espelho de `kit_variacao_gravar_variacoes`: sob o lock, cor + tamanho já gravado reaproveita o código.
+      async variacoes(_familiaId, linhas) {
+        s.antesDeGravarVariacoes();
+        return linhas.map((l) => {
+          const ja = s.variacoesGravadas.find((v) => v.cor === l.cor && v.tamanho === l.tamanho);
+          if (ja) return ja.codigo as string;
+          s.variacoesGravadas.push(l);
+          return l.codigo as string;
+        });
+      },
       async kit(a) {
         s.kits.push(a);
         s.ultimoHash = a.kit.pedido_hash as string;
@@ -265,6 +276,32 @@ describe('criarKitVariacao', () => {
     expect([c.s.familias.length, c.s.variacoesGravadas.length]).toEqual([1, 2]);
     expect(c.s.kits.map((k) => k.skus.map((x) => x.codigo))).toEqual([['00002001', '00002002'], ['00002001', '00002002']]);
     expect(c.s.sagas).toEqual(['T1']);
+  });
+
+  it('repetição concorrente da mesma chave reaproveita as variações da outra, sem órfãs (achado 4 da revisão final)', async () => {
+    const c = cenario();
+    // A: gravou a família e parou antes das variações.
+    c.s.antesDeGravarVariacoes = () => { throw new Error('fetch failed'); };
+    expect(await criarKitVariacao(c.deps, pedido())).toMatchObject({ ok: false, motivo: 'falha_gravar' });
+    expect([c.s.familias.length, c.s.variacoesGravadas.length]).toEqual([1, 0]);
+    // B leu o parcial vazio e reservou outros códigos; A grava as dela entre a leitura e a gravação de B.
+    let reservados: string[] = [];
+    const reservar = c.deps.reservarCodigos;
+    c.deps.reservarCodigos = async (qtd) => {
+      const r = await reservar(qtd);
+      reservados = r.codigos = r.codigos.map((x) => x.replace('0000200', 'B000200'));
+      return r;
+    };
+    c.s.antesDeGravarVariacoes = () => {
+      c.s.antesDeGravarVariacoes = () => {};
+      c.s.variacoesGravadas.push({ codigo: 'A-PB-M', cor: 'Preto e Branco', tamanho: 'M' }, { codigo: 'A-PB-G', cor: 'Preto e Branco', tamanho: 'G' });
+    };
+    const r = await criarKitVariacao(c.deps, pedido());
+    expect(r).toMatchObject({ ok: true, kitId: 'KIT1' });
+    expect(reservados).toEqual(['B0002001', 'B0002002']);
+    expect(c.s.variacoesGravadas.map((v) => v.codigo)).toEqual(['A-PB-M', 'A-PB-G']);
+    expect(c.s.kits.at(-1)!.skus.map((x) => x.codigo)).toEqual(['A-PB-M', 'A-PB-G']);
+    expect((r as { skus?: Array<{ codigo: string }> }).skus?.map((x) => x.codigo)).toEqual(['A-PB-M', 'A-PB-G']);
   });
 
   it('RPC com resultado incerto que gravou: consulta o estado durável, não apaga e enfileira', async () => {

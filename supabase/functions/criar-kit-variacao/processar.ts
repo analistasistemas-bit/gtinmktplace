@@ -91,8 +91,12 @@ export interface DepsCriarKitVariacao {
   gravar: {
     lote(): Promise<string>;
     familia(linha: Linha): Promise<string>;
-    /** Com `comRetryConcorrencia` (40001 `canonica_trocou`). */
-    variacao(linha: Linha): Promise<void>;
+    /**
+     * Variações do kit numa RPC sob o lock da família (`kit_variacao_gravar_variacoes`): combinação (cor) + tamanho
+     * já gravada por outra requisição da mesma chave reaproveita o código dela. Devolve os códigos finais na ordem de
+     * `linhas`. Com `comRetryConcorrencia` (40001 `canonica_trocou`).
+     */
+    variacoes(familiaId: string, linhas: Linha[]): Promise<string[]>;
     kit(args: { chave: string; kit: Linha; skus: Linha[]; baseline: Array<{ codigo: string; ml: number }>; alvos: Linha[] }): Promise<ResultadoRpcKit>;
     desfazer(loteId: string, familiaId: string | null): Promise<void>;
   };
@@ -529,12 +533,16 @@ export async function criarKitVariacao(
       }),
       kit_variacao_pedido: hash,
     });
-    for (const [i, c] of combinacoes.entries()) {
-      if (existentes.has(`${c.rotulo}#${c.tamanho}`)) continue;
-      await deps.gravar.variacao(montarVariacaoKitVariacao(c, {
-        familiaId, codigo: codigos[i], preco: input.preco, foto: input.fotos[c.rotulo],
-        pictureId: pictureIds.get(input.fotos[c.rotulo])!, pecas: input.pecasPorKit,
-      }));
+    // Repetição concorrente da mesma chave: a outra requisição pode ter gravado a mesma combinação depois da
+    // leitura do parcial. A RPC relê sob o lock da família e devolve o código que ficou valendo.
+    const indices = combinacoes.flatMap((c, i) => (existentes.has(`${c.rotulo}#${c.tamanho}`) ? [] : [i]));
+    if (indices.length > 0) {
+      const finais = await deps.gravar.variacoes(familiaId, indices.map((i) => montarVariacaoKitVariacao(combinacoes[i], {
+        familiaId: familiaId!, codigo: codigos[i], preco: input.preco, foto: input.fotos[combinacoes[i].rotulo],
+        pictureId: pictureIds.get(input.fotos[combinacoes[i].rotulo])!, pecas: input.pecasPorKit,
+      })));
+      if (finais.length !== indices.length) throw new Error('variações do kit: resposta inesperada');
+      indices.forEach((i, k) => { codigos[i] = finais[k]; });
     }
   } catch (e) {
     // Incerto (o insert pode ter gravado): mantém o parcial; a repetição com a mesma chave retoma.

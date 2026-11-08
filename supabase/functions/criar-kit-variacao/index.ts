@@ -155,9 +155,12 @@ function portas(admin: SupabaseClient, orgId: string, userId: string): DepsCriar
         return lote.id as string;
       },
       familia: async (linha) => (await lerUm(admin.from('familias').insert(linha).select('id').single(), 'família do kit')).id as string,
-      async variacao(linha) {
-        const { error } = await comRetryConcorrencia(() => admin.from('variacoes').insert(linha));
-        if (error) throw new Error(`variação do kit: ${error.message}`);
+      async variacoes(familiaId, linhas) {
+        const { data, error } = await comRetryConcorrencia(() =>
+          admin.rpc('kit_variacao_gravar_variacoes', { p_org: orgId, p_familia: familiaId, p_linhas: linhas }));
+        if (error) throw new Error(`variações do kit: ${error.message}`);
+        if (!Array.isArray(data)) throw new Error('variações do kit: resposta inesperada');
+        return data as string[];
       },
       kit: async (a) => await lerUm(admin.rpc('kit_variacao_criar', {
         p_org: orgId, p_chave: a.chave, p_kit: a.kit, p_skus: a.skus, p_baseline: a.baseline, p_alvos: a.alvos,
