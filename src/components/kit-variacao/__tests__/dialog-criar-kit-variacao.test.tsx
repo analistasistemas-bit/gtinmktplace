@@ -152,6 +152,23 @@ describe('DialogCriarKitVariacao', () => {
     expect(enviarFotoKit).not.toHaveBeenCalled();
   });
 
+  it('estado incerto (motivo estado_incerto) repete o mesmo pedido', async () => {
+    modulos.data = ['kit_variacao', 'imagem_ia'];
+    vi.mocked(gerarFotoKitEdge).mockClear();
+    vi.mocked(gerarFotoKitEdge).mockResolvedValueOnce({ ok: false, motivo: 'estado_incerto', mensagem: 'Tente de novo.' });
+    const user = userEvent.setup();
+    abrir();
+    await montar(user, ['Preto', 'Branco'], { 'Preto e Branco M': '1' });
+    await user.click(screen.getByRole('button', { name: 'Próximo' }));
+    const botao = () => screen.getByRole('button', { name: 'Gerar foto Preto e Branco' });
+    await user.click(botao());
+    await vi.waitFor(() => expect(botao()).toBeEnabled());
+    await user.click(botao());
+    await screen.findByRole('img', { name: 'Foto gerada Preto e Branco' });
+    const [a, b] = vi.mocked(gerarFotoKitEdge).mock.calls.map((x) => x[0].requestId);
+    expect(b).toBe(a);
+  });
+
   it('falha incerta (sem motivo) repete o mesmo pedido: recupera a geração existente em vez de gerar outra', async () => {
     modulos.data = ['kit_variacao', 'imagem_ia'];
     vi.mocked(gerarFotoKitEdge).mockClear();

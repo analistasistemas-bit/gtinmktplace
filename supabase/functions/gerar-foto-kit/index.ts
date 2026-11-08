@@ -155,6 +155,9 @@ async function atender(req: Request, inicio: number): Promise<Response> {
     if (!existente) await auditar(target, 'succeeded');
     return json({ request_id: requestId, path, url, custo_centavos: centavos(custoUsd), ...(existente ? { existente: true } : {}) });
   };
+  // Estado não confirmado (erro ao gravar ou reler): resposta INCERTA. A tela mantém o mesmo request_id e a repetição
+  // responde pelo estado gravado. Resposta definitiva só com `recusada` lida ou gravada com confirmação.
+  const incerto = () => json({ error: 'Não foi possível confirmar a foto. Tente de novo: a mesma foto é recuperada.', motivo: 'estado_incerto' }, 503);
   const falhaStorage = () => json({ error: 'Não foi possível guardar a foto gerada. Gere outra.', motivo: 'falha_storage' }, 502);
 
   // Repetição do mesmo pedido: devolve a mesma imagem, sem IA.
@@ -187,9 +190,9 @@ async function atender(req: Request, inicio: number): Promise<Response> {
       }
       let final: string | null;
       try { final = await transicionar('pendente_upload', { status: existe ? 'gerada' : 'recusada' }); }
-      catch (e) { logErro('registro', e); return json({ error: 'Falha ao registrar a geração. Tente novamente.' }, 500); }
+      catch (e) { logErro('registro', e); return incerto(); }
       if (final === 'recusada') return falhaStorage();
-      if (final !== 'gerada') return json({ error: 'Falha ao ler a geração. Tente novamente.' }, 500);
+      if (final !== 'gerada') return incerto();
     } else if (ja.status !== 'gerada') {
       return json({ error: 'A foto gerada não serve ao Mercado Livre. Gere outra.', motivo: 'imagem_inadequada' }, 502);
     }
@@ -269,11 +272,13 @@ async function atender(req: Request, inicio: number): Promise<Response> {
 
   // Gerada com custo real. Imprópria ao ML ou sem storage: registra o custo, fora da cobrança, e não entrega.
   const recusar = async (de: string, msg: string, motivo: string) => {
-    let final: string | null = 'recusada';
-    try { final = await transicionar(de, { status: 'recusada', custo_usd: custoUsd }); } catch (e) { logErro('registro', e); }
+    let final: string | null;
+    try { final = await transicionar(de, { status: 'recusada', custo_usd: custoUsd }); }
+    catch (e) { logErro('registro', e); await auditar(target, 'failed'); return incerto(); }
     // Outra execução já finalizou como `gerada` (objeto no storage): vale o estado gravado.
     if (final === 'gerada') return await entregar(path, custoUsd, false);
     await auditar(target, 'failed');
+    if (final !== 'recusada') return incerto();
     return json({ error: msg, motivo }, 502);
   };
   const path = `${orgId}/kit-variacao-ia/${requestId}.${gerada.ext}`;
@@ -284,8 +289,8 @@ async function atender(req: Request, inicio: number): Promise<Response> {
   // se o upload estourar o prazo e terminar depois, a repetição do mesmo pedido acha o objeto e finaliza.
   let pre: string | null;
   try { pre = await transicionar('pendente', { status: 'pendente_upload', storage_path: path, custo_usd: custoUsd }); }
-  catch (e) { logErro('registro', e); return json({ error: 'Falha ao registrar a geração. Tente novamente.' }, 500); }
-  if (pre !== 'pendente_upload') return json({ error: 'Falha ao registrar a geração. Tente novamente.' }, 500);
+  catch (e) { logErro('registro', e); return incerto(); }
+  if (pre !== 'pendente_upload') return incerto();
   let errUp: unknown = null;
   try {
     ({ error: errUp } = await comPrazo(admin.storage.from('imagens').upload(path, new Blob([gerada.bytes as Uint8Array<ArrayBuffer>], { type: gerada.mime }), {
@@ -303,8 +308,10 @@ async function atender(req: Request, inicio: number): Promise<Response> {
   }
   // Terminal condicional: nunca sobrescreve uma `recusada` decidida por uma repetição (prazo vencido). Prazo aqui
   // rejeita e vira 503 `prazo` no topo: o cliente repete o mesmo pedido e recupera o estado gravado.
-  const final = await transicionar('pendente_upload', { status: 'gerada' });
+  let final: string | null;
+  try { final = await transicionar('pendente_upload', { status: 'gerada' }); }
+  catch (e) { logErro('registro', e); return incerto(); }
   if (final === 'gerada') return await entregar(path, custoUsd, false);
   if (final === 'recusada') { await auditar(target, 'failed'); return falhaStorage(); }
-  return json({ error: 'Falha ao registrar a geração. Tente novamente.' }, 500);
+  return incerto();
 }

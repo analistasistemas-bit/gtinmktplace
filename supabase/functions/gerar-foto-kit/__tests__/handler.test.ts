@@ -21,6 +21,9 @@ const f = vi.hoisted(() => ({
   uploadAtrasoMs: 0,
   objetos: new Set<string>(),
   listaExiste: [] as boolean[],
+  uploadErroVira: '' as string,
+  leiturasImagens: 0,
+  falhaLeituraN: 0,
   codigoErro: undefined as unknown,
   deslocamento: 0,
   imagemB64: '',
@@ -95,7 +98,11 @@ function tabela(t: string) {
       if (t === 'organizations') return { data: { modulos_habilitados: f.modulos }, error: null };
       if (t === 'configuracoes') return { data: { ai_model_imagem: null }, error: null };
       if (t === 'familias') return { data: f.base, error: null };
-      if (t === 'kit_variacao_imagens') { const l = achar(); return { data: l ? { ...l } : null, error: null }; }
+      if (t === 'kit_variacao_imagens') {
+        f.leiturasImagens++;
+        if (f.falhaLeituraN && f.leiturasImagens === f.falhaLeituraN) return { data: null, error: { message: 'x' } };
+        const l = achar(); return { data: l ? { ...l } : null, error: null };
+      }
       return { data: null, error: null };
     },
     then: (res: (v: unknown) => void) => {
@@ -135,6 +142,11 @@ vi.mock('../../_shared/supabase.ts', () => ({
         upload: (p: string) => {
           f.uploads.push(p);
           if (f.uploadTrava) return new Promise(() => {});
+          if (f.uploadErroVira) {
+            // O storage devolve erro, e outra execução finaliza a linha nesse meio-tempo.
+            f.linhas[0].status = f.uploadErroVira;
+            return Promise.resolve({ data: null, error: { message: 'storage caiu' } });
+          }
           const fim = () => { f.objetos.add(p); return { data: { path: p }, error: null }; };
           return f.uploadAtrasoMs ? new Promise((res) => setTimeout(() => res(fim()), f.uploadAtrasoMs)) : Promise.resolve(fim());
         },
@@ -163,7 +175,8 @@ beforeEach(() => {
   f.admin = true; f.modulos = ['kit_variacao', 'imagem_ia']; f.moderadas = []; f.moderacaoFalha = false;
   f.imagemFalha = false; f.erroImagem = 'provedor caiu'; f.auditoriaFalha = false; f.atrasoModeracaoMs = 0; f.deslocamento = 0;
   f.atrasoImagemMs = 0; f.uploadTrava = false; f.codigoErro = undefined;
-  f.uploadAtrasoMs = 0; f.objetos = new Set(); f.listaExiste = []; f.imagemB64 = PNG_VERTICAL; f.custo = 0.041; f.chamadasImagem = []; f.chamadasVisao = 0;
+  f.uploadAtrasoMs = 0; f.objetos = new Set(); f.listaExiste = [];
+  f.uploadErroVira = ''; f.leiturasImagens = 0; f.falhaLeituraN = 0; f.imagemB64 = PNG_VERTICAL; f.custo = 0.041; f.chamadasImagem = []; f.chamadasVisao = 0;
   f.linhas = []; f.uploads = []; f.downloads = []; f.escritasProibidas = [];
   f.base = {
     nome_pai: 'Jaqueta', titulo_ml: 'Jaqueta Corta Vento',
@@ -367,6 +380,16 @@ describe('gerar-foto-kit', () => {
     expect(original!.status).toBe(502);
     expect((await original!.json()).motivo).toBe('falha_storage');
     expect(f.linhas[0]).toMatchObject({ status: 'recusada' });
+  });
+
+  it('estado já gerada → UPDATE sem linhas → releitura falha: resposta incerta, nunca falha_storage', async () => {
+    f.uploadErroVira = 'gerada';
+    f.falhaLeituraN = 2;   // 1ª leitura: repetição no início; 2ª: releitura depois do UPDATE sem linhas
+    const r = await post(ok);
+    const j = await r.json();
+    expect(r.status).toBe(503);
+    expect(j.motivo).toBe('estado_incerto');
+    expect(f.linhas[0]).toMatchObject({ status: 'gerada' });
   });
 
   it('pendente_upload sem objeto no storage: recusada (sem cobrança), nunca gera de novo', async () => {
