@@ -34,6 +34,9 @@ descrição do anúncio. O cliente que pedir paga por imagem.
 7. **Modelo:** o admin da plataforma escolhe provedor e modelo por organização (Nano Banana via OpenRouter ou modelos
    da Higgsfield). Cada modelo entra por um cadastro curto (endpoint, campo de referência, máximo de referências,
    parâmetros fixos, custo) e só é liberado após uma geração real; só entram modelos que aceitam foto de referência.
+   Liberados na medição de 08/11 (3 produtos reais × 3 missões): **Nano Banana 2.1 (padrão)**, **Grok Imagine 2** e
+   **Qwen Image 3 Edit** (Higgsfield). Fora: Marketing Studio (apagou texto de etiqueta), Ideogram 4 e Soul 2 i2i
+   (trocaram o produto).
 8. **Permissão:** gerar e aprovar, qualquer usuário da organização com o módulo `imagem_ia`; aplicar e reverter, só
    admin da organização.
 9. **Texto composto pelo sistema:** o modelo gera a cena sem texto de marketing; o PubliAI escreve headline,
