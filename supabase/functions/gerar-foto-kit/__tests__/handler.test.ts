@@ -16,6 +16,9 @@ const f = vi.hoisted(() => ({
   erroImagem: 'provedor caiu',
   auditoriaFalha: false,
   atrasoModeracaoMs: 0,
+  atrasoImagemMs: 0,
+  uploadTrava: false,
+  codigoErro: undefined as unknown,
   deslocamento: 0,
   imagemB64: '',
   custo: 0.041 as number | undefined,
@@ -48,7 +51,14 @@ vi.mock('../../_shared/ai/client.ts', () => ({
     chat: { completions: { create: async (a: Record<string, unknown>) => {
       if (a.modalities) {
         f.chamadasImagem.push(a);
-        if (f.imagemFalha) throw Object.assign(new Error(f.erroImagem), { status: 500, headers: { authorization: 'Bearer sk-or-v1-SEGREDO' } });
+        f.deslocamento += f.atrasoImagemMs;
+        // No teste de relógio falso a geração também consome os timers (o tempo passa para todos).
+        if (f.atrasoImagemMs) vi.advanceTimersByTime(f.atrasoImagemMs);
+        if (f.imagemFalha) {
+          throw Object.assign(new Error(f.erroImagem), {
+            status: 500, code: f.codigoErro, headers: { authorization: 'Bearer sk-or-v1-SEGREDO' },
+          });
+        }
         return {
           choices: [{ message: { images: [{ image_url: { url: `data:image/png;base64,${f.imagemB64}` } }] } }],
           usage: { prompt_tokens: 3000, completion_tokens: 1290, ...(f.custo !== undefined ? { cost: f.custo } : {}) },
@@ -113,7 +123,10 @@ vi.mock('../../_shared/supabase.ts', () => ({
     storage: {
       from: () => ({
         download: async (p: string) => (f.downloads.push(p), { data: new Blob([`foto ${p}`], { type: 'image/jpeg' }), error: null }),
-        upload: async (p: string) => { f.uploads.push(p); return { data: { path: p }, error: null }; },
+        upload: (p: string) => {
+          f.uploads.push(p);
+          return f.uploadTrava ? new Promise(() => {}) : Promise.resolve({ data: { path: p }, error: null });
+        },
         createSignedUrl: async (p: string) => ({ data: { signedUrl: `https://x/${p}?t=1` }, error: null }),
       }),
     },
@@ -131,7 +144,8 @@ beforeAll(async () => {
 const REQ = '11111111-1111-4111-8111-111111111111';
 beforeEach(() => {
   f.admin = true; f.modulos = ['kit_variacao', 'imagem_ia']; f.moderadas = []; f.moderacaoFalha = false;
-  f.imagemFalha = false; f.erroImagem = 'provedor caiu'; f.auditoriaFalha = false; f.atrasoModeracaoMs = 0; f.deslocamento = 0; f.imagemB64 = PNG_VERTICAL; f.custo = 0.041; f.chamadasImagem = []; f.chamadasVisao = 0;
+  f.imagemFalha = false; f.erroImagem = 'provedor caiu'; f.auditoriaFalha = false; f.atrasoModeracaoMs = 0; f.deslocamento = 0;
+  f.atrasoImagemMs = 0; f.uploadTrava = false; f.codigoErro = undefined; f.imagemB64 = PNG_VERTICAL; f.custo = 0.041; f.chamadasImagem = []; f.chamadasVisao = 0;
   f.linhas = []; f.uploads = []; f.downloads = []; f.escritasProibidas = [];
   f.base = {
     nome_pai: 'Jaqueta', titulo_ml: 'Jaqueta Corta Vento',
@@ -228,13 +242,34 @@ describe('gerar-foto-kit', () => {
   it('log de erro externo não leva payload, headers nem segredo', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     f.imagemFalha = true;
-    f.erroImagem = 'falhou com Authorization: Bearer sk-or-v1-SEGREDO e data:image/png;base64,' + 'A'.repeat(500);
+    f.erroImagem = 'falhou: Authorization: Bearer sk-or-v1-SEGREDO1; Basic dXNlcjpTRUdSRURPMg==; '
+      + 'https://user:SEGREDO3@api.x/v1?key=SEGREDO4&token=SEGREDO5 x-api-key: SEGREDO6 data:image/png;base64,' + 'A'.repeat(500);
+    f.codigoErro = 'SEGREDO7 Basic Zm9vOmJhcg==';
     await post(ok);
     const saida = JSON.stringify(spy.mock.calls);
     spy.mockRestore();
-    expect(saida).not.toContain('SEGREDO');
-    expect(saida).not.toContain('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
-    expect(saida).toContain('500');
+    expect(saida).not.toMatch(/SEGREDO|dXNlcj|Zm9vOmJhcg|AAAAAAAAAA|falhou/);
+    expect(saida).toMatch(/status\\":500/);
+  });
+
+  it('pior caso de tempo: IA lenta + upload travado responde antes de 150 s (relógio falso)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      f.atrasoImagemMs = 128_000;   // a geração consome quase todo o prazo
+      f.uploadTrava = true;         // e o storage nunca responde
+      const inicio = Date.now();
+      let resposta: Response | undefined;
+      void post(ok).then((r) => { resposta = r; });
+      for (let i = 0; i < 40 && !resposta; i++) {
+        await vi.advanceTimersByTimeAsync(1_000);
+        f.deslocamento += 1_000;
+      }
+      expect(resposta).toBeDefined();
+      expect(Date.now() - inicio).toBeLessThan(150_000);
+      expect(resposta!.status).toBeGreaterThanOrEqual(500);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('request_id em andamento → 409, sem IA', async () => {

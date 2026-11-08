@@ -23,27 +23,30 @@ function json(body: unknown, status = 200): Response {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Além do limite de uma execução da edge (150 s sem resposta): reserva `pendente` mais velha que isto foi abandonada.
 const ABANDONO_MS = 5 * 60_000;
-// Prazo global da execução (a edge corta em 150 s sem resposta), repartido entre moderação, downloads, visão e
-// geração. Sem tempo para a IA, recusa antes de reservar: nada é gerado nem cobrado.
+// Prazo global da execução (a edge corta em 150 s sem resposta). A IA termina até `PRAZO_MS - RESERVA_FINAL_MS`;
+// a reserva final é de upload, registro, URL assinada e auditoria. `LIMITE_RESPOSTA_MS` é a resposta garantida no pior
+// caso: passou dele, responde 503 `prazo` (o cliente repete o mesmo pedido e recupera a geração, se ela terminar).
+// Sem tempo para a IA, recusa antes de reservar: nada é gerado nem cobrado.
 const PRAZO_MS = 140_000;
+const RESERVA_FINAL_MS = 10_000;
+const LIMITE_RESPOSTA_MS = 145_000;
 const MINIMO_IA_MS = 90_000;
 const centavos = (usd: number) => Math.ceil(Number((usd * 100).toFixed(6)));
 
-/** Log de erro externo só com campos permitidos: status, código e mensagem curta saneada (nunca payload/headers). */
-export function sanear(msg: string): string {
-  return msg
-    .replace(/data:[^\s,;]+(;base64)?,[A-Za-z0-9+/=]*/g, '[dados]')
-    .replace(/bearer\s+\S+/gi, 'Bearer [oculto]')
-    .replace(/\b(sk|pk|eyJ)[\w.-]{8,}/g, '[oculto]')
-    .replace(/[A-Za-z0-9+/=_-]{32,}/g, '[oculto]')
-    .slice(0, 160);
-}
+// Log de erro externo por lista de permissão: status HTTP numérico, código de uma lista conhecida e mensagem fixa por
+// etapa. Nenhum texto do provedor, do banco ou do storage (pode trazer credencial, URL assinada ou payload).
+const CODIGOS_LOG = new Set(['23505', '23514', '40001', '57014', 'PGRST116', 'AbortError', 'TimeoutError', 'ETIMEDOUT', 'ECONNRESET']);
+const MSG_LOG: Record<string, string> = {
+  moderacao: 'moderação ilegível', ia: 'falha da IA', upload: 'falha no upload', registro: 'falha ao registrar',
+  auditoria: 'falha na auditoria', prazo: 'prazo esgotado', interno: 'erro interno',
+};
 function logErro(onde: string, e: unknown) {
-  const x = (e ?? {}) as { status?: unknown; statusCode?: unknown; code?: unknown; message?: unknown };
-  const status = typeof x.status === 'number' ? x.status : typeof x.statusCode === 'number' ? x.statusCode : undefined;
-  const codigo = typeof x.code === 'string' || typeof x.code === 'number' ? String(x.code).slice(0, 40) : undefined;
-  const msg = sanear(typeof x.message === 'string' ? x.message : typeof e === 'string' ? e : 'erro');
-  console.error(JSON.stringify({ fn: 'gerar-foto-kit', onde, status, codigo, msg }));
+  const x = (e ?? {}) as { status?: unknown; statusCode?: unknown; code?: unknown; name?: unknown };
+  const numero = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v >= 100 && v <= 599 ? v : undefined);
+  const status = numero(x.status) ?? numero(x.statusCode);
+  const bruto = typeof x.code === 'string' || typeof x.code === 'number' ? String(x.code) : typeof x.name === 'string' ? x.name : '';
+  const codigo = CODIGOS_LOG.has(bruto) ? bruto : undefined;
+  console.error(JSON.stringify({ fn: 'gerar-foto-kit', onde, status, codigo, msg: MSG_LOG[onde] ?? 'erro' }));
 }
 
 /** Corta `p` em `ms` (a operação de baixo pode seguir, mas o resultado é descartado: fail-closed). */
@@ -51,7 +54,9 @@ function comPrazo<T>(p: PromiseLike<T>, ms: number): Promise<T> {
   let t: ReturnType<typeof setTimeout> | undefined;
   return Promise.race([
     Promise.resolve(p),
-    new Promise<never>((_, rej) => { t = setTimeout(() => rej(new Error('prazo esgotado')), Math.max(0, ms)); }),
+    new Promise<never>((_, rej) => {
+      t = setTimeout(() => rej(Object.assign(new Error('prazo esgotado'), { name: 'TimeoutError' })), Math.max(0, ms));
+    }),
   ]).finally(() => clearTimeout(t));
 }
 
@@ -63,6 +68,19 @@ async function paraDataUrl(blob: Blob): Promise<string> {
 }
 
 Deno.serve(async (req) => {
+  const inicio = Date.now();
+  try {
+    return await comPrazo(atender(req, inicio), inicio + LIMITE_RESPOSTA_MS - Date.now());
+  } catch (e) {
+    const prazo = (e as { name?: unknown })?.name === 'TimeoutError';
+    logErro(prazo ? 'prazo' : 'interno', e);
+    return prazo
+      ? json({ error: 'A geração passou do tempo. Tente de novo: a foto já gerada é recuperada.', motivo: 'prazo' }, 503)
+      : json({ error: 'Erro interno. Tente novamente.' }, 500);
+  }
+});
+
+async function atender(req: Request, inicio: number): Promise<Response> {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
 
@@ -71,7 +89,9 @@ Deno.serve(async (req) => {
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
   const { orgId, userId } = context;
   const admin = adminClient();
-  const fim = Date.now() + PRAZO_MS;
+  const fim = inicio + PRAZO_MS;
+  /** Tempo de uma operação da fase final, sempre antes do limite de resposta (com 2 s de folga para responder). */
+  const fatiaFinal = (max: number) => Math.max(0, Math.min(max, inicio + LIMITE_RESPOSTA_MS - 2_000 - Date.now()));
   const resta = () => fim - Date.now();
   /** Tempo da próxima etapa: até `max`, deixando `reservar` para as seguintes. Sem tempo, lança. */
   const fatia = (max: number, reservar: number) => {
@@ -81,7 +101,7 @@ Deno.serve(async (req) => {
   };
   // Auditoria nunca transforma o resultado: depois do registro, a geração já é cobrável e precisa chegar à tela.
   const auditar = async (t: { type: string; id: string }, r: 'denied' | 'failed' | 'succeeded') => {
-    try { await auditarOperacaoSuporte(admin, context, t, r); } catch (e) { logErro('auditoria', e); }
+    try { await comPrazo(auditarOperacaoSuporte(admin, context, t, r), fatiaFinal(3_000)); } catch (e) { logErro('auditoria', e); }
   };
 
   // Mesmo gate da criação do kit (ADR-0060), mais o módulo pago de imagem.
@@ -190,7 +210,7 @@ Deno.serve(async (req) => {
       fotos.push(await paraDataUrl(data));
     }
     const descricao = await descreverPeca(fotos, fatia(25_000, 60_000));
-    gerada = await gerarImagem(modelo, montarPedidoImagem({ cores, descricao: descricao.texto }), fotos, fatia(100_000, 5_000));
+    gerada = await gerarImagem(modelo, montarPedidoImagem({ cores, descricao: descricao.texto }), fotos, fatia(100_000, RESERVA_FINAL_MS));
     custoUsd = descricao.custoUsd + gerada.custoUsd;
   } catch (e) {
     // Falha de geração não cobra: some a reserva e o mesmo request_id pode tentar de novo.
@@ -202,8 +222,10 @@ Deno.serve(async (req) => {
 
   // Gerada com custo real. Imprópria ao ML ou sem storage: registra o custo, fora da cobrança, e não entrega.
   const recusar = async (msg: string, motivo: string) => {
-    await tabela().update({ status: 'recusada', custo_usd: custoUsd, atualizado_em: new Date().toISOString() })
-      .eq('org_id', orgId).eq('request_id', requestId);
+    try {
+      await comPrazo(tabela().update({ status: 'recusada', custo_usd: custoUsd, atualizado_em: new Date().toISOString() })
+        .eq('org_id', orgId).eq('request_id', requestId), fatiaFinal(4_000));
+    } catch (e) { logErro('registro', e); }
     await auditar(target, 'failed');
     return json({ error: msg, motivo }, 502);
   };
@@ -211,22 +233,29 @@ Deno.serve(async (req) => {
     return await recusar('A foto gerada não serve ao Mercado Livre (precisa ser vertical ou quadrada). Gere outra.', 'imagem_inadequada');
   }
   const path = `${orgId}/kit-variacao-ia/${requestId}.${gerada.ext}`;
-  const { error: errUp } = await admin.storage.from('imagens').upload(path, new Blob([gerada.bytes as Uint8Array<ArrayBuffer>], { type: gerada.mime }), {
-    contentType: gerada.mime, upsert: true,
-  });
+  let errUp: unknown = null;
+  try {
+    ({ error: errUp } = await comPrazo(admin.storage.from('imagens').upload(path, new Blob([gerada.bytes as Uint8Array<ArrayBuffer>], { type: gerada.mime }), {
+      contentType: gerada.mime, upsert: true,
+    }), fatiaFinal(6_000)));
+  } catch (e) { errUp = e; }
   if (errUp) {
     logErro('upload', errUp);
     return await recusar('Não foi possível guardar a foto gerada. Tente novamente.', 'falha_storage');
   }
-  const { error: errFim } = await tabela().update({
+  // Prazo aqui rejeita e vira 503 `prazo` no topo: o cliente repete o mesmo pedido e recupera a geração, se gravou.
+  const { error: errFim } = await comPrazo(tabela().update({
     status: 'gerada', storage_path: path, custo_usd: custoUsd, atualizado_em: new Date().toISOString(),
-  }).eq('org_id', orgId).eq('request_id', requestId);
+  }).eq('org_id', orgId).eq('request_id', requestId), fatiaFinal(4_000));
   if (errFim) {
     // Sem o registro não há entrega (fail-closed): a imagem não sai sem a cobrança.
     logErro('registro', errFim);
     return json({ error: 'Falha ao registrar a geração. Tente novamente.' }, 500);
   }
-  const { data: assinada } = await admin.storage.from('imagens').createSignedUrl(path, 60 * 60 * 2);
+  let url: string | null = null;
+  try {
+    url = (await comPrazo(admin.storage.from('imagens').createSignedUrl(path, 60 * 60 * 2), fatiaFinal(3_000))).data?.signedUrl ?? null;
+  } catch { /* sem URL: a tela pede "Recarregar prévia" com o mesmo pedido */ }
   await auditar(target, 'succeeded');
-  return json({ request_id: requestId, path, url: assinada?.signedUrl ?? null, custo_centavos: centavos(custoUsd) });
-});
+  return json({ request_id: requestId, path, url, custo_centavos: centavos(custoUsd) });
+}
