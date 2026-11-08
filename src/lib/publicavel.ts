@@ -32,7 +32,7 @@ function flagsCritica(
 
 // "Produto simples": CREATE de uma variação só, fora do domínio de aviamentos — não há cores
 // para diferenciar, a variação É o produto.
-function familiaProdutoSimples(familia: Familia): boolean {
+export function familiaProdutoSimples(familia: Familia): boolean {
   const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
   return familia.operacao === 'CREATE' && familia.tipoAviamento === 'outro' && incluidas.length === 1;
 }

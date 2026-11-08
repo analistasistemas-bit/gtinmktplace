@@ -19,6 +19,8 @@ import { corpoDoErroDaEdge } from '@/lib/edge-erro';
 import { UNIDADES_FISCAIS } from '@/lib/fiscal';
 import { formatarNomeProduto } from '@/lib/texto';
 import { useNcmOficial } from '@/hooks/useNcmOficial';
+import { useCestExiste, useCestOficial } from '@/hooks/useCestOficial';
+import { aguardarSyncFiscal } from '@/lib/aguardar-sync-fiscal';
 import {
   EtapaFiscalForm, fiscalVazio, fiscalCompleto, type FiscalForm,
 } from '@/components/estoque/etapa-fiscal-form';
@@ -46,6 +48,10 @@ export function DialogFiscalProduto({ familiaId, fila, onFechar, onAvancar, onSa
   const [familia, setFamilia] = useState<FamiliaFiscalCarregada | null>(null);
   const [fiscal, setFiscal] = useState<FiscalForm>(fiscalVazio());
   const ncmOficial = useNcmOficial(fiscal.ncm);
+  // Emenda D-7 do ADR-0197: candidatos do NCM (sem autopreencher — edição de produto no ar) e trava
+  // de CEST inexistente.
+  const cestOficial = useCestOficial(fiscal.ncm, familiaId != null);
+  const cestExiste = useCestExiste(fiscal.cest);
   const [unidade, setUnidade] = useState('');
   const [sugestaoNcm, setSugestaoNcm] = useState<{ ncm: string; justificativa: string } | null>(null);
   const [carregandoSugestao, setCarregandoSugestao] = useState(false);
@@ -109,7 +115,7 @@ export function DialogFiscalProduto({ familiaId, fila, onFechar, onAvancar, onSa
 
   const precisaEscolherUnidade = !!familia && !unidadeValida(familia.unidade);
   const podeSalvar = !!familia
-    && fiscalCompleto(fiscal, familia.origem, ncmOficial.status)
+    && fiscalCompleto(fiscal, familia.origem, ncmOficial.status, cestExiste)
     && (!precisaEscolherUnidade || !!unidade)
     && salvando === null;
 
@@ -146,6 +152,10 @@ export function DialogFiscalProduto({ familiaId, fila, onFechar, onAvancar, onSa
       toast.warning('Fiscal salvo, mas o envio ao Mercado Livre não entrou na fila — ele será reenviado automaticamente em até 6 h.');
     }
     onSalvo();
+    // O resultado do ML (can_invoice) chega pela fila segundos depois: recarrega de novo quando o
+    // worker concluir, sem o operador precisar dar F5. O dialog fica montado depois de fechar.
+    const salvoId = familiaId;
+    void aguardarSyncFiscal(salvoId).then((ok) => { if (ok) onSalvo(); }).catch(() => {});
     return true;
   }
 
@@ -193,6 +203,8 @@ export function DialogFiscalProduto({ familiaId, fila, onFechar, onAvancar, onSa
               carregandoSugestao={carregandoSugestao}
               onAplicarSugestao={() => sugestaoNcm && setFiscal((prev) => ({ ...prev, ncm: sugestaoNcm.ncm }))}
               csosnPadrao={csosnPadrao}
+              cestOficial={cestOficial}
+              cestExiste={cestExiste}
             />
 
             {precisaEscolherUnidade && (

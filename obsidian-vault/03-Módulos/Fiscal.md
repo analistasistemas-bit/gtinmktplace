@@ -59,7 +59,7 @@ estado vira dropdown com as 27 UFs.
 ## Cadastro fiscal do produto — por família, empurrado por SKU
 
 NCM, CSOSN/CST, CEST e origem fiscal **não mudam com a cor** — vivem em `familias`, não em
-`variacoes`. Campos: `ncm` (8 dígitos, obrigatório para emitir), `cest` (opcional, só com ST),
+`variacoes`. Campos: `ncm` (8 dígitos, obrigatório para emitir), `cest` (obrigatório na nota quando o NCM tem CEST vigente, com ou sem ST; o sistema só valida o formato; na entrada por nota, a tabela `cest_oficial` sugere quando o XML não traz, ADR-0197),
 `origem_nfe` (0–8, **nunca deriva** de `familias.origem` — o binário nacional/importado do
 ADR-0055/0107 que segue calculando 8%/16% de imposto; os dois são digitados independentes, com
 trava de coerência LOUD), `fci` (condicional a origem 3/5/8), `tributacao_icms` (CSOSN sob Simples

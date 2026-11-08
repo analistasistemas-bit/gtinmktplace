@@ -9,8 +9,8 @@ import { gerarCopy } from '../_shared/ai/copywriter.ts';
 import { diagnosticarTitulo, type DescarteTitulo } from '../_shared/ai/titulo-pos.ts';
 import { TituloInviavelError, mensagemTituloInviavel } from '../_shared/ai/titulo-montar.ts';
 import { posProcessarDescricao, tamanhosDaGradeCopy } from '../_shared/ai/copywriter-prompt.ts';
-import { ehCorIndefinida, COR_VISION_INDEFINIDA } from '../_shared/cor/indefinida.ts';
-import { categoriaAceitaCor, removerCorDosSlots, removerCorDaDescricao } from '../_shared/cor/sem-atributo.ts';
+import { ehCorIndefinida } from '../_shared/cor/indefinida.ts';
+import { categoriaAceitaCor, corSemAtributo, removerCorDosSlots, removerCorDaDescricao } from '../_shared/cor/sem-atributo.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { sugerirPrecoVenda, grossUp, freteEstavelGrossUp, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
 import { arredondar5Proximo } from '../_shared/preco/arredondar.ts';
@@ -25,8 +25,8 @@ import { buscarFreteVendedor } from '../_shared/ml/frete.ts';
 import { montarAtributosML, preencherUnitsPerPack, preencherNomeObrigatorio, faltanteKitSemContagem, categoriaParaTipo, type AtributoML } from '../_shared/categoria/atributos.ts';
 import { resolverAtributosGenericos } from '../_shared/categoria/resolver-atributos-genericos.ts';
 import { resolverCategoria, type InputCategoria } from '../_shared/categoria/resolver.ts';
-import { inputCategoriaDaFamilia, categoriaPorCatalogo } from './categoria-familia.ts';
-import { buscarProdutoCatalogoPorGtin, buscarCategoriaFicha } from '../_shared/ml/catalogo.ts';
+import { inputCategoriaDaFamilia, categoriaPorCatalogo, categoriaPorBuscaCatalogo } from './categoria-familia.ts';
+import { buscarProdutoCatalogoPorGtin, buscarCategoriaFicha, buscarFichasCatalogoPorTexto } from '../_shared/ml/catalogo.ts';
 import { buscarCategoriaPreditor, buscarDominioCategoria, buscarNomeCategoria, type CategoriaCandidata } from '../_shared/ml/domain-discovery.ts';
 import { calcularSugestaoCatalogo, type SugestaoCatalogoPersistir } from './sugestao-catalogo.ts';
 import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
@@ -69,7 +69,7 @@ Deno.serve(async (req) => {
     .update({ status: 'processando' })
     .eq('id', job.familia_id)
     .eq('status', 'pendente')
-    .select('id, user_id, org_id, nome_pai, descricao_pai, lote_id, operacao, fornecedor, marca, origem, unidade, categoria_ml_id, atributos_ml, atributos_faltantes, atributos_editados_pelo_operador, variacao_principal_codigo, kit_multiplicador, kit_variacao_pedido, titulo_ml, genero, grade_tamanho')
+    .select('id, user_id, org_id, nome_pai, descricao_pai, lote_id, operacao, fornecedor, marca, origem, unidade, categoria_ml_id, tipo_aviamento, atributos_ml, atributos_faltantes, atributos_editados_pelo_operador, variacao_principal_codigo, kit_multiplicador, kit_variacao_pedido, titulo_ml, genero, grade_tamanho')
     .maybeSingle();
   if (claimErr) {
     return new Response(`Claim: ${claimErr.message}`, { status: 500, headers: corsHeaders });
@@ -197,8 +197,8 @@ Deno.serve(async (req) => {
     // Emenda ADR-0044 (2026-10-27): categoria sem COLOR → a cor que só o Vision achou é da
     // embalagem e vira indefinida. Categoria já conhecida (UPDATE/reprocesso): resolve aqui, antes
     // da copy e do UPDATE parcial; no CREATE a categoria só sai no passo 5c (ver passo 6).
-    const corDaFoto = (v: { cor: string | null; cor_origem: string | null }) =>
-      v.cor_origem === 'vision' && !ehCorIndefinida(v.cor);
+    // Inclui o veredito 'Outra' (ADR-0198): sem isso o produto simples o mandaria como COLOR ao ML.
+    const corDaFoto = (v: { cor_origem: string | null }) => v.cor_origem === 'vision';
     // Categoria cujo schema foi de fato lido: o passo 6 só pula a checagem dela, não a de uma
     // categoria cuja leitura falhou aqui (token/rede) e pode dar certo depois.
     let categoriaChecada: string | null = null;
@@ -211,7 +211,11 @@ Deno.serve(async (req) => {
       return !categoriaAceitaCor(schema);
     };
     const resolvidas = resolvidasBrutas.some(corDaFoto) && await descartaCorDaFoto(claimed.categoria_ml_id)
-      ? resolvidasBrutas.map((v) => (corDaFoto(v) ? { ...v, cor: COR_VISION_INDEFINIDA } : v))
+      ? resolvidasBrutas.map((v) => {
+        if (!corDaFoto(v)) return v;
+        const cor = corSemAtributo(resolvidasBrutas.length, claimed.tipo_aviamento, claimed.operacao);
+        return { ...v, cor, cor_origem: cor ? v.cor_origem : null };
+      })
       : resolvidasBrutas;
 
     // 4. Persistir cores (UPDATE em batch — só as que mudaram)
@@ -311,8 +315,12 @@ Deno.serve(async (req) => {
     // produto de catálogo NÃO é exposto pela API (só domain_id), por isso vamos pelo nome.
     // Os candidatos passam pelo MESMO desempate do resolver (ADR-0026 emenda 2026-10-17).
     // Resiliente: falha/rede/só genérico/abstenção → mantém o resultado do preditor textual.
-    if ((cat.origem === 'generico' || cat.origem === 'manual') && concorrencia.product_name && token) {
-      const porCatalogo = await categoriaPorCatalogo(inputCategoria, concorrencia.product_name, depsCategoria);
+    // Sem nome de catálogo (GTIN não casou): resgate pela busca textual (ADR-0026 emenda 2026-11-07).
+    if ((cat.origem === 'generico' || cat.origem === 'manual') && token) {
+      const tokenCatalogo = token;
+      const porCatalogo = concorrencia.product_name
+        ? await categoriaPorCatalogo(inputCategoria, concorrencia.product_name, depsCategoria)
+        : await categoriaPorBuscaCatalogo(inputCategoria, depsCategoria, (nome) => buscarFichasCatalogoPorTexto(tokenCatalogo, nome));
       if (porCatalogo) {
         categoriaMlId = porCatalogo.categoriaId;
         categoriaNome = porCatalogo.categoriaNome;
@@ -557,19 +565,23 @@ Deno.serve(async (req) => {
       && await descartaCorDaFoto(categoriaMlId)
       ? resolvidas.filter(corDaFoto)
       : [];
+    const corDescartada = corSemAtributo(resolvidas.length, tipo, claimed.operacao);
     if (descartadas.length) {
       const { error: corErr } = await admin.from('variacoes')
-        .update({ cor: COR_VISION_INDEFINIDA }).in('id', descartadas.map((v) => v.id));
+        .update(corDescartada ? { cor: corDescartada } : { cor: null, cor_origem: null })
+        .in('id', descartadas.map((v) => v.id));
       if (corErr) throw new Error(`Cor sem atributo: ${corErr.message}`);
     }
     const semCor = new Set(descartadas.map((v) => v.codigo));
-    const variacoesFinais = variacoesCopy.map((v) => (semCor.has(v.codigo) ? { ...v, cor: COR_VISION_INDEFINIDA } : v));
-    const slotsTitulo = descartadas.length
-      ? removerCorDosSlots(copy.titulo_slots, descartadas.map((v) => v.cor as string),
-        `${claimed.nome_pai} ${claimed.descricao_pai ?? ''}`)
+    const variacoesFinais = variacoesCopy.map((v) => (semCor.has(v.codigo) ? { ...v, cor: corDescartada } : v));
+    // ADR-0198: só o NOME respalda cor. Na descrição, "CORANTE VERMELHO 33" é ingrediente.
+    const coresDaFoto = descartadas.map((v) => v.cor).filter((c): c is string => !ehCorIndefinida(c));
+    const slotsTitulo = coresDaFoto.length
+      ? removerCorDosSlots(copy.titulo_slots, coresDaFoto,
+        [claimed.nome_pai, ...resolvidas.map((v) => v.nome ?? '')].join(' '))
       : copy.titulo_slots;
-    const descricaoBase = descartadas.length
-      ? removerCorDaDescricao(copy.descricao, descartadas.map((v) => v.cor as string),
+    const descricaoBase = coresDaFoto.length
+      ? removerCorDaDescricao(copy.descricao, coresDaFoto,
         `${claimed.nome_pai} ${claimed.descricao_pai ?? ''}`)
       : copy.descricao;
     const coresUnicas = [...new Set(variacoesFinais.map((v) => v.cor).filter((c): c is string => !!c && !ehCorIndefinida(c)))];

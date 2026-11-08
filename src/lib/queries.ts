@@ -645,6 +645,7 @@ export function familiaFromRow(
     loteId: r.lote_id,
     codigoPai: r.codigo_pai,
     titulo: r.titulo_ml ?? r.nome_pai,
+    nomePai: r.nome_pai,
     descricao: r.descricao_ml ?? r.descricao_pai ?? '',
     operacao: r.operacao as OperacaoML,
     estrategiaPreco: mapEstrategiaPreco(r.estrategia_preco),

@@ -1,5 +1,20 @@
 # PubliAI — Tasks
 
+## Tabela oficial de CEST (ADR-0197) — 2026-11-07
+
+Em produção desde 2026-11-07 (main `079297d1`; migration `20261107192533_adr197_cest_oficial`).
+
+- [x] `cest_oficial` e `cest_candidatos`, com gerador em `scripts/cest/`; migration testada em transação desfeita.
+- [x] Entrada por nota: preenche candidato único por NCM completo; mostra os demais; declaração mantida sem candidato.
+- [x] `supabase db push`: 1.200 pares, `cest_candidatos` conferida como `authenticated`.
+- [ ] Validar a tela com uma nota real da Daludi depois do deploy.
+
+## Selo do CSOSN e regra do CEST (emenda ADR-0135) — 2026-11-07
+
+- [x] Selo do CSOSN na entrada por nota: "CSOSN de saída da empresa — confira", porque o valor nunca vem da nota (ADR-0181 D-10).
+- [x] ADR-0135 e vault: CEST não depende de ST (cláusula vigésima do Convênio ICMS 142/2018).
+- [ ] Revisar o CEST dos 26 produtos da Daludi sem o campo (lista para aprovação do Diego ou do contador).
+
 ## Piso de R$ 19 em toda campanha (emenda ADR-0174) — 2026-11-07
 
 Em produção desde 2026-11-07 (main `8d109728`; `operacoes-massa` v44, `sincronizar-promocoes` v38, `ads-campanhas` v21, `ads-metricas` v9, `coletar-ads-ml` v26, `coletar-trafego-ml` v25, `publicar-familias` v59, `reconciliar-convergencia-up` v87).
@@ -7429,3 +7444,9 @@ Espaço para observações, decisões pendentes pequenas, ideias durante a imple
 - [x] **Cor composta preservada na Camada 1** (2026-11-07, adendo ADR-0004) — `Marrom Dourado` virava `Dourado` porque o dicionário testa o sinônimo mais longo primeiro; `Castanho Escuro`, `Vermelho Intenso` e `Azul Turquesa` perdiam palavra do mesmo jeito. `extrairCorDoTexto` agora mantém matiz + 1-2 tons literal. Retroteste em 2.547 pares de origem `descricao`: compostas corrigidas, 4 linhas deixam de herdar a cor do pai (`PINK 167` com pai `BRANCA` era `Branco`), nenhum falso positivo. Não é retroativo. Deploy: `process-familia`.
 
 - [x] **Louro, Loiro e Chocolate no dicionário de cores** (2026-11-07, adendo ADR-0004) — colorações `Louro Escuro`, `Louro Médio` e `Chocolate` saíam `Outra` pelo Vision. Não é retroativo. Deploy: `process-familia`.
+
+- [x] **Identidade do produto no título** (2026-11-07, [ADR-0198](decisions/0198-identidade-do-produto-no-titulo.md)) — "2 em 1" deixa de virar cor, ingrediente deixa de respaldar cor, nome comercial vai para `modelo` e é o último a sair no corte. Produto simples em categoria sem `COLOR` fica sem cor no CREATE. Revisão avisa palavra do nome fora do título e título repetido no lote. Medido no modelo real: 0 de 40 falhas. Não é retroativo. Deploy: funções que importam `_shared/ai/titulo-pos.ts`.
+
+- [x] **`openai/gpt-6-luna` como modelo de texto padrão** (2026-11-07, adendo ADR-0074) — medido contra o `gpt-4.1-mini`: 76 de 76 copies sem falha, nome comercial 40 de 40, menos da metade do custo. Limite da copy sobe para 45 s. Vale para todas as orgs. `gpt-4.1-mini` fica como saída de emergência.
+
+- [x] **Metragem com ponto de milhar no título** (2026-11-07) — "LINHA DE COST 10.000MT" virava "000m": as regras de número liam só o fim. `NUM` em `_shared/ai/titulo.ts` aceita milhar e vale para metragem, contagem, medida ancorada e conversão de unidade. Nenhum título publicado tinha o erro (os 18 desse tipo são do modelo antigo de título). Deploy: funções que importam `titulo-guards.ts`.

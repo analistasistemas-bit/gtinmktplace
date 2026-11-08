@@ -4,14 +4,14 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 // o import quebra sob vitest (Node/jsdom, sem global Deno). Em Deno real, comportamento idêntico.
 const env = typeof Deno !== 'undefined' ? Deno.env : undefined;
 
-// Padrão do PubliAI desde o ADR-0098: o experimento mediu gpt-4.1-mini com ancoragem perfeita
-// (zero fórmula proibida e zero medida não ancorada em 3 execuções) e mais variedade entre
-// anúncios que o gpt-4o-mini, a ~1,1 centavo por família.
+// Padrão desde 07/11/2026 (emenda ADR-0074): medido contra o gpt-4.1-mini em cosmético, aviamento
+// e grade, deu 76 de 76 chamadas de copy sem falha, nome comercial 40 de 40 e menos da metade do
+// custo. É mais lento (~17 s por copy, pico de 27 s): ver TIMEOUT_COPY_MS em copywriter.ts.
 // A env var vence este default. Conferido em 2026-08-02: AI_MODEL_COPY NÃO existe nos secrets
 // do projeto, então produção cai neste valor. Criar esse secret depois passa a mascarar o
 // default aqui — se algum dia produção parecer presa num modelo antigo, olhe os secrets antes
 // de olhar este arquivo.
-export const MODELO_COPY = env?.get('AI_MODEL_COPY') ?? 'openai/gpt-4.1-mini';
+export const MODELO_COPY = env?.get('AI_MODEL_COPY') ?? 'openai/gpt-6-luna';
 export const MODELO_VISION = env?.get('AI_MODEL_VISION') ?? 'openai/gpt-4o';
 
 /**

@@ -110,6 +110,10 @@ function foiTimeout(e: unknown): boolean {
   return msg.includes('aborted') || msg.includes('timed out') || msg.includes('timeout');
 }
 
+// gpt-6-luna leva ~17 s, com pico medido de 27 s sob 40 chamadas simultâneas. Duas tentativas
+// somam 90 s no pior caso, dentro do que process-familia aguenta (emenda ADR-0074).
+const TIMEOUT_COPY_MS = 45_000;
+
 async function chamarCopy(input: InputCopy, modelo: string): Promise<OutputCopy> {
   const client = openrouterClient();
   const resp = await client.chat.completions.create(
@@ -122,7 +126,7 @@ async function chamarCopy(input: InputCopy, modelo: string): Promise<OutputCopy>
       response_format: { type: 'json_schema', json_schema: SCHEMA_COPY },
       temperature: 0.4,
     },
-    { signal: AbortSignal.timeout(30_000) },
+    { signal: AbortSignal.timeout(TIMEOUT_COPY_MS) },
   );
   const conteudo = resp.choices[0]?.message?.content;
   if (!conteudo) throw new Error('resposta vazia');
@@ -174,7 +178,7 @@ export async function gerarCopy(input: InputCopy, modelo: string = MODELO_COPY):
     }
   }
   if (foiTimeout(ultimoErro)) {
-    throw new Error('Copy (IA/OpenRouter): excedeu 30s (timeout) após 2 tentativas');
+    throw new Error(`Copy (IA/OpenRouter): excedeu ${TIMEOUT_COPY_MS / 1000}s (timeout) após 2 tentativas`);
   }
   throw new Error(`Copy (IA/OpenRouter): ${ultimoErro instanceof Error ? ultimoErro.message : String(ultimoErro)}`);
 }

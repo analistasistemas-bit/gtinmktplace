@@ -44,6 +44,7 @@ flowchart TD
   `aplicarGuardsTitulo` (`_shared/ai/titulo-guards.ts`), mesmo princípio (prefixa quando ausente
   do `nome_pai` mas presente na descrição); único ponto chamado por `process-familia`,
   `regenerar-copy-familia` e `titulo-particao.ts` (split ADR-0048).
+- **Nome comercial (ADR-0198)** — submarca e versão vão para `modelo`; no corte, `marca` sai antes. Mudar o bloco NOME COMERCIAL do prompt exige medir no modelo real: exemplo mal formatado trava o `gpt-4.1-mini`.
 - **Atributos obrigatórios** — `_shared/categoria/atributos.ts` +
   `_shared/ai/atributos-llm*.ts`, preenchimento closed-set (IA só escolhe `value_id` de lista
   permitida)

@@ -9,6 +9,8 @@ function fakeAdmin(over: {
   publicadas?: string[];
   // ncm_consultar: default = todo código vigente; 'vencido'/'inexistente'/'erro' forçam o caso.
   ncm?: 'vigente' | 'vencido' | 'inexistente' | 'erro';
+  // cest_oficial (emenda D-7 do ADR-0197): default = CEST existe.
+  cest?: 'existe' | 'inexistente' | 'erro';
 } = {}) {
   const rpcs: string[] = [];
   const writes: Array<{ table: string; payload: Record<string, unknown>; filters: Record<string, unknown> }> = [];
@@ -34,6 +36,12 @@ function fakeAdmin(over: {
       select: () => { rec.op = rec.op || 'select'; return api; },
       eq: (col: string, val: unknown) => { rec.filters[col] = val; return api; },
       update: (payload: Record<string, unknown>) => { rec.op = 'update'; rec.payload = payload; return api; },
+      limit: async () => {
+        reads.push({ table, filters: rec.filters });
+        const modo = over.cest ?? 'existe';
+        if (modo === 'erro') return { data: null, error: { message: 'cest fora do ar' } };
+        return { data: modo === 'existe' ? [{ cest: rec.filters.cest }] : [], error: null };
+      },
       maybeSingle: async () => {
         reads.push({ table, filters: rec.filters });
         return { data: erroDeLeitura() ? null : ler(), error: erroDeLeitura() };
@@ -250,6 +258,33 @@ describe('processarAtualizacaoFiscal', () => {
     expect(r.tipo).toBe('falha');
     expect(writes.length).toBe(0);
     expect(enfileirarPush).not.toHaveBeenCalled();
+  });
+
+  // Emenda D-7 do ADR-0197: caso real 07/11 (Daludi, 00000208) — ML recusou "Invalid cest: 3304999".
+  it('CEST fora da tabela oficial → invalido, zero update e zero enqueue', async () => {
+    const { admin, writes } = fakeAdmin({ cest: 'inexistente' });
+    const enfileirarPush = vi.fn(async () => 'msg-1');
+    const r = await processarAtualizacaoFiscal(deps(admin, enfileirarPush), {
+      familiaId: 'fam-1', fiscal: { ...FISCAL_OK, cest: '3304999' },
+    });
+    expect(r.tipo).toBe('invalido');
+    expect((r as { erros: string[] }).erros[0]).toMatch(/CEST 3304999 não existe/);
+    expect(writes.length).toBe(0);
+    expect(enfileirarPush).not.toHaveBeenCalled();
+  });
+
+  it('CEST na tabela oficial → grava', async () => {
+    const { admin, writes } = fakeAdmin();
+    const r = await processarAtualizacaoFiscal(deps(admin), { familiaId: 'fam-1', fiscal: { ...FISCAL_OK, cest: '2001500' } });
+    expect(r.tipo).toBe('ok');
+    expect(writes[0].payload.cest).toBe('2001500');
+  });
+
+  it('erro lendo cest_oficial → falha (fail-closed)', async () => {
+    const { admin, writes } = fakeAdmin({ cest: 'erro' });
+    const r = await processarAtualizacaoFiscal(deps(admin), { familiaId: 'fam-1', fiscal: { ...FISCAL_OK, cest: '2001500' } });
+    expect(r.tipo).toBe('falha');
+    expect(writes.length).toBe(0);
   });
 
   it('erro no update → falha (não "invalido" com mensagem crua de banco)', async () => {

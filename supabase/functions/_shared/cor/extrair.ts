@@ -84,6 +84,8 @@ const SO_DIGITOS = /^\d+$/;
 // Também usada para descartar sufixo de unidade ao FINAL do nome da cor (ex.: "AZ PISCINA
 // UND"), que senão conta como palavra extra e estoura MAX_PALAVRAS_COR — bug do lote #33.
 const UNIDADES_METRAGEM = new Set(['m', 'mt', 'mts', 'metro', 'metros', 'cm', 'mm', 'un', 'und', 'kg', 'g']);
+// "2 em 1", "3 de 4": conector depois do número não abre nome de cor (ADR-0198).
+const CONECTORES = new Set(['em', 'de', 'da', 'do', 'com', 'sem', 'para', 'por', 'e', 'a', 'o', 'x']);
 // Uma cor real tem 1-2 palavras; corrida maior é frase/descrição, não cor.
 const MAX_PALAVRAS_COR = 2;
 
@@ -106,7 +108,7 @@ export function extrairCorECodigo(nome: string): { cor: string; codigo: string }
   // Último dígito-puro seguido de token só-letras (a cor fica perto do fim, antes do tamanho).
   let idx = -1;
   for (let i = 0; i < tokens.length - 1; i++) {
-    if (SO_DIGITOS.test(tokens[i]) && SO_LETRAS.test(tokens[i + 1])) idx = i;
+    if (SO_DIGITOS.test(tokens[i]) && SO_LETRAS.test(tokens[i + 1]) && !CONECTORES.has(tokens[i + 1].toLowerCase())) idx = i;
   }
   if (idx < 0) return null;
 

@@ -27,6 +27,7 @@ import { useLoteRealtime } from '@/hooks/useLoteRealtime';
 import { uploadImagensLote } from '@/lib/upload-imagens';
 import { QK, fetchConexoes, fetchKitsDosProdutos } from '@/lib/queries';
 import { familiaPublicavel, familiaIncompleta, idsPublicaveis, loteTemPublicacao, familiaPrecosDivergentes } from '@/lib/publicavel';
+import { titulosRepetidos } from '@/lib/conferencia-titulo';
 import { ordenarPorExcecao } from '@/lib/revisao-ordem';
 import { coresNovasSemFoto } from '@/lib/cores-novas';
 import { coresNovasComEstoque } from '@/lib/revisao-variacoes';
@@ -188,6 +189,7 @@ export default function Revisao() {
   // diferentes, ela herdaria o mesmo bug do controle individual (ver familiaPrecosDivergentes)
   // — bloqueia a ativação em lote nesse caso.
   const familiasDivergentes = useMemo(() => familias.filter(familiaPrecosDivergentes), [familias]);
+  const idsTituloRepetido = useMemo(() => titulosRepetidos(familias), [familias]);
   const qtdErros = useMemo(() => familias.filter((f) => f.status === 'erro').length, [familias]);
   const resultadoLote = useMemo(() => resultadoPublicacao(familias), [familias]);
 
@@ -631,6 +633,7 @@ export default function Revisao() {
                       focoCodigo={focoCritica?.familiaId === familia.id ? focoCritica.codigo : null}
                       onFocoConcluido={() => setFocoCritica(null)}
                       ocultarSemEstoque={ocultarSemEstoque}
+                      tituloRepetido={idsTituloRepetido.has(familia.id)}
                     />
                   </Collapsible.Content>
                 </Collapsible.Root>

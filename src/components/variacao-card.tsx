@@ -25,6 +25,7 @@ import { uploadImagensLote } from '@/lib/upload-imagens';
 import { QK } from '@/lib/queries';
 import { fmtBRL } from '@/lib/formato';
 import { gtinInvalido } from '@/lib/gtin';
+import { corExibida } from '@/lib/conferencia-titulo';
 import type { Variacao } from '@/lib/tipos-dominio';
 import { SemaforoPreco } from '@/components/semaforo-preco';
 
@@ -92,7 +93,8 @@ export function VariacaoCard({
     setGtinStr(variacao.gtin ?? '');
   }, [variacao.gtin]);
   const gtinRuim = gtinInvalido(gtinStr);
-  const rotulo = rotuloVariacao(variacao);
+  const cor = corExibida(variacao.cor, exigeCor);
+  const rotulo = rotuloVariacao({ ...variacao, cor });
   const tamanho = variacao.tamanho?.trim() || null;
 
   async function lidarTrocaFoto(arquivo: File) {
@@ -153,9 +155,10 @@ export function VariacaoCard({
             coluna `auto`, presente também na linha do GTIN). */}
         <div className="grid min-w-[150px] flex-1 grid-cols-[1fr_auto] items-center gap-x-2 gap-y-1">
           <Input
-            value={variacao.cor}
+            value={cor}
             onChange={(e) => onMudarCor(variacao.codigo, e.target.value)}
             onBlur={() => onSalvarCor?.(variacao.codigo)}
+            placeholder={exigeCor ? undefined : 'Sem cor'}
             aria-describedby={criticas.includes('sem cor') ? criticaId : undefined}
             className="h-7"
           />
@@ -169,8 +172,8 @@ export function VariacaoCard({
             )}
             {/* Alerta "sem cor" (⚠️) só para cor que vai ao ML agora: estoque 0 dorme
                 até repor e não exige cor, nem produto simples. Com cor, o badge de origem é informativo. */}
-            {(variacao.cor || (exigeCor && variacao.estoque > 0)) && (
-              <BadgeCorOrigem origem={variacao.cor ? variacao.corOrigem : null} />
+            {(cor || (exigeCor && variacao.estoque > 0)) && (
+              <BadgeCorOrigem origem={cor ? variacao.corOrigem : null} />
             )}
             <StatusInline status={statusCor} />
           </div>

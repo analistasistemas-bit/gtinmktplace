@@ -11,8 +11,9 @@ export interface OpcaoModeloIA {
 // e gerarCopy é a única etapa de IA sem fallback resiliente (ADR-0030) — falha ali derruba a
 // família. Slug removido da constraint em migration; nenhuma org o usava.
 export const MODELOS_TEXTO: OpcaoModeloIA[] = [
-  { slug: 'openai/gpt-4.1-mini', label: 'GPT-4.1-mini (padrão)', precoLabel: '$0,40 / $1,60 por 1M tokens' },
-  { slug: 'openai/gpt-4o-mini', label: 'GPT-4o-mini (mais barato)', precoLabel: '$0,15 / $0,60 por 1M tokens' },
+  { slug: 'openai/gpt-6-luna', label: 'GPT-6 Luna (padrão)', precoLabel: '$0,10 / $0,50 por 1M tokens' },
+  { slug: 'openai/gpt-4.1-mini', label: 'GPT-4.1-mini (mais rápido)', precoLabel: '$0,40 / $1,60 por 1M tokens' },
+  { slug: 'openai/gpt-4o-mini', label: 'GPT-4o-mini', precoLabel: '$0,15 / $0,60 por 1M tokens' },
 ];
 
 // Geração da foto do kit com variação (ADR-0197, Task 15). O primeiro é o padrão (org sem escolha). Todo slug aqui

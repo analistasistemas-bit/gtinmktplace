@@ -162,6 +162,29 @@ orgs fixadas no modelo antigo), `MODELO_COPY` em `_shared/ai/modelos.ts`, tabela
 Detalhe operacional confirmado na época: **não existe secret `AI_MODEL_COPY` no projeto**, então
 o default do código é o que vale em produção para orgs com `ai_model_texto` nulo.
 
+---
+
+## Adendo (2026-11-07) — `openai/gpt-6-luna` vira o padrão
+
+Medição sem gravar nada, prompt da `main`, `gpt-4.1-mini` contra `gpt-6-luna`:
+
+| Teste | `gpt-4.1-mini` | `gpt-6-luna` |
+|---|---|---|
+| Copy, 10 cosméticos x 4: sem falha | 39 de 40 | 40 de 40 |
+| Nome comercial no título | 36 de 39 | 40 de 40 |
+| Copy, 18 de aviamento, multicor e grade x 2: sem falha | 27 de 36 | 36 de 36 |
+| Grade: título inviável | 6 de 12 | 0 de 12 |
+| Custo por mil famílias | US$ 3,36 | US$ 1,45 a 1,55 |
+| Tempo da copy | ~5 s | ~17 s, pico de 27 s |
+
+Categoria, atributos, resposta ao comprador e NCM deram 8 de 8 nos dois. Na resposta, o `gpt-4.1-mini` afirmou que o creme serve para todo tipo de cabelo, sem dado no anúncio; o `gpt-6-luna` disse que vai verificar.
+
+Candidatos reprovados: `gpt-6-luna-pro` (39 de 40 estouraram 30 s), `deepseek-v4.1-flash` (13 de 40 falhas), `gemini-3.5-flash-lite` (escreveu "Colocação" e tirou o número do tom). `claude-haiku-5.5` foi bem, mas custa quase o dobro.
+
+Consequências: a copy passa de 30 s para 45 s de limite (`TIMEOUT_COPY_MS`), e cada família leva ~12 s a mais. `gpt-4.1-mini` segue selecionável como saída de emergência, e `MODELOS_TEXTO[0]` precisa ser o padrão, porque a tela o mostra quando a org tem `NULL`. Mudar o prompt da copy continua exigindo medição real (ADR-0198).
+
+---
+
 ## Emenda 2026-11-07 — Imagem deixa de ser dormente
 
 Quando a Fase 4 do kit com variação for entregue (ADR-0197), `ai_model_imagem` passa a ser usado, para empresas com o módulo `imagem_ia`. Modelo padrão `google/gemini-nano-banana-2.1`. Até lá o campo segue dormente.

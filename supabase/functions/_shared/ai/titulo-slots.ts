@@ -45,14 +45,18 @@ export const ORDEM_LEITURA = [
 ] as const satisfies readonly SlotTitulo[];
 
 /**
- * Ordem de CORTE: quem sai primeiro quando estoura 60 chars. É o espelho exato da ordem de
- * leitura — o menos prioritário sai antes.
+ * Ordem de CORTE: quem sai primeiro quando estoura 60 chars. É o espelho da ordem de leitura —
+ * o menos prioritário sai antes —, com uma troca: `marca` sai antes de `modelo`, porque numeração
+ * e nome comercial distinguem o produto e a marca não (ADR-0198).
  *
  * Ordem de leitura e ordem de corte são contratos DISTINTOS de propósito: é o que permite
  * proteger `variacao` do corte sem tirá-la do lugar no texto. Quem decide o que é incortável
  * é montarTitulo (titulo-montar.ts), não esta lista.
  */
-export const ORDEM_CORTE = [...ORDEM_LEITURA].reverse() as readonly SlotTitulo[];
+export const ORDEM_CORTE = [
+  'sinonimo', 'aplicacao', 'compatibilidade', 'variacao', 'material',
+  'quantidade', 'medida', 'marca', 'modelo', 'produto',
+] as const satisfies readonly SlotTitulo[];
 
 /** Todos os slots que a IA devolve (schema/coerção/diagnóstico). Os três últimos só valem na
  *  grade (ADR-0184); fora dela são zerados antes de qualquer guard. */

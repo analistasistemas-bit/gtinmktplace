@@ -50,4 +50,15 @@ describe('VariacaoCard — alerta "sem cor"', () => {
     renderCard({ exigeCor: false });
     expect(screen.queryByText(/Sem cor identificada/i)).not.toBeInTheDocument();
   });
+
+  it('produto simples com Outra: campo vazio, sem a palavra Outra (ADR-0198)', () => {
+    renderCard({ exigeCor: false, variacao: { ...semCor, cor: 'Outra', corOrigem: 'vision' } });
+    expect(screen.getByPlaceholderText('Sem cor')).toHaveValue('');
+    expect(screen.queryByDisplayValue('Outra')).not.toBeInTheDocument();
+  });
+
+  it('família que exige cor continua mostrando Outra para o operador validar', () => {
+    renderCard({ variacao: { ...semCor, cor: 'Outra', corOrigem: 'vision' } });
+    expect(screen.getByDisplayValue('Outra')).toBeInTheDocument();
+  });
 });

@@ -1284,7 +1284,7 @@ do preço no menor preço entre concorrentes MercadoLíder quando o preço compe
 — liga a exibição do lucro (`lucro R$ X`) no card "Líquido no faturamento" do Dashboard —,
 **`ai_model_texto`/`ai_model_imagem`** (text, nullable, ADR-0074, migration
 `20260713120000_ai_model_por_org.sql`): slug OpenRouter do modelo de IA da org, lista curada via
-CHECK constraint (texto: `openai/gpt-4.1-mini` padrão ou `openai/gpt-4o-mini`; imagem, hoje
+CHECK constraint (texto: `openai/gpt-6-luna` padrão, `openai/gpt-4.1-mini` ou `openai/gpt-4o-mini`; imagem, hoje
 dormente sem consumidor: só `google/gemini-2.5-flash-image`, "Nano Banana") — incluir um novo
 modelo exige migration (altera o CHECK), não é config/env. `NULL` (caso comum,
 inclusive todas as orgs em produção hoje) → `ai_model_texto` cai no fallback `MODELO_COPY`/env
@@ -1736,6 +1736,10 @@ no E7** (ADR-0027, D-E7.6). RLS: SELECT quando o dono do path (1º segmento) per
 organização** (`profiles.org_id = current_org_id()`, join por `storage.foldername(name)[1]`);
 INSERT/UPDATE/DELETE continuam "own" (`auth.uid()` == 1º segmento). *Migration `20260527123422`
 + `20260705165828_e7_rls_org.sql`.*
+
+### `cest_oficial` (ADR-0197)
+
+Global, sem `org_id`; RLS só leitura para `authenticated`. Colunas: `cest`, `ncm_prefixo` (4 a 8 dígitos), `anexo`, `item`, `descricao`, `atualizado_em`. Chave `(cest, ncm_prefixo)`. Fonte: Convênio ICMS 142/2018, Anexos II a XXV. RPC `cest_candidatos(p_ncm)` devolve todas as correspondências, do prefixo mais longo ao mais curto.
 
 ### `ncm_oficial` (ADR-0187)
 Tabela global (sem `org_id`) da nomenclatura Siscomex: `codigo` (8 dígitos, PK), `descricao` (composta pelos ancestrais),

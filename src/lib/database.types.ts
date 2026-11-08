@@ -3132,6 +3132,33 @@ export type Database = {
           },
         ]
       }
+      cest_oficial: {
+        Row: {
+          anexo: string
+          atualizado_em: string
+          cest: string
+          descricao: string
+          item: string
+          ncm_prefixo: string
+        }
+        Insert: {
+          anexo: string
+          atualizado_em?: string
+          cest: string
+          descricao: string
+          item: string
+          ncm_prefixo: string
+        }
+        Update: {
+          anexo?: string
+          atualizado_em?: string
+          cest?: string
+          descricao?: string
+          item?: string
+          ncm_prefixo?: string
+        }
+        Relationships: []
+      }
       ncm_oficial: {
         Row: {
           atualizado_em: string
@@ -5872,6 +5899,15 @@ export type Database = {
         }[]
       }
       modulos_habilitados_da_org: { Args: never; Returns: string[] }
+      cest_candidatos: {
+        Args: { p_ncm: string }
+        Returns: {
+          cest: string
+          descricao: string
+          exato: boolean
+          ncm_prefixo: string
+        }[]
+      }
       ncm_consultar: {
         Args: { p_codigos: string[] }
         Returns: {

@@ -34,7 +34,8 @@ import {
 } from '@/hooks/useFamiliaMutations';
 import { subirCapaFamilia, removerCapaFamilia, subirCapa2Familia, removerCapa2Familia, subirCapa3Familia, removerCapa3Familia } from '@/lib/upload-imagens';
 import { setVariacaoExcluida } from '@/lib/publicar';
-import { casadaNoMl, criticasVariacao, familiaExigeCor, familiaExigeFotoPorVariacao } from '@/lib/publicavel';
+import { casadaNoMl, criticasVariacao, familiaExigeCor, familiaExigeFotoPorVariacao, familiaProdutoSimples } from '@/lib/publicavel';
+import { palavrasForaDoTitulo } from '@/lib/conferencia-titulo';
 import { variacoesParaRevisao, agruparRevisaoUpdate } from '@/lib/revisao-variacoes';
 import { alvosAplicarPreco, exigeDivisaoUpdate, familiaEhUP } from '@/lib/grupos-preco';
 import { cn } from '@/lib/utils';
@@ -97,9 +98,11 @@ interface FamiliaExpandedProps {
   focoCodigo?: string | null;
   onFocoConcluido?: () => void;
   ocultarSemEstoque?: boolean;
+  /** Outra família nova do lote tem o mesmo título (ADR-0198). */
+  tituloRepetido?: boolean;
 }
 
-export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarSemEstoque = false }: FamiliaExpandedProps) {
+export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarSemEstoque = false, tituloRepetido = false }: FamiliaExpandedProps) {
   const [titulo, setTitulo] = useState(familia.titulo);
   const [descricao, setDescricao] = useState(familia.descricao);
   const [variacoes, setVariacoes] = useState(familia.variacoes);
@@ -197,6 +200,8 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
   const [removerCapa3Aberto, setRemoverCapa3Aberto] = useState(false);
   const updatePrincipal = useUpdateVariacaoPrincipal(familia.loteId);
   const exigeCor = familiaExigeCor(familia);
+  // Só produto simples: em família de cores o nome do pai traz código e "CORES", e o aviso viraria ruído.
+  const foraDoTitulo = familiaProdutoSimples(familia) ? palavrasForaDoTitulo(familia.nomePai, titulo) : [];
   const exigeFoto = familiaExigeFotoPorVariacao(familia);
   // Imposto por origem (ADR-0055): mesma alíquota do card "Análise para publicação"
   // (painel-analise.tsx), para o semáforo por variação não divergir do badge do topo.
@@ -869,6 +874,12 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
             onChange={(e) => { tituloDirty.current = true; setTitulo(e.target.value); }}
             onBlur={salvarTitulo}
           />
+          {foraDoTitulo.length > 0 && (
+            <p className="mt-1 text-xs text-warning">Fora do título: {foraDoTitulo.join(', ')}</p>
+          )}
+          {tituloRepetido && (
+            <p className="mt-1 text-xs text-warning">Outra família deste lote tem o mesmo título: o ML pode derrubar por duplicado.</p>
+          )}
 
           <div className="mb-1 mt-3 flex items-center justify-between">
             <label htmlFor={`descricao-${familia.id}`} className="block text-xs font-semibold text-muted-foreground">DESCRIÇÃO</label>

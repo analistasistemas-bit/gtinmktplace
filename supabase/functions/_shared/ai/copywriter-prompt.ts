@@ -787,6 +787,32 @@ mas SÓ com palavras da fonte — nunca invente para encher.
   produto="Short Bermuda" publico="Masculino" caracteristica="Esporte Fino" material="Linho"
   → Short Bermuda Masculino Esporte Fino Linho
 
+NOME COMERCIAL (produto com nome próprio: cosmético, alimento, linha de marca)
+O nome próprio é o que separa este produto dos irmãos da mesma marca. Ele nunca fica de fora.
+- Copie em "modelo", literal e contíguo da fonte, a submarca, versão ou fragrância declarada no nome.
+- Não troque esse nome por benefício genérico e não o descarte por parecer adjetivo.
+- Função declarada como "2 em 1" fica em "produto", junto do tipo.
+- Cor da embalagem, corante e ingrediente nunca vão para "variacao".
+- Palavra do nome que não é tipo, medida nem marca, mesmo incomum ou inventada, é nome comercial: entra em "modelo".
+
+Fonte: Shampoo BRILHO JABUTICABA 500ml
+  produto="Shampoo" modelo="Brilho Jabuticaba" medida="500ml"
+  termos_com_risco=[]
+  CORRETO: Shampoo Brilho Jabuticaba 500ml
+  ERRADO:  Shampoo 500ml
+
+Fonte: Vivaz Pop Cachos Definidos 500g - Gel para modelar e fixar 2 em 1
+  produto="Gel para Modelar 2 em 1" modelo="Vivaz Pop Cachos Definidos" medida="500g"
+  termos_com_risco=[]
+  CORRETO: Gel para Modelar 2 em 1 Vivaz Pop Cachos Definidos 500g
+  ERRADO:  Gel para Modelar e Fixar 2 em 1 500g
+
+Fonte: Bálsamo de Pontas Ultraliso Manteiga de Karité 60ml
+  produto="Bálsamo de Pontas" modelo="Ultraliso Manteiga de Karité" medida="60ml"
+  termos_com_risco=[]
+  CORRETO: Bálsamo de Pontas Ultraliso Manteiga de Karité 60ml
+  ERRADO:  Bálsamo de Pontas 60ml Manteiga de Karité
+
 EXEMPLOS
 
 Fonte: Barbante · marca Bandeirante · modelo 4/6 · 570 m · 85% algodão

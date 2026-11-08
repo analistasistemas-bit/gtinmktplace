@@ -36,6 +36,7 @@ import {
 } from '@/components/estoque/linha-variacao-form';
 import { CampoFoto } from '@/components/estoque/campo-foto';
 import { useNcmOficial } from '@/hooks/useNcmOficial';
+import { useCestExiste, useSugestaoCest } from '@/hooks/useCestOficial';
 import {
   EtapaFiscalForm, fiscalVazio, fiscalCompleto, confirmacoesNotaOk, confirmacoesAposMudanca, CONFIRMACOES_VAZIAS,
   type FiscalForm,
@@ -173,6 +174,7 @@ export function DialogCadastroProduto({
   const [etapaFiscal, setEtapaFiscal] = useState(false);
   const [fiscal, setFiscal] = useState<FiscalForm>(fiscalVazio());
   const ncmOficial = useNcmOficial(fiscal.ncm);
+  const cestExiste = useCestExiste(fiscal.cest);
   // ADR-0181 D-10: confirmações ativas dos campos fiscais vindos da nota.
   const [confirmacoes, setConfirmacoes] = useState(CONFIRMACOES_VAZIAS);
   // Toda mudança fiscal (inclusive "aplicar sugestão") passa por aqui: derruba as confirmações do que mudou.
@@ -181,6 +183,11 @@ export function DialogCadastroProduto({
     setFiscal(depois);
     setConfirmacoes((c) => confirmacoesAposMudanca(c, fiscal, depois));
   }
+  // ADR-0197: só na entrada por nota, quando o XML não trouxe CEST.
+  const cestOficial = useSugestaoCest({
+    ativo: aberto && fiscalAtivo && !!inicial?.sugestaoDaNota && !inicial.fiscal?.cest,
+    ncm: fiscal.ncm, cest: fiscal.cest, mudar: mudarFiscal,
+  });
 
   const api = useCadastroProduto({ aberto, onCadastrado });
   const { sugestao: sugestaoNcm, carregando: carregandoSugestao } =
@@ -312,6 +319,9 @@ export function DialogCadastroProduto({
             confirmacoes={confirmacoes}
             onConfirmar={(patch) => setConfirmacoes((c) => ({ ...c, ...patch }))}
             avisosNota={inicial?.avisosNota}
+            cestOficial={cestOficial}
+            cestExiste={cestExiste}
+            cestNota={inicial?.fiscal?.cest}
           />
         ) : !resultado ? (
           // min-w-0 obrigatorio: DialogContent e um `grid` sem `minmax(0,1fr)` (grid-cols nao
@@ -500,7 +510,7 @@ export function DialogCadastroProduto({
               <Button variant="outline" onClick={() => setEtapaFiscal(false)} disabled={api.salvando}>Voltar</Button>
               <Button
                 onClick={submeter}
-                disabled={!fiscalCompleto(fiscal, origem, ncmOficial.status) || (!!inicial?.sugestaoDaNota && !confirmacoesNotaOk(fiscal, inicial.avisosNota, confirmacoes)) || api.salvando}
+                disabled={!fiscalCompleto(fiscal, origem, ncmOficial.status, cestExiste) || (!!inicial?.sugestaoDaNota && !confirmacoesNotaOk(fiscal, inicial.avisosNota, confirmacoes)) || api.salvando}
               >
                 {api.salvando ? rotuloSalvando : 'Cadastrar'}
               </Button>

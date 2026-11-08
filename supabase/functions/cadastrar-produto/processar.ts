@@ -8,6 +8,7 @@ import { gtinOuNull } from '../_shared/produto/gtin.ts';
 import type { VariacaoEntrada, ProdutoEntrada, ErroValidacao, SugestaoDistribuicao } from '../_shared/produto/validar.ts';
 import { camposFiscaisFaltantes } from '../_shared/fiscal/validar.ts';
 import { mensagemNcm, ncmsInvalidos } from '../_shared/fiscal/ncm-oficial.ts';
+import { cestInexistente } from '../_shared/fiscal/cest-oficial.ts';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import {
   GRADES_DO_TIPO, gradeDaFamilia, tamanhosDaGrade, tamanhosValidosParaTipos, type GradeTamanho,
@@ -183,7 +184,10 @@ export async function validarNcmDaEntrada(
   admin: SupabaseClient, p: ProdutoEntrada, moduloFiscalAtivo: boolean,
 ): Promise<string[]> {
   if (!moduloFiscalAtivo) return [];
-  return (await ncmsInvalidos(admin, [p.fiscal?.ncm])).map(mensagemNcm);
+  const erros = (await ncmsInvalidos(admin, [p.fiscal?.ncm])).map(mensagemNcm);
+  // ADR-0197 (emenda D-7): CEST inexistente é recusado pelo ML (10088).
+  const cestErro = await cestInexistente(admin, p.fiscal?.cest);
+  return cestErro ? [...erros, cestErro] : erros;
 }
 
 /** Uma linha de `variacoes` já gravada, como o `select` do handler devolve (colunas snake_case,

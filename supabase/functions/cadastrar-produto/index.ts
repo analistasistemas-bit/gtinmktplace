@@ -108,8 +108,8 @@ Deno.serve(async (req) => {
   if (faltasFiscais.length === 0) {
     try { faltasFiscais.push(...await validarNcmDaEntrada(admin, produto, moduloFiscal)); }
     catch (e) {
-      console.error('cadastrar-produto: leitura da tabela de NCM falhou:', e);
-      return json({ error: 'Não foi possível verificar o NCM. Tente novamente.' }, 500);
+      console.error('cadastrar-produto: leitura da tabela de NCM/CEST falhou:', e);
+      return json({ error: 'Não foi possível verificar o NCM/CEST. Tente novamente.' }, 500);
     }
   }
   if (faltasFiscais.length > 0) {

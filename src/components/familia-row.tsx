@@ -25,6 +25,7 @@ import {
   familiaExigeCor,
   familiaExigeFotoPorVariacao,
   familiaPrecosDivergentes,
+  familiaProdutoSimples,
 } from '@/lib/publicavel';
 import { coresNovasComEstoque, coresSemFotoExcluidas } from '@/lib/revisao-variacoes';
 
@@ -204,7 +205,7 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
       <div className="min-w-0">
         <div className="font-medium truncate">{familia.titulo}</div>
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mt-1">
-          <span>PAI {familia.codigoPai} · {familia.variacoes.length} cores</span>
+          <span>PAI {familia.codigoPai} · {familiaProdutoSimples(familia) ? 'Produto único' : `${familia.variacoes.length} cores`}</span>
           <span className="sm:hidden font-medium text-foreground flex items-center gap-1 border rounded px-1.5 py-0.5">
             {familia.operacao} · R$ {fmtBRLSemSimbolo(precoVendaMin)}
           </span>
