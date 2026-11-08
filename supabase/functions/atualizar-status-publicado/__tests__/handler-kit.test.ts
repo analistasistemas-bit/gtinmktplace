@@ -22,7 +22,6 @@ function builder(tabela: string) {
         return { data: { id: 'c', org_id: 'O', canal: 'mercado_livre', conta_externa_id: '1', expires_at: null,
           organizations: { modulos_habilitados: f.modulos } }, error: null };
       case 'anuncios_externos_itens': return { data: ITENS, error: null };
-      case 'kit_variacao_componentes': return { data: f.componentes.map((codigo) => ({ codigo })), error: null };
       case 'sku_politica_kit': return { data: f.politicas, error: null };
       default: return { data: [], error: null };
     }
@@ -42,6 +41,11 @@ vi.mock('../../_shared/supabase.ts', () => ({
   adminClient: () => ({
     from: (t: string) => builder(t),
     rpc: async (nome: string, args: Record<string, unknown>) => {
+      // Participação é leitura (RPC agregada): conta em `consultas`, não em `eventos`.
+      if (nome === 'kit_skus_participantes') {
+        f.consultas.push(nome);
+        return { data: f.componentes.filter((c) => (args.p_codigos as string[]).includes(c)), error: null };
+      }
       f.eventos.push(`rpc:${nome}${nome === 'kit_politica_operador' ? `:${args.p_bloquear}` : ''}`);
       return { data: nome === 'kit_ativacao_liberar' ? true : { ok: true, anterior: false }, error: null };
     },

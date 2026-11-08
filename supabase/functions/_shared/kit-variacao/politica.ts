@@ -23,15 +23,14 @@ export function kitLigado(familia: unknown): boolean {
 export async function skusParticipantes(
   admin: SupabaseClient, orgId: string, skus: string[], ligado: boolean,
 ): Promise<Set<string>> {
-  const out = new Set<string>();
-  if (!ligado || skus.length === 0) return out;
+  if (!ligado || skus.length === 0) return new Set();
   // ponytail: qualquer kit conta, inclusive rascunho; errar para o lado da saga só custa uma pausa de T.
-  for (const tabela of ['kit_variacao_skus', 'kit_variacao_componentes']) {
-    const { data, error } = await admin.from(tabela).select('codigo').eq('org_id', orgId).in('codigo', skus);
-    if (error) throw new Error(`skusParticipantes: ${tabela}: ${error.message}`);
-    for (const r of data ?? []) out.add(r.codigo as string);
-  }
-  return out;
+  // Códigos distintos já agregados num escalar (RPC): a leitura de linhas corta em 1.000, e um código omitido
+  // viraria SKU comum. Resposta fora do formato lança: nunca vira "não participa".
+  const { data, error } = await admin.rpc('kit_skus_participantes', { p_org: orgId, p_codigos: skus });
+  if (error) throw new Error(`skusParticipantes: ${error.message}`);
+  if (!Array.isArray(data)) throw new Error('skusParticipantes: resposta inesperada');
+  return new Set(data as string[]);
 }
 
 export function podeEscreverQuantidade(p: { participa: boolean; origem: 'saga' | 'outro' }): boolean {

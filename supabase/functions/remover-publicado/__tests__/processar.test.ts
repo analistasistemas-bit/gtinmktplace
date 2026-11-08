@@ -72,6 +72,11 @@ function fakeAdmin(filas: Record<string, unknown[]>) {
     from: (tabela: string) => chain(tabela),
     storage: { from: () => ({ remove: async (paths: string[]) => { removidos.push(paths); return { error: null }; } }) },
     rpc: async (nome: string, args: unknown) => {
+      // ADR-0199: participação é leitura (fila `rpc:kit_skus_participantes`), não entra em `rpcs`.
+      if (nome === 'kit_skus_participantes') {
+        const v = proximo(`rpc:${nome}`);
+        return ehErro(v) ? { data: null, error: { message: v.__erro } } : { data: v, error: null };
+      }
       rpcs.push({ nome, args, tabelasDeletadasAntes: deletes.map((d) => d.tabela) });
       // ADR-0185: a preparação da republicação é a RPC transacional (testada em SQL, em
       // supabase/tests/preparar_republicacao.sql). Aqui só o contrato: fila `rpc:<nome>` ou um
@@ -1307,8 +1312,7 @@ describe('removerPublicado — SKU em kit com variação (ADR-0199, Task 7)', ()
   // familias: alvo, em_voo, kits vinculados, cópias do pai (códigos de todas as cópias).
   const cenario = (exclusoes: unknown[]) => fakeAdmin({
     familias: [ALVO_KIT, [], [], [{ variacoes: [{ codigo: '00012346' }] }, { variacoes: [{ codigo: '00012347' }] }]],
-    kit_variacao_skus: [[]],
-    kit_variacao_componentes: [[{ codigo: '00012347' }]],
+    'rpc:kit_skus_participantes': [['00012347']],
     kit_exclusoes: [exclusoes],
     anuncios_externos: [[{ id: 'ext-1', mudando_composicao: false }], [{ mudando_composicao: false }]],
     anuncios_externos_itens: [[]],
@@ -1356,7 +1360,9 @@ describe('removerPublicado — SKU em kit com variação (ADR-0199, Task 7)', ()
   it('RPC recusa por publicação pendente → mesmo tipo', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ status: 'paused' }), { status: 200 })));
     const { admin } = cenario([]);
-    (admin as { rpc: unknown }).rpc = async () => ({ data: null, error: { message: 'republicar:kit_publicacao_pendente' } });
+    const rpc0 = admin.rpc;
+    admin.rpc = async (n: string, a: unknown) => (n === 'kit_skus_participantes'
+      ? rpc0(n, a) : { data: null, error: { message: 'republicar:kit_publicacao_pendente' } });
     const r = await removerPublicado(
       { admin, ctx: CTX, conexao: CONEXAO },
       { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
@@ -1369,7 +1375,9 @@ describe('removerPublicado — SKU em kit com variação (ADR-0199, Task 7)', ()
       ? new Response('{}', { status: 200 })
       : new Response(JSON.stringify({ status: 'paused' }), { status: 200 }))));
     const { admin } = cenario([]);
-    (admin as { rpc: unknown }).rpc = async () => ({ data: null, error: { message: 'republicar:kit_em_transferencia' } });
+    const rpc0 = admin.rpc;
+    admin.rpc = async (n: string, a: unknown) => (n === 'kit_skus_participantes'
+      ? rpc0(n, a) : { data: null, error: { message: 'republicar:kit_em_transferencia' } });
     const r = await removerPublicado(
       { admin, ctx: CTX, conexao: CONEXAO },
       { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
@@ -1381,8 +1389,7 @@ describe('removerPublicado — SKU em kit com variação (ADR-0199, Task 7)', ()
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ status: 'paused' }), { status: 200 })));
     const filas: Record<string, unknown[]> = {
       familias: [{ ...ALVO_KIT, organizations: { modulos_habilitados: [] } }, [], []],
-      kit_variacao_skus: [['nao-lido']],
-      kit_variacao_componentes: [['nao-lido']],
+      'rpc:kit_skus_participantes': [['nao-lido']],
       kit_exclusoes: [['nao-lido']],
       anuncios_externos: [[{ id: 'ext-1', mudando_composicao: false }], [{ mudando_composicao: false }]],
       anuncios_externos_itens: [[]],
@@ -1393,7 +1400,6 @@ describe('removerPublicado — SKU em kit com variação (ADR-0199, Task 7)', ()
       { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
     );
     expect(r.tipo).toBe('preservada');
-    expect([filas.kit_variacao_skus, filas.kit_variacao_componentes, filas.kit_exclusoes])
-      .toEqual([[['nao-lido']], [['nao-lido']], [['nao-lido']]]);
+    expect([filas['rpc:kit_skus_participantes'], filas.kit_exclusoes]).toEqual([[['nao-lido']], [['nao-lido']]]);
   });
 });

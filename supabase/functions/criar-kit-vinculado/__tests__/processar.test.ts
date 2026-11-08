@@ -265,13 +265,6 @@ function chain(table: string, state: {
       if ('codigo' in f) return { data: [], error: null }; // codigosJaUsados
       return { data: [], error: null };
     }
-    // ADR-0199: participantes de kit com variação (componentes) — e quem leu as tabelas.
-    if (table === 'kit_variacao_skus' || table === 'kit_variacao_componentes') {
-      state.lidasKit?.push(table);
-      const pedidos = (f.codigo?.val ?? []) as string[];
-      const lista = table === 'kit_variacao_componentes' ? state.participantes ?? [] : [];
-      return { data: lista.filter((c) => pedidos.includes(c)).map((codigo) => ({ codigo })), error: null };
-    }
     if (table === 'lotes') {
       if (rec.op === 'insert') { state.inserts.lotes.push(rec.payload as Record<string, unknown>); return { data: { id: 'lote-1' }, error: null }; }
       return { data: null, error: null };
@@ -355,6 +348,11 @@ function depsFake(opts: {
         return { data: ultimo, error: null };
       }
       if (name === 'proximo_numero_lote') return { data: 1, error: null };
+      // ADR-0199: participantes de kit com variação (RPC agregada) — e quem leu.
+      if (name === 'kit_skus_participantes') {
+        state.lidasKit?.push(name);
+        return { data: (state.participantes ?? []).filter((c) => (args.p_codigos as string[]).includes(c)), error: null };
+      }
       if (name === 'ncm_consultar') {
         const modo = opts.ncm ?? 'vigente';
         if (modo === 'erro') return { data: null, error: { message: 'rpc fora do ar' } };
@@ -482,7 +480,7 @@ describe('criarKitsVinculados', () => {
     const { deps, inserts, state } = depsFake({ kitModulo: true, participantes: ['99999999'] });
     const r = await criarKitsVinculados(deps, { familiaBaseId: 'f-base', kits: [kitPadrao(2)] });
     expect(r.ok).toEqual(true);
-    expect(state.lidasKit).toEqual(['kit_variacao_skus', 'kit_variacao_componentes']);
+    expect(state.lidasKit).toEqual(['kit_skus_participantes']);
     expect(inserts.familias[0]).not.toHaveProperty('organizations');
   });
 

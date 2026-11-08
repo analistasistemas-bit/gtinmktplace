@@ -294,17 +294,18 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
         throw new RecusaKit(`${existentes.map((f) => f.sku).join(', ')}: SKU em kit com variação já tem anúncio no `
           + 'Mercado Livre. Use Gerenciar kit.');
       }
-      // Variação canônica da org (família mais recente), a mesma que a saga e o ledger usam.
-      const { data, error } = await admin.from('variacoes').select('codigo, estoque, familias!inner(criado_em)')
-        .eq('org_id', familia.org_id).in('codigo', codigosKit)
-        .order('criado_em', { referencedTable: 'familias', ascending: false });
-      if (error) throw new Error(`variacoes (saldo sob exclusão): ${error.message}`);
-      const vistos = new Set<string>();
-      for (const r of data ?? []) {
-        if (vistos.has(r.codigo as string)) continue;
-        vistos.add(r.codigo as string);
-        const v = varPorSku.get(r.codigo as string);
-        if (v) varPorSku.set(v.sku, { ...v, estoque: r.estoque as number });
+      // Variação canônica da org (família mais recente, desempate pelo id), a mesma que a saga e o ledger usam,
+      // resolvida no servidor (`DISTINCT ON`): o embed ordenado do PostgREST não ordena as linhas de `variacoes`.
+      // Vale para o payload e para a confirmação (`varPorSku`).
+      const { data, error } = await admin.rpc('kit_saldo_canonico', { p_org: familia.org_id, p_codigos: codigosKit });
+      if (error) throw new Error(`kit_saldo_canonico (saldo sob exclusão): ${error.message}`);
+      const saldo = (data ?? null) as Record<string, unknown> | null;
+      if (!saldo || typeof saldo !== 'object' || Array.isArray(saldo)) throw new Error('kit_saldo_canonico: resposta inesperada');
+      for (const codigo of codigosKit) {
+        const estoque = saldo[codigo];
+        if (typeof estoque !== 'number') throw new RecusaKit(`${codigo}: SKU de kit com variação sem variação canônica.`);
+        const v = varPorSku.get(codigo);
+        if (v) varPorSku.set(codigo, { ...v, estoque });
       }
     } catch (e) {
       // Nada desta tentativa foi ao ML: solta, a menos que uma tentativa anterior tenha criado o item.

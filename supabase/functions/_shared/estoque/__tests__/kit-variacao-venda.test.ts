@@ -76,7 +76,6 @@ function bancoKit(o: { vinculos?: Array<{ sku: string; item_externo_id: string }
     anuncios_externos_itens: (o.vinculos ?? []).map((v) => ({ ...v, org_id: 'org-1', catalog_listing_id: null })),
     familias: [],
     kit_variacao_skus: (o.participantes ?? []).map((codigo) => ({ codigo, org_id: 'org-1' })),
-    kit_variacao_componentes: [],
     estoque_movimentos: [],
   };
   const from = (tabela: string) => {
@@ -105,6 +104,9 @@ function bancoKit(o: { vinculos?: Array<{ sku: string; item_externo_id: string }
     return q;
   };
   const rpc = (fn: string, a: Record<string, unknown>) => {
+    if (fn === 'kit_skus_participantes') {
+      return Promise.resolve({ data: (o.participantes ?? []).filter((c) => (a.p_codigos as string[]).includes(c)), error: null });
+    }
     if (fn !== 'baixar_estoque') return Promise.resolve({ data: null, error: null });
     const nova = !refs.has(a.p_ref as string);
     refs.add(a.p_ref as string);

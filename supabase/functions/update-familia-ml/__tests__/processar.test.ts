@@ -83,7 +83,6 @@ function fakeAdmin(over: {
       if (table === 'anuncios_externos') return raizUP;
       if (table === 'anuncios_externos_itens') return itensUP;
       if (table === 'lotes') return lote;
-      if (table === 'kit_variacao_componentes') return (over.kitComponentes ?? []).map((codigo) => ({ codigo }));
       return null;
     };
     const api: Record<string, unknown> = {
@@ -111,6 +110,10 @@ function fakeAdmin(over: {
   }
   const storage = { from: () => ({ createSignedUrl: async () => ({ data: { signedUrl: 'x' }, error: null }) }) };
   const rpc = async (fn: string, args?: { p_codigos?: string[] }) => {
+    // ADR-0199: participação de kit com variação (RPC agregada).
+    if (fn === 'kit_skus_participantes') {
+      return { data: (over.kitComponentes ?? []).filter((c) => (args?.p_codigos ?? []).includes(c)), error: null };
+    }
     // ADR-0187: ncm_consultar (gate fiscal) — default vigente p/ todo código pedido.
     if (fn === 'ncm_consultar') {
       const ncm = over.ncm ?? 'vigente';

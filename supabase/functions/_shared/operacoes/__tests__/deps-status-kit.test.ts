@@ -16,7 +16,6 @@ import { depsStatus } from '../deps.ts';
 
 const TABELAS: Record<string, unknown[]> = {
   anuncios_externos_itens: [{ sku: 'P1', item_externo_id: 'MLB1', catalog_listing_id: null }],
-  kit_variacao_componentes: [{ codigo: 'P1' }],
 };
 function admin() {
   const from = (t: string) => {
@@ -27,7 +26,8 @@ function admin() {
     return q;
   };
   const rpc = async (nome: string) => ({
-    data: nome === 'kit_ativacao_liberar' ? true : nome === 'kit_ativacao_reivindicar' ? { ok: true, anterior: false } : { ok: true },
+    data: nome === 'kit_skus_participantes' ? ['P1']
+      : nome === 'kit_ativacao_liberar' ? true : nome === 'kit_ativacao_reivindicar' ? { ok: true, anterior: false } : { ok: true },
     error: null,
   });
   return { from, rpc } as never;

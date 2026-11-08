@@ -28,7 +28,6 @@ function builder(tabela: string) {
         return [{ id: 'c', org_id: 'O', canal: 'mercado_livre', conta_externa_id: '1', expires_at: null }];
       case 'operacoes_massa_itens': return f.itensOp;
       case 'anuncios_externos_itens': return VINCULOS;
-      case 'kit_variacao_componentes': return [{ org_id: 'O', codigo: 'P1' }];
       case 'sku_politica_kit': return f.politicas;
       default: return [];
     }
@@ -64,6 +63,7 @@ vi.mock('../../_shared/supabase.ts', () => ({
     from: (t: string) => builder(t),
     rpc: async (nome: string, args: Linha) => {
       f.rpcs.push(nome);
+      if (nome === 'kit_skus_participantes') return { data: (args.p_codigos as string[]).filter((c) => c === 'P1'), error: null };
       if (nome === 'operacoes_massa_reivindicar') {
         const it = f.itensOp.find((i) => i.ml_item_id === args.p_ml_item && i.status === 'pendente');
         if (it) it.status = 'enviando';

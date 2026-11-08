@@ -760,7 +760,7 @@ function adminKit(st: EstadoFake, o: { modulos: string[]; skuPorUp: Record<strin
         c.maybeSingle = () => maybeSingle().then(embutir);
         return c;
       }
-      if (!['anuncios_externos_itens', 'kit_variacao_skus', 'kit_variacao_componentes'].includes(tabela)) return base.from(tabela);
+      if (tabela !== 'anuncios_externos_itens') return base.from(tabela);
       leituras.push(tabela);
       let lista: string[] = [];
       const chain: Record<string, unknown> = {
@@ -768,15 +768,16 @@ function adminKit(st: EstadoFake, o: { modulos: string[]; skuPorUp: Record<strin
         eq: () => chain,
         in: (_col: string, vals: string[]) => { lista = vals; return chain; },
         then: (ok: (v: unknown) => unknown) => Promise.resolve({
-          data: tabela === 'anuncios_externos_itens'
-            ? lista.filter((up) => o.skuPorUp[up]).map((up) => ({ sku: o.skuPorUp[up] }))
-            : tabela === 'kit_variacao_componentes'
-              ? lista.filter((c) => o.componentes.includes(c)).map((codigo) => ({ codigo }))
-              : [],
+          data: lista.filter((up) => o.skuPorUp[up]).map((up) => ({ sku: o.skuPorUp[up] })),
           error: null,
         }).then(ok),
       };
       return chain;
+    },
+    rpc: async (nome: string, a: Record<string, unknown>) => {
+      if (nome !== 'kit_skus_participantes') return (base as unknown as { rpc: (n: string, a: unknown) => unknown }).rpc(nome, a);
+      leituras.push(nome);
+      return { data: (a.p_codigos as string[]).filter((c) => o.componentes.includes(c)), error: null };
     },
   } as unknown as SupabaseClient;
   return { admin, leituras };
@@ -802,7 +803,7 @@ describe('criarKitVirtual — componente em kit com variação (ADR-0199)', () =
     const st = novoEstado();
     const { admin, leituras } = adminKit(st, { modulos: ['kit_variacao'], skuPorUp: {}, componentes: [] });
     expect(await criarKitVirtual(deps(st, { admin }), inputPadrao())).toMatchObject({ ok: true });
-    expect(leituras).toEqual(['anuncios_externos_itens', 'kit_variacao_skus', 'kit_variacao_componentes']);
+    expect(leituras).toEqual(['anuncios_externos_itens', 'kit_skus_participantes']);
   });
 
   it('org sem o módulo: nenhuma leitura nova', async () => {

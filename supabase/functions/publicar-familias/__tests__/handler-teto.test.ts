@@ -23,7 +23,6 @@ function builder(tabela: string) {
     if (tabela === 'variacoes') return { data: f.variacoes, error: null };
     if (tabela === 'marketplace_connections') return { data: f.conexao, error: null };
     if (tabela === 'familias') return { data: [{ id: 'fam-1', categoria_ml_id: 'MLB1' }], error: null };
-    if (tabela === 'kit_variacao_componentes') return { data: f.componentes.map((codigo) => ({ codigo })), error: null };
     if (tabela === 'sku_politica_kit') return { data: f.politicas, error: null };
     if (tabela === 'ml_formato_publicacao') {
       return f.formatoErro ? { data: null, error: { message: 'fora do ar' } } : { data: f.formatos, error: null };
@@ -46,7 +45,13 @@ vi.mock('../../_shared/support-audit.ts', () => ({ auditarOperacaoSuporte: vi.fn
 vi.mock('../../_shared/supabase.ts', () => ({
   adminClient: () => ({
     from: (t: string) => builder(t),
-    rpc: async (_n: string, a: { p_operacao: string }) => ({ data: a.p_operacao === 'CREATE' ? f.create : f.update, error: null }),
+    rpc: async (n: string, a: { p_operacao: string; p_codigos?: string[] }) => {
+      if (n === 'kit_skus_participantes') {
+        f.leituras.push(n);
+        return { data: f.componentes.filter((c) => a.p_codigos!.includes(c)), error: null };
+      }
+      return { data: a.p_operacao === 'CREATE' ? f.create : f.update, error: null };
+    },
   }),
 }));
 vi.mock('../../_shared/queue.ts', () => ({

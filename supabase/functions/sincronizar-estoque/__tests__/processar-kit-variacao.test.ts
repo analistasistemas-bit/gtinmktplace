@@ -85,6 +85,12 @@ function fakeAdmin(b: Banco) {
     return api;
   };
   const rpc = async (nome: string, args: Record<string, unknown>) => {
+    // Participação é leitura (RPC agregada): conta em `consultas`, não em `rpcs`.
+    if (nome === 'kit_skus_participantes') {
+      consultas.push(nome);
+      if (b.falhar === nome) return { data: null, error: { message: 'boom' } };
+      return { data: b.componentes.filter((c) => (args.p_codigos as string[]).includes(c)), error: null };
+    }
     rpcs.push({ nome, args });
     return { data: b.rpc?.[nome] ?? { ok: true, id: 'T1' }, error: null };
   };
@@ -185,12 +191,18 @@ describe('sincronizar-estoque × kit com variação', () => {
 
   it('criarTransferencia que lança também devolve a intenção ao outbox e relança', async () => {
     const m = montar({ modulos: ['kit_variacao'], componentes: ['P1'] });
-    m.deps.admin = { ...(m.deps.admin as object), rpc: async () => ({ data: null, error: { message: 'timeout' } }) } as never;
+    const admin = m.deps.admin as unknown as { rpc: (n: string, a: Record<string, unknown>) => Promise<unknown> };
+    const rpcOriginal = admin.rpc;
+    m.deps.admin = {
+      ...(m.deps.admin as object),
+      rpc: async (n: string, a: Record<string, unknown>) =>
+        (n === 'kit_skus_participantes' ? rpcOriginal(n, a) : { data: null, error: { message: 'timeout' } }),
+    } as never;
     await expect(processarSincronizacao(m.deps, JOB)).rejects.toThrow(/timeout/);
     expect(m.movs.find((x) => x.id === 'm2')!.push_enfileirado_em).toBeNull();
   });
 
-  it.each(['familias', 'kit_variacao_componentes'])('falha ao ler %s lança antes de qualquer push', async (t) => {
+  it.each(['familias', 'kit_skus_participantes'])('falha ao ler %s lança antes de qualquer push', async (t) => {
     const m = montar({ modulos: ['kit_variacao'], componentes: ['P1'], falhar: t });
     await expect(processarSincronizacao(m.deps, JOB)).rejects.toThrow();
     expect(pushes()).toEqual([]);

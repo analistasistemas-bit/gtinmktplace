@@ -207,10 +207,10 @@ begin
   perform pg_temp.afirmar(pg_temp.erro(format('select public.kit_saga_salvar_transferencia(%L, %L, %L, %L, null, false)',
     c.org, t1, gen_random_uuid(), 'reduzir')) like '%kit_execucao_vencida%', 'passo gravado com outro token');
   -- Com o token: grava, ignora colunas fora da saga e não regrava o valor final.
-  perform public.kit_saga_salvar_alvo(c.org, t1, tok, 'UP-P', '{"qtd_passo1": 5, "valor_anterior": 5, "valor_alvo": 3, "fase": "reducao", "papel": "destino", "delta": 9, "up_id": "X"}');
+  perform public.kit_saga_salvar_alvo(c.org, t1, tok, 'UP-P', '{"qtd_passo1": 5, "valor_anterior": 5, "valor_alvo": 3, "fase": "reducao", "papel": "destino", "delta": 9, "up_id": "X", "pagos_passo1": ["O-1"]}');
   perform public.kit_saga_salvar_alvo(c.org, t1, tok, 'UP-P', '{"valor_anterior": 7, "valor_alvo": 1, "fase": "aumento", "recusas": 2, "item_escrita": "MLB-P"}');
   perform pg_temp.afirmar((select qtd_passo1 = 5 and valor_anterior = 5 and valor_alvo = 3 and fase = 'reducao' and papel = 'origem' and delta = -2
-                                  and recusas = 2 and item_escrita = 'MLB-P'
+                                  and recusas = 2 and item_escrita = 'MLB-P' and pagos_passo1 = '{O-1}'
                            from public.kit_transferencia_alvos where transferencia_id = t1 and up_id = 'UP-P'), 'alvo gravado errado');
   perform public.kit_saga_salvar_transferencia(c.org, t1, tok, 'reduzir', 'alerta y', false);
   perform pg_temp.afirmar((select passo = 'reduzir' and alerta = 'alerta y' and estado = 'ativa'

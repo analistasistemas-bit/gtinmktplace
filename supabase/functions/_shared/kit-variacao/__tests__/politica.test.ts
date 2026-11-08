@@ -51,10 +51,11 @@ function falso(b: Banco) {
         return { data: achadas, error: null };
       }
       if (tabela === 'organizations') return { data: b.modulos === null ? null : { modulos_habilitados: b.modulos }, error: null };
+      // PostgREST corta a leitura de linhas em 1.000.
       const linhas = (tabela === 'kit_variacao_skus' ? b.kitSkus
         : tabela === 'sku_politica_kit' ? b.politicas
         : tabela === 'anuncios_externos_itens' ? b.itens : b.componentes) ?? [];
-      return { data: linhas.filter((r) => filtros.every((f) => f(r))), error: null };
+      return { data: linhas.filter((r) => filtros.every((f) => f(r))).slice(0, 1000), error: null };
     };
     const api: Record<string, unknown> = {
       select: () => api,
@@ -81,9 +82,20 @@ function falso(b: Banco) {
     return api;
   };
   const rpc = async (nome: string, args: Record<string, unknown>) => {
-    rpcs.push({ nome, args });
-    eventos.push(`rpc:${nome}`);
+    // Leitura de participação: conta como consulta (com os argumentos), não como efeito.
+    if (nome === 'kit_skus_participantes') consultas.push(`${nome}:${JSON.stringify(args)}`);
+    else {
+      rpcs.push({ nome, args });
+      eventos.push(`rpc:${nome}`);
+    }
     if (b.falhar === nome) return { data: null, error: { message: 'boom' } };
+    if (nome === 'kit_skus_participantes' && !(b.rpc && nome in b.rpc)) {
+      // Como a RPC: distintos das duas tabelas, da org, entre os pedidos. Sem corte de 1.000 linhas.
+      const pedidos = args.p_codigos as string[];
+      const todos = [...(b.kitSkus ?? []), ...(b.componentes ?? [])]
+        .filter((r) => r.org_id === args.p_org && pedidos.includes(r.codigo)).map((r) => r.codigo);
+      return { data: [...new Set(todos)].sort(), error: null };
+    }
     return { data: b.rpc?.[nome] ?? null, error: null };
   };
   return { admin: { from, rpc } as unknown as SupabaseClient, consultas, rpcs, eventos, banco: b };
@@ -113,6 +125,22 @@ describe('skusParticipantes', () => {
     expect(f.consultas).toEqual([]);
   });
 
+  it('mais de 1.000 linhas de componentes: o código da linha 1.001 participa (achado 2 da revisão final)', async () => {
+    // 500 kit-SKUs com A+B e 1 com A+C: 1.002 linhas, 3 códigos.
+    const componentes = [
+      ...Array.from({ length: 500 }, () => [{ org_id: 'O', codigo: 'A' }, { org_id: 'O', codigo: 'B' }]).flat(),
+      { org_id: 'O', codigo: 'A' }, { org_id: 'O', codigo: 'C' },
+    ];
+    const f = falso({ modulos: null, componentes });
+    expect(await skusParticipantes(f.admin, 'O', ['A', 'B', 'C'], true)).toEqual(new Set(['A', 'B', 'C']));
+    expect(f.consultas).toEqual(['kit_skus_participantes:{"p_org":"O","p_codigos":["A","B","C"]}']);
+  });
+
+  it('resposta fora do formato lança, nunca vira "não participa"', async () => {
+    const f = falso({ modulos: null, rpc: { kit_skus_participantes: { ok: true } } });
+    await expect(skusParticipantes(f.admin, 'O', ['A'], true)).rejects.toThrow(/resposta inesperada/);
+  });
+
   it('participa quem é SKU de kit ou componente de kit, só da própria org', async () => {
     const f = falso({
       modulos: null,
@@ -120,11 +148,11 @@ describe('skusParticipantes', () => {
       componentes: [{ org_id: 'O', codigo: 'P1' }, { org_id: 'O', codigo: 'P1' }, { org_id: 'X', codigo: 'B' }],
     });
     expect(await skusParticipantes(f.admin, 'O', ['K1', 'P1', 'B', 'C', 'Z'], true)).toEqual(new Set(['K1', 'P1']));
-    expect(f.consultas).toEqual(['kit_variacao_skus', 'kit_variacao_componentes']);
+    expect(f.consultas).toEqual(['kit_skus_participantes:{"p_org":"O","p_codigos":["K1","P1","B","C","Z"]}']);
   });
 
-  it.each(['kit_variacao_skus', 'kit_variacao_componentes'])('falha ao ler %s lança', async (t) => {
-    const f = falso({ modulos: null, falhar: t });
+  it('falha da RPC lança', async () => {
+    const f = falso({ modulos: null, falhar: 'kit_skus_participantes' });
     await expect(skusParticipantes(f.admin, 'O', ['A'], true)).rejects.toThrow();
   });
 });
@@ -226,7 +254,6 @@ describe('prepararStatusOperador (Task 6: pausar/reativar pelo operador)', () =>
     const { r, lidos } = preparar(f, { ligado: false });
     expect('concluir' in await r).toBe(true);
     expect(f.consultas).toEqual([]);
-    expect(f.rpcs).toEqual([]);
     expect(lidos).toEqual([]);
   });
 

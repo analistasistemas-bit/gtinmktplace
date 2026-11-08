@@ -21,7 +21,6 @@ function builder(tabela: string) {
     if (tabela === 'variacoes') return { data: f.variacoes, error: null };
     if (tabela === 'anuncios_externos') return { data: f.linhas, error: null };
     if (tabela === 'lotes') return { data: { origem: 'planilha' }, error: null };
-    if (tabela === 'kit_variacao_componentes') return { data: f.componentes.map((codigo) => ({ codigo })), error: null };
     return { data: [], error: null };
   };
   const q: Record<string, unknown> = {
@@ -38,7 +37,14 @@ function builder(tabela: string) {
 }
 
 vi.mock('../../_shared/cors.ts', () => ({ corsHeaders: {}, handleOptions: () => new Response() }));
-vi.mock('../../_shared/supabase.ts', () => ({ adminClient: () => ({ from: (t: string) => builder(t) }) }));
+vi.mock('../../_shared/supabase.ts', () => ({
+  adminClient: () => ({
+    from: (t: string) => builder(t),
+    rpc: async (n: string, a: { p_codigos: string[] }) => (n === 'kit_skus_participantes'
+      ? { data: f.componentes.filter((c) => a.p_codigos.includes(c)), error: null }
+      : { data: null, error: { message: `rpc inesperada: ${n}` } }),
+  }),
+}));
 vi.mock('../../_shared/queue.ts', () => ({
   verificarAssinatura: async () => true,
   enfileirarVinculacaoCatalogo: vi.fn(async () => {}),

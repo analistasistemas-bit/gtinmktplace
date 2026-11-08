@@ -391,11 +391,11 @@ describe('atualizarFamiliaUP — Fix 5: efeitos pós-composição', () => {
         ...(admin as Record<string, unknown>),
         from: (t: string) => {
           lidas.push(t);
-          if (t.startsWith('kit_variacao_')) {
-            return { select: () => ({ eq: () => ({ in: async () => ({ data: t === 'kit_variacao_componentes' ? [{ codigo: 'A' }] : [], error: null }) }) }) };
-          }
           return (admin as { from: (t: string) => unknown }).from(t);
         },
+        rpc: async (n: string, a: Record<string, unknown>) => (n === 'kit_skus_participantes'
+          ? (lidas.push(n), { data: (a.p_codigos as string[]).filter((c) => c === 'A'), error: null })
+          : (admin as { rpc: (n: string, a: unknown) => unknown }).rpc(n, a)),
       };
       let entradaVista: Parameters<typeof atualizarComposicao>[1] | null = null;
       const r = await atualizarFamiliaUP(args({
@@ -414,8 +414,8 @@ describe('atualizarFamiliaUP — Fix 5: efeitos pós-composição', () => {
     expect([...(sem.entradaVista.participantes ?? [])]).toEqual([]);
     expect(sem.r.estado === 'ok' && sem.r.enviados?.map((e) => e.itemExternoId)).toEqual(['MLB1', 'MLB2']);
     expect(sem.lidas.filter((t) => t.startsWith('kit_') || t === 'organizations')).toEqual([]);
-    // Com o módulo: organizations não (embed), kit_variacao_skus/componentes e os SKUs da raiz (Task 7).
-    expect(sem.lidas.length).toBe(com.lidas.length - 3);
+    // Com o módulo: organizations não (embed), a RPC de participação e os SKUs da raiz (Task 7).
+    expect(sem.lidas.length).toBe(com.lidas.length - 2);
   });
 
   it('Task 7: participante fora da planilha vai como participante à saga e o lote ganha aviso; sem módulo, nada', async () => {
@@ -428,14 +428,10 @@ describe('atualizarFamiliaUP — Fix 5: efeitos pós-composição', () => {
       const { admin, writes } = fakeAdmin(filhos);
       const kitAdmin = {
         ...(admin as Record<string, unknown>),
-        from: (t: string) => {
-          if (t.startsWith('kit_variacao_')) {
-            return { select: () => ({ eq: () => ({ in: async (_c: string, cods: string[]) => ({
-              data: t === 'kit_variacao_componentes' ? cods.filter((c) => c === 'B').map((codigo) => ({ codigo })) : [], error: null,
-            }) }) }) };
-          }
-          return (admin as { from: (t: string) => unknown }).from(t);
-        },
+        from: (t: string) => (admin as { from: (t: string) => unknown }).from(t),
+        rpc: async (n: string, a: Record<string, unknown>) => (n === 'kit_skus_participantes'
+          ? { data: (a.p_codigos as string[]).filter((c) => c === 'B'), error: null }
+          : (admin as { rpc: (n: string, a: unknown) => unknown }).rpc(n, a)),
       };
       let entradaVista: Parameters<typeof atualizarComposicao>[1] | null = null;
       await atualizarFamiliaUP(args({
@@ -468,11 +464,10 @@ describe('atualizarFamiliaUP — Fix 5: efeitos pós-composição', () => {
     const { admin } = fakeAdmin(filhos);
     const kitAdmin = {
       ...(admin as Record<string, unknown>),
-      from: (t: string) => (t.startsWith('kit_variacao_')
-        ? { select: () => ({ eq: () => ({ in: async (_c: string, cods: string[]) => ({
-          data: t === 'kit_variacao_componentes' ? cods.filter((c) => c === 'B').map((codigo) => ({ codigo })) : [], error: null,
-        }) }) }) }
-        : (admin as { from: (t: string) => unknown }).from(t)),
+      from: (t: string) => (admin as { from: (t: string) => unknown }).from(t),
+      rpc: async (n: string, a: Record<string, unknown>) => (n === 'kit_skus_participantes'
+        ? { data: (a.p_codigos as string[]).filter((c) => c === 'B'), error: null }
+        : (admin as { rpc: (n: string, a: unknown) => unknown }).rpc(n, a)),
     };
     let entradaVista: Parameters<typeof atualizarComposicao>[1] | null = null;
     await atualizarFamiliaUP(args({

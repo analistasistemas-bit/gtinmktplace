@@ -72,9 +72,6 @@ function fakeAdmin(over: {
         if (table === 'familias' && rec.op === 'update' && 'kit_base_codigo_pai' in rec.filters) {
           return Promise.resolve({ data: kitsReclamados, error: null }).then(resolve);
         }
-        if (table === 'kit_variacao_componentes') {
-          return Promise.resolve({ data: (over.kitComponentes ?? []).map((codigo) => ({ codigo })), error: null }).then(resolve);
-        }
         if (table === 'anuncios_externos_itens') {
           return Promise.resolve(over.filhosErro ? { data: null, error: { message: 'boom' } } : { data: over.filhosUP ?? [], error: null }).then(resolve);
         }
@@ -85,6 +82,10 @@ function fakeAdmin(over: {
     return api;
   }
   const rpc = async (fn: string, args?: { p_codigos?: string[] }) => {
+    // ADR-0199: participação de kit com variação (RPC agregada).
+    if (fn === 'kit_skus_participantes') {
+      return { data: (over.kitComponentes ?? []).filter((c) => (args?.p_codigos ?? []).includes(c)), error: null };
+    }
     // ADR-0187: ncm_consultar (gate fiscal) — default vigente p/ todo código pedido.
     if (fn === 'ncm_consultar') {
       const ncm = over.ncm ?? 'vigente';

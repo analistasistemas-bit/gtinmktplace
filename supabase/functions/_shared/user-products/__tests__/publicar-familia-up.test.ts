@@ -228,6 +228,8 @@ describe('publicarFamiliaUP — kit com variação (saga real publicarGrupo)', (
     buscaAcha?: Record<string, string>;
     /** Quantidade do UP no ML na confirmação. */
     qtdMl?: number;
+    /** Resposta de `kit_saldo_canonico`. */
+    saldoCanonico?: Record<string, number>;
   }
 
   function montar(c: Cenario = {}) {
@@ -277,9 +279,6 @@ describe('publicarFamiliaUP — kit com variação (saga real publicarGrupo)', (
     };
     const kitAdmin = {
       from: (t: string) => {
-        if (t === 'kit_variacao_componentes' || t === 'kit_variacao_skus') {
-          return { select: () => ({ eq: () => ({ in: async () => ({ data: t === 'kit_variacao_componentes' ? [{ codigo: 's-verde' }] : [], error: null }) }) }) };
-        }
         if (t === 'sku_politica_kit') {
           return { select: () => ({ eq: () => ({ in: async () => { eventos.push('politica'); return { data: politica(nPol++), error: null }; } }) }) };
         }
@@ -289,12 +288,13 @@ describe('publicarFamiliaUP — kit com variação (saga real publicarGrupo)', (
         if (t === 'anuncios_externos_itens') return tabelaItens();
         if (t === 'variacoes') {
           return {
-            // Duas famílias com s-verde: a canônica (mais recente) tem 1; a antiga, 9.
+            // Achado 1 da revisão final: a leitura de linhas devolve a cópia antiga (9) ANTES da vigente (1).
+            // O saldo só pode vir da RPC da canônica.
             select: () => ({ eq: () => ({ in: () => ({ order: async () => {
               eventos.push('reler');
               return { data: [
-                { codigo: 's-verde', estoque: 1, familias: { criado_em: '2026-06-01' } },
                 { codigo: 's-verde', estoque: 9, familias: { criado_em: '2026-01-01' } },
+                { codigo: 's-verde', estoque: 1, familias: { criado_em: '2026-06-01' } },
               ], error: null };
             } }) }) }),
             update: (v: unknown) => ((admin as { from: (t: string) => { update: (v: unknown) => unknown } }).from(t)).update(v),
@@ -303,6 +303,13 @@ describe('publicarFamiliaUP — kit com variação (saga real publicarGrupo)', (
         return (admin as { from: (t: string) => unknown }).from(t);
       },
       rpc: async (nome: string, a: Record<string, unknown>) => {
+        if (nome === 'kit_skus_participantes') {
+          return { data: (a.p_codigos as string[]).filter((x) => x === 's-verde'), error: null };
+        }
+        if (nome === 'kit_saldo_canonico') {
+          eventos.push('reler');
+          return { data: c.saldoCanonico ?? { 's-verde': 1 }, error: null };
+        }
         eventos.push(nome === 'kit_adquirir_exclusao' ? `adquirir:${a.p_dono_tipo}:${a.p_dono_id}` : `${nome}`);
         return { data: nome === 'kit_adquirir_exclusao' ? (c.adquirir ?? { ok: true }) : null, error: null };
       },
@@ -331,6 +338,14 @@ describe('publicarFamiliaUP — kit com variação (saga real publicarGrupo)', (
     const montarPayload = (criarPortasSpy.mock.calls[0][0] as { montarPayloadPlano: (s: string) => { available_quantity: number } }).montarPayloadPlano;
     expect(montarPayload('s-verde').available_quantity).toBe(1);
     expect(m.famStatus()).toContain('publicado');
+  });
+
+  it('SKU de kit sem variação canônica: recusa antes de criar e solta', async () => {
+    const m = montar({ saldoCanonico: {} });
+    const r = await m.rodar();
+    expect(r).toMatchObject({ estado: 'erro', mensagem: expect.stringContaining('sem variação canônica') });
+    expect(m.eventos.some((e) => e.startsWith('criar:'))).toBe(false);
+    expect(m.soltou()).toBe(true);
   });
 
   it('Reenviar com item já existente (não é retomada): recusa, nada ativa nem cria, solta e marca erro', async () => {
