@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-11-07
+atualizado: 2026-11-08
 ---
 
 # Changelog
@@ -8,6 +8,10 @@ atualizado: 2026-11-07
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-11-08
+
+- **Campo Marca / Fabricante no cadastro** (emenda [[0188-marca-por-produto|ADR-0188]]): o cadastro pela nota gravava o emitente (uma revenda) como fornecedor e, sem marca, ele ia ao ML como BRAND/MANUFACTURER — anúncio bloqueado. O campo aparece em toda org (simples e grade) e grava `familias.marca`; obrigatório e vazio no cadastro pela nota; edge recusa nota sem marca e trata marca trocada no retry como divergência. Em produção desde 2026-11-08 (main `a3e180dc`; `cadastrar-produto` v44, `adicionar-variacoes-familia` v31).
 
 ## 2026-11-07
 

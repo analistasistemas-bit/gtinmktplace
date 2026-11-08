@@ -2,9 +2,12 @@
 
 ## Campo Marca / Fabricante no cadastro (emenda ADR-0188) — 2026-11-07
 
+Em produção desde 2026-11-08 (main `a3e180dc`; `cadastrar-produto` v44, `adicionar-variacoes-familia` v31).
+
 - [x] Campo em toda org (cadastro simples e grade), grava `familias.marca` → BRAND/MANUFACTURER no ML.
 - [x] Obrigatório no cadastro pela nota (o emitente é revenda); a edge `cadastrar-produto` recusa nota sem marca.
-- [ ] Deploy da edge `cadastrar-produto` e validação com uma nota real.
+- [x] Deploy das edges `cadastrar-produto` e `adicionar-variacoes-familia` (código conferido por download).
+- [ ] Validar com uma nota real (campo vazio trava o Cadastrar; marca chega ao ML).
 
 ## Tabela oficial de CEST (ADR-0197) — 2026-11-07
 
