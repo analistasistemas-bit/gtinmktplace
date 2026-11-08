@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { DialogCriarKitVariacao } from '../dialog-criar-kit-variacao';
+import { escolherNoSelect } from '@/test/select';
 
 const v = (codigo: string, cor: string, tamanho: string, estoque: number) => ({
   codigo, cor, tamanho, estoque, preco: 49.9, precoPublicacao: 49.9, excluidaDaPublicacao: false,
@@ -345,7 +346,7 @@ describe('DialogCriarKitVariacao', () => {
       abrir();
       await ateEtapa2(user);
       await user.click(screen.getByRole('button', { name: 'Voltar' }));
-      await user.click(screen.getByRole('checkbox', { name: 'Cor Marrom' }));
+      await montar(user, ['Marrom'], { 'Preto e Marrom M': '1' });
       await user.click(screen.getByRole('button', { name: 'Próximo' }));
       await waitFor(() => expect(gerar()).toHaveBeenCalledTimes(2));
       expect(gerar().mock.calls[1][0].cores).toEqual(['Preto', 'Branco', 'Marrom']);
@@ -359,7 +360,7 @@ describe('DialogCriarKitVariacao', () => {
       await user.clear(screen.getByLabelText('Título'));
       await user.type(screen.getByLabelText('Título'), 'Meu título');
       await user.click(screen.getByRole('button', { name: 'Voltar' }));
-      await user.click(screen.getByRole('checkbox', { name: 'Cor Marrom' }));
+      await montar(user, ['Marrom'], { 'Preto e Marrom M': '1' });
       await user.click(screen.getByRole('button', { name: 'Próximo' }));
       expect(await screen.findByRole('alertdialog')).toHaveTextContent(/texto que você editou/);
       expect(gerar()).toHaveBeenCalledTimes(1);
@@ -368,11 +369,12 @@ describe('DialogCriarKitVariacao', () => {
       expect(gerar()).toHaveBeenCalledTimes(1);
 
       await user.click(screen.getByRole('button', { name: 'Voltar' }));
-      await user.click(screen.getByRole('checkbox', { name: 'Cor Marrom' }));
+      await montar(user, [], { 'Preto e Marrom M': '0' });
       await user.click(screen.getByRole('button', { name: 'Próximo' }));
       await user.click(await screen.findByRole('button', { name: 'Gerar texto novo' }));
       await screen.findByDisplayValue('Kit 2 Blusas Canelada');
-      expect(gerar()).toHaveBeenCalledTimes(2);
+      // Volta ao pedido Preto e Branco: a geração dele já existe (cache), sem nova chamada paga.
+      expect(gerar()).toHaveBeenCalledTimes(1);
     });
 
     it('falha da IA mostra o erro e deixa os campos editáveis', async () => {
@@ -385,6 +387,61 @@ describe('DialogCriarKitVariacao', () => {
       await user.type(screen.getByLabelText('Título'), 'Escrito à mão');
       expect(screen.getByLabelText('Título')).toHaveValue('Escrito à mão');
       expect(gerar()).toHaveBeenCalledTimes(1);
+    });
+
+    it('cor marcada sem combinação com quantidade não entra no texto', async () => {
+      const user = userEvent.setup();
+      abrir();
+      await montar(user, ['Preto', 'Branco', 'Marrom'], { 'Preto e Branco M': '1' });
+      await user.click(screen.getByRole('button', { name: 'Próximo' }));
+      await screen.findByDisplayValue('Kit 2 Blusas Canelada');
+      expect(gerar().mock.calls[0][0].cores).toEqual(['Preto', 'Branco']);
+    });
+
+    it('voltar a um pedido já gerado reaproveita o texto, sem nova chamada (A → B → A)', async () => {
+      const user = userEvent.setup();
+      abrir();
+      await ateEtapa2(user);
+      await user.click(screen.getByRole('button', { name: 'Voltar' }));
+      await montar(user, ['Marrom'], { 'Preto e Marrom M': '1' });
+      gerar().mockResolvedValueOnce({ ok: true, titulo: 'Kit 2 Blusas Preto Branco Marrom', descricao: 'Outro.', previa_id: 'PV2' } as never);
+      await user.click(screen.getByRole('button', { name: 'Próximo' }));
+      await screen.findByDisplayValue('Kit 2 Blusas Preto Branco Marrom');
+      await user.click(screen.getByRole('button', { name: 'Voltar' }));
+      await montar(user, [], { 'Preto e Marrom M': '0' });
+      await user.click(screen.getByRole('button', { name: 'Próximo' }));
+      expect(await screen.findByDisplayValue('Kit 2 Blusas Canelada')).toBeInTheDocument();
+      expect(gerar()).toHaveBeenCalledTimes(2);
+    });
+
+    it('enquanto gera, Voltar fica travado (a resposta não cai em outro pedido)', async () => {
+      gerar().mockImplementationOnce(() => new Promise(() => {}) as never);
+      const user = userEvent.setup();
+      abrir();
+      await montar(user, ['Preto', 'Branco'], { 'Preto e Branco M': '1' });
+      await user.click(screen.getByRole('button', { name: 'Próximo' }));
+      await screen.findByText(/Gerando título e descrição/);
+      expect(screen.getByRole('button', { name: 'Voltar' })).toBeDisabled();
+    });
+
+    it('manter o texto depois de mudar as peças não envia a prévia de outra quantidade', async () => {
+      vi.mocked(criarKitVariacaoEdge).mockClear();
+      const user = userEvent.setup();
+      abrir();
+      await montar(user, ['Preto', 'Branco', 'Marrom'], { 'Preto e Branco M': '1' });
+      await user.click(screen.getByRole('button', { name: 'Próximo' }));
+      await screen.findByDisplayValue('Kit 2 Blusas Canelada');
+      await user.type(screen.getByLabelText('Título'), ' editado');
+      await user.click(screen.getByRole('button', { name: 'Voltar' }));
+      await escolherNoSelect(user, 'Peças por kit', '3');
+      await montar(user, [], { 'Preto, Branco e Marrom M': '1' });
+      await user.click(screen.getByRole('button', { name: 'Próximo' }));
+      await user.click(await screen.findByRole('button', { name: 'Manter meu texto' }));
+      await user.upload(screen.getByLabelText('Foto Preto, Branco e Marrom'), new File(['x'], 'f.jpg', { type: 'image/jpeg' }));
+      await user.click(screen.getByRole('button', { name: 'Próximo' }));
+      await user.click(await screen.findByRole('button', { name: 'Criar kit' }));
+      await waitFor(() => expect(criarKitVariacaoEdge).toHaveBeenCalledTimes(1));
+      expect(vi.mocked(criarKitVariacaoEdge).mock.calls[0][0]).toMatchObject({ pecasPorKit: 3, previaId: undefined });
     });
   });
 });

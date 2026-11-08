@@ -68,7 +68,8 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
   const [tipo, setTipo] = useState<'gold_special' | 'gold_pro'>('gold_special');
   const [titulo, setTitulo] = useState('');
   const [descricao, setDescricao] = useState('');
-  const [previaId, setPreviaId] = useState<string | undefined>();
+  // Prévia do texto com as peças em que foi gerada: a criação recusa prévia de outra quantidade (previa_divergente).
+  const [previa, setPrevia] = useState<{ id: string; pecas: number } | undefined>();
   const [fotos, setFotos] = useState<Record<string, FotoKit>>({});
   const [soEmKit, setSoEmKit] = useState(false);
   const [meta, setMeta] = useState('3');
@@ -89,8 +90,8 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
     chave.current = crypto.randomUUID();
     enviadas.current.clear();
     setEtapa('montagem'); setCores([]); setPecas(2); setQtd({}); setPreco(''); setTipo('gold_special');
-    setTitulo(''); setDescricao(''); setPreviaId(undefined); setFotos({}); setSoEmKit(false); setMeta('3');
-    setTextoDe(null); setEditado(false); setErroTexto(null); setConfirmarTexto(false); falhouEm.current = '';
+    setTitulo(''); setDescricao(''); setPrevia(undefined); setFotos({}); setSoEmKit(false); setMeta('3');
+    setTextoDe(null); setEditado(false); setErroTexto(null); setConfirmarTexto(false); falhouEm.current = ''; geracoes.current.clear();
   }, [open]);
 
   const variacoes = useMemo(
@@ -124,8 +125,12 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
   );
 
   // O texto cita cores, quantidade e tamanhos: é de um pedido. Mudou o pedido, a etapa 2 gera de novo.
+  // Só o que vira anúncio: cores e tamanhos com quantidade > 0 (cor marcada sem combinação não é oferecida).
   const tamanhosUsados = useMemo(() => tamanhos.filter((t) => quantidades.some((q) => q.tamanho === t)), [tamanhos, quantidades]);
-  const pedidoTexto = JSON.stringify([marcadas, pecas, tamanhosUsados]);
+  const coresTexto = useMemo(() => marcadas.filter((c) => quantidades.some((q) => q.cores.includes(c))), [marcadas, quantidades]);
+  const pedidoTexto = JSON.stringify([coresTexto, pecas, tamanhosUsados]);
+  // Texto gerado por pedido: voltar a um pedido já gerado não paga outra chamada.
+  const geracoes = useRef(new Map<string, { titulo: string; descricao: string; previaId?: string }>());
   const mudarMontagem = (f: () => void) => f();
 
   const precoNum = Number(preco.replace(',', '.'));
@@ -148,22 +153,31 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
     // Uma geração por pedido. Texto editado de outro pedido só é trocado com confirmação.
     if (textoDe === pedidoTexto || falhouEm.current === pedidoTexto || texto.isPending) return;
     if (editado && (titulo.trim() || descricao.trim())) { setConfirmarTexto(true); return; }
-    gerarTexto();
+    usarOuGerar();
   }
 
+  function aplicarTexto(pedido: string, g: { titulo: string; descricao: string; previaId?: string }, p: number) {
+    setTitulo(g.titulo); setDescricao(g.descricao); setPrevia(g.previaId ? { id: g.previaId, pecas: p } : undefined);
+    setTextoDe(pedido); setEditado(false); setErroTexto(null);
+  }
   const texto = useMutation({
     mutationFn: (p: { pedido: string; cores: string[]; pecas: number; tamanhos: string[] }) =>
       gerarTextoKitEdge({ familiaBaseId, pecasPorKit: p.pecas, cores: p.cores, tamanhos: p.tamanhos }),
     onSuccess: (r, p) => {
       if (!r.ok) { falhouEm.current = p.pedido; setErroTexto(r.mensagem); return; }
-      setTitulo(r.titulo); setDescricao(r.descricao); setPreviaId(r.previa_id);
-      setTextoDe(p.pedido); setEditado(false); setErroTexto(null);
+      const g = { titulo: r.titulo, descricao: r.descricao, previaId: r.previa_id };
+      geracoes.current.set(p.pedido, g);
+      aplicarTexto(p.pedido, g, p.pecas);
     },
     onError: (e, p) => { falhouEm.current = p.pedido; setErroTexto((e as Error).message); },
   });
   function gerarTexto() {
     setErroTexto(null);
-    texto.mutate({ pedido: pedidoTexto, cores: marcadas, pecas, tamanhos: tamanhosUsados });
+    texto.mutate({ pedido: pedidoTexto, cores: coresTexto, pecas, tamanhos: tamanhosUsados });
+  }
+  function usarOuGerar() {
+    const ja = geracoes.current.get(pedidoTexto);
+    if (ja) aplicarTexto(pedidoTexto, ja, pecas); else gerarTexto();
   }
 
   const criar = useMutation({
@@ -183,7 +197,7 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
       return criarKitVariacaoEdge({
         familiaBaseId, cores: marcadas, pecasPorKit: pecas, preco: precoNum, quantidades, titulo, descricao,
         fotos: caminhos, soEmKit: isAdmin && soEmKit, meta: soEmKit ? metaNum : 0, chaveCadastro: chave.current,
-        listingTypeId: tipo, previaId,
+        listingTypeId: tipo, previaId: previa?.pecas === pecas ? previa.id : undefined,
       });
     },
     onSuccess: (r) => {
@@ -217,7 +231,7 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel onClick={() => setTextoDe(pedidoTexto)}>Manter meu texto</AlertDialogCancel>
-          <AlertDialogAction onClick={gerarTexto}>Gerar texto novo</AlertDialogAction>
+          <AlertDialogAction onClick={usarOuGerar}>Gerar texto novo</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
@@ -512,7 +526,7 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
               </>
             ) : etapa === 'anuncio' ? (
               <>
-                <Button variant="outline" onClick={() => setEtapa('montagem')}>Voltar</Button>
+                <Button variant="outline" disabled={texto.isPending} onClick={() => setEtapa('montagem')}>Voltar</Button>
                 <Button disabled={!podeAnuncio} onClick={() => setEtapa('conferir')}>Próximo</Button>
               </>
             ) : (
