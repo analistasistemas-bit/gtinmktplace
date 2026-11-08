@@ -9,7 +9,7 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import type { ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { humanizarErroML, MLApiError } from '../_shared/ml/erro-ml.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
-import { importarPedidosDoItem, lerOferta, listarPendentes } from '../_shared/kit-variacao/ml-oferta.ts';
+import { importarPedidosDoItem, lerItens, lerOferta, listarPendentes } from '../_shared/kit-variacao/ml-oferta.ts';
 import { avancarSaga, PRAZO_PASSO_S, quarentenaDoEnv, type DepsSaga } from '../_shared/kit-variacao/saga.ts';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { getConnector } from '../_shared/canais/registry.ts';
@@ -120,6 +120,7 @@ function deps(orgId: string, transferenciaId: string): DepsSaga {
     },
     ml: {
       lerOferta: async (upId, esperados) => lerOferta((await ml()).token, upId, esperados, f),
+      lerItens: async (upId, ids) => lerItens((await ml()).token, upId, ids, f),
       listarPendentes: async () => { const c = await ml(); return listarPendentes(c.token, c.seller, f); },
       importarPedidos: async (itemIds, desde, idsPasso1, antesDeBaixar) => {
         const c = await ml();
