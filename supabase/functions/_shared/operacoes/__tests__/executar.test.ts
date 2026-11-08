@@ -723,6 +723,8 @@ describe('ofertas de preço fixo', () => {
       expect(itens[0]).toMatchObject({ status: 'mudou', mensagem: 'O preço da oferta mudou: agora 59,90' });
       expect(itens[0].etapa).toBeUndefined();
       expect(ml.post).not.toHaveBeenCalled();
+      // Sem isto o preview seguia com o preço velho até o sync do dia seguinte e toda nova tentativa dava "mudou".
+      expect(deps.espelharPreco).toHaveBeenCalledWith('P-MLB18099366', 'MLB1', 59.9, ['candidate']);
     });
 
     it('Review Focus 2: preço fresco < 19 com risco confirmado → bloqueado, sem POST', async () => {

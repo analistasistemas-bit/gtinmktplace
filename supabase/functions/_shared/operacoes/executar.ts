@@ -20,8 +20,9 @@ export interface DepsExecutar extends DepsLaco {
   /** Semáforo no preço pedido com a projeção atual da Central; null = item sumiu da Central. */
   semaforoAtual(promocaoId: string, mlItemId: string, preco: number | null): Promise<Semaforo | null>;
   espelharStatusCentral(promocaoId: string, tipo: TipoPromocao, mlItemId: string, espelho: Espelho): Promise<void>;
-  /** Preço aplicado na Central (preco_promo; líquido reprojetado nesse preço quando der). Best-effort. */
-  espelharPreco(promocaoId: string, mlItemId: string, preco: number): Promise<void>;
+  /** Preço aplicado na Central (preco_promo; líquido reprojetado nesse preço quando der). Best-effort.
+   *  `estados`: status da linha que aceitam o espelho (padrão: participando). */
+  espelharPreco(promocaoId: string, mlItemId: string, preco: number, estados?: string[]): Promise<void>;
   /** Recalcula ml_promocoes.contagem a partir das linhas da Central (mesma regra do sync). Best-effort. */
   recontarCentral(promocaoId: string): Promise<void>;
   /** Ofertas fixas: outra operação aderiu a este item há pouco (`candidate` ainda não prova nada). */
@@ -226,7 +227,12 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar, p
 
   if (d.tipo === 'fim') {
     if (d.status !== 'ja_estava') {
-      await encerrar({ status: d.status, mensagem: d.mensagem });
+      if (!(await encerrar({ status: d.status, mensagem: d.mensagem }))) return;
+      // Oferta fixa com preço novo no ML: a Central (fonte do preview) recebe o preço vivo, senão toda nova
+      // tentativa sai com o preço velho e cai em `mudou` de novo até o sync do dia seguinte.
+      if (fixa && d.status === 'mudou' && fresco?.status === 'candidate' && fresco.preco != null) {
+        await deps.espelharPreco(op.promocao_id, id, fresco.preco, ['candidate']).catch(() => {});
+      }
       return;
     }
     // Retry depois de crash pós-escrita cai aqui: grava o offer_id do SMART e acerta o espelho.

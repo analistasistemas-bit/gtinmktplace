@@ -173,7 +173,7 @@ export function depsExecutar(admin: SupabaseClient, cx: Cx, op: OperacaoRow, cha
       falhou('espelharStatusCentral', error);
     },
 
-    async espelharPreco(promocaoId, mlItemId, preco) {
+    async espelharPreco(promocaoId, mlItemId, preco, estados = ['pending', 'started']) {
       // Achado Codex P2: com sync em curso ele mesmo grava o estado real do ML — não disputar a linha.
       if (await syncEmCurso(promocaoId)) return;
       const linha = () => admin.from('ml_promocao_itens');
@@ -192,9 +192,10 @@ export function depsExecutar(admin: SupabaseClient, cx: Cx, op: OperacaoRow, cha
       const patch = r
         ? { preco_promo: preco, preco_avaliado: preco, projecao: r.projecao, pior_semaforo: r.pior_semaforo }
         : { preco_promo: preco, preco_avaliado: preco, projecao: semCalculo, pior_semaforo: 'indisponivel' };
-      // Só se a linha ainda é participando: um lote do sync que voltou a gravar `candidate` não fica com preço aplicado.
+      // Padrão só participando: um lote do sync que voltou a gravar `candidate` não fica com preço aplicado.
+      // `candidate` só no `mudou` de oferta fixa (preço novo do convite lido agora do ML).
       const upd = await linha().update(patch).eq('org_id', op.org_id).eq('promocao_id', promocaoId).eq('ml_item_id', mlItemId)
-        .in('status', ['pending', 'started']);
+        .in('status', estados);
       falhou('espelharPreco', upd.error);
     },
 
