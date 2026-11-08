@@ -4,14 +4,14 @@ import { fetchDetalheKitVariacao, fetchKitsVariacao } from '@/lib/kit-variacao-e
 export const QK_KITS_VARIACAO = ['kits-variacao'] as const;
 
 /** Kits com variação da org (ADR-0200). Só com o módulo ligado: sem ele as tabelas podem nem existir. Repete a
- *  leitura enquanto algum kit está sendo montado, para a linha sair de "publicando" sozinha. */
+ *  leitura enquanto algum kit está sendo montado ou encerrado, para a linha mudar de estado sozinha. */
 export function useKitsVariacao(enabled: boolean) {
   return useQuery({
     queryKey: QK_KITS_VARIACAO,
     queryFn: fetchKitsVariacao,
     enabled,
     staleTime: 30_000,
-    refetchInterval: (q) => ((q.state.data ?? []).some((k) => k.status === 'publicando') ? 10_000 : false),
+    refetchInterval: (q) => ((q.state.data ?? []).some((k) => k.status === 'publicando' || k.status === 'encerrando') ? 10_000 : false),
   });
 }
 

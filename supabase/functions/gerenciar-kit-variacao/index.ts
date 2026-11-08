@@ -17,7 +17,7 @@ function json(body: unknown, status = 200): Response {
 
 const STATUS_POR_MOTIVO: Record<string, number> = {
   kit_nao_encontrado: 404, modulo_desligado: 403, versao: 409, up_ocupado: 409, alvos_invalidos: 409,
-  sku_sem_anuncio: 409, so_em_kit_desligado: 409, pedido_diferente: 409,
+  sku_sem_anuncio: 409, so_em_kit_desligado: 409, pedido_diferente: 409, saldo: 409, transferencia_aberta: 409,
 };
 
 function portas(admin: SupabaseClient, orgId: string): DepsGerenciarKit {
@@ -43,6 +43,11 @@ function portas(admin: SupabaseClient, orgId: string): DepsGerenciarKit {
     },
     enfileirarSaga: (id) => enfileirarSaga(id, orgId),
     enfileirarReposicao: (kitId) => enfileirarReposicao(orgId, kitId),
+    async encerrar(kitId, versao) {
+      const { data, error } = await admin.rpc('kit_variacao_encerrar', { p_org: orgId, p_kit: kitId, p_versao: versao });
+      if (error) throw new Error(`kit_variacao_encerrar: ${error.message}`);
+      return data as RespostaRpcGerenciar;
+    },
   };
 }
 

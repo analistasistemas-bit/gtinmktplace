@@ -11,6 +11,7 @@ import { humanizarErroML, MLApiError } from '../_shared/ml/erro-ml.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { importarPedidosDoItem, lerOferta, listarPendentes } from '../_shared/kit-variacao/ml-oferta.ts';
 import { avancarSaga, PRAZO_PASSO_S, quarentenaDoEnv, type DepsSaga } from '../_shared/kit-variacao/saga.ts';
+import { avisarKitsEncerrados } from '../_shared/kit-variacao/encerrar.ts';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { getConnector } from '../_shared/canais/registry.ts';
 import { montarAnuncioCanonico } from '../_shared/anuncios/montar-canonico.ts';
@@ -176,6 +177,14 @@ function deps(orgId: string): DepsSaga {
     agora: () => new Date(),
     quarentenaS: quarentenaDoEnv(Deno.env.get('KIT_QUARENTENA_S')),
     novoToken: () => crypto.randomUUID(),
+    encerramento: {
+      async finalizar(id, token) {
+        exigir(await admin.rpc('kit_encerrar_finalizar', base(id, token)), 'encerrar kit');
+      },
+      avisar: async (texto, chave) => { await notificarCategoria(admin, orgId, 'estoque', texto, { chave }); },
+      // Depois do commit; a varredura diária repete o que faltar (marca `encerrado_avisado_em`).
+      avisarConcluidos: async () => { await avisarKitsEncerrados(admin, notificarCategoria, orgId); },
+    },
   };
 }
 

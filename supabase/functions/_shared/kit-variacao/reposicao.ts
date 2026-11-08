@@ -383,8 +383,13 @@ export async function reativarPausaAutomatica(admin: SupabaseClient, o: {
   } finally {
     c = await prep.concluir(r);
   }
-  // Reativado só com o item LIDO ativo depois do PUT; resposta ok com leitura pausada repete.
-  if (r.ok) return c.liberado && c.status[o.itemId] === 'ativo' ? 'reativado' : 'manter';
+  // Reativado só com o item LIDO ativo depois do PUT; resposta ok com leitura pausada repete. Peça que deixou de
+  // participar (kit encerrado) não passa pela exclusão nem lê os alvos em `concluir`: a leitura é feita aqui.
+  if (r.ok) {
+    if (!c.liberado) return 'manter';
+    const lido = o.itemId in c.status ? c.status[o.itemId] : await o.lerStatus(o.itemId).catch(() => null);
+    return lido === 'ativo' ? 'reativado' : 'manter';
+  }
   const st = r.erro?.status;
   if (st !== undefined && st >= 400 && st < 500 && st !== 408 && st !== 429) {
     // Recusa definitiva do ML: repetir não muda nada; o operador decide.
