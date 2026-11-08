@@ -154,3 +154,20 @@ Criar o kit só mostrava um toast; a saga leva de 10 a 15 min e ninguém era avi
 - **Travada** continua com o alerta imediato da própria saga (um só, como os testes da saga exigem), agora com o
   código do kit e o link do Gerenciar kit (`APP_URL/#/publicados?kit=<id>`, que abre o diálogo). Esse alerta segue
   sem chave nem nova tentativa, como antes; a linha vermelha na tela e no Gerenciar fica até alguém resolver.
+
+## Adendo (2026-11-08): alerta com carência e "resolvido"
+
+Caso Zaven (kit 00000224): o Telegram recebeu "Transferência de kit bloqueada: … pausa do item criado não confirmada"
+e a saga resolveu sozinha 20 s depois; o texto ficou em `kit_transferencias.alerta` da concluída.
+
+- **Carência única.** Todo reagendamento com alerta escalonado (pausa do item criado ou busca do UP ainda indexando,
+  pedidos sem baixa, preparo ou recusa do CREATE) só alerta se o problema persistir 3 min (`CARENCIA_ALERTA_MS`),
+  contados da intenção do CREATE ou de `alerta_desde` (primeiro registro do problema; avançar de passo zera). A
+  janela de 5 min da busca vazia virou esta carência. Até 15 min (`BLOQUEIO_MS`) o texto é de espera ("… em espera
+  (tentando de novo)" ou "Aguardando o Mercado Livre confirmar a pausa…"); depois, "bloqueada". Cada texto sai uma
+  vez (`alerta_enviado`). Travada, abortada, venda acima do saldo e repausa que falha seguem imediatos.
+- **Resolvido.** Concluída com `alerta_enviado` ganha "O alerta anterior desta transferência foi resolvido." no aviso
+  de fim; tipos sem aviso de fim (entrada, cancelamento, guardar peças) ganham um aviso curto. Mesma chave
+  `kit_fim:<transferência>` e mesma marca `aviso_fim_enviado_em`, gravada só depois do envio.
+- **Concluída sem alerta velho.** `kit_saga_finalizar` grava na concluída o alerta recebido (a saga manda null, ou o
+  "política não autoriza reativar"); abortada segue com `coalesce`.

@@ -67,7 +67,7 @@ function deps(orgId: string, transferenciaId: string): DepsSaga {
       },
       async carregar(id) {
         const transferencia = exigir(await admin.from('kit_transferencias')
-          .select('id, org_id, tipo, passo, estado, versao_politica, passo_em, alerta')
+          .select('id, org_id, tipo, passo, estado, versao_politica, passo_em, alerta, alerta_desde, alerta_enviado')
           .eq('id', id).eq('org_id', orgId).single(), 'ler transferência');
         const alvos = exigir(await admin.from('kit_transferencia_alvos').select('*')
           .eq('transferencia_id', id).eq('org_id', orgId).order('up_id'), 'ler alvos');
@@ -76,6 +76,8 @@ function deps(orgId: string, transferenciaId: string): DepsSaga {
       async salvarTransferencia(id, token, patch) {
         exigir(await admin.rpc('kit_saga_salvar_transferencia', {
           ...base(id, token), p_passo: patch.passo ?? null, p_alerta: patch.alerta ?? null, p_travar: patch.travar ?? false,
+          p_alerta_desde: patch.alertaDesde ?? null, p_limpar_alerta_desde: patch.limparAlertaDesde ?? false,
+          p_alerta_enviado: patch.alertaEnviado ?? null,
         }), 'gravar transferência');
       },
       async salvarAlvo(id, token, upId, patch) {

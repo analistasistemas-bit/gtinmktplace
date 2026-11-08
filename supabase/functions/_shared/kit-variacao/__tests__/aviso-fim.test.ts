@@ -121,6 +121,41 @@ describe('avisarFimTransferencia', () => {
     }
   });
 
+  it('concluída depois de alerta escalonado: o aviso de fim diz que o alerta foi resolvido, uma vez só', async () => {
+    const b = cenario();
+    b.tabelas.kit_transferencias[0].alerta_enviado = 'Transferência de kit bloqueada: pedidos sem baixa.';
+    const n = notificador();
+    expect(await avisarFimTransferencia(b.admin, n.notificar, 'org-1', 't1')).toBe(true);
+    expect(n.enviados).toHaveLength(1);
+    expect(n.enviados[0].chave).toBe('kit_fim:t1');
+    expect(n.enviados[0].texto).toMatch(/^✅ Kit montado/);
+    expect(n.enviados[0].texto).toContain('O alerta anterior desta transferência foi resolvido.');
+    expect(await avisarFimTransferencia(b.admin, n.notificar, 'org-1', 't1')).toBe(false);
+    expect(n.enviados).toHaveLength(1);
+  });
+
+  it('sem alerta enviado, o aviso de fim não fala em resolvido', async () => {
+    const b = cenario();
+    const n = notificador();
+    await avisarFimTransferencia(b.admin, n.notificar, 'org-1', 't1');
+    expect(n.enviados[0].texto).not.toMatch(/resolvido/);
+  });
+
+  it('tipo sem aviso de fim (entrada, sem kit) que alertou: manda só o "resolvido", uma vez; falha não marca', async () => {
+    const b = cenario({ tipo: 'entrada' });
+    Object.assign(b.tabelas.kit_transferencias[0], { kit_id: null, alerta_enviado: 'Transferência de kit em espera (tentando de novo): x.' });
+    let falhar = true;
+    const n = notificador(() => falhar);
+    await expect(avisarFimTransferencia(b.admin, n.notificar, 'org-1', 't1')).rejects.toThrow('telegram fora');
+    expect(b.tabelas.kit_transferencias[0].aviso_fim_enviado_em).toBeNull();
+    falhar = false;
+    expect(await avisarFimTransferencia(b.admin, n.notificar, 'org-1', 't1')).toBe(true);
+    expect(await avisarFimTransferencia(b.admin, n.notificar, 'org-1', 't1')).toBe(false);
+    expect(n.enviados).toHaveLength(1);
+    expect(n.enviados[0].chave).toBe('kit_fim:t1');
+    expect(n.enviados[0].texto).toMatch(/^✅ Resolvido: .*entrada/);
+  });
+
   it('ativa, travada, abortada e tipos fora do escopo não avisam', async () => {
     for (const o of [{ estado: 'ativa' }, { estado: 'travada' }, { estado: 'abortada' }, { tipo: 'entrada' }, { tipo: 'cancelamento' }]) {
       const b = cenario(o);
@@ -136,6 +171,14 @@ describe('avisarFinsPendentes', () => {
     const b = cenario();
     b.tabelas.kit_transferencias.push({ ...b.tabelas.kit_transferencias[0], id: 't2', kit_id: 'sumiu' });
     b.tabelas.kit_transferencias.push({ ...b.tabelas.kit_transferencias[0], id: 't3', aviso_fim_enviado_em: '2026-11-08T00:00:00Z' });
+    const n = notificador();
+    expect(await avisarFinsPendentes(b.admin, n.notificar)).toBe(1);
+    expect(n.enviados.map((e) => e.chave)).toEqual(['kit_fim:t1']);
+  });
+  it('varredura também pega a concluída de tipo sem aviso de fim que alertou', async () => {
+    const b = cenario({ tipo: 'sair_sobra' });
+    Object.assign(b.tabelas.kit_transferencias[0], { kit_id: null, alerta_enviado: 'Transferência de kit bloqueada: x.' });
+    b.tabelas.kit_transferencias.push({ ...b.tabelas.kit_transferencias[0], id: 't2', alerta_enviado: null });
     const n = notificador();
     expect(await avisarFinsPendentes(b.admin, n.notificar)).toBe(1);
     expect(n.enviados.map((e) => e.chave)).toEqual(['kit_fim:t1']);

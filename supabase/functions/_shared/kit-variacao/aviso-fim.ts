@@ -2,6 +2,8 @@
 // Telegram, com o link do anúncio do kit. Mesmo padrão do aviso de kit zerado (`venda.ts`): envio com chave por
 // transferência (in-app por chave, Telegram reservado por chat) e `aviso_fim_enviado_em` gravado só DEPOIS do envio.
 // Falha fica sem marca; a varredura diária (`reconciliar-estoque`) tenta de novo. Nunca mexe na saga.
+// Transferência que mandou alerta escalonado (`alerta_enviado`) e concluiu ganha o "resolvido": no próprio aviso de
+// fim ou, nos tipos sem aviso de fim (entrada, cancelamento, guardar peças), num aviso curto com a mesma chave.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import type { CategoriaNotificacao } from '../notificacoes/categorias.ts';
 import { AVISO_SELETOR_ML } from './combinacoes.ts';
@@ -31,21 +33,36 @@ export function comLinkDoKit(texto: string, appUrl: string | undefined, kit: { i
 }
 
 const kits = (n: number) => `${n} ${n === 1 ? 'kit' : 'kits'}`;
+const RESOLVIDO = 'O alerta anterior desta transferência foi resolvido.';
+const TIPO_ROTULO: Record<string, string> = { entrada: 'entrada de peças', cancelamento: 'cancelamento', sair_sobra: 'guardar peças' };
 
 /**
- * Avisa o fim de UMA transferência concluída (`montar`, `desmontar`, `repor`). Devolve true se enviou agora; false se
- * não é caso de aviso ou já foi avisada. Erro de leitura ou de envio lança, sem marcar.
+ * Avisa o fim de UMA transferência concluída (`montar`, `desmontar`, `repor`; outro tipo só se alertou). Devolve true
+ * se enviou agora; false se não é caso de aviso ou já foi avisada. Erro de leitura ou de envio lança, sem marcar.
  */
 export async function avisarFimTransferencia(
   admin: SupabaseClient, notificar: NotificarComChave, orgId: string, transferenciaId: string,
 ): Promise<boolean> {
   const t = exigir(await admin.from('kit_transferencias')
-    .select('id, kit_id, tipo, estado, itens, aviso_fim_enviado_em')
+    .select('id, kit_id, tipo, estado, itens, aviso_fim_enviado_em, alerta_enviado')
     .eq('id', transferenciaId).eq('org_id', orgId).maybeSingle(), 'ler transferência') as {
       kit_id: string | null; tipo: string; estado: string; itens: Array<{ codigo: string; quantidade: number }>;
-      aviso_fim_enviado_em: string | null;
+      aviso_fim_enviado_em: string | null; alerta_enviado: string | null;
     } | null;
-  if (!t || t.estado !== 'concluida' || !TIPOS.includes(t.tipo) || t.aviso_fim_enviado_em || !t.kit_id) return false;
+  if (!t || t.estado !== 'concluida' || t.aviso_fim_enviado_em) return false;
+  const enviar = async (texto: string) => {
+    await notificar(admin, orgId, 'estoque', texto, { chave: `kit_fim:${transferenciaId}` });
+    // Sem a marca, a varredura reenvia com a mesma chave: não duplica.
+    const { error } = await admin.from('kit_transferencias').update({ aviso_fim_enviado_em: new Date().toISOString() })
+      .eq('id', transferenciaId).is('aviso_fim_enviado_em', null);
+    if (error) console.error('kit_aviso_fim_marcar_falhou', transferenciaId, error.message);
+    return true;
+  };
+  if (!TIPOS.includes(t.tipo) || !t.kit_id) {
+    if (!t.alerta_enviado) return false;
+    return await enviar(`✅ Resolvido: a transferência de kit (${TIPO_ROTULO[t.tipo] ?? t.tipo}) que tinha alertado `
+      + 'terminou. Nada a fazer.');
+  }
 
   const kit = exigir(await admin.from('kits_variacao').select('codigo_pai_kit, pecas_por_kit')
     .eq('id', t.kit_id).eq('org_id', orgId).maybeSingle(), 'ler kit') as { codigo_pai_kit: string; pecas_por_kit: number } | null;
@@ -76,6 +93,7 @@ export async function avisarFimTransferencia(
   });
   const texto = [
     `✅ ${titulo}: ${familia?.nome_pai ?? 'kit com variação'} (${kit.codigo_pai_kit})`,
+    ...(t.alerta_enviado ? [RESOLVIDO] : []),
     '',
     ...linhas,
     '',
@@ -86,19 +104,18 @@ export async function avisarFimTransferencia(
     ...(t.tipo === 'desmontar' ? [] : ['', AVISO_SELETOR_ML]),
   ].join('\n');
 
-  await notificar(admin, orgId, 'estoque', texto, { chave: `kit_fim:${transferenciaId}` });
-  // Sem a marca, a varredura reenvia com a mesma chave: não duplica.
-  const { error } = await admin.from('kit_transferencias').update({ aviso_fim_enviado_em: new Date().toISOString() })
-    .eq('id', transferenciaId).is('aviso_fim_enviado_em', null);
-  if (error) console.error('kit_aviso_fim_marcar_falhou', transferenciaId, error.message);
-  return true;
+  return await enviar(texto);
 }
 
 /** Varredura (reconciliação diária): concluídas sem marca, de todas as orgs. Erro por transferência só loga. */
 export async function avisarFinsPendentes(admin: SupabaseClient, notificar: NotificarComChave): Promise<number> {
-  const pendentes = exigir(await admin.from('kit_transferencias').select('id, org_id')
-    .eq('estado', 'concluida').is('aviso_fim_enviado_em', null).in('tipo', TIPOS)
-    .order('criado_em', { ascending: true }).limit(200), 'ler pendentes') as Array<{ id: string; org_id: string }>;
+  // Duas leituras (tipos com aviso de fim; qualquer tipo que alertou) em vez de um `or` de PostgREST.
+  const ler = async (filtro: 'tipo' | 'alerta') => {
+    let q = admin.from('kit_transferencias').select('id, org_id').eq('estado', 'concluida').is('aviso_fim_enviado_em', null);
+    q = filtro === 'tipo' ? q.in('tipo', TIPOS) : q.not('alerta_enviado', 'is', null);
+    return exigir(await q.order('criado_em', { ascending: true }).limit(200), 'ler pendentes') as Array<{ id: string; org_id: string }>;
+  };
+  const pendentes = [...new Map([...await ler('tipo'), ...await ler('alerta')].map((p) => [p.id, p])).values()];
   let n = 0;
   for (const p of pendentes) {
     try {
