@@ -10,7 +10,7 @@ function request(body: Record<string, unknown>, method = 'POST') {
 }
 
 function harness(overrides: { authenticate?: (req: Request) => Promise<{ userId: string }>; exists?: boolean } = {}) {
-  const methods = ['wallet','organization','metrics','terms','saveTerms','preview','close','statements','statement','reconcile','pulseUsage','extensaoUsage','audit','monthlyReport','paymentProfile','savePaymentProfile','noticeSubscription','saveNoticeSubscription'] as const;
+  const methods = ['wallet','organization','metrics','terms','saveTerms','saveUnitPrices','preview','close','statements','statement','reconcile','pulseUsage','extensaoUsage','audit','monthlyReport','paymentProfile','savePaymentProfile','noticeSubscription','saveNoticeSubscription'] as const;
   const repository: Record<string, ReturnType<typeof vi.fn>> = { organizationExists: vi.fn().mockResolvedValue(overrides.exists ?? true) };
   for (const method of methods) repository[method] = vi.fn().mockResolvedValue({ method });
   return {
@@ -67,6 +67,7 @@ describe('createPlatformAdminHandler', () => {
     ['metrics', 'metrics', { org_id: ORG, month: '2026-08' }, [ACTOR, ORG, '2026-08']],
     ['terms', 'terms', { org_id: ORG }, [ACTOR, ORG]],
     ['save_terms', 'saveTerms', { org_id: ORG, starts_on: '2026-08-01', modality: 2, monthly_fee_cents: 0, revenue_bps_t1: 700, revenue_bps_t2: 600, revenue_bps_t3: 550, revenue_bps_t4: 500, sonar_unit_cents: 120, setup_fee_cents: 0, setup_due_month: null, reason: 'nova' }, [ACTOR, { org_id: ORG, starts_on: '2026-08-01', modality: 2, monthly_fee_cents: 0, revenue_bps_t1: 700, revenue_bps_t2: 600, revenue_bps_t3: 550, revenue_bps_t4: 500, sonar_unit_cents: 120, image_unit_cents: 0, setup_fee_cents: 0, setup_due_month: null, reason: 'nova', due_day: 5 }]],
+    ['save_unit_prices', 'saveUnitPrices', { org_id: ORG, expected_terms_id: STATEMENT, sonar_unit_cents: 150, image_unit_cents: 80, monthly_fee_cents: 999 }, [ACTOR, { org_id: ORG, expected_terms_id: STATEMENT, sonar_unit_cents: 150, image_unit_cents: 80 }]],
     ['preview', 'preview', { org_id: ORG, month: '2026-08' }, [ACTOR, ORG, '2026-08']],
     ['close', 'close', { org_id: ORG, month: '2026-08', expected_revision: 'rev' }, [ACTOR, ORG, '2026-08', 'rev']],
     ['statements', 'statements', { org_id: ORG, page: 2, page_size: 10 }, [ACTOR, ORG, 2, 10, undefined]],

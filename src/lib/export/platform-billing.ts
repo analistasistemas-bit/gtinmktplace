@@ -32,7 +32,8 @@ function buildSnapshotBlocks(statement: BillingStatement): BlocoResumo[] {
   if (image) {
     blocks[0].itens.push(
       { label: 'Imagens IA', valor: String(image.quantity ?? 0) },
-      { label: 'Preço unitário imagem IA', valor: fmtBRL((image.unit_cents ?? 0) / 100) },
+      // null = o preço mudou no meio do mês (emenda 2026-11-08 ao ADR-0155); o valor da linha segue exato.
+      { label: 'Preço unitário imagem IA', valor: image.unit_cents === null ? 'variável no mês' : fmtBRL(image.unit_cents / 100) },
     );
   }
 

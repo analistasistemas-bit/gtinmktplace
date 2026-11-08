@@ -6,8 +6,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
-import { usePlatformTerms, useSavePlatformTerms } from '@/hooks/usePlatformAdmin';
-import { effectiveTerm, todayInFortaleza, type CommercialTerms } from '@/lib/platform-admin';
+import { usePlatformTerms, useSavePlatformTerms, useSavePlatformUnitPrices } from '@/hooks/usePlatformAdmin';
+import { effectiveTerm, todayInFortaleza, type CommercialTerms, type PlatformAdminError } from '@/lib/platform-admin';
 
 type Props = {
   orgId: string;
@@ -480,5 +480,113 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+type UnitPricesProps = {
+  orgId: string;
+  rows: CommercialTerms[];
+  onSaved: () => void;
+};
+
+/** Emenda 2026-11-08 ao ADR-0155: só os dois preços por unidade, valendo já na competência aberta.
+ *  Cada entrega congela o próprio preço, então nada já apurado é reescrito. O resto do contrato
+ *  continua mudando só pela renegociação (mês seguinte). */
+export function UnitPricesForm({ orgId, rows, onSaved }: UnitPricesProps) {
+  const today = todayInFortaleza();
+  const vigente = effectiveTerm(rows, today);
+  const agendada = [...rows]
+    .filter((row) => row.starts_on > today)
+    .sort((a, b) => a.starts_on.localeCompare(b.starts_on) || b.version - a.version)[0] ?? null;
+  const [sonar, setSonar] = useState('');
+  const [image, setImage] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const save = useSavePlatformUnitPrices();
+
+  useEffect(() => {
+    setSonar(formatScaled(vigente?.sonar_unit_cents ?? 0, 2));
+    setImage(formatScaled(vigente?.image_unit_cents ?? 0, 2));
+    setError(null);
+  }, [vigente?.id, vigente?.sonar_unit_cents, vigente?.image_unit_cents]);
+
+  if (!vigente) return null;
+  const modalidade1 = vigente.modality === 1;
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!vigente) return;
+    const sonarCents = modalidade1 ? 0 : parseScaled(sonar, 2);
+    const imageCents = parseScaled(image, 2);
+    if (sonarCents === null || imageCents === null) {
+      setError('Use valores positivos ou zero, com no máximo duas casas decimais.');
+      return;
+    }
+    setError(null);
+    try {
+      await save.mutateAsync({
+        org_id: orgId,
+        expected_terms_id: vigente.id,
+        sonar_unit_cents: sonarCents,
+        image_unit_cents: imageCents,
+      });
+      onSaved();
+    } catch (caught) {
+      const failure = caught as PlatformAdminError;
+      setError(failure.code === 'conflict'
+        ? 'A condição vigente mudou enquanto a tela estava aberta. Recarregue a página e confira os preços.'
+        : failure instanceof Error ? failure.message : 'Não foi possível alterar os preços.');
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Preços por unidade a partir de agora</CardTitle>
+        <CardDescription>
+          Vale para consultas e imagens a partir de agora, neste mês. O que já foi consumido mantém o preço da época;
+          mensalidade, faixas, implantação e vencimento não mudam.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
+          <label className="space-y-1 text-sm" htmlFor="unit-sonar">
+            <span className="font-medium">Sonar por consulta</span>
+            <Input
+              id="unit-sonar"
+              aria-label="Sonar por consulta a partir de agora"
+              inputMode="decimal"
+              disabled={modalidade1}
+              value={modalidade1 ? '0,00' : sonar}
+              onChange={(event) => setSonar(event.target.value)}
+            />
+            {modalidade1 && (
+              <span className="text-xs text-muted-foreground">Modalidade 1: Sonar incluso, sem cobrança por consulta.</span>
+            )}
+          </label>
+          <label className="space-y-1 text-sm" htmlFor="unit-image">
+            <span className="font-medium">Imagem IA por unidade</span>
+            <Input
+              id="unit-image"
+              aria-label="Imagem IA por unidade a partir de agora"
+              inputMode="decimal"
+              value={image}
+              onChange={(event) => setImage(event.target.value)}
+            />
+          </label>
+          {agendada && (
+            <p className="text-sm text-muted-foreground sm:col-span-2">
+              A renegociação já agendada para <strong>{agendada.starts_on}</strong> mantém os preços dela
+              {' '}(Sonar {formatScaled(agendada.sonar_unit_cents, 2)} · Imagem IA {formatScaled(agendada.image_unit_cents ?? 0, 2)}).
+            </p>
+          )}
+          {error && <p className="text-sm text-destructive sm:col-span-2" role="alert">{error}</p>}
+          <div className="sm:col-span-2">
+            <Button type="submit" variant="outline" disabled={save.isPending}>
+              {save.isPending ? 'Aplicando…' : 'Aplicar a partir de agora'}
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
   );
 }

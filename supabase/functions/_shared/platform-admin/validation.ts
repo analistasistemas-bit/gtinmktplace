@@ -1,6 +1,6 @@
 import { validarCnpj } from '../fiscal/validar.ts';
 import { chatPrivado } from '../notificacoes/destinatario.ts';
-import type { CommercialTermsInput, Month, PaymentProfileInput, PixKeyType } from './types.ts';
+import type { CommercialTermsInput, Month, PaymentProfileInput, PixKeyType, UnitPricesInput } from './types.ts';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -77,6 +77,18 @@ export function validateTerms(input: unknown): CommercialTermsInput {
     setup_due_month: setupDueMonth,
     reason: value.reason.trim(),
     due_day: dueDay,
+  };
+}
+
+export function validateUnitPrices(input: unknown): UnitPricesInput {
+  const value = object(input);
+  if (typeof value.org_id !== 'string' || !UUID.test(value.org_id)) fail('org_id inválido');
+  if (typeof value.expected_terms_id !== 'string' || !UUID.test(value.expected_terms_id)) fail('expected_terms_id inválido');
+  return {
+    org_id: value.org_id,
+    expected_terms_id: value.expected_terms_id,
+    sonar_unit_cents: cents(value.sonar_unit_cents, 'sonar_unit_cents'),
+    image_unit_cents: cents(value.image_unit_cents, 'image_unit_cents'),
   };
 }
 

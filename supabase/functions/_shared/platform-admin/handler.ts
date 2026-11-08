@@ -1,8 +1,8 @@
-import { validarAssinaturaAviso, validatePaymentProfile, validateTerms } from './validation.ts';
+import { validarAssinaturaAviso, validatePaymentProfile, validateTerms, validateUnitPrices } from './validation.ts';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
-const ACTIONS = new Set(['wallet','organization','metrics','terms','save_terms','preview','close','statements','statement','reconcile_revenue','pulse_usage','extensao_usage','audit','monthly_report','payment_profile','save_payment_profile','notice_subscription','save_notice_subscription']);
+const ACTIONS = new Set(['wallet','organization','metrics','terms','save_terms','save_unit_prices','preview','close','statements','statement','reconcile_revenue','pulse_usage','extensao_usage','audit','monthly_report','payment_profile','save_payment_profile','notice_subscription','save_notice_subscription']);
 // deno-lint-ignore no-explicit-any
 type Repository = Record<string, (...args: any[]) => Promise<unknown>>;
 type Dependencies = { authenticate(req: Request): Promise<{ userId: string }>; repository: Repository; corsHeaders?: Record<string, string> };
@@ -26,7 +26,7 @@ export function createPlatformAdminHandler(deps: Dependencies): (req: Request) =
     try {
       const { userId } = await deps.authenticate(req); const body = await req.json().catch(() => { throw new TypeError('JSON inválido'); }) as Record<string, unknown>;
       const action = requiredString(body.action, 'action'); if (!ACTIONS.has(action)) throw new TypeError('action inválida');
-      const orgActions = new Set(['organization','metrics','terms','save_terms','preview','close','statements','statement','reconcile_revenue','pulse_usage','extensao_usage','audit','monthly_report']);
+      const orgActions = new Set(['organization','metrics','terms','save_terms','save_unit_prices','preview','close','statements','statement','reconcile_revenue','pulse_usage','extensao_usage','audit','monthly_report']);
       const orgId = orgActions.has(action) ? uuid(body.org_id, 'org_id') : null;
       if (orgId && action !== 'organization' && !(await deps.repository.organizationExists(orgId))) return json({ error: 'Organização não encontrada', code: 'organization_not_found' }, 404, headers);
       let result: unknown;
@@ -43,6 +43,7 @@ export function createPlatformAdminHandler(deps: Dependencies): (req: Request) =
         case 'metrics': result = await deps.repository.metrics(userId, orgId, month(body.month)); break;
         case 'terms': result = await deps.repository.terms(userId, orgId); break;
         case 'save_terms': result = await deps.repository.saveTerms(userId, validateTerms(body)); break;
+        case 'save_unit_prices': result = await deps.repository.saveUnitPrices(userId, validateUnitPrices(body)); break;
         case 'preview': result = await deps.repository.preview(userId, orgId, month(body.month)); break;
         case 'close': result = await deps.repository.close(userId, orgId, month(body.month), requiredString(body.expected_revision, 'expected_revision')); break;
         // `month` opcional: existência do demonstrativo da competência sem depender da paginação.

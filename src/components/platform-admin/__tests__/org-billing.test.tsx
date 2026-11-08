@@ -27,6 +27,7 @@ vi.mock('@/hooks/usePlatformAdmin', () => ({
   useClosePlatformStatement: () => ({ mutateAsync: mocks.close, isPending: false }),
   useReconcilePlatformRevenue: () => ({ mutateAsync: mocks.reconcile, isPending: false }),
   useSavePlatformTerms: () => ({ mutateAsync: mocks.save, isPending: false }),
+  useSavePlatformUnitPrices: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 vi.mock('@/components/export/botao-exportar', () => ({

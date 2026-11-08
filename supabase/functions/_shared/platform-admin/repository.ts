@@ -213,6 +213,7 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
     monthlyReport: (_actorId: string, orgId: string, month: string) => montarRelatorioMensal(db as never, orgId, month, now()),
     async terms(_actorId: string, orgId: string) { const { data, error } = await db.from('platform_commercial_terms').select('*').eq('org_id', orgId).order('starts_on', { ascending: false }).order('version', { ascending: false }); fail(error); return { rows: data ?? [] }; },
     saveTerms: (actorId: string, input: Record<string, unknown>) => rpc<CommercialTerms>('platform_save_terms', { p_actor: actorId, p_input: input }),
+    saveUnitPrices: (actorId: string, input: Record<string, unknown>) => rpc<CommercialTerms>('platform_save_unit_prices', { p_actor: actorId, p_input: input }),
     async paymentProfile(_actorId: string): Promise<PaymentProfile | null> {
       const { data, error } = await db.from('platform_payment_profile').select('beneficiary_name,document,bank_name,branch,account,pix_key_type,pix_key,city,updated_at,updated_by').eq('id', true).maybeSingle(); fail(error);
       return (data as PaymentProfile | null) ?? null;

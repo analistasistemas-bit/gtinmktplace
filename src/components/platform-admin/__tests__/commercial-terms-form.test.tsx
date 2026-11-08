@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/hooks/usePlatformAdmin', () => ({
   usePlatformTerms: mocks.useTerms,
   useSavePlatformTerms: () => ({ mutateAsync: mocks.save, isPending: false }),
+  useSavePlatformUnitPrices: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 const current: CommercialTerms = {

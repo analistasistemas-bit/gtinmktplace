@@ -17,6 +17,7 @@ import {
   type NoticeSubscription,
   type PulseUsage,
   type RevenueReconciliationInput,
+  type UnitPricesInput,
   type Wallet,
 } from '@/lib/platform-admin';
 
@@ -264,6 +265,25 @@ export function useSavePlatformTerms() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['platform-admin', userId, 'terms', input.org_id] }),
         invalidateBilling(queryClient, userId, input.org_id, input.starts_on.slice(0, 7)),
+      ]);
+    },
+  });
+}
+
+/** Emenda 2026-11-08 ao ADR-0155: preços por unidade valendo já na competência aberta. */
+export function useSavePlatformUnitPrices() {
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  const queryClient = useQueryClient();
+  return useMutation<CommercialTerms, Error, UnitPricesInput>({
+    mutationFn: (input) => {
+      requireUser(userId);
+      return callPlatformAdmin('save_unit_prices', { ...input });
+    },
+    onSuccess: async (terms, input) => {
+      if (!userId) return;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['platform-admin', userId, 'terms', input.org_id] }),
+        invalidateBilling(queryClient, userId, input.org_id, terms.starts_on.slice(0, 7)),
       ]);
     },
   });

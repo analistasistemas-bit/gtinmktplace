@@ -20,7 +20,16 @@ export type CommercialTermsInput = {
   due_day: number;
 };
 
-export type PixKeyType = 'cpf' | 'cnpj' | 'email' | 'phone' | 'random';
+/** Emenda 2026-11-08 ao ADR-0155: preços por unidade com vigência na competência aberta. */
+export type UnitPricesInput = {
+  org_id: string;
+  /** Termo vigente que a tela mostrava; o banco recusa (conflito) se outro já vigora. */
+  expected_terms_id: string;
+  sonar_unit_cents: Cents;
+  image_unit_cents: Cents;
+};
+
+export type PixKeyType ='cpf' | 'cnpj' | 'email' | 'phone' | 'random';
 
 /** Dados de recebimento da Daludi (ADR-0193 D-9): linha única, só service_role. */
 export type PaymentProfileInput = {

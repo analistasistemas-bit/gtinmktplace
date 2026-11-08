@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { AlertTriangle, FileText, Loader2 } from 'lucide-react';
 import { BotaoExportar } from '@/components/export/botao-exportar';
-import { CommercialTermsForm } from '@/components/platform-admin/commercial-terms-form';
+import { CommercialTermsForm, UnitPricesForm } from '@/components/platform-admin/commercial-terms-form';
 import { RevenueReconciliation, type ReconciliationCandidate } from '@/components/platform-admin/revenue-reconciliation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -374,6 +374,16 @@ export function OrgBilling({ orgId, month }: Props) {
           )}
         </CardContent>
       </Card>
+
+      <UnitPricesForm
+        orgId={orgId}
+        rows={termsQuery.data?.rows ?? []}
+        onSaved={() => {
+          void previewQuery.refetch();
+          void termsQuery.refetch();
+          toast.success('✓ Preços por unidade valendo a partir de agora');
+        }}
+      />
 
       {preview.terms && termsForm}
 

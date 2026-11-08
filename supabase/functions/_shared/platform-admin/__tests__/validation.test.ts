@@ -1,5 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { validatePaymentProfile, validateTerms } from '../validation.ts';
+import { validatePaymentProfile, validateTerms, validateUnitPrices } from '../validation.ts';
+
+describe('validateUnitPrices', () => {
+  const unit = { org_id: '90000000-0000-0000-0000-000000000001', expected_terms_id: '60000000-0000-0000-0000-000000000001', sonar_unit_cents: 150, image_unit_cents: 0 };
+
+  it('aceita só os dois preços e o termo-base, descartando o resto', () => {
+    expect(validateUnitPrices({ ...unit, monthly_fee_cents: 999, reason: 'x' })).toEqual(unit);
+  });
+
+  it('exige o termo-base esperado', () => {
+    expect(() => validateUnitPrices({ ...unit, expected_terms_id: undefined })).toThrow('expected_terms_id inválido');
+  });
+
+  it('rejeita preço negativo, fracionário ou ausente', () => {
+    expect(() => validateUnitPrices({ ...unit, sonar_unit_cents: -1 })).toThrow(TypeError);
+    expect(() => validateUnitPrices({ ...unit, image_unit_cents: 1.5 })).toThrow(TypeError);
+    expect(() => validateUnitPrices({ ...unit, image_unit_cents: undefined })).toThrow(TypeError);
+  });
+});
 
 const ORG = '90000000-0000-0000-0000-000000000001';
 const valid = {
