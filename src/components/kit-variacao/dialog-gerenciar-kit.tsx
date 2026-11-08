@@ -497,58 +497,58 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin: ehAdmin }
             )}
 
             {!fechado && (
-            <section aria-label="Política do kit" className="grid gap-3 rounded-md border p-3">
-              {isAdmin ? (
-                <>
-                  <div className="flex items-center justify-between gap-3 text-sm">
-                    <label htmlFor="kv-so-em-kit">
-                      <span className="font-medium">Vender só em kit</span>
-                      <span className="block text-xs text-muted-foreground">As peças ficam guardadas, com o anúncio individual pausado.</span>
-                    </label>
-                    <Switch
-                      id="kv-so-em-kit" aria-label="Vender só em kit" checked={kit.soEmKit} disabled={enviando}
-                      onCheckedChange={(v) => setConfirmar(v ? 'ligar_so_em_kit' : 'desligar_so_em_kit')}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between gap-3 text-sm">
-                    <label htmlFor="kv-reposicao">
-                      <span className="font-medium">Reposição automática</span>
-                      <span className="block text-xs text-muted-foreground">
-                        {kit.soEmKit ? 'Monta kits até a meta conforme vendem.' : 'Só existe com "Vender só em kit" ligado.'}
-                      </span>
-                    </label>
-                    <Switch
-                      id="kv-reposicao" aria-label="Reposição automática" checked={kit.reposicaoAuto} disabled={enviando || !kit.soEmKit}
-                      onCheckedChange={(v) => politica(v ? 'ligar_reposicao' : 'desligar_reposicao',
-                        v ? 'Reposição automática ligada' : 'Reposição automática desligada. O Telegram avisa quando uma combinação acabar.')}
-                    />
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <label htmlFor="meta-kit" className="font-medium">Meta</label>
-                    <Input
-                      id="meta-kit" aria-label="Meta" type="number" min={0} step={1} inputMode="numeric"
-                      className="h-8 w-20 text-right tabular-nums" value={meta} onChange={(e) => setMeta(e.target.value)}
-                    />
-                    <span className="text-xs text-muted-foreground">kits por combinação e tamanho</span>
-                    <Button
-                      variant="outline" size="sm" className="ml-auto"
-                      disabled={enviando || !/^\d+$/.test(meta) || Number(meta) === kit.meta}
-                      onClick={() => politica('alterar_meta', `Meta alterada para ${meta}`, { meta: Number(meta) })}
-                    >
-                      Salvar meta
-                    </Button>
-                  </div>
-                  {kit.soEmKit && exemplo && (
-                    <ExplicacaoReposicao meta={inteiro(meta)} cores={exemplo.cores} tamanho={exemplo.tamanho} />
-                  )}
-                </>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  Vender só em kit: {kit.soEmKit ? 'ligado' : 'desligado'} · Reposição automática: {kit.reposicaoAuto ? 'ligada' : 'desligada'} · Meta {kit.meta}.
-                  Só administradores mudam o kit.
-                </p>
-              )}
-            </section>
+              <section aria-label="Política do kit" className="grid gap-3 rounded-md border p-3">
+                {isAdmin ? (
+                  <>
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <label htmlFor="kv-so-em-kit">
+                        <span className="font-medium">Vender só em kit</span>
+                        <span className="block text-xs text-muted-foreground">As peças ficam guardadas, com o anúncio individual pausado.</span>
+                      </label>
+                      <Switch
+                        id="kv-so-em-kit" aria-label="Vender só em kit" checked={kit.soEmKit} disabled={enviando}
+                        onCheckedChange={(v) => setConfirmar(v ? 'ligar_so_em_kit' : 'desligar_so_em_kit')}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <label htmlFor="kv-reposicao">
+                        <span className="font-medium">Reposição automática</span>
+                        <span className="block text-xs text-muted-foreground">
+                          {kit.soEmKit ? 'Monta kits até a meta conforme vendem.' : 'Só existe com "Vender só em kit" ligado.'}
+                        </span>
+                      </label>
+                      <Switch
+                        id="kv-reposicao" aria-label="Reposição automática" checked={kit.reposicaoAuto} disabled={enviando || !kit.soEmKit}
+                        onCheckedChange={(v) => politica(v ? 'ligar_reposicao' : 'desligar_reposicao',
+                          v ? 'Reposição automática ligada' : 'Reposição automática desligada. O Telegram avisa quando uma combinação acabar.')}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <label htmlFor="meta-kit" className="font-medium">Meta</label>
+                      <Input
+                        id="meta-kit" aria-label="Meta" type="number" min={0} step={1} inputMode="numeric"
+                        className="h-8 w-20 text-right tabular-nums" value={meta} onChange={(e) => setMeta(e.target.value)}
+                      />
+                      <span className="text-xs text-muted-foreground">kits por combinação e tamanho</span>
+                      <Button
+                        variant="outline" size="sm" className="ml-auto"
+                        disabled={enviando || !/^\d+$/.test(meta) || Number(meta) === kit.meta}
+                        onClick={() => politica('alterar_meta', `Meta alterada para ${meta}`, { meta: Number(meta) })}
+                      >
+                        Salvar meta
+                      </Button>
+                    </div>
+                    {kit.soEmKit && exemplo && (
+                      <ExplicacaoReposicao meta={inteiro(meta)} cores={exemplo.cores} tamanho={exemplo.tamanho} />
+                    )}
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Vender só em kit: {kit.soEmKit ? 'ligado' : 'desligado'} · Reposição automática: {kit.reposicaoAuto ? 'ligada' : 'desligada'} · Meta {kit.meta}.
+                    Só administradores mudam o kit.
+                  </p>
+                )}
+              </section>
             )}
 
             <DialogFooter>

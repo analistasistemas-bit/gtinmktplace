@@ -311,6 +311,9 @@ begin
   select * into c from ctx;
   r := public.estornar_estoque(c.org, 'mercado_livre', 'mercado_livre:9751:09810001', '09810001');
   perform pg_temp.afirmar(pg_temp.estoque(c.org, '09810001') = 1, 'estorno tardio credita o SKU do kit: ' || coalesce(r::text, 'null'));
+  -- Venda tardia (pedido antigo importado depois): baixa pelo caminho normal, com a identidade estável do SKU.
+  r := public.baixar_estoque(c.org, '09810001', 1, 'mercado_livre', 'mercado_livre:9752:09810001');
+  perform pg_temp.afirmar((r->>'aplicado')::boolean and pg_temp.estoque(c.org, '09810001') = 0, 'venda tardia baixa: ' || r::text);
   -- 8. Kit sem nada no ML encerra direto, sem transferência. Publicação em curso (exclusão) recusa antes.
   perform public.kit_adquirir_exclusao(c.org, array['09830001'], 'publicacao', '97500000-0000-0000-0000-000000000801');
   r := public.kit_variacao_encerrar(c.org, c.kit3, (select versao from public.kits_variacao where id = c.kit3));

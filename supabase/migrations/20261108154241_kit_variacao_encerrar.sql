@@ -271,17 +271,20 @@ create trigger kit_transferencias_guarda_encerrado
 -- Exclusão de SKU de kit encerrando/encerrado: só para transferência (a `encerrar`; as outras o trigger acima recusa).
 -- Publicação, ativação e republicação (`preparar_republicacao` insere a exclusão antes de apagar vínculos e virar
 -- CREATE) são recusadas e desfazem a operação inteira.
+-- AFTER INSERT: roda depois da espera pelo índice único (o BEFORE não é reexecutado na rechecagem), então quem esperou
+-- a exclusão de um encerramento lê o status já commitado mesmo sem travar o kit.
 create or replace function public.kit_exclusoes_guarda_encerrado()
 returns trigger language plpgsql security definer set search_path = ''
 as $$
 begin
   if new.dono_tipo = 'transferencia' then
-    return new;
+    return null;
   end if;
   -- Mesmo lock da guarda de transferência: espera o encerramento em curso e lê o status commitado. A republicação
   -- não trava: ela segura `familias` FOR UPDATE, e `kit_variacao_adicionar` (kit FOR UPDATE, depois FK da variação
   -- nova na família) fecharia um ciclo. Contra o encerramento, ela é serializada pela própria exclusão (os dois
-  -- disputam a mesma linha) e, se terminar antes, o encerramento sem vínculo recusa (`sem_vinculo`).
+  -- disputam a mesma linha) e lê o status depois dessa espera (AFTER); se terminar antes, o encerramento sem vínculo
+  -- recusa (`sem_vinculo`).
   if new.dono_tipo <> 'republicacao' then
     perform 1 from public.kits_variacao k
     where k.org_id = new.org_id
@@ -294,12 +297,12 @@ begin
   ) then
     raise exception 'kit_encerrado: % é de kit encerrado (%).', new.codigo, new.dono_tipo using errcode = 'KX030';
   end if;
-  return new;
+  return null;
 end $$;
 
 drop trigger if exists kit_exclusoes_guarda_encerrado on public.kit_exclusoes;
 create trigger kit_exclusoes_guarda_encerrado
-  before insert on public.kit_exclusoes
+  after insert on public.kit_exclusoes
   for each row execute procedure public.kit_exclusoes_guarda_encerrado();
 
 -- 5a. Efeito local do encerramento. Interna: quem chama travou a org e o kit e já fechou os itens no ML (ou o kit

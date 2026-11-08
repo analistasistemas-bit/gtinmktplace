@@ -146,4 +146,14 @@ set +e; R=$(psql_ -c "select count(*) from public.preparar_republicacao('$ORG', 
   (select id from public.familias where org_id = '$ORG' and codigo_pai = '09983000'))" 2>&1); set -e
 echo "$R" | grep -qE 'kit_em_transferencia|kit_encerrado' || falha "republicar kit encerrando devia recusar ($R)"
 echo "republicar kit encerrando: recusado"
-echo "OK: 5 corridas sem deadlock"
+
+# 6. Encerrar sem vínculo × republicação (rodada 5 do Codex): o kit 4 (vínculo apagado na corrida 4) vira `erro` e
+# encerra direto, soltando as exclusões na mesma transação. A republicação que esperava a exclusão insere depois do
+# commit; a guarda (AFTER INSERT) lê `encerrado` e recusa.
+psql_ -c "update public.kits_variacao set status = 'erro' where id = '$(kit 4)'" > /dev/null
+corrida "encerrar×republicação (sem vínculo)" \
+  "select public.kit_variacao_encerrar('$ORG', '$(kit 4)', $(versao "$(kit 4)"))->>'encerrado'" \
+  "insert into public.kit_exclusoes (org_id, codigo, dono_tipo, dono_id) values ('$ORG', '09984001', 'republicacao', gen_random_uuid())"
+echo "$B_OUT" | grep -q kit_encerrado || falha "republicação depois do encerramento devia recusar ($B_OUT)"
+[ "$(status_kit "$(kit 4)")" = encerrado ] || falha "kit 4 devia estar encerrado"
+echo "OK: 6 corridas sem deadlock"
