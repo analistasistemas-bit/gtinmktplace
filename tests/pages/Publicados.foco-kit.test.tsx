@@ -365,6 +365,17 @@ describe('Publicados — foco e andamento do kit com variação', () => {
     expect(b).toHaveAttribute('data-destaque', 'true');
   });
 
+  it('análise da linha ainda carregando (ou com erro): o bloco do kit aparece, rola e destaca (revisão Grok)', async () => {
+    lista(true);
+    useFamiliaMock.mockReturnValue({ data: undefined, isLoading: true, isError: false });
+    renderPagina();
+    act(() => useFocoKitStore.getState().focar(BASE, 'K1'));
+    const b = await bloco();
+    expect(rolou).toHaveBeenCalled();
+    expect(b).toHaveAttribute('data-destaque', 'true');
+    expect(b).toHaveTextContent('Conferindo vendas');
+  });
+
   it('base em outra página: vai até a página dela', async () => {
     lista(false);
     renderPagina();

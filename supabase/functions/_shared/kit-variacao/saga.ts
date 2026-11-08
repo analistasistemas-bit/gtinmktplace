@@ -157,7 +157,8 @@ export interface DepsSaga {
     buscarItemCriado(codigo: string): Promise<BuscaItemCriado>;
   };
   enfileirar(id: string, delayS: number): Promise<void>;
-  alertar(texto: string): Promise<void>;
+  /** `chave`: alerta escalonado, idempotente por (transferência, texto) — o notificador com chave lança em falha. */
+  alertar(texto: string, chave?: string): Promise<void>;
   /** Aviso de "estoque zerado" (ADR-0134) dos SKUs cuja redução para 0 a saga acabou de confirmar no ML. */
   avisarZerados?(codigos: string[]): Promise<void>;
   agora(): Date;
@@ -303,9 +304,9 @@ function problemaDaOferta(alvo: AlvoSaga, o: OfertaUP, exigirPausa: boolean): st
 
 /** Alerta nunca derruba o passo: o registro durável é a coluna `alerta`, e um erro aqui reagendaria
  * por cima de travada ou abortada, ou perderia o alerta de uma baixa já aplicada. */
-async function alertar(ctx: Ctx, texto: string): Promise<boolean> {
+async function alertar(ctx: Ctx, texto: string, chave?: string): Promise<boolean> {
   try {
-    await ctx.deps.alertar(texto);
+    await ctx.deps.alertar(texto, chave);
     return true;
   } catch (e) {
     console.error(`kit-transferencia ${ctx.t.id}: alerta não enviado: ${mensagem(e)}: ${texto}`);
@@ -347,7 +348,8 @@ async function reagendarComAlerta(
   await mudar(ctx, ctx.t.passo, delayS, { alerta: motivo, alertaDesde: new Date(desde).toISOString() });
   // Marca só depois do envio: falha na fila ou no Telegram deixa o alerta pendente para a próxima tentativa, e o
   // "resolvido" nunca fala de alerta que não saiu. Falha ao gravar a marca só repete o alerta; não derruba o passo.
-  if (texto !== null && texto !== ctx.t.alerta_enviado && await alertar(ctx, texto)) {
+  // Com chave: falha de leitura/gravação lança (sem marca, a próxima tentativa reenvia) e a repetição não duplica.
+  if (texto !== null && texto !== ctx.t.alerta_enviado && await alertar(ctx, texto, `kit_alerta:${ctx.t.id}:${hashTexto(texto)}`)) {
     await salvarTransferencia(ctx, { alertaEnviado: texto })
       .catch((e) => console.error(`kit-transferencia ${ctx.t.id}: marca do alerta não gravada: ${mensagem(e)}`));
   }
@@ -355,6 +357,13 @@ async function reagendarComAlerta(
 }
 
 const ESPERA = 'Transferência de kit em espera (tentando de novo)';
+
+/** FNV-1a 32 bits: chave curta e estável por texto de alerta. */
+function hashTexto(t: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < t.length; i++) h = Math.imul(h ^ t.charCodeAt(i), 0x01000193) >>> 0;
+  return h.toString(16);
+}
 
 /** Sem reenvio e sem soltar a exclusão: a peça fica sem oferta até o operador resolver. */
 async function travar(ctx: Ctx, motivo: string): Promise<ResultadoPasso> {

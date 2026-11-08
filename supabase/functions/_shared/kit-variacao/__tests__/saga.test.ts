@@ -1447,6 +1447,24 @@ describe('avancarSaga: alerta com carência (alarme falso de "bloqueada")', () =
     expect(c.s.alertas).toHaveLength(1);
   });
 
+  it('alerta escalonado vai com chave estável por transferência e texto: a repetição não duplica o aviso (revisão Grok)', async () => {
+    const c = cenario();
+    await rodar(c, noPasso('conciliar'));
+    c.s.falhasImportacao = ['pedido 1: sem SKU'];
+    await passo(c);
+    c.s.agora += 4 * 60_000;
+    const chaves: Array<string | undefined> = [];
+    let fora = true;
+    c.deps.alertar = async (texto, chave) => { chaves.push(chave); if (fora) throw new Error('leitura de assinantes falhou'); c.s.alertas.push(texto); };
+    await passo(c);
+    fora = false;
+    await passo(c);
+    expect(chaves).toHaveLength(2);
+    expect(chaves[0]).toMatch(new RegExp(`^kit_alerta:${c.s.t.id}:`));
+    expect(chaves[1]).toBe(chaves[0]);
+    expect(c.s.t.alerta_enviado).toBe(c.s.alertas[0]);
+  });
+
   it('Telegram que falha não grava a marca: a tentativa seguinte reenvia uma vez', async () => {
     const c = cenario();
     await rodar(c, noPasso('conciliar'));

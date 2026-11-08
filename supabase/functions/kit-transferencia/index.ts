@@ -176,12 +176,13 @@ function deps(orgId: string, transferenciaId: string): DepsSaga {
     },
     enfileirar: (id, delayS) => enfileirarSaga(id, orgId, delayS),
     // Todo alerta da saga (travada, bloqueada, abortada) leva o kit e o link do Gerenciar kit no PubliAI.
-    alertar: async (texto) => {
+    alertar: async (texto, chave) => {
       const { data } = await admin.from('kit_transferencias').select('kit_id, kits_variacao(codigo_pai_kit)')
         .eq('id', transferenciaId).eq('org_id', orgId).maybeSingle();
       const k = (data as { kits_variacao?: { codigo_pai_kit?: string } | null } | null)?.kits_variacao;
       await notificarCategoria(admin, orgId, 'estoque',
-        comLinkDoKit(texto, Deno.env.get('APP_URL'), { id: (data?.kit_id as string | null) ?? null, codigoPai: k?.codigo_pai_kit }));
+        comLinkDoKit(texto, Deno.env.get('APP_URL'), { id: (data?.kit_id as string | null) ?? null, codigoPai: k?.codigo_pai_kit }),
+        chave ? { chave } : undefined);
     },
     avisarZerados: (codigos) => alertarZeradosConfirmados(admin, notificarCategoria, orgId, codigos),
     agora: () => new Date(),

@@ -837,6 +837,10 @@ function LinhaTabela({
     {aberto && (
       <TableRow className="hover:bg-transparent">
         <TableCell colSpan={temFiscal ? 11 : 10} className="whitespace-normal bg-muted/30 p-3">
+          {/* Fora da análise: o andamento do kit não espera (nem depende de) carregar a família da linha. */}
+          <div className={cn(kitsVariacaoDaBase.length > 0 && 'mb-3')}>
+            <KitsComVariacao kits={kitsVariacaoDaBase} onGerenciar={onGerenciarKit} foco={focoKit} />
+          </div>
           {carregandoFamilia ? (
             <p className="text-xs text-muted-foreground">carregando análise…</p>
           ) : erroFamilia || !familia ? (
@@ -850,7 +854,6 @@ function LinhaTabela({
                 </div>
               )}
               {!ehKitVinculado && <KitsVinculados codigoPai={item.codigoPai} ativo={aberto} />}
-              <KitsComVariacao kits={kitsVariacaoDaBase} onGerenciar={onGerenciarKit} foco={focoKit} />
               <PainelAnalise
                 familia={familia}
                 precoOverride={item.precoAtual ?? item.precoPublicacao}
@@ -1509,7 +1512,8 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
   }, [focoPedido, loadingPublicados, pag.itensPagina, itensExibidos, doCanal, filtro.busca, tamanho, aplicar, kitsVariacao, limparFoco]);
   useEffect(() => {
     if (!focoLinha) return;
-    const id = setTimeout(() => setFocoLinha(null), 3000);
+    // Prazo para o bloco montar (kit recém-criado chegando na releitura); o destaque em si dura 2,5 s no bloco.
+    const id = setTimeout(() => setFocoLinha(null), 15_000);
     return () => clearTimeout(id);
   }, [focoLinha]);
 
