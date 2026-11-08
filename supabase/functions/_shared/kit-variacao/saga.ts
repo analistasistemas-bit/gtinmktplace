@@ -45,6 +45,8 @@ export interface AlvoSaga {
   qtd_passo1: number | null;
   passo1_em: string | null;
   ids_passo1: string[] | null;
+  /** Pagos já incorporados a `qtd_passo1` (baixados no ML e localmente, provado no passo 1): fora da reserva. */
+  pagos_passo1?: string[] | null;
   valor_anterior: number | null;
   valor_alvo: number | null;
   pausado_pela_saga: string[];
@@ -355,13 +357,45 @@ async function pausar(ctx: Ctx): Promise<ResultadoPasso> {
   const agora = iso(ctx);
   for (const [i, alvo] of ctx.alvos.entries()) {
     const oferta = ofertas[i];
+    const ids = oferta ? idsDoItem(oferta.itens.map((x) => x.id), pendentes) : [];
     await salvarAlvo(ctx, alvo, {
       qtd_passo1: oferta?.quantidade ?? 0,
       passo1_em: agora,
-      ids_passo1: oferta ? idsDoItem(oferta.itens.map((x) => x.id), pendentes) : [],
+      ids_passo1: ids,
+      pagos_passo1: oferta ? await pagosIncorporados(ctx, alvo, oferta, agora, ids) : [],
     });
   }
   return avancar(ctx, 'aguardar', ctx.deps.quarentenaS);
+}
+
+/** Depois da importação o sync-venda vê a referência aplicada e não alerta mais: alerta aqui. */
+async function alertarBaixas(ctx: Ctx, imp: ResultadoImportacao): Promise<void> {
+  for (const { orderId, resultado } of imp.baixas) {
+    for (const v of resultado.vendaAcimaSaldo) {
+      await alertar(ctx, `Kit: venda acima do saldo em ${v.codigo} (pedido ${orderId}): pedia ${v.pedido}, havia ${v.anterior}.`);
+    }
+    for (const v of resultado.desyncMl) {
+      await alertar(ctx, `Kit: ML vendeu ${v.codigo} com o PubliAI em zero (pedido ${orderId}).`);
+    }
+  }
+}
+
+/**
+ * Pagos que a leitura do passo 1 já contém. Prova: todos os pagos do item baixados localmente (importação sem
+ * falha) e o saldo local, já com essas baixas, fechando com a quantidade lida no ML (`divergencia` nula). Então
+ * o ML também já tinha descontado cada um, e a conciliação não os reserva de novo: sem isso, um pago dentro da
+ * margem de `pagosDesde` e já baixado nunca solta, porque a queda desde o passo 1 é zero. Sem prova, nenhum: o
+ * pago segue bloqueando como antes. Id pendente no passo 1 fica de fora (a cobertura por id cuida dele).
+ */
+async function pagosIncorporados(
+  ctx: Ctx, alvo: AlvoSaga, oferta: OfertaUP, passo1: string, ids: string[],
+): Promise<string[]> {
+  const imp = await ctx.deps.ml.importarPedidos(
+    oferta.itens.map((i) => i.id), new Date(Date.parse(passo1) - JANELA_PEDIDOS_MS).toISOString(), ids, () => vivo(ctx));
+  await alertarBaixas(ctx, imp);
+  if (imp.falhas.length > 0) return [];
+  if (divergencia(alvo, await conferirSaldo(ctx, alvo.codigo), oferta.quantidade)) return [];
+  return imp.pagos.map((o) => String(o.id)).filter((id) => !ids.includes(id));
 }
 
 function aguardar(ctx: Ctx): Promise<ResultadoPasso> {
@@ -392,21 +426,17 @@ async function conciliar(ctx: Ctx): Promise<ResultadoPasso> {
     // A importação baixa estoque: o prazo é conferido antes de cada baixa, não só na entrada.
     const imp = await ctx.deps.ml.importarPedidos(
       itemIds, new Date(passo1 - JANELA_PEDIDOS_MS).toISOString(), alvo.ids_passo1, () => vivo(ctx));
-    // Depois da importação o sync-venda vê a referência aplicada e não alerta mais: alerta aqui.
-    for (const { orderId, resultado } of imp.baixas) {
-      for (const v of resultado.vendaAcimaSaldo) {
-        await alertar(ctx, `Kit: venda acima do saldo em ${v.codigo} (pedido ${orderId}): pedia ${v.pedido}, havia ${v.anterior}.`);
-      }
-      for (const v of resultado.desyncMl) {
-        await alertar(ctx, `Kit: ML vendeu ${v.codigo} com o PubliAI em zero (pedido ${orderId}).`);
-      }
-    }
+    await alertarBaixas(ctx, imp);
     if (imp.falhas.length > 0) return reagendar(ctx, `pedidos sem baixa: ${imp.falhas.join('; ')}`, REAGENDAR_S, true);
 
     const reserva = calcularReserva({
       itemIds,
       pendentes: [...pendentes, ...imp.naoPagos],
-      pagosRecentes: pagosDesde(imp.pagos, new Date(passo1 - MARGEM_PAGOS_MS).toISOString()),
+      // Só a coorte provada no passo 1 sai; pago sem baixa naquela hora continua reservando.
+      pagosRecentes: pagosDesde(
+        imp.pagos.filter((o) => !(alvo.pagos_passo1 ?? []).includes(String(o.id))),
+        new Date(passo1 - MARGEM_PAGOS_MS).toISOString(),
+      ),
       idsPasso1: alvo.ids_passo1,
       qtdPasso1: alvo.qtd_passo1,
       qtdAgora: oferta.quantidade,

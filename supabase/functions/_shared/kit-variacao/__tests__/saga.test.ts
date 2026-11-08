@@ -5,7 +5,7 @@ import {
   avancarSaga, criarTransferencia, quarentenaDoEnv,
   type AlvoSaga, type DepsSaga, type PassoSaga, type ResultadoPasso, type TransferenciaSaga,
 } from '../saga.ts';
-import type { PedidoPendente } from '../conciliacao.ts';
+import type { PedidoPago, PedidoPendente } from '../conciliacao.ts';
 
 // Tudo falso: banco em memória e ML em memória. `chamadas` registra cada escrita no ML, em ordem.
 interface ItemFalso { id: string; status: string; subStatus: string[] }
@@ -51,6 +51,8 @@ function cenario() {
     /** Pausas automáticas gravadas por `finalizar`. */
     pausas: [] as Array<{ codigo: string; itemId: string }>,
     pendentes: [] as PedidoPendente[],
+    /** Pedidos pagos que a importação devolve (o fake não baixa nada: o saldo é do teste). */
+    pagos: [] as PedidoPago[],
     falhasImportacao: [] as string[],
     baixas: [] as Array<{ orderId: string; resultado: never }>,
     chamadas: [] as string[],
@@ -223,7 +225,8 @@ function cenario() {
           s.baixasFeitas++;
           s.agora += s.passoBaixaMs;
         }
-        return { pagos: [], naoPagos: [], falhas: s.falhasImportacao, baixas: s.baixas };
+        const pagos = s.pagos.filter((o) => (o.order_items ?? []).some((oi) => _itemIds.includes(oi?.item?.id ?? '')));
+        return { pagos, naoPagos: [], falhas: s.falhasImportacao, baixas: s.baixas };
       },
       async putQuantidade(itemId, q) {
         s.chamadas.push(`qtd ${itemId} ${q}`);
@@ -427,6 +430,36 @@ describe('avancarSaga', () => {
     c.s.baixas = [{ orderId: '5', resultado: { vendaAcimaSaldo: [{ codigo: 'P', pedido: 2, anterior: 1, aplicado: 1 }], desyncMl: [] } as never }];
     await passo(c);
     expect(c.s.alertas.join()).toMatch(/acima do saldo em P \(pedido 5\)/);
+  });
+
+  // Revisão final, achado 3: venda paga às 11h59, já baixada no ML e localmente; passo 1 às 12h00 com saldo 4;
+  // conciliação às 12h05 (corte = passo 1 − 2 min inclui a venda).
+  const vendaDas1159 = (): PedidoPago => ({
+    id: 'O-1159', date_closed: new Date(INICIO - 60_000).toISOString(),
+    order_items: [{ item: { id: 'MLB-P' }, quantity: 1 }],
+  } as PedidoPago);
+
+  it('pago já incorporado ao passo 1 (baixado no ML e local) não prende a transferência (achado 3)', async () => {
+    const c = cenario();
+    c.s.ups['UP-P'].quantidade = 4;
+    c.s.saldo.P = 4;
+    c.s.pagos = [vendaDas1159()];
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(c.s.chamadas).toContain('qtd MLB-P 3');
+    expect(c.s.alvos.find((a) => a.codigo === 'P')!.pagos_passo1).toEqual(['O-1159']);
+  });
+
+  it('pago sem prova no passo 1 (local ainda sem a baixa) continua bloqueando (achado 3)', async () => {
+    const c = cenario();
+    c.s.ups['UP-P'].quantidade = 4;   // ML já descontou; o local não
+    c.s.pagos = [vendaDas1159()];
+    for (let i = 0; i < 4; i++) await passo(c);   // pausar, confirmar a pausa, aguardar, conciliar
+    expect(c.s.alvos.find((a) => a.codigo === 'P')!.pagos_passo1).toEqual([]);
+    expect(c.s.t.passo).toBe('conciliar');
+    expect(c.s.t.alerta).toContain('comprometida');
+    expect(c.s.rpcs).not.toContain('reservar');
+    expect(c.s.chamadas.filter((x) => x.startsWith('qtd '))).toEqual([]);
   });
 
   it('pedido pendente do UP bloqueia até sair da lista, sem reservar nem escrever (achado 1)', async () => {
