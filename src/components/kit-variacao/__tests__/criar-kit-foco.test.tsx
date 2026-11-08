@@ -66,7 +66,6 @@ describe('DialogCriarKitVariacao: foco depois de criar', () => {
     abrir(true, fechar);
     await montar(user, ['Preto', 'Branco'], { 'Preto e Branco M': '1' });
     await user.click(screen.getByRole('button', { name: 'Próximo' }));
-    await user.click(screen.getByRole('button', { name: /Gerar título e descrição/ }));
     await screen.findByDisplayValue('Kit 2 Blusas Canelada');
     await user.click(screen.getByRole('button', { name: 'Gerar foto Preto e Branco' }));
     fireEvent.load(await screen.findByRole('img', { name: 'Foto gerada Preto e Branco' }));
