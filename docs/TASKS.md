@@ -12,7 +12,9 @@ Em produção desde 2026-11-08 (main `a3e180dc`; `cadastrar-produto` v44, `adici
 ## Kit com variação (ADR-0200) — 2026-11-08
 
 **Estado:** no ar desde 2026-11-08 (main `3ee59923`; Tasks 0–16 aprovadas por revisão externa): 14 migrations aplicadas
-e 75 edges implantadas. **Módulos `kit_variacao` e `imagem_ia` desligados em todas as orgs** até o piloto. Portão de concorrência
+e 75 edges implantadas. **Piloto OK na Zaven em 2026-11-08** (módulos `kit_variacao` e `imagem_ia` ligados só lá): montar e desmontar 1 kit
+fecharam o estoque no PubliAI e no ML. Próximas: encerrar kit, acompanhamento na aba Operações com aviso app/Telegram,
+texto no padrão da copy, foto com verificação automática, preço editável na etapa Conferir, fim do alarme falso pós-CREATE. Portão de concorrência
 verde em 2026-11-08: os 4 scripts `supabase/tests/kit_*_concorrencia.sh` e `platform_imagem_ia_concorrencia.sh`,
 2 rodadas cada, em Postgres local carregado com o schema de produção (`supabase db dump`). Spec `docs/superpowers/specs/2026-11-06-kit-com-variacao-design.md`; plano
 `docs/superpowers/plans/2026-11-07-kit-com-variacao.md`; ADR [0200](decisions/0200-kit-com-variacao.md).

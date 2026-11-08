@@ -121,6 +121,48 @@ describe('SimuladorKit', () => {
     expect(calcularTarifaML).toHaveBeenCalledWith(120, 'MLB1', expect.anything(), 8);
   });
 
+  it('enquanto recota não libera seguir; libera quando a conta nova chega', async () => {
+    const { mudarPreco, onPodeSeguir } = renderSim(100);
+    await waitFor(() => expect(onPodeSeguir).toHaveBeenLastCalledWith(true));
+    mudarPreco(120);
+    expect(onPodeSeguir).toHaveBeenLastCalledWith(false);
+    expect(screen.getByText(/Calculando/)).toBeInTheDocument();
+    await screen.findByText('R$ 26,00', {}, { timeout: 2000 });
+    await waitFor(() => expect(onPodeSeguir).toHaveBeenLastCalledWith(true));
+  });
+
+  it('mostra a variação do lucro em relação ao preço anterior', async () => {
+    const { mudarPreco } = renderSim(100);
+    await screen.findByText('R$ 10,00');
+    expect(screen.queryByText(/em relação a/)).toBeNull();
+    mudarPreco(120);
+    expect(screen.queryByText(/em relação a/)).toBeNull();
+    // lucro 10 → 26 na mesma pior combinação (Preto e Marrom)
+    expect(await screen.findByText(/em relação a/, {}, { timeout: 2000 })).toHaveTextContent('+R$ 16,00 em relação a R$ 100,00');
+  });
+
+  it('preço zero não fica em "Calculando" nem libera seguir', async () => {
+    const { onPodeSeguir } = renderSim(0);
+    expect(screen.queryByText(/Calculando/)).toBeNull();
+    expect(screen.queryByText(/R\$/)).toBeNull();
+    expect(onPodeSeguir).toHaveBeenLastCalledWith(false);
+    expect(calcularTarifaML).not.toHaveBeenCalled();
+  });
+
+  it('confirmação de prejuízo não volta ao retornar ao preço confirmado', async () => {
+    const { onPodeSeguir, mudarPreco } = renderSim(70);
+    await userEvent.click(await screen.findByLabelText('Seguir mesmo assim'));
+    await waitFor(() => expect(onPodeSeguir).toHaveBeenLastCalledWith(true));
+    const antes = onPodeSeguir.mock.calls.length;
+    mudarPreco(75);
+    await screen.findByText(/R\$ 75,00/, {}, { timeout: 2000 });
+    mudarPreco(70);
+    await screen.findByText(/R\$ 70,00/, {}, { timeout: 2000 });
+    await screen.findByText(/dá prejuízo/);
+    expect(screen.getByLabelText('Seguir mesmo assim')).not.toBeChecked();
+    expect(onPodeSeguir.mock.calls.slice(antes).some(([v]) => v === true)).toBe(false);
+  });
+
   it('expande o lucro de cada combinação', async () => {
     renderSim(100);
     await userEvent.click(await screen.findByRole('button', { name: /Ver lucro de cada combinação/ }));

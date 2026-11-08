@@ -79,8 +79,10 @@ export function SimuladorKit({ familiaBaseId, cores, pecas, quantidades, preco, 
 
   const carregando = familiaQ.isLoading || aliquotasQ.isLoading;
   const erroLeitura = familiaQ.isError || aliquotasQ.isError;
-  const estado = erroLeitura ? 'indisponivel' : carregando ? 'calculando' : sim.estado;
-  const precisaConfirmar = erroLeitura || sim.precisaConfirmar;
+  // Preço vazio, zero ou ilegível: nada a cotar (a query fica desligada); bloqueia em vez de "Calculando" eterno.
+  const semPreco = !(preco > 0);
+  const estado = erroLeitura ? 'indisponivel' : semPreco ? 'sem_preco' : carregando ? 'calculando' : sim.estado;
+  const precisaConfirmar = erroLeitura || (!semPreco && sim.precisaConfirmar);
 
   // A confirmação vale só para a conta exibida: mudou preço, tipo, combinação ou lucro, vale de novo no
   // mesmo render (um effect de reset deixaria um onPodeSeguir(true) escapar com a conta nova).
@@ -89,17 +91,32 @@ export function SimuladorKit({ familiaBaseId, cores, pecas, quantidades, preco, 
     ...sim.linhas.map((l) => `${l.rotulo}#${l.tamanho}:${l.resumo ? centavos(l.resumo.lucro) : l.motivo}`),
   ].join('|');
   const [confirmadoEm, setConfirmadoEm] = useState<string | null>(null);
+  // Preço editável na etapa 3: voltar ao preço já confirmado (70 → 75 → 70) refaria a mesma chave com a
+  // tarifa em cache. Qualquer troca de conta descarta a confirmação, ajustada no render (sem frame liberado).
+  const [chaveVista, setChaveVista] = useState(chaveConta);
+  if (chaveVista !== chaveConta) { setChaveVista(chaveConta); setConfirmadoEm(null); }
   const confirmado = confirmadoEm === chaveConta;
-  const bloqueado = estado === 'sem_custo' || estado === 'peca_inexistente';
+  const bloqueado = estado === 'sem_custo' || estado === 'peca_inexistente' || estado === 'sem_preco';
   const pode = estado !== 'calculando' && !bloqueado && (!precisaConfirmar || confirmado);
   useEffect(() => { onPodeSeguir?.(pode); }, [pode, onPodeSeguir]);
 
   const [expandido, setExpandido] = useState(false);
   const varias = sim.linhas.length > 1;
 
+  // Variação do lucro da pior combinação em relação ao último preço já calculado (mesma combinação).
+  const contaAgora = (estado === 'ok' || estado === 'prejuizo') && sim.pior?.resumo
+    ? { preco, combinacao: `${sim.pior.rotulo}#${sim.pior.tamanho}`, lucro: sim.pior.resumo.lucro } : null;
+  const [contas, setContas] = useState<{ atual: typeof contaAgora; anterior: typeof contaAgora }>({ atual: null, anterior: null });
+  if (contaAgora && (contas.atual?.preco !== contaAgora.preco || contas.atual.combinacao !== contaAgora.combinacao || contas.atual.lucro !== contaAgora.lucro)) {
+    setContas({ atual: contaAgora, anterior: contas.atual && centavos(contas.atual.preco) !== centavos(contaAgora.preco) ? contas.atual : null });
+  }
+  const anterior = contaAgora && contas.anterior?.combinacao === contaAgora.combinacao ? contas.anterior : null;
+
   return (
     <section aria-label="Simulador de lucro do kit" className="flex flex-col gap-2">
       {estado === 'calculando' && <p className="text-xs text-muted-foreground">Calculando o que você recebe…</p>}
+
+      {estado === 'sem_preco' && <p className="text-xs text-danger">Informe um preço maior que zero.</p>}
 
       {estado === 'sem_custo' && (
         <p className="text-xs text-danger">
@@ -134,12 +151,17 @@ export function SimuladorKit({ familiaBaseId, cores, pecas, quantidades, preco, 
               Pior combinação: <span className="text-foreground">{sim.pior.rotulo} · {sim.pior.tamanho}</span>
             </p>
           )}
+          {anterior && contaAgora && (
+            <p className="text-xs tabular-nums text-muted-foreground">
+              {contaAgora.lucro < 0 ? 'prejuízo' : 'lucro'} {fmtBRL(contaAgora.lucro)} ({contaAgora.lucro >= anterior.lucro ? '+' : '−'}{fmtBRL(Math.abs(contaAgora.lucro - anterior.lucro))} em relação a {fmtBRL(anterior.preco)})
+            </p>
+          )}
           <DetalheRecebe r={sim.pior.resumo} preco={preco} original={null} listingType={tipo} variasCores={false} rotuloPreco="preço do kit" />
         </div>
       )}
 
       {/* Leitura falhou: o react-query conserva dados antigos; nenhum número nem a pior combinação. */}
-      {varias && estado !== 'calculando' && !erroLeitura && (
+      {varias && estado !== 'calculando' && !semPreco && !erroLeitura && (
         <div>
           <Button type="button" variant="ghost" size="sm" onClick={() => setExpandido((e) => !e)} aria-expanded={expandido}>
             <ChevronDown className={cn('size-3.5 transition-transform', expandido && 'rotate-180')} aria-hidden />

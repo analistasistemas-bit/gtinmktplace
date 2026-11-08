@@ -15,8 +15,8 @@ setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > Monitor de Frete ✅ → Central de Promoções (MVP só leitura) ✅ → Operações em Massa ✅ → Promoções V2
 > (adesão em massa) ✅ — as duas últimas entregues juntas em 28/09 ([[0174-operacoes-em-massa-promocoes-v2|ADR-0174]]) → Painel de Ads (se a Avil investir em Ads). E5 Shopee entra quando houver conta.
 >
-> **🟡 Kit com variação ([[Índice de ADRs|ADR-0200]]) — implementado na branch `worktree-kit-com-variacao-design`, NÃO implantado (2026-11-08).**
-> Tasks 0–16 aprovadas; módulos `kit_variacao` e `imagem_ia` desligados, 13 migrations e 6 edges novas sem aplicar. Falta: `db push`, deploy com prova por hash, portão 4b (concorrência em Postgres local) e piloto com 1 combinação (DSA ou Daludi). Roteiro em `docs/TASKS.md` ("Antes de ligar o módulo").
+> **🟢 Kit com variação ([[Índice de ADRs|ADR-0200]]) — em produção desde 2026-11-08, piloto OK na Zaven.**
+> 14 migrations e 75 edges implantadas; portão de concorrência verde. Montar e desmontar 1 kit fecharam o estoque no PubliAI e no ML. Módulos `kit_variacao`/`imagem_ia` ligados só na Zaven. Próximas melhorias em `docs/TASKS.md`: encerrar kit, acompanhamento na aba Operações, texto no padrão da copy, foto com verificação, preço editável no Conferir, fim do alarme falso pós-CREATE.
 >
 > **🟢 Central premium + relatório mensal do cliente + fechamento automático ([[0193-relatorio-mensal-do-cliente-e-fechamento-automatico|ADR-0193]]) — em produção (2026-11-03, main `ae4072cf`, 5 fatias).**
 > Falta o Diego: preencher "Dados de recebimento", assinar "Aviso no Telegram" e decidir fechar setembro/outubro (o automático dia 01 reporta "mês anterior aberto" até lá).

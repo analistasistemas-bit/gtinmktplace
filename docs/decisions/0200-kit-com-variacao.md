@@ -72,6 +72,12 @@ Opção B do Diego (07/11): grade própria com página única e risco residual a
     (ADR-0055) ou sem cotação, avisa e não presume número.
 11. **Texto por IA em etapa própria** (`gerar-texto-kit`): título e descrição dizem que é kit e quantas peças. Não usa
     `process-familia`. Reprocessar não pode reescrever o kit.
+    *Emenda 08/11:* o texto parte da `descricao_ml` da base canônica, no padrão de seções da copy do anúncio novo. A
+    IA reescreve só a abertura ("KIT N …") e a frase final; quantidade, guia de tamanhos (só os tamanhos com
+    quantidade), cores (só as do kit) e o resto das seções são editados por código, e trecho da IA com número, cor ou
+    seção fora da base é descartado. Base sem descrição no padrão: gera antes pelo prompt do anúncio novo. A etapa 2
+    gera sozinha uma vez por pedido (cores, peças, tamanhos); texto editado só é trocado com confirmação. Medição no
+    `gpt-6-luna`: 12 bases × 4 execuções, 48/48 nas checagens.
 12. **Escopo:** só user product, só `selling_address`, sem Full, sem Kit Virtual ou kit vinculado na base, peças por
     kit de 2 a 6, cores distintas. Tudo atrás do módulo `kit_variacao`: organização sem o módulo não muda de
     comportamento.
