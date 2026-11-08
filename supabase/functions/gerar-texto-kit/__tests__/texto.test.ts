@@ -221,6 +221,24 @@ describe('montarTextoKit — guardas contra dado inventado (revisão Codex 08/11
     expect(com('Disponível também no tamanho GG.')).not.toContain('GG');
     expect(com('Disponível nos tamanhos P, M e G.')).toContain('Disponível nos tamanhos P, M e G.');
   });
+  it('Grok: cor da base que CONTÉM a cor do kit é cor fora (kit Cinza × "Cinza Escuro")', () => {
+    const d = (p: string) => montarTextoKit(dados({ coresKit: ['Cinza', 'Amarelo'] }), { ...IA_BOA, paragrafos: [IA_BOA.paragrafos[1], p] }).descricao;
+    expect(d('Também em Cinza Escuro.')).not.toContain('Cinza Escuro.');
+    expect(d('Disponível em Cinza.')).toContain('Disponível em Cinza.');
+  });
+  it('Grok: kit Cinza × "Cinza Escuro" no fallback da base e no bullet', () => {
+    const base = BASE.replace('diversas ocasiões.\n\nCom cós', 'diversas ocasiões. Também em Cinza Escuro.\n\nCom cós')
+      .replace('✔ Bolsos funcionais', '✔ Cor cinza escuro discreta\n✔ Bolsos funcionais');
+    const d = montarTextoKit(dados({ descricaoBase: base, coresKit: ['Cinza', 'Amarelo'] }), { cabecalho: '', paragrafos: [], fechamento: '' }).descricao;
+    expect(d).not.toMatch(/cinza escuro/i);
+  });
+  it('Grok: tamanho em minúsculas no contexto também conta', () => {
+    expect(com('Disponível também no tamanho gg.')).not.toContain('tamanho gg');
+    expect(com('Nos tamanhos p, m e g.')).toContain('Nos tamanhos p, m e g.');
+  });
+  it('Grok: "1 unidade" da descrição unitária não autoriza a IA quando N > 1', () => {
+    expect(com('Vendido em 1 unidade.')).not.toContain('1 unidade');
+  });
   it('material que a base cita passa', () => {
     expect(com('O poliéster da composição ajuda no conforto.')).toContain('O poliéster da composição');
   });

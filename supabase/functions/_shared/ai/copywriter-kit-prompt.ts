@@ -69,11 +69,21 @@ function reCor(cor: string): RegExp {
   return new RegExp(`(?<![\\p{L}\\d])${[...palavras, flex].join('\\s+')}s?(?![\\p{L}\\d])`, 'gu');
 }
 
-/** Cita alguma cor da base que não é do kit? As do kit são apagadas antes ("Cinza Escuro" não vira "Cinza"). */
-function citaCorFora(texto: string, coresBase: string[], coresKit: string[]): boolean {
+/**
+ * Alguma cor de `fora` no texto? Casa a cor mais longa primeiro, kit e fora juntos: com o kit em Cinza,
+ * "Cinza Escuro" é cor fora (apagar "Cinza" antes deixaria só "Escuro" e passaria — revisão Grok).
+ */
+function citaAlgumaCor(texto: string, coresKit: string[], fora: string[]): boolean {
   let t = norm(texto);
-  for (const k of [...coresKit].sort((a, b) => b.length - a.length)) t = t.replace(reCor(k), ' ');
-  return coresBase.some((c) => !coresKit.includes(c) && reCor(c).test(t));
+  const todas = [...coresKit.map((c) => [c, false] as const), ...fora.map((c) => [c, true] as const)]
+    .sort((a, b) => norm(b[0]).length - norm(a[0]).length);
+  for (const [c, ehFora] of todas) t = t.replace(reCor(c), ehFora ? ' \u0001 ' : ' ');
+  return t.includes('\u0001');
+}
+
+/** Cita alguma cor da base que não é do kit? */
+function citaCorFora(texto: string, coresBase: string[], coresKit: string[]): boolean {
+  return citaAlgumaCor(texto, coresKit, coresBase.filter((c) => !coresKit.includes(c)));
 }
 
 /** Número com a unidade/palavra seguinte ("80|%", "80|bolsos", "30|"): "80%" da composição não autoriza "80 bolsos". */
@@ -103,15 +113,15 @@ const UNIDADES_DO_KIT = new Set(['peca', 'pecas', 'unidade', 'unidades', 'kit', 
 const singular = (w: string) => w.replace(/oes$|aes$/, 'ao').replace(/s$/, '');
 
 // Tamanho só em contexto ("tamanho GG", "tam. M", "tamanhos P, M e G"): "G"/"M" soltos na prosa não contam.
-const RE_TAMANHO = /(?:[Tt]amanhos?|TAMANHOS?|[Tt]am\.|TAM\.)\s*(?:(?:do|de|no|nos|ao|até o|até)\s+)?((?:PP|P|M|GG|G|XGG|XG|EGG|EG|EXG|G\d|\d{1,2})(?:\s*(?:,|\/|e|a|ao|até)\s*(?:PP|P|M|GG|G|XGG|XG|EGG|EG|EXG|G\d|\d{1,2})(?![\p{L}\d]))*)(?![\p{L}\d])/gu;
+const RE_TAMANHO = /(?:tamanhos?|tam\.)\s*(?:(?:do|de|no|nos|ao|até o|até)\s+)?((?:PP|P|M|GG|G|XGG|XG|EGG|EG|EXG|G\d|\d{1,2})(?:\s*(?:,|\/|e|a|ao|até)\s*(?:PP|P|M|GG|G|XGG|XG|EGG|EG|EXG|G\d|\d{1,2})(?![\p{L}\d]))*)(?![\p{L}\d])/giu;
 function tamanhosCitados(t: string): string[] {
   return [...t.matchAll(RE_TAMANHO)].flatMap((m) => m[1].split(/\s*(?:,|\/|\be\b|\ba\b|\bao\b|até)\s*/u).filter(Boolean));
 }
-const citaTamanhoFora = (t: string, d: DadosTextoKit) => tamanhosCitados(t).some((x) => !d.tamanhosKit.includes(x));
+const citaTamanhoFora = (t: string, d: DadosTextoKit) => tamanhosCitados(t).some((x) => !d.tamanhosKit.includes(x.toUpperCase()));
 /** Tira o trecho "tamanho(s) …" com tamanho fora do kit (cabeçalho da base). */
 const semTamanhoFora = (t: string, d: DadosTextoKit) =>
   t.replace(RE_TAMANHO, (m, lista: string) => (lista.split(/\s*(?:,|\/|\be\b|\ba\b|\bao\b|até)\s*/u).filter(Boolean)
-    .some((x) => !d.tamanhosKit.includes(x)) ? ' ' : m)).replace(/\s+/g, ' ').trim();
+    .some((x) => !d.tamanhosKit.includes(x.toUpperCase())) ? ' ' : m)).replace(/\s+/g, ' ').trim();
 const RE_VENDA_UNITARIA = /\bvendid[ao]s?\s+(em|por)\s+unidade|\bvendid[ao]s?\s+(individualmente|separadamente|avulsa)/;
 const RE_PROIBIDO = /\b(frete|envio|entrega|prazo|garantia|garantido)\b/i;
 const RE_EMOJI_SECAO = /[🧵✅📌🎯❓🎨📦🚚📏]/u;
@@ -121,23 +131,24 @@ const RE_EMOJI_SECAO = /[🧵✅📌🎯❓🎨📦🚚📏]/u;
  * palavra do dicionário que a base usa fora de cor ("toque natural") passa, se não for nome de cor da base.
  */
 function citaCorInventada(t: string, d: DadosTextoKit, baseNorm: string): boolean {
-  let x = norm(t);
-  for (const k of [...d.coresKit].sort((a, b) => b.length - a.length)) x = x.replace(reCor(k), ' ');
   const coresBaseNorm = d.coresBase.map(norm);
   // Palavra que compõe uma cor do kit ("azul" com Azul Claro no kit) passa.
   const doKit = new Set(d.coresKit.flatMap((k) => norm(k).split(/\s+/)));
-  return [...SINONIMOS_COR, ...d.coresBase].some((c) => {
-    if (norm(c).split(/\s+/).every((w) => doKit.has(w)) || !reCor(c).test(x)) return false;
-    const naBase = reCor(c).test(baseNorm);
-    return !naBase || coresBaseNorm.some((cb) => reCor(c).test(cb));
+  const fora = [...SINONIMOS_COR, ...d.coresBase].filter((c) => {
+    if (norm(c).split(/\s+/).every((w) => doKit.has(w))) return false;
+    return !reCor(c).test(baseNorm) || coresBaseNorm.some((cb) => reCor(c).test(cb));
   });
+  return citaAlgumaCor(t, d.coresKit, fora);
 }
 
 /** Contexto da base para conferir o texto da IA (calculado uma vez). */
 function fonteDa(d: DadosTextoKit) {
   const texto = `${d.descricaoBase} ${d.tituloBase} ${d.nomeBase}`;
   const produto = new Set((norm(`${d.tituloBase} ${d.nomeBase} ${partesDaBase(d.descricaoBase).cabecalho}`).match(/\p{L}+/gu) ?? []).map(singular));
-  return { texto, norm: norm(texto), pares: new Set(paresNumero(texto)), produto };
+  // "1 unidade/peça/item" da descrição unitária não autoriza a IA no kit (o corpo diz "Kit com N unidades").
+  const unitario = /^1\|(unidades?|un|pecas?|itens|item)$/;
+  const pares = new Set(paresNumero(texto).filter((par) => d.pecas <= 1 || !unitario.test(par)));
+  return { texto, norm: norm(texto), pares, produto };
 }
 
 /** Texto da IA aceitável: uma linha de prosa sem cor fora do kit, material/propriedade ou número+unidade fora da base, sem frete. */
