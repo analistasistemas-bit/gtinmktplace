@@ -71,12 +71,13 @@ export function adequadaAoML(d: { largura: number; altura: number } | null): boo
 
 /** Gera a foto do kit. `textos`: instruções e dados em partes separadas. Lança em falha do provedor ou resposta sem
  * imagem (nada a cobrar). O timeout vem do prazo global da edge (`gerar-foto-kit`). */
-export async function gerarImagem(modelo: string, textos: string[], fotos: string[], timeoutMs = 100_000) {
+export async function gerarImagem(modelo: string, textos: string[], fotos: string[], timeoutMs = 100_000, extra: Record<string, unknown> = {}) {
   const resp = await openrouterClient().chat.completions.create({
     model: modelo,
     modalities: ['image', 'text'],
     // Quadrada: N peças lado a lado numa linha (Adendo 1). O ML aceita vertical ou quadrada.
-    image_config: { aspect_ratio: '1:1' },
+    // `extra`: opções do modelo (ex.: `quality` no gpt-5.4-image-2), só na medição por enquanto.
+    image_config: { aspect_ratio: '1:1', ...extra },
     usage: { include: true },
     messages: [{
       role: 'user',

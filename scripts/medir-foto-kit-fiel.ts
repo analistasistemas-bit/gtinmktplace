@@ -5,6 +5,7 @@
 // Uso (Deno, a partir da raiz do repo):
 //   SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… OPENROUTER_API_KEY=… \
 //   deno run -A scripts/medir-foto-kit-fiel.ts --kits kits.json --saida /tmp/medicao-foto-kit [--limite-usd 5] [--so 1]
+//     [--modelo <slug OpenRouter>] [--max-tentativas 3] [--reserva-usd 0.12]   (comparar modelos de imagem)
 // kits.json: [{ "familia_id": "<uuid>", "cores": ["Bege Cru", "Cinza Escuro"] }, …] (fica fora do repo: é dado real).
 // Não defina AI_MODEL_VISION: a produção usa o padrão de `modelos.ts`.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
@@ -19,21 +20,24 @@ const kits: Array<{ familia_id: string; cores: string[] }> = JSON.parse(await De
 const saida = arg('saida', '/tmp/medicao-foto-kit')!;
 const limiteUsd = Number(arg('limite-usd', '5'));
 const so = Number(arg('so', String(kits.length)));
-// Teto por tentativa para a trava de orçamento (geração ~US$ 0,045 + verificação), antes de gastar.
-const RESERVA_TENTATIVA_USD = 0.12;
+// Teto por tentativa para a trava de orçamento (geração + verificação), antes de gastar. Modelo caro: suba a reserva.
+const RESERVA_TENTATIVA_USD = Number(arg('reserva-usd', '0.12'));
+const MODELO = arg('modelo', MODELO_IMAGEM_PADRAO)!;
+const QUALIDADE = arg('qualidade');
+const TENTATIVAS = Math.min(MAX_TENTATIVAS, Number(arg('max-tentativas', String(MAX_TENTATIVAS))));
 
 const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
 await Deno.mkdir(saida, { recursive: true });
 const csv = `${saida}/resultado.csv`;
 const q = (v: unknown) => `"${String(v ?? '').replaceAll('"', '""')}"`;
 await Deno.writeTextFile(csv, [
-  'kit', 'produto', 'n_cores', 'cores', 'tentativa', 'aprovado', ...ITENS.map(([c]) => c),
+  'modelo', 'kit', 'produto', 'n_cores', 'cores', 'tentativa', 'aprovado', ...ITENS.map(([c]) => c),
   'custo_ficha_usd', 'custo_geracao_usd', 'custo_verificacao_usd', 'ms_ficha', 'ms_geracao', 'ms_verificacao', 'motivos',
 ].join(',') + '\n');
 
 const b64 = (b: Uint8Array) => { let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(s); };
 let total = 0;
-console.log(`modelo de imagem ${MODELO_IMAGEM_PADRAO}; visão ${MODELO_VISION}; limite US$ ${limiteUsd}`);
+console.log(`modelo de imagem ${MODELO}${QUALIDADE ? ` qualidade ${QUALIDADE}` : ''}; visão ${MODELO_VISION}; limite US$ ${limiteUsd}`);
 
 for (const [k, kit] of kits.slice(0, so).entries()) {
   const dir = `${saida}/kit-${String(k + 1).padStart(2, '0')}`;
@@ -73,12 +77,12 @@ for (const [k, kit] of kits.slice(0, so).entries()) {
   console.log(`kit ${k + 1} ${produto} [${kit.cores.join(' + ')}]: ficha ${ficha.comprimento} ${ficha.proporcao_altura_largura} fotos ${origem.map((o) => o.length).join('/')} tons ${ficha.cores.map((c) => c.nome_tom).join(' / ')} (US$ ${custoFicha.toFixed(4)}, ${msFicha} ms)`);
 
   let motivos: string[] = [];
-  for (let t = 1; t <= MAX_TENTATIVAS; t++) {
+  for (let t = 1; t <= TENTATIVAS; t++) {
     if (total + RESERVA_TENTATIVA_USD > limiteUsd) { console.error(`PARADO: US$ ${total.toFixed(3)} + reserva passa do limite`); Deno.exit(2); }
     t0 = Date.now();
     let gerada: Awaited<ReturnType<typeof gerarImagem>>;
-    try { gerada = await gerarImagem(MODELO_IMAGEM_PADRAO, montarPedidoFiel({ ficha, grupos, motivos }), grupos.flatMap((g) => g.urls), 120_000); }
-    catch (e) { console.error(`kit ${k + 1} t${t}: falha da geração (${(e as Error).name})`); break; }
+    try { gerada = await gerarImagem(MODELO, montarPedidoFiel({ ficha, grupos, motivos }), grupos.flatMap((g) => g.urls), 150_000, QUALIDADE ? { quality: QUALIDADE } : {}); }
+    catch (e) { console.error(`kit ${k + 1} t${t}: falha da geração (${(e as Error).name} ${(e as { status?: number }).status ?? ''})`); break; }
     const msGeracao = Date.now() - t0;
     total += gerada.custoUsd;
     await Deno.writeFile(`${dir}/tentativa-${t}.${gerada.ext}`, gerada.bytes);
@@ -97,7 +101,7 @@ for (const [k, kit] of kits.slice(0, so).entries()) {
     }
     const ok = new Map(v.itens.map((i) => [i.campo, i.ok]));
     await Deno.writeTextFile(csv, [
-      k + 1, q(produto), kit.cores.length, q(kit.cores.join(' + ')), t, v.aprovado ? 'sim' : 'nao',
+      QUALIDADE ? `${MODELO}:${QUALIDADE}` : MODELO, k + 1, q(produto), kit.cores.length, q(kit.cores.join(' + ')), t, v.aprovado ? 'sim' : 'nao',
       ...ITENS.map(([c]) => (ok.has(c) ? (ok.get(c) ? 'ok' : 'DIVERGE') : '')),
       t === 1 ? custoFicha.toFixed(5) : '0', gerada.custoUsd.toFixed(5), custoVerif.toFixed(5), t === 1 ? msFicha : 0, msGeracao, msVerif,
       q(v.motivos.join(' || ')),

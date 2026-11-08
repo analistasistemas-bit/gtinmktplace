@@ -174,4 +174,20 @@ escuro. A descrição livre por visão não captou comprimento nem proporção. 
 
 **Ainda a medir:** taxa de aprovação na 1ª tentativa, falso positivo (aprovada não fiel na conferência humana) e
 tolerância de proporção (15%) com produtos reais (`scripts/medir-foto-kit-fiel.ts`). A base tem só 9 roupas com
-2+ cores fotografadas (2 lojas, sem camiseta).
+2+ cores fotografadas (2 lojas; a "Camisa" é uma camiseta gola careca), e em todas o dedupe deixou 1 foto distinta
+por cor (o mesmo arquivo em cada tamanho): frente/costas separadas não ocorreram nesta base.
+
+**Medição de 08/11 (12 kits, 6 de 2 cores e 6 de 3; Nano Banana 2.1 + gpt-4o; ~US$ 0,05–0,06 por tentativa).**
+A verificação aprovou os 12 em até 3 tentativas (7 na 1ª). Na conferência humana das 12 aprovadas: 3 fiéis
+(inclusive o caso Zaven), 7 em dúvida (etiqueta de gola inventada em 6; tom de Cáqui/Caramelo) e 2 não fiéis
+(etiqueta inventada no cós; decote quadrado no lugar do arredondado). A verificação reduz a falha, não a elimina:
+a aprovação humana ("Usar esta foto", depois de ampliar e comparar com as originais) continua sendo a trava.
+Reteste de 6 desses kits já com a proibição de etiqueta inventada no pedido e no inspetor: 4 aprovados (1 na 1ª);
+o inspetor passou a cobrar etiqueta "ausente" quando a ficha descreve etiqueta não visível (ponto a ajustar na
+ficha). Ficha levou até 29 s, verificação até 36 s e geração de 9 a 82 s: fatias de ficha e verificação de 35 s; uma
+geração acima de ~60 s na 1ª tentativa estoura o prazo e a chamada falha sem cobrança (o mesmo pedido repete).
+
+**Modelo mais forte (08/11):** `openai/gpt-5.4-image-2` (catálogo: imagem na entrada e na saída) não gerou imagem
+pelo OpenRouter em nenhuma qualidade (low, medium, high): `Complexity '…' is not supported for this image model`
+(`provider_unavailable`), como em 07/11. `google/gemini-3-pro-image` ficou fora por decisão do Diego (~3× o custo).
+Fica o Nano Banana 2.1; o script de medição aceita `--modelo` e `--qualidade` para repetir a comparação.
