@@ -35,7 +35,7 @@ const STATUS_POR_MOTIVO: Record<string, number> = {
   base_desatualizada: 409, base_e_kit: 409, base_em_kit: 409, base_legacy: 409, base_full: 409,
   base_multi_origem: 409, base_moderada: 409, foto_moderada: 409, peca_insuficiente: 409,
   baseline_divergente: 409, up_ocupado: 409, pedido_diferente: 409, cadastro_parcial_divergente: 409,
-  foto_nao_autorizada: 403,
+  foto_nao_autorizada: 403, previa_usada: 409, previa_divergente: 409, previa_invalida: 400,
 };
 
 type Linha = Record<string, unknown>;
@@ -215,6 +215,21 @@ function portas(admin: SupabaseClient, orgId: string, userId: string): DepsCriar
     },
 
     enfileirarSaga: (id) => enfileirarSaga(id, orgId),
+
+    previa: {
+      async ler(id) {
+        const { data, error } = await admin.from('kit_variacao_previas')
+          .select('familia_base_id, pecas, kit_id').eq('id', id).eq('org_id', orgId).maybeSingle();
+        if (error) throw new Error(`prévia do texto: ${error.message}`);
+        return data ? { baseId: data.familia_base_id as string, pecas: Number(data.pecas), kitId: (data.kit_id as string | null) ?? null } : null;
+      },
+      async consumir(a) {
+        const r = await lerUm(admin.rpc('kit_variacao_consumir_previa', {
+          p_org: orgId, p_previa: a.previaId, p_base: a.baseId, p_pecas: a.pecas, p_kit: a.kitId, p_chave: a.chave,
+        }), 'kit_variacao_consumir_previa');
+        return r as { ok: boolean; motivo?: string };
+      },
+    },
   };
 }
 
@@ -232,6 +247,7 @@ function parse(body: Linha): CriarKitVariacaoInput | null {
     })),
     titulo: body.titulo, descricao: body.descricao, fotos: body.fotos as Record<string, string>,
     soEmKit: body.so_em_kit === true, meta: typeof body.meta === 'number' ? body.meta : 0, chaveCadastro: body.chave_cadastro,
+    ...(typeof body.previa_id === 'string' && body.previa_id ? { previaId: body.previa_id } : {}),
     ...(body.listing_type_id != null ? { listingTypeId: body.listing_type_id as CriarKitVariacaoInput['listingTypeId'] } : {}),
   };
 }

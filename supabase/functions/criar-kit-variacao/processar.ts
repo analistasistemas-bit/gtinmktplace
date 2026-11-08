@@ -34,6 +34,8 @@ export interface CriarKitVariacaoInput {
   chaveCadastro: string;
   /** Clássico (padrão, como em `publicar-familias`) ou Premium: muda a comissão que o simulador cota. */
   listingTypeId?: 'gold_special' | 'gold_pro';
+  /** Prévia de `gerar-texto-kit` que produziu título e descrição: o consumo de IA dela passa para o kit. */
+  previaId?: string;
 }
 
 type Linha = Record<string, unknown>;
@@ -93,6 +95,12 @@ export interface DepsCriarKitVariacao {
     desfazer(loteId: string, familiaId: string | null): Promise<void>;
   };
   enfileirarSaga(transferenciaId: string): Promise<void>;
+  /** Consumo de IA da prévia do texto (`kit_variacao_previas`). Sem esta porta, `previaId` é recusado. */
+  previa?: {
+    ler(id: string): Promise<{ baseId: string; pecas: number; kitId: string | null } | null>;
+    /** Associa a prévia ao kit uma vez só e soma o custo na família do kit (RPC atômica). */
+    consumir(a: { previaId: string; kitId: string; chave: string; baseId: string; pecas: number }): Promise<{ ok: boolean; motivo?: string }>;
+  };
 }
 
 export interface SkuKitCriado { codigo: string; rotulo: string; tamanho: string; quantidade: number }
@@ -218,6 +226,22 @@ function validarPedido(input: CriarKitVariacaoInput): string | { combinacoes: Om
   return { combinacoes };
 }
 
+/**
+ * Depois do kit gravado: passa o consumo de IA da prévia para ele. Idempotente (mesma prévia, mesmo kit). Falha só
+ * é registrada: o kit já existe e a repetição da mesma chave tenta de novo.
+ */
+async function associarPrevia(deps: DepsCriarKitVariacao, input: CriarKitVariacaoInput, kitId: string): Promise<void> {
+  if (!input.previaId || !deps.previa) return;
+  try {
+    const r = await deps.previa.consumir({
+      previaId: input.previaId, kitId, chave: input.chaveCadastro, baseId: input.familiaBaseId, pecas: input.pecasPorKit,
+    });
+    if (!r.ok) console.error('criar_kit_variacao_previa_nao_associada', { previaId: input.previaId, motivo: r.motivo });
+  } catch (e) {
+    console.error('criar_kit_variacao_previa_falhou', { previaId: input.previaId, erro: String(e) });
+  }
+}
+
 /** Família do kit: a base clonada sem identidade, resultado nem texto fiscal (a nota usa o título do kit). */
 export function montarFamiliaKitVariacao(
   base: Linha, ctx: { loteId: string; codigoPai: string; chave: string; titulo: string; descricao: string; atributos: AtributoML[] },
@@ -234,6 +258,8 @@ export function montarFamiliaKitVariacao(
     // Foto por combinação, no item: COLOR define a foto no ML.
     capa_storage_path: null, capa_ml_picture_id: null,
     descricao_fiscal: null,
+    // O consumo de IA do clone é da base; o do kit entra só pela prévia (`kit_variacao_consumir_previa`).
+    tokens_input: null, tokens_output: null, custo_centavos: null,
   };
 }
 
@@ -274,8 +300,18 @@ export async function criarKitVariacao(
   const ja = await deps.existente(input.chaveCadastro);
   if (ja && ja.pedidoHash !== hash) return recusa('pedido_diferente', MSG_PEDIDO_DIFERENTE);
   if (ja) {
+    await associarPrevia(deps, input, ja.kitId);
     if (ja.transferenciaId) await deps.enfileirarSaga(ja.transferenciaId);
     return { ok: true, kitId: ja.kitId, transferenciaId: ja.transferenciaId ?? '', existente: true };
+  }
+
+  if (input.previaId) {
+    const p = await deps.previa?.ler(input.previaId);
+    if (!p) return recusa('previa_invalida', 'A prévia do texto não existe nesta empresa. Gere o texto de novo.');
+    if (p.baseId !== input.familiaBaseId || p.pecas !== input.pecasPorKit) {
+      return recusa('previa_divergente', 'A prévia do texto é de outro produto ou de outra quantidade de peças.');
+    }
+    if (p.kitId) return recusa('previa_usada', 'A prévia do texto já foi usada em outro kit. Gere o texto de novo.');
   }
 
   const base = await deps.lerBase(input.familiaBaseId);
@@ -455,6 +491,7 @@ export async function criarKitVariacao(
   }
   if (r.ok && r.existente && r.kit_id) {
     // Outra requisição (ou a anterior) com a mesma chave gravou o kit: a família é a mesma, nada a apagar.
+    await associarPrevia(deps, input, r.kit_id);
     if (r.transferencia_id) await deps.enfileirarSaga(r.transferencia_id);
     return { ok: true, kitId: r.kit_id, transferenciaId: r.transferencia_id ?? '', existente: true };
   }
@@ -463,6 +500,7 @@ export async function criarKitVariacao(
     await deps.gravar.desfazer(loteId, familiaId);
     return recusa(r.motivo ?? 'falha_gravar', r.mensagem ?? r.codigo);
   }
+  await associarPrevia(deps, input, r.kit_id);
   await deps.enfileirarSaga(r.transferencia_id);
   return {
     ok: true, kitId: r.kit_id, transferenciaId: r.transferencia_id, existente: !!r.existente, codigoPai,

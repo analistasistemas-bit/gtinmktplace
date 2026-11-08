@@ -58,6 +58,8 @@ function cenario() {
     desfeitos: [] as Array<[string, string | null]>,
     sagas: [] as string[],
     leituras: [] as string[],
+    previa: { baseId: 'FAM-BASE', pecas: 2, kitId: null as string | null } as { baseId: string; pecas: number; kitId: string | null } | null,
+    consumos: [] as Array<Record<string, unknown>>,
   };
   const deps: DepsCriarKitVariacao = {
     orgId: 'ORG',
@@ -111,6 +113,10 @@ function cenario() {
       desfazer: async (lote, fam) => { s.desfeitos.push([lote, fam]); },
     },
     enfileirarSaga: async (id) => { s.sagas.push(id); },
+    previa: {
+      ler: async () => s.previa,
+      consumir: async (a) => { s.consumos.push(a); return { ok: true }; },
+    },
   };
   return { s, deps };
 }
@@ -360,5 +366,44 @@ describe('criarKitVariacao', () => {
     c.s.existente = { kitId: 'KIT1', transferenciaId: 'T1' };
     expect(await criarKitVariacao(c.deps, pedido({ preco: 99.9 }))).toMatchObject({ ok: false, motivo: 'pedido_diferente' });
     expect(c.s.sagas).toEqual(['T1']);
+  });
+});
+
+describe('prévia do texto por IA (Task 11, rodada 1)', () => {
+  it('prévia válida: kit criado e consumo associado ao kit e à chave', async () => {
+    const c = cenario();
+    const r = await criarKitVariacao(c.deps, pedido({ previaId: 'PREV1' }));
+    expect(r.ok).toBe(true);
+    expect(c.s.consumos).toEqual([{ previaId: 'PREV1', kitId: 'KIT1', chave: 'CHAVE1', baseId: 'FAM-BASE', pecas: 2 }]);
+  });
+  it.each([
+    ['inexistente', null, 'previa_invalida'],
+    ['de outra base', { baseId: 'OUTRA', pecas: 2, kitId: null }, 'previa_divergente'],
+    ['de outras peças', { baseId: 'FAM-BASE', pecas: 3, kitId: null }, 'previa_divergente'],
+    ['já usada', { baseId: 'FAM-BASE', pecas: 2, kitId: 'KIT-OUTRO' }, 'previa_usada'],
+  ])('prévia %s recusa sem gravar nada', async (_n, previa, motivo) => {
+    const c = cenario();
+    c.s.previa = previa;
+    expect(await criarKitVariacao(c.deps, pedido({ previaId: 'PREV1' }))).toMatchObject({ ok: false, motivo });
+    expect(semGravacao(c)).toBe(0);
+  });
+  it('RPC incerta que gravou o kit: a prévia ainda é associada', async () => {
+    const c = cenario();
+    c.s.falhasKit = 1;
+    c.s.kitGravadoNaFalha = true;
+    await criarKitVariacao(c.deps, pedido({ previaId: 'PREV1' }));
+    expect(c.s.consumos).toHaveLength(1);
+    expect(c.s.consumos[0]).toMatchObject({ kitId: 'KIT1', chave: 'CHAVE1' });
+  });
+  it('sem previaId nada é consumido', async () => {
+    const c = cenario();
+    await criarKitVariacao(c.deps, pedido());
+    expect(c.s.consumos).toEqual([]);
+  });
+  it('o clone da família do kit zera os campos de IA herdados da base', async () => {
+    const c = cenario();
+    c.s.base!.familia = { ...c.s.base!.familia, tokens_input: 900, tokens_output: 400, custo_centavos: 7 };
+    await criarKitVariacao(c.deps, pedido());
+    expect(c.s.familias[0]).toMatchObject({ tokens_input: null, tokens_output: null, custo_centavos: null });
   });
 });
