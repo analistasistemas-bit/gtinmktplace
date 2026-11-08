@@ -36,6 +36,12 @@ descrição do anúncio. O cliente que pedir paga por imagem.
    parâmetros fixos, custo) e só é liberado após uma geração real; só entram modelos que aceitam foto de referência.
 8. **Permissão:** gerar e aprovar, qualquer usuário da organização com o módulo `imagem_ia`; aplicar e reverter, só
    admin da organização.
+9. **Texto composto pelo sistema:** o modelo gera a cena sem texto de marketing; o PubliAI escreve headline,
+   benefícios, especificações e legendas por cima, com layout fixo por missão. Elimina erro de letra (no uso real,
+   cerca de 1 em cada 7 imagens geradas com texto vinha com defeito) e gerações pagas só para corrigir texto.
+10. **Verificação por visão só alerta:** toda imagem é conferida e recebe alertas (cor, produto, texto na cena),
+    mas nada é escondido nem gerado de novo sozinho; o operador decide e a imagem exibida é faturável. Esconder
+    reprovadas foi descartado: a verificação do kit reprovou imagem boa no teste de 08/11.
 
 ## Alternativas descartadas
 

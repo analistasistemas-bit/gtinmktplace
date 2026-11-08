@@ -94,7 +94,10 @@ R6.1 Limites [A2]: headline ≤5 palavras; subheadline ≤10; benefício ≤6; e
 
 R6.2 [A1][A2] Normalização NFC; acento e cedilha preservados.
 
-R6.3 **EM ABERTO (pergunta ao Diego):** quem escreve o texto de marketing — o modelo ou o sistema (ver §10).
+R6.3 **Decidido (Diego, 08/11):** o modelo gera a cena **sem** texto de marketing, deixando a área reservada
+pelo layout da missão; o PubliAI compõe headline, subheadline, benefícios, especificações, etapas e legendas com
+fonte e layout fixos por missão, a partir do texto do roteiro aprovado. A impressão da embalagem real fica na
+foto. Texto que o modelo escrever por conta própria na cena é defeito alto (R8.1). Nova geração serve só à cena.
 
 ## 7. Cores
 
@@ -128,7 +131,11 @@ R8.4 [A1][A2] Rastreabilidade por imagem: versão do roteiro e da Ficha Verdade,
 defeitos, decisão e quem aprovou. Mudança em fato, referência ou roteiro marca as imagens ainda não aplicadas como
 desatualizadas [REV].
 
-R8.5 **EM ABERTO (pergunta ao Diego):** verificação automática por visão antes de exibir (ver §10).
+R8.5 **Decidido (Diego, 08/11):** a visão confere toda imagem e só **alerta** (ex.: "cor pode estar diferente
+da foto", "texto na cena", "produto ausente"); nunca esconde, nunca gera de novo sozinha e nunca altera a Ficha
+Verdade. O operador decide. Toda imagem exibida é faturável (R8.3); o custo da verificação fica com a Daludi.
+Motivo: no teste de 08/11 a verificação do kit reprovou uma imagem boa (cor do cordão) — esconder por ela faria a
+Daludi pagar imagem boa que o cliente nunca veria.
 
 ## 9. Arquivo final e aplicação no ML
 
@@ -153,12 +160,8 @@ R9.3 Aplicar (só admin, §8) [REV][OP]:
 
 ## 10. Pontos em aberto (perguntas ao Diego)
 
-1. **Texto de marketing:** Codex e Grok recomendam que o modelo gere a cena **sem** texto de marketing e o sistema
-   componha headline, benefícios, especificações e legendas já contados e confirmados; a impressão da embalagem
-   fica na foto. Hoje [OP] deixa o modelo escrever e corrige depois.
-2. **Verificação por visão antes de exibir:** Codex — triagem que esconde a reprovada (não cobra) e pede revisão
-   humana nas incertas; Grok — só marca problemas de identidade, sem esconder nem gerar de novo, e tudo que é
-   exibido cobra.
+1. ~~Texto de marketing~~ — decidido: composto pelo sistema (R6.3).
+2. ~~Verificação por visão~~ — decidido: só alerta, nada escondido (R8.5).
 3. Medição Nano Banana × modelos Higgsfield com estas regras.
 4. Limites de fotos por categoria lidos com token válido do app.
 
