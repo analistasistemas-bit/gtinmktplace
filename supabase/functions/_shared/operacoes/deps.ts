@@ -19,6 +19,7 @@ import { lerStatusML } from './ml-status.ts';
 import { getConnector } from '../canais/registry.ts';
 import { motivoMigracaoPxvPorItem } from '../user-products/guard-migracao-pxv.ts';
 import { prepararStatusOperador } from '../kit-variacao/politica.ts';
+import { notificarCategoria } from '../notificacoes/config.ts';
 
 const ITENS = 'operacoes_massa_itens';
 const COLS_ITEM = 'ml_item_id, preco, status, conferencias, semaforo, confirmado_risco, proxima_conferencia, saida_pedida_em, etapa, preco_anterior, estado_anterior, offer_id';
@@ -236,8 +237,11 @@ export function depsStatus(admin: SupabaseClient, cx: Cx, op: OperacaoStatusRow,
     lerStatus: (mlItemId) => lerStatusML(cx.token, mlItemId), // 401/403 lança SemAcessoStatusML (fatal)
     migracaoPxv: (mlItemId) => motivoMigracaoPxvPorItem(admin, op.org_id, mlItemId),
     atualizarStatus: (mlItemId, alvo) => conn.atualizarStatus(ctx, mlItemId, alvo),
-    // O status vivo já foi lido e decidido (`decidirStatus` barra moderado) antes daqui.
-    prepararKit: (mlItemId, alvo) => prepararStatusOperador(admin, op.org_id, mlItemId, alvo, kitLigado),
+    prepararKit: (mlItemId, alvo) => prepararStatusOperador(admin, {
+      orgId: op.org_id, mlItemId, alvo, ligado: kitLigado, origem: op.id,
+      lerStatus: (id) => lerStatusML(cx.token, id),
+      alertar: (texto) => notificarCategoria(admin, op.org_id, 'estoque', texto),
+    }),
     async encerrarRestantes(mensagem) {
       const { error } = await admin.from(ITENS).update({ status: 'erro', mensagem, atualizado_em: agoraIso() })
         .eq('org_id', op.org_id).eq('operacao_id', op.id).in('status', ['pendente', 'enviando']);

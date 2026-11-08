@@ -16,7 +16,8 @@ export interface DepsStatus extends DepsLaco {
   /** Mensagem do guard de migração PxV (ADR-0161) ou null. */
   migracaoPxv(mlItemId: string): Promise<string | null>;
   atualizarStatus(mlItemId: string, alvo: 'ativo' | 'pausado'): Promise<ResultadoCanal<void>>;
-  /** ADR-0197 (`prepararStatusOperador`): grava a pausa do operador ou autoriza a reativação de SKU de kit. */
+  /** ADR-0197 (`prepararStatusOperador`): grava a pausa do operador ou autoriza a reativação de SKU de kit;
+   *  `concluir(resultado do PUT)` só libera a exclusão com o resultado confirmado no ML. */
   prepararKit(mlItemId: string, alvo: 'ativo' | 'pausado'): Promise<PreparoStatus>;
   /** Fatal: todo item `pendente`/`enviando` da operação → `erro` com a mensagem. */
   encerrarRestantes(mensagem: string): Promise<void>;
@@ -31,7 +32,11 @@ async function processarStatus(op: OperacaoStatusRow, it: ItemRow, deps: DepsSta
   const d = decidirStatus(op.acao, atual, migracao);
   if (d.tipo === 'fim') {
     // ADR-0197: item já pausado (pela saga, por exemplo) também recebe a pausa do operador; senão a saga o reativa.
-    if (op.acao === 'pausar' && d.status === 'ja_estava') await deps.prepararKit(id, 'pausado');
+    // Se o bloqueio é desta operação (agora ou num retry), conta como aplicado e entra no Reverter.
+    if (op.acao === 'pausar' && d.status === 'ja_estava') {
+      const k = await deps.prepararKit(id, 'pausado');
+      if ('criouBloqueio' in k && k.criouBloqueio) return gravarPos(deps.gravarItem(op.id, id, { status: 'aplicado', mensagem: null }));
+    }
     // Recuperação: uma tentativa anterior já pediu a escrita e o anúncio está no alvo → foi esta operação
     // (sem isso o Reverter perderia o item). ponytail: se outra pessoa mudou o status entre a marca e o PUT,
     // conta como nosso — o Reverter revalida no ML antes de escrever.
@@ -41,17 +46,23 @@ async function processarStatus(op: OperacaoStatusRow, it: ItemRow, deps: DepsSta
   // ADR-0197: Guardado, moderado ou SKU em transferência recusam (massa e Reverter); a pausa vai antes do PUT.
   const kit = await deps.prepararKit(id, d.alvo);
   if ('recusa' in kit) return deps.gravarItem(op.id, id, { status: 'bloqueado', mensagem: kit.recusa });
+  // Exceção antes da resposta do PUT = resultado ambíguo (sem status HTTP): a exclusão fica até confirmar.
+  let put: ResultadoCanal<void> = { ok: false };
   try {
-    return await escrever(op, it, d.alvo, deps);
+    return await escrever(op, it, d.alvo, deps, (r) => { put = r; });
   } finally {
-    await kit.soltar();
+    await kit.concluir(put);
   }
 }
 
-async function escrever(op: OperacaoStatusRow, it: ItemRow, alvo: 'ativo' | 'pausado', deps: DepsStatus): Promise<void> {
+async function escrever(
+  op: OperacaoStatusRow, it: ItemRow, alvo: 'ativo' | 'pausado', deps: DepsStatus,
+  respondeu: (r: ResultadoCanal<void>) => void,
+): Promise<void> {
   const id = it.ml_item_id;
   if (!it.saida_pedida_em) await deps.gravarItem(op.id, id, { saida_pedida_em: new Date(deps.agora()).toISOString() });
   const r = await deps.atualizarStatus(id, alvo);
+  respondeu(r);
   if (r.ok) return gravarPos(deps.gravarItem(op.id, id, { status: 'aplicado', mensagem: null }));
   if (r.erro?.codigo === 'AUTENTICACAO') throw new SemAcessoStatusML(r.erro.mensagemOperador);
   const mensagem = r.erro?.mensagemOperador ?? MSG_FALHA_STATUS;

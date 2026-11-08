@@ -7,6 +7,8 @@ import { mapearConexao } from '../_shared/canais/conexao.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import { motivoMigracaoPxvPorItem } from '../_shared/user-products/guard-migracao-pxv.ts';
 import { EMBED_MODULOS, kitLigado, prepararStatusOperador } from '../_shared/kit-variacao/politica.ts';
+import { lerStatusML } from '../_shared/operacoes/ml-status.ts';
+import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -54,20 +56,23 @@ Deno.serve(async (req) => {
 
   const conn = getConnector('mercado_livre');
   const ctx = { getToken: () => getValidAccessTokenConexao(conexao) };
-  // ADR-0197: SKU de kit com variação. Guardado, moderado ou em transferência não reativa (409); a pausa do
-  // operador fica gravada antes do PUT.
-  const kit = await prepararStatusOperador(admin, orgId, ml_item_id, status, kitLigado(linhaConexao),
-    async () => (await conn.lerStatus(ctx, [ml_item_id]))[ml_item_id]?.status ?? null);
+  // ADR-0197: SKU de kit com variação. Guardado, moderado, em transferência ou sem leitura no ML não reativa
+  // (409); a pausa do operador fica gravada antes do PUT; a exclusão da ativação só sai com o resultado confirmado.
+  const kit = await prepararStatusOperador(admin, {
+    orgId, mlItemId: ml_item_id, alvo: status, ligado: kitLigado(linhaConexao),
+    lerStatus: async (id) => lerStatusML(await ctx.getToken(), id),
+    alertar: (texto) => notificarCategoria(admin, orgId, 'estoque', texto),
+  });
   if ('recusa' in kit) {
     await auditarOperacaoSuporte(admin, context, { type: 'item', id: ml_item_id }, 'denied');
     return new Response(JSON.stringify({ erro: kit.recusa }),
       { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
-  let resultado: Awaited<ReturnType<typeof conn.atualizarStatus>>;
+  let resultado: Awaited<ReturnType<typeof conn.atualizarStatus>> = { ok: false };   // exceção = ambíguo
   try {
     resultado = await conn.atualizarStatus(ctx, ml_item_id, status);
   } finally {
-    await kit.soltar();
+    await kit.concluir(resultado);
   }
   if (!resultado.ok) {
     await auditarOperacaoSuporte(admin, context, { type: 'item', id: ml_item_id }, 'failed');

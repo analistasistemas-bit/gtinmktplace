@@ -6,6 +6,7 @@
 // 3. Exclusão de publicação parada (resultado não confirmado) gera alerta: só o Reenviar a solta.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { paginarTudo } from '../_shared/pagina.ts';
+import { soltarExclusao } from '../_shared/kit-variacao/politica.ts';
 import { criarTransferencia } from '../_shared/kit-variacao/saga.ts';
 
 const PARADA_MS = 30 * 60 * 1000;
@@ -149,12 +150,37 @@ export async function alertarPublicacoesParadas(
   return porOrg.size;
 }
 
+/** Ativação mais nova que isto pode ter o PUT em voo (a retomada renova `criado_em`): não é lida. */
+const ATIVACAO_EM_VOO_MS = 10 * 60 * 1000;
+
 /**
- * A exclusão `ativacao` (Task 6) vive só durante um PUT de status do operador e é solta no `finally`. Com mais
- * de 1 h, a invocação morreu no meio: solta, senão as transferências desse SKU recebem `up_ocupado` para sempre.
+ * Task 6 (achado 1): ativação do operador sem confirmação segura a exclusão `ativacao`. Aqui a conferência lê no
+ * ML todos os alvos (item e cópias de catálogo); só com todas as leituras certas solta a exclusão e apaga a
+ * intenção. Leitura que falha mantém e alerta. Nunca libera por idade.
  */
-export async function soltarAtivacoesParadas(admin: SupabaseClient, agoraMs = Date.now()): Promise<void> {
-  const { error } = await admin.from('kit_exclusoes').delete()
-    .eq('dono_tipo', 'ativacao').lt('criado_em', new Date(agoraMs - PUBLICACAO_PARADA_MS).toISOString());
-  if (error) throw new Error(`kit_exclusoes: ${error.message}`);
+export async function conferirAtivacoesPendentes(
+  admin: SupabaseClient,
+  deps: { lerStatus: (orgId: string, itemId: string) => Promise<unknown>; alertar: (orgId: string, texto: string) => Promise<void> },
+  agoraMs = Date.now(),
+): Promise<number> {
+  const limite = new Date(agoraMs - ATIVACAO_EM_VOO_MS).toISOString();
+  const linhas = await paginarTudo<{ org_id: string; dono_id: string; ml_item_id: string; alvos: string[]; codigos: string[] }>(
+    (de, ate) => admin.from('kit_ativacoes').select('org_id, dono_id, ml_item_id, alvos, codigos')
+      .lt('criado_em', limite).order('org_id').order('dono_id').range(de, ate));
+  let liberadas = 0;
+  for (const l of linhas) {
+    try {
+      for (const id of l.alvos) await deps.lerStatus(l.org_id, id);   // lança = não confirmado
+      await soltarExclusao(admin, l.org_id, l.dono_id);
+      const { error } = await admin.from('kit_ativacoes').delete().eq('org_id', l.org_id).eq('dono_id', l.dono_id);
+      if (error) throw new Error(`kit_ativacoes: ${error.message}`);
+      liberadas++;
+    } catch (e) {
+      console.error('reconciliar_kit_ativacao_sem_confirmacao', l.org_id, l.ml_item_id, String(e));
+      await deps.alertar(l.org_id, `Kit com variação: a reativação de ${l.ml_item_id} (${l.codigos.join(', ')}) segue sem `
+        + 'confirmação no Mercado Livre, e o SKU continua reservado. Confira o anúncio e clique em Reativar de novo.')
+        .catch((x) => console.error('reconciliar_kit_alerta_falhou', l.org_id, String(x)));
+    }
+  }
+  return liberadas;
 }

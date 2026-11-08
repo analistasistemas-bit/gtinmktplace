@@ -9,6 +9,7 @@ const f = vi.hoisted(() => ({
   statusVivo: 'pausado',
   consultas: [] as string[],
   eventos: [] as string[],
+  put: { ok: true } as Record<string, unknown>,
 }));
 
 const ITENS = [{ org_id: 'O', sku: 'P1', item_externo_id: 'MLB1', catalog_listing_id: null }];
@@ -28,7 +29,9 @@ function builder(tabela: string) {
   };
   const q: Record<string, unknown> = {
     select: () => q, eq: () => q, in: () => q, or: () => q,
-    maybeSingle: async () => ler(),
+    upsert: async () => { f.eventos.push(`upsert:${tabela}`); return { error: null }; },
+    delete: () => { f.eventos.push(`delete:${tabela}`); return q; },
+    maybeSingle: async () => (tabela === 'kit_ativacoes' ? { data: null, error: null } : ler()),
     then: (ok: (v: unknown) => unknown, ko?: (e: unknown) => unknown) => Promise.resolve(ler()).then(ok, ko),
   };
   return q;
@@ -48,15 +51,26 @@ vi.mock('../../_shared/auth.ts', () => ({ requireUserOrg: async () => ({ orgId: 
 vi.mock('../../_shared/support-audit.ts', () => ({ auditarOperacaoSuporte: async () => {} }));
 vi.mock('../../_shared/ml/token.ts', () => ({ getValidAccessTokenConexao: async () => 'tok' }));
 vi.mock('../../_shared/user-products/guard-migracao-pxv.ts', () => ({ motivoMigracaoPxvPorItem: async () => null }));
+vi.mock('../../_shared/notificacoes/config.ts', () => ({
+  notificarCategoria: async () => { f.eventos.push('alerta'); },
+}));
+// Leitura estrita (achado 4): 401/403 lança SemAcessoStatusML, falha lança, item ausente = null.
+vi.mock('../../_shared/operacoes/ml-status.ts', () => {
+  class SemAcessoStatusML extends Error {}
+  return {
+    SemAcessoStatusML,
+    lerStatusML: async (_t: string, id: string) => {
+      f.eventos.push(`lerStatus:${id}`);
+      if (f.statusVivo === '403') throw new SemAcessoStatusML('ML 403');
+      return f.statusVivo;
+    },
+  };
+});
 vi.mock('../../_shared/canais/registry.ts', () => ({
   getConnector: () => ({
-    lerStatus: async (_c: unknown, ids: string[]) => {
-      f.eventos.push('lerStatus');
-      return Object.fromEntries(ids.map((id) => [id, { status: f.statusVivo }]));
-    },
     atualizarStatus: async (_c: unknown, id: string, status: string) => {
       f.eventos.push(`put:${id}:${status}`);
-      return { ok: true };
+      return f.put;
     },
   }),
 }));
@@ -70,7 +84,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   f.modulos = ['kit_variacao']; f.componentes = ['P1']; f.politicas = []; f.statusVivo = 'pausado';
-  f.consultas = []; f.eventos = [];
+  f.consultas = []; f.eventos = []; f.put = { ok: true };
 });
 
 const chamar = (status: 'ativo' | 'pausado') =>
@@ -101,13 +115,29 @@ describe('atualizar-status-publicado × kit com variação', () => {
     expect(f.eventos).toEqual(['rpc:kit_politica_operador:true', 'put:MLB1:pausado']);
   });
 
-  it('o operador reativa a própria pausa: exclusão, limpa o bloqueio, PUT e solta', async () => {
+  it('o operador reativa a própria pausa: intenção, exclusão, limpa o bloqueio, PUT, confirma e libera', async () => {
     f.politicas = [pol({ bloqueio_operador: true })];
     const r = await chamar('ativo');
     expect(r.status).toBe(200);
     expect(f.eventos).toEqual([
-      'lerStatus', 'rpc:kit_adquirir_exclusao', 'rpc:kit_politica_operador:false', 'put:MLB1:ativo', 'rpc:kit_soltar_exclusao',
+      'lerStatus:MLB1', 'upsert:kit_ativacoes', 'rpc:kit_adquirir_exclusao', 'rpc:kit_politica_operador:false',
+      'put:MLB1:ativo', 'lerStatus:MLB1', 'rpc:kit_soltar_exclusao', 'delete:kit_ativacoes',
     ]);
+  });
+
+  it('achado 1: timeout no PUT mantém a exclusão e alerta', async () => {
+    f.put = { ok: false, erro: { codigo: 'DESCONHECIDO', mensagemOperador: 'fetch failed', retentavel: false } };
+    const r = await chamar('ativo');
+    expect(r.status).toBe(502);
+    expect(f.eventos).not.toContain('rpc:kit_soltar_exclusao');
+    expect(f.eventos).toContain('alerta');
+  });
+
+  it('achado 4: 401/403 na leitura pede reconexão (não diz moderado)', async () => {
+    f.statusVivo = '403';
+    const r = await chamar('ativo');
+    expect(r.status).toBe(409);
+    expect((await r.json()).erro).toContain('Reconecte');
   });
 
   it('org sem o módulo: mesmas consultas de antes e PUT direto (ADR-0111 intocado)', async () => {

@@ -14,11 +14,12 @@ import { paginarTudo } from '../_shared/pagina.ts';
 import { filtroNotIn, listarOrgsArquivadas } from '../_shared/orgs-arquivadas.ts';
 import { lerPushPendente, despacharPushPendente } from '../_shared/estoque/baixa.ts';
 import {
-  alertarPublicacoesParadas, retomarTransferenciasParadas, soltarAtivacoesParadas, triarParticipantes,
+  alertarPublicacoesParadas, conferirAtivacoesPendentes, retomarTransferenciasParadas, triarParticipantes,
 } from './transferencias.ts';
 import { resolverConexaoEstrita } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { lerOferta } from '../_shared/kit-variacao/ml-oferta.ts';
+import { lerStatusML } from '../_shared/operacoes/ml-status.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 
 /** Teto operacional por execução: 5 páginas × 200 = 1.000 movimentos por org. */
@@ -153,7 +154,10 @@ Deno.serve(async (req) => {
   } catch (e) {
     console.error('reconciliar_kit_publicacoes_falhou', e);
   }
-  await soltarAtivacoesParadas(admin).catch((e) => console.error('reconciliar_kit_ativacoes_falhou', e));
+  await conferirAtivacoesPendentes(admin, {
+    lerStatus: async (orgId, itemId) => lerStatusML(await token(orgId), itemId),
+    alertar,
+  }).catch((e) => console.error('reconciliar_kit_ativacoes_falhou', e));
 
   return new Response(
     JSON.stringify({ ok: true, drenados, enfileirados, avaliados: alvos.size, transferencias, triadas, publicacoesParadas }),

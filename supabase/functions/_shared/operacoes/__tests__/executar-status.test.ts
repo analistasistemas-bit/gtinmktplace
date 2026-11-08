@@ -36,7 +36,7 @@ function montar(itens: Linha[], status: Record<string, StatusAnuncioCanal | null
     atualizarStatus: vi.fn(async (id) => (opts.falhaCanal?.includes(id)
       ? { ok: false, erro: { codigo: 'DESCONHECIDO', mensagemOperador: 'ML recusou', retentavel: false, status: 400 } }
       : { ok: true })) as DepsStatus['atualizarStatus'],
-    prepararKit: vi.fn(async () => ({ soltar: async () => {} })) as DepsStatus['prepararKit'],
+    prepararKit: vi.fn(async () => ({ criouBloqueio: false, concluir: async () => true })) as DepsStatus['prepararKit'],
     encerrarRestantes: vi.fn(async (mensagem: string) => {
       for (const i of itens) if (i.status === 'pendente' || i.status === 'enviando') Object.assign(i, { status: 'erro', mensagem });
     }),
@@ -179,7 +179,7 @@ describe('executarStatus × kit com variação (Task 6)', () => {
   it('reativar Guardado (ou Reverter de pausar): item bloqueado com o motivo, sem PUT', async () => {
     const itens = [item('A'), item('B')];
     const deps = montar(itens, { A: 'pausado', B: 'pausado' });
-    deps.prepararKit = vi.fn(async (id: string) => (id === 'A' ? { recusa: 'Desligue "Vender só em kit"' } : { soltar: async () => {} }));
+    deps.prepararKit = vi.fn(async (id: string) => (id === 'A' ? { recusa: 'Desligue "Vender só em kit"' } : { criouBloqueio: false, concluir: async () => true }));
     await executarStatus({ ...PAUSAR, acao: 'reativar' }, deps, OPTS);
     expect(itens.map((i) => [i.status, i.mensagem ?? null])).toEqual([['bloqueado', 'Desligue "Vender só em kit"'], ['aplicado', null]]);
     expect(deps.atualizarStatus).toHaveBeenCalledTimes(1);
@@ -187,22 +187,45 @@ describe('executarStatus × kit com variação (Task 6)', () => {
     expect(deps.prepararKit).toHaveBeenCalledWith('A', 'ativo');
   });
 
-  it('a política é gravada antes do PUT e a exclusão é solta depois, mesmo com falha do canal', async () => {
+  it('achado 1: a política é gravada antes do PUT e `concluir` recebe o resultado do PUT, mesmo com falha do canal', async () => {
     const ordem: string[] = [];
     const itens = [item('A')];
-    const deps = montar(itens, { A: 'pausado' }, { falhaCanal: ['A'] });
-    deps.prepararKit = vi.fn(async () => { ordem.push('preparar'); return { soltar: async () => { ordem.push('soltar'); } }; });
-    deps.atualizarStatus = vi.fn(async () => { ordem.push('put'); return { ok: false, erro: { codigo: 'DESCONHECIDO', mensagemOperador: 'x', retentavel: false, status: 400 } }; }) as DepsStatus['atualizarStatus'];
+    const deps = montar(itens, { A: 'pausado' });
+    const put = { ok: false, erro: { codigo: 'DESCONHECIDO', mensagemOperador: 'x', retentavel: false, status: 400 } };
+    deps.prepararKit = vi.fn(async () => {
+      ordem.push('preparar');
+      return { criouBloqueio: false, concluir: async (r: unknown) => { ordem.push(`concluir:${JSON.stringify(r)}`); return true; } };
+    });
+    deps.atualizarStatus = vi.fn(async () => { ordem.push('put'); return put; }) as DepsStatus['atualizarStatus'];
     await executarStatus({ ...PAUSAR, acao: 'reativar' }, deps, OPTS);
-    expect(ordem).toEqual(['preparar', 'put', 'soltar']);
+    expect(ordem).toEqual(['preparar', 'put', `concluir:${JSON.stringify(put)}`]);
   });
 
-  it('pausar item já pausado (pela saga, por exemplo) também grava a pausa do operador', async () => {
+  it('achado 1: exceção antes da resposta do PUT conclui como ambíguo (sem status HTTP)', async () => {
+    const itens = [item('A')];
+    const deps = montar(itens, { A: 'pausado' });
+    const concluir = vi.fn(async () => false);
+    deps.prepararKit = vi.fn(async () => ({ criouBloqueio: false, concluir }));
+    deps.atualizarStatus = vi.fn(async () => { throw new Error('fetch failed'); }) as DepsStatus['atualizarStatus'];
+    await executarStatus({ ...PAUSAR, acao: 'reativar' }, deps, OPTS);
+    expect(concluir).toHaveBeenCalledWith({ ok: false });
+  });
+
+  it('pausar item já pausado (pela saga, por exemplo) também grava a pausa do operador; bloqueio anterior fica ja_estava', async () => {
     const itens = [item('A')];
     const deps = montar(itens, { A: 'pausado' });
     await executarStatus(PAUSAR, deps, OPTS);
     expect(itens[0].status).toBe('ja_estava');
     expect(deps.prepararKit).toHaveBeenCalledWith('A', 'pausado');
+    expect(deps.atualizarStatus).not.toHaveBeenCalled();
+  });
+
+  it('achado 3: pausa em massa que CRIOU o bloqueio conta como aplicado (entra no Reverter)', async () => {
+    const itens = [item('A')];
+    const deps = montar(itens, { A: 'pausado' });
+    deps.prepararKit = vi.fn(async () => ({ criouBloqueio: true, concluir: async () => true }));
+    await executarStatus(PAUSAR, deps, OPTS);
+    expect(itens[0]).toMatchObject({ status: 'aplicado', mensagem: null });
     expect(deps.atualizarStatus).not.toHaveBeenCalled();
   });
 

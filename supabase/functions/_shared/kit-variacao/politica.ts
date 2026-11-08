@@ -4,6 +4,9 @@
 // família que o caminho já faz (`EMBED_MODULOS`), e `skusParticipantes` sai antes de tocar o banco.
 // Falha de leitura lança: quem chama não escreve, e o retry da fila repete.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+import type { StatusAnuncioCanal } from '../canais/contrato.ts';
+import { SemAcessoStatusML } from '../operacoes/ml-status.ts';
+import { MSG_RECONECTAR } from '../operacoes/falhas.ts';
 
 /** Acrescentar ao `select` de `familias` que o caminho já faz (FK única `familias_org_id_fkey`). */
 export const EMBED_MODULOS = 'organizations(modulos_habilitados)';
@@ -101,45 +104,80 @@ export async function soltarExclusao(admin: SupabaseClient, orgId: string, donoI
 }
 
 export const MSG_KIT_EM_TRANSFERENCIA =
-  'SKU em transferência de kit com variação. Tente de novo quando a transferência terminar.';
+  'SKU em transferência de kit com variação ou com ativação pendente. Tente de novo quando terminar.';
 export const MSG_KIT_POLITICA_MUDOU = 'A política do kit deste SKU mudou agora. Tente de novo.';
-const MSG_KIT_MODERADO = 'Anúncio moderado ou encerrado no Mercado Livre: não é reativado.';
+export const MSG_KIT_MODERADO = 'Anúncio moderado ou encerrado no Mercado Livre: não é reativado.';
+export const MSG_KIT_SEM_LEITURA = 'Não foi possível consultar o anúncio no Mercado Livre. Tente de novo.';
 
-export type PreparoStatus = { recusa: string } | { soltar: () => Promise<void> };
-const NADA: PreparoStatus = { soltar: async () => {} };
+/** Resultado do PUT de status (`ResultadoCanal`): `erro.status` ausente = sem resposta HTTP. */
+export interface ResultadoPutStatus { ok: boolean; erro?: { status?: number } }
+
+/** `concluir(resultado do PUT)`: true = exclusão liberada (resultado confirmado no ML). */
+export type PreparoStatus =
+  | { recusa: string }
+  | { criouBloqueio: boolean; concluir: (r: ResultadoPutStatus) => Promise<boolean> };
+const NADA: PreparoStatus = { criouBloqueio: false, concluir: () => Promise.resolve(true) };
+
+export interface OpcoesStatusOperador {
+  orgId: string;
+  mlItemId: string;
+  alvo: 'ativo' | 'pausado';
+  /** Módulo `kit_variacao`, do embed `EMBED_MODULOS` de uma leitura que o caminho já faz. */
+  ligado: boolean;
+  /** Operação em massa que pausa: `criouBloqueio` diz se o bloqueio é dela (Reverter). */
+  origem?: string;
+  /** Status vivo estrito de um item (`lerStatusML`): lança `SemAcessoStatusML` em 401/403 e erro em falha. */
+  lerStatus: (itemId: string) => Promise<StatusAnuncioCanal | null>;
+  /** Alerta durável ao operador (Telegram) quando a ativação fica sem confirmação. */
+  alertar: (texto: string) => Promise<unknown>;
+}
 
 async function politicaOperador(
-  admin: SupabaseClient, orgId: string, codigos: string[], bloquear: boolean, versoes?: Record<string, number>,
-): Promise<boolean> {
+  admin: SupabaseClient, orgId: string, codigos: string[], bloquear: boolean,
+  extra: { versoes?: Record<string, number>; origem?: string } = {},
+): Promise<{ ok: boolean; criou: boolean }> {
   const { data, error } = await admin.rpc('kit_politica_operador', {
-    p_org: orgId, p_codigos: codigos, p_bloquear: bloquear, ...(versoes ? { p_versoes: versoes } : {}),
+    p_org: orgId, p_codigos: codigos, p_bloquear: bloquear,
+    ...(extra.versoes ? { p_versoes: extra.versoes } : {}), ...(extra.origem ? { p_origem: extra.origem } : {}),
   });
   if (error) throw new Error(`kit_politica_operador: ${error.message}`);
-  return (data as { ok?: boolean } | null)?.ok === true;
+  const d = data as { ok?: boolean; criou?: boolean } | null;
+  return { ok: d?.ok === true, criou: d?.criou === true };
 }
+
+/** Dono da exclusão `ativacao`, estável por (org, item): o retry e o novo clique retomam a mesma ativação. */
+export async function donoAtivacao(orgId: string, mlItemId: string): Promise<string> {
+  const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`ativacao:${orgId}:${mlItemId}`)));
+  const x = [...h.slice(0, 16)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20)}`;
+}
+
+/** Sem resposta HTTP, 408, 429 ou 5xx: o ML pode ter aplicado (ou ainda aplicar) a escrita. */
+const ambiguo = (r: ResultadoPutStatus) => !r.ok
+  && (r.erro?.status === undefined || r.erro.status === 408 || r.erro.status === 429 || r.erro.status >= 500);
 
 /**
  * Pausar/reativar pelo operador (individual, massa e Reverter), só para SKU participante.
  * - Pausar grava `bloqueio_operador` e incrementa a versão ANTES do PUT: a saga em curso perde a reativação.
- * - Reativar passa por `podeReativar` (origem operador), pela leitura viva (moderado nunca), pela exclusão
- *   `ativacao` (nunca no meio de uma transferência) e limpa o bloqueio só se a versão não mudou.
- * Quem chama faz o PUT e depois `soltar()`. Falha de leitura lança: nada é ativado.
- * Participante é sempre user product (Task 10), então o vínculo vem de `anuncios_externos_itens`.
+ * - Reativar passa por `podeReativar` (origem operador), pela leitura viva estrita (moderado nunca; falha de
+ *   leitura recusa com a causa), grava a intenção (`kit_ativacoes`), pega a exclusão `ativacao` com dono estável
+ *   e limpa o bloqueio só se a versão não mudou. Depois do PUT, `concluir` libera a exclusão só com resposta
+ *   do ML (não ambígua) e leitura de todos os alvos (item e cópias de catálogo); senão mantém e alerta.
+ * Falha de leitura do banco lança: nada é ativado. Participante é sempre user product (Task 10).
  */
-export async function prepararStatusOperador(
-  admin: SupabaseClient, orgId: string, mlItemId: string, alvo: 'ativo' | 'pausado', ligado: boolean,
-  lerStatusVivo?: () => Promise<string | null>,
-): Promise<PreparoStatus> {
-  if (!ligado) return NADA;
-  const { data, error } = await admin.from('anuncios_externos_itens').select('sku').eq('org_id', orgId)
-    .or(`item_externo_id.eq.${mlItemId},catalog_listing_id.eq.${mlItemId}`);
+export async function prepararStatusOperador(admin: SupabaseClient, o: OpcoesStatusOperador): Promise<PreparoStatus> {
+  const { orgId, mlItemId } = o;
+  if (!o.ligado) return NADA;
+  const { data, error } = await admin.from('anuncios_externos_itens').select('sku, item_externo_id, catalog_listing_id')
+    .eq('org_id', orgId).or(`item_externo_id.eq.${mlItemId},catalog_listing_id.eq.${mlItemId}`);
   if (error) throw new Error(`anuncios_externos_itens: ${error.message}`);
-  const codigos = [...await skusParticipantes(admin, orgId, (data ?? []).map((r) => r.sku as string), true)];
+  const linhas = (data ?? []) as Array<{ sku: string; item_externo_id: string | null; catalog_listing_id: string | null }>;
+  const codigos = [...await skusParticipantes(admin, orgId, linhas.map((r) => r.sku), true)];
   if (codigos.length === 0) return NADA;
 
-  if (alvo === 'pausado') {
-    await politicaOperador(admin, orgId, codigos, true);
-    return NADA;
+  if (o.alvo === 'pausado') {
+    const r = await politicaOperador(admin, orgId, codigos, true, { origem: o.origem });
+    return { criouBloqueio: r.criou, concluir: () => Promise.resolve(true) };
   }
 
   const politicas = await lerPoliticas(admin, orgId, codigos);
@@ -147,25 +185,66 @@ export async function prepararStatusOperador(
     const d = podeReativar({ politica: politicas.get(c) ?? null, origem: 'operador' });
     if (!d.pode) return { recusa: d.motivo };
   }
-  if (lerStatusVivo) {
-    const vivo = await lerStatusVivo();
-    if (vivo !== 'pausado' && vivo !== 'ativo') return { recusa: MSG_KIT_MODERADO };
-  }
-
-  const dono = crypto.randomUUID();
-  if (!(await adquirirExclusao(admin, orgId, codigos, 'ativacao', dono)).ok) return { recusa: MSG_KIT_EM_TRANSFERENCIA };
-  // ponytail: invocação morta entre adquirir e soltar deixa a exclusão; a reconciliação diária a solta.
-  const soltar = () => soltarExclusao(admin, orgId, dono)
-    .catch((e) => console.error('kit_soltar_ativacao_falhou', orgId, mlItemId, String(e)));
+  let vivo: StatusAnuncioCanal | null;
   try {
+    vivo = await o.lerStatus(mlItemId);
+  } catch (e) {
+    return { recusa: e instanceof SemAcessoStatusML ? MSG_RECONECTAR : MSG_KIT_SEM_LEITURA };
+  }
+  if (vivo === null || vivo === 'indisponivel') return { recusa: MSG_KIT_SEM_LEITURA };
+  if (vivo !== 'pausado' && vivo !== 'ativo') return { recusa: MSG_KIT_MODERADO };
+
+  const dono = await donoAtivacao(orgId, mlItemId);
+  const alvos = [...new Set([mlItemId, ...linhas.flatMap((r) => [r.item_externo_id, r.catalog_listing_id])
+    .filter((x): x is string => !!x)])];
+  const intencao = () => admin.from('kit_ativacoes').select('dono_id').eq('org_id', orgId).eq('dono_id', dono).maybeSingle();
+  const { data: anterior, error: e1 } = await intencao();
+  if (e1) throw new Error(`kit_ativacoes: ${e1.message}`);
+  // Intenção antes da exclusão: invocação morta deixa rastro para a conferência diária. `criado_em` renovado
+  // na retomada, para a conferência não ler o ML com este PUT em voo.
+  const { error: e2 } = await admin.from('kit_ativacoes').upsert({
+    org_id: orgId, dono_id: dono, ml_item_id: mlItemId, alvos, codigos, criado_em: new Date().toISOString(),
+  }, { onConflict: 'org_id,dono_id' });
+  if (e2) throw new Error(`kit_ativacoes: ${e2.message}`);
+  const liberar = async () => {
+    await soltarExclusao(admin, orgId, dono);
+    const { error: e } = await admin.from('kit_ativacoes').delete().eq('org_id', orgId).eq('dono_id', dono);
+    if (e) throw new Error(`kit_ativacoes: ${e.message}`);
+  };
+  // Nada foi ao ML nesta tentativa; uma ativação anterior ainda incerta (mesmo dono) continua retida.
+  const desistir = () => (anterior ? Promise.resolve() : liberar());
+
+  try {
+    if (!(await adquirirExclusao(admin, orgId, codigos, 'ativacao', dono)).ok) {
+      await desistir();
+      return { recusa: MSG_KIT_EM_TRANSFERENCIA };
+    }
     const versoes = Object.fromEntries(codigos.map((c) => [c, politicas.get(c)?.versao ?? 0]));
-    if (!(await politicaOperador(admin, orgId, codigos, false, versoes))) {
-      await soltar();
+    if (!(await politicaOperador(admin, orgId, codigos, false, { versoes })).ok) {
+      await desistir();
       return { recusa: MSG_KIT_POLITICA_MUDOU };
     }
   } catch (e) {
-    await soltar();
+    await desistir().catch((x) => console.error('kit_ativacao_desistir_falhou', orgId, mlItemId, String(x)));
     throw e;
   }
-  return { soltar };
+
+  return {
+    criouBloqueio: false,
+    async concluir(r) {
+      if (!ambiguo(r)) {
+        try {
+          for (const id of alvos) await o.lerStatus(id);   // lança = resultado não confirmado
+          await liberar();
+          return true;
+        } catch (e) {
+          console.error('kit_ativacao_sem_confirmacao', orgId, mlItemId, String(e));
+        }
+      }
+      await o.alertar(`Kit com variação: a reativação de ${mlItemId} (${codigos.join(', ')}) não foi confirmada no `
+        + 'Mercado Livre. O SKU segue reservado: confira o anúncio e clique em Reativar de novo.')
+        .catch((e) => console.error('kit_ativacao_alerta_falhou', orgId, mlItemId, String(e)));
+      return false;
+    },
+  };
 }

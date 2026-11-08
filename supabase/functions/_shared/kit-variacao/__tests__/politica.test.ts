@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+import { SemAcessoStatusML } from '../../operacoes/ml-status.ts';
 import {
-  prepararStatusOperador, MSG_KIT_EM_TRANSFERENCIA, MSG_KIT_POLITICA_MUDOU,
+  prepararStatusOperador, donoAtivacao, MSG_KIT_EM_TRANSFERENCIA, MSG_KIT_POLITICA_MUDOU, MSG_KIT_SEM_LEITURA,
+  MSG_KIT_MODERADO, type OpcoesStatusOperador,
   skusParticipantes, podeEscreverQuantidade, podeReativar, adquirirExclusao, soltarExclusao, kitLigado, lerPoliticas,
   type PoliticaSku,
 } from '../politica.ts';
@@ -12,6 +14,7 @@ interface Banco {
   componentes?: Array<{ org_id: string; codigo: string }>;
   politicas?: Array<Record<string, unknown>>;
   itens?: Array<Record<string, unknown>>;
+  ativacoes?: Array<Record<string, unknown>>;
   falhar?: string;
   rpc?: Record<string, unknown>;
 }
@@ -20,11 +23,23 @@ interface Banco {
 function falso(b: Banco) {
   const consultas: string[] = [];
   const rpcs: Array<{ nome: string; args: Record<string, unknown> }> = [];
+  /** Escritas e RPCs na ordem em que aconteceram. */
+  const eventos: string[] = [];
+  b.ativacoes ??= [];
   const from = (tabela: string) => {
     consultas.push(tabela);
     const filtros: Array<(r: Record<string, unknown>) => boolean> = [];
+    let apagar = false;
     const ler = () => {
       if (b.falhar === tabela) return { data: null, error: { message: 'boom' } };
+      if (tabela === 'kit_ativacoes') {
+        const achadas = b.ativacoes!.filter((r) => filtros.every((f) => f(r)));
+        if (apagar) {
+          eventos.push('delete:kit_ativacoes');
+          b.ativacoes = b.ativacoes!.filter((r) => !achadas.includes(r));
+        }
+        return { data: achadas, error: null };
+      }
       if (tabela === 'organizations') return { data: b.modulos === null ? null : { modulos_habilitados: b.modulos }, error: null };
       const linhas = (tabela === 'kit_variacao_skus' ? b.kitSkus
         : tabela === 'sku_politica_kit' ? b.politicas
@@ -41,17 +56,27 @@ function falso(b: Banco) {
         filtros.push((r) => ou.some(([c, v]) => r[c] === v));
         return api;
       },
-      maybeSingle: async () => ler(),
+      delete: () => { apagar = true; return api; },
+      upsert: async (linha: Record<string, unknown>) => {
+        eventos.push(`upsert:${tabela}`);
+        b.ativacoes = [...b.ativacoes!.filter((r) => r.dono_id !== linha.dono_id), linha];
+        return { error: null };
+      },
+      maybeSingle: async () => {
+        const r = ler();
+        return Array.isArray(r.data) ? { ...r, data: r.data[0] ?? null } : r;
+      },
       then: (res: (v: unknown) => unknown) => Promise.resolve(ler()).then(res),
     };
     return api;
   };
   const rpc = async (nome: string, args: Record<string, unknown>) => {
     rpcs.push({ nome, args });
+    eventos.push(`rpc:${nome}`);
     if (b.falhar === nome) return { data: null, error: { message: 'boom' } };
     return { data: b.rpc?.[nome] ?? null, error: null };
   };
-  return { admin: { from, rpc } as unknown as SupabaseClient, consultas, rpcs };
+  return { admin: { from, rpc } as unknown as SupabaseClient, consultas, rpcs, eventos, banco: b };
 }
 
 describe('kitLigado', () => {
@@ -171,81 +196,157 @@ describe('prepararStatusOperador (Task 6: pausar/reativar pelo operador)', () =>
     org_id: 'O', codigo: 'P1', estado: 'normal', versao: 4, bloqueio_operador: false,
     bloqueio_moderacao: false, bloqueio_retirada: false, ...x,
   });
+  const preparar = (f: ReturnType<typeof falso>, x: Partial<OpcoesStatusOperador> = {}) => {
+    const lidos: string[] = [];
+    const alertas: string[] = [];
+    const o: OpcoesStatusOperador = {
+      orgId: 'O', mlItemId: 'MLB1', alvo: 'ativo', ligado: true,
+      lerStatus: async (id) => { lidos.push(id); return 'pausado'; },
+      alertar: async (t) => { alertas.push(t); },
+      ...x,
+    };
+    return { r: prepararStatusOperador(f.admin, o), lidos, alertas };
+  };
 
   it('org sem o módulo: nenhuma consulta nem RPC', async () => {
     const f = falso(banco({ modulos: null }));
-    const r = await prepararStatusOperador(f.admin, 'O', 'MLB1', 'ativo', false);
-    expect('soltar' in r).toBe(true);
+    const { r, lidos } = preparar(f, { ligado: false });
+    expect('concluir' in await r).toBe(true);
     expect(f.consultas).toEqual([]);
     expect(f.rpcs).toEqual([]);
+    expect(lidos).toEqual([]);
   });
 
   it('SKU comum em org com o módulo: lê o vínculo e a participação, sem RPC', async () => {
     const f = falso(banco());
-    const r = await prepararStatusOperador(f.admin, 'O', 'MLB2', 'ativo', true);
-    expect('soltar' in r).toBe(true);
+    expect('concluir' in await preparar(f, { mlItemId: 'MLB2' }).r).toBe(true);
     expect(f.rpcs).toEqual([]);
   });
 
   it('pausa manual grava bloqueio_operador (incrementa a versão) antes do PUT, sem exclusão', async () => {
     const f = falso(banco());
-    const r = await prepararStatusOperador(f.admin, 'O', 'MLB1', 'pausado', true);
-    expect('soltar' in r).toBe(true);
+    expect(await preparar(f, { alvo: 'pausado' }).r).toMatchObject({ criouBloqueio: false });
     expect(f.rpcs).toEqual([{ nome: 'kit_politica_operador', args: { p_org: 'O', p_codigos: ['P1'], p_bloquear: true } }]);
+  });
+
+  it('achado 3: pausa em massa passa a origem e devolve se criou o bloqueio', async () => {
+    const f = falso(banco({ rpc: { kit_politica_operador: { ok: true, criou: true } } }));
+    expect(await preparar(f, { alvo: 'pausado', origem: 'OP1' }).r).toMatchObject({ criouBloqueio: true });
+    expect(f.rpcs[0].args).toMatchObject({ p_bloquear: true, p_origem: 'OP1' });
   });
 
   it('a cópia de catálogo também acha o SKU', async () => {
     const f = falso(banco());
-    await prepararStatusOperador(f.admin, 'O', 'MLB1C', 'pausado', true);
+    await preparar(f, { mlItemId: 'MLB1C', alvo: 'pausado' }).r;
     expect(f.rpcs.map((x) => x.args.p_codigos)).toEqual([['P1']]);
   });
 
   it('Guardado: recusa com o motivo de "Vender só em kit", sem exclusão nem escrita', async () => {
     const f = falso(banco({ politicas: [pol({ estado: 'guardado' })] }));
-    const r = await prepararStatusOperador(f.admin, 'O', 'MLB1', 'ativo', true);
-    expect(r).toEqual({ recusa: expect.stringContaining('Vender só em kit') });
-    expect(f.rpcs).toEqual([]);
+    expect(await preparar(f).r).toEqual({ recusa: expect.stringContaining('Vender só em kit') });
+    expect(f.eventos).toEqual([]);
   });
 
   it('moderado (política) nunca reativa', async () => {
     const f = falso(banco({ politicas: [pol({ bloqueio_moderacao: true })] }));
-    expect(await prepararStatusOperador(f.admin, 'O', 'MLB1', 'ativo', true)).toEqual({ recusa: expect.stringContaining('moderado') });
-    expect(f.rpcs).toEqual([]);
+    expect(await preparar(f).r).toEqual({ recusa: expect.stringContaining('moderado') });
+    expect(f.eventos).toEqual([]);
   });
 
   it('moderado lido no ML nunca reativa, mesmo sem bloqueio na política', async () => {
     const f = falso(banco());
-    const r = await prepararStatusOperador(f.admin, 'O', 'MLB1', 'ativo', true, async () => 'moderado');
-    expect(r).toEqual({ recusa: expect.stringContaining('moderado') });
-    expect(f.rpcs).toEqual([]);
+    expect(await preparar(f, { lerStatus: async () => 'moderado' }).r).toEqual({ recusa: MSG_KIT_MODERADO });
+    expect(f.eventos).toEqual([]);
   });
 
-  it('pausa do operador: o operador reativa; exclusão ativacao, limpa o bloqueio com a versão lida e solta no fim', async () => {
+  it('achado 4: leitura que falha não vira "moderado" — 401/403 pede reconexão, o resto "não foi possível consultar"', async () => {
+    const f = falso(banco());
+    const auth = await preparar(f, { lerStatus: async () => { throw new SemAcessoStatusML('ML 403'); } }).r;
+    expect(auth).toEqual({ recusa: expect.stringContaining('Reconecte') });
+    expect(await preparar(f, { lerStatus: async () => { throw new Error('ML 500'); } }).r).toEqual({ recusa: MSG_KIT_SEM_LEITURA });
+    expect(await preparar(f, { lerStatus: async () => null }).r).toEqual({ recusa: MSG_KIT_SEM_LEITURA });
+    expect(f.eventos).toEqual([]);
+  });
+
+  it('reativa a pausa do operador: intenção, exclusão com dono estável, limpa o bloqueio; confirmado, libera', async () => {
     const f = falso(banco({ politicas: [pol({ bloqueio_operador: true })] }));
-    const r = await prepararStatusOperador(f.admin, 'O', 'MLB1', 'ativo', true, async () => 'pausado');
-    if (!('soltar' in r)) throw new Error('recusou');
-    expect(f.rpcs.map((x) => x.nome)).toEqual(['kit_adquirir_exclusao', 'kit_politica_operador']);
-    const dono = f.rpcs[0].args.p_dono_id;
-    expect(f.rpcs[0].args).toMatchObject({ p_codigos: ['P1'], p_dono_tipo: 'ativacao' });
+    const { r, lidos } = preparar(f);
+    const p = await r;
+    if (!('concluir' in p)) throw new Error('recusou');
+    const dono = await donoAtivacao('O', 'MLB1');
+    expect(f.eventos).toEqual(['upsert:kit_ativacoes', 'rpc:kit_adquirir_exclusao', 'rpc:kit_politica_operador']);
+    expect(f.banco.ativacoes).toEqual([expect.objectContaining({ dono_id: dono, alvos: ['MLB1', 'MLB1C'], codigos: ['P1'] })]);
+    expect(f.rpcs[0].args).toMatchObject({ p_codigos: ['P1'], p_dono_tipo: 'ativacao', p_dono_id: dono });
     expect(f.rpcs[1].args).toEqual({ p_org: 'O', p_codigos: ['P1'], p_bloquear: false, p_versoes: { P1: 4 } });
-    await r.soltar();
-    expect(f.rpcs[2]).toEqual({ nome: 'kit_soltar_exclusao', args: { p_org: 'O', p_dono_id: dono } });
+    expect(await p.concluir({ ok: true })).toBe(true);
+    expect(lidos).toEqual(['MLB1', 'MLB1', 'MLB1C']);   // pré-checagem + os dois alvos
+    expect(f.eventos.slice(3)).toEqual(['rpc:kit_soltar_exclusao', 'delete:kit_ativacoes']);
+    expect(f.banco.ativacoes).toEqual([]);
   });
 
-  it('SKU em transferência (exclusão ocupada): recusa sem mexer na política', async () => {
+  it('achado 1: recusa 4xx definitiva também confirma pela leitura antes de liberar', async () => {
+    const f = falso(banco());
+    const p = await preparar(f).r;
+    if (!('concluir' in p)) throw new Error('recusou');
+    expect(await p.concluir({ ok: false, erro: { status: 400 } })).toBe(true);
+    expect(f.banco.ativacoes).toEqual([]);
+  });
+
+  it.each([
+    ['sem resposta HTTP (timeout/rede)', { ok: false, erro: {} }],
+    ['408', { ok: false, erro: { status: 408 } }],
+    ['429', { ok: false, erro: { status: 429 } }],
+    ['502', { ok: false, erro: { status: 502 } }],
+  ])('achado 1: resultado ambíguo (%s) mantém exclusão e intenção, e alerta', async (_n, put) => {
+    const f = falso(banco());
+    const { r, alertas } = preparar(f);
+    const p = await r;
+    if (!('concluir' in p)) throw new Error('recusou');
+    expect(await p.concluir(put)).toBe(false);
+    expect(f.eventos).not.toContain('rpc:kit_soltar_exclusao');
+    expect(f.banco.ativacoes).toHaveLength(1);
+    expect(alertas).toEqual([expect.stringContaining('não foi confirmada')]);
+  });
+
+  it('achado 1: PUT ok mas leitura de um alvo falha: mantém e alerta', async () => {
+    const f = falso(banco());
+    let n = 0;
+    const { r, alertas } = preparar(f, { lerStatus: async () => { if (++n === 3) throw new Error('ML 500'); return 'pausado'; } });
+    const p = await r;
+    if (!('concluir' in p)) throw new Error('recusou');
+    expect(await p.concluir({ ok: true })).toBe(false);
+    expect(f.banco.ativacoes).toHaveLength(1);
+    expect(alertas).toHaveLength(1);
+  });
+
+  it('achado 1: retomada reconhece o mesmo dono; recusa nesta tentativa não apaga a intenção anterior incerta', async () => {
+    const dono = await donoAtivacao('O', 'MLB1');
+    const f = falso(banco({
+      ativacoes: [{ org_id: 'O', dono_id: dono, ml_item_id: 'MLB1', alvos: ['MLB1'], codigos: ['P1'] }],
+      rpc: { kit_adquirir_exclusao: { ok: true }, kit_politica_operador: { ok: false, codigo: 'P1' } },
+    }));
+    expect(await preparar(f).r).toEqual({ recusa: MSG_KIT_POLITICA_MUDOU });
+    expect(f.rpcs[0].args.p_dono_id).toBe(dono);
+    expect(f.eventos).not.toContain('rpc:kit_soltar_exclusao');
+    expect(f.banco.ativacoes).toHaveLength(1);
+  });
+
+  it('SKU em transferência (exclusão ocupada): recusa, sem mexer na política e sem deixar intenção', async () => {
     const f = falso(banco({ rpc: { kit_adquirir_exclusao: { ok: false, codigo: 'P1' } } }));
-    expect(await prepararStatusOperador(f.admin, 'O', 'MLB1', 'ativo', true)).toEqual({ recusa: MSG_KIT_EM_TRANSFERENCIA });
-    expect(f.rpcs.map((x) => x.nome)).toEqual(['kit_adquirir_exclusao']);
+    expect(await preparar(f).r).toEqual({ recusa: MSG_KIT_EM_TRANSFERENCIA });
+    expect(f.rpcs.map((x) => x.nome)).toEqual(['kit_adquirir_exclusao', 'kit_soltar_exclusao']);
+    expect(f.banco.ativacoes).toEqual([]);
   });
 
-  it('política mudou entre a leitura e a escrita: recusa e solta a exclusão', async () => {
+  it('política mudou entre a leitura e a escrita: recusa, solta a exclusão e apaga a intenção', async () => {
     const f = falso(banco({ rpc: { kit_adquirir_exclusao: { ok: true }, kit_politica_operador: { ok: false, codigo: 'P1' } } }));
-    expect(await prepararStatusOperador(f.admin, 'O', 'MLB1', 'ativo', true)).toEqual({ recusa: MSG_KIT_POLITICA_MUDOU });
+    expect(await preparar(f).r).toEqual({ recusa: MSG_KIT_POLITICA_MUDOU });
     expect(f.rpcs.map((x) => x.nome)).toEqual(['kit_adquirir_exclusao', 'kit_politica_operador', 'kit_soltar_exclusao']);
+    expect(f.banco.ativacoes).toEqual([]);
   });
 
-  it('falha de leitura lança (não ativa)', async () => {
+  it('falha de leitura do banco lança (não ativa)', async () => {
     const f = falso(banco({ falhar: 'anuncios_externos_itens' }));
-    await expect(prepararStatusOperador(f.admin, 'O', 'MLB1', 'ativo', true)).rejects.toThrow();
+    await expect(preparar(f).r).rejects.toThrow();
   });
 });

@@ -40,7 +40,10 @@ begin
   r := public.kit_politica_operador(o, array['C'], false, '{"C": 1}'::jsonb);
   perform pg_temp.afirmar(r->>'ok' = 'false', 'sem linha com versão 1 recusa');
   r := public.kit_politica_operador(o, array['C'], false, '{"C": 0}'::jsonb);
-  perform pg_temp.afirmar(r->>'ok' = 'true' and pg_temp.pol('C') = 'sem linha', 'sem linha não cria linha ao reativar');
+  -- Fix 1/achado 2: a linha ausente é materializada com versão 0 e travada antes de comparar.
+  perform pg_temp.afirmar(r->>'ok' = 'true' and pg_temp.pol('C') = '0/false', 'sem linha vira versão 0: ' || pg_temp.pol('C'));
+  r := public.kit_politica_operador(o, array['C'], true);
+  perform pg_temp.afirmar(pg_temp.pol('C') = '1/true', 'primeira pausa vai de 0 a 1: ' || pg_temp.pol('C'));
 
   -- Reativar com a versão certa limpa o bloqueio e incrementa.
   r := public.kit_politica_operador(o, array['A', 'B'], false, '{"A": 4, "B": 1}'::jsonb);
@@ -51,6 +54,32 @@ begin
   -- Reativar sem bloqueio não incrementa.
   perform public.kit_politica_operador(o, array['A'], false, '{"A": 5}'::jsonb);
   perform pg_temp.afirmar(pg_temp.pol('A') = '5/false', 'reativar sem bloqueio é idempotente');
+end $$;
+
+-- Achado 3: a pausa informa se ESTA origem (operação em massa) criou o bloqueio; retry preserva; bloqueio
+-- anterior não é atribuído; reativar limpa a origem.
+do $$
+declare o uuid := '97200000-0000-0000-0000-000000000001'; op uuid := gen_random_uuid(); r jsonb;
+begin
+  r := public.kit_politica_operador(o, array['A'], true, null, op);
+  perform pg_temp.afirmar((r->>'criou')::boolean, 'origem que bloqueou: criou ' || r::text);
+  r := public.kit_politica_operador(o, array['A'], true, null, op);
+  perform pg_temp.afirmar((r->>'criou')::boolean and pg_temp.pol('A') = '6/true', 'retry da mesma origem preserva: ' || pg_temp.pol('A'));
+  r := public.kit_politica_operador(o, array['A'], true, null, gen_random_uuid());
+  perform pg_temp.afirmar(not (r->>'criou')::boolean, 'bloqueio anterior não é da outra origem');
+  r := public.kit_politica_operador(o, array['A'], true);
+  perform pg_temp.afirmar(not (r->>'criou')::boolean, 'sem origem: não criou');
+  perform public.kit_politica_operador(o, array['A'], false, '{"A": 6}'::jsonb);
+  perform pg_temp.afirmar((select bloqueio_operador_origem is null from public.sku_politica_kit
+    where org_id = o and codigo = 'A'), 'reativar limpa a origem');
+end $$;
+
+-- Achado 1: intenção de ativação durável, só o service role escreve.
+do $$
+begin
+  perform pg_temp.afirmar(has_table_privilege('service_role', 'public.kit_ativacoes', 'insert,delete'), 'service_role escreve');
+  perform pg_temp.afirmar(not has_table_privilege('authenticated', 'public.kit_ativacoes', 'insert'), 'authenticated não escreve');
+  perform pg_temp.afirmar((select relrowsecurity from pg_class where oid = 'public.kit_ativacoes'::regclass), 'RLS ligada');
 end $$;
 
 -- Só o service role executa. E o embed `organizations(modulos_habilitados)` que as edges acrescentam às leituras
@@ -64,9 +93,9 @@ begin
     and conrelid = 'public.operacoes_massa'::regclass and confrelid = 'public.organizations'::regclass) = 1,
     'operacoes_massa: uma FK para organizations');
   perform pg_temp.afirmar(not has_function_privilege('authenticated',
-    'public.kit_politica_operador(uuid, text[], boolean, jsonb)', 'execute'), 'authenticated não executa');
+    'public.kit_politica_operador(uuid, text[], boolean, jsonb, uuid)', 'execute'), 'authenticated não executa');
   perform pg_temp.afirmar(has_function_privilege('service_role',
-    'public.kit_politica_operador(uuid, text[], boolean, jsonb)', 'execute'), 'service_role executa');
+    'public.kit_politica_operador(uuid, text[], boolean, jsonb, uuid)', 'execute'), 'service_role executa');
 end $$;
 
 rollback;

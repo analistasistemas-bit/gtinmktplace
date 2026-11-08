@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { triarParticipantes, alertarPublicacoesParadas, soltarAtivacoesParadas, type DepsTriagem } from '../transferencias.ts';
+import { triarParticipantes, alertarPublicacoesParadas, conferirAtivacoesPendentes, type DepsTriagem } from '../transferencias.ts';
 
 // ADR-0197 (Task 5, ruling da dúvida 2): todo SKU participante, sem filtro de status local nem janela de
 // 24 h, é comparado com o ML; só a diferença vira transferência `entrada`.
@@ -12,6 +12,7 @@ interface Banco {
   variacoes: Linha[];
   itens: Linha[];
   exclusoes?: Linha[];
+  ativacoes?: Linha[];
   rpc?: (args: Record<string, unknown>) => unknown;
 }
 
@@ -20,6 +21,7 @@ function falso(b: Banco) {
   const tabelas: Record<string, Linha[]> = {
     organizations: b.orgs, kit_variacao_skus: b.kitSkus, kit_variacao_componentes: b.componentes,
     variacoes: b.variacoes, anuncios_externos_itens: b.itens, kit_exclusoes: b.exclusoes ?? [],
+    kit_ativacoes: b.ativacoes ?? [],
   };
   const from = (t: string) => {
     const filtros: Array<(r: Linha) => boolean> = [];
@@ -151,17 +153,42 @@ describe('alertarPublicacoesParadas', () => {
   });
 });
 
-describe('soltarAtivacoesParadas (Task 6)', () => {
-  it('solta exclusão de ativação com mais de 1 h (invocação morta); recente e de outros donos ficam', async () => {
-    const f = falso({
-      ...BANCO,
-      exclusoes: [
-        { org_id: 'O', codigo: 'P1', dono_tipo: 'ativacao', criado_em: '2026-11-07T08:00:00.000Z' },
-        { org_id: 'O', codigo: 'P2', dono_tipo: 'ativacao', criado_em: '2026-11-07T11:50:00.000Z' },
-        { org_id: 'O', codigo: 'P3', dono_tipo: 'publicacao', criado_em: '2026-11-01T00:00:00.000Z' },
-      ],
-    });
-    await soltarAtivacoesParadas(f.admin, Date.parse('2026-11-07T12:00:00.000Z'));
-    expect(f.tabelas.kit_exclusoes.map((r) => r.codigo)).toEqual(['P2', 'P3']);
+describe('conferirAtivacoesPendentes (Task 6, achado 1)', () => {
+  const AGORA = Date.parse('2026-11-07T12:00:00.000Z');
+  const banco = () => falso({
+    ...BANCO,
+    exclusoes: [
+      { org_id: 'O', codigo: 'P1', dono_tipo: 'ativacao', dono_id: 'D1', criado_em: '2026-11-01T00:00:00.000Z' },
+      { org_id: 'O', codigo: 'P2', dono_tipo: 'ativacao', dono_id: 'D2', criado_em: '2026-11-01T00:00:00.000Z' },
+      { org_id: 'O', codigo: 'P3', dono_tipo: 'ativacao', dono_id: 'D3', criado_em: '2026-11-07T11:58:00.000Z' },
+    ],
+    ativacoes: [
+      { org_id: 'O', dono_id: 'D1', ml_item_id: 'MLB1', alvos: ['MLB1', 'MLB1C'], codigos: ['P1'], criado_em: '2026-11-01T00:00:00.000Z' },
+      { org_id: 'O', dono_id: 'D2', ml_item_id: 'MLB2', alvos: ['MLB2'], codigos: ['P2'], criado_em: '2026-11-01T00:00:00.000Z' },
+      // Recente: o PUT pode estar em voo, não é lida.
+      { org_id: 'O', dono_id: 'D3', ml_item_id: 'MLB3', alvos: ['MLB3'], codigos: ['P3'], criado_em: '2026-11-07T11:58:00.000Z' },
+    ],
+  });
+
+  it('libera só o que confirmou no ML; leitura que falha mantém e alerta; nunca por idade', async () => {
+    const f = banco();
+    const lidos: string[] = [];
+    const alertar = vi.fn(async () => {});
+    const n = await conferirAtivacoesPendentes(f.admin, {
+      lerStatus: async (_o, id) => { lidos.push(id); if (id === 'MLB2') throw new Error('ML 500'); return 'ativo'; },
+      alertar,
+    }, AGORA);
+    expect(n).toBe(1);
+    expect(lidos).toEqual(['MLB1', 'MLB1C', 'MLB2']);
+    expect(f.rpcs).toEqual([{ p_org: 'O', p_dono_id: 'D1' }]);
+    expect(f.tabelas.kit_ativacoes.map((r) => r.dono_id)).toEqual(['D2', 'D3']);
+    expect(alertar).toHaveBeenCalledWith('O', expect.stringContaining('MLB2'));
+  });
+
+  it('a limpeza por idade não existe mais: exclusão `ativacao` velha sem confirmação fica', async () => {
+    const f = banco();
+    await conferirAtivacoesPendentes(f.admin, { lerStatus: async () => { throw new Error('fora'); }, alertar: async () => {} }, AGORA);
+    expect(f.tabelas.kit_exclusoes).toHaveLength(3);
+    expect(f.rpcs).toEqual([]);
   });
 });
