@@ -91,7 +91,11 @@ R5.3 [REV] **Só tetos, nunca pisos:** até 3 benefícios (≤6 palavras), até 
 sem fato elegível não é oferecida. "Como usar" só usa passos já escritos nos dados da família; sem eles, vira guia
 de escolha ou conteúdo da embalagem com fatos confirmados, ou não é oferecida [A1][A2].
 
-R5.4 [A1][A2] Bloco técnico ao fim de cada prompt (photorealistic, studio lighting… no watermark).
+R5.4 [A1][A2][Diego] Todo prompt de imagem, das sete missões, termina **literalmente** com o bloco técnico, sem
+cortar nem reescrever:
+`photorealistic, ultra detailed, commercial product photography, studio lighting, realistic shadows, sharp focus,
+clean composition, high resolution, professional catalog, no distortion, no blur, no watermark, premium marketplace
+standard`. Teste de código garante a frase exata. ("premium" aqui é direção de arte, não texto na imagem — R4.3.)
 
 ## 6. Texto na imagem
 
@@ -103,6 +107,18 @@ R6.3 **Decidido (Diego, 08/11):** o modelo gera a cena **sem** texto de marketin
 pelo layout da missão; o PubliAI compõe headline, subheadline, benefícios, especificações, etapas e legendas com
 fonte e layout fixos por missão, a partir do texto do roteiro aprovado. A impressão da embalagem real fica na
 foto. Texto que o modelo escrever por conta própria na cena é defeito alto (R8.1). Nova geração serve só à cena.
+
+R6.4 **Estilo A · Catálogo limpo (Diego, 08/11; Codex e Grok concordam).** Inter, caixa mista, texto escuro
+#1b1f24 sobre placa branca sólida (≥92% opaca) sob 100% do texto; cor do produto só como acento onde o par atingir
+contraste ≥4,5:1 (senão, texto escuro). Mockups: `~/Desktop/IA/medicao-galeria-2026-11-08/layouts.html`.
+
+R6.5 Regras de layout, todas com teste automático que reprova o lote [REV]:
+- fonte ≥5% da largura (60 px no arquivo de 1200); títulos 7–8,5%; headline em até 2 linhas, etapa em 1 linha;
+- contraste ≥4,5:1 medido na cor já composta, sem opacidade sobre texto;
+- área segura: 6% nas laterais, texto entre 12% e 88% da altura; chips e lupas com folga ≥2%;
+- no máximo 3 benefícios e 4 pares na ficha técnica;
+- teste com as cores de acento de produtos claros e escuros (ex.: #c94f7c, #1f2a52, #139aa0);
+- renderização conferida também reduzida a 400 px de largura (miniatura do celular).
 
 ## 7. Cores
 
