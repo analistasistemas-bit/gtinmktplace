@@ -1720,6 +1720,16 @@ grava a entrega na transação em que a linha vira `gerada`, com `on conflict do
 mensal também toma. `platform_save_terms` e `platform_billing_preview` redefinidas (linha "Imagens IA" só com preço > 0 ou uso).
 *Migration `20261108094500_platform_imagem_ia_metering.sql`.*
 
+### `platform_save_unit_prices` (preços por unidade a partir de agora)
+Emenda 2026-11-08 ao ADR-0155. RPC (só super-admin ativo) que grava uma versão nova do termo resolvido com `starts_on` =
+competência aberta (relógio depois do lock da org), copiando modalidade, mensalidade, faixas, vencimento e implantação (do termo
+resolvido; zera só se já venceu) e trocando só `sonar_unit_cents`/`image_unit_cents`. Exige `expected_terms_id` (conflito
+`40001` se o vigente mudou); recusa mês com demonstrativo, org sem termo vigente, Sonar ≠ 0 na modalidade 1 e troca sem mudança.
+Audita `platform_unit_prices_saved` com `de`/`para`. `platform_sonar_delivery_json` passa a tomar o lock da org (`for no key
+update`), calcular a competência por `clock_timestamp()` e pular competência fechada, como a Imagem IA. `platform_billing_preview`:
+`unit_cents` das linhas Sonar/Imagem = preço praticado no mês, `null` se houve dois preços.
+*Migration `20261108141425_platform_precos_unidade_vigencia_atual.sql`.*
+
 ### `kit_exclusoes`
 Exclusão durável única: PK `(org_id, codigo)`, `up_id` (nulo até o dono resolver o UP), `dono_tipo`
 (`transferencia|publicacao|ativacao`), `dono_id`, `criado_em`. Índice `(org_id, dono_id)`.

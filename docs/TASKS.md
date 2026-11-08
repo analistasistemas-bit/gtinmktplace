@@ -1,5 +1,12 @@
 # PubliAI — Tasks
 
+## Preços por unidade a partir de agora (emenda ADR-0155) — 2026-11-08
+
+- [x] RPC `platform_save_unit_prices` (versão nova do termo na competência aberta; só Sonar/Imagem IA) + lock da org na entrega do Sonar.
+- [x] Bloco na aba Cobrança; teste SQL desfeito e teste de corrida em Postgres local (vermelho → verde).
+- [ ] Merge, `supabase db push` e deploy da edge `platform-admin`.
+- [ ] À parte: `platform_save_terms` herda implantação de termo futuro e usa `now()` no mês mínimo (achado da revisão).
+
 ## Campo Marca / Fabricante no cadastro (emenda ADR-0188) — 2026-11-07
 
 Em produção desde 2026-11-08 (main `a3e180dc`; `cadastrar-produto` v44, `adicionar-variacoes-familia` v31).
