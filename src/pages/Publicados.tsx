@@ -252,15 +252,22 @@ function KitsComVariacao({ kits, onGerenciar, foco }: {
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [destaque, setDestaque] = useState(false);
+  // Kit recém-criado pode chegar depois do foco (releitura em voo): o foco só é consumido com o bloco na tela.
+  const consumido = useRef<number | null>(null);
+  const temKits = kits.length > 0;
   useEffect(() => {
-    if (!foco) return;
+    if (!foco || !temKits || consumido.current === foco) return;
+    consumido.current = foco;
     const reduzido = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     ref.current?.scrollIntoView({ block: 'center', behavior: reduzido ? 'auto' : 'smooth' });
     setDestaque(true);
+  }, [foco, temKits]);
+  useEffect(() => {
+    if (!destaque) return;
     const id = setTimeout(() => setDestaque(false), 2500);
     return () => clearTimeout(id);
-  }, [foco]);
-  if (kits.length === 0) return null;
+  }, [destaque]);
+  if (!temKits) return null;
   return (
     <div
       ref={ref}

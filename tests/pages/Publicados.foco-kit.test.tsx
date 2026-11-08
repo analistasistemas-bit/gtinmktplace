@@ -349,6 +349,22 @@ describe('Publicados — foco e andamento do kit com variação', () => {
     expect(useFocoKitStore.getState().alvo).toBeNull();
   });
 
+  it('kit recém-criado que chega depois do foco ainda rola e destaca (achado Codex)', async () => {
+    lista(true);
+    useKitsVariacaoMock.mockReturnValue({ data: [] });
+    const { rerender } = renderPagina();
+    act(() => useFocoKitStore.getState().focar(BASE, 'K1'));
+    await screen.findAllByText(/Movimentos de estoque|carregando/i).catch(() => null);
+    expect(rolou).not.toHaveBeenCalled();
+    useKitsVariacaoMock.mockReturnValue({ data: [kit({ transferencia: transferencia() })] });
+    rerender(
+      <QueryClientProvider client={new QueryClient()}><MemoryRouter><Publicados /></MemoryRouter></QueryClientProvider>,
+    );
+    const b = await bloco();
+    await waitFor(() => expect(rolou).toHaveBeenCalled());
+    expect(b).toHaveAttribute('data-destaque', 'true');
+  });
+
   it('base em outra página: vai até a página dela', async () => {
     lista(false);
     renderPagina();
