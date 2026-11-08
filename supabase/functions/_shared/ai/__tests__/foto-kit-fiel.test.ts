@@ -16,7 +16,7 @@ const ficha: Ficha = {
 };
 const igual = { ok: true, nota: 'igual' };
 const peca = (posicao: number, extra: Record<string, unknown> = {}) => ({
-  posicao, comprimento: 'meio_da_coxa', proporcao_altura_largura: 0.82, modelagem: igual, cos: igual, cordao: igual,
+  posicao, comprimento_vs_original: 'igual', proporcao_original: 0.85, proporcao_gerada: 0.88, modelagem: igual, cos: igual, cordao: igual,
   bolsos: igual, etiquetas: igual, barra: igual, textura: igual, cor: igual, ...extra,
 });
 const resposta = (pecas: unknown[]) => ({ quantidade_pecas: pecas.length, fundo_claro_neutro: true, pecas });
@@ -29,12 +29,19 @@ describe('avaliar (veredito em código)', () => {
     expect(v.itens.every((i) => i.ok)).toBe(true);
   });
 
-  it('caso Zaven: peça longa (joelho) e proporção maior → reprova comprimento e proporção com motivo', () => {
-    const v = avaliar(ficha, resposta([peca(1, { comprimento: 'joelho', proporcao_altura_largura: 1.15 }), peca(2)]), [null, null]);
+  it('caso Zaven: peça mais longa e proporção maior que a original (lidas na mesma resposta) → reprova os dois', () => {
+    const v = avaliar(ficha, resposta([peca(1, { comprimento_vs_original: 'mais_longo', proporcao_original: 0.85, proporcao_gerada: 1.15 }), peca(2)]), [null, null]);
     expect(v.aprovado).toBe(false);
     expect(v.itens.find((i) => i.campo === 'comprimento')!.ok).toBe(false);
     expect(v.itens.find((i) => i.campo === 'proporcao')!.ok).toBe(false);
-    expect(v.motivos.join(' ')).toMatch(/Bege Cru: termina no joelho; a original termina no meio da coxa/);
+    expect(v.motivos.join(' ')).toMatch(/Bege Cru: saiu mais longa que a original/);
+    expect(v.motivos.join(' ')).toMatch(/Bege Cru: altura\/largura 1\.15; a original 0\.85/);
+  });
+
+  it('proporção dentro de 15% e comprimento igual não reprova (ruído de estimativa)', () => {
+    const v = avaliar(ficha, resposta([peca(1, { proporcao_original: 0.85, proporcao_gerada: 0.95 }), peca(2)]), []);
+    expect(v.itens.find((i) => i.campo === 'proporcao')!.ok).toBe(true);
+    expect(avaliar(ficha, resposta([peca(1, { comprimento_vs_original: 'talvez' }), peca(2)]), []).aprovado).toBe(false);
   });
 
   it('caso Zaven: cinza mais escuro por ΔE reprova a cor mesmo com o inspetor dizendo ok', () => {

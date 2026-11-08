@@ -19,7 +19,7 @@ import {
   avaliar, extrairFicha, type Ficha, type FotosDaCor, lerVerificacao, MAX_TENTATIVAS, montarPedidoFiel, reprovacao,
   type Verificacao,
 } from '../_shared/ai/foto-kit-fiel.ts';
-import { corDaPeca, corDaPecaNaColuna } from '../_shared/ai/cor.ts';
+import { corDaPecaNaColuna } from '../_shared/ai/cor.ts';
 import { decodificar } from '../_shared/ai/pixels.ts';
 import { fotoDaOrg } from '../criar-kit-variacao/processar.ts';
 import { fotosEmItemModerado } from '../criar-kit-variacao/fotos-moderadas.ts';
@@ -306,7 +306,8 @@ async function atender(req: Request, inicio: number): Promise<Response> {
     const porCor = Math.min(MAX_FOTOS_COR, Math.floor(MAX_FOTOS / cores.length));
     origem = [];
     for (const c of cores) {
-      const paths = candidatas.get(c)!.filter((p) => !moderadas.has(p)).slice(0, porCor);
+      // Folga de 2× o teto: o mesmo arquivo costuma estar em vários caminhos (um por tamanho); repetidas saem depois.
+      const paths = candidatas.get(c)!.filter((p) => !moderadas.has(p)).slice(0, porCor * 2);
       if (paths.length === 0) return json({ error: `Sem foto utilizável da cor ${c} (nenhuma, de outra empresa ou de anúncio moderado). Envie a foto.`, motivo: 'sem_foto_origem' }, 409);
       origem.push(paths);
     }
@@ -340,16 +341,31 @@ async function atender(req: Request, inicio: number): Promise<Response> {
       if (e || !data) throw new Error('foto de origem não encontrada');
       return data as Blob;
     })))), ms);
-    grupos = await Promise.all(blobs.map(async (bs, i) => ({ cor: cores[i], urls: await Promise.all(bs.map(paraDataUrl)) })));
+    // Sem repetidas por conteúdo (mesmo arquivo em outro caminho), até o teto por cor.
+    const porCor = Math.min(MAX_FOTOS_COR, Math.floor(MAX_FOTOS / cores.length));
+    const distintas = await Promise.all(blobs.map(async (bs, i) => {
+      const vistos = new Set<string>();
+      const fica: number[] = [];
+      for (const [j, b] of bs.entries()) {
+        const h = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', await b.arrayBuffer()))).join(',');
+        if (!vistos.has(h)) { vistos.add(h); fica.push(j); }
+      }
+      return fica.slice(0, porCor).map((j) => ({ path: origem[i][j], blob: bs[j] }));
+    }));
+    origem = distintas.map((d) => d.map((x) => x.path));
+    grupos = await Promise.all(distintas.map(async (d, i) => ({ cor: cores[i], urls: await Promise.all(d.map((x) => paraDataUrl(x.blob))) })));
     if (fichaSalva) {
       ficha = fichaSalva;
     } else {
-      // Cor média amostrada em código na 1ª foto de cada cor (sem leitura → null, a cor fica com a visão).
-      const hexes = await Promise.all(blobs.map(async (bs) => {
-        const px = decodificar(new Uint8Array(await bs[0].arrayBuffer()));
-        return px ? corDaPeca(px) : null;
-      }));
-      const lida = await extrairFicha(grupos, origem, hexes, fatia(FICHA_MS, 60_000));
+      // Hex amostrado em código na versão reduzida (256 px, render do storage) da 1ª foto de cada cor: decodificar a
+      // foto inteira custa ~1 s de CPU a frio. Sem versão reduzida → sem hex (a cor fica com a visão).
+      const pixels = await comPrazo(Promise.all(origem.map(async (ps) => {
+        try {
+          const { data } = await admin.storage.from('imagens').download(ps[0], { transform: { width: 256, height: 256, resize: 'contain' } });
+          return data ? decodificar(new Uint8Array(await data.arrayBuffer())) : null;
+        } catch { return null; }
+      })), fatia(8_000, 60_000)).catch(() => origem.map(() => null));
+      const lida = await extrairFicha(grupos, origem, pixels, fatia(FICHA_MS, 60_000));
       ficha = lida.ficha;
       custoUsd += lida.custoUsd;
     }

@@ -37,6 +37,8 @@ const f = vi.hoisted(() => ({
   linhas: [] as Array<Record<string, unknown>>,
   uploads: [] as string[],
   downloads: [] as string[],
+  reduzidas: [] as string[],
+  conteudos: {} as Record<string, string>,
   escritasProibidas: [] as string[],
 }));
 
@@ -62,15 +64,15 @@ const FICHA_IA = {
   tipo_peca: 'jaqueta', comprimento: 'cintura', comprimento_descricao: 'jaqueta curta, termina na cintura',
   proporcao_altura_largura: 0.8, modelagem: 'reta', caimento: 'solto', cos: 'elástico', cordao: 'sem cordão',
   bolsos_quantidade: 2, bolsos: '2 frontais', etiquetas: 'nenhuma visível', barra: 'elástica', textura: 'nylon',
-  cores: [{ cor: 'Preto', nome_tom: 'preto' }, { cor: 'Branco', nome_tom: 'branco gelo' }],
+  cores: [{ cor: 'Preto', nome_tom: 'preto', regiao_peca: { x0: 0.2, y0: 0.2, x1: 0.8, y1: 0.8 } }, { cor: 'Branco', nome_tom: 'branco gelo', regiao_peca: { x0: 0.2, y0: 0.2, x1: 0.8, y1: 0.8 } }],
 };
 const igual = { ok: true, nota: 'igual' };
 const pecaOk = (posicao: number) => ({
-  posicao, comprimento: 'cintura', proporcao_altura_largura: 0.8, modelagem: igual, cos: igual, cordao: igual,
+  posicao, comprimento_vs_original: 'igual', proporcao_original: 0.8, proporcao_gerada: 0.82, modelagem: igual, cos: igual, cordao: igual,
   bolsos: igual, etiquetas: igual, barra: igual, textura: igual, cor: igual,
 });
 const APROVADA = { quantidade_pecas: 2, fundo_claro_neutro: true, pecas: [pecaOk(1), pecaOk(2)] };
-const LONGA = { ...APROVADA, pecas: [{ ...pecaOk(1), comprimento: 'joelho', proporcao_altura_largura: 1.2 }, pecaOk(2)] };
+const LONGA = { ...APROVADA, pecas: [{ ...pecaOk(1), comprimento_vs_original: 'mais_longo', proporcao_gerada: 1.2 }, pecaOk(2)] };
 vi.mock('../../_shared/ai/client.ts', () => ({
   openrouterClient: () => ({
     chat: { completions: { create: async (a: Record<string, unknown>) => {
@@ -176,7 +178,10 @@ vi.mock('../../_shared/supabase.ts', () => ({
     from: tabela,
     storage: {
       from: () => ({
-        download: async (p: string) => (f.downloads.push(p), { data: new Blob([`foto ${p}`], { type: 'image/jpeg' }), error: null }),
+        download: async (p: string, o?: { transform?: unknown }) => {
+          if (o?.transform) f.reduzidas.push(p); else f.downloads.push(p);
+          return { data: new Blob([f.conteudos[p] ?? `foto ${p}`], { type: 'image/jpeg' }), error: null };
+        },
         upload: (p: string) => {
           f.uploads.push(p);
           if (f.uploadTrava) return new Promise(() => {});
@@ -217,7 +222,7 @@ beforeEach(() => {
   f.uploadAtrasoMs = 0; f.objetos = new Set(); f.listaExiste = [];
   f.uploadErroVira = ''; f.leiturasImagens = 0; f.falhaLeituraN = 0; f.imagemB64 = PNG_VERTICAL; f.custo = 0.041; f.chamadasImagem = []; f.chamadasVisao = 0;
   f.chamadasFicha = 0; f.verificacoes = []; f.pedidosVerificacao = []; f.atrasoVerificacaoMs = 0;
-  f.linhas = []; f.uploads = []; f.downloads = []; f.escritasProibidas = [];
+  f.linhas = []; f.uploads = []; f.downloads = []; f.reduzidas = []; f.conteudos = {}; f.escritasProibidas = [];
   f.base = {
     nome_pai: 'Jaqueta', titulo_ml: 'Jaqueta Corta Vento',
     variacoes: [
@@ -282,6 +287,14 @@ describe('gerar-foto-kit', () => {
     expect(Number(f.linhas[0].custo_usd)).toBeGreaterThan(0);
   });
 
+  it('originais repetidas (mesmo arquivo em outro caminho) vão uma vez só; hex da cor sai da versão reduzida', async () => {
+    f.conteudos = { 'org-1/lote/preto.jpg': 'mesma', 'org-1/lote/preto-g.jpg': 'mesma' };
+    expect((await post(ok)).status).toBe(200);
+    const conteudo = (f.chamadasImagem[0].messages as Array<{ content: Array<{ type: string }> }>)[0].content;
+    expect(conteudo.filter((c) => c.type === 'image_url')).toHaveLength(2);
+    expect(f.reduzidas).toEqual(['org-1/lote/preto.jpg', 'u1/lote/branco.jpg']);
+  });
+
   it('foto gerada não publica sem aprovação: nada é escrito em família, variação ou ML', async () => {
     expect((await post(ok)).status).toBe(200);
     expect(f.escritasProibidas).toEqual([]);
@@ -306,7 +319,7 @@ describe('gerar-foto-kit', () => {
     const j1 = await r1.json();
     expect(j1).toMatchObject({ aprovado: false, proxima: true, tentativa: 1 });
     expect(j1.path).toBeUndefined();
-    expect(j1.motivos.join(' ')).toMatch(/Preto: termina no joelho; a original termina na cintura/);
+    expect(j1.motivos.join(' ')).toMatch(/Preto: saiu mais longa que a original/);
     expect(f.linhas).toHaveLength(1);
     expect(f.linhas[0]).toMatchObject({ tentativa: 1, status: 'recusada' });
     expect(Number(f.linhas[0].custo_usd)).toBeGreaterThan(0);
@@ -319,7 +332,7 @@ describe('gerar-foto-kit', () => {
     expect(f.chamadasFicha).toBe(1);   // ficha guardada na 1ª tentativa
     const dados = JSON.stringify(f.chamadasImagem[1].messages);
     expect(dados).toContain('corrigir');
-    expect(dados).toContain('Preto: termina no joelho');
+    expect(dados).toContain('Preto: saiu mais longa');
     expect(f.linhas.map((l) => [l.tentativa, l.status])).toEqual([[1, 'recusada'], [2, 'gerada']]);
   });
 

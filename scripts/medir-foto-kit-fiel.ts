@@ -1,0 +1,122 @@
+// ADR-0200, Adendo 1: medição real da foto do kit fiel à peça (fora da suíte). Roda o MESMO pipeline da edge
+// `gerar-foto-kit` (ficha → geração ancorada → verificação → até 3 tentativas) sobre produtos reais, SÓ LEITURA:
+// não grava no banco, não sobe ao storage, não publica nada. Guarda as imagens e um CSV por item da ficha.
+//
+// Uso (Deno, a partir da raiz do repo):
+//   SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… OPENROUTER_API_KEY=… \
+//   deno run -A scripts/medir-foto-kit-fiel.ts --kits kits.json --saida /tmp/medicao-foto-kit [--limite-usd 5] [--so 1]
+// kits.json: [{ "familia_id": "<uuid>", "cores": ["Bege Cru", "Cinza Escuro"] }, …] (fica fora do repo: é dado real).
+// Não defina AI_MODEL_VISION: a produção usa o padrão de `modelos.ts`.
+import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { adequadaAoML, dimensoesImagem, gerarImagem, MODELO_IMAGEM_PADRAO } from '../supabase/functions/_shared/ai/imagem.ts';
+import {
+  avaliar, extrairFicha, ITENS, lerVerificacao, MAX_TENTATIVAS, montarPedidoFiel, reprovacao, type Verificacao,
+} from '../supabase/functions/_shared/ai/foto-kit-fiel.ts';
+import { corDaPecaNaColuna, diferencaCor } from '../supabase/functions/_shared/ai/cor.ts';
+import { decodificar } from '../supabase/functions/_shared/ai/pixels.ts';
+import { MODELO_VISION } from '../supabase/functions/_shared/ai/modelos.ts';
+
+const arg = (n: string, d?: string) => { const i = Deno.args.indexOf(`--${n}`); return i >= 0 ? Deno.args[i + 1] : d; };
+const kits: Array<{ familia_id: string; cores: string[] }> = JSON.parse(await Deno.readTextFile(arg('kits')!));
+const saida = arg('saida', '/tmp/medicao-foto-kit')!;
+const limiteUsd = Number(arg('limite-usd', '5'));
+const so = Number(arg('so', String(kits.length)));
+// Teto por tentativa para a trava de orçamento (geração ~US$ 0,045 + verificação), antes de gastar.
+const RESERVA_TENTATIVA_USD = 0.12;
+
+const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
+await Deno.mkdir(saida, { recursive: true });
+const csv = `${saida}/resultado.csv`;
+const q = (v: unknown) => `"${String(v ?? '').replaceAll('"', '""')}"`;
+await Deno.writeTextFile(csv, [
+  'kit', 'produto', 'n_cores', 'cores', 'tentativa', 'aprovado', ...ITENS.map(([c]) => c), 'deltaE_por_cor',
+  'custo_ficha_usd', 'custo_geracao_usd', 'custo_verificacao_usd', 'ms_ficha', 'ms_geracao', 'ms_verificacao', 'ms_decode_gerada', 'motivos',
+].join(',') + '\n');
+
+const b64 = (b: Uint8Array) => { let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(s); };
+let total = 0;
+console.log(`modelo de imagem ${MODELO_IMAGEM_PADRAO}; visão ${MODELO_VISION}; limite US$ ${limiteUsd}`);
+
+for (const [k, kit] of kits.slice(0, so).entries()) {
+  const dir = `${saida}/kit-${String(k + 1).padStart(2, '0')}`;
+  await Deno.mkdir(dir, { recursive: true });
+  const { data: fam, error } = await sb.from('familias').select('titulo_ml, nome_pai, variacoes(cor, imagem_path, excluida_da_publicacao)').eq('id', kit.familia_id).single();
+  if (error || !fam) { console.error(`kit ${k + 1}: família não lida`); continue; }
+  const produto = String(fam.titulo_ml ?? fam.nome_pai);
+  // Mesma escolha da edge: fotos das variações da cor, sem repetir, até o teto por cor (sem a checagem de moderação
+  // do ML, que não muda a fidelidade medida).
+  const porCor = Math.min(3, Math.floor(12 / kit.cores.length));
+  const origem = kit.cores.map((c) => [...new Set((fam.variacoes as Array<{ cor: string | null; imagem_path: string | null; excluida_da_publicacao?: boolean }>)
+    .filter((v) => !v.excluida_da_publicacao && v.imagem_path && String(v.cor ?? '').trim() === c).map((v) => v.imagem_path!))].slice(0, porCor * 2));
+  if (origem.some((o) => o.length === 0)) { console.error(`kit ${k + 1}: cor sem foto`); continue; }
+  const brutos = await Promise.all(origem.map((ps) => Promise.all(ps.map(async (p) => {
+    const { data, error: e } = await sb.storage.from('imagens').download(p);
+    if (e || !data) throw new Error(`download ${p}`);
+    return { path: p, bytes: new Uint8Array(await data.arrayBuffer()), mime: data.type || 'image/jpeg' };
+  }))));
+  // Sem repetidas por conteúdo, até o teto (igual à edge).
+  const bytes = await Promise.all(brutos.map(async (fs) => {
+    const vistos = new Set<string>();
+    const fica = [];
+    for (const f of fs) {
+      const h = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', f.bytes))).join(',');
+      if (!vistos.has(h)) { vistos.add(h); fica.push(f); }
+    }
+    return fica.slice(0, porCor);
+  }));
+  for (const [i, fs] of bytes.entries()) origem[i] = fs.map((f) => f.path);
+  for (const [i, fs] of bytes.entries()) for (const [j, f] of fs.entries()) await Deno.writeFile(`${dir}/original-${i + 1}-${j + 1}.${f.mime.split('/')[1] ?? 'jpg'}`, f.bytes);
+  const grupos = bytes.map((fs, i) => ({ cor: kit.cores[i], urls: fs.map((f) => `data:${f.mime};base64,${b64(f.bytes)}`) }));
+  const pixels = await Promise.all(origem.map(async (ps) => {
+    const { data } = await sb.storage.from('imagens').download(ps[0], { transform: { width: 256, height: 256, resize: 'contain' } });
+    return data ? decodificar(new Uint8Array(await data.arrayBuffer())) : null;
+  }));
+
+  let t0 = Date.now();
+  const { ficha, custoUsd: custoFicha } = await extrairFicha(grupos, origem, pixels, 60_000);
+  const msFicha = Date.now() - t0;
+  total += custoFicha;
+  await Deno.writeTextFile(`${dir}/ficha.json`, JSON.stringify(ficha, null, 2));
+  console.log(`kit ${k + 1} ${produto} [${kit.cores.join(' + ')}]: ficha ${ficha.comprimento} ${ficha.proporcao_altura_largura} fotos ${origem.map((o) => o.length).join('/')} hex ${ficha.cores.map((c) => c.hex).join(' ')} (US$ ${custoFicha.toFixed(4)}, ${msFicha} ms)`);
+
+  let motivos: string[] = [];
+  for (let t = 1; t <= MAX_TENTATIVAS; t++) {
+    if (total + RESERVA_TENTATIVA_USD > limiteUsd) { console.error(`PARADO: US$ ${total.toFixed(3)} + reserva passa do limite`); Deno.exit(2); }
+    t0 = Date.now();
+    let gerada: Awaited<ReturnType<typeof gerarImagem>>;
+    try { gerada = await gerarImagem(MODELO_IMAGEM_PADRAO, montarPedidoFiel({ ficha, grupos, motivos }), grupos.flatMap((g) => g.urls), 120_000); }
+    catch (e) { console.error(`kit ${k + 1} t${t}: falha da geração (${(e as Error).name})`); break; }
+    const msGeracao = Date.now() - t0;
+    total += gerada.custoUsd;
+    await Deno.writeFile(`${dir}/tentativa-${t}.${gerada.ext}`, gerada.bytes);
+    let v: Verificacao; let custoVerif = 0; let msVerif = 0; let msDecode = 0; let deltas: string[] = [];
+    if (!adequadaAoML(dimensoesImagem(gerada.bytes))) {
+      v = reprovacao('Enquadramento: a foto saiu horizontal ou pequena.');
+    } else {
+      t0 = Date.now();
+      try {
+        const lida = await lerVerificacao(ficha, grupos, `data:${gerada.mime};base64,${b64(gerada.bytes)}`, 60_000);
+        msVerif = Date.now() - t0;
+        custoVerif = lida.custoUsd; total += custoVerif;
+        const td = performance.now();
+        const px = decodificar(gerada.bytes);
+        msDecode = Math.round(performance.now() - td);
+        const hexG = ficha.cores.map((_, i) => (px ? corDaPecaNaColuna(px, i, kit.cores.length) : null));
+        deltas = ficha.cores.map((c, i) => { const d = c.hex && hexG[i] ? diferencaCor(c.hex, hexG[i]!) : null; return d ? d.deltaE.toFixed(1) : '?'; });
+        v = avaliar(ficha, lida.json, hexG);
+        await Deno.writeTextFile(`${dir}/verificacao-${t}.json`, JSON.stringify({ resposta: lida.json, veredito: v }, null, 2));
+      } catch (e) { msVerif = Date.now() - t0; v = reprovacao(`verificação falhou (${(e as Error).name})`); }
+    }
+    const ok = new Map(v.itens.map((i) => [i.campo, i.ok]));
+    await Deno.writeTextFile(csv, [
+      k + 1, q(produto), kit.cores.length, q(kit.cores.join(' + ')), t, v.aprovado ? 'sim' : 'nao',
+      ...ITENS.map(([c]) => (ok.has(c) ? (ok.get(c) ? 'ok' : 'DIVERGE') : '')), q(deltas.join(' | ')),
+      t === 1 ? custoFicha.toFixed(5) : '0', gerada.custoUsd.toFixed(5), custoVerif.toFixed(5), t === 1 ? msFicha : 0, msGeracao, msVerif, msDecode,
+      q(v.motivos.join(' || ')),
+    ].join(',') + '\n', { append: true });
+    console.log(`  t${t}: ${v.aprovado ? 'APROVADA' : 'reprovada'} geração ${msGeracao} ms, verificação ${msVerif} ms, ΔE ${deltas.join('/')} | acumulado US$ ${total.toFixed(3)}${v.aprovado ? '' : ` | ${v.motivos.join(' || ').slice(0, 300)}`}`);
+    if (v.aprovado) break;
+    motivos = v.motivos;
+  }
+}
+console.log(`TOTAL US$ ${total.toFixed(4)} — CSV ${csv}`);

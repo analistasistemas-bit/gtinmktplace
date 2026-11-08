@@ -144,15 +144,19 @@ escuro. A descrição livre por visão não captou comprimento nem proporção. 
 
 1. **Ficha estruturada antes de gerar**, por visão, com todas as fotos de cada cor (variações da cor, fora de item
    moderado, até 3 por cor): tipo e comprimento relativo ao corpo, proporção altura/largura, modelagem e caimento,
-   cós, cordão, bolsos, etiquetas, barra, textura e cor por cor do kit. O hex médio da cor é amostrado em código
-   (pixels da peça, fundo excluído pela cor dos cantos), não pedido ao modelo. As capas da família ficam fora: não
-   têm cor declarada.
+   cós, cordão, bolsos, etiquetas, barra, textura e cor por cor do kit. Fotos repetidas por conteúdo (o mesmo
+   arquivo em um caminho por tamanho) contam uma vez. O hex médio da cor é amostrado em código na versão de 256 px
+   da 1ª foto da cor (render do storage), dentro da caixa da peça que a ficha aponta, com o fundo excluído; sem
+   caixa, sem hex (a média da foto inteira pegava a pele do modelo: medido em 08/11). As capas da família ficam fora:
+   não têm cor declarada.
 2. **Geração ancorada**: fotos de cada cor + a ficha (como dado, separado das instruções); o pedido proíbe alongar,
    encurtar, trocar modelagem ou inventar detalhe. Enquadramento do kit: N peças lado a lado, mesma escala, numa
    linha, fundo claro neutro, quadrada.
 3. **Verificação automática**: 2ª chamada de visão compara a gerada com as originais item a item da ficha e devolve
-   JSON estruturado; o veredito é calculado em código (nunca um "aprovado" do modelo). Comprimento por categoria e
-   proporção por número com tolerância; cor também por ΔE entre o hex amostrado da original e o da peça gerada.
+   JSON estruturado; o veredito é calculado em código (nunca um "aprovado" do modelo). Comprimento comparado direto
+   com a original (mais longa, igual, mais curta) e proporção altura/largura da original e da gerada lidas na mesma
+   resposta, com tolerância de 15% (a categoria absoluta lida numa foto estendida contra uma vestida deu ruído na
+   medição de 08/11); cor também por ΔE entre o hex amostrado da original e o da peça gerada.
    Erro ou resposta ilegível na verificação reprova (fail-closed). Foto gerada horizontal ou pequena também reprova
    a tentativa.
 4. **Até 3 tentativas por `request_id`** (1 + 2 automáticas), cada uma numa linha de `kit_variacao_imagens`
