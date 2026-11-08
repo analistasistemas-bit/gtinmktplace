@@ -59,6 +59,9 @@ verify_jwt = true
 # ADR-0197: criação do kit com variação em Publicados. Chamada pelo APP com o JWT do admin.
 [functions.criar-kit-variacao]
 verify_jwt = true
+# ADR-0197: título e descrição do kit com variação por IA (prévia). Chamada pelo APP com o JWT do admin.
+[functions.gerar-texto-kit]
+verify_jwt = true
 # ADR-0154: busca de componentes candidatos a Kit Virtual. Chamada pelo APP com o JWT do admin.
 [functions.buscar-componentes-kit-virtual]
 verify_jwt = true

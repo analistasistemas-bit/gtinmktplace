@@ -34,6 +34,7 @@ import { desempatarCategoriaLLM } from '../_shared/ai/categoria-llm.ts';
 import { preencherAtributosClosedSet, desempatarAtributosLLM } from '../_shared/ai/atributos-llm.ts';
 import { analisarMercado } from '../_shared/ml/mercado.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
+import { ehFamiliaDeKit } from '../_shared/kit-variacao/familia-kit.ts';
 import { forcarMarcaDoProduto, lerMarcaOrg, marcaParaCriacao } from '../_shared/categoria/marca-org.ts';
 
 interface Job { familia_id: string; lote_id: string; }
@@ -68,7 +69,7 @@ Deno.serve(async (req) => {
     .update({ status: 'processando' })
     .eq('id', job.familia_id)
     .eq('status', 'pendente')
-    .select('id, user_id, org_id, nome_pai, descricao_pai, lote_id, operacao, fornecedor, marca, origem, unidade, categoria_ml_id, atributos_ml, atributos_faltantes, atributos_editados_pelo_operador, variacao_principal_codigo, kit_multiplicador, titulo_ml, genero, grade_tamanho')
+    .select('id, user_id, org_id, nome_pai, descricao_pai, lote_id, operacao, fornecedor, marca, origem, unidade, categoria_ml_id, atributos_ml, atributos_faltantes, atributos_editados_pelo_operador, variacao_principal_codigo, kit_multiplicador, kit_variacao_pedido, titulo_ml, genero, grade_tamanho')
     .maybeSingle();
   if (claimErr) {
     return new Response(`Claim: ${claimErr.message}`, { status: 500, headers: corsHeaders });
@@ -82,7 +83,8 @@ Deno.serve(async (req) => {
   // kit seguir daqui reescreve os dois como produto comum — foi o que apagou o título do primeiro
   // kit real (2026-09-03, virou "… 700g 2un"). Devolve a família ao estado publicável sem tocar em
   // nada: o caminho de recuperação do kit é republicar, nunca reprocessar.
-  if (claimed.kit_multiplicador != null) {
+  // Kit com variação (ADR-0197) tem o mesmo problema: título e descrição vêm de gerar-texto-kit.
+  if (ehFamiliaDeKit(claimed)) {
     console.error('process_familia_recusa_kit', { familiaId: job.familia_id, orgId: claimed.org_id });
     await admin.from('familias').update({ status: 'pronto' }).eq('id', job.familia_id);
     return new Response('Kit vinculado não passa por process-familia (ADR-0151)', { status: 200, headers: corsHeaders });
