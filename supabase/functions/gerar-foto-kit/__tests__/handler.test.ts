@@ -61,6 +61,7 @@ function tabela(t: string) {
   const q: Record<string, unknown> = {
     select: () => q,
     eq: (c: string, v: unknown) => { filtros[c] = v; return q; },
+    lt: (c: string, v: unknown) => { filtros[`${c}<`] = v; return q; },
     insert: (row: Record<string, unknown>) => {
       if (t !== 'kit_variacao_imagens') f.escritasProibidas.push(t);
       op = 'insert'; payload = row; return q;
@@ -86,7 +87,12 @@ function tabela(t: string) {
           }
           f.linhas.push({ ...payload });
         } else if (op === 'update') Object.assign(achar() ?? {}, payload);
-        else if (op === 'delete') f.linhas = f.linhas.filter((l) => l !== achar());
+        else if (op === 'delete') {
+          const l = achar();
+          const casa = l && (filtros.status === undefined || l.status === filtros.status)
+            && (filtros['criado_em<'] === undefined || String(l.criado_em) < String(filtros['criado_em<']));
+          if (casa) f.linhas = f.linhas.filter((x) => x !== l);
+        }
       }
       return res({ data: null, error: null });
     },
@@ -182,9 +188,17 @@ describe('gerar-foto-kit', () => {
   });
 
   it('request_id em andamento → 409, sem IA', async () => {
-    f.linhas.push({ org_id: 'org-1', request_id: REQ, status: 'pendente', rotulo: 'Preto e Branco' });
+    f.linhas.push({ org_id: 'org-1', request_id: REQ, status: 'pendente', rotulo: 'Preto e Branco', criado_em: new Date().toISOString() });
     expect((await post(ok)).status).toBe(409);
     expect(f.chamadasImagem).toHaveLength(0);
+  });
+
+  it('reserva pendente abandonada (edge morreu) não trava o request_id: gera de novo', async () => {
+    f.linhas.push({ org_id: 'org-1', request_id: REQ, status: 'pendente', rotulo: 'Preto e Branco', criado_em: new Date(Date.now() - 10 * 60_000).toISOString() });
+    expect((await post(ok)).status).toBe(200);
+    expect(f.chamadasImagem).toHaveLength(1);
+    expect(f.linhas).toHaveLength(1);
+    expect(f.linhas[0]).toMatchObject({ status: 'gerada' });
   });
 
   it('falha da IA não grava geração (não cobra) e libera a repetição', async () => {

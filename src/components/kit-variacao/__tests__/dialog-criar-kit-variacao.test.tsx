@@ -149,6 +149,28 @@ describe('DialogCriarKitVariacao', () => {
     expect(enviarFotoKit).not.toHaveBeenCalled();
   });
 
+  it('falha definitiva da geração libera um pedido novo; falha de rede repete o mesmo', async () => {
+    modulos.data = ['kit_variacao', 'imagem_ia'];
+    vi.mocked(gerarFotoKitEdge).mockClear();
+    vi.mocked(gerarFotoKitEdge)
+      .mockResolvedValueOnce({ ok: false, motivo: 'rede', mensagem: 'Failed to fetch' })
+      .mockResolvedValueOnce({ ok: false, motivo: 'imagem_inadequada', mensagem: 'Gere outra.' });
+    const user = userEvent.setup();
+    abrir();
+    await montar(user, ['Preto', 'Branco'], { 'Preto e Branco M': '1' });
+    await user.click(screen.getByRole('button', { name: 'Próximo' }));
+    const botao = () => screen.getByRole('button', { name: 'Gerar foto Preto e Branco' });
+    await user.click(botao());
+    await vi.waitFor(() => expect(botao()).toBeEnabled());
+    await user.click(botao());
+    await vi.waitFor(() => expect(botao()).toBeEnabled());
+    await user.click(botao());
+    await screen.findByRole('img', { name: 'Foto gerada Preto e Branco' });
+    const [a, b, c] = vi.mocked(gerarFotoKitEdge).mock.calls.map((x) => x[0].requestId);
+    expect(b).toBe(a);
+    expect(c).not.toBe(b);
+  });
+
   it('a explicação da reposição usa a meta digitada', async () => {
     const user = userEvent.setup();
     abrir();

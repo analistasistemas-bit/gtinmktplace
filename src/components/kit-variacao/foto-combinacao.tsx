@@ -1,7 +1,7 @@
 // ADR-0197 (Task 15): foto de uma combinação do kit (Criar e Gerenciar). Sempre dá para enviar a foto; com o módulo
 // `imagem_ia`, também gerar por IA. A foto gerada fica como candidata e só vira a foto da combinação quando o operador
-// clica "Usar esta foto": sem aprovação, nada publica. Cada geração é um pedido novo (`requestId`); a repetição de um
-// pedido que falhou usa o mesmo, e a edge devolve a imagem já gerada em vez de gerar (e cobrar) de novo.
+// clica "Usar esta foto": sem aprovação, nada publica. Cada geração é um pedido novo (`requestId`); depois de falha de
+// rede a repetição usa o mesmo, e a edge devolve a imagem já gerada em vez de gerar (e cobrar) de novo.
 import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -31,7 +31,12 @@ export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, 
       return gerarFotoKitEdge({ requestId: requestId.current, familiaBaseId, cores });
     },
     onSuccess: (r) => {
-      if (!r.ok) { toast.error('Não foi possível gerar a foto', { description: r.mensagem }); return; }
+      if (!r.ok) {
+        // Desfecho desconhecido (rede) ou em andamento: repete o mesmo pedido. Falha definitiva: o próximo é outro.
+        if (r.motivo !== 'rede' && r.motivo !== 'em_andamento') requestId.current = '';
+        toast.error('Não foi possível gerar a foto', { description: r.mensagem });
+        return;
+      }
       requestId.current = '';
       setCandidata({ path: r.path, url: r.url });
     },

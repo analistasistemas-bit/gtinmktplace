@@ -98,7 +98,7 @@ export async function descreverPeca(fotos: string[]): Promise<{ texto: string; c
     temperature: 0,
     usage: { include: true },
     // deno-lint-ignore no-explicit-any
-  } as any, { signal: AbortSignal.timeout(45_000) });
+  } as any, { signal: AbortSignal.timeout(25_000) });
   // deno-lint-ignore no-explicit-any
   const r = resp as any;
   const texto = String(r.choices?.[0]?.message?.content ?? '').trim();
@@ -106,7 +106,8 @@ export async function descreverPeca(fotos: string[]): Promise<{ texto: string; c
   return { texto, custoUsd: custoImagemUsd(MODELO_VISION, r.usage) };
 }
 
-/** Gera a foto do kit. Lança em falha do provedor ou resposta sem imagem (nada a cobrar). */
+/** Gera a foto do kit. Lança em falha do provedor ou resposta sem imagem (nada a cobrar). Timeouts: visão 25 s + geração
+ * 100 s cabem nos 150 s de requisição sem resposta da edge, com folga para download e leitura do ML. */
 export async function gerarImagem(modelo: string, pedido: string, fotos: string[]) {
   const resp = await openrouterClient().chat.completions.create({
     model: modelo,
@@ -119,7 +120,7 @@ export async function gerarImagem(modelo: string, pedido: string, fotos: string[
       content: [{ type: 'text', text: pedido }, ...fotos.map((url) => ({ type: 'image_url', image_url: { url } }))],
     }],
     // deno-lint-ignore no-explicit-any
-  } as any, { signal: AbortSignal.timeout(120_000) });
+  } as any, { signal: AbortSignal.timeout(100_000) });
   // deno-lint-ignore no-explicit-any
   const usage = (resp as any).usage as UsoProvedor | undefined;
   return { ...extrairImagem(resp), custoUsd: custoImagemUsd(modelo, usage) };

@@ -21,6 +21,8 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Além do limite de uma execução da edge (150 s sem resposta): reserva `pendente` mais velha que isto foi abandonada.
+const ABANDONO_MS = 5 * 60_000;
 const centavos = (usd: number) => Math.ceil(Number((usd * 100).toFixed(6)));
 
 async function paraDataUrl(blob: Blob): Promise<string> {
@@ -68,10 +70,15 @@ Deno.serve(async (req) => {
   const tabela = () => admin.from('kit_variacao_imagens');
 
   // Repetição do mesmo pedido: devolve a mesma imagem, sem IA.
-  const { data: ja, error: errJa } = await tabela().select('status, rotulo, storage_path, custo_usd')
+  const { data: ja, error: errJa } = await tabela().select('status, rotulo, storage_path, custo_usd, criado_em')
     .eq('org_id', orgId).eq('request_id', requestId).maybeSingle();
   if (errJa) return json({ error: 'Falha ao ler a geração. Tente novamente.' }, 500);
-  if (ja) {
+  const limiteAbandono = new Date(Date.now() - ABANDONO_MS).toISOString();
+  if (ja?.status === 'pendente' && String(ja.criado_em) < limiteAbandono) {
+    // Reserva de uma execução que morreu (passou do tempo máximo da edge): sem imagem entregue, nada a cobrar.
+    // O filtro por status e idade não apaga uma execução viva.
+    await tabela().delete().eq('org_id', orgId).eq('request_id', requestId).eq('status', 'pendente').lt('criado_em', limiteAbandono);
+  } else if (ja) {
     if (ja.rotulo !== rotulo) return json({ error: 'request_id já usado em outra combinação.', motivo: 'pedido_diferente' }, 409);
     if (ja.status === 'pendente') return json({ error: 'Esta foto ainda está sendo gerada.', motivo: 'em_andamento' }, 409);
     if (ja.status !== 'gerada') return json({ error: 'A foto gerada não serve ao Mercado Livre. Gere outra.', motivo: 'imagem_inadequada' }, 502);

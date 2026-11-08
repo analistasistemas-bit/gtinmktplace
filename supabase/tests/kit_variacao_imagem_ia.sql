@@ -14,9 +14,13 @@ declare
   recusou boolean;
 begin
   -- check do modelo: padrão novo aceito, lixo recusado (numa linha real qualquer; tudo é desfeito).
-  update public.configuracoes set ai_model_imagem = 'google/gemini-nano-banana-2.1'
-   where org_id = (select org_id from public.configuracoes where org_id is not null limit 1);
-  perform pg_temp.afirmar(found, 'sem linha de configuracoes para testar o check');
+  -- Erro capturado com mensagem própria: o DETAIL do check_violation traria a linha inteira (inclui segredo).
+  begin
+    update public.configuracoes set ai_model_imagem = 'google/gemini-nano-banana-2.1'
+     where org_id = (select org_id from public.configuracoes where org_id is not null limit 1);
+    perform pg_temp.afirmar(found, 'sem linha de configuracoes para testar o check');
+  exception when check_violation then raise exception 'FALHA: check recusou o modelo padrão';
+  end;
   begin
     update public.configuracoes set ai_model_imagem = 'google/qualquer'
      where org_id = (select org_id from public.configuracoes where org_id is not null limit 1);
