@@ -127,4 +127,22 @@ wait
 [ "$RC" -ne 0 ] && echo "$B_OUT" | grep -q 'demonstrativo fechado' || falha "6: troca aceita em competência fechada ($B_OUT)"
 echo "6 fechamento×troca: recusou"
 
+# 7. Resultado travado como platform_sonar_complete trava (A: for no key update) × entrega sobre o mesmo
+#    resultado (B, outra busca): o FK result_id pede key share, que é compatível — B não espera. Com `for update`
+#    B esperaria, e somado ao fechamento (lock da org + share em platform_sonar_deliveries) fechava ciclo.
+R=$(uuid); busca "$R"
+psql_ -c "insert into public.platform_sonar_searches (org_id, actor_id, request_id, intent_key, normalized_query, query_type, result_id, state, origin)
+            select org_id, actor_id, gen_random_uuid(), intent_key || ':2', normalized_query, query_type, result_id, state, origin
+              from public.platform_sonar_searches where result_id = '$R'" > /dev/null
+LOCK_MODE=$(psql_ -c "select case when position('for no key update' in prosrc) > 0 then 'no key update' else 'update' end
+                      from pg_proc where proname = 'platform_sonar_complete'")
+psql_ -c "begin; select 1 from public.platform_sonar_results where id = '$R' for $LOCK_MODE; select pg_sleep(3); commit;" > /dev/null 2>&1 &
+sleep 1
+t0=$(date +%s)
+psql_ -c "select public.platform_sonar_delivery_json(s) from public.platform_sonar_searches s where s.result_id = '$R' and s.intent_key like '%:2'" > /dev/null
+DT=$(( $(date +%s) - t0 ))
+wait
+echo "7 resultado travado×entrega ($LOCK_MODE): B esperou ${DT}s"
+[ "$DT" -lt 1 ] || falha "7: entrega esperou o lock do resultado (complete usa for $LOCK_MODE)"
+
 echo "platform_precos_unidade_concorrencia: OK"

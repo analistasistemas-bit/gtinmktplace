@@ -382,3 +382,51 @@ $$;
 
 revoke all on function public.platform_billing_preview(uuid,uuid,date) from public,anon,authenticated;
 grant execute on function public.platform_billing_preview(uuid,uuid,date) to service_role;
+
+-- platform_sonar_complete: igual à de 20260906170100, exceto o lock do resultado (for update → for no key update).
+-- Revisão do diff (Codex): com a entrega do Sonar esperando o lock da org, um `complete` repetido segurando o
+-- resultado `for update` e esperando a org (fechamento em curso) fechava ciclo com a entrega de OUTRA org sobre o
+-- mesmo resultado (o FK result_id pede key share) e com o fechamento (share em platform_sonar_deliveries).
+-- `no key update` é compatível com key share e basta: o update do resultado só muda colunas que não são chave.
+create or replace function public.platform_sonar_complete(
+  p_actor uuid, p_org_id uuid, p_support_request uuid, p_search_id uuid,
+  p_lease_token uuid, p_payload jsonb, p_failure_reason text default null
+) returns jsonb
+language plpgsql security definer set search_path = ''
+as $$
+declare v_search public.platform_sonar_searches%rowtype;
+declare v_result public.platform_sonar_results%rowtype;
+declare v_consumption jsonb;
+begin
+  perform public.platform_assert_sonar_context(p_actor,p_org_id,p_support_request);
+  select * into v_search from public.platform_sonar_searches where id=p_search_id and org_id=p_org_id and actor_id=p_actor for update;
+  if not found then raise exception 'search not found' using errcode='42501'; end if;
+  if v_search.support_request_id is distinct from p_support_request then raise exception 'support context mismatch' using errcode='42501'; end if;
+  select * into v_result from public.platform_sonar_results where id=v_search.result_id for no key update;
+  if v_result.state='ready' then return public.platform_sonar_resolve_result(p_actor,p_org_id,p_support_request,p_search_id); end if;
+  if v_result.state <> 'pending' or v_result.lease_token is distinct from p_lease_token
+    or v_search.lease_token is distinct from p_lease_token or v_result.lease_until <= now() then
+    raise exception 'stale sonar lease' using errcode='40001';
+  end if;
+  if p_failure_reason is not null or p_payload is null or jsonb_typeof(p_payload) <> 'object'
+    or not coalesce((
+      (jsonb_typeof(p_payload->'itens')='array' and jsonb_array_length(p_payload->'itens') > 0)
+      or (jsonb_typeof(p_payload->'por_anuncio')='object' and p_payload->'por_anuncio' <> '{}'::jsonb)
+    ), false) then
+    update public.platform_sonar_results set state='failed',failure_reason=coalesce(nullif(btrim(p_failure_reason),''),'resultado_indisponivel'),
+      lease_token=null,lease_until=null,updated_at=now() where id=v_result.id;
+    update public.platform_sonar_searches set state='failed',completed_at=now() where id=v_search.id;
+    insert into public.platform_sonar_events(org_id,search_id,actor_id,result_id,stage,outcome,reason)
+      values(p_org_id,v_search.id,p_actor,v_result.id,'complete','failed',coalesce(p_failure_reason,'resultado_indisponivel'));
+    return jsonb_build_object('acao','failed','busca_id',v_search.id,'resultado_id',v_result.id);
+  end if;
+  update public.platform_sonar_results set state='ready',payload=p_payload,valid_until=now()+interval '7 days',
+    lease_token=null,lease_until=null,failure_reason=null,updated_at=now() where id=v_result.id;
+  v_consumption := public.platform_sonar_delivery_json(v_search);
+  update public.platform_sonar_searches set state='completed',completed_at=now() where id=v_search.id;
+  insert into public.platform_sonar_events(org_id,search_id,actor_id,result_id,stage,outcome)
+    values(p_org_id,v_search.id,p_actor,v_result.id,'complete','ready');
+  return jsonb_build_object('acao','ready','busca_id',v_search.id,'resultado_id',v_result.id,
+    'payload',p_payload,'consumo',v_consumption);
+end;
+$$;

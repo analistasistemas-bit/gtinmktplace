@@ -141,6 +141,18 @@ describe('buildBillingReport', () => {
     expect(comLinha).toContainEqual({ label: 'Preço unitário imagem IA', valor: fmtBRL(0.5) });
   });
 
+  it('preço trocado no meio do mês: linha com unit_cents null vira "variável no mês" (Sonar e imagem)', () => {
+    const itens = buildBillingReport({
+      ...statement,
+      lines: [
+        ...statement.lines.map((line) => line.key === 'sonar' ? { ...line, quantity: 2, unit_cents: null, amount_cents: 250 } : line),
+        { key: 'image_ia', label: 'Imagens IA', quantity: 2, unit_cents: null, amount_cents: 130, source_type: 'image_deliveries', source_id: null },
+      ],
+    }).blocos?.flatMap((block) => block.itens) ?? [];
+    expect(itens).toContainEqual({ label: 'Preço unitário Sonar', valor: 'variável no mês' });
+    expect(itens).toContainEqual({ label: 'Preço unitário imagem IA', valor: 'variável no mês' });
+  });
+
   it('permanece idêntico quando condições atuais mudam fora do snapshot', () => {
     const before = buildBillingReport(statement);
     const currentTerms: CommercialTerms = { ...statement.terms!, revenue_bps_t1: 900, sonar_unit_cents: 250 };

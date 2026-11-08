@@ -9,6 +9,7 @@ function formatPercent(revenueBps: number | null): string {
 
 function buildSnapshotBlocks(statement: BillingStatement): BlocoResumo[] {
   const terms = statement.terms;
+  const sonarLine = statement.lines.find((line) => line.key === 'sonar');
   const blocks: BlocoResumo[] = [
     {
       titulo: 'Condições aplicadas',
@@ -21,7 +22,10 @@ function buildSnapshotBlocks(statement: BillingStatement): BlocoResumo[] {
         { label: 'Consultas Sonar', valor: String(statement.sonar_units) },
         {
           label: 'Preço unitário Sonar',
-          valor: terms ? fmtBRL(terms.sonar_unit_cents / 100) : 'Não definido',
+          // Preço da linha (o praticado no mês); null = mudou no meio do mês. Sem linha, o do termo.
+          valor: sonarLine
+            ? (sonarLine.unit_cents === null ? 'variável no mês' : fmtBRL(sonarLine.unit_cents / 100))
+            : terms ? fmtBRL(terms.sonar_unit_cents / 100) : 'Não definido',
         },
       ],
     },
