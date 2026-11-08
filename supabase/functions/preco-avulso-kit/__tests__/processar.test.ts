@@ -81,6 +81,19 @@ describe('lerPrecosAvulsos', () => {
     expect(r.A.fim_promocao).toBe('2026-11-09T02:59:00Z');
   });
 
+  it('oferta antes da campanha: Relâmpago pending pelo ref_id; outra janela da mesma campanha não empresta a data', async () => {
+    const { get } = api({
+      '/items/bulk': bulk([['MLB1', 71.9]]),
+      '/items/MLB1/sale_price': venda(39.9, 71.9, { promotion_id: 'OFFER-MLB1-88', campaign_id: 'LGH-1' }),
+      '/seller-promotions/items/MLB1': [
+        { id: 'LGH-1', type: 'LIGHTNING', ref_id: 'OFFER-MLB1-77', status: 'started', finish_date: '2026-11-08T23:00:00Z' },
+        { id: 'LGH-1', type: 'LIGHTNING', ref_id: 'OFFER-MLB1-88', status: 'pending', finish_date: '2026-11-10T02:59:00Z' },
+      ],
+    });
+    const r = await lerPrecosAvulsos(get, [{ sku: 'A', item_id: 'MLB1' }]);
+    expect(r.A.fim_promocao).toBe('2026-11-10T02:59:00Z');
+  });
+
   it('mesmo item em dois SKUs: uma leitura de sale_price só', async () => {
     const { get, chamadas } = api({ '/items/bulk': bulk([['MLB2', 69.9]]), '/items/MLB2/sale_price': venda(69.9, null) });
     const r = await lerPrecosAvulsos(get, [{ sku: 'A', item_id: 'MLB2' }, { sku: 'A2', item_id: 'MLB2' }]);

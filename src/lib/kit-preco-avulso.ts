@@ -72,15 +72,14 @@ export function compararKit(preco: number, linhas: LinhaAvulsa[]): ComparacaoKit
   // Em centavos: 91,80 digitado contra soma 91,80 é "igual", não um float acima ou abaixo.
   const caras = ok.filter((l) => centavos(preco) >= centavos(l.soma.promocao));
   const maisCaro = caras.length > 0;
-  // A data só vale para a promoção que torna o kit mais caro.
-  const fims = caras.map((l) => l.soma.fimPromocao).filter((f): f is string => !!f).sort();
   return {
     pior,
     descontoNormal: desconto(preco, pior.soma.normal),
     descontoPromocao: desconto(preco, pior.soma.promocao),
     maisCaro,
     referencia: maisCaro ? pior.soma.promocao : null,
-    fimPromocao: fims[0] ?? null,
+    // O aviso cita a soma da pior: só a data da promoção dela (a de outra combinação não muda o que o aviso diz).
+    fimPromocao: maisCaro && pior.soma.temPromocao ? pior.soma.fimPromocao : null,
     semComparacao,
   };
 }

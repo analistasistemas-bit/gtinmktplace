@@ -35,14 +35,18 @@ async function precosNormais(get: GetML, ids: string[]): Promise<Map<string, num
 }
 
 async function fimDaOferta(get: GetML, itemId: string, meta: Obj): Promise<string | null> {
-  const ids = new Set([meta.promotion_id, meta.campaign_id].filter((x): x is string => typeof x === 'string' && !!x));
-  if (ids.size === 0) return null;
+  const texto = (x: unknown) => (typeof x === 'string' && x ? x : null);
+  const ofertaId = texto(meta.promotion_id);
+  const campanhaId = texto(meta.campaign_id);
+  if (!ofertaId && !campanhaId) return null;
   try {
-    const lista = await get(`/seller-promotions/items/${encodeURIComponent(itemId)}?app_version=v2`);
-    // Relâmpago traz o OFFER- em `ref_id` (ver operacoes/reajuste/ml.ts). Casada com a oferta vencedora do /sale_price,
-    // a visão por item pode ainda dizer `candidate`: aceita também.
-    const oferta = (Array.isArray(lista) ? (lista as Obj[]) : []).find((p) => (p.status === 'started' || p.status === 'candidate')
-      && [p.id, p.offer_id, p.ref_id].some((x) => typeof x === 'string' && ids.has(x)));
+    const raw = await get(`/seller-promotions/items/${encodeURIComponent(itemId)}?app_version=v2`);
+    const lista = Array.isArray(raw) ? (raw as Obj[]) : [];
+    // 1º a oferta exata (Relâmpago traz o OFFER- em `ref_id` e fica `pending` enquanto participa, ADR-0174; duas janelas
+    // da mesma campanha dividem o `id`). Só sem ela, a campanha iniciada.
+    const oferta = (ofertaId && lista.find((p) => ['started', 'pending', 'candidate'].includes(p.status as string)
+        && (p.offer_id === ofertaId || p.ref_id === ofertaId)))
+      || lista.find((p) => p.status === 'started' && (p.id === campanhaId || p.id === ofertaId));
     return typeof oferta?.finish_date === 'string' && oferta.finish_date ? oferta.finish_date : null;
   } catch (e) {
     console.warn('preco_avulso_fim_promocao_falhou', itemId, String(e));
