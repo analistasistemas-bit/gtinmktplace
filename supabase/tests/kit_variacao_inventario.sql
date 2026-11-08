@@ -282,15 +282,17 @@ $$;
 
 -- Recusa integral: erro com a mensagem esperada, sem movimento de inventário, foto aberta e sem finais.
 create function pg_temp.recusa_integral(o uuid, p_msg text) returns void language plpgsql as $$
-declare v_id uuid := pg_temp.foto(o); v_saldos text;
+declare v_id uuid := pg_temp.foto(o); v_saldos text; v_erro text;
 begin
   select string_agg(codigo || '=' || estoque, ',' order by codigo) into v_saldos from public.variacoes where org_id = o;
+  -- Só a chamada fica no bloco que captura: a falha do próprio teste não pode virar "recusa esperada".
   begin
     perform public.confirmar_inventario(o, v_id, 1, null);
-    raise exception 'confirmar deveria recusar (%)', p_msg;
   exception when others then
-    if position(p_msg in sqlerrm) = 0 then raise exception 'esperava "%", veio: %', p_msg, sqlerrm; end if;
+    v_erro := sqlerrm;
   end;
+  if v_erro is null then raise exception 'confirmar deveria recusar (%)', p_msg; end if;
+  if position(p_msg in v_erro) = 0 then raise exception 'esperava "%", veio: %', p_msg, v_erro; end if;
   if exists (select 1 from public.estoque_movimentos where org_id = o and referencia_externa like 'inventario:%')
      or (select status from public.inventarios where id = v_id) <> 'aberto'
      or exists (select 1 from public.inventarios_itens where inventario_id = v_id and qtd_final is not null)
