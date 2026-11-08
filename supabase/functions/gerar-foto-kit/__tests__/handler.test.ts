@@ -37,7 +37,6 @@ const f = vi.hoisted(() => ({
   linhas: [] as Array<Record<string, unknown>>,
   uploads: [] as string[],
   downloads: [] as string[],
-  reduzidas: [] as string[],
   conteudos: {} as Record<string, string>,
   escritasProibidas: [] as string[],
 }));
@@ -58,13 +57,11 @@ vi.mock('../../criar-kit-variacao/fotos-moderadas.ts', () => ({
     return f.moderadas;
   }),
 }));
-// Sem decodificação real de pixels no teste: a cor fica só com o inspetor (o ΔE tem teste próprio em `cor.ts`).
-vi.mock('../../_shared/ai/pixels.ts', () => ({ decodificar: () => null }));
 const FICHA_IA = {
   tipo_peca: 'jaqueta', comprimento: 'cintura', comprimento_descricao: 'jaqueta curta, termina na cintura',
   proporcao_altura_largura: 0.8, modelagem: 'reta', caimento: 'solto', cos: 'elástico', cordao: 'sem cordão',
   bolsos_quantidade: 2, bolsos: '2 frontais', etiquetas: 'nenhuma visível', barra: 'elástica', textura: 'nylon',
-  cores: [{ cor: 'Preto', nome_tom: 'preto', regiao_peca: { x0: 0.2, y0: 0.2, x1: 0.8, y1: 0.8 } }, { cor: 'Branco', nome_tom: 'branco gelo', regiao_peca: { x0: 0.2, y0: 0.2, x1: 0.8, y1: 0.8 } }],
+  cores: [{ cor: 'Preto', nome_tom: 'preto' }, { cor: 'Branco', nome_tom: 'branco gelo' }],
 };
 const igual = { ok: true, nota: 'igual' };
 const pecaOk = (posicao: number) => ({
@@ -178,8 +175,8 @@ vi.mock('../../_shared/supabase.ts', () => ({
     from: tabela,
     storage: {
       from: () => ({
-        download: async (p: string, o?: { transform?: unknown }) => {
-          if (o?.transform) f.reduzidas.push(p); else f.downloads.push(p);
+        download: async (p: string) => {
+          f.downloads.push(p);
           return { data: new Blob([f.conteudos[p] ?? `foto ${p}`], { type: 'image/jpeg' }), error: null };
         },
         upload: (p: string) => {
@@ -222,7 +219,7 @@ beforeEach(() => {
   f.uploadAtrasoMs = 0; f.objetos = new Set(); f.listaExiste = [];
   f.uploadErroVira = ''; f.leiturasImagens = 0; f.falhaLeituraN = 0; f.imagemB64 = PNG_VERTICAL; f.custo = 0.041; f.chamadasImagem = []; f.chamadasVisao = 0;
   f.chamadasFicha = 0; f.verificacoes = []; f.pedidosVerificacao = []; f.atrasoVerificacaoMs = 0;
-  f.linhas = []; f.uploads = []; f.downloads = []; f.reduzidas = []; f.conteudos = {}; f.escritasProibidas = [];
+  f.linhas = []; f.uploads = []; f.downloads = []; f.conteudos = {}; f.escritasProibidas = [];
   f.base = {
     nome_pai: 'Jaqueta', titulo_ml: 'Jaqueta Corta Vento',
     variacoes: [
@@ -287,12 +284,11 @@ describe('gerar-foto-kit', () => {
     expect(Number(f.linhas[0].custo_usd)).toBeGreaterThan(0);
   });
 
-  it('originais repetidas (mesmo arquivo em outro caminho) vão uma vez só; hex da cor sai da versão reduzida', async () => {
+  it('originais repetidas (mesmo arquivo em outro caminho) vão uma vez só', async () => {
     f.conteudos = { 'org-1/lote/preto.jpg': 'mesma', 'org-1/lote/preto-g.jpg': 'mesma' };
     expect((await post(ok)).status).toBe(200);
     const conteudo = (f.chamadasImagem[0].messages as Array<{ content: Array<{ type: string }> }>)[0].content;
     expect(conteudo.filter((c) => c.type === 'image_url')).toHaveLength(2);
-    expect(f.reduzidas).toEqual(['org-1/lote/preto.jpg', 'u1/lote/branco.jpg']);
   });
 
   it('foto gerada não publica sem aprovação: nada é escrito em família, variação ou ML', async () => {

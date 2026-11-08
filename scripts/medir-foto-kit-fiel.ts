@@ -12,8 +12,6 @@ import { adequadaAoML, dimensoesImagem, gerarImagem, MODELO_IMAGEM_PADRAO } from
 import {
   avaliar, extrairFicha, ITENS, lerVerificacao, MAX_TENTATIVAS, montarPedidoFiel, reprovacao, type Verificacao,
 } from '../supabase/functions/_shared/ai/foto-kit-fiel.ts';
-import { corDaPecaNaColuna, diferencaCor } from '../supabase/functions/_shared/ai/cor.ts';
-import { decodificar } from '../supabase/functions/_shared/ai/pixels.ts';
 import { MODELO_VISION } from '../supabase/functions/_shared/ai/modelos.ts';
 
 const arg = (n: string, d?: string) => { const i = Deno.args.indexOf(`--${n}`); return i >= 0 ? Deno.args[i + 1] : d; };
@@ -29,8 +27,8 @@ await Deno.mkdir(saida, { recursive: true });
 const csv = `${saida}/resultado.csv`;
 const q = (v: unknown) => `"${String(v ?? '').replaceAll('"', '""')}"`;
 await Deno.writeTextFile(csv, [
-  'kit', 'produto', 'n_cores', 'cores', 'tentativa', 'aprovado', ...ITENS.map(([c]) => c), 'deltaE_por_cor',
-  'custo_ficha_usd', 'custo_geracao_usd', 'custo_verificacao_usd', 'ms_ficha', 'ms_geracao', 'ms_verificacao', 'ms_decode_gerada', 'motivos',
+  'kit', 'produto', 'n_cores', 'cores', 'tentativa', 'aprovado', ...ITENS.map(([c]) => c),
+  'custo_ficha_usd', 'custo_geracao_usd', 'custo_verificacao_usd', 'ms_ficha', 'ms_geracao', 'ms_verificacao', 'motivos',
 ].join(',') + '\n');
 
 const b64 = (b: Uint8Array) => { let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(s); };
@@ -67,17 +65,12 @@ for (const [k, kit] of kits.slice(0, so).entries()) {
   for (const [i, fs] of bytes.entries()) origem[i] = fs.map((f) => f.path);
   for (const [i, fs] of bytes.entries()) for (const [j, f] of fs.entries()) await Deno.writeFile(`${dir}/original-${i + 1}-${j + 1}.${f.mime.split('/')[1] ?? 'jpg'}`, f.bytes);
   const grupos = bytes.map((fs, i) => ({ cor: kit.cores[i], urls: fs.map((f) => `data:${f.mime};base64,${b64(f.bytes)}`) }));
-  const pixels = await Promise.all(origem.map(async (ps) => {
-    const { data } = await sb.storage.from('imagens').download(ps[0], { transform: { width: 256, height: 256, resize: 'contain' } });
-    return data ? decodificar(new Uint8Array(await data.arrayBuffer())) : null;
-  }));
-
   let t0 = Date.now();
-  const { ficha, custoUsd: custoFicha } = await extrairFicha(grupos, origem, pixels, 60_000);
+  const { ficha, custoUsd: custoFicha } = await extrairFicha(grupos, origem, 60_000);
   const msFicha = Date.now() - t0;
   total += custoFicha;
   await Deno.writeTextFile(`${dir}/ficha.json`, JSON.stringify(ficha, null, 2));
-  console.log(`kit ${k + 1} ${produto} [${kit.cores.join(' + ')}]: ficha ${ficha.comprimento} ${ficha.proporcao_altura_largura} fotos ${origem.map((o) => o.length).join('/')} hex ${ficha.cores.map((c) => c.hex).join(' ')} (US$ ${custoFicha.toFixed(4)}, ${msFicha} ms)`);
+  console.log(`kit ${k + 1} ${produto} [${kit.cores.join(' + ')}]: ficha ${ficha.comprimento} ${ficha.proporcao_altura_largura} fotos ${origem.map((o) => o.length).join('/')} tons ${ficha.cores.map((c) => c.nome_tom).join(' / ')} (US$ ${custoFicha.toFixed(4)}, ${msFicha} ms)`);
 
   let motivos: string[] = [];
   for (let t = 1; t <= MAX_TENTATIVAS; t++) {
@@ -89,7 +82,7 @@ for (const [k, kit] of kits.slice(0, so).entries()) {
     const msGeracao = Date.now() - t0;
     total += gerada.custoUsd;
     await Deno.writeFile(`${dir}/tentativa-${t}.${gerada.ext}`, gerada.bytes);
-    let v: Verificacao; let custoVerif = 0; let msVerif = 0; let msDecode = 0; let deltas: string[] = [];
+    let v: Verificacao; let custoVerif = 0; let msVerif = 0;
     if (!adequadaAoML(dimensoesImagem(gerada.bytes))) {
       v = reprovacao('Enquadramento: a foto saiu horizontal ou pequena.');
     } else {
@@ -98,23 +91,18 @@ for (const [k, kit] of kits.slice(0, so).entries()) {
         const lida = await lerVerificacao(ficha, grupos, `data:${gerada.mime};base64,${b64(gerada.bytes)}`, 60_000);
         msVerif = Date.now() - t0;
         custoVerif = lida.custoUsd; total += custoVerif;
-        const td = performance.now();
-        const px = decodificar(gerada.bytes);
-        msDecode = Math.round(performance.now() - td);
-        const hexG = ficha.cores.map((_, i) => (px ? corDaPecaNaColuna(px, i, kit.cores.length) : null));
-        deltas = ficha.cores.map((c, i) => { const d = c.hex && hexG[i] ? diferencaCor(c.hex, hexG[i]!) : null; return d ? d.deltaE.toFixed(1) : '?'; });
-        v = avaliar(ficha, lida.json, hexG);
+        v = avaliar(ficha, lida.json);
         await Deno.writeTextFile(`${dir}/verificacao-${t}.json`, JSON.stringify({ resposta: lida.json, veredito: v }, null, 2));
       } catch (e) { msVerif = Date.now() - t0; v = reprovacao(`verificação falhou (${(e as Error).name})`); }
     }
     const ok = new Map(v.itens.map((i) => [i.campo, i.ok]));
     await Deno.writeTextFile(csv, [
       k + 1, q(produto), kit.cores.length, q(kit.cores.join(' + ')), t, v.aprovado ? 'sim' : 'nao',
-      ...ITENS.map(([c]) => (ok.has(c) ? (ok.get(c) ? 'ok' : 'DIVERGE') : '')), q(deltas.join(' | ')),
-      t === 1 ? custoFicha.toFixed(5) : '0', gerada.custoUsd.toFixed(5), custoVerif.toFixed(5), t === 1 ? msFicha : 0, msGeracao, msVerif, msDecode,
+      ...ITENS.map(([c]) => (ok.has(c) ? (ok.get(c) ? 'ok' : 'DIVERGE') : '')),
+      t === 1 ? custoFicha.toFixed(5) : '0', gerada.custoUsd.toFixed(5), custoVerif.toFixed(5), t === 1 ? msFicha : 0, msGeracao, msVerif,
       q(v.motivos.join(' || ')),
     ].join(',') + '\n', { append: true });
-    console.log(`  t${t}: ${v.aprovado ? 'APROVADA' : 'reprovada'} geração ${msGeracao} ms, verificação ${msVerif} ms, ΔE ${deltas.join('/')} | acumulado US$ ${total.toFixed(3)}${v.aprovado ? '' : ` | ${v.motivos.join(' || ').slice(0, 300)}`}`);
+    console.log(`  t${t}: ${v.aprovado ? 'APROVADA' : 'reprovada'} geração ${msGeracao} ms, verificação ${msVerif} ms | acumulado US$ ${total.toFixed(3)}${v.aprovado ? '' : ` | ${v.motivos.join(' || ').slice(0, 300)}`}`);
     if (v.aprovado) break;
     motivos = v.motivos;
   }

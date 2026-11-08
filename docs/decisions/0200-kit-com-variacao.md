@@ -145,10 +145,11 @@ escuro. A descrição livre por visão não captou comprimento nem proporção. 
 1. **Ficha estruturada antes de gerar**, por visão, com todas as fotos de cada cor (variações da cor, fora de item
    moderado, até 3 por cor): tipo e comprimento relativo ao corpo, proporção altura/largura, modelagem e caimento,
    cós, cordão, bolsos, etiquetas, barra, textura e cor por cor do kit. Fotos repetidas por conteúdo (o mesmo
-   arquivo em um caminho por tamanho) contam uma vez. O hex médio da cor é amostrado em código na versão de 256 px
-   da 1ª foto da cor (render do storage), dentro da caixa da peça que a ficha aponta, com o fundo excluído; sem
-   caixa, sem hex (a média da foto inteira pegava a pele do modelo: medido em 08/11). As capas da família ficam fora:
-   não têm cor declarada.
+   arquivo em um caminho por tamanho) contam uma vez. **Sem hex amostrado em código**: medido em 08/11 em 7 kits
+   reais, a foto vestida e o cenário contaminam a média mesmo dentro da caixa da peça apontada pelo modelo e com
+   filtro de pele (o preto saiu marrom), e o hex errado no pedido puxou a geração para o marrom (falso positivo no
+   kit Preto Mesclado). A cor fica com as fotos, o nome do tom e o inspetor; voltar ao hex só com segmentação da
+   peça. As capas da família ficam fora: não têm cor declarada.
 2. **Geração ancorada**: fotos de cada cor + a ficha (como dado, separado das instruções); o pedido proíbe alongar,
    encurtar, trocar modelagem ou inventar detalhe. Enquadramento do kit: N peças lado a lado, mesma escala, numa
    linha, fundo claro neutro, quadrada.
@@ -156,7 +157,8 @@ escuro. A descrição livre por visão não captou comprimento nem proporção. 
    JSON estruturado; o veredito é calculado em código (nunca um "aprovado" do modelo). Comprimento comparado direto
    com a original (mais longa, igual, mais curta) e proporção altura/largura da original e da gerada lidas na mesma
    resposta, com tolerância de 15% (a categoria absoluta lida numa foto estendida contra uma vestida deu ruído na
-   medição de 08/11); cor também por ΔE entre o hex amostrado da original e o da peça gerada.
+   medição de 08/11); cor por matiz e escurecimento contra as originais da cor (cinza que puxa para o marrom é
+   divergência).
    Erro ou resposta ilegível na verificação reprova (fail-closed). Foto gerada horizontal ou pequena também reprova
    a tentativa.
 4. **Até 3 tentativas por `request_id`** (1 + 2 automáticas), cada uma numa linha de `kit_variacao_imagens`
@@ -170,5 +172,6 @@ escuro. A descrição livre por visão não captou comprimento nem proporção. 
    mostra "A IA não conseguiu uma foto fiel" com os motivos, sugere enviar foto própria e não oferece
    "Usar esta foto" (resposta reprovada nunca traz `path`).
 
-**Ainda a medir:** taxa de aprovação na 1ª tentativa e tolerâncias (proporção 15%, ΔE 15) com produtos reais
-(`scripts/medir-foto-kit-fiel.ts`).
+**Ainda a medir:** taxa de aprovação na 1ª tentativa, falso positivo (aprovada não fiel na conferência humana) e
+tolerância de proporção (15%) com produtos reais (`scripts/medir-foto-kit-fiel.ts`). A base tem só 9 roupas com
+2+ cores fotografadas (2 lojas, sem camiseta).

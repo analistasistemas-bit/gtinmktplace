@@ -19,8 +19,6 @@ import {
   avaliar, extrairFicha, type Ficha, type FotosDaCor, lerVerificacao, MAX_TENTATIVAS, montarPedidoFiel, reprovacao,
   type Verificacao,
 } from '../_shared/ai/foto-kit-fiel.ts';
-import { corDaPecaNaColuna } from '../_shared/ai/cor.ts';
-import { decodificar } from '../_shared/ai/pixels.ts';
 import { fotoDaOrg } from '../criar-kit-variacao/processar.ts';
 import { fotosEmItemModerado } from '../criar-kit-variacao/fotos-moderadas.ts';
 
@@ -357,15 +355,7 @@ async function atender(req: Request, inicio: number): Promise<Response> {
     if (fichaSalva) {
       ficha = fichaSalva;
     } else {
-      // Hex amostrado em código na versão reduzida (256 px, render do storage) da 1ª foto de cada cor: decodificar a
-      // foto inteira custa ~1 s de CPU a frio. Sem versão reduzida → sem hex (a cor fica com a visão).
-      const pixels = await comPrazo(Promise.all(origem.map(async (ps) => {
-        try {
-          const { data } = await admin.storage.from('imagens').download(ps[0], { transform: { width: 256, height: 256, resize: 'contain' } });
-          return data ? decodificar(new Uint8Array(await data.arrayBuffer())) : null;
-        } catch { return null; }
-      })), fatia(8_000, 60_000)).catch(() => origem.map(() => null));
-      const lida = await extrairFicha(grupos, origem, pixels, fatia(FICHA_MS, 60_000));
+      const lida = await extrairFicha(grupos, origem, fatia(FICHA_MS, 60_000));
       ficha = lida.ficha;
       custoUsd += lida.custoUsd;
     }
@@ -389,8 +379,7 @@ async function atender(req: Request, inicio: number): Promise<Response> {
       const geradaUrl = await paraDataUrl(new Blob([gerada.bytes as Uint8Array<ArrayBuffer>], { type: gerada.mime }));
       const lida = await lerVerificacao(ficha, grupos, geradaUrl, fatia(VERIFICACAO_MS, RESERVA_FINAL_MS));
       custoUsd += lida.custoUsd;
-      const px = decodificar(gerada.bytes);
-      verificacao = avaliar(ficha, lida.json, ficha.cores.map((_, i) => (px ? corDaPecaNaColuna(px, i, cores.length) : null)));
+      verificacao = avaliar(ficha, lida.json);
     } catch (e) {
       logErro('verificacao', e);
       verificacao = reprovacao('Não foi possível conferir a foto gerada.');
