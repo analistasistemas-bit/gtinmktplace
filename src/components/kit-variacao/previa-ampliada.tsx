@@ -48,8 +48,8 @@ export function PreviaAmpliada({ open, onOpenChange, rotulo, url, aprovada, conf
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid min-h-0 flex-1 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_22rem] lg:overflow-hidden">
-          <div className="relative min-h-0 bg-muted/40">
+        <div className="grid min-h-0 flex-1 content-start overflow-y-auto lg:grid-cols-[minmax(0,1fr)_22rem] lg:content-stretch lg:overflow-hidden">
+          <div className="relative bg-muted/40 lg:min-h-0">
             {url && (
               <Button
                 size="sm" variant="outline" className="absolute top-3 right-3 z-10 bg-background/90"
@@ -59,7 +59,7 @@ export function PreviaAmpliada({ open, onOpenChange, rotulo, url, aprovada, conf
                 {zoom ? 'Afastar' : 'Aproximar'}
               </Button>
             )}
-            <div className="h-full max-h-[60vh] overflow-auto p-4 lg:max-h-none">
+            <div className="max-h-[60vh] overflow-auto p-4 lg:h-full lg:max-h-none">
               {url
                 ? <img
                     src={url} alt={`Foto gerada ${rotulo}, ampliada`}

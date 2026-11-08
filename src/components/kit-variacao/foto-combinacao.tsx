@@ -104,7 +104,7 @@ export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, 
             {candidata.url && !erroPrevia
               ? <img
                   key={candidata.url} src={candidata.url} alt={`Foto gerada ${rotulo}`}
-                  className="h-24 w-18 shrink-0 rounded object-cover"
+                  className="h-24 w-18 shrink-0 rounded bg-background object-contain"
                   onLoad={() => setCarregada(true)} onError={() => { setCarregada(false); setErroPrevia(true); }}
                 />
               : <span aria-hidden className="h-24 w-18 shrink-0 rounded bg-muted" />}
