@@ -259,7 +259,7 @@ describe('DialogGerenciarKit', () => {
       await abrirNovo(user);
       const campo = screen.getByLabelText('Nova Preto e Marrom GG');
       expect(campo).toBeDisabled();
-      expect(campo.closest('td')).toHaveAttribute('title', 'Sem peça de Marrom em GG');
+      expect(campo.closest('td')).toHaveAttribute('title', 'Sem peça livre de Marrom em GG');
       expect(screen.getByLabelText('Nova Preto e Branco GG')).toBeEnabled();
     });
 

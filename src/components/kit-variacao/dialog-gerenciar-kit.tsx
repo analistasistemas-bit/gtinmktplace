@@ -389,7 +389,7 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
                                     const bloqueada = m.maximo === 0 && valor === 0;
                                     const acima = valor > m.maximo;
                                     return (
-                                      <td key={t} className="px-2 py-1.5 text-right" title={bloqueada ? `Sem peça de ${m.faltam.join(', ')} em ${t}` : undefined}>
+                                      <td key={t} className="px-2 py-1.5 text-right" title={bloqueada ? `Sem peça livre de ${m.faltam.join(', ')} em ${t}` : undefined}>
                                         <Input
                                           type="number" min={0} step={1} inputMode="numeric" placeholder="0"
                                           aria-label={`Nova ${rotulo} ${t}`}

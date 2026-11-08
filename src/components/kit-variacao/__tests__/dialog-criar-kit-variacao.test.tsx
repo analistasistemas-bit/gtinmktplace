@@ -124,7 +124,7 @@ describe('DialogCriarKitVariacao', () => {
     await montar(user, ['Preto', 'Bege Cru'], {});
     const campo = screen.getByLabelText('Quantidade Preto e Bege Cru M');
     expect(campo).toBeDisabled();
-    expect(campo.closest('td')).toHaveAttribute('title', 'Sem peça de Bege Cru em M');
+    expect(campo.closest('td')).toHaveAttribute('title', 'Sem peça livre de Bege Cru em M');
   });
 
   it('acima do máximo o campo fica vermelho', async () => {

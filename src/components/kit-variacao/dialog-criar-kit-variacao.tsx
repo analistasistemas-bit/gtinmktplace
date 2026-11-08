@@ -278,7 +278,7 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
                                 const bloqueada = maximo === 0 && valor === 0;
                                 const acima = valor > maximo;
                                 return (
-                                  <td key={t} className="px-2 py-1.5 text-right" title={bloqueada ? `Sem peça de ${faltam.join(', ')} em ${t}` : undefined}>
+                                  <td key={t} className="px-2 py-1.5 text-right" title={bloqueada ? `Sem peça livre de ${faltam.join(', ')} em ${t}` : undefined}>
                                     <Input
                                       type="number" min={0} step={1} inputMode="numeric"
                                       aria-label={`Quantidade ${rotulo} ${t}`}

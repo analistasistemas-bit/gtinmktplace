@@ -51,5 +51,6 @@ export function maximoPorCelula(
   const chave = (cores: string[]) => [...cores].sort().join('|');
   const outras = quantidades.filter((q) => q.tamanho !== celula.tamanho || chave(q.cores) !== chave(celula.cores));
   const livre = saldoDePecas(variacoes, celula.cores, [celula.tamanho], outras).map((s) => ({ cor: s.cor, n: Math.max(0, s.tem - s.precisa) }));
+  // `faltam` = sem peça LIVRE: zerada ou já usada por outra célula (o texto da tela não pode dizer que não existe).
   return { maximo: Math.min(...livre.map((l) => l.n)), faltam: livre.filter((l) => l.n === 0).map((l) => l.cor) };
 }
