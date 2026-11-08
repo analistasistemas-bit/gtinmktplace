@@ -68,6 +68,17 @@ describe('validateTerms', () => {
   });
 });
 
+describe('validateTerms — imagem IA (kit com variação)', () => {
+  it('ausente vira 0 e informado é preservado', () => {
+    expect(validateTerms(valid).image_unit_cents).toBe(0);
+    expect(validateTerms({ ...valid, image_unit_cents: 50 }).image_unit_cents).toBe(50);
+    expect(validateTerms({ ...valid, modality: 1, monthly_fee_cents: 60000, sonar_unit_cents: 0, image_unit_cents: 50 }).image_unit_cents).toBe(50);
+  });
+  it.each([-1, 1.5, '50', null])('rejeita image_unit_cents %s', (value) => {
+    expect(() => validateTerms({ ...valid, image_unit_cents: value })).toThrow('image_unit_cents');
+  });
+});
+
 describe('validateTerms — vencimento (ADR-0193 D-9)', () => {
   it('ausente vira dia 05 e informado é preservado', () => {
     expect(validateTerms(valid).due_day).toBe(5);

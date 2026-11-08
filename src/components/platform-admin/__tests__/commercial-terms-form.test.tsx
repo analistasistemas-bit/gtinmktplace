@@ -317,6 +317,21 @@ describe('CommercialTermsForm', () => {
     expect(screen.getByText(/Anterior/)).toBeInTheDocument();
   });
 
+  it('imagem IA: envia o preço por imagem em qualquer modalidade e renegociação parte do valor atual', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
+    expect(screen.getByLabelText('Imagem IA por unidade')).toHaveValue('0,00');
+    await user.clear(screen.getByLabelText('Imagem IA por unidade'));
+    await user.type(screen.getByLabelText('Imagem IA por unidade'), '0,50');
+    await user.type(screen.getByLabelText('Motivo'), 'preço da imagem');
+    await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ modality: 1, image_unit_cents: 50 }));
+    cleanup();
+
+    render(<CommercialTermsForm orgId="org-a" current={{ ...current, image_unit_cents: 75 }} onSaved={vi.fn()} />);
+    expect(screen.getByLabelText('Imagem IA por unidade')).toHaveValue('0,75');
+  });
+
   it('trava Sonar em 0,00 na modalidade 1 e Infraestrutura em 0,00 na modalidade 2', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);

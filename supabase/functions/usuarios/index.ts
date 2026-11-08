@@ -314,7 +314,7 @@ Deno.serve(async (req) => {
       if (!alvoOrg) return json({ error: 'Empresa não encontrada.' }, 404);
       const historyTables = ['platform_commercial_terms', 'platform_billing_statements', 'platform_billing_sale_facts',
         'platform_revenue_reconciliations', 'platform_audit_events', 'platform_sonar_searches',
-        'platform_sonar_deliveries', 'platform_sonar_events'];
+        'platform_sonar_deliveries', 'platform_sonar_events', 'platform_image_deliveries'];
       for (const table of historyTables) {
         const { count, error } = await db.from(table).select('id', { count: 'exact', head: true }).eq('org_id', alvo);
         if (error) return json({ error: `Não foi possível verificar o histórico em ${table}: ${error.message}` }, 500);

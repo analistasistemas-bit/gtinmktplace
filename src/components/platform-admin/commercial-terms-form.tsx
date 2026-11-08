@@ -23,6 +23,7 @@ type FormState = {
   revenueT3: string;
   revenueT4: string;
   sonar: string;
+  image: string;
   setup: string;
   setupDueMonth: string;
   dueDay: string;
@@ -82,6 +83,7 @@ function initialState(current: CommercialTerms | null, startsOn: string): FormSt
     revenueT3: formatScaled(current?.revenue_bps_t3 ?? (modality === '2' ? 550 : 350), 2),
     revenueT4: formatScaled(current?.revenue_bps_t4 ?? (modality === '2' ? 500 : 300), 2),
     sonar: formatScaled(current?.sonar_unit_cents ?? (modality === '2' ? 120 : 0), 2),
+    image: formatScaled(current?.image_unit_cents ?? 0, 2),
     setup: formatScaled(current?.setup_fee_cents ?? 300_000, 2),
     setupDueMonth: current?.setup_due_month ?? startsOn.slice(0, 7),
     dueDay: String(current?.due_day ?? 5),
@@ -162,8 +164,9 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
     const revenueT3 = parseScaled(form.revenueT3, 2);
     const revenueT4 = parseScaled(form.revenueT4, 2);
     const sonar = parseScaled(form.sonar, 2);
+    const image = parseScaled(form.image, 2);
     const setup = parseScaled(form.setup, 2);
-    if ([monthly, revenueT1, revenueT2, revenueT3, revenueT4, sonar, setup].some((value) => value === null)) {
+    if ([monthly, revenueT1, revenueT2, revenueT3, revenueT4, sonar, image, setup].some((value) => value === null)) {
       setError('Use valores positivos ou zero, com no máximo duas casas decimais.');
       return;
     }
@@ -196,6 +199,7 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
         revenue_bps_t3: revenueT3!,
         revenue_bps_t4: revenueT4!,
         sonar_unit_cents: form.modality === '1' ? 0 : sonar!,
+        image_unit_cents: image!,
         setup_fee_cents: isFirstContract ? setup! : 0,
         setup_due_month: effectiveSetupDue,
         reason: form.reason.trim(),
@@ -328,7 +332,7 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
                 </label>
               </div>
             </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 md:col-span-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 md:col-span-2">
               <label className="space-y-1 text-sm" htmlFor="terms-sonar">
                 <span className="font-medium">Sonar por consulta</span>
                 <Input
@@ -338,6 +342,16 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
                   disabled={form.modality === '1'}
                   value={form.modality === '1' ? '0,00' : form.sonar}
                   onChange={(event) => set('sonar', event.target.value)}
+                />
+              </label>
+              <label className="space-y-1 text-sm" htmlFor="terms-image">
+                <span className="font-medium">Imagem IA por unidade</span>
+                <Input
+                  id="terms-image"
+                  aria-label="Imagem IA por unidade"
+                  inputMode="decimal"
+                  value={form.image}
+                  onChange={(event) => set('image', event.target.value)}
                 />
               </label>
               <label className="space-y-1 text-sm" htmlFor="terms-setup">

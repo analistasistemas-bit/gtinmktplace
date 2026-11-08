@@ -181,6 +181,28 @@ describe('OrgBilling', () => {
     await waitFor(() => expect(toastError).toHaveBeenCalledWith('sem rede'));
   });
 
+  it('composição mostra "Imagens IA" só quando a prévia traz a linha', () => {
+    render(<OrgBilling orgId="org-a" month="2026-08" />);
+    expect(screen.queryByText(/Imagens IA/)).not.toBeInTheDocument();
+    cleanup();
+
+    const preview = makePreview();
+    mocks.usePreview.mockReturnValue({
+      data: {
+        ...preview,
+        image_units: 3,
+        image_cents: 150,
+        lines: [...preview.lines, { key: 'image_ia', label: 'Imagens IA', quantity: 3, unit_cents: 50, amount_cents: 150, source_type: 'image_deliveries', source_id: null }],
+      },
+      isLoading: false,
+      isError: false,
+      refetch: mocks.refetch,
+    });
+    render(<OrgBilling orgId="org-a" month="2026-08" />);
+    expect(screen.getByText('Imagens IA (3)')).toBeInTheDocument();
+    expect(screen.getByText('Imagens IA (3)').nextElementSibling?.textContent).toMatch(/1,50/);
+  });
+
   it('contrato futuro ainda nao vigente nao reabre como primeiro contrato', () => {
     mocks.useTerms.mockReturnValue({
       data: { rows: [{ ...terms, starts_on: '2026-10-01' }] },

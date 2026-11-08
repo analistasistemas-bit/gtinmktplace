@@ -43,6 +43,7 @@ export function validateTerms(input: unknown): CommercialTermsInput {
   if (value.modality === 1 && sonarUnitCents !== 0) {
     fail('Modalidade 1 não cobra Sonar do cliente: informe 0');
   }
+  const imageUnitCents = value.image_unit_cents === undefined ? 0 : cents(value.image_unit_cents, 'image_unit_cents');
   if (value.modality === 2 && monthlyFeeCents !== 0) {
     fail('Modalidade 2 não tem infraestrutura separada: informe 0');
   }
@@ -71,6 +72,7 @@ export function validateTerms(input: unknown): CommercialTermsInput {
     revenue_bps_t3: value.revenue_bps_t3 as number,
     revenue_bps_t4: value.revenue_bps_t4 as number,
     sonar_unit_cents: sonarUnitCents,
+    image_unit_cents: imageUnitCents,
     setup_fee_cents: setupFee,
     setup_due_month: setupDueMonth,
     reason: value.reason.trim(),

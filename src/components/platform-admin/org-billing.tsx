@@ -78,12 +78,15 @@ function Composition({ preview }: { preview: BillingPreview }) {
   const setup = amount(preview.lines, 'setup');
   const infrastructure = amount(preview.lines, 'infrastructure');
   const credits = amount(preview.lines, 'credits');
+  // Linha só existe com preço > 0 ou uso no mês (e nunca em snapshot anterior à cobrança de imagem).
+  const image = preview.lines.find((line) => line.key === 'image_ia');
   const rows = [
     ['Receita bruta', preview.gross_cents],
     ['Ajustes da base', -preview.refund_cents || 0],
     [`Percentual (${humanPercent(preview.applied_bps)})`, preview.fee_cents],
     ['Infraestrutura', infrastructure],
     [`Consultas Sonar (${preview.sonar_units})`, preview.sonar_cents],
+    ...(image ? [[`Imagens IA (${image.quantity ?? 0})`, image.amount_cents] as const] : []),
     ['Implantação', setup],
     ['Créditos', credits || (-preview.credit_cents || 0)],
   ] as const;

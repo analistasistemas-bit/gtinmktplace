@@ -11,6 +11,8 @@ export type CommercialTermsInput = {
   revenue_bps_t3: number;
   revenue_bps_t4: number;
   sonar_unit_cents: Cents;
+  /** Preço por imagem IA gerada (kit com variação); ausente = 0. Vale em qualquer modalidade. */
+  image_unit_cents?: Cents;
   setup_fee_cents: Cents;
   setup_due_month: Month | null;
   reason: string;
@@ -76,6 +78,9 @@ export type BillingPreview = {
   applied_tier: 1 | 2 | 3 | 4 | null;
   sonar_units: number;
   sonar_cents: Cents;
+  /** Imagens IA cobradas no mês. Snapshot anterior à cobrança de imagem não traz os campos. */
+  image_units?: number;
+  image_cents?: Cents;
   lines: BillingLine[];
   total_cents: Cents;
   credit_cents: Cents;
