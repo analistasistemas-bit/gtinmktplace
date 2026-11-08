@@ -22,7 +22,7 @@ import { lerOferta } from '../_shared/kit-variacao/ml-oferta.ts';
 import { AVISO_SELETOR_ML } from '../_shared/kit-variacao/combinacoes.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import {
-  criarKitVariacao, itemModerado, type CriarKitVariacaoInput, type DepsCriarKitVariacao,
+  criarKitVariacao, itensPorFoto, moderadosDoBulk, type CriarKitVariacaoInput, type DepsCriarKitVariacao,
 } from './processar.ts';
 
 function json(body: unknown, status = 200): Response {
@@ -61,6 +61,22 @@ function portas(admin: SupabaseClient, orgId: string, userId: string): DepsCriar
   })();
 
   return {
+    orgId,
+    async usuariosDaOrg() {
+      return (await ler(admin.from('profiles').select('id').eq('org_id', orgId), 'usuários da org') ?? []).map((p) => p.id as string);
+    },
+
+    async parcial(chave) {
+      const f = await ler(admin.from('familias').select('id, lote_id, codigo_pai').eq('org_id', orgId)
+        .eq('chave_cadastro', chave).maybeSingle(), 'cadastro parcial');
+      if (!f) return null;
+      const vs = await ler(admin.from('variacoes').select('codigo, cor, tamanho').eq('familia_id', f.id), 'variações do parcial') ?? [];
+      return {
+        familiaId: f.id as string, loteId: f.lote_id as string, codigoPai: f.codigo_pai as string,
+        variacoes: vs.map((v) => ({ codigo: v.codigo as string, cor: v.cor as string | null, tamanho: v.tamanho as string | null })),
+      };
+    },
+
     async lerBase(familiaId) {
       const familia = await ler(admin.from('familias').select(`*, ${EMBED_MODULOS}`)
         .eq('id', familiaId).eq('org_id', orgId).maybeSingle(), 'família-base') as Linha | null;
@@ -93,25 +109,22 @@ function portas(admin: SupabaseClient, orgId: string, userId: string): DepsCriar
 
     lerOferta: async (upId, itemIds) => lerOferta((await ml()).token, upId, itemIds),
 
-    // Foto → itens que a usam (variação pela `imagem_path`, família pelas capas) → status lido no ML agora.
+    // Foto → itens que a usam (`itensPorFoto`: Legacy, principal e cópias de catálogo) → status lido no ML agora,
+    // com leitura completa (`moderadosDoBulk` lança se faltar item). Qualquer falha lança e a edge recusa.
     async fotosEmItemModerado(paths) {
-      const vs = await ler(admin.from('variacoes').select('codigo, imagem_path').eq('org_id', orgId).in('imagem_path', paths),
-        'fotos de variação') ?? [];
-      const capas: Linha[] = [];
+      const vs = await ler(admin.from('variacoes').select('codigo, imagem_path, catalog_listing_id, familias!inner(ml_item_id)')
+        .eq('org_id', orgId).in('imagem_path', paths), 'fotos de variação') ?? [];
+      const capas: Array<{ path: string; codigo_pai: string; ml_item_id: string | null }> = [];
       for (const coluna of ['capa_storage_path', 'capa2_storage_path', 'capa3_storage_path']) {
         const fs = await ler(admin.from('familias').select('*').eq('org_id', orgId).in(coluna, paths), 'fotos de capa') as Linha[] | null;
-        capas.push(...(fs ?? []).map((f) => ({ codigo_pai: f.codigo_pai, ml_item_id: f.ml_item_id, path: f[coluna] })));
+        capas.push(...(fs ?? []).map((f) => ({
+          path: f[coluna] as string, codigo_pai: f.codigo_pai as string, ml_item_id: (f.ml_item_id as string | null) ?? null,
+        })));
       }
-      const itensPorPath = new Map<string, Set<string>>();
-      const juntar = (path: string, id: unknown) => {
-        if (typeof id !== 'string' || !id) return;
-        if (!itensPorPath.has(path)) itensPorPath.set(path, new Set());
-        itensPorPath.get(path)!.add(id);
-      };
       const skus = [...new Set(vs.map((v) => v.codigo as string))];
-      const pais = [...new Set(capas.map((f) => f.codigo_pai as string))];
+      const pais = [...new Set(capas.map((f) => f.codigo_pai))];
       const filhos: Linha[] = [];
-      const colunas = 'sku, item_externo_id, anuncios_externos!inner(codigo_pai)';
+      const colunas = 'sku, item_externo_id, catalog_listing_id, anuncios_externos!inner(codigo_pai)';
       if (skus.length > 0) {
         filhos.push(...await ler(admin.from('anuncios_externos_itens').select(colunas).eq('org_id', orgId)
           .in('sku', skus), 'itens das fotos de variação') ?? []);
@@ -120,15 +133,20 @@ function portas(admin: SupabaseClient, orgId: string, userId: string): DepsCriar
         filhos.push(...await ler(admin.from('anuncios_externos_itens').select(colunas).eq('org_id', orgId)
           .in('anuncios_externos.codigo_pai', pais), 'itens das fotos de capa') ?? []);
       }
-      for (const v of vs) for (const f of filhos) if (f.sku === v.codigo) juntar(v.imagem_path as string, f.item_externo_id);
-      for (const c of capas) {
-        juntar(c.path as string, c.ml_item_id);
-        for (const f of filhos) {
-          const raiz = (f as Linha).anuncios_externos as { codigo_pai?: string } | null;
-          if (raiz?.codigo_pai === c.codigo_pai) juntar(c.path as string, f.item_externo_id);
-        }
-      }
-      const ids = [...new Set([...itensPorPath.values()].flatMap((s) => [...s]))];
+      const umDe = (x: unknown) => (Array.isArray(x) ? x[0] : x) as Linha | null | undefined;
+      const itensPorPath = itensPorFoto({
+        variacoes: vs.map((v) => ({
+          imagem_path: v.imagem_path as string, codigo: v.codigo as string,
+          familia_ml_item_id: (umDe(v.familias)?.ml_item_id as string | null) ?? null,
+          catalog_listing_id: (v.catalog_listing_id as string | null) ?? null,
+        })),
+        capas,
+        filhos: filhos.map((f) => ({
+          sku: f.sku as string, codigo_pai: (umDe(f.anuncios_externos)?.codigo_pai as string | null) ?? null,
+          item_externo_id: (f.item_externo_id as string | null) ?? null, catalog_listing_id: (f.catalog_listing_id as string | null) ?? null,
+        })),
+      });
+      const ids = [...new Set([...itensPorPath.values()].flatMap((x) => [...x]))];
       if (ids.length === 0) return [];
       const { token } = await ml();
       const moderados = new Set<string>();
@@ -138,13 +156,7 @@ function portas(admin: SupabaseClient, orgId: string, userId: string): DepsCriar
           headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000),
         });
         if (!resp.ok) throw new Error(`ML /items/bulk ${resp.status}`);
-        const entradas = comoEnvelopeAntigo(await resp.json(), bloco);
-        for (const e of Array.isArray(entradas) ? entradas : []) {
-          const b = (e as { code?: number; body?: { id?: string; status?: string; sub_status?: string[] } }).body;
-          // Item que não se lê não prova nada: o kit não usa a foto.
-          if (!b?.id || !b.status) throw new Error('ML /items/bulk: item não lido');
-          if (itemModerado({ id: b.id, status: b.status, subStatus: b.sub_status ?? [] })) moderados.add(b.id);
-        }
+        for (const id of moderadosDoBulk(bloco, comoEnvelopeAntigo(await resp.json(), bloco))) moderados.add(id);
       }
       return [...itensPorPath].filter(([, itens]) => [...itens].some((id) => moderados.has(id))).map(([p]) => p);
     },

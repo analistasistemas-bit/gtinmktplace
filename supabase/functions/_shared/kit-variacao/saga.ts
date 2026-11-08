@@ -551,11 +551,19 @@ async function criarDestino(ctx: Ctx, alvo: AlvoSaga): Promise<'criou' | 'pronto
       criou = true;
     }
   }
+  // O ML cria ativo. Antes de qualquer passo local que possa falhar, a pausa é feita e confirmada pela leitura
+  // (`paused_by_seller`). A obrigação é durável: `item_criado` sem `escrita_em` faz toda retomada repetir isto,
+  // e falha ou recusa do registro nunca deixa o item vendável. A reativação é da política, como nos outros alvos.
+  await putStatus(ctx, alvo.item_criado!, 'paused');
+  const oferta = await ler(ctx, alvo);
+  const item = oferta.itens.find((i) => i.id === alvo.item_criado);
+  if (!item || !pausadoPeloVendedor(item)) {
+    // Alerta uma vez (motivo repetido não realerta): o item pode estar vendável enquanto a pausa não pega.
+    return reagendar(ctx, `${alvo.codigo}: confirmando a pausa do item criado ${alvo.item_criado}`, CONFIRMAR_APOS_S, true);
+  }
   vivo(ctx);
   const reg = await ctx.deps.repo.registrarItem(alvo.codigo, alvo.item_criado!, alvo.up_criado!);
-  if (!reg.ok) return travar(ctx, `${alvo.codigo}: item ${alvo.item_criado} criado, mas ${reg.motivo}`);
-  // O ML cria ativo: pausa até confirmar a quantidade; a reativação é da política, como nos outros alvos.
-  await putStatus(ctx, alvo.item_criado!, 'paused');
+  if (!reg.ok) return travar(ctx, `${alvo.codigo}: item ${alvo.item_criado} criado (pausado), mas ${reg.motivo}`);
   await salvarAlvo(ctx, alvo, { escrita_em: iso(ctx) });
   return criou ? 'criou' : 'pronto';
 }

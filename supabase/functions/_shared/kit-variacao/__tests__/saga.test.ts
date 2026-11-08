@@ -986,6 +986,32 @@ describe('avancarSaga: destino sem item (CREATE do kit)', () => {
     expect(c.s.t.estado).toBe('travada');
     expect(c.s.t.alerta).toMatch(/family_id divergente/);
     expect(c.s.rpcs).not.toContain('creditar');
+    // Estado remoto: o item criado ficou pausado pelo vendedor antes do registro que recusou.
+    expect(c.s.ups['UP-NOVO1'].itens[0]).toMatchObject({ status: 'paused', subStatus: ['paused_by_seller'] });
+  });
+
+  it('registro que lança: o item criado é pausado e confirmado antes; a retomada não deixa vendável', async () => {
+    const c = cenarioCriar();
+    let falhas = 2;
+    c.s.aoRegistrar = () => { if (falhas-- > 0) throw new Error('banco fora'); };
+    await rodar(c, (x) => criacoes(x) === 1 && falhas === 1);
+    expect(c.s.ups['UP-NOVO1'].itens[0].subStatus).toContain('paused_by_seller');
+    expect(c.s.alvos[2].escrita_em).toBeNull();
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(criacoes(c)).toBe(1);
+  });
+
+  it('pausa do item criado que o ML ignora: não registra nem avança até a leitura confirmar', async () => {
+    const c = cenarioCriar();
+    c.s.pausaIgnorada.add('MLB-NOVO1');
+    for (let i = 0; i < 25; i++) await passo(c);
+    expect(c.s.registros).toEqual([]);
+    expect(c.s.alvos[2].escrita_em).toBeNull();
+    expect(c.s.t.passo).toBe('aumentar');
+    c.s.pausaIgnorada.delete('MLB-NOVO1');
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
   });
 
   it('kit com 20 SKUs: item já registrado não é refeito, e cada invocação cria o seu', async () => {

@@ -54,8 +54,22 @@ export interface ResultadoRpcKit {
   kit_id?: string; transferencia_id?: string; existente?: boolean;
 }
 
+/** Cadastro parcial de uma tentativa anterior com a mesma chave (família gravada, kit não). */
+export interface CadastroParcial {
+  familiaId: string;
+  loteId: string;
+  codigoPai: string;
+  variacoes: Array<{ codigo: string; cor: string | null; tamanho: string | null }>;
+}
+
 export interface DepsCriarKitVariacao {
+  /** Org autenticada: dona das fotos (`{org_id}/...`). */
+  orgId: string;
+  /** Usuários da org: o layout legado do bucket é `{user_id}/...` (policy "imagens: select org"). */
+  usuariosDaOrg(): Promise<string[]>;
   lerBase(familiaId: string): Promise<BaseKit | null>;
+  /** Família do kit já gravada por uma tentativa anterior com a mesma chave (`familias.chave_cadastro`). */
+  parcial(chave: string): Promise<CadastroParcial | null>;
   existente(chave: string): Promise<{ kitId: string; transferenciaId: string | null } | null>;
   lerOferta(upId: string, itemIds: string[]): Promise<OfertaUP>;
   /** Caminhos de foto usados por algum item moderado (`under_review`, `forbidden`, `waiting_for_patch`), lido no ML. */
@@ -93,6 +107,61 @@ const texto = (v: unknown) => String(v ?? '').trim();
 export function itemModerado(i: { id: string; status: string; subStatus: string[] }): boolean {
   const s = parseStatusML({ id: i.id, status: i.status, sub_status: i.subStatus }).status;
   return s === 'moderado' || s === 'inativo';
+}
+
+/**
+ * Itens do ML ligados a cada caminho de foto: pela variação, o anúncio Legacy da família (`familias.ml_item_id`), a
+ * cópia de catálogo da variação e os filhos UP do SKU (principal e cópia); pela capa, o anúncio da família e todos
+ * os filhos do PAI. Sem nenhum desses a foto não está em anúncio.
+ */
+export function itensPorFoto(e: {
+  variacoes: Array<{ imagem_path: string; codigo: string; familia_ml_item_id: string | null; catalog_listing_id: string | null }>;
+  capas: Array<{ path: string; codigo_pai: string; ml_item_id: string | null }>;
+  filhos: Array<{ sku: string; codigo_pai: string | null; item_externo_id: string | null; catalog_listing_id: string | null }>;
+}): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  const juntar = (path: string, ...ids: Array<string | null>) => {
+    for (const id of ids) {
+      if (!id) continue;
+      if (!out.has(path)) out.set(path, new Set());
+      out.get(path)!.add(id);
+    }
+  };
+  for (const v of e.variacoes) {
+    juntar(v.imagem_path, v.familia_ml_item_id, v.catalog_listing_id);
+    for (const f of e.filhos) if (f.sku === v.codigo) juntar(v.imagem_path, f.item_externo_id, f.catalog_listing_id);
+  }
+  for (const c of e.capas) {
+    juntar(c.path, c.ml_item_id);
+    for (const f of e.filhos) if (f.codigo_pai === c.codigo_pai) juntar(c.path, f.item_externo_id, f.catalog_listing_id);
+  }
+  return out;
+}
+
+/** Moderados numa resposta de `/items/bulk` (envelope antigo). Leitura incompleta lança: sem ela não há prova. */
+export function moderadosDoBulk(ids: string[], entradas: unknown): Set<string> {
+  if (!Array.isArray(entradas)) throw new Error('ML /items/bulk: resposta inesperada');
+  const out = new Set<string>();
+  const lidos = new Set<string>();
+  for (const e of entradas) {
+    const { code, body } = (e ?? {}) as { code?: number; body?: { id?: string; status?: string; sub_status?: string[] } | null };
+    if (code !== 200 || !body?.id || !body.status) throw new Error(`ML /items/bulk: item não lido (${code})`);
+    lidos.add(body.id);
+    if (itemModerado({ id: body.id, status: body.status, subStatus: body.sub_status ?? [] })) out.add(body.id);
+  }
+  const faltando = ids.filter((id) => !lidos.has(id));
+  if (faltando.length > 0) throw new Error(`ML /items/bulk: sem ${faltando.join(', ')}`);
+  return out;
+}
+
+/**
+ * Foto da org: primeira pasta = org (layout novo) ou um usuário da org (legado), sem `..` nem caminho absoluto. Mesma
+ * regra da policy de leitura do bucket `imagens`; sem dono comprovado, recusa.
+ */
+export function fotoDaOrg(path: string, orgId: string, usuariosDaOrg: Set<string>): boolean {
+  const partes = path.split('/');
+  if (path.startsWith('/') || partes.length < 2 || partes.some((p) => p === '' || p === '.' || p === '..')) return false;
+  return partes[0] === orgId || usuariosDaOrg.has(partes[0]);
 }
 
 interface Combinacao { cores: string[]; rotulo: string; tamanho: string; quantidade: number; componentes: Linha[] }
@@ -244,7 +313,17 @@ export async function criarKitVariacao(
   const faltaFoto = combinacoes.find((c) => !texto(input.fotos?.[c.rotulo]));
   if (faltaFoto) return recusa('sem_foto', `Falta a foto de ${faltaFoto.rotulo}.`);
   const paths = [...new Set(combinacoes.map((c) => input.fotos[c.rotulo]))];
-  const moderadas = await deps.fotosEmItemModerado(paths);
+  // O caminho vem do cliente e a edge assina com service role: só foto da própria org (prefixo do bucket).
+  const usuarios = new Set(await deps.usuariosDaOrg());
+  const alheia = paths.find((path) => !fotoDaOrg(path, deps.orgId, usuarios));
+  if (alheia) return recusa('foto_nao_autorizada', `A foto ${alheia} não pertence a esta empresa.`);
+  let moderadas: string[];
+  try {
+    moderadas = await deps.fotosEmItemModerado(paths);
+  } catch (e) {
+    // Sem leitura completa não há prova de que a foto não está em anúncio moderado: recusa.
+    return recusa('foto_moderacao_ilegivel', `Não foi possível conferir as fotos no Mercado Livre: ${e instanceof Error ? e.message : String(e)}`);
+  }
   if (moderadas.length > 0) {
     return recusa('foto_moderada', `Foto usada em anúncio moderado no Mercado Livre: ${moderadas.join(', ')}. Use outra.`);
   }
@@ -288,25 +367,43 @@ export async function criarKitVariacao(
     }
   }
 
-  const { codigoPai, codigos } = await deps.reservarCodigos(1 + combinacoes.length);
-  const loteId = await deps.gravar.lote();
-  let familiaId: string | null = null;
+  // Retomada: a mesma chave reaproveita a família e as variações que uma tentativa anterior gravou (a família
+  // tem `chave_cadastro` única por org). Só o que falta é gravado; nada é apagado sem resultado definitivo.
+  const parcial = await deps.parcial(input.chaveCadastro);
+  if (parcial) {
+    const pedidos = new Set(combinacoes.map((c) => `${c.rotulo}#${c.tamanho}`));
+    const sobra = parcial.variacoes.find((v) => !pedidos.has(`${v.cor}#${v.tamanho}`));
+    if (sobra) return recusa('cadastro_parcial_divergente', `A tentativa anterior gravou ${sobra.codigo}, fora deste pedido. Use outra chave.`);
+  }
+  const existentes = new Map((parcial?.variacoes ?? []).map((v) => [`${v.cor}#${v.tamanho}`, v.codigo]));
+  const faltam = combinacoes.filter((c) => !existentes.has(`${c.rotulo}#${c.tamanho}`));
+  const reserva = parcial && faltam.length === 0 ? null
+    : await deps.reservarCodigos(faltam.length + 1);   // 1 PAI + N; na retomada o PAI reservado sobra
+  const codigoPai = parcial?.codigoPai ?? reserva!.codigoPai;
+  const novos = [...(reserva?.codigos ?? [])];
+  const codigos = combinacoes.map((c) => existentes.get(`${c.rotulo}#${c.tamanho}`) ?? novos.shift()!);
+
+  const loteId = parcial?.loteId ?? await deps.gravar.lote();
+  let familiaId: string | null = parcial?.familiaId ?? null;
   try {
-    familiaId = await deps.gravar.familia(montarFamiliaKitVariacao(familia, {
+    familiaId ??= await deps.gravar.familia(montarFamiliaKitVariacao(familia, {
       loteId, codigoPai, chave: input.chaveCadastro, titulo: input.titulo.trim(), descricao: input.descricao, atributos,
     }));
     for (const [i, c] of combinacoes.entries()) {
+      if (existentes.has(`${c.rotulo}#${c.tamanho}`)) continue;
       await deps.gravar.variacao(montarVariacaoKitVariacao(c, {
         familiaId, codigo: codigos[i], preco: input.preco, foto: input.fotos[c.rotulo],
         pictureId: pictureIds.get(input.fotos[c.rotulo])!, pecas: input.pecasPorKit,
       }));
     }
   } catch (e) {
-    await deps.gravar.desfazer(loteId, familiaId);
-    return recusa('falha_gravar', e instanceof Error ? e.message : String(e));
+    // Incerto (o insert pode ter gravado): mantém o parcial; a repetição com a mesma chave retoma.
+    return recusa('falha_gravar', `${e instanceof Error ? e.message : String(e)}. Tente de novo: o cadastro é retomado.`);
   }
 
-  const r = await deps.gravar.kit({
+  let r: ResultadoRpcKit;
+  try {
+    r = await deps.gravar.kit({
     chave: input.chaveCadastro,
     kit: {
       codigo_pai_base: familia.codigo_pai, codigo_pai_kit: codigoPai, pecas_por_kit: input.pecasPorKit,
@@ -317,13 +414,23 @@ export async function criarKitVariacao(
       componentes: c.componentes.map((v) => ({ codigo: v.codigo, quantidade: 1 })),
     })),
     baseline, alvos,
-  });
-  // Recusa, ou outra requisição com a mesma chave criou antes: a família e as variações desta saem.
-  if (!r.ok || !r.transferencia_id || !r.kit_id || r.existente) {
-    await deps.gravar.desfazer(loteId, familiaId);
-    if (r.ok && r.existente && r.kit_id) {
-      return { ok: true, kitId: r.kit_id, transferenciaId: r.transferencia_id ?? '', existente: true };
+    });
+  } catch (e) {
+    // Resultado incerto: o estado durável decide. Kit gravado segue; senão o parcial fica para a retomada.
+    const ja = await deps.existente(input.chaveCadastro).catch(() => null);
+    if (!ja?.transferenciaId) {
+      return recusa('falha_gravar', `${e instanceof Error ? e.message : String(e)}. Tente de novo: o cadastro é retomado.`);
     }
+    r = { ok: true, kit_id: ja.kitId, transferencia_id: ja.transferenciaId, existente: true };
+  }
+  if (r.ok && r.existente && r.kit_id) {
+    // Outra requisição (ou a anterior) com a mesma chave gravou o kit: a família é a mesma, nada a apagar.
+    if (r.transferencia_id) await deps.enfileirarSaga(r.transferencia_id);
+    return { ok: true, kitId: r.kit_id, transferenciaId: r.transferencia_id ?? '', existente: true };
+  }
+  // Recusa definitiva da RPC (nada do kit foi gravado): família e variações desta chave saem.
+  if (!r.ok || !r.transferencia_id || !r.kit_id) {
+    await deps.gravar.desfazer(loteId, familiaId);
     return recusa(r.motivo ?? 'falha_gravar', r.mensagem ?? r.codigo);
   }
   await deps.enfileirarSaga(r.transferencia_id);

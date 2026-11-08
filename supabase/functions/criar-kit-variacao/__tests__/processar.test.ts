@@ -46,6 +46,9 @@ function cenario() {
     existente: null as { kitId: string; transferenciaId: string | null } | null,
     rpc: { ok: true, kit_id: 'KIT1', transferencia_id: 'T1' } as ResultadoRpcKit,
     erroFiscal: null as string | null,
+    erroModeracao: null as string | null,
+    falhasKit: 0,
+    kitGravadoNaFalha: false,
     fotoQuebrada: null as string | null,
     familias: [] as Linha[],
     variacoesGravadas: [] as Linha[],
@@ -55,8 +58,19 @@ function cenario() {
     leituras: [] as string[],
   };
   const deps: DepsCriarKitVariacao = {
+    orgId: 'ORG',
+    usuariosDaOrg: async () => ['U1'],
     lerBase: async () => s.base,
     existente: async () => s.existente,
+    // Espelho de `familias.chave_cadastro` + variações gravadas nela.
+    async parcial(chave) {
+      const f = s.familias.find((x) => x.chave_cadastro === chave);
+      if (!f) return null;
+      return {
+        familiaId: 'FAM-KIT', loteId: f.lote_id as string, codigoPai: f.codigo_pai as string,
+        variacoes: s.variacoesGravadas.map((v) => ({ codigo: v.codigo as string, cor: v.cor as string, tamanho: v.tamanho as string })),
+      };
+    },
     async lerOferta(upId, itemIds) {
       s.leituras.push(`${upId} ${itemIds.join(',')}`);
       const o = s.ofertas[upId] ?? {};
@@ -65,7 +79,10 @@ function cenario() {
         itens: itemIds.map((id) => ({ id, status: 'active', subStatus: [] })), somenteSellingAddress: true, ...o,
       } as OfertaUP;
     },
-    fotosEmItemModerado: async (paths) => paths.filter((p) => s.moderadas.includes(p)),
+    async fotosEmItemModerado(paths) {
+      if (s.erroModeracao) throw new Error(s.erroModeracao);
+      return paths.filter((p) => s.moderadas.includes(p));
+    },
     exigirFiscal: async () => { if (s.erroFiscal) throw new Error(s.erroFiscal); },
     lerSchema: async () => s.schema,
     garantirGuia: async () => {},
@@ -77,7 +94,16 @@ function cenario() {
       lote: async () => 'LOTE1',
       familia: async (l) => { s.familias.push(l); return 'FAM-KIT'; },
       variacao: async (l) => { s.variacoesGravadas.push(l); },
-      kit: async (a) => { s.kits.push(a); return s.rpc; },
+      async kit(a) {
+        s.kits.push(a);
+        if (s.falhasKit > 0) {
+          s.falhasKit--;
+          // Resultado incerto: a RPC pode ter gravado (kitGravadoNaFalha) ou não.
+          if (s.kitGravadoNaFalha) s.existente = { kitId: 'KIT1', transferenciaId: 'T1' };
+          throw new Error('fetch failed');
+        }
+        return s.rpc;
+      },
       desfazer: async (lote, fam) => { s.desfeitos.push([lote, fam]); },
     },
     enfileirarSaga: async (id) => { s.sagas.push(id); },
@@ -94,7 +120,7 @@ function pedido(extra: Partial<CriarKitVariacaoInput> = {}): CriarKitVariacaoInp
       { cores: ['Preto', 'Branco'], tamanho: 'G', quantidade: 1 },
     ],
     titulo: 'Kit 2 Blusas Canelada', descricao: 'Kit com 2 blusas.',
-    fotos: { 'Preto e Branco': 'kits/pb.jpg', 'Preto e Marrom': 'kits/pm.jpg' },
+    fotos: { 'Preto e Branco': 'ORG/kits/pb.jpg', 'Preto e Marrom': 'ORG/kits/pm.jpg' },
     soEmKit: false, meta: 0, chaveCadastro: 'CHAVE1',
     ...extra,
   };
@@ -130,7 +156,7 @@ describe('criarKitVariacao', () => {
     await criarKitVariacao(c.deps, pedido());
     expect(c.s.variacoesGravadas[0]).toMatchObject({
       custo: 39.75, peso_gramas: 400, altura_cm: 6, largura_cm: 25, comprimento_cm: 30,
-      estoque: 0, gtin: null, preco_publicacao: 89.9, imagem_path: 'kits/pb.jpg', ml_picture_id: 'PIC-kits/pb.jpg',
+      estoque: 0, gtin: null, preco_publicacao: 89.9, imagem_path: 'ORG/kits/pb.jpg', ml_picture_id: 'PIC-ORG/kits/pb.jpg',
     });
   });
 
@@ -181,20 +207,63 @@ describe('criarKitVariacao', () => {
 
   it('foto usada em item moderado recusa', async () => {
     const c = cenario();
-    c.s.moderadas = ['kits/pb.jpg'];
+    c.s.moderadas = ['ORG/kits/pb.jpg'];
     expect(await criarKitVariacao(c.deps, pedido())).toMatchObject({ ok: false, motivo: 'foto_moderada' });
     expect(semGravacao(c)).toBe(0);
   });
 
   it('foto que não sobe ao ML recusa antes de gravar; tipo de anúncio vai para o kit', async () => {
     const c = cenario();
-    c.s.fotoQuebrada = 'kits/pb.jpg';
+    c.s.fotoQuebrada = 'ORG/kits/pb.jpg';
     expect(await criarKitVariacao(c.deps, pedido())).toMatchObject({ ok: false, motivo: 'foto_invalida' });
     expect(semGravacao(c)).toBe(0);
     const d = cenario();
     await criarKitVariacao(d.deps, pedido({ listingTypeId: 'gold_pro' }));
     expect(d.s.kits[0].kit).toMatchObject({ listing_type_id: 'gold_pro' });
     expect(await criarKitVariacao(d.deps, pedido({ listingTypeId: 'free' as never }))).toMatchObject({ motivo: 'tipo_anuncio_invalido' });
+  });
+
+  it('foto de outra org ou sem dono comprovado recusa antes de assinar ou subir', async () => {
+    for (const path of ['OUTRA-ORG/kits/pb.jpg', 'kits/pb.jpg', '/ORG/x.jpg', 'ORG/../OUTRA/x.jpg', 'pb.jpg']) {
+      const c = cenario();
+      let subiu = 0;
+      c.deps.subirFoto = async () => { subiu++; return 'PIC'; };
+      expect(await criarKitVariacao(c.deps, pedido({ fotos: { 'Preto e Branco': path } }))).toMatchObject({ motivo: 'foto_nao_autorizada' });
+      expect(subiu).toBe(0);
+      expect(semGravacao(c)).toBe(0);
+    }
+    // Layout legado {user_id}/...: usuário da org passa.
+    const d = cenario();
+    expect(await criarKitVariacao(d.deps, pedido({ fotos: { 'Preto e Branco': 'U1/pb.jpg' } }))).toMatchObject({ ok: true });
+  });
+
+  it('leitura das fotos no ML que falha recusa (sem prova de que não estão em anúncio moderado)', async () => {
+    const c = cenario();
+    c.s.erroModeracao = 'ML /items/bulk 500';
+    expect(await criarKitVariacao(c.deps, pedido())).toMatchObject({ ok: false, motivo: 'foto_moderacao_ilegivel' });
+    expect(semGravacao(c)).toBe(0);
+  });
+
+  it('falha depois de gravar a família: a mesma chave retoma sem duplicar', async () => {
+    const c = cenario();
+    c.s.falhasKit = 1;
+    expect(await criarKitVariacao(c.deps, pedido())).toMatchObject({ ok: false, motivo: 'falha_gravar' });
+    expect(c.s.desfeitos).toEqual([]);
+    expect([c.s.familias.length, c.s.variacoesGravadas.length]).toEqual([1, 2]);
+    const r = await criarKitVariacao(c.deps, pedido());
+    expect(r).toMatchObject({ ok: true, kitId: 'KIT1', transferenciaId: 'T1' });
+    expect([c.s.familias.length, c.s.variacoesGravadas.length]).toEqual([1, 2]);
+    expect(c.s.kits.map((k) => k.skus.map((x) => x.codigo))).toEqual([['00002001', '00002002'], ['00002001', '00002002']]);
+    expect(c.s.sagas).toEqual(['T1']);
+  });
+
+  it('RPC com resultado incerto que gravou: consulta o estado durável, não apaga e enfileira', async () => {
+    const c = cenario();
+    c.s.falhasKit = 1;
+    c.s.kitGravadoNaFalha = true;
+    expect(await criarKitVariacao(c.deps, pedido())).toMatchObject({ ok: true, kitId: 'KIT1', transferenciaId: 'T1', existente: true });
+    expect(c.s.desfeitos).toEqual([]);
+    expect(c.s.sagas).toEqual(['T1']);
   });
 
   it('combinação publicada sem foto recusa', async () => {
