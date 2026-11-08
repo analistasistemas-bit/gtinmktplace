@@ -161,7 +161,7 @@ function cenario(f: FotoKit) {
     avisos: [] as string[],
     sagas: [] as string[],
     recusar: {} as Record<string, string>,
-    reativar: {} as Record<string, 'reativado' | 'abandonar' | 'manter'>,
+    reativar: {} as Record<string, 'reativado' | 'ja_ativo' | 'inexistente' | 'abandonar' | 'manter'>,
     falhaAvisar: false,
   };
   const deps: DepsReposicao = {
@@ -255,6 +255,36 @@ describe('executarReposicao', () => {
     await executarReposicao(c.deps, 'K1');
     expect(c.s.chamadas).toContain('aviso B 5 pausado');
     expect(c.s.avisos[0]).toContain('segue pausado');
+  });
+
+  it('Fix 1b: item com pausa registrada que sumiu do ML encerra o registro e o aviso diz que o anúncio não existe mais', async () => {
+    const c = cenario(foto([kit('K1', [combo('KPB', 1, ['P', 'B'])])], [sku('P', 0), sku('B', 2, 'guardado', { versao: 4 })],
+      [{ codigo: 'B', itemId: 'MLB-B' }]));
+    c.s.reativar = { 'MLB-B': 'inexistente' };
+    const r = await executarReposicao(c.deps, 'K1');
+    expect(c.s.chamadas).toEqual([
+      'sobra B {"B":4,"P":1}', 'reativar B MLB-B', 'esquecer B MLB-B', 'aviso B 5 inexistente', 'concluir aviso B 5',
+    ]);
+    expect(c.s.avisos[0]).toContain('não existe mais');
+    expect(r.retentar).toBe(false);
+  });
+
+  it('Fix 1b: item já ativo (reativado por alguém): registro sai sem PUT e o aviso não se atribui a reativação', async () => {
+    const c = cenario(foto([kit('K1', [combo('KPB', 1, ['P', 'B'])])], [sku('P', 0), sku('B', 2, 'guardado', { versao: 4 })],
+      [{ codigo: 'B', itemId: 'MLB-B' }]));
+    c.s.reativar = { 'MLB-B': 'ja_ativo' };
+    await executarReposicao(c.deps, 'K1');
+    expect(c.s.chamadas).toContain('esquecer B MLB-B');
+    expect(c.s.chamadas).toContain('aviso B 5 ativo');
+    expect(c.s.avisos[0]).not.toContain('foi reativado');
+  });
+
+  it('Fix 1b: operador reativou (registro apagado) e pausou fora do app: a rodada seguinte não reativa', async () => {
+    // O registro saiu na reativação do operador (politica.test); sem registro, nada a desfazer.
+    const c = cenario(foto([kit('K1', [combo('KPB', 0, ['P', 'B'])], { soEmKit: false })],
+      [sku('P', 2, 'normal'), sku('B', 2, 'normal')], []));
+    await executarReposicao(c.deps, 'K1');
+    expect(c.s.chamadas).toEqual([]);
   });
 
   it('Fix 1 (P2-2): ligar → pausa → desligar → saga abortada registra a pausa → a rodada reativa', async () => {

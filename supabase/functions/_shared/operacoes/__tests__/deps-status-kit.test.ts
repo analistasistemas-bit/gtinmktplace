@@ -21,7 +21,7 @@ const TABELAS: Record<string, unknown[]> = {
 function admin() {
   const from = (t: string) => {
     const q: Record<string, unknown> = {
-      select: () => q, eq: () => q, in: () => q, or: () => q,
+      select: () => q, eq: () => q, in: () => q, or: () => q, delete: () => q,
       then: (ok: (v: unknown) => unknown) => Promise.resolve({ data: TABELAS[t] ?? [], error: null }).then(ok),
     };
     return q;

@@ -246,7 +246,16 @@ export async function prepararStatusOperador(admin: SupabaseClient, o: OpcoesSta
       if (!ambiguo(r)) {
         try {
           for (const id of alvos) await o.lerStatus(id);   // lança = resultado não confirmado
-          if (await liberar(true)) return true;
+          if (await liberar(true)) {
+            // Task 14: o operador reativou; a pausa da automação deste item deixa de existir. Uma pausa posterior
+            // (inclusive fora do app) nunca é desfeita pela reposição. Falha aqui só loga: a rodada que vir o item
+            // ativo também apaga o registro.
+            if (!o.automatico) {
+              const { error: ep } = await admin.from('kit_pausas_automaticas').delete().eq('org_id', orgId).in('item_id', alvos);
+              if (ep) console.error('kit_pausa_registro_nao_apagado', orgId, mlItemId, ep.message);
+            }
+            return true;
+          }
           // Outra geração assumiu (prazo vencido): ela confirma e libera.
           console.error('kit_ativacao_geracao_perdida', orgId, mlItemId, geracao);
           return false;

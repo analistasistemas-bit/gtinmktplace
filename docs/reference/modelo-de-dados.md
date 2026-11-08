@@ -1667,7 +1667,7 @@ retirada fazem o registro sair sem PUT. Pausa anterior à saga nunca entra. RLS 
 *Migration `20261108052338_kit_variacao_reposicao.sql`.*
 
 ### `kit_avisos_sobra`
-Aviso de Sobra pendente (Task 14): PK `(org_id, codigo, versao)`, `resultado` (`reativado|pausado|sem_pausa`, gravado antes
+Aviso de Sobra pendente (Task 14): PK `(org_id, codigo, versao)`, `resultado` (`reativado|ativo|pausado|inexistente|sem_pausa`, gravado antes
 do envio), `criado_em`. Nasce em `kit_reposicao_sobra`, na mesma transação da transição; sai depois do envio. A reposição só
 avisa com o resultado da reativação conhecido. RLS de `select` por org; escrita só `service_role`.
 

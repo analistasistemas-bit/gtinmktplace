@@ -16,6 +16,7 @@ interface Banco {
   politicas?: Array<Record<string, unknown>>;
   itens?: Array<Record<string, unknown>>;
   ativacoes?: Array<Record<string, unknown>>;
+  pausas?: Array<Record<string, unknown>>;
   falhar?: string;
   rpc?: Record<string, unknown>;
 }
@@ -38,6 +39,14 @@ function falso(b: Banco) {
         if (apagar) {
           eventos.push('delete:kit_ativacoes');
           b.ativacoes = b.ativacoes!.filter((r) => !achadas.includes(r));
+        }
+        return { data: achadas, error: null };
+      }
+      if (tabela === 'kit_pausas_automaticas') {
+        const achadas = (b.pausas ?? []).filter((r) => filtros.every((f) => f(r)));
+        if (apagar) {
+          eventos.push('delete:kit_pausas_automaticas');
+          b.pausas = (b.pausas ?? []).filter((r) => !achadas.includes(r));
         }
         return { data: achadas, error: null };
       }
@@ -301,7 +310,30 @@ describe('prepararStatusOperador (Task 6: pausar/reativar pelo operador)', () =>
     expect(puts).toEqual(['MLB1']);
     expect(f.eventos).toContain('rpc:kit_adquirir_exclusao');           // exclusão e CAS da política mantidos
     expect(f.eventos).toContain('rpc:kit_ativacao_liberar');            // confirmado pela leitura
-    expect(lidos).toEqual(['MLB1', 'MLB1', 'MLB1C']);
+    expect(lidos).toEqual(['MLB1', 'MLB1', 'MLB1', 'MLB1C']);           // + a leitura do registro (Fix 1b)
+  });
+
+  it('Fix 1b: reativação confirmada do operador apaga o registro da pausa da automação daquele item', async () => {
+    const f = falso(banco({ politicas: [pol()], pausas: [{ org_id: 'O', item_id: 'MLB1', codigo: 'P1' }, { org_id: 'O', item_id: 'MLB9', codigo: 'X' }] }));
+    const p = await preparar(f).r;
+    if (!('concluir' in p)) throw new Error('recusou');
+    expect(f.banco.pausas).toHaveLength(2);           // antes do PUT confirmado, nada sai
+    expect(await p.concluir({ ok: true })).toBe(true);
+    expect(f.banco.pausas).toEqual([{ org_id: 'O', item_id: 'MLB9', codigo: 'X' }]);
+  });
+
+  it('Fix 1b: item visto ativo ou inexistente na leitura: sem PUT, sem exclusão', async () => {
+    const opcoes = (puts: string[], st: 'ativo' | 'encerrado' | null) => ({
+      orgId: 'O', codigo: 'P1', itemId: 'MLB1', lerStatus: async () => st,
+      putAtivo: async (id: string) => { puts.push(id); return { ok: true }; }, alertar: async () => {},
+    });
+    const puts: string[] = [];
+    const f = falso(banco({ politicas: [pol({ estado: 'sobra' })] }));
+    expect(await reativarPausaAutomatica(f.admin, opcoes(puts, 'ativo'))).toBe('ja_ativo');
+    expect(await reativarPausaAutomatica(f.admin, opcoes(puts, null))).toBe('inexistente');
+    expect(await reativarPausaAutomatica(f.admin, opcoes(puts, 'encerrado'))).toBe('inexistente');
+    expect(puts).toEqual([]);
+    expect(f.rpcs).toEqual([]);
   });
 
   it('Fix 1 (P1-3): pausa do operador abandona sem PUT; Guardado mantém', async () => {

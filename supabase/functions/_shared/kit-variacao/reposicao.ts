@@ -52,7 +52,8 @@ export interface FotoKit {
   avisos: Array<{ codigo: string; versao: number; resultado: ResultadoAviso | null }>;
 }
 
-export type ResultadoAviso = 'reativado' | 'pausado' | 'sem_pausa';
+export type ResultadoAviso = 'reativado' | 'ativo' | 'pausado' | 'inexistente' | 'sem_pausa';
+export type ResultadoReativar = 'reativado' | 'ja_ativo' | 'inexistente' | 'abandonar' | 'manter';
 
 export interface Move { kitId: string; codigo: string; quantidade: number }
 
@@ -147,7 +148,7 @@ export interface DepsReposicao {
    * Desfaz uma pausa da automação. `abandonar`: a pausa deixou de ser da automação (operador, moderação, retirada) e
    * o registro sai sem PUT. `manter`: incerto ou ocupado; o registro fica e a rodada repete.
    */
-  reativar(codigo: string, itemId: string): Promise<'reativado' | 'abandonar' | 'manter'>;
+  reativar(codigo: string, itemId: string): Promise<ResultadoReativar>;
   esquecerPausa(codigo: string, itemId: string): Promise<void>;
   /** Telegram (estoque), idempotente pela chave. */
   avisar(texto: string, chave: string): Promise<void>;
@@ -159,7 +160,9 @@ export interface DepsReposicao {
 
 const TEXTO_SOBRA: Record<ResultadoAviso, string> = {
   reativado: 'O anúncio individual foi reativado e vende sozinho até a peça que falta entrar; aí volta a ficar guardado para o kit.',
+  ativo: 'O anúncio individual já estava ativo (reativado fora da reposição).',
   pausado: 'O anúncio individual segue pausado (pausa do operador, moderação ou recusa do Mercado Livre). Confira em Publicados.',
+  inexistente: 'O anúncio individual não existe mais no Mercado Livre (excluído ou encerrado). Confira em Publicados.',
   sem_pausa: 'O anúncio individual não estava pausado pelo kit e segue como está.',
 };
 
@@ -230,7 +233,8 @@ export async function executarReposicao(deps: DepsReposicao, kitId: string): Pro
       const rs = resultados.get(a.codigo) ?? [];
       const restantes = f.pausas.some((p) => p.codigo === a.codigo && !resolvidas.has(p.itemId));
       if (restantes) continue;   // reativação incerta ou ainda não tentada: avisa depois
-      resultado = rs.includes('reativado') ? 'reativado' : rs.includes('abandonar') ? 'pausado' : 'sem_pausa';
+      resultado = rs.includes('reativado') ? 'reativado' : rs.includes('ja_ativo') ? 'ativo'
+        : rs.includes('abandonar') ? 'pausado' : rs.includes('inexistente') ? 'inexistente' : 'sem_pausa';
       await deps.registrarAviso(a.codigo, a.versao, resultado);
     }
     try {
@@ -354,9 +358,20 @@ export async function reativarPausaAutomatica(admin: SupabaseClient, o: {
   /** PUT `status=active` só neste item. `erro.status` ausente = sem resposta HTTP. */
   putAtivo: (itemId: string) => Promise<ResultadoPutStatus>;
   alertar: (texto: string) => Promise<unknown>;
-}): Promise<'reativado' | 'abandonar' | 'manter'> {
+}): Promise<ResultadoReativar> {
   const politica = (await lerPoliticas(admin, o.orgId, [o.codigo])).get(o.codigo) ?? null;
   if (!podeReativar({ politica, origem: 'automatico' }).pode) return politica?.estado === 'guardado' ? 'manter' : 'abandonar';
+  // O registro só vale para item pausado. Visto ativo (alguém reativou) ou inexistente (404, encerrado): sai sem PUT,
+  // e uma pausa posterior fora do app nunca é desfeita pela automação.
+  let vivo: StatusAnuncioCanal | null;
+  try {
+    vivo = await o.lerStatus(o.itemId);
+  } catch {
+    return 'manter';
+  }
+  if (vivo === null || vivo === 'encerrado') return 'inexistente';
+  if (vivo === 'ativo') return 'ja_ativo';
+  if (vivo !== 'pausado') return 'abandonar';   // moderado/inativo: nunca desfeito
   const prep = await prepararStatusOperador(admin, {
     orgId: o.orgId, mlItemId: o.itemId, alvo: 'ativo', ligado: true, automatico: true, lerStatus: o.lerStatus, alertar: o.alertar,
   });

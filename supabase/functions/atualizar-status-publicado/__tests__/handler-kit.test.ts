@@ -124,6 +124,8 @@ describe('atualizar-status-publicado × kit com variação', () => {
     expect(f.eventos).toEqual([
       'lerStatus:MLB1', 'rpc:kit_ativacao_reivindicar', 'rpc:kit_adquirir_exclusao', 'rpc:kit_politica_operador:false',
       'put:MLB1:ativo', 'lerStatus:MLB1', 'rpc:kit_ativacao_liberar',
+      // Task 14: reativação confirmada do operador apaga a pausa da automação deste item.
+      'delete:kit_pausas_automaticas',
     ]);
   });
 

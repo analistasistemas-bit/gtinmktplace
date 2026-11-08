@@ -29,12 +29,12 @@ grant select on public.kit_pausas_automaticas to authenticated;
 grant all on public.kit_pausas_automaticas to service_role;
 
 -- Aviso de Sobra pendente: nasce na mesma transação da transição (kit_reposicao_sobra) e só sai depois do envio.
--- `resultado` (reativado | pausado | sem_pausa) é gravado antes do envio: a retomada repete o mesmo texto.
+-- `resultado` (reativado | ativo | pausado | inexistente | sem_pausa) é gravado antes do envio: a retomada repete o mesmo texto.
 create table if not exists public.kit_avisos_sobra (
   org_id    uuid not null references public.organizations(id),
   codigo    text not null,
   versao    integer not null,
-  resultado text check (resultado in ('reativado', 'pausado', 'sem_pausa')),
+  resultado text check (resultado in ('reativado', 'ativo', 'pausado', 'inexistente', 'sem_pausa')),
   criado_em timestamptz not null default now(),
   primary key (org_id, codigo, versao)
 );
