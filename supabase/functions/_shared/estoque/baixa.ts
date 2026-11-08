@@ -2,6 +2,7 @@
 // A venda é sagrada — nada aqui pode derrubar o sync-venda; o chamador envolve em try/catch.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { resolverOrigemEstoque } from './kit.ts';
+import { skusParticipantes } from '../kit-variacao/politica.ts';
 
 export interface ItemVendaBaixa {
   codigo: string | null;
@@ -336,6 +337,41 @@ export async function kitsManuaisZerados(admin: SupabaseClient, orgId: string, c
     const kit = (Array.isArray(k) ? k[0] : k) as { reposicao_auto?: boolean; so_em_kit?: boolean } | null;
     return !!kit && !(kit.so_em_kit === true && kit.reposicao_auto === true);
   }).map((r) => r.codigo as string);
+}
+
+/**
+ * ADR-0197 (portão da Task 3): com catálogo incompleto e o módulo ligado, separa os itens que podem ser de SKU
+ * participante. Participante = o item ML é de um anúncio de participante (`anuncios_externos_itens`, inclusive a
+ * cópia de catálogo) ou o código resolvido (que pode ser o de fallback) é participante. Esses ficam para depois:
+ * baixar agora poderia gravar outra referência (`canal:pedido:SKU`) para o mesmo pedido. Os demais baixam como
+ * hoje, e a referência por SKU deixa o retry baixar só o que faltou. Leitura falha: adia tudo.
+ */
+export async function separarParticipantes(
+  admin: SupabaseClient, orgId: string, itens: ItemVendaBaixa[],
+): Promise<{ comuns: ItemVendaBaixa[]; adiados: ItemVendaBaixa[] }> {
+  try {
+    const ids = [...new Set(itens.map((i) => i.ml_item_id).filter((x): x is string => !!x))];
+    const skusDoItem = new Map<string, string[]>();
+    for (const coluna of ['item_externo_id', 'catalog_listing_id']) {
+      if (ids.length === 0) break;
+      const { data, error } = await admin.from('anuncios_externos_itens')
+        .select('sku, item_externo_id, catalog_listing_id').eq('org_id', orgId).in(coluna, ids);
+      if (error) throw new Error(`anuncios_externos_itens: ${error.message}`);
+      for (const r of data ?? []) {
+        for (const id of [r.item_externo_id, r.catalog_listing_id] as Array<string | null>) {
+          if (id) skusDoItem.set(id, [...(skusDoItem.get(id) ?? []), r.sku as string]);
+        }
+      }
+    }
+    const candidatos = new Set([...itens.flatMap((i) => (i.codigo ? [i.codigo] : [])), ...[...skusDoItem.values()].flat()]);
+    const part = await skusParticipantes(admin, orgId, [...candidatos], true);
+    const ehPart = (i: ItemVendaBaixa) => (!!i.codigo && part.has(i.codigo))
+      || (skusDoItem.get(i.ml_item_id ?? '') ?? []).some((s) => part.has(s));
+    return { comuns: itens.filter((i) => !ehPart(i)), adiados: itens.filter(ehPart) };
+  } catch (e) {
+    console.error('separar_participantes_falhou', orgId, String(e));
+    return { comuns: [], adiados: itens };
+  }
 }
 
 /** Movimentos aplicados cujo push ao QStash ainda não foi confirmado (outbox no ledger). */

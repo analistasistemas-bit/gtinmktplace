@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { estornarVendaCancelada, kitsManuaisZerados, refBaixa, registrarBaixaVenda } from '../baixa.ts';
+import { estornarVendaCancelada, kitsManuaisZerados, refBaixa, registrarBaixaVenda, separarParticipantes } from '../baixa.ts';
 import { agendarCancelamentoKit } from '../cancelamento.ts';
 
 // ADR-0197 (Task 8): venda e cancelamento de SKU de kit com variação. O kit tem saldo próprio, então a
@@ -70,6 +70,36 @@ describe('venda de kit com variação', () => {
       orgId: 'org-1', canal: 'mercado_livre', orderId: 56, itens: [{ codigo: 'A', quantity: 1 }],
     });
     expect(r.zerados).toEqual([]);
+  });
+});
+
+describe('separarParticipantes (catálogo incompleto, módulo ligado)', () => {
+  const COMUM = { codigo: '00000029', quantity: 1, ml_item_id: 'MLB-COMUM' };
+  const KIT = { codigo: 'SELLER-SKU-VELHO', quantity: 1, ml_item_id: 'MLB-KIT' };
+
+  it('pedido só de SKU comum: nada adiado (baixa imediata)', async () => {
+    const { admin } = fakeAdmin({ anuncios_externos_itens: [], kit_variacao_skus: [], kit_variacao_componentes: [] }, {});
+    expect(await separarParticipantes(admin, 'org-1', [COMUM])).toEqual({ comuns: [COMUM], adiados: [] });
+  });
+
+  it('item cujo anúncio é de SKU participante é adiado, mesmo com código de fallback diferente', async () => {
+    const { admin } = fakeAdmin({
+      anuncios_externos_itens: [{ sku: 'KIT-PB-M', item_externo_id: 'MLB-KIT', catalog_listing_id: null }],
+      kit_variacao_skus: [{ codigo: 'KIT-PB-M' }], kit_variacao_componentes: [],
+    }, {});
+    expect(await separarParticipantes(admin, 'org-1', [COMUM, KIT])).toEqual({ comuns: [COMUM], adiados: [KIT] });
+  });
+
+  it('código de fallback participante é adiado', async () => {
+    const fb = { codigo: 'COMP-P', quantity: 1, ml_item_id: 'MLB-X' };
+    const { admin } = fakeAdmin({ anuncios_externos_itens: [], kit_variacao_skus: [], kit_variacao_componentes: [{ codigo: 'COMP-P' }] }, {});
+    expect((await separarParticipantes(admin, 'org-1', [fb])).adiados).toEqual([fb]);
+  });
+
+  it('leitura falha: adia tudo (conservador)', async () => {
+    const { admin } = fakeAdmin({}, {});
+    admin.from = () => { throw new Error('fora'); };
+    expect(await separarParticipantes(admin, 'org-1', [COMUM])).toEqual({ comuns: [], adiados: [COMUM] });
   });
 });
 

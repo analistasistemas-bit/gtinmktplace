@@ -4,7 +4,7 @@
 import { corsHeaders } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura, enfileirarSincronizacaoEstoque } from '../_shared/queue.ts';
-import { registrarBaixaVenda, despacharPushPendente, kitsManuaisZerados } from '../_shared/estoque/baixa.ts';
+import { registrarBaixaVenda, despacharPushPendente, kitsManuaisZerados, separarParticipantes } from '../_shared/estoque/baixa.ts';
 import { tratarPedidoCancelado } from '../_shared/estoque/cancelamento.ts';
 import { depsCancelamento } from '../_shared/estoque/cancelamento-deps.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
@@ -109,15 +109,19 @@ Deno.serve(async (req) => {
       (pedido.payments ?? []).flatMap((p) => (p?.id != null ? [p.id] : []))),
     carregarGtinsDaVenda(token, [pedido], idsPubliai, kitLigado),
   ]);
-  // Portão da Task 3 (ADR-0197): a referência da baixa inclui o SKU. Com leitura parcial o código pode cair
-  // no seller_custom_field e o mesmo pedido ganharia outra referência, outro débito. Com o módulo ligado não
-  // baixa nem estorna: 502 para o QStash repetir. Org sem módulo segue tolerante, como sempre.
-  const catalogoIncerto = kitLigado && (incompleto || gtinFalhou);
-
   const { novaPaga, itens, compradorNome } = await upsertVenda(admin, userId, orgId, pedido, {
     freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver, contaExternaId: conexao.contaExternaId,
     liquidoPorPayment: liquidoPorPayment ?? undefined,
   });
+
+  // Portão da Task 3 (ADR-0197): a referência da baixa inclui o SKU. Com leitura parcial o código pode cair
+  // no seller_custom_field e o mesmo pedido ganharia outra referência, outro débito. Com o módulo ligado, só os
+  // itens de SKU participante ficam para depois (502, o QStash repete); os comuns baixam como hoje. Org sem
+  // módulo segue tolerante, sem consulta nova.
+  const { comuns: itensBaixa, adiados } = kitLigado && (incompleto || gtinFalhou) && orgId
+    ? await separarParticipantes(admin, orgId, itens)
+    : { comuns: itens, adiados: [] };
+  const catalogoIncerto = adiados.length > 0;
 
   // Alerta de nova venda paga aos destinatários da categoria 'vendas'. Usa os itens já com EAN
   // resolvido (catálogo/GTIN) e o nome real do comprador já resolvido pelo upsert (nunca o
@@ -144,19 +148,19 @@ Deno.serve(async (req) => {
   // retry veria novaPaga=false e a perda seria permanente. Gatear em "está pago" faz
   // o retry retomar naturalmente, e a idempotência vem do ledger: cada SKU já baixado
   // devolve `aplicado=false` e não é reaplicado.
-  if (pedido.status === 'paid' && orgId && catalogoIncerto) {
-    if (await reservarNotificacao(admin, orgId, userId, 'estoque_baixa_adiada', String(pedido.id))) {
-      await notificarCategoria(
-        admin, orgId, 'vendas',
-        `🚨 Baixa de estoque adiada (pedido ${pedido.id})\n\n`
-        + 'O catálogo não carregou por inteiro, e com kit com variação a baixa poderia sair no SKU errado. '
-        + 'O PubliAI tenta de novo sozinho. Confira o saldo antes de ajustar manualmente em Estoque, para não descontar duas vezes.',
-      );
-    }
-  } else if (pedido.status === 'paid' && orgId) {
+  if (pedido.status === 'paid' && orgId && catalogoIncerto
+    && await reservarNotificacao(admin, orgId, userId, 'estoque_baixa_adiada', String(pedido.id))) {
+    await notificarCategoria(
+      admin, orgId, 'vendas',
+      `🚨 Baixa de estoque adiada (pedido ${pedido.id})\n\n${adiados.map((i) => `• ${i.codigo ?? i.ml_item_id}`).join('\n')}\n\n`
+      + 'O catálogo não carregou por inteiro, e com kit com variação a baixa poderia sair no SKU errado. '
+      + 'O PubliAI tenta de novo sozinho. Confira o saldo antes de ajustar manualmente em Estoque, para não descontar duas vezes.',
+    );
+  }
+  if (pedido.status === 'paid' && orgId) {
     try {
       const { pendentesDePush, vendaAcimaSaldo, desyncMl, falhas, semSku, skuDesconhecido, zerados } = await registrarBaixaVenda(admin, {
-        orgId, canal: 'mercado_livre', orderId: pedido.id, itens,
+        orgId, canal: 'mercado_livre', orderId: pedido.id, itens: itensBaixa,
       });
       // Despacha o OUTBOX, não só o que esta execução aplicou: assim um push que ficou
       // para trás numa execução anterior é reenviado aqui. O canal de origem NÃO é
@@ -263,7 +267,7 @@ Deno.serve(async (req) => {
       statusPedido: pedido.status ?? null,
       shipmentStatus: shipment?.status != null ? String(shipment.status) : null,
       temEnvio: pedido.shipping?.id != null,
-      kitLigado, catalogoIncompleto: incompleto || gtinFalhou,
+      kitLigado, catalogoIncompleto: catalogoIncerto,
     });
   }
 
