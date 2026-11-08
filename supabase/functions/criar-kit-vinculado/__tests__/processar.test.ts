@@ -467,6 +467,17 @@ describe('criarKitsVinculados', () => {
     expect(admin.rpc).not.toHaveBeenCalledWith('proximo_codigo_produto', expect.anything());
   });
 
+  // Fix 1 da Task 7: reenvio da chave antiga (kit em `erro`) também recusa — a retomada não pode furar o guard.
+  it('reenvio de chave existente com base em kit com variação: recusa sem re-encadear', async () => {
+    const { deps, enfileirados } = depsFake({
+      kitModulo: true, participantes: ['00000001'], mlItemId: 'MLB1',
+      chavesJaUsadas: ['uuid-k2'], statusPorChave: { 'uuid-k2': 'erro' },
+    });
+    const r = await criarKitsVinculados(deps, { familiaBaseId: 'f-base', kits: [kitPadrao(2)] });
+    expect(r).toMatchObject({ ok: false, motivo: 'base_em_kit_variacao' });
+    expect(enfileirados.publicarFamilias).toEqual(0);
+  });
+
   it('kit com módulo e base fora de kit segue; família do kit não leva o embed do módulo', async () => {
     const { deps, inserts, state } = depsFake({ kitModulo: true, participantes: ['99999999'] });
     const r = await criarKitsVinculados(deps, { familiaBaseId: 'f-base', kits: [kitPadrao(2)] });

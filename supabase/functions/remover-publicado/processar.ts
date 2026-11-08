@@ -53,6 +53,9 @@ export type ResultadoRemocao =
   | { tipo: 'kit_com_variacao'; skus: string[] }
   /** ADR-0197: republicar com transferência de kit aberta — o vínculo que ela usa não pode sumir. */
   | { tipo: 'kit_em_transferencia' }
+  /** ADR-0197: exclusão de publicação pendente (dono = raiz antiga). Republicar apagaria o único dono capaz de
+   *  soltá-la, e ela pode ser criação remota incerta: o operador reenvia a publicação pendente primeiro. */
+  | { tipo: 'kit_publicacao_pendente' }
   /** ADR-0168: sold_quantity > 0 em qualquer MLB do codigo_pai — zero mutação ML, zero delete local. */
   | { tipo: 'tem_movimentacao' }
   /** ADR-0185: a cópia vigente do produto ainda está sendo processada/publicada — espera e repete. */
@@ -218,8 +221,9 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
   }
 
   // ADR-0197: SKU de qualquer cópia do pai em kit com variação. Antes de qualquer mutação no ML. Remover
-  // recusa sempre (spec, item 15); republicar só com transferência aberta — pré-checagem pela exclusão
-  // que a transferência segura, e a RPC confere de novo sob lock. Org sem o módulo não consulta nada.
+  // recusa sempre (spec, item 15); republicar recusa com a exclusão do SKU tomada — transferência ou ativação
+  // (o vínculo que ela usa não pode sumir) ou publicação pendente. A RPC disputa a mesma exclusão de novo,
+  // na transação. Org sem o módulo não consulta nada.
   if (kitLigado(alvo)) {
     const { data: copias, error: copiasErr } = await admin.from('familias')
       .select('variacoes(codigo)').eq('org_id', alvo.org_id).eq('codigo_pai', alvo.codigo_pai);
@@ -229,10 +233,12 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
     const participantes = [...await skusParticipantes(admin, alvo.org_id as string, codigos, true)].sort();
     if (participantes.length > 0 && !input.preservarFamilia) return { tipo: 'kit_com_variacao', skus: participantes };
     if (participantes.length > 0) {
-      const { data: emTransferencia, error: exErr } = await admin.from('kit_exclusoes').select('codigo')
-        .eq('org_id', alvo.org_id).eq('dono_tipo', 'transferencia').in('codigo', participantes);
-      if (exErr) throw new Error(`remover-publicado: consultar transferências de kit falhou: ${exErr.message}`);
-      if ((emTransferencia ?? []).length > 0) return { tipo: 'kit_em_transferencia' };
+      const { data: exclusoes, error: exErr } = await admin.from('kit_exclusoes').select('codigo, dono_tipo')
+        .eq('org_id', alvo.org_id).in('codigo', participantes);
+      if (exErr) throw new Error(`remover-publicado: consultar exclusões de kit falhou: ${exErr.message}`);
+      const donos = ((exclusoes ?? []) as Array<{ dono_tipo: string }>).map((x) => x.dono_tipo);
+      if (donos.includes('publicacao')) return { tipo: 'kit_publicacao_pendente' };
+      if (donos.length > 0) return { tipo: 'kit_em_transferencia' };
     }
   }
 
@@ -394,6 +400,7 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
       if (motivo === 'nao_encontrada') return { tipo: 'nao_encontrada' };
       if (motivo === 'em_processamento') return { tipo: 'em_processamento' };
       if (motivo === 'kit_em_transferencia') return { tipo: 'kit_em_transferencia' };
+      if (motivo === 'kit_publicacao_pendente') return { tipo: 'kit_publicacao_pendente' };
       throw new Error(`remover-publicado: preparar republicação falhou: ${prepErr.message}`);
     }
     const linha = (Array.isArray(prep) ? prep[0] : prep) as { familia_id: string; lote_id: string; lotes_afetados: string[] | null };

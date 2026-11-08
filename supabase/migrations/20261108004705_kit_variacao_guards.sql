@@ -4,10 +4,14 @@
 -- 1. Nova cópia (planilha, adicionar variação, CREATE depois de republicar): trigger em `variacoes` grava o
 --    saldo da canônica, lido sob o lock dela, no lugar do ESTOQUE da planilha ou do snapshot. Recusa com
 --    transferência aberta. Org sem o módulo segue como hoje.
+--    Mutação de saldo que resolveu a canônica antiga antes da troca recebe `canonica_trocou` (40001,
+--    retentável) em vez de baixar a cópia que deixou de valer.
 -- 2. Exclusão de cor: a última cópia de um participante não sai; apagar a canônica com outra sobrando leva o
---    saldo para a próxima canônica (senão o saldo voltaria mudo ao valor da cópia velha).
--- 3. `preparar_republicacao` recusa com transferência aberta; fora disso incrementa a versão da política dos
---    participantes, invalidando trabalhos antigos (publicação compara `versoes_kit`, saga compara a soma).
+--    saldo para a próxima canônica (senão o saldo voltaria mudo ao valor da cópia velha). Marcar a cor como
+--    fora da publicação (`excluida_da_publicacao`) também é recusado.
+-- 3. `preparar_republicacao` disputa a exclusão (`kit_exclusoes`) dos participantes, como a transferência:
+--    transferência, ativação ou publicação pendente recusa. Fora disso incrementa a versão da política,
+--    invalidando trabalhos antigos (publicação compara `versoes_kit`, saga compara a soma).
 -- 4. `limpar_movimentos_orfaos` preserva movimento de participante e de transferência.
 -- 5. `kit_variacao_base_em_kit`: base com kit vinculado ou Kit Virtual vivo (validação da Task 10).
 --
@@ -18,12 +22,17 @@
 grant estoque_rpc_executor to postgres;
 grant usage, create on schema public to estoque_rpc_executor;
 
+-- Republicação disputa a exclusão por SKU durante a própria transação (insere e apaga na mesma RPC).
+alter table public.kit_exclusoes drop constraint if exists kit_exclusoes_dono_tipo_check;
+alter table public.kit_exclusoes add constraint kit_exclusoes_dono_tipo_check
+  check (dono_tipo in ('transferencia', 'publicacao', 'ativacao', 'republicacao'));
+
 -- preparar_republicacao (dono postgres) usa a mesma noção de transferência aberta.
 grant execute on function public.kit_sku_em_transferencia(uuid, text) to postgres;
 
--- 1. Saldo da nova cópia. Dono executor: o lock e a releitura usam `kit_sku_travado`.
--- ponytail: quem já resolveu o id da canônica antiga antes deste lock (baixar_estoque, kit_sku_travado)
--- aplica o delta nela depois do commit. Janela de ms entre ingest e venda; portão da Task 17.
+-- 1. Saldo da nova cópia. Dono executor: o lock e a releitura usam `kit_sku_travado`. Serializa com toda
+-- mutação de saldo pelo lock da linha canônica antiga: quem a resolveu antes e esperou o lock cai na
+-- conferência do update abaixo (`canonica_trocou`).
 create or replace function public.kit_variacao_saldo_copia()
 returns trigger language plpgsql security definer set search_path = ''
 as $$
@@ -55,6 +64,53 @@ create trigger variacoes_kit_saldo_copia
   before insert on public.variacoes
   for each row execute procedure public.kit_variacao_saldo_copia();
 
+-- Toda mutação de saldo (baixar/estornar_estoque, registrar_entrada, ajustar_estoque, kit_aplicar_movimento)
+-- termina num UPDATE da linha que resolveu e travou. Para participante, sob esse lock: a linha ainda é a
+-- canônica? Se uma cópia nova commitou enquanto esperava, recusa a transação inteira (o movimento já gravado
+-- volta junto) com erro retentável; a repetição resolve a cópia nova. Também recusa tirar o participante
+-- da publicação (`excluida_da_publicacao`): seria remover a cor do anúncio por fora da saga.
+-- `kit.carregando_saldo` libera só o transporte de saldo da exclusão (a linha apagada ainda é visível).
+create or replace function public.kit_variacao_conferir_update()
+returns trigger language plpgsql security definer set search_path = ''
+as $$
+declare v_modulos text[]; v_canonica uuid;
+begin
+  if coalesce(current_setting('kit.carregando_saldo', true), '') = '1' then
+    return new;
+  end if;
+  if not exists (select 1 from public.kit_variacao_skus s where s.org_id = new.org_id and s.codigo = new.codigo)
+     and not exists (select 1 from public.kit_variacao_componentes c where c.org_id = new.org_id and c.codigo = new.codigo) then
+    return new;
+  end if;
+  select modulos_habilitados into v_modulos from public.organizations where id = new.org_id;
+  if not coalesce('kit_variacao' = any(v_modulos), false) then
+    return new;
+  end if;
+
+  if new.excluida_da_publicacao and not old.excluida_da_publicacao then
+    raise exception 'SKU % está em kit com variação e não pode sair da publicação.', new.codigo
+      using errcode = '23514';
+  end if;
+
+  if new.estoque is distinct from old.estoque then
+    select v.id into v_canonica from public.variacoes v join public.familias f on f.id = v.familia_id
+    where v.org_id = new.org_id and v.codigo = new.codigo order by f.criado_em desc limit 1;
+    if v_canonica is distinct from new.id then
+      raise exception 'canonica_trocou: a cópia canônica de % mudou durante a operação. Repita.', new.codigo
+        using errcode = '40001';
+    end if;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists variacoes_kit_conferir_update on public.variacoes;
+create trigger variacoes_kit_conferir_update
+  before update of estoque, excluida_da_publicacao on public.variacoes
+  for each row
+  when (old.estoque is distinct from new.estoque
+        or (new.excluida_da_publicacao and not old.excluida_da_publicacao))
+  execute procedure public.kit_variacao_conferir_update();
+
 -- 2. Exclusão. Só conta cópia de família viva: no cascade, a família já saiu e a variação dela ainda não.
 create or replace function public.kit_variacao_sair(p_org uuid, p_codigo text, p_id uuid)
 returns void language plpgsql security definer set search_path = ''
@@ -74,7 +130,9 @@ begin
   end if;
 
   if v_canonica = p_id then
+    perform set_config('kit.carregando_saldo', '1', true);
     update public.variacoes set estoque = v_estoque where id = v_prox;
+    perform set_config('kit.carregando_saldo', '', true);
   end if;
 end $$;
 
@@ -136,6 +194,9 @@ declare
   v_lotes uuid[];
   v_modulos text[];
   v_kit text[];
+  v_codigo text;
+  v_dono text;
+  v_exclusao uuid := gen_random_uuid();
 begin
   -- Serializa republicações concorrentes do mesmo produto (e contra quem mexe nas mesmas linhas).
   perform 1 from familias f where f.org_id = p_org and f.codigo_pai = p_codigo_pai for update;
@@ -172,9 +233,12 @@ begin
     raise exception 'republicar:em_processamento' using errcode = 'P0001';
   end if;
 
-  -- ADR-0197: participante de kit com variação (qualquer cópia do pai). Com transferência aberta, o
-  -- vínculo que ela usa não pode sumir. Fora disso, política e composição ficam (são por código) e a
-  -- versão sobe: job enfileirado antes desta republicação é recusado. Sem linha nasce com 1 (0 + 1).
+  -- ADR-0197: participante de kit com variação (qualquer cópia do pai). Disputa a mesma exclusão que
+  -- transferência, publicação e ativação, em ordem de código, até o fim desta transação: transferência que
+  -- começa depois espera o commit e só então pega a exclusão. Dono atual recusa — transferência/ativação
+  -- (o vínculo que ela usa não pode sumir) ou publicação pendente (a exclusão dela tem a raiz antiga como
+  -- dono e não é liberada às cegas: pode ser criação remota incerta). Fora disso, política e composição
+  -- ficam (são por código) e a versão sobe: job enfileirado antes é recusado. Sem linha nasce com 1.
   select modulos_habilitados into v_modulos from organizations o where o.id = p_org;
   if coalesce('kit_variacao' = any(v_modulos), false) then
     select coalesce(array_agg(distinct v.codigo order by v.codigo), '{}') into v_kit
@@ -182,6 +246,18 @@ begin
      where f.org_id = p_org and f.codigo_pai = p_codigo_pai
        and (exists (select 1 from kit_variacao_skus s where s.org_id = p_org and s.codigo = v.codigo)
          or exists (select 1 from kit_variacao_componentes c where c.org_id = p_org and c.codigo = v.codigo));
+    foreach v_codigo in array v_kit loop
+      insert into kit_exclusoes (org_id, codigo, dono_tipo, dono_id)
+      values (p_org, v_codigo, 'republicacao', v_exclusao)
+      on conflict (org_id, codigo) do nothing;
+      if not found then
+        select x.dono_tipo into v_dono from kit_exclusoes x where x.org_id = p_org and x.codigo = v_codigo;
+        if v_dono = 'publicacao' then
+          raise exception 'republicar:kit_publicacao_pendente' using errcode = 'P0001';
+        end if;
+        raise exception 'republicar:kit_em_transferencia' using errcode = 'P0001';
+      end if;
+    end loop;
     if exists (select 1 from unnest(v_kit) k(codigo) where public.kit_sku_em_transferencia(p_org, k.codigo)) then
       raise exception 'republicar:kit_em_transferencia' using errcode = 'P0001';
     end if;
@@ -229,6 +305,8 @@ begin
 
   update lotes l set status = 'revisao'::lote_status where l.id = v_lote;
 
+  delete from kit_exclusoes x where x.org_id = p_org and x.dono_id = v_exclusao;
+
   return query select v_vigente, v_lote, v_lotes;
 end;
 $$;
@@ -273,8 +351,11 @@ grant execute on function public.limpar_movimentos_orfaos(uuid)
   to service_role;
 
 -- 5. Validação reversa (Task 10): motivo para recusar kit com variação sobre estes SKUs, ou null.
--- Kit vinculado: o SKU é de uma base com kit vivo (STATUS_KIT_VIVO) ou é ele mesmo kit vinculado.
--- Kit Virtual vivo (`publicando`/`publicado`): `codigo` do componente é best-effort (D-12), então também
+-- Conservador nos dois: só o encerramento seguro libera.
+-- Kit vinculado: o SKU é de uma base com família de kit em qualquer status (`erro` é retomável pelo reenvio
+-- da chave; só a exclusão da família encerra) ou é ele mesmo kit vinculado.
+-- Kit Virtual em qualquer status menos `encerrado`: `erro` não distingue recusa definitiva do ML de resposta
+-- perdida com o kit criado, então conta como ocupado. `codigo` do componente é best-effort (D-12): também
 -- casa pelo user product ou item do anúncio local do SKU, como `bloquear_remocao_componente_kit_virtual`.
 create or replace function public.kit_variacao_base_em_kit(p_org uuid, p_codigos text[])
 returns text language sql stable security definer set search_path = ''
@@ -285,13 +366,12 @@ as $$
       where v.org_id = p_org and v.codigo = any(p_codigos)
         and (f.kit_multiplicador is not null or exists (
           select 1 from public.familias k
-          where k.org_id = p_org and k.kit_base_codigo_pai = f.codigo_pai and k.kit_multiplicador is not null
-            and k.status in ('pronto', 'publicando', 'publicado')))
+          where k.org_id = p_org and k.kit_base_codigo_pai = f.codigo_pai and k.kit_multiplicador is not null))
     ) then 'SKU com kit vinculado: kit com variação não pode usar esta base.'
     when exists (
       select 1 from public.kits_virtuais k
       join public.kits_virtuais_componentes c on c.kit_id = k.id
-      where k.org_id = p_org and k.status in ('publicando', 'publicado')
+      where k.org_id = p_org and k.status <> 'encerrado'
         and (c.codigo = any(p_codigos) or exists (
           select 1 from public.anuncios_externos_itens i
           where i.org_id = p_org and i.sku = any(p_codigos)
@@ -304,12 +384,14 @@ $$;
 revoke all on function public.kit_variacao_base_em_kit(uuid, text[]) from public, anon, authenticated;
 grant execute on function public.kit_variacao_base_em_kit(uuid, text[]) to service_role;
 revoke all on function public.kit_variacao_saldo_copia() from public, anon, authenticated;
+revoke all on function public.kit_variacao_conferir_update() from public, anon, authenticated;
 revoke all on function public.kit_variacao_preservar_variacao() from public, anon, authenticated;
 revoke all on function public.kit_variacao_preservar_familia() from public, anon, authenticated;
 revoke all on function public.kit_variacao_sair(uuid, text, uuid) from public, anon, authenticated, service_role;
 
 -- Dono executor: único papel que escreve `variacoes.estoque` (bloquear_escrita_direta_estoque).
 alter function public.kit_variacao_saldo_copia() owner to estoque_rpc_executor;
+alter function public.kit_variacao_conferir_update() owner to estoque_rpc_executor;
 alter function public.kit_variacao_sair(uuid, text, uuid) owner to estoque_rpc_executor;
 alter function public.kit_variacao_preservar_variacao() owner to estoque_rpc_executor;
 alter function public.kit_variacao_preservar_familia() owner to estoque_rpc_executor;

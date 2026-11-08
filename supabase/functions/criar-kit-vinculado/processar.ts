@@ -345,6 +345,25 @@ export async function criarKitsVinculados(
     .eq('id', input.familiaBaseId).eq('org_id', orgId).maybeSingle();
   if (!base) return { ok: false, motivo: 'base_nao_encontrada' };
 
+  // ADR-0197: peça de kit com variação só muda de oferta pela transferência; um kit vinculado daria a ela
+  // outra oferta fora desse controle. Antes de criar E de retomar (reenvio de chave antiga re-encadeia kit em
+  // `erro`). Org sem o módulo não consulta nada.
+  if (kitLigado(base)) {
+    try {
+      const { data: vs, error: vsErr } = await admin.from('variacoes').select('codigo').eq('familia_id', base.id as string);
+      if (vsErr) throw new Error(`variacoes: ${vsErr.message}`);
+      const codigos = (vs ?? []).map((v) => v.codigo as string);
+      if ((await skusParticipantes(admin, orgId, codigos, true)).size > 0) {
+        return {
+          ok: false, motivo: 'base_em_kit_variacao',
+          mensagem: 'Este produto faz parte de um kit com variação. Kit vinculado não pode usar a mesma peça.',
+        };
+      }
+    } catch (e) {
+      return { ok: false, motivo: 'falha_leitura', mensagem: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
   const kitsCriados: KitCriado[] = [];
   // Só existe quando kitsFaltando não é vazio (lote novo nasce dentro do bloco abaixo);
   // reenvio puro (todos os kits pedidos já existiam) não cria lote e devolve undefined.
@@ -360,19 +379,6 @@ export async function criarKitsVinculados(
 
     // Kit de kit não existe.
     if (base.kit_multiplicador != null) return { ok: false, motivo: 'base_e_kit' };
-
-    // ADR-0197: peça de kit com variação só muda de oferta pela transferência; um kit vinculado daria a ela
-    // outra oferta fora desse controle. Org sem o módulo não consulta nada.
-    try {
-      if ((await skusParticipantes(admin, orgId, [baseVar.codigo as string], kitLigado(base))).size > 0) {
-        return {
-          ok: false, motivo: 'base_em_kit_variacao',
-          mensagem: 'Este produto faz parte de um kit com variação. Kit vinculado não pode usar a mesma peça.',
-        };
-      }
-    } catch (e) {
-      return { ok: false, motivo: 'falha_leitura', mensagem: e instanceof Error ? e.message : String(e) };
-    }
 
     // Custo alimenta markup (ADR-0055): nunca pode nascer 0 nem null.
     const custoBase = baseVar.custo == null ? null : Number(baseVar.custo);

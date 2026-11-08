@@ -108,7 +108,13 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
     case 'kit_em_transferencia':
       await auditarOperacaoSuporte(admin, context, target, 'denied');
       return json({
-        erro: 'SKU deste produto está em transferência de kit com variação. Aguarde terminar e tente de novo — nada foi alterado.',
+        erro: 'SKU deste produto está em transferência ou ativação de kit com variação. Aguarde terminar e tente de novo — nada foi alterado.',
+      }, 409);
+    case 'kit_publicacao_pendente':
+      await auditarOperacaoSuporte(admin, context, target, 'denied');
+      return json({
+        erro: 'Há publicação pendente de SKU deste produto em kit com variação. Reenvie a publicação pendente '
+          + '(tela Lotes) e confira o anúncio antes de republicar — nada foi alterado.',
       }, 409);
     case 'tem_movimentacao':
       await auditarOperacaoSuporte(admin, context, target, 'denied');

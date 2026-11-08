@@ -136,13 +136,14 @@ export async function registrarBaixaVenda(
     // movimento só por `referencia_externa` e repõe na variação resolvida a partir do `codigo`
     // GRAVADO no movimento. Trocar a ref faria venda e estorno nunca se encontrarem.
     const ref = refBaixa(p.canal, p.orderId, b.codigo);
-    const { data, error } = await admin.rpc('baixar_estoque', {
+    const args = {
       p_org: p.orgId,
       p_codigo: origem.codigoCanonico,
       p_qtd: b.quantity * origem.multiplicador,
       p_canal: p.canal,
       p_ref: ref,
-    });
+    };
+    const { data, error } = await rpcEstoque(admin, 'baixar_estoque', args);
     if (error) {
       console.error('baixar_estoque_falhou', { orderId: p.orderId, codigo: b.codigo, erro: error.message });
       falhas.push({ codigo: b.codigo, mensagem: error.message });
@@ -256,6 +257,17 @@ async function registrarVendaSemSku(
 }
 
 /**
+ * ADR-0197: `canonica_trocou` = a cópia canônica do SKU de kit com variação trocou enquanto a RPC esperava o
+ * lock. A RPC desfez tudo (nem a referência ficou), e repetir resolve a cópia nova. Até 3 tentativas; depois
+ * vira falha comum, reaplicada no próximo evento do pedido.
+ */
+async function rpcEstoque(admin: SupabaseClient, nome: string, args: Record<string, unknown>) {
+  let r = await admin.rpc(nome, args);
+  for (let i = 1; i < 3 && r.error?.message?.startsWith('canonica_trocou'); i++) r = await admin.rpc(nome, args);
+  return r;
+}
+
+/**
  * Estorna, para um pedido cancelado, tudo que foi de fato baixado dele.
  * A checagem "houve baixa?" vive DENTRO da RPC (com advisory lock e FOR UPDATE no
  * movimento de venda) — fazer o check aqui e o estorno lá seria check-then-act não
@@ -268,7 +280,7 @@ export async function estornarVendaCancelada(
 ): Promise<{ pendentesDePush: MovimentoPendente[]; falhas: Array<{ codigo: string; mensagem: string }> }> {
   const falhas: Array<{ codigo: string; mensagem: string }> = [];
   for (const b of selecionarBaixas(p.itens)) {
-    const { error } = await admin.rpc('estornar_estoque', {
+    const { error } = await rpcEstoque(admin, 'estornar_estoque', {
       p_org: p.orgId, p_canal: p.canal,
       p_ref_venda: refBaixa(p.canal, p.orderId, b.codigo),
       p_codigo: b.codigo,

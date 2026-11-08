@@ -1329,7 +1329,7 @@ describe('removerPublicado — SKU em kit com variação (ADR-0197, Task 7)', ()
   it('republicar com transferência aberta: recusa antes de pausar no ML', async () => {
     const fetchFake = vi.fn();
     vi.stubGlobal('fetch', fetchFake);
-    const { admin, rpcs } = cenario([{ codigo: '00012347' }]);
+    const { admin, rpcs } = cenario([{ codigo: '00012347', dono_tipo: 'transferencia' }]);
     const r = await removerPublicado(
       { admin, ctx: CTX, conexao: CONEXAO },
       { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
@@ -1337,6 +1337,31 @@ describe('removerPublicado — SKU em kit com variação (ADR-0197, Task 7)', ()
     expect(r).toEqual({ tipo: 'kit_em_transferencia' });
     expect(fetchFake).not.toHaveBeenCalled();
     expect(rpcs).toEqual([]);
+  });
+
+  it('republicar com publicação pendente (exclusão da raiz antiga): recusa antes de pausar, sem soltar a exclusão', async () => {
+    const fetchFake = vi.fn();
+    vi.stubGlobal('fetch', fetchFake);
+    const { admin, rpcs, deletes } = cenario([{ codigo: '00012347', dono_tipo: 'publicacao' }]);
+    const r = await removerPublicado(
+      { admin, ctx: CTX, conexao: CONEXAO },
+      { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
+    );
+    expect(r).toEqual({ tipo: 'kit_publicacao_pendente' });
+    expect(fetchFake).not.toHaveBeenCalled();
+    expect(rpcs).toEqual([]);
+    expect(deletes).toEqual([]);
+  });
+
+  it('RPC recusa por publicação pendente → mesmo tipo', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ status: 'paused' }), { status: 200 })));
+    const { admin } = cenario([]);
+    (admin as { rpc: unknown }).rpc = async () => ({ data: null, error: { message: 'republicar:kit_publicacao_pendente' } });
+    const r = await removerPublicado(
+      { admin, ctx: CTX, conexao: CONEXAO },
+      { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
+    );
+    expect(r).toEqual({ tipo: 'kit_publicacao_pendente' });
   });
 
   it('republicar sem transferência segue; a RPC é a autoridade (transferência aberta depois da checagem)', async () => {

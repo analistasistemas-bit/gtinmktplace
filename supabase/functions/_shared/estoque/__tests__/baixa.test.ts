@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   selecionarBaixas, refBaixa, selecionarSemSku, refSemSku,
-  registrarBaixaVenda, classificarBaixaSemSaldo,
+  registrarBaixaVenda, classificarBaixaSemSaldo, estornarVendaCancelada,
 } from '../baixa';
 
 describe('selecionarBaixas', () => {
@@ -234,6 +234,41 @@ describe('registrarBaixaVenda — SKU desconhecido pelo catálogo', () => {
     const admin = adminFake({ aplicado: true, motivo: 'venda' });
     const r = await registrarBaixaVenda(admin as never, pedido);
     expect(r.skuDesconhecido).toEqual([]);
+  });
+
+  // ADR-0197 (Task 7, fix 1): a cópia canônica do SKU de kit com variação trocou enquanto a baixa esperava o
+  // lock. A RPC recusa sem gravar nada; repetir resolve a cópia nova.
+  it('canonica_trocou: repete a RPC na hora e baixa', async () => {
+    const admin = adminFake({ aplicado: true, motivo: 'venda' });
+    const respostas = [
+      { data: null, error: { message: 'canonica_trocou: a cópia canônica de 00220809 mudou durante a operação. Repita.' } },
+      { data: { aplicado: true, motivo: 'venda' }, error: null },
+    ];
+    let chamadas = 0;
+    admin.rpc = () => Promise.resolve(respostas[chamadas++] as never);
+    const r = await registrarBaixaVenda(admin as never, pedido);
+    expect(chamadas).toBe(2);
+    expect(r.falhas).toEqual([]);
+  });
+
+  it('canonica_trocou insistente: desiste depois de 3 tentativas e vira falha (retry no próximo evento)', async () => {
+    const admin = adminFake({ aplicado: true, motivo: 'venda' });
+    let chamadas = 0;
+    admin.rpc = () => { chamadas++; return Promise.resolve({ data: null, error: { message: 'canonica_trocou: x' } } as never); };
+    const r = await registrarBaixaVenda(admin as never, pedido);
+    expect(chamadas).toBe(3);
+    expect(r.falhas).toHaveLength(1);
+  });
+
+  it('estorno com canonica_trocou também repete', async () => {
+    const admin = adminFake({ aplicado: true, motivo: 'venda' });
+    let chamadas = 0;
+    admin.rpc = () => Promise.resolve((chamadas++ === 0
+      ? { data: null, error: { message: 'canonica_trocou: x' } }
+      : { data: null, error: null }) as never);
+    const r = await estornarVendaCancelada(admin as never, pedido);
+    expect(chamadas).toBe(2);
+    expect(r.falhas).toEqual([]);
   });
 });
 

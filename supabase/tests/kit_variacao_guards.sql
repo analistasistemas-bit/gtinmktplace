@@ -111,6 +111,44 @@ begin
   perform pg_temp.afirmar(pg_temp.saldo('09900003') = 77, 'SKU comum segue a planilha: ' || pg_temp.saldo('09900003'));
 end $$;
 
+-- 1b. Fix 1: troca de canônica. Venda depois da cópia baixa a nova (sequencial). Mutação que resolveu a cópia
+-- antiga antes da troca (o caso das duas sessões, ver kit_variacao_guards_concorrencia.sh) é simulada pelo
+-- UPDATE direto na linha antiga como o executor: recusa retentável, sem baixar.
+do $$
+declare r jsonb;
+begin
+  r := public.baixar_estoque('97300000-0000-0000-0000-000000000001', '09900001', 1, 'mercado_livre', 'pedido-t7-1');
+  perform pg_temp.afirmar((r->>'aplicado')::boolean and pg_temp.saldo('09900001') = 4, 'venda baixa a canônica nova: ' || r::text);
+end $$;
+reset role;
+grant estoque_rpc_executor to postgres;
+set local role estoque_rpc_executor;
+do $$
+declare v_erro text;
+begin
+  v_erro := pg_temp.erro($q$update public.variacoes set estoque = estoque - 1
+    where familia_id = '97300000-0000-0000-0000-000000000301' and codigo = '09900001'$q$);
+  perform pg_temp.afirmar(v_erro like 'canonica_trocou:%', 'cópia antiga recusa: ' || coalesce(v_erro, 'baixou'));
+  -- SKU comum: caminho de hoje, sem conferência.
+  update public.variacoes set estoque = estoque - 1
+  where familia_id = '97300000-0000-0000-0000-000000000301' and codigo = '09900003';
+end $$;
+reset role;
+set local role service_role;
+
+-- 1c. Tirar o participante da publicação é remover a cor por fora da saga: recusa.
+do $$
+declare v_erro text;
+begin
+  v_erro := pg_temp.erro($q$update public.variacoes set excluida_da_publicacao = true
+    where familia_id = '97300000-0000-0000-0000-000000000303' and codigo = '09900001'$q$);
+  perform pg_temp.afirmar(v_erro like '%não pode sair da publicação%', 'excluir da publicação recusa: ' || coalesce(v_erro, 'gravou'));
+  update public.variacoes set excluida_da_publicacao = true
+  where familia_id = '97300000-0000-0000-0000-000000000303' and codigo = '09900003';
+  update public.variacoes set excluida_da_publicacao = false
+  where familia_id = '97300000-0000-0000-0000-000000000303' and codigo = '09900003';
+end $$;
+
 -- 2. Org sem o módulo: comportamento de hoje (planilha manda).
 reset role;
 update public.organizations set modulos_habilitados = '{}' where id = '97300000-0000-0000-0000-000000000001';
@@ -161,11 +199,34 @@ begin
     where org_id = '97300000-0000-0000-0000-000000000001' and codigo = '09900001') = 3, 'recusa não incrementa');
 end $$;
 
--- 6. Republicar sem trânsito: preserva composição e saldo, incrementa a versão dos participantes (job velho
--- com a versão anterior é recusado na publicação, Task 5).
+-- 5b. Fix 2/3: a republicação disputa a exclusão do SKU. Exclusão de transferência (mesmo antes de a
+-- transferência aparecer como aberta) recusa; exclusão de publicação pendente (raiz antiga) recusa com
+-- motivo próprio e NÃO é liberada.
 reset role;
 update public.kit_transferencias set estado = 'concluida' where id = '97300000-0000-0000-0000-000000000601';
 set local role service_role;
+do $$
+declare o uuid := '97300000-0000-0000-0000-000000000001'; v_erro text;
+begin
+  insert into public.kit_exclusoes (org_id, codigo, dono_tipo, dono_id) values (o, '09900002', 'transferencia', gen_random_uuid());
+  v_erro := pg_temp.erro($q$select public.preparar_republicacao('97300000-0000-0000-0000-000000000001',
+    'mercado_livre', '09900000', '97300000-0000-0000-0000-000000000301')$q$);
+  perform pg_temp.afirmar(v_erro like '%republicar:kit_em_transferencia%', 'exclusão de transferência recusa: ' || coalesce(v_erro, 'passou'));
+  delete from public.kit_exclusoes where org_id = o;
+
+  insert into public.kit_exclusoes (org_id, codigo, dono_tipo, dono_id) values (o, '09900001', 'publicacao', gen_random_uuid());
+  v_erro := pg_temp.erro($q$select public.preparar_republicacao('97300000-0000-0000-0000-000000000001',
+    'mercado_livre', '09900000', '97300000-0000-0000-0000-000000000301')$q$);
+  perform pg_temp.afirmar(v_erro like '%republicar:kit_publicacao_pendente%', 'publicação pendente recusa: ' || coalesce(v_erro, 'passou'));
+  perform pg_temp.afirmar(exists (select 1 from public.kit_exclusoes where org_id = o and dono_tipo = 'publicacao'),
+    'exclusão de publicação não é liberada');
+  perform pg_temp.afirmar((select versao from public.sku_politica_kit where org_id = o and codigo = '09900001') = 3,
+    'recusa não incrementa');
+  delete from public.kit_exclusoes where org_id = o;
+end $$;
+
+-- 6. Republicar sem trânsito: preserva composição e saldo, incrementa a versão dos participantes (job velho
+-- com a versão anterior é recusado na publicação, Task 5).
 do $$
 declare o uuid := '97300000-0000-0000-0000-000000000001';
 begin
@@ -182,6 +243,8 @@ begin
     'saldo preservado: ' || pg_temp.saldo('09900001') || '/' || pg_temp.saldo('09900002'));
   perform pg_temp.afirmar((select ml_item_id is null from public.familias
     where id = '97300000-0000-0000-0000-000000000303'), 'vigente desvinculada (comportamento ADR-0185)');
+  perform pg_temp.afirmar(not exists (select 1 from public.kit_exclusoes where org_id = o),
+    'exclusão da republicação solta no fim da RPC');
 end $$;
 
 -- 7. Excluir cor em composição falha (última cópia); SKU comum sai normalmente.
@@ -234,6 +297,9 @@ begin
   perform pg_temp.nova_variacao('97300000-0000-0000-0000-000000000311', '09930001', 0);
   perform pg_temp.afirmar(public.kit_variacao_base_em_kit(o, array['09920001']) like '%kit vinculado%', 'base de kit vinculado recusa');
   perform pg_temp.afirmar(public.kit_variacao_base_em_kit(o, array['09930001']) like '%kit vinculado%', 'SKU do kit vinculado recusa');
+  -- Fix 4: kit em `erro` é retomável pelo reenvio da chave — segue ocupando a base.
+  update public.familias set status = 'erro' where id = '97300000-0000-0000-0000-000000000311';
+  perform pg_temp.afirmar(public.kit_variacao_base_em_kit(o, array['09920001']) like '%kit vinculado%', 'kit vinculado em erro recusa');
 
   -- Kit Virtual com componente de `codigo`/`codigo_pai` nulos: casa pelo user product do item local.
   insert into public.anuncios_externos (id, user_id, org_id, canal, codigo_pai) values (a, u, o, 'mercado_livre', '09940000');
@@ -244,6 +310,9 @@ begin
   insert into public.kits_virtuais_componentes (kit_id, org_id, ordem, user_product_id, item_externo_id, quantidade) values
     (k, o, 0, 'MLBU9731', null, 1), (k, o, 1, 'MLBU9739', null, 1);
   perform pg_temp.afirmar(public.kit_variacao_base_em_kit(o, array['09940001']) like '%Kit Virtual%', 'componente de Kit Virtual recusa');
+  -- Fix 5: `erro` não distingue recusa definitiva de criação remota incerta: ocupado.
+  update public.kits_virtuais set status = 'erro' where id = k;
+  perform pg_temp.afirmar(public.kit_variacao_base_em_kit(o, array['09940001']) like '%Kit Virtual%', 'Kit Virtual em erro recusa');
   update public.kits_virtuais set status = 'encerrado' where id = k;
   perform pg_temp.afirmar(public.kit_variacao_base_em_kit(o, array['09940001']) is null, 'Kit Virtual encerrado libera');
 end $$;
