@@ -47,6 +47,7 @@ function fakeDeps(over: Partial<DepsCancelamento> = {}) {
     skusParticipantes: () => Promise.reject(new Error('consulta de kit inesperada')),
     agendarCancelamentoKit: () => Promise.reject(new Error('agendamento de kit inesperado')),
     classificarItensKit: () => Promise.reject(new Error('identidade inesperada')),
+    gravarIdentidades: () => Promise.reject(new Error('identidade inesperada')),
     registrarPendenciaKit: () => Promise.reject(new Error('pendência inesperada')),
     ...over,
   };
@@ -204,6 +205,7 @@ describe('tratarPedidoCancelado — kit com variação', () => {
         return Promise.resolve(['est-kit']);
       },
       // Leitura incerta: só '00000029' é comum comprovado (vínculo sem participante); o resto fica incerto.
+      gravarIdentidades: (_a, p) => Promise.resolve(p.itens),
       classificarItensKit: (_a, p) => Promise.resolve(p.incerto
         ? { certos: p.itens.filter((i) => i.codigo === '00000029'), incertos: p.itens.filter((i) => i.codigo !== '00000029'), divergentes: [] }
         : { certos: p.itens, incertos: [], divergentes: [] }),
@@ -338,6 +340,19 @@ describe('tratarPedidoCancelado — kit com variação', () => {
     });
     await tratarPedidoCancelado(ADMIN, deps, KIT);
     expect(chamadas.estornos[0].itens).toEqual([{ codigo: 'KIT-ORIGINAL', quantity: 1 }]);
+  });
+
+  it('o cancelamento grava a identidade e estorna pelo SKU vencedor', async () => {
+    const gravadas: string[][] = [];
+    const { chamadas, deps } = depsKit({
+      gravarIdentidades: (_a, p) => {
+        gravadas.push(p.itens.map((i) => i.codigo ?? ''));
+        return Promise.resolve(p.itens.map((i) => ({ ...i, codigo: 'KIT-PRIMEIRO' })));
+      },
+    });
+    await tratarPedidoCancelado(ADMIN, deps, KIT);
+    expect(gravadas).toEqual([['KIT-PB-M']]);
+    expect(chamadas.estornos[0].itens).toEqual([{ codigo: 'KIT-PRIMEIRO', quantity: 1 }]);
   });
 
   it('identidade ilegível: pendente calado, sem estorno', async () => {

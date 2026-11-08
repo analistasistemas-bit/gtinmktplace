@@ -118,23 +118,22 @@ export async function gravarIdentidades(
 }
 
 export interface DepsAvisoKit {
-  reservar: (admin: SupabaseClient, orgId: string, userId: string | null, entidade: string, chave: string) => Promise<boolean>;
-  notificar: (admin: SupabaseClient, orgId: string, categoria: CategoriaNotificacao, texto: string) => Promise<unknown>;
+  /** `notificarCategoria` com `chave`: idempotente (in-app por chave, Telegram reservado por chat). */
+  notificar: (
+    admin: SupabaseClient, orgId: string, categoria: CategoriaNotificacao, texto: string, opcoes: { chave: string },
+  ) => Promise<unknown>;
 }
-
-/** Janela do aviso: zeragem mais velha que isso não avisa (evita despejar histórico na primeira execução). */
-const JANELA_AVISO_MS = 7 * 24 * 3600 * 1000;
 
 /**
  * Avisa cada kit em modo manual que zerou por venda. O evento é o próprio movimento do ledger (`estoque_resultante
- * = 0` vindo de saldo > 0), durável; o dedupe é por movimento. Chamado pelo sync-venda e pela importação da saga:
- * quem chegar primeiro avisa, e uma falha entre o débito e o aviso é recuperada na próxima chamada.
+ * = 0` vindo de saldo > 0), durável. `kit_aviso_enviado_em` só é gravado DEPOIS do envio; envio com chave por
+ * movimento, então repetir não duplica. Falha no envio deixa o movimento para a próxima varredura (sync-venda,
+ * importação da saga ou reconciliação diária), sem janela de tempo.
  *
- * Modo manual (spec, Reposição): só "Vender só em kit" com reposição automática repõe sozinho. Erro de leitura lança.
+ * Modo manual (spec, Reposição): só "Vender só em kit" com reposição automática repõe sozinho. Erro de leitura lança;
+ * erro de envio de um movimento não impede os demais. Devolve quantos foram enviados.
  */
-export async function avisarKitsZerados(
-  admin: SupabaseClient, deps: DepsAvisoKit, orgId: string, userId: string | null,
-): Promise<number> {
+export async function avisarKitsZerados(admin: SupabaseClient, deps: DepsAvisoKit, orgId: string): Promise<number> {
   const { data: skus, error } = await admin.from('kit_variacao_skus')
     .select('codigo, kits_variacao(reposicao_auto, so_em_kit)').eq('org_id', orgId);
   if (error) throw new Error(`kit_variacao_skus: ${error.message}`);
@@ -148,20 +147,44 @@ export async function avisarKitsZerados(
   const { data: movs, error: e2 } = await admin.from('estoque_movimentos')
     .select('id, codigo, referencia_externa')
     .eq('org_id', orgId).eq('motivo', 'venda').eq('estoque_resultante', 0).gt('estoque_anterior', 0)
-    .gte('criado_em', new Date(Date.now() - JANELA_AVISO_MS).toISOString())
+    .is('kit_aviso_enviado_em', null)
     .in('codigo', manuais);
   if (e2) throw new Error(`estoque_movimentos: ${e2.message}`);
   let n = 0;
   for (const m of movs ?? []) {
-    if (!await deps.reservar(admin, orgId, userId, 'estoque_kit_zerado', m.id as string)) continue;
     const pedido = String(m.referencia_externa ?? '').split(':')[1] ?? '';
-    await deps.notificar(
-      admin, orgId, 'estoque',
-      `🧩 Kit sem saldo: ${m.codigo}${pedido ? ` (pedido ${pedido})` : ''}\n\n`
-      + 'Este kit não repõe sozinho (reposição automática desligada ou individual ativo). '
-      + 'Para voltar a vender, use Montar mais.',
-    );
+    try {
+      await deps.notificar(
+        admin, orgId, 'estoque',
+        `🧩 Kit sem saldo: ${m.codigo}${pedido ? ` (pedido ${pedido})` : ''}\n\n`
+        + 'Este kit não repõe sozinho (reposição automática desligada ou individual ativo). '
+        + 'Para voltar a vender, use Montar mais.',
+        { chave: `kit_zerado:${m.id}` },
+      );
+    } catch (e) {
+      console.error('kit_aviso_zerado_envio_falhou', orgId, m.id, String(e));
+      continue;
+    }
+    const { error: e3 } = await admin.from('estoque_movimentos')
+      .update({ kit_aviso_enviado_em: new Date().toISOString() }).eq('id', m.id as string);
+    // Sem a marca, a próxima varredura reenvia com a mesma chave: não duplica.
+    if (e3) console.error('kit_aviso_zerado_marcar_falhou', orgId, m.id, e3.message);
     n++;
+  }
+  return n;
+}
+
+/** Varredura diária (reconciliar-estoque): todas as orgs com o módulo, sem depender de venda nova. Erro por org só loga. */
+export async function avisarKitsZeradosDasOrgs(admin: SupabaseClient, deps: DepsAvisoKit): Promise<number> {
+  const { data, error } = await admin.from('organizations').select('id').contains('modulos_habilitados', ['kit_variacao']);
+  if (error) throw new Error(`organizations: ${error.message}`);
+  let n = 0;
+  for (const o of data ?? []) {
+    try {
+      n += await avisarKitsZerados(admin, deps, o.id as string);
+    } catch (e) {
+      console.error('kit_aviso_zerado_org_falhou', o.id, String(e));
+    }
   }
   return n;
 }

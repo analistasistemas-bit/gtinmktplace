@@ -180,22 +180,19 @@ export async function buscarClaimsSeller(token: string): Promise<ClaimML[]> {
  *  `ret` como `Leitura` grava só o que foi lido; `ReturnML|null` (chamada antiga) conta como lido.
  *  Sem `extras` não toca nas colunas do pós-venda. `lidoEm` = instante ANTES dos GETs ao ML (guarda
  *  de versão do RPC). Lança em erro do banco; `linha` = a linha que ficou no banco. */
-export async function upsertDevolucao(
-  admin: SupabaseClient, userId: string, orgId: string | null, claim: ClaimML,
-  ret: Leitura<ReturnML | null> | ReturnML | null,
-  /** Conta ML conectada. Claim em que ela é a COMPRADORA não é devolução de venda — ver
-   *  `ehClaimDeCompra`. Opcional para não quebrar chamadas antigas; sem ele, grava como antes. */
-  contaExternaId?: string | null,
-  extras?: ExtrasClaim,
-  lidoEm?: string,
-): Promise<{ nova: boolean; row: ReturnType<typeof mapearDevolucao>; ignorado?: boolean; linha?: Record<string, unknown> }> {
+/**
+ * Linha mapeada do claim e o pedido dele, SEM gravar a devolução. ADR-0197: a reconciliação de claims precisa do
+ * pedido antes de gravar a devolução (que tira o claim do filtro) quando o crédito de kit pode não persistir.
+ */
+export async function resolverPedidoDoClaim(
+  admin: SupabaseClient, userId: string, claim: ClaimML,
+  ret: Leitura<ReturnML | null> | ReturnML | null, contaExternaId?: string | null,
+): Promise<{ row: ReturnType<typeof mapearDevolucao>; ignorado: boolean }> {
   const leitura: Leitura<ReturnML | null> = ret && typeof ret === 'object' && 'ok' in ret
     ? ret as Leitura<ReturnML | null> : { ok: true, valor: ret as ReturnML | null };
   const row = mapearDevolucao(claim, leitura.ok ? leitura.valor : null, contaExternaId);
 
-  if (ehClaimDeCompra(claim, contaExternaId)) {
-    return { nova: false, row, ignorado: true };
-  }
+  if (ehClaimDeCompra(claim, contaExternaId)) return { row, ignorado: true };
 
   // Se order_id é nulo mas o claim é sobre envio (resource = shipment), resolve order_id em ml_vendas
   if (row.order_id === null && claim.resource === 'shipment' && claim.resource_id != null) {
@@ -208,6 +205,22 @@ export async function upsertDevolucao(
       row.order_id = Number(venda.order_id);
     }
   }
+  return { row, ignorado: false };
+}
+
+export async function upsertDevolucao(
+  admin: SupabaseClient, userId: string, orgId: string | null, claim: ClaimML,
+  ret: Leitura<ReturnML | null> | ReturnML | null,
+  /** Conta ML conectada. Claim em que ela é a COMPRADORA não é devolução de venda — ver
+   *  `ehClaimDeCompra`. Opcional para não quebrar chamadas antigas; sem ele, grava como antes. */
+  contaExternaId?: string | null,
+  extras?: ExtrasClaim,
+  lidoEm?: string,
+): Promise<{ nova: boolean; row: ReturnType<typeof mapearDevolucao>; ignorado?: boolean; linha?: Record<string, unknown> }> {
+  const leitura: Leitura<ReturnML | null> = ret && typeof ret === 'object' && 'ok' in ret
+    ? ret as Leitura<ReturnML | null> : { ok: true, valor: ret as ReturnML | null };
+  const { row, ignorado } = await resolverPedidoDoClaim(admin, userId, claim, leitura, contaExternaId);
+  if (ignorado) return { nova: false, row, ignorado: true };
 
   const { data: anterior } = await admin.from('ml_devolucoes')
     .select('id').eq('user_id', userId).eq('claim_id', row.claim_id).maybeSingle();

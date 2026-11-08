@@ -6,7 +6,7 @@ import { estornarVendaCancelada, despacharPushPendente, houveBaixaDeVenda } from
 import { cancelamentoPeloComprador } from '../faturamento/devolucoes-io.ts';
 import { reservarNotificacao } from '../faturamento/notificacoes-dedupe.ts';
 import { registrarPendenciaKit } from '../faturamento/pendencias.ts';
-import { classificarItensKit } from '../kit-variacao/venda.ts';
+import { classificarItensKit, gravarIdentidades } from '../kit-variacao/venda.ts';
 import { notificarCategoria } from '../notificacoes/config.ts';
 import { skusParticipantes } from '../kit-variacao/politica.ts';
 import { agendarCancelamentoKit, type DepsCancelamento } from './cancelamento.ts';
@@ -22,5 +22,6 @@ export const depsCancelamento: DepsCancelamento = {
   skusParticipantes,
   agendarCancelamentoKit: (admin, p) => agendarCancelamentoKit(admin, (id, orgId) => enfileirarSaga(id, orgId), p),
   classificarItensKit,
+  gravarIdentidades,
   registrarPendenciaKit,
 };

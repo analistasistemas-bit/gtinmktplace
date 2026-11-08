@@ -6,6 +6,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura, enfileirarSincronizacaoEstoque } from '../_shared/queue.ts';
 import { registrarBaixaVenda, despacharPushPendente } from '../_shared/estoque/baixa.ts';
 import { avisarKitsZerados } from '../_shared/kit-variacao/venda.ts';
+import { registrarPendenciaKit } from '../_shared/faturamento/pendencias.ts';
 import { tratarPedidoCancelado } from '../_shared/estoque/cancelamento.ts';
 import { depsCancelamento } from '../_shared/estoque/cancelamento-deps.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
@@ -154,6 +155,13 @@ Deno.serve(async (req) => {
       }, kitLigado ? { kit: { incerto: leituraIncerta } } : {});
       const { pendentesDePush, vendaAcimaSaldo, desyncMl, falhas, semSku, skuDesconhecido } = r;
       adiados = r.adiados;
+      // Durável: a etapa de pendências da reconciliação refaz a baixa (refazerBaixaAdiada), sem depender de
+      // novo webhook. Se a gravação falhar, o 502 abaixo faz o QStash repetir.
+      if (adiados.length > 0) {
+        await registrarPendenciaKit(admin, orgId, String(pedido.id),
+          `kit_baixa_adiada: ${adiados.map((i) => i.ml_item_id ?? i.codigo).join(', ')}`)
+          .catch((e) => console.error('kit_baixa_adiada_pendencia_falhou', pedido.id, String(e)));
+      }
       if (adiados.length > 0
         && await reservarNotificacao(admin, orgId, userId, 'estoque_baixa_adiada', String(pedido.id))) {
         await notificarCategoria(
@@ -248,7 +256,7 @@ Deno.serve(async (req) => {
       // ADR-0197: kit em modo manual que zerou. O evento é o movimento do ledger; o dedupe é por movimento, e
       // a importação da saga chama o mesmo despacho. Último do bloco: erro aqui não cala os alertas acima.
       if (kitLigado) {
-        await avisarKitsZerados(admin, { reservar: reservarNotificacao, notificar: notificarCategoria }, orgId, userId);
+        await avisarKitsZerados(admin, { notificar: notificarCategoria }, orgId);
       }
     } catch (e) {
       console.error('baixa_estoque_falhou', e);

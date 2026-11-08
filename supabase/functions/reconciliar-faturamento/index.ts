@@ -3,18 +3,20 @@
 // (e perguntas/devoluções nas fases seguintes) de todos os usuários com credencial ML.
 import { corsHeaders } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { verificarAssinatura } from '../_shared/queue.ts';
+import { verificarAssinatura, enfileirarSincronizacaoEstoque } from '../_shared/queue.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { mapearConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { buscarPedidosPeriodo, buscarPedidosPeriodoEstrito, buscarPedido, memoCatalogo, upsertVenda, buscarShipment, buscarFreteVendedor, reconciliarLiberacoes } from '../_shared/faturamento/io.ts';
 import { carregarLiquidoMP, carregarLiquidoMPDoPedido, carregarGtinsDaVenda, mapaLiberacaoPorOrder } from '../_shared/faturamento/enriquecimento.ts';
 import { buscarPerguntasSeller, buscarTituloItem, upsertPergunta, carregarPerguntasLocais } from '../_shared/faturamento/perguntas-io.ts';
-import { buscarClaimsSeller, lerClaimCompleto, upsertDevolucao, carregarDevolucoesLocais, enriquecerPendentes } from '../_shared/faturamento/devolucoes-io.ts';
+import { buscarClaimsSeller, lerClaimCompleto, upsertDevolucao, carregarDevolucoesLocais, enriquecerPendentes, resolverPedidoDoClaim } from '../_shared/faturamento/devolucoes-io.ts';
 import { mapearPergunta } from '../_shared/faturamento/pergunta.ts';
 import { buscarPacksNaoLidos, buscarMensagensPackEstrito, upsertMensagensEstrito, resolverMetaPack } from '../_shared/faturamento/mensagens-io.ts';
 import { recuperarComOrcamento, recuperarPendentes } from '../_shared/faturamento/posvenda-fluxo.ts';
 import { depsAcaoReal } from '../_shared/faturamento/posvenda-acao-io.ts';
 import { tratarPedidoCancelado } from '../_shared/estoque/cancelamento.ts';
+import { despacharPushPendente, refazerBaixaAdiada } from '../_shared/estoque/baixa.ts';
+import { desfechoKit, processarClaim } from './kit.ts';
 import { depsCancelamento } from '../_shared/estoque/cancelamento-deps.ts';
 import { perguntaPrecisaUpsert, claimPrecisaProcessar, claimsDeVenda } from '../_shared/faturamento/reconciliar-filtros.ts';
 import { chunk } from '../_shared/faturamento/utils.ts';
@@ -22,7 +24,7 @@ import { classificarErroML, MLApiError } from '../_shared/ml/erro-ml.ts';
 import { registrarFalhaAuth, registrarSyncOk } from '../_shared/ml/liveness.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { montarMensagemConexaoBloqueada } from '../_shared/notificacoes/telegram.ts';
-import { lerPendencias, registrarPendencias, temPendenciaAtiva } from '../_shared/faturamento/pendencias.ts';
+import { lerPendencias, lerPendenciasKit, registrarPendenciaKit, registrarPendencias, temPendenciaAtiva } from '../_shared/faturamento/pendencias.ts';
 import type { PedidoML } from '../_shared/faturamento/venda.ts';
 import { SemAcessoRodada, cicloHoraUtc, executarMensagem, rotear, statusHttp, type MsgOrg } from '../_shared/rodada/rodada.ts';
 import { depsRodada, fanoutAtivo, publicarDisparo } from '../_shared/rodada/deps.ts';
@@ -145,29 +147,42 @@ async function legado(admin: ReturnType<typeof adminClient>): Promise<Response> 
           try {
             // Claim relido aqui (versão capturada antes): o da listagem pode ter minutos de idade.
             const { claim: atual, ret, extras, lidoEm } = await lerClaimCompleto(token, String(claim.id));
-            const { row, ignorado } = await upsertDevolucao(admin, userId, orgId, atual, ret, cx.contaExternaId, extras, lidoEm);
-            if (ignorado || row.order_id == null) return;
-            const pedido = await buscarPedido(token, String(row.order_id));
-            const shippingId = pedido.shipping?.id ?? null;
-            const [frete, shipment, liquidoPorPayment, { gtinPorItem, incerto: gtinIncerto }] = await Promise.all([
-              buscarFreteVendedor(token, shippingId),
-              buscarShipment(token, shippingId),
-              carregarLiquidoMPDoPedido(token, Number(cx.contaExternaId),
-                (pedido.payments ?? []).flatMap((p) => (p?.id != null ? [p.id] : []))),
-              carregarGtinsDaVenda(token, [pedido], idsPubliai, kitLigado),
-            ]);
-            const { itens } = await upsertVenda(admin, userId, orgId, pedido, {
-              freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver, contaExternaId: cx.contaExternaId,
-              liquidoPorPayment: liquidoPorPayment ?? undefined,
-            });
             // ADR-0121: é por AQUI que o cancelamento com devolução chega — o pedido já saiu da
             // janela de 72h do passo 2, e o webhook do cancelamento pode nunca ter vindo.
-            await tratarPedidoCancelado(admin, depsCancelamento, {
-              orgId, userId, canal: 'mercado_livre', orderId: pedido.id, itens,
-              statusPedido: pedido.status ?? null,
-              shipmentStatus: shipment?.status != null ? String(shipment.status) : null,
-              temEnvio: pedido.shipping?.id != null,
-              kitLigado, catalogoIncompleto: incompleto || gtinIncerto,
+            // ADR-0197: o desfecho do crédito de kit decide se a devolução é gravada (processarClaim).
+            await processarClaim({
+              kitLigado,
+              resolverPedido: async () => {
+                const { row, ignorado } = await resolverPedidoDoClaim(admin, userId, atual, ret, cx.contaExternaId);
+                return { ignorado, orderId: row.order_id };
+              },
+              gravarDevolucao: async () => {
+                const { row, ignorado } = await upsertDevolucao(admin, userId, orgId, atual, ret, cx.contaExternaId, extras, lidoEm);
+                return { ignorado: !!ignorado, orderId: row.order_id };
+              },
+              prepararPedido: async (orderId) => {
+                const pedido = await buscarPedido(token, String(orderId));
+                const shippingId = pedido.shipping?.id ?? null;
+                const [frete, shipment, liquidoPorPayment, { gtinPorItem, incerto: gtinIncerto }] = await Promise.all([
+                  buscarFreteVendedor(token, shippingId),
+                  buscarShipment(token, shippingId),
+                  carregarLiquidoMPDoPedido(token, Number(cx.contaExternaId),
+                    (pedido.payments ?? []).flatMap((p) => (p?.id != null ? [p.id] : []))),
+                  carregarGtinsDaVenda(token, [pedido], idsPubliai, kitLigado),
+                ]);
+                const { itens } = await upsertVenda(admin, userId, orgId, pedido, {
+                  freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver, contaExternaId: cx.contaExternaId,
+                  liquidoPorPayment: liquidoPorPayment ?? undefined,
+                });
+                return {
+                  orgId, userId, canal: 'mercado_livre', orderId: pedido.id, itens,
+                  statusPedido: pedido.status ?? null,
+                  shipmentStatus: shipment?.status != null ? String(shipment.status) : null,
+                  temEnvio: pedido.shipping?.id != null,
+                  kitLigado, catalogoIncompleto: incompleto || gtinIncerto,
+                };
+              },
+              tratar: (p) => tratarPedidoCancelado(admin, depsCancelamento, p),
             });
           } catch { /* segue */ }
         }));
@@ -373,27 +388,40 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
           try {
             // Claim relido aqui (versão capturada antes): o da listagem pode ter minutos de idade.
             const { claim: atual, ret, extras, lidoEm } = await lerClaimCompleto(token, String(claim.id));
-            const { row, ignorado } = await upsertDevolucao(admin, userId, org, atual, ret, cx.contaExternaId, extras, lidoEm);
-            if (ignorado || row.order_id == null) { n++; return; }
-            const pedido = await buscarPedido(token, String(row.order_id));
-            const shippingId = pedido.shipping?.id ?? null;
-            const [frete, shipment, liquidoPorPayment, { gtinPorItem, incerto: gtinIncerto }] = await Promise.all([
-              buscarFreteVendedor(token, shippingId),
-              buscarShipment(token, shippingId),
-              carregarLiquidoMPDoPedido(token, Number(cx.contaExternaId), pagamentosDoPedido(pedido)),
-              carregarGtinsDaVenda(token, [pedido], idsPubliai, kitLigado),
-            ]);
-            const { itens } = await upsertVenda(admin, userId, org, pedido, {
-              freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver, contaExternaId: cx.contaExternaId,
-              liquidoPorPayment: liquidoPorPayment ?? undefined,
-            });
             // ADR-0121: o cancelamento com devolução chega por aqui (pedido fora da janela de 72h).
-            await tratarPedidoCancelado(admin, depsCancelamento, {
-              orgId: org, userId, canal: 'mercado_livre', orderId: pedido.id, itens,
-              statusPedido: pedido.status ?? null,
-              shipmentStatus: shipment?.status != null ? String(shipment.status) : null,
-              temEnvio: pedido.shipping?.id != null,
-              kitLigado, catalogoIncompleto: incompleto || gtinIncerto,
+            // ADR-0197: `repetir` lança antes de gravar a devolução: o claim fica no filtro e não conta (processarClaim).
+            await processarClaim({
+              kitLigado,
+              resolverPedido: async () => {
+                const { row, ignorado } = await resolverPedidoDoClaim(admin, userId, atual, ret, cx.contaExternaId);
+                return { ignorado, orderId: row.order_id };
+              },
+              gravarDevolucao: async () => {
+                const { row, ignorado } = await upsertDevolucao(admin, userId, org, atual, ret, cx.contaExternaId, extras, lidoEm);
+                return { ignorado: !!ignorado, orderId: row.order_id };
+              },
+              prepararPedido: async (orderId) => {
+                const pedido = await buscarPedido(token, String(orderId));
+                const shippingId = pedido.shipping?.id ?? null;
+                const [frete, shipment, liquidoPorPayment, { gtinPorItem, incerto: gtinIncerto }] = await Promise.all([
+                  buscarFreteVendedor(token, shippingId),
+                  buscarShipment(token, shippingId),
+                  carregarLiquidoMPDoPedido(token, Number(cx.contaExternaId), pagamentosDoPedido(pedido)),
+                  carregarGtinsDaVenda(token, [pedido], idsPubliai, kitLigado),
+                ]);
+                const { itens } = await upsertVenda(admin, userId, org, pedido, {
+                  freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver, contaExternaId: cx.contaExternaId,
+                  liquidoPorPayment: liquidoPorPayment ?? undefined,
+                });
+                return {
+                  orgId: org, userId, canal: 'mercado_livre', orderId: pedido.id, itens,
+                  statusPedido: pedido.status ?? null,
+                  shipmentStatus: shipment?.status != null ? String(shipment.status) : null,
+                  temEnvio: pedido.shipping?.id != null,
+                  kitLigado, catalogoIncompleto: incompleto || gtinIncerto,
+                };
+              },
+              tratar: (p) => tratarPedidoCancelado(admin, depsCancelamento, p),
             });
             n++;
           } catch (e) {
@@ -470,6 +498,8 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
     async processarPedidos(token, cx, userId, org, pedidos) {
       const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver, incompleto, kitLigado } = await catalogoDe(userId, org);
       const { gtinPorItem, incerto: gtinIncerto } = await carregarGtinsDaVenda(token, pedidos, idsPubliai, kitLigado);
+      // ADR-0197: pedidos com obrigação de kit (baixa adiada ou crédito). Só com o módulo; lança → a etapa falha.
+      const obrigacoesKit = kitLigado ? await lerPendenciasKit(admin, org) : new Set<string>();
       const r = resultadoVazio();
       for (const lote of chunk(pedidos, PARALELAS)) {
         await Promise.all(lote.map(async (pedido) => {
@@ -501,8 +531,12 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
             });
             // ADR-0197: obrigação de crédito não gravada → falha do pedido (vira pendência e repete). Crédito
             // pendente → nem ok nem falha: a obrigação gravada não pode ser apagada por este "sucesso".
-            if (cancelamento === 'repetir') throw new Error('kit_cancelamento: obrigação de crédito não gravada');
-            return liquidoPorPayment !== null && cancelamento !== 'pendente';
+            // ADR-0197: baixa adiada pelo portão do sync-venda é refeita aqui, de forma durável.
+            const baixaOk = !(obrigacoesKit.has(String(pedido.id)) && pedido.status === 'paid') || await refazerBaixaAdiada(admin, {
+              registrarPendenciaKit,
+              despachar: (pend) => despacharPushPendente(admin, org, pend, enfileirarSincronizacaoEstoque),
+            }, { orgId: org, canal: 'mercado_livre', orderId: pedido.id, itens, incerto: incompleto || gtinIncerto });
+            return desfechoKit({ mpLido: liquidoPorPayment !== null, cancelamento, baixaOk });
           });
           if (erro) console.warn(`reconciliar: pedido ${pedido.id} da org ${org} falhou: ${(erro as Error)?.message ?? erro}`);
         }));

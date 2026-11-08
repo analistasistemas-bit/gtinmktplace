@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { estornarVendaCancelada, refBaixa, registrarBaixaVenda } from '../baixa.ts';
-import { avisarKitsZerados, classificarItensKit } from '../../kit-variacao/venda.ts';
+import { estornarVendaCancelada, refazerBaixaAdiada, refBaixa, registrarBaixaVenda } from '../baixa.ts';
+import { avisarKitsZerados, classificarItensKit, gravarIdentidades } from '../../kit-variacao/venda.ts';
+import { tratarPedidoCancelado, type DepsCancelamento } from '../cancelamento.ts';
 import { agendarCancelamentoKit } from '../cancelamento.ts';
 
 // ADR-0197 (Task 8): venda e cancelamento de SKU de kit com variação. O kit tem saldo próprio, então a
@@ -184,49 +185,150 @@ describe('classificarItensKit (cancelamento)', () => {
 });
 
 describe('avisarKitsZerados', () => {
-  function admin(movs: Array<Record<string, unknown>>) {
-    const { admin: a } = fakeAdmin({
-      kit_variacao_skus: [
-        { codigo: 'KIT-DESLIGADA', kits_variacao: { reposicao_auto: false, so_em_kit: true } },
-        { codigo: 'KIT-INDIVIDUAL', kits_variacao: { reposicao_auto: true, so_em_kit: false } },
-        { codigo: 'KIT-AUTO', kits_variacao: { reposicao_auto: true, so_em_kit: true } },
-      ],
-      estoque_movimentos: movs,
-    }, {});
-    return a;
+  /** Ledger em memória: só movimentos de zeragem; `update` grava `kit_aviso_enviado_em` por id. */
+  function bancoAviso(movs: Array<{ id: string; codigo: string; referencia_externa: string }>) {
+    const linhas = movs.map((m) => ({ ...m, kit_aviso_enviado_em: null as string | null }));
+    const skus = [
+      { codigo: 'KIT-DESLIGADA', kits_variacao: { reposicao_auto: false, so_em_kit: true } },
+      { codigo: 'KIT-INDIVIDUAL', kits_variacao: { reposicao_auto: true, so_em_kit: false } },
+      { codigo: 'KIT-AUTO', kits_variacao: { reposicao_auto: true, so_em_kit: true } },
+    ];
+    const filtrosMov: Array<[string, unknown]> = [];
+    const from = (tabela: string) => {
+      let patch: Record<string, unknown> | null = null;
+      let id: unknown = null;
+      // deno-lint-ignore no-explicit-any
+      const q: any = {
+        select: () => q, gt: () => q,
+        update: (p: Record<string, unknown>) => { patch = p; return q; },
+        eq: (k: string, v: unknown) => { if (k === 'id') id = v; return q; },
+        is: (k: string, v: unknown) => { filtrosMov.push([k, v]); return q; },
+        in: (k: string, v: unknown) => { filtrosMov.push([k, v]); return q; },
+        then: (res: (v: unknown) => unknown) => {
+          if (tabela === 'kit_variacao_skus') return Promise.resolve({ data: skus, error: null }).then(res);
+          if (patch) {
+            const l = linhas.find((x) => x.id === id);
+            if (l) Object.assign(l, patch);
+            return Promise.resolve({ error: null }).then(res);
+          }
+          const manuais = (filtrosMov.find(([k]) => k === 'codigo')?.[1] ?? []) as string[];
+          return Promise.resolve({
+            data: linhas.filter((l) => l.kit_aviso_enviado_em === null && manuais.includes(l.codigo)), error: null,
+          }).then(res);
+        },
+      };
+      return q;
+    };
+    // deno-lint-ignore no-explicit-any
+    return { admin: { from } as any, linhas, filtrosMov };
   }
 
-  it('avisa uma vez por movimento de zeragem, nos kits em modo manual', async () => {
-    const reservados = new Set<string>();
-    const textos: string[] = [];
+  it('falha no envio não marca; a próxima varredura envia uma vez e marca', async () => {
+    const b = bancoAviso([{ id: 'mov-1', codigo: 'KIT-DESLIGADA', referencia_externa: 'mercado_livre:123:KIT-DESLIGADA' }]);
+    const enviados: Array<{ texto: string; chave: string }> = [];
+    let falhar = true;
     const deps = {
-      reservar: (_a: unknown, _o: string, _u: string | null, ent: string, chave: string) => {
-        const k = `${ent}:${chave}`;
-        if (reservados.has(k)) return Promise.resolve(false);
-        reservados.add(k);
-        return Promise.resolve(true);
+      notificar: (_a: unknown, _o: string, _c: string, texto: string, o: { chave: string }) => {
+        if (falhar) return Promise.reject(new Error('telegram fora'));
+        enviados.push({ texto, chave: o.chave });
+        return Promise.resolve();
       },
-      notificar: (_a: unknown, _o: string, _c: string, t: string) => { textos.push(t); return Promise.resolve(); },
     };
-    const a = admin([{ id: 'mov-1', codigo: 'KIT-DESLIGADA', referencia_externa: 'mercado_livre:123:KIT-DESLIGADA' }]);
-    // Dois caminhos (webhook e importação da saga) chamam o mesmo despacho: um aviso só.
-    expect(await avisarKitsZerados(a, deps as never, 'org-1', null)).toBe(1);
-    expect(await avisarKitsZerados(a, deps as never, 'org-1', null)).toBe(0);
-    expect(textos).toHaveLength(1);
-    expect(textos[0]).toContain('KIT-DESLIGADA');
-    expect(textos[0]).toContain('pedido 123');
+    expect(await avisarKitsZerados(b.admin, deps as never, 'org-1')).toBe(0);
+    expect(b.linhas[0].kit_aviso_enviado_em).toBeNull();
+    falhar = false;
+    expect(await avisarKitsZerados(b.admin, deps as never, 'org-1')).toBe(1);
+    expect(await avisarKitsZerados(b.admin, deps as never, 'org-1')).toBe(0);
+    expect(enviados).toEqual([{ texto: expect.stringContaining('pedido 123'), chave: 'kit_zerado:mov-1' }]);
+    expect(b.linhas[0].kit_aviso_enviado_em).not.toBeNull();
   });
 
-  it('consulta o ledger só pelos kits manuais', async () => {
-    const { admin: a, chamadas } = fakeAdmin({
-      kit_variacao_skus: [
-        { codigo: 'KIT-INDIVIDUAL', kits_variacao: { reposicao_auto: true, so_em_kit: false } },
-        { codigo: 'KIT-AUTO', kits_variacao: { reposicao_auto: true, so_em_kit: true } },
-      ],
-    }, {});
-    await avisarKitsZerados(a, { reservar: () => Promise.resolve(true), notificar: () => Promise.resolve() }, 'org-1', null);
-    const mov = chamadas.find((c) => c.tabela === 'estoque_movimentos');
-    expect(mov?.filtros).toContainEqual(['in', 'codigo', ['KIT-INDIVIDUAL']]);
+  it('só kits em modo manual, sem janela de tempo', async () => {
+    const b = bancoAviso([]);
+    await avisarKitsZerados(b.admin, { notificar: () => Promise.resolve() }, 'org-1');
+    expect(b.filtrosMov).toContainEqual(['codigo', ['KIT-DESLIGADA', 'KIT-INDIVIDUAL']]);
+    expect(b.filtrosMov).toContainEqual(['kit_aviso_enviado_em', null]);
+  });
+});
+
+/** `bancoKit` + estorno com tombstone, como a RPC real: estorno sem baixa grava o tombstone, e a baixa tardia
+ *  da mesma referência não debita. */
+function comEstorno(b: ReturnType<typeof bancoKit>) {
+  const tombstones = new Set<string>();
+  const debitos: string[] = [];
+  const rpcBaixa = b.admin.rpc;
+  b.admin.rpc = (fn: string, a: Record<string, unknown>) => {
+    if (fn === 'estornar_estoque') {
+      const ref = a.p_ref_venda as string;
+      if (b.refs.has(ref)) return Promise.resolve({ data: { aplicado: true, motivo: 'estorno_venda' }, error: null });
+      tombstones.add(ref);
+      return Promise.resolve({ data: { aplicado: false, motivo: 'sem_baixa_registrada' }, error: null });
+    }
+    if (fn === 'baixar_estoque' && tombstones.has(a.p_ref as string)) {
+      return Promise.resolve({ data: { aplicado: false, motivo: 'cancelada_antes_da_baixa' }, error: null });
+    }
+    if (fn === 'baixar_estoque' && !b.refs.has(a.p_ref as string)) debitos.push(a.p_ref as string);
+    return rpcBaixa(fn, a);
+  };
+  return { tombstones, debitos };
+}
+
+describe('cancelamento antes da baixa fixa a identidade (rodada 2)', () => {
+  it('cancelamento resolve A; baixa tardia que resolveria B não debita', async () => {
+    const b = bancoKit({ participantes: ['KIT-A'] });
+    const x = comEstorno(b);
+    const deps = {
+      classificarItensKit, gravarIdentidades,
+      estornarVendaCancelada,
+      skusParticipantes: () => Promise.resolve(new Set(['KIT-A'])),
+      agendarCancelamentoKit: () => Promise.resolve([]),
+      despacharPushPendente: () => Promise.resolve({ marcados: 0, falhas: 0 }),
+      enfileirarSincronizacaoEstoque: () => Promise.resolve('x'),
+      registrarPendenciaKit: () => Promise.resolve(),
+    } as unknown as DepsCancelamento;
+    const pedido = { orgId: 'org-1', userId: null, canal: 'mercado_livre', orderId: 300, statusPedido: 'cancelled',
+      shipmentStatus: 'ready_to_ship', temEnvio: true, kitLigado: true };
+    await tratarPedidoCancelado(b.admin, deps, { ...pedido, itens: [{ codigo: 'KIT-A', quantity: 1, ml_item_id: 'MLB-K' }] });
+    expect(b.identidade.map((i) => i.codigo)).toEqual(['KIT-A']);
+    expect([...x.tombstones]).toEqual([refBaixa('mercado_livre', 300, 'KIT-A')]);
+    // Webhook `paid` atrasado, com outra resolução do mesmo item.
+    const r = await registrarBaixaVenda(b.admin, {
+      orgId: 'org-1', canal: 'mercado_livre', orderId: 300, itens: [{ codigo: 'KIT-B', quantity: 1, ml_item_id: 'MLB-K' }],
+    }, { kit: { incerto: false } });
+    expect(x.debitos).toEqual([]);
+    expect(r.divergentes).toEqual([{ mlItemId: 'MLB-K', resolvido: 'KIT-B', identidade: 'KIT-A' }]);
+  });
+});
+
+describe('refazerBaixaAdiada (reconciliação, rodada 2)', () => {
+  const P = { orgId: 'org-1', canal: 'mercado_livre', orderId: 400 };
+
+  it('ainda incerto: renova a obrigação e não é sucesso', async () => {
+    const b = bancoKit({ participantes: ['COMP-P'] });
+    const obrigacoes: string[] = [];
+    const ok = await refazerBaixaAdiada(b.admin, {
+      registrarPendenciaKit: (_a, _o, id, erro) => { obrigacoes.push(`${id}|${erro}`); return Promise.resolve(); },
+      despachar: () => Promise.resolve(),
+    }, { ...P, itens: [{ codigo: 'COMUM-9', quantity: 1, ml_item_id: 'MLB-CAT' }], incerto: true });
+    expect(ok).toBe(false);
+    expect(obrigacoes).toEqual([expect.stringMatching(/^400\|kit_baixa_adiada: adiado MLB-CAT/)]);
+    expect([...b.refs]).toEqual([]);
+  });
+
+  it('leitura certa na retomada: baixa uma vez e conclui', async () => {
+    const b = bancoKit({ participantes: ['COMP-P'] });
+    const deps = { registrarPendenciaKit: () => Promise.reject(new Error('não devia')), despachar: () => Promise.resolve() };
+    const item = { codigo: 'COMP-P', quantity: 1, ml_item_id: 'MLB-CAT' };
+    expect(await refazerBaixaAdiada(b.admin, deps, { ...P, itens: [item], incerto: false })).toBe(true);
+    expect(await refazerBaixaAdiada(b.admin, deps, { ...P, itens: [item], incerto: false })).toBe(true);
+    expect([...b.refs]).toEqual([refBaixa('mercado_livre', 400, 'COMP-P')]);
+  });
+
+  it('obrigação não gravada: lança (o pedido conta como falha)', async () => {
+    const b = bancoKit({});
+    await expect(refazerBaixaAdiada(b.admin, {
+      registrarPendenciaKit: () => Promise.reject(new Error('banco fora')), despachar: () => Promise.resolve(),
+    }, { ...P, itens: [{ codigo: 'X', quantity: 1, ml_item_id: 'MLB-X' }], incerto: true })).rejects.toThrow('banco fora');
   });
 });
 

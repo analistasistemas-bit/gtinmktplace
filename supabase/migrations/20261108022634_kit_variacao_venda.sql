@@ -37,6 +37,14 @@ create trigger kit_venda_identidade_imutavel
 
 alter table public.worker_pendencias add column if not exists obrigatoria boolean not null default false;
 
+-- 3) Aviso de kit zerado em modo manual. O evento é o movimento de venda que zerou o SKU do kit; esta coluna só
+--    é preenchida DEPOIS do envio (notificação com chave, idempotente). Sem ela, a próxima varredura (sync-venda,
+--    importação da saga ou reconciliação diária) tenta de novo, sem janela de tempo.
+alter table public.estoque_movimentos add column if not exists kit_aviso_enviado_em timestamptz;
+create index if not exists estoque_movimentos_zerado_sem_aviso_idx
+  on public.estoque_movimentos (org_id, codigo)
+  where motivo = 'venda' and estoque_resultante = 0 and kit_aviso_enviado_em is null;
+
 -- Corpo de 20260927205804 preservado; só o descarte poupa a pendência obrigatória.
 create or replace function public.registrar_pendencias_pedido(p_org uuid, p_ok text[], p_inicio timestamptz,
                                                    p_falhas text[], p_erro text)

@@ -12,7 +12,7 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { refBaixa, selecionarBaixas, type ItemVendaBaixa, type MovimentoPendente } from './baixa.ts';
 import type { CategoriaNotificacao } from '../notificacoes/categorias.ts';
 import { criarTransferencia } from '../kit-variacao/saga.ts';
-import type { classificarItensKit } from '../kit-variacao/venda.ts';
+import type { classificarItensKit, gravarIdentidades } from '../kit-variacao/venda.ts';
 
 /** Estados de envio que provam que a mercadoria NÃO saiu. Allowlist, nunca denylist:
  *  `buscarShipment` devolve null em qualquer erro de rede, e tratar o desconhecido como
@@ -61,6 +61,8 @@ export interface DepsCancelamento {
   ) => Promise<string[]>;
   /** ADR-0197: `classificarItensKit` (identidade do item vendido). Lança em erro de leitura. */
   classificarItensKit: typeof classificarItensKit;
+  /** ADR-0197: `gravarIdentidades` (a primeira resolução do item vence). Lança em erro. */
+  gravarIdentidades: typeof gravarIdentidades;
   /** ADR-0197: RPC `registrar_pendencia_kit` (worker_pendencias obrigatória, sem descarte). Lança em erro. */
   registrarPendenciaKit: (admin: SupabaseClient, orgId: string, orderId: string, erro: string) => Promise<void>;
 }
@@ -92,6 +94,16 @@ export type ResultadoCancelamento =
   | 'erro';
 
 /**
+ * ADR-0197: o pedido cai no crédito de kit com variação (cancelado, comprovadamente antes do despacho, módulo
+ * ligado). É o único caminho que pode devolver `pendente`/`repetir`.
+ */
+export function entraNoCreditoKit(p: PedidoCancelado): boolean {
+  if (p.statusPedido !== 'cancelled' || !p.kitLigado) return false;
+  const st = p.shipmentStatus != null ? String(p.shipmentStatus) : null;
+  return (st !== null && PRE_DESPACHO.includes(st)) || !p.temEnvio;
+}
+
+/**
  * Repõe o estoque de um pedido cancelado, ou avisa quando não dá para repor com segurança.
  *
  * Idempotente pelos dois lados: o estorno é idempotente por referência dentro da RPC e o aviso
@@ -108,7 +120,7 @@ export async function tratarPedidoCancelado(
   const preDespachoConhecido = st !== null && PRE_DESPACHO.includes(st);
 
   try {
-    if ((preDespachoConhecido || !p.temEnvio) && p.kitLigado) return await reporComKit(admin, deps, p);
+    if (entraNoCreditoKit(p)) return await reporComKit(admin, deps, p);
     if (preDespachoConhecido || !p.temEnvio) {
       // A checagem "houve baixa?" vive dentro da RPC, atômica com o estorno — e quando não há
       // baixa ela grava o tombstone que impede a execução `paid` posterior de baixar um pedido
@@ -175,6 +187,11 @@ async function reporComKit(
     itens = await deps.classificarItensKit(admin, {
       orgId: p.orgId, canal: p.canal, orderId: p.orderId, itens: p.itens, incerto: !!p.catalogoIncompleto,
     });
+    // O cancelamento também fixa a identidade (a primeira vence): o tombstone e uma baixa tardia caem no mesmo
+    // SKU, então a baixa que resolveria outro código não debita um pedido já cancelado.
+    itens = { ...itens, certos: await deps.gravarIdentidades(admin, {
+      orgId: p.orgId, canal: p.canal, orderId: p.orderId, itens: itens.certos,
+    }) };
   } catch (e) {
     return await pendente(admin, deps, p, `identidade: ${String(e)}`, false);
   }

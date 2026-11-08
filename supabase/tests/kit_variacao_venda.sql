@@ -41,6 +41,16 @@ begin
 end $$;
 reset role;
 
+-- 2b) Coluna e índice do aviso de kit zerado (marca só depois do envio).
+do $$
+begin
+  if not exists (select 1 from information_schema.columns
+                 where table_schema = 'public' and table_name = 'estoque_movimentos' and column_name = 'kit_aviso_enviado_em')
+    then raise exception '2b: coluna ausente'; end if;
+  if not exists (select 1 from pg_indexes where indexname = 'estoque_movimentos_zerado_sem_aviso_idx')
+    then raise exception '2b: índice ausente'; end if;
+end $$;
+
 -- 3) Grants.
 do $$
 begin

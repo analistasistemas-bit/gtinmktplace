@@ -20,6 +20,7 @@ import { resolverConexaoEstrita } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { lerOferta } from '../_shared/kit-variacao/ml-oferta.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
+import { avisarKitsZeradosDasOrgs } from '../_shared/kit-variacao/venda.ts';
 
 /** Teto operacional por execução: 5 páginas × 200 = 1.000 movimentos por org. */
 const MAX_PAGINAS = 5;
@@ -157,9 +158,12 @@ Deno.serve(async (req) => {
     token,
     alertar,
   }).catch((e) => console.error('reconciliar_kit_ativacoes_falhou', e));
+  // ADR-0197 (Task 8): aviso de kit zerado que não saiu (envio falhou ou nenhuma venda nova desde então).
+  const avisosKit = await avisarKitsZeradosDasOrgs(admin, { notificar: notificarCategoria })
+    .catch((e) => { console.error('reconciliar_kit_avisos_zerado_falhou', e); return 0; });
 
   return new Response(
-    JSON.stringify({ ok: true, drenados, enfileirados, avaliados: alvos.size, transferencias, triadas, publicacoesParadas }),
+    JSON.stringify({ ok: true, drenados, enfileirados, avaliados: alvos.size, transferencias, triadas, publicacoesParadas, avisosKit }),
     { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
   );
 });

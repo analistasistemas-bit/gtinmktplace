@@ -475,3 +475,28 @@ export async function despacharPushPendente(
   }
   return { marcados, falhas };
 }
+
+/**
+ * ADR-0197: retomada durável da baixa adiada pelo portão (item sem identidade, leitura incerta, sem prova de ser
+ * comum). O sync-venda grava a obrigação em `worker_pendencias` (`obrigatoria`); a etapa de pendências da
+ * reconciliação relê o pedido e chama isto. Devolve true quando nada ficou para trás; senão renova a obrigação
+ * (lança se não conseguir gravar: o chamador conta falha e repete).
+ */
+export async function refazerBaixaAdiada(
+  admin: SupabaseClient,
+  deps: {
+    registrarPendenciaKit: (admin: SupabaseClient, orgId: string, orderId: string, erro: string) => Promise<void>;
+    despachar: (pendentes: MovimentoPendente[]) => Promise<unknown>;
+  },
+  p: { orgId: string; canal: string; orderId: string | number; itens: ItemVendaBaixa[]; incerto: boolean },
+): Promise<boolean> {
+  const r = await registrarBaixaVenda(admin, p, { kit: { incerto: p.incerto } });
+  await deps.despachar(r.pendentesDePush);
+  const resto = [
+    ...r.adiados.map((i) => `adiado ${i.ml_item_id ?? i.codigo}`),
+    ...r.falhas.map((f) => `${f.codigo}: ${f.mensagem}`),
+  ];
+  if (resto.length === 0) return true;
+  await deps.registrarPendenciaKit(admin, p.orgId, String(p.orderId), `kit_baixa_adiada: ${resto.join('; ')}`);
+  return false;
+}

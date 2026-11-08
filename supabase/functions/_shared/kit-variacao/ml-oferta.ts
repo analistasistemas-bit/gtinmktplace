@@ -9,7 +9,6 @@ import { MLApiError } from '../ml/erro-ml.ts';
 import { caminhoMultiget, comoEnvelopeAntigo } from '../ml/multiget.ts';
 import type { PedidoPago, PedidoPendente } from './conciliacao.ts';
 import { avisarKitsZerados } from './venda.ts';
-import { reservarNotificacao } from '../faturamento/notificacoes-dedupe.ts';
 import { notificarCategoria } from '../notificacoes/config.ts';
 
 const API = 'https://api.mercadolibre.com';
@@ -198,7 +197,7 @@ export async function importarPedidosDoItem(
   }
   // ADR-0197: a baixa daqui pode ser a que zerou um kit em modo manual; o sync-venda depois só vê duplicata.
   try {
-    await avisarKitsZerados(admin, { reservar: reservarNotificacao, notificar: notificarCategoria }, orgId, null);
+    await avisarKitsZerados(admin, { notificar: notificarCategoria }, orgId);
   } catch (e) {
     console.error('kit_aviso_zerado_falhou', orgId, String(e));
   }
