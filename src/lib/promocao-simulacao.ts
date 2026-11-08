@@ -1,6 +1,6 @@
 // Emenda ADR-0174 (2026-11-03) — busca e "mesmo preço/desconto" para um produto e suas variações no detalhe
 // da campanha. Regras puras; o líquido no preço escolhido vem SEMPRE do servidor (etapa 'simular').
-import { corDeReferencia, PRECO_MIN_PROMOCAO, type ItemPromocao, type SemaforoPromo, type CorProjetada } from '@/lib/promocoes';
+import { corDeReferencia, PRECO_MIN_PROMOCAO, type ItemPromocao, type PaiDoItem, type SemaforoPromo, type CorProjetada } from '@/lib/promocoes';
 
 export type ModoAlvo = 'desconto' | 'preco';
 export type ResultadoSimulacao =
@@ -21,6 +21,30 @@ export function filtrarPorBusca(itens: ItemPromocao[], termo: string): ItemPromo
     const texto = normalizar([it.titulo, it.ml_item_id, it.anuncio_normal_id, ...it.projecao.map((c) => c.sku)].filter(Boolean).join(' '));
     return palavras.every((p) => texto.includes(p));
   });
+}
+
+/** PAI do anúncio; linha de catálogo herda o do normal do par; sem vínculo, cai no SKU de alguma cor. */
+export function paiDoItem(it: ItemPromocao, mapa: Map<string, PaiDoItem>): PaiDoItem | undefined {
+  const porItem = mapa.get(it.ml_item_id) ?? (it.anuncio_normal_id ? mapa.get(it.anuncio_normal_id) : undefined);
+  if (porItem) return porItem;
+  for (const c of it.projecao) { const p = c.sku ? mapa.get(`sku:${c.sku.trim()}`) : undefined; if (p) return p; }
+  return undefined;
+}
+
+/** PAIs com anúncio na lista, em ordem alfabética, com quantos anúncios cada um tem. */
+export function opcoesPai(itens: ItemPromocao[], mapa: Map<string, PaiDoItem>): (PaiDoItem & { qtd: number })[] {
+  const porCodigo = new Map<string, PaiDoItem & { qtd: number }>();
+  for (const it of itens) {
+    const p = paiDoItem(it, mapa);
+    if (!p) continue;
+    const o = porCodigo.get(p.codigo_pai);
+    if (o) o.qtd++; else porCodigo.set(p.codigo_pai, { ...p, qtd: 1 });
+  }
+  return [...porCodigo.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR') || a.codigo_pai.localeCompare(b.codigo_pai));
+}
+
+export function filtrarPorPai(itens: ItemPromocao[], mapa: Map<string, PaiDoItem>, codigoPai: string | null): ItemPromocao[] {
+  return codigoPai ? itens.filter((it) => paiDoItem(it, mapa)?.codigo_pai === codigoPai) : itens;
 }
 
 /** Preço pedido para o anúncio: desconto % sobre o preço original, ou o mesmo preço para todos. */

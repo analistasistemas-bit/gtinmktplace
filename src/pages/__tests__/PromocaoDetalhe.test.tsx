@@ -18,7 +18,7 @@ vi.mock('@/lib/supabase', async (orig) => {
 });
 
 vi.mock('@/hooks/usePromocoes', () => ({
-  usePromocoes: vi.fn(), useItensPromocao: vi.fn(),
+  usePromocoes: vi.fn(), useItensPromocao: vi.fn(), usePaisPorItem: () => ({ data: undefined }),
 }));
 
 const promo = {

@@ -193,6 +193,35 @@ export async function fetchItensPromocao(promocaoId: string): Promise<ItemPromoc
       .order('ml_item_id').range(de, ate) as never);
 }
 
+export interface PaiDoItem { codigo_pai: string; nome: string }
+
+/** `MLB -> produto PAI` de todos os anúncios ML da org: anúncio (Legacy/partição) e cada SKU UP (ADR-0174 filtro por PAI). */
+export async function fetchPaisPorItem(): Promise<Map<string, PaiDoItem>> {
+  const [anuncios, itensUp, familias, variacoes] = await Promise.all([
+    buscarTodasPaginas<{ item_externo_id: string; codigo_pai: string }>((de, ate) =>
+      supabase.from('anuncios_externos').select('item_externo_id, codigo_pai').eq('canal', 'mercado_livre')
+        .not('item_externo_id', 'is', null).order('id').range(de, ate) as never),
+    buscarTodasPaginas<{ item_externo_id: string; anuncios_externos: { codigo_pai: string; canal: string } | null }>((de, ate) =>
+      supabase.from('anuncios_externos_itens').select('item_externo_id, anuncios_externos!anuncios_externos_itens_pai_fk(codigo_pai, canal)')
+        .eq('retirado', false).not('item_externo_id', 'is', null).order('id').range(de, ate) as never),
+    buscarTodasPaginas<{ codigo_pai: string; nome_pai: string; ml_item_id: string | null }>((de, ate) =>
+      supabase.from('familias').select('codigo_pai, nome_pai, ml_item_id').not('ml_item_id', 'is', null)
+        .order('publicado_em', { ascending: false }).order('id').range(de, ate) as never),
+    buscarTodasPaginas<{ codigo: string; familias: { codigo_pai: string } | null }>((de, ate) =>
+      supabase.from('variacoes').select('codigo, familias(codigo_pai)').order('id').range(de, ate) as never),
+  ]);
+  const nomes = new Map<string, string>();
+  for (const f of familias) if (!nomes.has(f.codigo_pai)) nomes.set(f.codigo_pai, formatarNomeProduto(f.nome_pai) || f.codigo_pai);
+  const pai = (codigo: string): PaiDoItem => ({ codigo_pai: codigo, nome: nomes.get(codigo) ?? codigo });
+  const mapa = new Map<string, PaiDoItem>();
+  for (const f of familias) if (f.ml_item_id) mapa.set(f.ml_item_id, pai(f.codigo_pai));
+  for (const a of anuncios) mapa.set(a.item_externo_id, pai(a.codigo_pai));
+  for (const i of itensUp) if (i.anuncios_externos?.canal === 'mercado_livre') mapa.set(i.item_externo_id, pai(i.anuncios_externos.codigo_pai));
+  // Fallback por SKU (mesma ordem do servidor em `resolverCor`): chave prefixada para não colidir com MLB.
+  for (const v of variacoes) if (v.familias) mapa.set(`sku:${v.codigo}`, pai(v.familias.codigo_pai));
+  return mapa;
+}
+
 export async function fetchParticipacoes(): Promise<Participacao[]> {
   return buscarTodasPaginas<Participacao>((de, ate) =>
     supabase.from('ml_promocao_itens').select(`promocao_id, ${COLS_ITEM}`).in('status', ['started', 'pending'])

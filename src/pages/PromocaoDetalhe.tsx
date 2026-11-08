@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { useSimularPrecos } from '@/hooks/useOperacoes';
 import { parsePreco } from '@/lib/operacoes';
 import {
-  AVISO_DESCONTO, MAX_SIMULAR, aplicarSimulacao, descontoInvalido, filtrarPorBusca, foraDaFaixa, precoAlvo, sobreporSimulacao, type ModoAlvo,
+  AVISO_DESCONTO, MAX_SIMULAR, aplicarSimulacao, descontoInvalido, filtrarPorBusca, filtrarPorPai, foraDaFaixa, opcoesPai, precoAlvo, sobreporSimulacao, type ModoAlvo,
 } from '@/lib/promocao-simulacao';
 import { PageHeader } from '@/components/ui/page-header';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
@@ -17,7 +17,8 @@ import { DataTable, type Column } from '@/components/ui/data-table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { EmptyState } from '@/components/ui/empty-state';
 import { CarregandoMarca } from '@/components/ui/carregando-marca';
-import { useItensPromocao, usePromocoes } from '@/hooks/usePromocoes';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useItensPromocao, usePaisPorItem, usePromocoes } from '@/hooks/usePromocoes';
 import { calcularMarkup } from '@/lib/markup';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtMarkup, fmtPct } from '@/lib/formato';
@@ -25,7 +26,7 @@ import { formatarNomeProduto } from '@/lib/texto';
 import { ehTipoOperavel, type AcaoPromocao } from '@/lib/operacoes';
 import {
   URL_PROMOCOES_ML, ehTipoSoSellerCenter, ateQuantoDaLinha, convidadoAbaixoDoPiso, corDeReferencia, descontoPct, emLeitura, filtrarItens, mlbExibido, rotuloMlb, rotuloSemLiquido, rotuloTipo,
-  type ItemPromocao, type SemaforoPromo,
+  type ItemPromocao, type PaiDoItem, type SemaforoPromo,
 } from '@/lib/promocoes';
 import { ChipFiltro, ContagemSemaforo, SEMAFORO_UI } from '@/components/promocoes/contagem-semaforo';
 import { SheetCores } from '@/components/promocoes/sheet-cores';
@@ -33,6 +34,8 @@ import { BarraSelecao } from '@/components/promocoes/barra-selecao';
 import { PreviewOperacao } from '@/components/promocoes/preview-operacao';
 
 const PESO: Record<SemaforoPromo, number> = { vermelho: 0, amarelo: 1, verde: 2, indisponivel: 3 };
+const SEM_PAIS = new Map<string, PaiDoItem>();
+const TODOS_PAIS = '__todos__'; // Radix Select não aceita value vazio
 
 // Reutilizados pela coluna da tabela desktop e pelo cartão da lista mobile — mesmo conteúdo, um só lugar.
 function precoPromo(r: ItemPromocao, sim?: { aviso: string | null }) {
@@ -105,6 +108,8 @@ export default function PromocaoDetalhe() {
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [preview, setPreview] = useState<{ acao: AcaoPromocao; itens: ItemPromocao[] } | null>(null);
   const [busca, setBusca] = useState('');
+  const [pai, setPai] = useState<string | null>(null);
+  const paisPorItem = usePaisPorItem();
   const [modo, setModo] = useState<ModoAlvo>('preco');
   const [valorTexto, setValorTexto] = useState('');
   const [simulacao, setSimulacao] = useState<Simulacao | null>(null);
@@ -115,7 +120,7 @@ export default function PromocaoDetalhe() {
 
   const promo = promocoes.data?.find((p) => p.promocao_id === promocaoId) ?? null;
   // Trocar de campanha (navegação entre detalhes) não deve arrastar a seleção anterior.
-  useEffect(() => { setSelecionados(new Set()); setPreview(null); setBusca(''); limparSimulacao(); }, [promocaoId]);
+  useEffect(() => { setSelecionados(new Set()); setPreview(null); setBusca(''); setPai(null); limparSimulacao(); }, [promocaoId]);
 
   const podeSelecionar = promo != null && ehTipoOperavel(promo.tipo) && promo.status !== 'finished';
   // Preço escolhido: convidados de DEAL/Relâmpago (aderir) e participantes de DEAL (alterar preço — emenda 2026-11-03).
@@ -129,8 +134,10 @@ export default function PromocaoDetalhe() {
     const s = simulacao?.itens.get(i.ml_item_id);
     return s && s.status === i.status ? sobreporSimulacao(i, s) : i;
   }), [itens.data, simulacao]);
-  const daAba = useMemo(() => filtrarPorBusca(filtrarItens(itensVisao, { semaforo: null, participando }), busca), [itensVisao, participando, busca]);
-  const linhas = useMemo(() => filtrarPorBusca(filtrarItens(itensVisao, { semaforo, participando }), busca), [itensVisao, semaforo, participando, busca]);
+  const mapaPais = paisPorItem.data ?? SEM_PAIS;
+  const opcoesDePai = useMemo(() => opcoesPai(filtrarItens(itensVisao, { semaforo: null, participando }), mapaPais), [itensVisao, participando, mapaPais]);
+  const daAba = useMemo(() => filtrarPorPai(filtrarPorBusca(filtrarItens(itensVisao, { semaforo: null, participando }), busca), mapaPais, pai), [itensVisao, participando, busca, mapaPais, pai]);
+  const linhas = useMemo(() => filtrarPorPai(filtrarPorBusca(filtrarItens(itensVisao, { semaforo, participando }), busca), mapaPais, pai), [itensVisao, semaforo, participando, busca, mapaPais, pai]);
   const linhasMobile = useMemo(() => [...linhas].sort((a, b) => PESO[a.pior_semaforo] - PESO[b.pior_semaforo]), [linhas]);
 
   const selecionadosItens = useMemo(() => itensVisao.filter((i) => selecionados.has(i.ml_item_id)), [itensVisao, selecionados]);
@@ -300,7 +307,7 @@ export default function PromocaoDetalhe() {
           <ContagemSemaforo contagem={contagem} ativo={semaforo} onFiltro={setSemaforo} />
         </div>
         <Tabs value={participando ? 'participando' : 'convidados'}
-          onValueChange={(v) => { setParticipando(v === 'participando'); setSemaforo(null); limparSimulacao(); }}>
+          onValueChange={(v) => { setParticipando(v === 'participando'); setSemaforo(null); setPai(null); limparSimulacao(); }}>
           <TabsList aria-label="Filtrar por participação">
             <TabsTrigger value="convidados">Convidados</TabsTrigger>
             <TabsTrigger value="participando">Participando</TabsTrigger>
@@ -308,7 +315,21 @@ export default function PromocaoDetalhe() {
         </Tabs>
       </div>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="relative w-full lg:max-w-sm">
+        <div className="flex w-full flex-col gap-3 sm:flex-row lg:max-w-2xl">
+        <Select value={pai ?? TODOS_PAIS} onValueChange={(v) => setPai(v === TODOS_PAIS ? null : v)} disabled={opcoesDePai.length === 0}>
+          <SelectTrigger className="w-full sm:w-72" aria-label="Filtrar por produto PAI">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={TODOS_PAIS}>Todos os produtos</SelectItem>
+            {opcoesDePai.map((o) => (
+              <SelectItem key={o.codigo_pai} value={o.codigo_pai}>
+                {o.nome} <span className="text-muted-foreground">({o.qtd})</span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <div className="relative w-full sm:max-w-sm">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
           <Input
             value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar produto, MLB ou SKU"
@@ -320,6 +341,7 @@ export default function PromocaoDetalhe() {
               <X className="size-4" aria-hidden />
             </button>
           )}
+        </div>
         </div>
         {podeSimular && (
           <div className="flex flex-wrap items-center gap-2">
