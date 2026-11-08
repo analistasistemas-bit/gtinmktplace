@@ -16,7 +16,7 @@ import { ehVendaDaConta, totalNovaVenda } from '../_shared/faturamento/venda.ts'
 import { reservarNotificacao } from '../_shared/faturamento/notificacoes-dedupe.ts';
 import { verificarAltaFrete } from '../_shared/faturamento/monitor-frete.ts';
 import { depsMonitorFrete } from '../_shared/faturamento/monitor-frete-deps.ts';
-import { carregarLiquidoMPDoPedido, carregarGtinsFallback } from '../_shared/faturamento/enriquecimento.ts';
+import { carregarLiquidoMPDoPedido, carregarGtinsDaVenda } from '../_shared/faturamento/enriquecimento.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { registrarCarrinho } from '../_shared/notificacoes/gerencial/carrinho-io.ts';
 import { montarMensagemNovaVenda, montarMensagemConexaoBloqueada } from '../_shared/notificacoes/telegram.ts';
@@ -100,20 +100,14 @@ Deno.serve(async (req) => {
   }
 
   const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver, incompleto, kitLigado } = await carregarCatalogo(admin, userId, orgId);
-  // ADR-0197: com o módulo de kit, GTIN estrito; a falha não derruba a venda, só marca o catálogo incerto.
-  let gtinFalhou = false;
   const shippingId = pedido.shipping?.id ?? null;
-  const [frete, shipment, liquidoPorPayment, gtinPorItem] = await Promise.all([
+  const [frete, shipment, liquidoPorPayment, { gtinPorItem, incerto: gtinFalhou }] = await Promise.all([
     buscarFreteVendedor(token, shippingId),
     buscarShipment(token, shippingId),
     // Só os pagamentos deste pedido (1-2 requisições), não a varredura de 120 dias do MP.
     carregarLiquidoMPDoPedido(token, Number(conexao.contaExternaId),
       (pedido.payments ?? []).flatMap((p) => (p?.id != null ? [p.id] : []))),
-    carregarGtinsFallback(token, [pedido], idsPubliai, { estrito: kitLigado }).catch((e) => {
-      console.error('gtin_fallback_falhou', pedido.id, String(e));
-      gtinFalhou = true;
-      return new Map<string, string>();
-    }),
+    carregarGtinsDaVenda(token, [pedido], idsPubliai, kitLigado),
   ]);
   // Portão da Task 3 (ADR-0197): a referência da baixa inclui o SKU. Com leitura parcial o código pode cair
   // no seller_custom_field e o mesmo pedido ganharia outra referência, outro débito. Com o módulo ligado não
@@ -245,7 +239,8 @@ Deno.serve(async (req) => {
         await notificarCategoria(
           admin, orgId, 'estoque',
           `🧩 Kit sem saldo (pedido ${pedido.id})\n\n${manuais.map((c) => `• ${c}`).join('\n')}\n\n`
-          + 'A reposição automática deste kit está desligada. Para voltar a vender, use Montar mais.',
+          + 'Este kit não repõe sozinho (reposição automática desligada ou individual ativo). '
+          + 'Para voltar a vender, use Montar mais.',
         );
       }
     } catch (e) {

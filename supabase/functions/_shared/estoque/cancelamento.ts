@@ -163,20 +163,22 @@ export async function tratarPedidoCancelado(
 async function reporComKit(
   admin: SupabaseClient, deps: DepsCancelamento, p: PedidoCancelado,
 ): Promise<ResultadoCancelamento> {
-  if (p.catalogoIncompleto) return await pendente(admin, deps, p, 'catálogo incompleto');
+  // Causa transitória, sem saber se há participante: pendência calada. Avisar aqui mandaria "crédito do kit não
+  // confirmado" a todo cancelamento da org numa varredura com uma página ruim (a classe dos 26 avisos do ADR-0121).
+  if (p.catalogoIncompleto) return await pendente(admin, deps, p, 'catálogo incompleto', false);
   const codigos = selecionarBaixas(p.itens).map((b) => b.codigo);
   let participantes: Set<string>;
   try {
     participantes = await deps.skusParticipantes(admin, p.orgId, codigos, true);
   } catch (e) {
-    return await pendente(admin, deps, p, `participantes: ${String(e)}`);
+    return await pendente(admin, deps, p, `participantes: ${String(e)}`, false);
   }
 
   let r: Awaited<ReturnType<DepsCancelamento['estornarVendaCancelada']>>;
   try {
     r = await deps.estornarVendaCancelada(admin, { orgId: p.orgId, canal: p.canal, orderId: p.orderId, itens: p.itens });
   } catch (e) {
-    if (codigos.some((c) => participantes.has(c))) return await pendente(admin, deps, p, String(e));
+    if (codigos.some((c) => participantes.has(c))) return await pendente(admin, deps, p, String(e), true);
     throw e;
   }
 
@@ -197,13 +199,14 @@ async function reporComKit(
 
   const falhasKit = r.falhas.filter((f) => participantes.has(f.codigo));
   if (falhasKit.length > 0) {
-    return await pendente(admin, deps, p, falhasKit.map((f) => `${f.codigo}: ${f.mensagem}`).join('; '));
+    return await pendente(admin, deps, p, falhasKit.map((f) => `${f.codigo}: ${f.mensagem}`).join('; '), true);
   }
   return 'reposto';
 }
 
+/** `avisar` só quando o crédito de participante falhou de fato; o aviso sai uma vez por pedido. */
 async function pendente(
-  admin: SupabaseClient, deps: DepsCancelamento, p: PedidoCancelado, erro: string,
+  admin: SupabaseClient, deps: DepsCancelamento, p: PedidoCancelado, erro: string, avisar: boolean,
 ): Promise<'pendente'> {
   console.error('kit_cancelamento_pendente', p.orderId, erro);
   try {
@@ -211,6 +214,7 @@ async function pendente(
   } catch (e) {
     console.error('kit_cancelamento_pendencia_falhou', p.orderId, String(e));
   }
+  if (!avisar) return 'pendente';
   try {
     if (await deps.reservarNotificacao(admin, p.orgId, p.userId, 'estoque_cancelado_kit_pendente', String(p.orderId))) {
       await deps.notificarCategoria(

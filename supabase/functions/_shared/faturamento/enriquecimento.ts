@@ -123,3 +123,19 @@ export async function carregarGtinsFallback(
   const rec = await buscarGtinsDosItens(token, [...ids], opts);
   return new Map(Object.entries(rec));
 }
+
+/**
+ * ADR-0197 (portão da Task 3, sync-venda): com o módulo de kit, GTIN estrito. A falha não derruba a venda: devolve
+ * mapa vazio e `incerto`, e quem chama não baixa nem estorna nesta execução. Sem o módulo, tolerante como sempre.
+ */
+export async function carregarGtinsDaVenda(
+  token: string, pedidos: PedidoML[], idsPubliai: Set<string>, kitLigado: boolean,
+): Promise<{ gtinPorItem: Map<string, string>; incerto: boolean }> {
+  if (!kitLigado) return { gtinPorItem: await carregarGtinsFallback(token, pedidos, idsPubliai), incerto: false };
+  try {
+    return { gtinPorItem: await carregarGtinsFallback(token, pedidos, idsPubliai, { estrito: true }), incerto: false };
+  } catch (e) {
+    console.error('gtin_fallback_falhou', String(e));
+    return { gtinPorItem: new Map(), incerto: true };
+  }
+}

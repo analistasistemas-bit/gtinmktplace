@@ -319,6 +319,21 @@ begin
   r := public.kit_criar_transferencia(c.org, null, 'entrada', jsonb_build_array(jsonb_build_object('codigo', P, 'quantidade', 0)),
     '[{"codigo":"09800001","up_id":"UP-P","item_ids":["MLB-P"]}]');
   perform pg_temp.afirmar((r->>'ok')::boolean, 'transferência depois da publicação: ' || r::text);
+
+  -- Task 8: cancelamento do kit, como `agendarCancelamentoKit` chama. kit_id obrigatório, alvo só o SKU do
+  -- kit (UP + cópia de catálogo), delta 0 (o crédito já veio do estorno), exclusão com o UP.
+  r := public.kit_criar_transferencia(c.org, c.kit, 'cancelamento', jsonb_build_array(jsonb_build_object('codigo', K3, 'quantidade', 0)),
+    '[{"codigo":"09810003","up_id":"UP-K3","item_ids":["MLB-K3","MLB-K3C"]}]');
+  perform pg_temp.afirmar((r->>'ok')::boolean, 'cancelamento: ' || r::text);
+  t1 := (r->>'id')::uuid;
+  perform pg_temp.afirmar((select tipo = 'cancelamento' and kit_id = c.kit and estado = 'ativa'
+                           from public.kit_transferencias where id = t1), 'cancelamento criado errado');
+  perform pg_temp.afirmar((select string_agg(codigo || ':' || papel || ':' || delta || ':' || up_id || ':' || array_to_string(item_ids, '+'), ',')
+                           from public.kit_transferencia_alvos where transferencia_id = t1)
+    = '09810003:destino:0:UP-K3:MLB-K3+MLB-K3C', 'alvo do cancelamento errado');
+  perform pg_temp.afirmar((select string_agg(codigo || ':' || up_id, ',') from public.kit_exclusoes
+                           where org_id = c.org and dono_id = t1 and dono_tipo = 'transferencia')
+    = '09810003:UP-K3', 'exclusão do cancelamento errada');
 end $$;
 reset role;
 

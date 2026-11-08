@@ -321,18 +321,20 @@ export async function estornarVendaCancelada(
 }
 
 /**
- * ADR-0197: dos SKUs zerados por uma venda, os de kit com variação com reposição automática desligada (modo
- * manual). Ninguém repõe esse kit sozinho: o operador precisa saber que a combinação acabou. Quem chama só
- * consulta com o módulo ligado. Erro de leitura lança.
+ * ADR-0197: dos SKUs zerados por uma venda, os de kit com variação em modo manual. Pela spec (Reposição), só
+ * "Vender só em kit" com reposição automática repõe sozinho; individual ativo ou reposição desligada é só
+ * Montar mais, e o operador precisa saber que a combinação acabou. Quem chama só consulta com o módulo
+ * ligado. Erro de leitura lança.
  */
 export async function kitsManuaisZerados(admin: SupabaseClient, orgId: string, codigos: string[]): Promise<string[]> {
   if (codigos.length === 0) return [];
   const { data, error } = await admin.from('kit_variacao_skus')
-    .select('codigo, kits_variacao(reposicao_auto)').eq('org_id', orgId).in('codigo', codigos);
+    .select('codigo, kits_variacao(reposicao_auto, so_em_kit)').eq('org_id', orgId).in('codigo', codigos);
   if (error) throw new Error(`kit_variacao_skus: ${error.message}`);
   return (data ?? []).filter((r) => {
     const k = (r as { kits_variacao?: unknown }).kits_variacao;
-    return ((Array.isArray(k) ? k[0] : k) as { reposicao_auto?: boolean } | null)?.reposicao_auto === false;
+    const kit = (Array.isArray(k) ? k[0] : k) as { reposicao_auto?: boolean; so_em_kit?: boolean } | null;
+    return !!kit && !(kit.so_em_kit === true && kit.reposicao_auto === true);
   }).map((r) => r.codigo as string);
 }
 

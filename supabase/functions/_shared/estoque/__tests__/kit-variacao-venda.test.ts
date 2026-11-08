@@ -74,14 +74,16 @@ describe('venda de kit com variação', () => {
 });
 
 describe('kitsManuaisZerados', () => {
-  it('só SKU de kit com reposição automática desligada', async () => {
+  it('modo manual: reposição desligada ou individual ativo; só "só em kit" + automática fica de fora', async () => {
     const { admin } = fakeAdmin({
       kit_variacao_skus: [
-        { codigo: 'KIT-A', kits_variacao: { reposicao_auto: false } },
-        { codigo: 'KIT-B', kits_variacao: { reposicao_auto: true } },
+        { codigo: 'KIT-DESLIGADA', kits_variacao: { reposicao_auto: false, so_em_kit: true } },
+        { codigo: 'KIT-INDIVIDUAL', kits_variacao: { reposicao_auto: true, so_em_kit: false } },
+        { codigo: 'KIT-AUTO', kits_variacao: { reposicao_auto: true, so_em_kit: true } },
       ],
     }, {});
-    expect(await kitsManuaisZerados(admin, 'org-1', ['KIT-A', 'KIT-B', 'COMUM'])).toEqual(['KIT-A']);
+    expect(await kitsManuaisZerados(admin, 'org-1', ['KIT-DESLIGADA', 'KIT-INDIVIDUAL', 'KIT-AUTO', 'COMUM']))
+      .toEqual(['KIT-DESLIGADA', 'KIT-INDIVIDUAL']);
   });
 
   it('lista vazia não consulta', async () => {

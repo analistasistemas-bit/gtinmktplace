@@ -263,6 +263,9 @@ describe('tratarPedidoCancelado — kit com variação', () => {
     expect(await tratarPedidoCancelado(ADMIN, deps, KIT)).toBe('pendente');
     expect(chamadas.estornos).toHaveLength(0);
     expect(extra.pendencias).toHaveLength(1);
+    // Causa transitória: pendência calada.
+    expect(chamadas.reservas).toEqual([]);
+    expect(chamadas.notificacoes).toEqual([]);
   });
 
   it('catálogo incompleto com o módulo ligado: pendente, sem estorno por código incerto', async () => {
@@ -272,6 +275,8 @@ describe('tratarPedidoCancelado — kit com variação', () => {
     expect(chamadas.estornos).toHaveLength(0);
     expect(extra.participantes).toEqual([]);
     expect(extra.pendencias).toHaveLength(1);
+    expect(chamadas.reservas).toEqual([]);
+    expect(chamadas.notificacoes).toEqual([]);
   });
 
   it('SKU retirado segue creditável: credita, sem transferência e sem pendência', async () => {
