@@ -165,4 +165,19 @@ psql_ -c "$(copia "$F5" '3 hours')" > /dev/null || falha "5: a repetição de E 
 [ "$(saldo 09950002)" = "$ANTES" ] || falha "5: saldo $(saldo 09950002), esperado $ANTES (transportado pela exclusão)"
 rm -f "$OUT_B"
 
+# 6. Revisão final (achado 4): duas requisições da mesma chave gravando as variações do kit. A grava a combinação
+#    com o código dela e segura 3 s; B (t=1) pede a mesma combinação com outro código, espera o lock da família e,
+#    depois do commit de A, recebe o código de A sem inserir nada. Nenhuma variação órfã.
+F6=97300000-0000-0000-0000-0000000000f6
+psql_ -c "insert into public.lotes (id, user_id, org_id, status, origem) values ('$F6', '$USR', '$ORG', 'processando', 'manual');
+          insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai, operacao, origem, chave_cadastro)
+            values ('$F6', '$F6', '$USR', '$ORG', '09970000', 'Kit conc', 'CREATE', 'nacional', gen_random_uuid());" > /dev/null
+linha() { echo "[{\"codigo\": \"$1\", \"cor\": \"A e B\", \"tamanho\": \"M\", \"nome\": \"A e B\", \"preco\": 90, \"estoque\": 0, \"user_id\": \"$USR\"}]"; }
+corrida "6 variações do kit×repetição" \
+  "select public.kit_variacao_gravar_variacoes('$ORG', '$F6', '$(linha 09970001)')" \
+  "select public.kit_variacao_gravar_variacoes('$ORG', '$F6', '$(linha 09970009)')"
+[ "$DT" -ge 2 ] || falha "6: B devia esperar o lock da família"
+echo "$B_OUT" | grep -q '09970001' || falha "6: B devia receber o código de A ($B_OUT)"
+[ "$(psql_ -c "select count(*) from public.variacoes where familia_id = '$F6'")" = 1 ] || falha "6: variação órfã"
+
 echo "kit_variacao_guards_concorrencia: OK"
