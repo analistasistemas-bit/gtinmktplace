@@ -307,14 +307,20 @@ export type FamiliaResumo = {
 
 type FamiliaResumoRow = Pick<FamiliaRow, 'id' | 'codigo_pai' | 'titulo_ml' | 'nome_pai' | 'status' | 'erro_mensagem' | 'ml_permalink'>;
 
-export function familiaResumoFromRow(r: FamiliaResumoRow, anuncios: AnuncioExternoLite[]): FamiliaResumo {
+export function familiaResumoFromRow(
+  r: FamiliaResumoRow,
+  anuncios: AnuncioExternoLite[],
+  itensUp?: { sku: string; userProductId: string | null }[],
+  estoquePorSku: Map<string, number> = new Map(),
+): FamiliaResumo {
   return {
     id: r.id,
     codigoPai: r.codigo_pai,
     titulo: r.titulo_ml ?? r.nome_pai,
     status: r.status as FamiliaStatus,
     erroMensagem: r.erro_mensagem,
-    mlPermalink: r.ml_permalink,
+    // Família UP: página /up/ (todas as cores/tamanhos), igual a Publicados; Legacy segue o permalink.
+    mlPermalink: linkPaginaUP(itensUp, estoquePorSku) ?? r.ml_permalink,
     anuncios: [...anuncios].sort((a, b) => a.particao - b.particao)
       .map((a) => ({ particao: a.particao, permalink: a.permalink, titulo: a.titulo })),
   };
@@ -328,8 +334,25 @@ export async function fetchFamiliasResumo(loteId: string): Promise<FamiliaResumo
     .order('codigo_pai');
   if (error) throw error;
   const rows = (data ?? []) as FamiliaResumoRow[];
-  const porCodigo = await fetchAnunciosPorCodigoPai([...new Set(rows.map((r) => r.codigo_pai))]);
-  return rows.map((r) => familiaResumoFromRow(r, porCodigo.get(r.codigo_pai) ?? []));
+  const publicadas = rows.filter((r) => r.status === 'publicado');
+  // Itens UP + estoque só das publicadas (é o que tem link); tela faz poll de 2,5s.
+  const [porCodigo, itensUp, estoque] = await Promise.all([
+    fetchAnunciosPorCodigoPai([...new Set(rows.map((r) => r.codigo_pai))]),
+    fetchItensAtivosUP([...new Set(publicadas.map((r) => r.codigo_pai))]),
+    publicadas.length === 0 ? [] : buscarTodasPaginas<{ familia_id: string; codigo: string; estoque: number | null }>(
+      (de, ate) => supabase.from('variacoes').select('familia_id, codigo, estoque')
+        .in('familia_id', publicadas.map((r) => r.id)).order('id').range(de, ate),
+    ),
+  ]);
+  const estoquePorFamilia = new Map<string, Map<string, number>>();
+  for (const v of estoque) {
+    const m = estoquePorFamilia.get(v.familia_id) ?? new Map<string, number>();
+    m.set(v.codigo, v.estoque ?? 0);
+    estoquePorFamilia.set(v.familia_id, m);
+  }
+  return rows.map((r) => familiaResumoFromRow(
+    r, porCodigo.get(r.codigo_pai) ?? [], itensUp.get(r.codigo_pai), estoquePorFamilia.get(r.id),
+  ));
 }
 
 /** Custo mais recente de cada SKU (`recentes` da linha mais nova para a mais antiga). Só o custo muda: a família
