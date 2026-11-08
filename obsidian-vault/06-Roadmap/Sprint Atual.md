@@ -16,7 +16,7 @@ setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > (adesão em massa) ✅ — as duas últimas entregues juntas em 28/09 ([[0174-operacoes-em-massa-promocoes-v2|ADR-0174]]) → Painel de Ads (se a Avil investir em Ads). E5 Shopee entra quando houver conta.
 >
 > **🟢 Kit com variação ([[Índice de ADRs|ADR-0200]]) — em produção desde 2026-11-08, piloto OK na Zaven.**
-> Piloto OK; módulos `kit_variacao`/`imagem_ia` ligados só na Zaven. Entregues em 08/11 (main `f9a462d5`): estoque por cor e "máx N" por célula, texto automático da base, preço editável no Conferir, acompanhamento da montagem com aviso de fim e sem alarme falso, Encerrar kit e foto por IA com verificação (aprovação humana segue obrigatória). Pendências e SHAs em `docs/TASKS.md`.
+> Piloto OK; módulos `kit_variacao`/`imagem_ia` ligados só na Zaven. Entregues em 08/11 (main `f9a462d5`): estoque por cor e "máx N" por célula, texto automático da base, preço editável no Conferir, acompanhamento da montagem com aviso de fim e sem alarme falso, Encerrar kit e foto por IA com verificação (aprovação humana segue obrigatória). Também em 08/11 (main `70dd137b`): preço avulso das peças (normal e em promoção, lido do ML na hora pela edge `preco-avulso-kit`) nas 3 etapas do Criar kit e no Gerenciar kit, com aviso e "Criar mesmo assim" quando o kit sai mais caro que as peças separadas. Pendências e SHAs em `docs/TASKS.md`.
 >
 > **🟢 Central premium + relatório mensal do cliente + fechamento automático ([[0193-relatorio-mensal-do-cliente-e-fechamento-automatico|ADR-0193]]) — em produção (2026-11-03, main `ae4072cf`, 5 fatias).**
 > Falta o Diego: preencher "Dados de recebimento", assinar "Aviso no Telegram" e decidir fechar setembro/outubro (o automático dia 01 reporta "mês anterior aberto" até lá).
