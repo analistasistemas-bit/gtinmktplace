@@ -449,10 +449,12 @@ describe('gerar-foto-kit', () => {
     try {
       f.uploadAtrasoMs = 7_000;
       void post(ok).then((r) => { primeira = r; });
+      for (let i = 0; i < 500 && f.uploads.length === 0; i++) { await vi.advanceTimersByTimeAsync(5); await new Promise((r) => setImmediate(r)); }
       for (let i = 0; i < 10; i++) { await vi.advanceTimersByTimeAsync(1_000); f.deslocamento += 1_000; }
     } finally {
       vi.useRealTimers();
     }
+    await vi.waitFor(() => expect(primeira).toBeDefined());
     expect(primeira!.status).toBe(503);
     expect((await primeira!.json()).motivo).toBe('prazo');
     expect(f.linhas[0]).toMatchObject({ status: 'pendente_upload', storage_path: `org-1/kit-variacao-ia/${REQ}.png` });
@@ -489,7 +491,9 @@ describe('gerar-foto-kit', () => {
     try {
       f.uploadAtrasoMs = 3_000;   // dentro da fatia de 6 s do original
       void post(ok).then((r) => { original = r; });
-      for (let i = 0; i < 50 && f.uploads.length === 0; i++) await vi.advanceTimersByTimeAsync(100);
+      // O hash das originais (dedupe) é assíncrono real: deixa a fila andar sem gastar o relógio falso.
+      for (let i = 0; i < 500 && f.uploads.length === 0; i++) { await vi.advanceTimersByTimeAsync(5); await new Promise((r) => setImmediate(r)); }
+      expect(f.uploads.length).toBeGreaterThan(0);
       expect(f.linhas[0]).toMatchObject({ status: 'pendente_upload' });
       void post(ok).then((r) => { repeticao = r; });
       await vi.advanceTimersByTimeAsync(100);
@@ -500,6 +504,7 @@ describe('gerar-foto-kit', () => {
     } finally {
       vi.useRealTimers();
     }
+    await vi.waitFor(() => expect(original).toBeDefined());
     expect(original!.status).toBe(200);
     expect(f.linhas[0]).toMatchObject({ status: 'gerada' });
     expect(f.chamadasImagem).toHaveLength(1);
@@ -511,12 +516,15 @@ describe('gerar-foto-kit', () => {
     try {
       f.uploadAtrasoMs = 3_000;
       void post(ok).then((r) => { original = r; });
-      for (let i = 0; i < 50 && f.uploads.length === 0; i++) await vi.advanceTimersByTimeAsync(100);
+      // O hash das originais (dedupe) é assíncrono real: deixa a fila andar sem gastar o relógio falso.
+      for (let i = 0; i < 500 && f.uploads.length === 0; i++) { await vi.advanceTimersByTimeAsync(5); await new Promise((r) => setImmediate(r)); }
+      expect(f.uploads.length).toBeGreaterThan(0);
       f.linhas[0].status = 'recusada';   // decidido por outra execução enquanto o upload corria
       await vi.advanceTimersByTimeAsync(4_000);
     } finally {
       vi.useRealTimers();
     }
+    await vi.waitFor(() => expect(original).toBeDefined());
     expect(original!.status).toBe(502);
     expect((await original!.json()).motivo).toBe('falha_storage');
     expect(f.linhas[0]).toMatchObject({ status: 'recusada' });
