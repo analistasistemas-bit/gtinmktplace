@@ -336,22 +336,25 @@ export async function fetchFamiliasResumo(loteId: string): Promise<FamiliaResumo
   const rows = (data ?? []) as FamiliaResumoRow[];
   const publicadas = rows.filter((r) => r.status === 'publicado');
   // Itens UP + estoque só das publicadas (é o que tem link); tela faz poll de 2,5s.
-  const [porCodigo, itensUp, estoque] = await Promise.all([
+  const codigosPublicados = [...new Set(publicadas.map((r) => r.codigo_pai))];
+  const [porCodigo, itensUp, familiasEstoque] = await Promise.all([
     fetchAnunciosPorCodigoPai([...new Set(rows.map((r) => r.codigo_pai))]),
-    fetchItensAtivosUP([...new Set(publicadas.map((r) => r.codigo_pai))]),
-    publicadas.length === 0 ? [] : buscarTodasPaginas<{ familia_id: string; codigo: string; estoque: number | null }>(
-      (de, ate) => supabase.from('variacoes').select('familia_id, codigo, estoque')
-        .in('familia_id', publicadas.map((r) => r.id)).order('id').range(de, ate),
-    ),
+    fetchItensAtivosUP(codigosPublicados),
+    // Estoque vigente = família mais recente do produto (criado_em desc), como em Publicados:
+    // o saldo deste lote fica defasado depois de outro lote/venda (revisão Grok).
+    codigosPublicados.length === 0 ? [] : buscarTodasPaginas<{
+      codigo_pai: string; variacoes: { codigo: string; estoque: number | null }[] | null;
+    }>((de, ate) => supabase.from('familias').select('codigo_pai, variacoes(codigo, estoque)')
+      .in('codigo_pai', codigosPublicados).order('criado_em', { ascending: false }).order('id').range(de, ate)),
   ]);
-  const estoquePorFamilia = new Map<string, Map<string, number>>();
-  for (const v of estoque) {
-    const m = estoquePorFamilia.get(v.familia_id) ?? new Map<string, number>();
-    m.set(v.codigo, v.estoque ?? 0);
-    estoquePorFamilia.set(v.familia_id, m);
+  const estoqueVigente = new Map<string, Map<string, number>>();
+  for (const f of familiasEstoque) {
+    const porSku = estoqueVigente.get(f.codigo_pai) ?? new Map<string, number>();
+    for (const v of f.variacoes ?? []) if (!porSku.has(v.codigo)) porSku.set(v.codigo, v.estoque ?? 0);
+    estoqueVigente.set(f.codigo_pai, porSku);
   }
   return rows.map((r) => familiaResumoFromRow(
-    r, porCodigo.get(r.codigo_pai) ?? [], itensUp.get(r.codigo_pai), estoquePorFamilia.get(r.id),
+    r, porCodigo.get(r.codigo_pai) ?? [], itensUp.get(r.codigo_pai), estoqueVigente.get(r.codigo_pai),
   ));
 }
 
