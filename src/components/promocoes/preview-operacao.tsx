@@ -129,6 +129,11 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
   const precoInvalido = (l: LinhaEditavel) => abaixoDoPiso(l) || semPrecoOfertaFixa(l) || podeEditarPreco && (l.preco == null || l.preco <= 0 || semFaixa(l) || acimaDoOriginal(l) || (l.min != null && l.max != null && (l.preco < l.min || l.preco > l.max)));
   const podeEnviar = marcadas.length > 0 && !marcadas.some(precoInvalido) && (!temRisco || confirmadoRisco);
 
+  const selecionaveis = linhas.filter((l) => !l.motivoBloqueio);
+  const todosMarcados = selecionaveis.length > 0 && selecionaveis.every((l) => l.marcado);
+  function marcarTodos(marcado: boolean) {
+    setLinhas((prev) => prev.map((l) => (l.motivoBloqueio ? l : { ...l, marcado })));
+  }
   function alternarMarcado(id: string) {
     setLinhas((prev) => prev.map((l) => (l.ml_item_id === id ? { ...l, marcado: !l.marcado } : l)));
   }
@@ -282,6 +287,12 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
               </div>
             )}
           </div>
+        )}
+        {selecionaveis.length > 1 && (
+          <label className="flex items-center gap-3 border-b px-4 py-2 text-sm">
+            <Checkbox aria-label="Selecionar todos" checked={todosMarcados} onCheckedChange={(v) => marcarTodos(!!v)} />
+            Selecionar todos
+          </label>
         )}
         <ul className="flex flex-1 flex-col divide-y divide-border overflow-y-auto px-4">
           {linhas.map((l) => {
