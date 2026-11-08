@@ -15,6 +15,8 @@ export interface EstoqueZeradoAlerta {
   zeradas: VariacaoZerada[];
   /** Todas as variações do produto estão em zero — é o caso em que o ML pausa o anúncio. */
   produtoInteiroZerado: boolean;
+  /** ADR-0199: sem prova de que o canal recebeu o zero de todos os SKUs; omite a situação do anúncio. */
+  semSituacao?: boolean;
   permalink: string | null;
 }
 
@@ -59,7 +61,9 @@ export function montarMensagemEstoqueZerado(a: EstoqueZeradoAlerta): string {
     : a.zeradas.length === 1
     ? `📦 Estoque zerado numa variação de ${nome}`
     : `📦 Estoque zerado em ${a.zeradas.length} variações de ${nome}`;
-  const situacao = a.produtoInteiroZerado
+  // ADR-0199: sem prova de que todo SKU do anúncio teve o zero confirmado no canal, avisa só o zerado local.
+  const situacao = a.semSituacao ? []
+    : a.produtoInteiroZerado
     ? ['Anúncio pausado no Mercado Livre.', 'Repor o estoque reativa o anúncio automaticamente.']
     : [`O anúncio segue no ar sem ${a.zeradas.length === 1 ? 'ela' : 'elas'}.`];
   return blocos([cabecalho], a.zeradas.map((v) => `• ${rotulo(v)}`), situacao, [a.permalink]);

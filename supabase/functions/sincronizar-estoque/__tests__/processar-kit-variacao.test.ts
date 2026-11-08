@@ -276,6 +276,16 @@ describe('sincronizar-estoque × kit com variação', () => {
     expect(m.movs.filter((x) => x.codigo === 'P1' && x.alertado_em !== null && x.alertado_em !== undefined)).toEqual([]);
   });
 
+  it('saga confirma P1 com P2 comum ainda falhando no push: avisa só o zerado, sem "anúncio pausado" (rodada 3)', async () => {
+    const m = montar({ modulos: ['kit_variacao'], componentes: ['P1'], zerados: true, saldos: { P1: 0, P2: 0 } });
+    await alertarZeradosConfirmados(m.admin, m.notificar as never, 'O', ['P1']);
+    const texto = String((m.notificar.mock.calls[0] as unknown[])[3]);
+    expect(texto).toContain('Estoque zerado');
+    expect(texto).toContain('P1');
+    expect(texto).not.toContain('Anúncio pausado');
+    expect(texto).not.toContain('segue no ar');
+  });
+
   it('saga: só afirma "anúncio pausado" quando todo participante zerado do produto foi confirmado (rodada 2)', async () => {
     const parcial = montar({ modulos: ['kit_variacao'], componentes: ['P1', 'P2'], zerados: true, saldos: { P1: 0, P2: 0 } });
     await alertarZeradosConfirmados(parcial.admin, parcial.notificar as never, 'O', ['P1']);

@@ -213,11 +213,13 @@ async function alertarEstoqueZerado(
       cor: ctx.rotuloPorSku.get(codigo)?.cor ?? null,
     }));
     const totais = Object.values(ctx.estoquePorSku);
+    const todos = totais.length > 0 && totais.every((q) => q <= 0);
     await notificar(admin, ctx.orgId, 'estoque', montarMensagemEstoqueZerado({
       produto: ctx.produto,
       codigoPai: ctx.codigoPai,
       zeradas,
-      produtoInteiroZerado: (f.pausadoConfirmado ?? true) && totais.length > 0 && totais.every((q) => q <= 0),
+      produtoInteiroZerado: todos,
+      semSituacao: todos && !(f.pausadoConfirmado ?? true),
       permalink: ctx.permalink,
     }));
   } catch (e) {
@@ -242,10 +244,9 @@ export async function alertarZeradosConfirmados(
     for (const codigoPai of new Set((data ?? []).map((m) => m.codigo_pai as string))) {
       const f = await lerFamiliaComSaldo(admin, orgId, codigoPai);
       if (!f) continue;
-      // "Anúncio pausado" só se todo participante zerado do produto teve o zero confirmado agora; o SKU comum
-      // recebe o zero pelo push direto.
-      const participantes = await skusParticipantes(admin, orgId, Object.keys(f.estoquePorSku), true);
-      const pausadoConfirmado = [...participantes].every((c) => (f.estoquePorSku[c] ?? 0) > 0 || so.has(c));
+      // "Anúncio pausado" só com prova de que TODO SKU do anúncio teve o zero confirmado agora (participante ou
+      // comum: o push do comum pode estar falhando). Sem a prova, o aviso sai só com o zerado local.
+      const pausadoConfirmado = Object.keys(f.estoquePorSku).every((c) => so.has(c));
       await alertarEstoqueZerado(admin, notificar, {
         orgId, codigoPai, produto: f.nome, permalink: f.permalink,
         rotuloPorSku: f.rotuloPorSku, estoquePorSku: f.estoquePorSku, temAnuncio: true,
