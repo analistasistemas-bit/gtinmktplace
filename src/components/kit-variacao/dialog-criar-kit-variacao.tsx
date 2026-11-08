@@ -26,6 +26,7 @@ import { criarKitVariacaoEdge, enviarFotoKit, gerarTextoKitEdge } from '@/lib/ki
 import { SimuladorKit } from '@/components/kit-variacao/simulador-kit';
 import { ExplicacaoReposicao } from '@/components/kit-variacao/explicacao-reposicao';
 import { FotoCombinacao, type FotoKit } from '@/components/kit-variacao/foto-combinacao';
+import { useFocoKitStore } from '@/stores/foco-kit-store';
 
 const PECAS = [2, 3, 4, 5, 6];
 const TITULO_MAX = 60;
@@ -166,6 +167,8 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
       qc.invalidateQueries({ queryKey: QK_KITS_VARIACAO });
       qc.invalidateQueries({ queryKey: QK.publicados });
       onOpenChange(false);
+      // Publicados leva até a linha da base e destaca o andamento da montagem.
+      if (familiaQ.data?.codigoPai) useFocoKitStore.getState().focar(familiaQ.data.codigoPai, r.kit_id);
     },
     onError: (e) => toast.error('Falha ao criar o kit', { description: (e as Error).message }),
   });

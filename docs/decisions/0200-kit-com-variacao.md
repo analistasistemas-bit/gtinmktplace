@@ -132,3 +132,25 @@ inexistente.
 - A imagem deixa de ser dormente no ADR-0074 quando a Fase 4 for entregue (emenda).
 - Ainda a medir: tempo de quarentena e efeito das pausas no ranking do ML; individual pausado em campanha de
   promoção.
+
+## Adendo (2026-11-08): acompanhar a transferência na tela e avisar ao terminar
+
+Criar o kit só mostrava um toast; a saga leva de 10 a 15 min e ninguém era avisado ao fim.
+
+- **Na tela.** Depois de criar, Montar mais ou Desmontar, o diálogo fecha e Publicados leva à linha da base (página
+  atual, outra página do mesmo filtro ou busca pelo código; base fora da lista abre o Gerenciar kit), expande e destaca
+  o bloco "Kits com variação" por 2,5 s. Com transferência ativa, o bloco mostra a etapa em linguagem simples, "passo X
+  de 9", na ordem real de `PassoSaga`, com a contagem da quarentena (último `passo1_em` + 300 s; o front não lê
+  `KIT_QUARENTENA_S`). Travada: borda vermelha parada, com o alerta. Sem transferência: link "Ver anúncio no ML"
+  (`familias.ml_permalink` do kit). O Gerenciar kit usa o mesmo indicador. Polling de 5 s em `useKitsVariacao`
+  enquanto há transferência ativa (não há padrão Realtime nesta tela). `alerta` de transferência ativa não aparece:
+  guarda motivo de reagendamento (ex.: `quarentena`) por `coalesce`.
+- **Aviso ao terminar.** Montagem, desmontagem e reposição concluídas avisam no app e no Telegram (categoria
+  `estoque`, que já tem assinantes) com o nome do kit, as combinações e tamanhos, a quantidade, a URL do anúncio do kit
+  e o aviso do seletor do ML. Mesmo padrão do aviso de kit zerado: `notificarCategoria` com chave
+  `kit_fim:<transferência>` e `kit_transferencias.aviso_fim_enviado_em` gravado só depois do envio. O worker avisa logo
+  depois da saga; falha só loga, nunca reabre nem trava a saga, e a varredura diária (`reconciliar-estoque`) repete o
+  que ficou sem marca. A migration marca como avisado tudo o que já tinha terminado.
+- **Travada** continua com o alerta imediato da própria saga (um só, como os testes da saga exigem), agora com o
+  código do kit e o link do Gerenciar kit (`APP_URL/#/publicados?kit=<id>`, que abre o diálogo). Esse alerta segue
+  sem chave nem nova tentativa, como antes; a linha vermelha na tela e no Gerenciar fica até alguém resolver.

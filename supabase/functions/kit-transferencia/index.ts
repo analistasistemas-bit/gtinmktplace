@@ -20,11 +20,12 @@ import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
 import { enfileirarSincronizacaoFiscal } from '../_shared/queue.ts';
 import { talvezFinalizarLote } from '../_shared/lote/finalizar.ts';
 import { alertarZeradosConfirmados } from '../sincronizar-estoque/processar.ts';
+import { avisarFimTransferencia, linkGerenciarKit } from '../_shared/kit-variacao/aviso-fim.ts';
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-function deps(orgId: string): DepsSaga {
+function deps(orgId: string, transferenciaId: string): DepsSaga {
   const admin = adminClient();
   // Toda chamada ao ML desta invocação morre no prazo do passo, antes de o lease do claim vencer.
   const prazo = AbortSignal.timeout(PRAZO_PASSO_S * 1000);
@@ -171,7 +172,15 @@ function deps(orgId: string): DepsSaga {
       },
     },
     enfileirar: (id, delayS) => enfileirarSaga(id, orgId, delayS),
-    alertar: async (texto) => { await notificarCategoria(admin, orgId, 'estoque', texto); },
+    // Todo alerta da saga (travada, bloqueada, abortada) leva o kit e o link do Gerenciar kit no PubliAI.
+    alertar: async (texto) => {
+      const { data } = await admin.from('kit_transferencias').select('kit_id, kits_variacao(codigo_pai_kit)')
+        .eq('id', transferenciaId).eq('org_id', orgId).maybeSingle();
+      const k = (data as { kits_variacao?: { codigo_pai_kit?: string } | null } | null)?.kits_variacao;
+      const link = linkGerenciarKit(Deno.env.get('APP_URL'), data?.kit_id as string | null);
+      const sufixo = [k?.codigo_pai_kit ? `Kit ${k.codigo_pai_kit}.` : '', link ? `Abrir o Gerenciar kit: ${link}` : ''].filter(Boolean);
+      await notificarCategoria(admin, orgId, 'estoque', sufixo.length ? `${texto}\n\n${sufixo.join(' ')}` : texto);
+    },
     avisarZerados: (codigos) => alertarZeradosConfirmados(admin, notificarCategoria, orgId, codigos),
     agora: () => new Date(),
     quarentenaS: quarentenaDoEnv(Deno.env.get('KIT_QUARENTENA_S')),
@@ -315,9 +324,14 @@ Deno.serve(async (req) => {
   if (!job?.transferencia_id || !job.org_id) return new Response('Body inválido', { status: 400, headers: corsHeaders });
 
   try {
-    const r = await avancarSaga(deps(job.org_id), job.transferencia_id);
+    const r = await avancarSaga(deps(job.org_id, job.transferencia_id), job.transferencia_id);
     await fecharCriacao(adminClient(), job.org_id, job.transferencia_id, r.acao);
     await reporDepois(adminClient(), job.org_id, job.transferencia_id, r.acao);
+    // Aviso de fim com chave: falha só loga e fica sem marca para a varredura diária; a saga já terminou.
+    if (r.acao === 'concluida') {
+      await avisarFimTransferencia(adminClient(), notificarCategoria, job.org_id, job.transferencia_id)
+        .catch((e) => console.error('kit_aviso_fim_falhou', job.transferencia_id, String(e)));
+    }
     // Ocupada: outra invocação tem o claim, ou a anterior morreu e o prazo ainda não venceu. O QStash
     // repete; se a outra estava viva, a repetição só executa um passo já idempotente.
     return json(r.acao === 'ocupada' ? 409 : 200, r);
