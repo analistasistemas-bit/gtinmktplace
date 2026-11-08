@@ -153,10 +153,20 @@ async function atender(req: Request, inicio: number): Promise<Response> {
       const { data: lista, error: errLista } = await admin.storage.from('imagens').list(caminho.slice(0, corte), { search: nome });
       if (errLista) { logErro('upload', errLista); return json({ error: 'Falha ao conferir a foto gerada. Tente novamente.' }, 500); }
       const existe = (lista ?? []).some((o: { name: string }) => o.name === nome);
-      const { error: errFin } = await tabela().update({ status: existe ? 'gerada' : 'recusada', atualizado_em: new Date().toISOString() })
-        .eq('org_id', orgId).eq('request_id', requestId).eq('status', 'pendente_upload');
+      const { data: afetadas, error: errFin } = await tabela()
+        .update({ status: existe ? 'gerada' : 'recusada', atualizado_em: new Date().toISOString() })
+        .eq('org_id', orgId).eq('request_id', requestId).eq('status', 'pendente_upload').select('status');
       if (errFin) { logErro('registro', errFin); return json({ error: 'Falha ao registrar a geração. Tente novamente.' }, 500); }
-      if (!existe) return json({ error: 'Não foi possível guardar a foto gerada. Gere outra.', motivo: 'falha_storage' }, 502);
+      let final: unknown = existe ? 'gerada' : 'recusada';
+      if (!afetadas || afetadas.length === 0) {
+        // Outra repetição finalizou antes (UPDATE condicional sem linha): responde pelo estado gravado, não pelo seu.
+        const { data: agora, error: errAgora } = await tabela().select('status')
+          .eq('org_id', orgId).eq('request_id', requestId).maybeSingle();
+        if (errAgora) { logErro('registro', errAgora); return json({ error: 'Falha ao ler a geração. Tente novamente.' }, 500); }
+        final = agora?.status;
+      }
+      if (final === 'recusada') return json({ error: 'Não foi possível guardar a foto gerada. Gere outra.', motivo: 'falha_storage' }, 502);
+      if (final !== 'gerada') return json({ error: 'Falha ao ler a geração. Tente novamente.' }, 500);
     } else if (ja.status !== 'gerada') {
       return json({ error: 'A foto gerada não serve ao Mercado Livre. Gere outra.', motivo: 'imagem_inadequada' }, 502);
     }

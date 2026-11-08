@@ -20,6 +20,7 @@ const f = vi.hoisted(() => ({
   uploadTrava: false,
   uploadAtrasoMs: 0,
   objetos: new Set<string>(),
+  listaExiste: [] as boolean[],
   codigoErro: undefined as unknown,
   deslocamento: 0,
   imagemB64: '',
@@ -94,7 +95,7 @@ function tabela(t: string) {
       if (t === 'organizations') return { data: { modulos_habilitados: f.modulos }, error: null };
       if (t === 'configuracoes') return { data: { ai_model_imagem: null }, error: null };
       if (t === 'familias') return { data: f.base, error: null };
-      if (t === 'kit_variacao_imagens') return { data: achar() ?? null, error: null };
+      if (t === 'kit_variacao_imagens') { const l = achar(); return { data: l ? { ...l } : null, error: null }; }
       return { data: null, error: null };
     },
     then: (res: (v: unknown) => void) => {
@@ -105,7 +106,13 @@ function tabela(t: string) {
             return res({ data: null, error: { code: '23505', message: 'duplicate' } });
           }
           f.linhas.push({ ...payload });
-        } else if (op === 'update') Object.assign(achar() ?? {}, payload);
+        } else if (op === 'update') {
+          // UPDATE condicional: só afeta a linha que casa com o filtro de status; devolve as linhas afetadas.
+          const l = achar();
+          const casa = l && (filtros.status === undefined || l.status === filtros.status);
+          if (casa) Object.assign(l, payload);
+          return res({ data: casa ? [{ ...l }] : [], error: null });
+        }
         else if (op === 'delete') {
           const l = achar();
           const casa = l && (filtros.status === undefined || l.status === filtros.status)
@@ -132,7 +139,9 @@ vi.mock('../../_shared/supabase.ts', () => ({
           return f.uploadAtrasoMs ? new Promise((res) => setTimeout(() => res(fim()), f.uploadAtrasoMs)) : Promise.resolve(fim());
         },
         list: async (pasta: string, o: { search: string }) => ({
-          data: [...f.objetos].filter((x) => x.startsWith(`${pasta}/${o.search}`)).map((x) => ({ name: x.slice(pasta.length + 1) })),
+          data: f.listaExiste.length > 0
+            ? (f.listaExiste.shift() ? [{ name: o.search }] : [])
+            : [...f.objetos].filter((x) => x.startsWith(`${pasta}/${o.search}`)).map((x) => ({ name: x.slice(pasta.length + 1) })),
           error: null,
         }),
         createSignedUrl: async (p: string) => ({ data: { signedUrl: `https://x/${p}?t=1` }, error: null }),
@@ -154,7 +163,7 @@ beforeEach(() => {
   f.admin = true; f.modulos = ['kit_variacao', 'imagem_ia']; f.moderadas = []; f.moderacaoFalha = false;
   f.imagemFalha = false; f.erroImagem = 'provedor caiu'; f.auditoriaFalha = false; f.atrasoModeracaoMs = 0; f.deslocamento = 0;
   f.atrasoImagemMs = 0; f.uploadTrava = false; f.codigoErro = undefined;
-  f.uploadAtrasoMs = 0; f.objetos = new Set(); f.imagemB64 = PNG_VERTICAL; f.custo = 0.041; f.chamadasImagem = []; f.chamadasVisao = 0;
+  f.uploadAtrasoMs = 0; f.objetos = new Set(); f.listaExiste = []; f.imagemB64 = PNG_VERTICAL; f.custo = 0.041; f.chamadasImagem = []; f.chamadasVisao = 0;
   f.linhas = []; f.uploads = []; f.downloads = []; f.escritasProibidas = [];
   f.base = {
     nome_pai: 'Jaqueta', titulo_ml: 'Jaqueta Corta Vento',
@@ -302,6 +311,21 @@ describe('gerar-foto-kit', () => {
     expect((await r.json()).path).toBe(`org-1/kit-variacao-ia/${REQ}.png`);
     expect(f.linhas[0]).toMatchObject({ status: 'gerada' });
     expect(f.chamadasImagem).toHaveLength(1);
+  });
+
+  it('duas repetições concorrentes de pendente_upload: a que perde a corrida responde pelo estado final (gerada → 200)', async () => {
+    f.linhas.push({
+      org_id: 'org-1', request_id: REQ, status: 'pendente_upload', rotulo: 'Preto e Branco', familia_base_id: 'fam-1',
+      cores: ['Preto', 'Branco'], storage_path: `org-1/kit-variacao-ia/${REQ}.png`, custo_usd: 0.041, criado_em: new Date().toISOString(),
+    });
+    // A primeira vê o objeto (upload terminou); a segunda leu antes e não vê.
+    f.listaExiste = [true, false];
+    const [a, b] = await Promise.all([post(ok), post(ok)]);
+    expect(f.linhas[0]).toMatchObject({ status: 'gerada' });
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    expect((await b.json()).path).toBe(`org-1/kit-variacao-ia/${REQ}.png`);
+    expect(f.chamadasImagem).toHaveLength(0);
   });
 
   it('pendente_upload sem objeto no storage: recusada (sem cobrança), nunca gera de novo', async () => {
