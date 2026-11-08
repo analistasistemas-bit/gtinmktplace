@@ -193,7 +193,7 @@ Conjunto de até sete imagens de anúncio geradas por IA para uma cor de uma fam
 _Evitar_: fotos comuns da família (capa, capa2 e capa3, que são as mesmas para todas as cores).
 
 **Fato do produto**:
-Informação técnica que uma imagem pode afirmar como verdade (medida, metragem, composição, marca, conteúdo da embalagem). Só vale o que consta nos dados da família; o que a IA lê na foto serve apenas para conferir, nunca como fonte.
+Informação técnica que uma imagem pode afirmar como verdade (medida, metragem, composição, marca, conteúdo da embalagem). Só vale o que uma pessoa afirmou: a planilha, um atributo editado pelo operador ou um texto escrito por IA que o operador confirmou para aquela família. O que a IA escreveu e ninguém confirmou é apenas sugestão; o que a IA lê na foto serve apenas para conferir, nunca como fonte.
 _Evitar_: informação da embalagem como fonte.
 
 **Divergência de fato**:
