@@ -1,0 +1,167 @@
+// ADR-0197: "Você recebe por venda" do kit com variação, antes de confirmar. Mesmo card de Promoções
+// (`DetalheRecebe`), com a cotação oficial no preço, categoria, dimensões e peso do kit.
+import { useEffect, useMemo, useState } from 'react';
+import { useQueries } from '@tanstack/react-query';
+import { AlertTriangle, ChevronDown } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { DetalheRecebe } from '@/components/promocoes/detalhe-recebe';
+import { useAliquotas } from '@/hooks/useConfiguracoes';
+import { useFamilia } from '@/hooks/useFamilia';
+import { fmtBRL } from '@/lib/formato';
+import {
+  aliquotaDoKit, chaveDimensoes, simularKit, skuDoKit, type LinhaSimulada, type SimulacaoKit,
+} from '@/lib/kit-variacao-simulacao';
+import { calcularTarifaML, type Tarifa } from '@/lib/tarifa';
+import { cn } from '@/lib/utils';
+
+/** Mesma espera de digitação do preview de Promoções. */
+const ESPERA_DIGITACAO_MS = 500;
+const centavos = (n: number) => Math.round(n * 100);
+const pctInt = (n: number) => `${Math.round(n * 100)}%`;
+
+export function SimuladorKit({ familiaBaseId, cores, pecas, quantidades, preco, tipo = 'gold_special', onPodeSeguir }: {
+  familiaBaseId: string;
+  cores: string[];
+  pecas: number;
+  quantidades: { cores: string[]; tamanho: string; quantidade: number }[];
+  preco: number;
+  tipo?: 'gold_special' | 'gold_pro';
+  /** Conta pronta e, se houver prejuízo, conta indisponível ou imposto fora, confirmada pelo operador. */
+  onPodeSeguir?: (pode: boolean) => void;
+}) {
+  // Custo vigente (ADR-0185): o lote mais novo de cada SKU, não o da família mais antiga.
+  const familiaQ = useFamilia(familiaBaseId, true, true);
+  const aliquotasQ = useAliquotas();
+  const familia = familiaQ.data;
+  const aliquotaPct = aliquotaDoKit(familia?.origem, aliquotasQ.data);
+
+  // Comissão e frete mudam por faixa de preço: recota quando o operador para de digitar.
+  const [precoCotado, setPrecoCotado] = useState(preco);
+  useEffect(() => {
+    const t = setTimeout(() => setPrecoCotado(preco), ESPERA_DIGITACAO_MS);
+    return () => clearTimeout(t);
+  }, [preco]);
+  const precoEmDia = centavos(precoCotado) === centavos(preco);
+
+  const variacoes = useMemo(() => familia?.variacoes ?? [], [familia]);
+  const dims = useMemo(() => {
+    const porChave = new Map<string, NonNullable<ReturnType<typeof skuDoKit>>['dim']>();
+    for (const q of quantidades) {
+      const sku = q.quantidade > 0 ? skuDoKit(variacoes, cores, q.cores, q.tamanho) : null;
+      if (sku) porChave.set(chaveDimensoes(sku.dim), sku.dim);
+    }
+    return [...porChave.entries()];
+  }, [variacoes, cores, quantidades]);
+
+  const categoria = familia?.categoriaMlId ?? null;
+  // Mesma queryKey de useTarifaML: deduplica com os outros cards da mesma tarifa.
+  const tarifas = useQueries({
+    queries: dims.map(([, dim]) => ({
+      queryKey: ['tarifa', categoria, precoCotado, dim.alturaCm, dim.larguraCm, dim.comprimentoCm, dim.pesoGramas, aliquotaPct ?? 0],
+      queryFn: () => calcularTarifaML(precoCotado, categoria as string, dim, aliquotaPct ?? 0),
+      enabled: !!categoria && precoCotado > 0 && aliquotasQ.isFetched,
+      staleTime: 6 * 60 * 60 * 1000,
+      retry: false,
+    })),
+  });
+
+  const sim: SimulacaoKit = useMemo(() => {
+    const cotacoes = new Map<string, Tarifa | null | undefined>();
+    dims.forEach(([chave], i) => {
+      const q = tarifas[i];
+      // Preço digitado e ainda não cotado: nunca mostra o lucro do preço anterior.
+      cotacoes.set(chave, !precoEmDia ? undefined : q.isError ? null : q.isSuccess ? q.data : (categoria ? undefined : null));
+    });
+    return simularKit({ preco, pecas, cores, quantidades, variacoes, tipo, aliquotaPct, cotacoes });
+  }, [dims, tarifas, precoEmDia, categoria, preco, pecas, cores, quantidades, variacoes, tipo, aliquotaPct]);
+
+  const carregando = familiaQ.isLoading || aliquotasQ.isLoading;
+  const erroLeitura = familiaQ.isError || aliquotasQ.isError;
+  const estado = erroLeitura ? 'indisponivel' : carregando ? 'calculando' : sim.estado;
+  const precisaConfirmar = erroLeitura || sim.precisaConfirmar;
+
+  const [confirmado, setConfirmado] = useState(false);
+  // Confirmação vale para o preço e a conta que o operador viu.
+  useEffect(() => { setConfirmado(false); }, [preco, estado, sim.semAliquota]);
+  const pode = estado !== 'calculando' && (!precisaConfirmar || confirmado);
+  useEffect(() => { onPodeSeguir?.(pode); }, [pode, onPodeSeguir]);
+
+  const [expandido, setExpandido] = useState(false);
+  const varias = sim.linhas.length > 1;
+
+  return (
+    <section aria-label="Simulador de lucro do kit" className="flex flex-col gap-2">
+      {estado === 'calculando' && <p className="text-xs text-muted-foreground">Calculando o que você recebe…</p>}
+
+      {estado === 'indisponivel' && (
+        <p className="text-xs text-danger">
+          {erroLeitura ? 'Não foi possível ler custos e alíquotas agora.' : 'Não foi possível calcular o lucro de todas as combinações.'}
+          {' '}O resultado não é exibido como exato.
+        </p>
+      )}
+
+      {estado !== 'calculando' && sim.semAliquota && !erroLeitura && (
+        <p className="flex items-start gap-1 rounded-md border border-warning/30 bg-warning/5 p-2 text-xs text-warning">
+          <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden />
+          <span>Imposto fora da conta: a alíquota por origem não está confirmada em Configurações. O lucro abaixo não desconta imposto.</span>
+        </p>
+      )}
+
+      {sim.pior?.resumo && (estado === 'ok' || estado === 'prejuizo') && (
+        <div className="flex flex-col gap-1">
+          {varias && (
+            <p className="text-xs font-medium text-muted-foreground">
+              Pior combinação: <span className="text-foreground">{sim.pior.rotulo} · {sim.pior.tamanho}</span>
+            </p>
+          )}
+          <DetalheRecebe r={sim.pior.resumo} preco={preco} original={null} listingType={tipo} variasCores={false} rotuloPreco="preço do kit" />
+        </div>
+      )}
+
+      {varias && estado !== 'calculando' && (
+        <div>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setExpandido((e) => !e)} aria-expanded={expandido}>
+            <ChevronDown className={cn('size-3.5 transition-transform', expandido && 'rotate-180')} aria-hidden />
+            {expandido ? 'Ocultar combinações' : `Ver lucro de cada combinação (${sim.linhas.length})`}
+          </Button>
+          {expandido && (
+            <ul className="mt-1 divide-y divide-border rounded-md border text-xs">
+              {sim.linhas.map((l) => <LinhaCombinacao key={`${l.rotulo}#${l.tamanho}`} l={l} pior={l === sim.pior} />)}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {precisaConfirmar && estado !== 'calculando' && (
+        <div className="rounded-lg border border-danger/30 bg-danger/5 p-3 text-sm">
+          <p className="font-medium text-danger">
+            {estado === 'prejuizo' ? 'Este preço dá prejuízo em pelo menos uma combinação.'
+              : estado === 'indisponivel' ? 'Lucro não calculado.'
+              : 'Lucro calculado sem imposto.'}
+          </p>
+          <label htmlFor="kit-seguir-mesmo-assim" className="mt-2 flex items-center gap-2">
+            <Checkbox id="kit-seguir-mesmo-assim" checked={confirmado} onCheckedChange={(v) => setConfirmado(!!v)} />
+            Seguir mesmo assim
+          </label>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function LinhaCombinacao({ l, pior }: { l: LinhaSimulada; pior: boolean }) {
+  return (
+    <li className={cn('flex items-center justify-between gap-2 px-2 py-1.5 tabular-nums', pior && 'bg-muted/50')}>
+      <span className="min-w-0 truncate">{l.rotulo} · {l.tamanho}{pior && <span className="ml-1 text-muted-foreground">(pior)</span>}</span>
+      {l.resumo ? (
+        <span className={l.resumo.lucro < 0 ? 'text-destructive' : 'text-success'}>
+          {l.resumo.lucro < 0 ? 'prejuízo ' : 'lucro '}{fmtBRL(l.resumo.lucro)}
+          {l.resumo.margem != null && ` · margem ${pctInt(l.resumo.margem)}`}
+        </span>
+      ) : (
+        <span className="text-muted-foreground">{l.motivo ?? 'Calculando…'}</span>
+      )}
+    </li>
+  );
+}

@@ -8,8 +8,10 @@ import { cn } from '@/lib/utils';
 const pct = (n: number) => `${n.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
 const pctInt = (n: number) => `${Math.round(n * 100)}%`;
 
-export function DetalheRecebe({ r, preco, original, listingType, variasCores }: {
+export function DetalheRecebe({ r, preco, original, listingType, variasCores, rotuloPreco = 'preço na campanha' }: {
   r: ResumoLucro; preco: number; original: number | null; listingType?: string | null; variasCores: boolean;
+  /** Kit com variação (ADR-0197) reaproveita o card fora de campanha. */
+  rotuloPreco?: string;
 }) {
   const desconto = original != null && original > preco ? Math.round((1 - preco / original) * 100) : null;
   return (
@@ -18,7 +20,7 @@ export function DetalheRecebe({ r, preco, original, listingType, variasCores }: 
         <Wallet className="size-3.5" aria-hidden /> Você recebe por venda
       </div>
       <p className="mb-1 text-xs tabular-nums text-muted-foreground">
-        preço na campanha <span className="font-medium text-foreground">{fmtBRL(preco)}</span>
+        {rotuloPreco} <span className="font-medium text-foreground">{fmtBRL(preco)}</span>
         {desconto != null && ` (−${desconto}%)`}
         {' · '}custo do produto <span className="font-medium text-foreground">{fmtBRL(r.custo)}</span>
       </p>
