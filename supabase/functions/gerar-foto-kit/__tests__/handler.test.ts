@@ -316,7 +316,8 @@ describe('gerar-foto-kit', () => {
   it('duas repetições concorrentes de pendente_upload: a que perde a corrida responde pelo estado final (gerada → 200)', async () => {
     f.linhas.push({
       org_id: 'org-1', request_id: REQ, status: 'pendente_upload', rotulo: 'Preto e Branco', familia_base_id: 'fam-1',
-      cores: ['Preto', 'Branco'], storage_path: `org-1/kit-variacao-ia/${REQ}.png`, custo_usd: 0.041, criado_em: new Date().toISOString(),
+      cores: ['Preto', 'Branco'], storage_path: `org-1/kit-variacao-ia/${REQ}.png`, custo_usd: 0.041, criado_em: new Date(Date.now() - 10 * 60_000).toISOString(),
+      atualizado_em: new Date(Date.now() - 10 * 60_000).toISOString(),   // prazo da execução original já venceu
     });
     // A primeira vê o objeto (upload terminou); a segunda leu antes e não vê.
     f.listaExiste = [true, false];
@@ -328,10 +329,51 @@ describe('gerar-foto-kit', () => {
     expect(f.chamadasImagem).toHaveLength(0);
   });
 
+  it('repetição durante o upload (objeto ainda ausente) → 503 em_andamento sem mudar estado; o original termina gerada', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    let original: Response | undefined;
+    let repeticao: Response | undefined;
+    try {
+      f.uploadAtrasoMs = 3_000;   // dentro da fatia de 6 s do original
+      void post(ok).then((r) => { original = r; });
+      for (let i = 0; i < 50 && f.uploads.length === 0; i++) await vi.advanceTimersByTimeAsync(100);
+      expect(f.linhas[0]).toMatchObject({ status: 'pendente_upload' });
+      void post(ok).then((r) => { repeticao = r; });
+      await vi.advanceTimersByTimeAsync(100);
+      expect(repeticao!.status).toBe(503);
+      expect((await repeticao!.json()).motivo).toBe('em_andamento');
+      expect(f.linhas[0]).toMatchObject({ status: 'pendente_upload' });
+      await vi.advanceTimersByTimeAsync(4_000);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(original!.status).toBe(200);
+    expect(f.linhas[0]).toMatchObject({ status: 'gerada' });
+    expect(f.chamadasImagem).toHaveLength(1);
+  });
+
+  it('gravação terminal do original é condicional: se a linha já foi recusada, não vira gerada e responde pela recusa', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    let original: Response | undefined;
+    try {
+      f.uploadAtrasoMs = 3_000;
+      void post(ok).then((r) => { original = r; });
+      for (let i = 0; i < 50 && f.uploads.length === 0; i++) await vi.advanceTimersByTimeAsync(100);
+      f.linhas[0].status = 'recusada';   // decidido por outra execução enquanto o upload corria
+      await vi.advanceTimersByTimeAsync(4_000);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(original!.status).toBe(502);
+    expect((await original!.json()).motivo).toBe('falha_storage');
+    expect(f.linhas[0]).toMatchObject({ status: 'recusada' });
+  });
+
   it('pendente_upload sem objeto no storage: recusada (sem cobrança), nunca gera de novo', async () => {
     f.linhas.push({
       org_id: 'org-1', request_id: REQ, status: 'pendente_upload', rotulo: 'Preto e Branco', familia_base_id: 'fam-1',
-      cores: ['Preto', 'Branco'], storage_path: `org-1/kit-variacao-ia/${REQ}.png`, custo_usd: 0.041, criado_em: new Date().toISOString(),
+      cores: ['Preto', 'Branco'], storage_path: `org-1/kit-variacao-ia/${REQ}.png`, custo_usd: 0.041, criado_em: new Date(Date.now() - 10 * 60_000).toISOString(),
+      atualizado_em: new Date(Date.now() - 10 * 60_000).toISOString(),   // prazo da execução original já venceu
     });
     const r = await post(ok);
     expect(r.status).toBe(502);

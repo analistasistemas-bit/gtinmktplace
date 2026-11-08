@@ -31,6 +31,8 @@ const PRAZO_MS = 140_000;
 const RESERVA_FINAL_MS = 10_000;
 const LIMITE_RESPOSTA_MS = 145_000;
 const MINIMO_IA_MS = 90_000;
+// `pendente_upload` sem objeto só vira `recusada` depois que a execução original não pode mais gravar (limite + margem).
+const UPLOAD_VENCIDO_MS = LIMITE_RESPOSTA_MS + 30_000;
 const centavos = (usd: number) => Math.ceil(Number((usd * 100).toFixed(6)));
 
 // Log de erro externo por lista de permissão: status HTTP numérico, código de uma lista conhecida e mensagem fixa por
@@ -130,9 +132,33 @@ async function atender(req: Request, inicio: number): Promise<Response> {
   const rotulo = rotuloCombinacao(cores);
   const target = { type: 'familia', id: familiaBaseId };
   const tabela = () => admin.from('kit_variacao_imagens');
+  /**
+   * Transição de estado condicional (`status = de`): devolve o estado que ficou gravado. Zero linhas afetadas = outra
+   * execução decidiu antes; relê e devolve o estado dela. Toda transição terminal passa por aqui (nunca sobrescreve
+   * uma decisão já gravada). Erro de escrita/leitura lança.
+   */
+  const transicionar = async (de: string, campos: Record<string, unknown>): Promise<string | null> => {
+    const { data, error: e1 } = await comPrazo(tabela().update({ ...campos, atualizado_em: new Date().toISOString() })
+      .eq('org_id', orgId).eq('request_id', requestId).eq('status', de).select('status'), fatiaFinal(4_000));
+    if (e1) throw e1;
+    if (data && data.length > 0) return String(campos.status);
+    const { data: agora, error: e2 } = await comPrazo(tabela().select('status')
+      .eq('org_id', orgId).eq('request_id', requestId).maybeSingle(), fatiaFinal(3_000));
+    if (e2) throw e2;
+    return (agora?.status as string | undefined) ?? null;
+  };
+  const entregar = async (path: string, custoUsd: number, existente: boolean) => {
+    let url: string | null = null;
+    try {
+      url = (await comPrazo(admin.storage.from('imagens').createSignedUrl(path, 60 * 60 * 2), fatiaFinal(3_000))).data?.signedUrl ?? null;
+    } catch { /* sem URL: a tela pede "Recarregar prévia" com o mesmo pedido */ }
+    if (!existente) await auditar(target, 'succeeded');
+    return json({ request_id: requestId, path, url, custo_centavos: centavos(custoUsd), ...(existente ? { existente: true } : {}) });
+  };
+  const falhaStorage = () => json({ error: 'Não foi possível guardar a foto gerada. Gere outra.', motivo: 'falha_storage' }, 502);
 
   // Repetição do mesmo pedido: devolve a mesma imagem, sem IA.
-  const { data: ja, error: errJa } = await tabela().select('status, rotulo, familia_base_id, cores, storage_path, custo_usd, criado_em')
+  const { data: ja, error: errJa } = await tabela().select('status, rotulo, familia_base_id, cores, storage_path, custo_usd, criado_em, atualizado_em')
     .eq('org_id', orgId).eq('request_id', requestId).maybeSingle();
   if (errJa) return json({ error: 'Falha ao ler a geração. Tente novamente.' }, 500);
   const limiteAbandono = new Date(Date.now() - ABANDONO_MS).toISOString();
@@ -153,25 +179,21 @@ async function atender(req: Request, inicio: number): Promise<Response> {
       const { data: lista, error: errLista } = await admin.storage.from('imagens').list(caminho.slice(0, corte), { search: nome });
       if (errLista) { logErro('upload', errLista); return json({ error: 'Falha ao conferir a foto gerada. Tente novamente.' }, 500); }
       const existe = (lista ?? []).some((o: { name: string }) => o.name === nome);
-      const { data: afetadas, error: errFin } = await tabela()
-        .update({ status: existe ? 'gerada' : 'recusada', atualizado_em: new Date().toISOString() })
-        .eq('org_id', orgId).eq('request_id', requestId).eq('status', 'pendente_upload').select('status');
-      if (errFin) { logErro('registro', errFin); return json({ error: 'Falha ao registrar a geração. Tente novamente.' }, 500); }
-      let final: unknown = existe ? 'gerada' : 'recusada';
-      if (!afetadas || afetadas.length === 0) {
-        // Outra repetição finalizou antes (UPDATE condicional sem linha): responde pelo estado gravado, não pelo seu.
-        const { data: agora, error: errAgora } = await tabela().select('status')
-          .eq('org_id', orgId).eq('request_id', requestId).maybeSingle();
-        if (errAgora) { logErro('registro', errAgora); return json({ error: 'Falha ao ler a geração. Tente novamente.' }, 500); }
-        final = agora?.status;
+      // Objeto ausente com a execução original ainda dentro do prazo: o upload pode estar em curso. Não decide nada
+      // (a tela trata `em_andamento` como incerto e repete o mesmo pedido).
+      const limiteUpload = new Date(Date.now() - UPLOAD_VENCIDO_MS).toISOString();
+      if (!existe && String(ja.atualizado_em ?? ja.criado_em) >= limiteUpload) {
+        return json({ error: 'A foto ainda está sendo guardada. Tente de novo em instantes.', motivo: 'em_andamento' }, 503);
       }
-      if (final === 'recusada') return json({ error: 'Não foi possível guardar a foto gerada. Gere outra.', motivo: 'falha_storage' }, 502);
+      let final: string | null;
+      try { final = await transicionar('pendente_upload', { status: existe ? 'gerada' : 'recusada' }); }
+      catch (e) { logErro('registro', e); return json({ error: 'Falha ao registrar a geração. Tente novamente.' }, 500); }
+      if (final === 'recusada') return falhaStorage();
       if (final !== 'gerada') return json({ error: 'Falha ao ler a geração. Tente novamente.' }, 500);
     } else if (ja.status !== 'gerada') {
       return json({ error: 'A foto gerada não serve ao Mercado Livre. Gere outra.', motivo: 'imagem_inadequada' }, 502);
     }
-    const { data: assinada } = await admin.storage.from('imagens').createSignedUrl(ja.storage_path as string, 60 * 60 * 2);
-    return json({ request_id: requestId, path: ja.storage_path, url: assinada?.signedUrl ?? null, custo_centavos: centavos(Number(ja.custo_usd)), existente: true });
+    return await entregar(String(ja.storage_path), Number(ja.custo_usd), true);
   }
 
   // Base da própria org; cores só dela (nunca texto livre do cliente no pedido à IA).
@@ -246,24 +268,24 @@ async function atender(req: Request, inicio: number): Promise<Response> {
   }
 
   // Gerada com custo real. Imprópria ao ML ou sem storage: registra o custo, fora da cobrança, e não entrega.
-  const recusar = async (msg: string, motivo: string) => {
-    try {
-      await comPrazo(tabela().update({ status: 'recusada', custo_usd: custoUsd, atualizado_em: new Date().toISOString() })
-        .eq('org_id', orgId).eq('request_id', requestId), fatiaFinal(4_000));
-    } catch (e) { logErro('registro', e); }
+  const recusar = async (de: string, msg: string, motivo: string) => {
+    let final: string | null = 'recusada';
+    try { final = await transicionar(de, { status: 'recusada', custo_usd: custoUsd }); } catch (e) { logErro('registro', e); }
+    // Outra execução já finalizou como `gerada` (objeto no storage): vale o estado gravado.
+    if (final === 'gerada') return await entregar(path, custoUsd, false);
     await auditar(target, 'failed');
     return json({ error: msg, motivo }, 502);
   };
+  const path = `${orgId}/kit-variacao-ia/${requestId}.${gerada.ext}`;
   if (!adequadaAoML(dimensoesImagem(gerada.bytes))) {
-    return await recusar('A foto gerada não serve ao Mercado Livre (precisa ser vertical ou quadrada). Gere outra.', 'imagem_inadequada');
+    return await recusar('pendente', 'A foto gerada não serve ao Mercado Livre (precisa ser vertical ou quadrada). Gere outra.', 'imagem_inadequada');
   }
   // Caminho determinístico por (org, request_id), gravado com o custo ANTES do upload (`pendente_upload`, não cobrável):
   // se o upload estourar o prazo e terminar depois, a repetição do mesmo pedido acha o objeto e finaliza.
-  const path = `${orgId}/kit-variacao-ia/${requestId}.${gerada.ext}`;
-  const { error: errPre } = await comPrazo(tabela().update({
-    status: 'pendente_upload', storage_path: path, custo_usd: custoUsd, atualizado_em: new Date().toISOString(),
-  }).eq('org_id', orgId).eq('request_id', requestId), fatiaFinal(4_000));
-  if (errPre) { logErro('registro', errPre); return json({ error: 'Falha ao registrar a geração. Tente novamente.' }, 500); }
+  let pre: string | null;
+  try { pre = await transicionar('pendente', { status: 'pendente_upload', storage_path: path, custo_usd: custoUsd }); }
+  catch (e) { logErro('registro', e); return json({ error: 'Falha ao registrar a geração. Tente novamente.' }, 500); }
+  if (pre !== 'pendente_upload') return json({ error: 'Falha ao registrar a geração. Tente novamente.' }, 500);
   let errUp: unknown = null;
   try {
     ({ error: errUp } = await comPrazo(admin.storage.from('imagens').upload(path, new Blob([gerada.bytes as Uint8Array<ArrayBuffer>], { type: gerada.mime }), {
@@ -277,20 +299,12 @@ async function atender(req: Request, inicio: number): Promise<Response> {
   }
   if (errUp) {
     logErro('upload', errUp);
-    return await recusar('Não foi possível guardar a foto gerada. Tente novamente.', 'falha_storage');
+    return await recusar('pendente_upload', 'Não foi possível guardar a foto gerada. Gere outra.', 'falha_storage');
   }
-  // Prazo aqui rejeita e vira 503 `prazo` no topo: o cliente repete o mesmo pedido e recupera a geração, se gravou.
-  const { error: errFim } = await comPrazo(tabela().update({ status: 'gerada', atualizado_em: new Date().toISOString() })
-    .eq('org_id', orgId).eq('request_id', requestId), fatiaFinal(4_000));
-  if (errFim) {
-    // Sem o registro não há entrega (fail-closed): a imagem não sai sem a cobrança.
-    logErro('registro', errFim);
-    return json({ error: 'Falha ao registrar a geração. Tente novamente.' }, 500);
-  }
-  let url: string | null = null;
-  try {
-    url = (await comPrazo(admin.storage.from('imagens').createSignedUrl(path, 60 * 60 * 2), fatiaFinal(3_000))).data?.signedUrl ?? null;
-  } catch { /* sem URL: a tela pede "Recarregar prévia" com o mesmo pedido */ }
-  await auditar(target, 'succeeded');
-  return json({ request_id: requestId, path, url, custo_centavos: centavos(custoUsd) });
+  // Terminal condicional: nunca sobrescreve uma `recusada` decidida por uma repetição (prazo vencido). Prazo aqui
+  // rejeita e vira 503 `prazo` no topo: o cliente repete o mesmo pedido e recupera o estado gravado.
+  const final = await transicionar('pendente_upload', { status: 'gerada' });
+  if (final === 'gerada') return await entregar(path, custoUsd, false);
+  if (final === 'recusada') { await auditar(target, 'failed'); return falhaStorage(); }
+  return json({ error: 'Falha ao registrar a geração. Tente novamente.' }, 500);
 }
