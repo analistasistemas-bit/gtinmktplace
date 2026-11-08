@@ -1026,6 +1026,22 @@ describe('avancarSaga: destino sem item (CREATE do kit)', () => {
     expect(c.s.t.estado).toBe('concluida');
   });
 
+  it('leitura do UP criado que lança: o principal já foi pausado, nada é registrado e sai alerta com backoff', async () => {
+    const c = cenarioCriar();
+    let falhas = 3;
+    c.s.aoLer = (up) => { if (up === 'UP-NOVO1' && falhas-- > 0) throw new Error('busca do UP com 0 itens'); };
+    await rodar(c, (x) => criacoes(x) === 1 && falhas === 2);
+    const iPausa = c.s.chamadas.indexOf('paused MLB-NOVO1');
+    expect(iPausa).toBeGreaterThan(c.s.chamadas.indexOf('criar K 1'));
+    expect(c.s.ups['UP-NOVO1'].itens[0].subStatus).toContain('paused_by_seller');
+    expect(c.s.registros).toEqual([]);
+    expect(c.s.alertas.filter((a) => /K: pausa do item criado não confirmada .*busca do UP com 0 itens/.test(a))).toHaveLength(1);
+    expect(c.s.filas.at(-1)).toBe(5);
+    await rodar(c, undefined, 80);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(c.s.registros).toHaveLength(1);
+  });
+
   it('registro que lança: o item criado é pausado e confirmado antes; a retomada não deixa vendável', async () => {
     const c = cenarioCriar();
     let falhas = 2;

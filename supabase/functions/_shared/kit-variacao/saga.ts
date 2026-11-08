@@ -557,14 +557,22 @@ async function criarDestino(ctx: Ctx, alvo: AlvoSaga): Promise<'criou' | 'pronto
   // a cópia de catálogo que o ML anexar) são pausados e confirmados pela leitura (`paused_by_seller`). A obrigação
   // é durável: `item_criado` sem `escrita_em` faz toda retomada repetir isto, e falha ou recusa do registro nunca
   // deixa item vendável. Cada item entra em `pausado_pela_saga` antes do PUT; a reativação segue a política.
+  // O principal (já em `pausado_pela_saga`) é pausado antes de qualquer leitura: a descoberta do UP pode lançar logo
+  // depois do CREATE (busca ainda sem o item, stock, multiget). Toda falha desta obrigação, inclusive de leitura,
+  // entra no backoff com alerta escalonado, nunca no reagendamento genérico.
   const abertosSoltos = (o: OfertaUP) => o.itens.filter((i) => !encerrado(i) && !moderado(i) && !pausadoPeloVendedor(i));
-  const soltos = abertosSoltos(await ler(ctx, alvo)).map((i) => i.id);
-  if (soltos.length > 0) {
-    const novos = soltos.filter((id) => !alvo.pausado_pela_saga.includes(id));
-    if (novos.length > 0) await salvarAlvo(ctx, alvo, { pausado_pela_saga: [...alvo.pausado_pela_saga, ...novos] });
-    for (const id of soltos) await putStatus(ctx, id, 'paused');
-    const ainda = abertosSoltos(await ler(ctx, alvo)).map((i) => i.id);
-    if (ainda.length > 0) return aguardarPausaCriada(ctx, alvo, ainda);
+  try {
+    await putStatus(ctx, alvo.item_criado!, 'paused');
+    const soltos = abertosSoltos(await ler(ctx, alvo)).map((i) => i.id);
+    if (soltos.length > 0) {
+      const novos = soltos.filter((id) => !alvo.pausado_pela_saga.includes(id));
+      if (novos.length > 0) await salvarAlvo(ctx, alvo, { pausado_pela_saga: [...alvo.pausado_pela_saga, ...novos] });
+      for (const id of soltos) await putStatus(ctx, id, 'paused');
+      const ainda = abertosSoltos(await ler(ctx, alvo)).map((i) => i.id);
+      if (ainda.length > 0) return aguardarPausaCriada(ctx, alvo, ainda);
+    }
+  } catch (e) {
+    return aguardarPausaCriada(ctx, alvo, [`${alvo.item_criado} (${mensagem(e)})`]);
   }
   vivo(ctx);
   const reg = await ctx.deps.repo.registrarItem(alvo.codigo, alvo.item_criado!, alvo.up_criado!);
