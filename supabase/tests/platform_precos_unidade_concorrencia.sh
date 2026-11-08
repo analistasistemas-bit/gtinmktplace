@@ -5,7 +5,7 @@
 #
 # Uso: bash supabase/tests/platform_precos_unidade_concorrencia.sh [container]
 # Postgres LOCAL, nunca remoto, carregado com o schema de produção (supabase db dump --role-only + supabase db dump;
-# drop schema public cascade; carregar os dois; recriar on_auth_user_created) + a migration 20261108141425.
+# drop schema public cascade; carregar os dois; recriar on_auth_user_created) + a migration 20261108191336.
 set -euo pipefail
 C="${1:-$(docker ps --format '{{.Names}}' | grep '^supabase_db_' | head -1)}"
 ORG=97700000-0000-0000-0000-0000000000c1

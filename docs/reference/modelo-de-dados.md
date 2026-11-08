@@ -1739,11 +1739,11 @@ resolvido; zera só se já venceu) e trocando só `sonar_unit_cents`/`image_unit
 Audita `platform_unit_prices_saved` com `de`/`para`. `platform_sonar_delivery_json` passa a tomar o lock da org (`for no key
 update`), calcular a competência por `clock_timestamp()` e pular competência fechada, como a Imagem IA. `platform_billing_preview`:
 `unit_cents` das linhas Sonar/Imagem = preço praticado no mês, `null` se houve dois preços.
-*Migration `20261108141425_platform_precos_unidade_vigencia_atual.sql`.*
+*Migration `20261108191336_platform_precos_unidade_vigencia_atual.sql`.*
 
 `platform_save_terms` (emenda 2026-11-08 ao ADR-0164): a herança da implantação vem de `platform_resolve_terms(org, starts_on)`
 (o termo que vigora no mês gravado), não do termo de maior `starts_on`; o mês mínimo usa `clock_timestamp()` depois do lock
-da org. *Migration `20261108144858_platform_save_terms_heranca_resolvida.sql`.*
+da org. *Migration `20261108191339_platform_save_terms_heranca_resolvida.sql`.*
 
 ### `kit_exclusoes`
 Exclusão durável única: PK `(org_id, codigo)`, `up_id` (nulo até o dono resolver o UP), `dono_tipo`

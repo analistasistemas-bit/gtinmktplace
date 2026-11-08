@@ -1,7 +1,7 @@
 \set ON_ERROR_STOP on
 -- Emenda 2026-11-08 ao ADR-0155: preços por unidade com vigência na competência aberta.
 -- Rodar: python3 scripts/teste-sql-desfeito.py supabase/tests/platform_precos_unidade.sql \
---          supabase/migrations/20261108141425_platform_precos_unidade_vigencia_atual.sql
+--          supabase/migrations/20261108191336_platform_precos_unidade_vigencia_atual.sql
 -- Só toca dados do próprio fixture (orgs is_test, usuário, termos, entregas, demonstrativo); tudo some no rollback.
 begin;
 

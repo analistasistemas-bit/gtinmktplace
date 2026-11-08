@@ -2,8 +2,8 @@
 -- Emenda 2026-11-08 ao ADR-0164: platform_save_terms herda a implantação do termo que vigora no mês gravado
 -- e calcula o mês mínimo pelo relógio depois do lock.
 -- Rodar: python3 scripts/teste-sql-desfeito.py supabase/tests/platform_save_terms_heranca.sql \
---          supabase/migrations/20261108141425_platform_precos_unidade_vigencia_atual.sql \
---          supabase/migrations/20261108144858_platform_save_terms_heranca_resolvida.sql
+--          supabase/migrations/20261108191336_platform_precos_unidade_vigencia_atual.sql \
+--          supabase/migrations/20261108191339_platform_save_terms_heranca_resolvida.sql
 -- Só toca dados do próprio fixture (orgs is_test, usuário, termos); tudo some no rollback.
 begin;
 
