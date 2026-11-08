@@ -303,11 +303,13 @@ function problemaDaOferta(alvo: AlvoSaga, o: OfertaUP, exigirPausa: boolean): st
 
 /** Alerta nunca derruba o passo: o registro durável é a coluna `alerta`, e um erro aqui reagendaria
  * por cima de travada ou abortada, ou perderia o alerta de uma baixa já aplicada. */
-async function alertar(ctx: Ctx, texto: string): Promise<void> {
+async function alertar(ctx: Ctx, texto: string): Promise<boolean> {
   try {
     await ctx.deps.alertar(texto);
+    return true;
   } catch (e) {
     console.error(`kit-transferencia ${ctx.t.id}: alerta não enviado: ${mensagem(e)}: ${texto}`);
+    return false;
   }
 }
 
@@ -342,12 +344,13 @@ async function reagendarComAlerta(
   const decorrido = agora - desde;
   const texto = decorrido < CARENCIA_ALERTA_MS ? null
     : decorrido < BLOQUEIO_MS ? `${espera}: ${motivo}.` : `Transferência de kit bloqueada: ${motivo}.`;
-  const enviar = texto !== null && texto !== ctx.t.alerta_enviado;
-  // A marca vai junto com o reagendamento: alerta que falha no envio não se repete (como antes) e conta como enviado.
-  await mudar(ctx, ctx.t.passo, delayS, {
-    alerta: motivo, alertaDesde: new Date(desde).toISOString(), ...(enviar ? { alertaEnviado: texto } : {}),
-  });
-  if (enviar) await alertar(ctx, texto);
+  await mudar(ctx, ctx.t.passo, delayS, { alerta: motivo, alertaDesde: new Date(desde).toISOString() });
+  // Marca só depois do envio: falha na fila ou no Telegram deixa o alerta pendente para a próxima tentativa, e o
+  // "resolvido" nunca fala de alerta que não saiu. Falha ao gravar a marca só repete o alerta; não derruba o passo.
+  if (texto !== null && texto !== ctx.t.alerta_enviado && await alertar(ctx, texto)) {
+    await salvarTransferencia(ctx, { alertaEnviado: texto })
+      .catch((e) => console.error(`kit-transferencia ${ctx.t.id}: marca do alerta não gravada: ${mensagem(e)}`));
+  }
   return { passo: ctx.t.passo, acao: 'reagendada', motivo };
 }
 

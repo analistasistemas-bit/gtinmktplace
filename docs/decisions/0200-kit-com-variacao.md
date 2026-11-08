@@ -165,7 +165,8 @@ e a saga resolveu sozinha 20 s depois; o texto ficou em `kit_transferencias.aler
   contados da intenção do CREATE ou de `alerta_desde` (primeiro registro do problema; avançar de passo zera). A
   janela de 5 min da busca vazia virou esta carência. Até 15 min (`BLOQUEIO_MS`) o texto é de espera ("… em espera
   (tentando de novo)" ou "Aguardando o Mercado Livre confirmar a pausa…"); depois, "bloqueada". Cada texto sai uma
-  vez (`alerta_enviado`). Travada, abortada, venda acima do saldo e repausa que falha seguem imediatos.
+  vez (`alerta_enviado`, gravado só depois do envio: falha na fila ou no Telegram reenvia na tentativa seguinte e
+  nunca vira "resolvido" falso). Travada, abortada, venda acima do saldo e repausa que falha seguem imediatos.
 - **Resolvido.** Concluída com `alerta_enviado` ganha "O alerta anterior desta transferência foi resolvido." no aviso
   de fim; tipos sem aviso de fim (entrada, cancelamento, guardar peças) ganham um aviso curto. Mesma chave
   `kit_fim:<transferência>` e mesma marca `aviso_fim_enviado_em`, gravada só depois do envio.

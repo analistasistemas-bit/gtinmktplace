@@ -1428,6 +1428,42 @@ describe('avancarSaga: alerta com carência (alarme falso de "bloqueada")', () =
     expect(c.s.t.alerta).toBeNull();
   });
 
+  it('fila que falha depois da carência não perde o alerta nem grava a marca (revisão Codex)', async () => {
+    const c = cenario();
+    await rodar(c, noPasso('conciliar'));
+    c.s.falhasImportacao = ['pedido 1: sem SKU'];
+    await passo(c);
+    c.s.agora += 4 * 60_000;
+    const enfileirar = c.deps.enfileirar;
+    let falhar = true;
+    c.deps.enfileirar = async (id, d) => { if (falhar) { falhar = false; throw new Error('QStash fora'); } return enfileirar(id, d); };
+    await passo(c);
+    expect(c.s.alertas).toEqual([]);
+    expect(c.s.t.alerta_enviado).toBeNull();
+    await passo(c);
+    expect(c.s.alertas).toHaveLength(1);
+    expect(c.s.t.alerta_enviado).toBe(c.s.alertas[0]);
+    await passo(c);
+    expect(c.s.alertas).toHaveLength(1);
+  });
+
+  it('Telegram que falha não grava a marca: a tentativa seguinte reenvia uma vez', async () => {
+    const c = cenario();
+    await rodar(c, noPasso('conciliar'));
+    c.s.falhasImportacao = ['pedido 1: sem SKU'];
+    await passo(c);
+    c.s.agora += 4 * 60_000;
+    let fora = true;
+    c.deps.alertar = async (texto) => { if (fora) throw new Error('telegram fora'); c.s.alertas.push(texto); };
+    await passo(c);
+    expect(c.s.t.alerta_enviado).toBeNull();
+    fora = false;
+    await passo(c);
+    await passo(c);
+    expect(c.s.alertas).toHaveLength(1);
+    expect(c.s.t.alerta_enviado).toBe(c.s.alertas[0]);
+  });
+
   it('travada continua alertando na hora, sem carência', async () => {
     const c = cenario();
     c.s.ups['UP-P'].locais = ['selling_address', 'warehouse'];
