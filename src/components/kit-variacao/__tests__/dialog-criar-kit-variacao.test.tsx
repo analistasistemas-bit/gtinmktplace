@@ -26,9 +26,11 @@ const familia = {
 vi.mock('@/hooks/useFamilia', () => ({ useFamilia: () => familia }));
 const modulos = { data: ['kit_variacao'] as string[] };
 vi.mock('@/hooks/useModulosHabilitados', () => ({ useModulosHabilitados: () => modulos }));
+const sim = { pode: true, preco: undefined as number | undefined };
 vi.mock('@/components/kit-variacao/simulador-kit', () => ({
-  SimuladorKit: ({ onPodeSeguir }: { onPodeSeguir?: (p: boolean) => void }) => {
-    onPodeSeguir?.(true);
+  SimuladorKit: ({ onPodeSeguir, preco }: { onPodeSeguir?: (p: boolean) => void; preco: number }) => {
+    sim.preco = preco;
+    onPodeSeguir?.(sim.pode);
     return <div>simulador</div>;
   },
 }));
@@ -61,7 +63,7 @@ async function montar(user: ReturnType<typeof userEvent.setup>, cores: string[],
 }
 
 describe('DialogCriarKitVariacao', () => {
-  beforeEach(() => { modulos.data = ['kit_variacao']; });
+  beforeEach(() => { modulos.data = ['kit_variacao']; sim.pode = true; });
 
   it('as combinações mudam com as cores marcadas', async () => {
     const user = userEvent.setup();
@@ -461,5 +463,47 @@ describe('DialogCriarKitVariacao', () => {
       await user.type(screen.getByLabelText('Título'), ' G');
       expect(screen.getByRole('button', { name: 'Próximo' })).toBeEnabled();
     });
+  });
+
+  async function irParaConferir(user: ReturnType<typeof userEvent.setup>) {
+    await montar(user, ['Preto', 'Branco'], { 'Preto e Branco M': '1' });
+    await user.click(screen.getByRole('button', { name: 'Próximo' }));
+    await user.click(screen.getByRole('button', { name: /Gerar título e descrição/ }));
+    await screen.findByDisplayValue('Kit 2 Blusas Canelada');
+    await user.upload(screen.getByLabelText('Foto Preto e Branco'), new File(['x'], 'pb.jpg', { type: 'image/jpeg' }));
+    await user.click(screen.getByRole('button', { name: 'Próximo' }));
+  }
+
+  it('o preço editado na etapa 3 é o mesmo da etapa 2 e vai ao simulador', async () => {
+    const user = userEvent.setup();
+    abrir();
+    await irParaConferir(user);
+    const campo = screen.getByLabelText('Preço do kit');
+    expect(campo).toHaveValue('99.80'); // sugestão: soma dos preços unitários
+    await user.clear(campo);
+    await user.type(campo, '120,50');
+    expect(sim.preco).toBe(120.5);
+    await user.click(screen.getByRole('button', { name: 'Voltar' }));
+    expect(screen.getByLabelText('Preço do kit')).toHaveValue('120,50');
+  });
+
+  it('preço zero ou vazio na etapa 3 bloqueia "Criar kit"', async () => {
+    const user = userEvent.setup();
+    abrir();
+    await irParaConferir(user);
+    expect(screen.getByRole('button', { name: 'Criar kit' })).toBeEnabled();
+    await user.clear(screen.getByLabelText('Preço do kit'));
+    expect(screen.getByRole('button', { name: 'Criar kit' })).toBeDisabled();
+    await user.type(screen.getByLabelText('Preço do kit'), '0');
+    expect(screen.getByRole('button', { name: 'Criar kit' })).toBeDisabled();
+    expect(screen.queryByText(/NaN/)).toBeNull();
+  });
+
+  it('"Criar kit" segue o simulador (desabilitado enquanto ele não libera)', async () => {
+    sim.pode = false;
+    const user = userEvent.setup();
+    abrir();
+    await irParaConferir(user);
+    expect(screen.getByRole('button', { name: 'Criar kit' })).toBeDisabled();
   });
 });

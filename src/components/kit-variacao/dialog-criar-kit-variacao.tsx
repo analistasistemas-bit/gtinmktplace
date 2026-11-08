@@ -511,9 +511,17 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
               <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs">
                 <p><span className="font-medium">{titulo}</span></p>
                 <p className="text-muted-foreground">
-                  {fmtBRL(precoNum)} · {quantidades.length} {quantidades.length === 1 ? 'anúncio' : 'anúncios'} · {totalKits} kits
+                  {precoNum > 0 && `${fmtBRL(precoNum)} · `}{quantidades.length} {quantidades.length === 1 ? 'anúncio' : 'anúncios'} · {totalKits} kits
                   {soEmKit && ` · Vender só em kit, meta ${metaNum}`}
                 </p>
+              </div>
+              {/* Mesmo estado `preco` da etapa 2: editar aqui é editar lá, e o simulador recota (ADR-0200). */}
+              <div className="grid gap-1 text-sm sm:max-w-xs">
+                <label htmlFor="kv-preco" className="font-medium">Preço do kit</label>
+                <Input
+                  id="kv-preco" aria-label="Preço do kit" inputMode="decimal" value={preco} disabled={criar.isPending}
+                  onChange={(e) => setPreco(e.target.value)} className="h-9 tabular-nums"
+                />
               </div>
               <SimuladorKit
                 familiaBaseId={familiaBaseId} cores={marcadas} pecas={pecas} quantidades={quantidades}
@@ -539,7 +547,7 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
             ) : (
               <>
                 <Button variant="outline" disabled={criar.isPending} onClick={() => setEtapa('anuncio')}>Voltar</Button>
-                <Button disabled={!podeSeguir || criar.isPending} onClick={() => criar.mutate()}>
+                <Button disabled={!(precoNum > 0) || !podeSeguir || criar.isPending} onClick={() => criar.mutate()}>
                   {criar.isPending ? 'Criando…' : 'Criar kit'}
                 </Button>
               </>
