@@ -208,6 +208,8 @@ function chain(table: string, state: {
   existentesVariacoes: Record<string, unknown>[];
   liveKits: { id: string; codigo_pai: string; kit_multiplicador: number }[];
   inserts: { familias: Record<string, unknown>[]; variacoes: Record<string, unknown>[] };
+  participantes?: string[];
+  lidasKit?: string[];
 }) {
   type Filtro = { op: 'eq' | 'in' | 'not' | 'is'; val: unknown };
   const rec: { op?: string; filters: Record<string, Filtro>; payload?: unknown } = { filters: {} };
@@ -263,6 +265,13 @@ function chain(table: string, state: {
       if ('codigo' in f) return { data: [], error: null }; // codigosJaUsados
       return { data: [], error: null };
     }
+    // ADR-0197: participantes de kit com variação (componentes) — e quem leu as tabelas.
+    if (table === 'kit_variacao_skus' || table === 'kit_variacao_componentes') {
+      state.lidasKit?.push(table);
+      const pedidos = (f.codigo?.val ?? []) as string[];
+      const lista = table === 'kit_variacao_componentes' ? state.participantes ?? [] : [];
+      return { data: lista.filter((c) => pedidos.includes(c)).map((codigo) => ({ codigo })), error: null };
+    }
     if (table === 'lotes') {
       if (rec.op === 'insert') { state.inserts.lotes.push(rec.payload as Record<string, unknown>); return { data: { id: 'lote-1' }, error: null }; }
       return { data: null, error: null };
@@ -287,6 +296,9 @@ function depsFake(opts: {
   faltantesBase?: string[];
   // ncm_consultar (ADR-0187): default vigente.
   ncm?: 'vigente' | 'vencido' | 'inexistente' | 'erro';
+  // ADR-0197: módulo kit_variacao embutido na leitura da base e SKUs em composição.
+  kitModulo?: boolean;
+  participantes?: string[];
 } = {}) {
   const {
     custo = 10, peso_gramas: pesoGramas = 100, mlItemId = null,
@@ -303,6 +315,7 @@ function depsFake(opts: {
     atributos_ml: atributosMlBase,
     kit_base_codigo_pai: null, kit_multiplicador: null, ml_item_id: mlItemId, marca: marcaBase,
     ...(opts.faltantesBase ? { atributos_faltantes: opts.faltantesBase } : {}),
+    organizations: { modulos_habilitados: opts.kitModulo ? ['estoque', 'kit_variacao'] : ['estoque'] },
   });
   const baseVariacoes = Array.from({ length: qtdVariacoes }, (_, i) => linhaVariacaoCheia({
     id: `bv${i}`, familia_id: BASE_ID, org_id: 'org-1', user_id: 'user-1',
@@ -327,6 +340,8 @@ function depsFake(opts: {
     baseFamilia, baseVariacoes, existentesFamilias, existentesVariacoes,
     liveKits: [] as { id: string; codigo_pai: string; kit_multiplicador: number }[],
     inserts,
+    participantes: opts.participantes ?? [],
+    lidasKit: [] as string[],
   };
   let proximoCodigo = 20;
 
@@ -366,7 +381,7 @@ function depsFake(opts: {
     llm: llm as never,
   };
 
-  return { deps, inserts, enfileirados, admin };
+  return { deps, inserts, enfileirados, admin, state };
 }
 
 describe('criarKitsVinculados', () => {
@@ -440,6 +455,31 @@ describe('criarKitsVinculados', () => {
       familiaBaseId: 'f-base', kits: [kitPadrao(2)],
     });
     expect(enfileirados.publicarFamilias).toEqual(0);
+  });
+
+  // ADR-0197: peça de kit com variação não pode ganhar outra oferta fora da transferência.
+  it('base em kit com variação é recusada antes de lote, família ou código', async () => {
+    const { deps, inserts, admin } = depsFake({ kitModulo: true, participantes: ['00000001'] });
+    const r = await criarKitsVinculados(deps, { familiaBaseId: 'f-base', kits: [kitPadrao(2)] });
+    expect(r).toMatchObject({ ok: false, motivo: 'base_em_kit_variacao' });
+    expect(inserts.lotes).toEqual([]);
+    expect(inserts.familias).toEqual([]);
+    expect(admin.rpc).not.toHaveBeenCalledWith('proximo_codigo_produto', expect.anything());
+  });
+
+  it('kit com módulo e base fora de kit segue; família do kit não leva o embed do módulo', async () => {
+    const { deps, inserts, state } = depsFake({ kitModulo: true, participantes: ['99999999'] });
+    const r = await criarKitsVinculados(deps, { familiaBaseId: 'f-base', kits: [kitPadrao(2)] });
+    expect(r.ok).toEqual(true);
+    expect(state.lidasKit).toEqual(['kit_variacao_skus', 'kit_variacao_componentes']);
+    expect(inserts.familias[0]).not.toHaveProperty('organizations');
+  });
+
+  it('org sem o módulo: nenhuma leitura de tabela de kit', async () => {
+    const { deps, state } = depsFake({ participantes: ['00000001'] });
+    const r = await criarKitsVinculados(deps, { familiaBaseId: 'f-base', kits: [kitPadrao(2)] });
+    expect(r.ok).toEqual(true);
+    expect(state.lidasKit).toEqual([]);
   });
 
   it('base com mais de uma variação é recusada (escopo v1)', async () => {

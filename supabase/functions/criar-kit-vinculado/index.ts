@@ -32,6 +32,7 @@ const STATUS_POR_MOTIVO: Record<string, number> = {
   base_sem_variacao: 409,
   base_multivariacao: 409,
   base_e_kit: 409,
+  base_em_kit_variacao: 409,
   base_sem_custo: 400,
   base_sem_peso: 400,
   base_sem_categoria: 400,

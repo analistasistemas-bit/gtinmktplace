@@ -38,6 +38,7 @@ const STATUS_POR_MOTIVO: Record<MotivoCriarKitVirtual, number> = {
   foto_obrigatoria: 400,
   falha_leitura: 500,
   fiscal_componente: 400,
+  componente_em_kit_variacao: 409,
   // Outra chamada está no meio do CREATE desta mesma chave — conflito, não erro do operador.
   em_andamento: 409,
   falha_criar_kit: 500,

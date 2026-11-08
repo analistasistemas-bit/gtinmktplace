@@ -12,6 +12,7 @@ import {
   removerComposicaoUP, type PortasRemocao, type FilhoComp, type ResultadoRemocaoUP,
 } from '../_shared/user-products/remover-composicao.ts';
 import { STATUS_KIT_VIVO } from '../_shared/estoque/kit.ts';
+import { EMBED_MODULOS, kitLigado, skusParticipantes } from '../_shared/kit-variacao/politica.ts';
 
 export interface RemoverPublicadoInput {
   familiaId: string;
@@ -48,6 +49,10 @@ export type ResultadoRemocao =
    *  espelha `kit_vinculado_ativo` acima; a trigger `familias_bloquear_remocao_componente_kit_virtual`
    *  (migration 20260906140450) é a última linha, esta é a mensagem clara ANTES da mutação. */
   | { tipo: 'kit_virtual_publicado'; kits: string[] }
+  /** ADR-0197: Remover apagaria saldo e composição de SKU em kit com variação (exclusão física bloqueada). */
+  | { tipo: 'kit_com_variacao'; skus: string[] }
+  /** ADR-0197: republicar com transferência de kit aberta — o vínculo que ela usa não pode sumir. */
+  | { tipo: 'kit_em_transferencia' }
   /** ADR-0168: sold_quantity > 0 em qualquer MLB do codigo_pai — zero mutação ML, zero delete local. */
   | { tipo: 'tem_movimentacao' }
   /** ADR-0185: a cópia vigente do produto ainda está sendo processada/publicada — espera e repete. */
@@ -151,7 +156,7 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
   const { familiaId, orgId, canal } = input;
 
   const { data: alvo, error: alvoErr } = await admin.from('familias')
-    .select('id, lote_id, codigo_pai, ml_item_id, org_id, kit_multiplicador, status')
+    .select(`id, lote_id, codigo_pai, ml_item_id, org_id, kit_multiplicador, status, ${EMBED_MODULOS}`)
     .eq('id', familiaId).eq('org_id', orgId).maybeSingle();
   if (alvoErr) throw new Error(`remover-publicado: consultar família falhou: ${alvoErr.message}`);
   if (!alvo) return { tipo: 'nao_encontrada' };
@@ -209,6 +214,25 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
         tipo: 'kit_vinculado_ativo',
         kits: [...porPai].map(([codigoPai, multiplicador]) => ({ codigoPai, multiplicador })),
       };
+    }
+  }
+
+  // ADR-0197: SKU de qualquer cópia do pai em kit com variação. Antes de qualquer mutação no ML. Remover
+  // recusa sempre (spec, item 15); republicar só com transferência aberta — pré-checagem pela exclusão
+  // que a transferência segura, e a RPC confere de novo sob lock. Org sem o módulo não consulta nada.
+  if (kitLigado(alvo)) {
+    const { data: copias, error: copiasErr } = await admin.from('familias')
+      .select('variacoes(codigo)').eq('org_id', alvo.org_id).eq('codigo_pai', alvo.codigo_pai);
+    if (copiasErr) throw new Error(`remover-publicado: consultar SKUs do produto falhou: ${copiasErr.message}`);
+    const codigos = [...new Set(((copias ?? []) as Array<{ variacoes?: Array<{ codigo: string }> }>)
+      .flatMap((f) => (f.variacoes ?? []).map((v) => v.codigo)))];
+    const participantes = [...await skusParticipantes(admin, alvo.org_id as string, codigos, true)].sort();
+    if (participantes.length > 0 && !input.preservarFamilia) return { tipo: 'kit_com_variacao', skus: participantes };
+    if (participantes.length > 0) {
+      const { data: emTransferencia, error: exErr } = await admin.from('kit_exclusoes').select('codigo')
+        .eq('org_id', alvo.org_id).eq('dono_tipo', 'transferencia').in('codigo', participantes);
+      if (exErr) throw new Error(`remover-publicado: consultar transferências de kit falhou: ${exErr.message}`);
+      if ((emTransferencia ?? []).length > 0) return { tipo: 'kit_em_transferencia' };
     }
   }
 
@@ -369,6 +393,7 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
       if (motivo === 'nao_publicada') return { tipo: 'nao_publicada' };
       if (motivo === 'nao_encontrada') return { tipo: 'nao_encontrada' };
       if (motivo === 'em_processamento') return { tipo: 'em_processamento' };
+      if (motivo === 'kit_em_transferencia') return { tipo: 'kit_em_transferencia' };
       throw new Error(`remover-publicado: preparar republicação falhou: ${prepErr.message}`);
     }
     const linha = (Array.isArray(prep) ? prep[0] : prep) as { familia_id: string; lote_id: string; lotes_afetados: string[] | null };

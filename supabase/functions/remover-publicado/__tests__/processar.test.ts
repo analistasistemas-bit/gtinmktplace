@@ -1296,3 +1296,79 @@ describe('removerPublicado — precheck em_processamento no fallback UP (revisã
     expect(rpcs).toEqual([]);
   });
 });
+
+describe('removerPublicado — SKU em kit com variação (ADR-0197, Task 7)', () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  const ALVO_KIT = {
+    id: 'fam-1', lote_id: 'lote-40', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG,
+    organizations: { modulos_habilitados: ['kit_variacao'] },
+  };
+  // familias: alvo, em_voo, kits vinculados, cópias do pai (códigos de todas as cópias).
+  const cenario = (exclusoes: unknown[]) => fakeAdmin({
+    familias: [ALVO_KIT, [], [], [{ variacoes: [{ codigo: '00012346' }] }, { variacoes: [{ codigo: '00012347' }] }]],
+    kit_variacao_skus: [[]],
+    kit_variacao_componentes: [[{ codigo: '00012347' }]],
+    kit_exclusoes: [exclusoes],
+    anuncios_externos: [[{ id: 'ext-1', mudando_composicao: false }], [{ mudando_composicao: false }]],
+    anuncios_externos_itens: [[]],
+  });
+
+  it('Remover destrutivo com participante (qualquer cópia): recusa antes de qualquer chamada ao ML', async () => {
+    const fetchFake = vi.fn();
+    vi.stubGlobal('fetch', fetchFake);
+    const { admin, deletes, updates, rpcs } = cenario([]);
+    const r = await removerPublicado({ admin, ctx: CTX, conexao: CONEXAO }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    expect(r).toEqual({ tipo: 'kit_com_variacao', skus: ['00012347'] });
+    expect(fetchFake).not.toHaveBeenCalled();
+    expect(deletes).toEqual([]);
+    expect(updates).toEqual([]);
+    expect(rpcs).toEqual([]);
+  });
+
+  it('republicar com transferência aberta: recusa antes de pausar no ML', async () => {
+    const fetchFake = vi.fn();
+    vi.stubGlobal('fetch', fetchFake);
+    const { admin, rpcs } = cenario([{ codigo: '00012347' }]);
+    const r = await removerPublicado(
+      { admin, ctx: CTX, conexao: CONEXAO },
+      { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
+    );
+    expect(r).toEqual({ tipo: 'kit_em_transferencia' });
+    expect(fetchFake).not.toHaveBeenCalled();
+    expect(rpcs).toEqual([]);
+  });
+
+  it('republicar sem transferência segue; a RPC é a autoridade (transferência aberta depois da checagem)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (_u: string, o?: { method?: string }) => (o?.method === 'PUT'
+      ? new Response('{}', { status: 200 })
+      : new Response(JSON.stringify({ status: 'paused' }), { status: 200 }))));
+    const { admin } = cenario([]);
+    (admin as { rpc: unknown }).rpc = async () => ({ data: null, error: { message: 'republicar:kit_em_transferencia' } });
+    const r = await removerPublicado(
+      { admin, ctx: CTX, conexao: CONEXAO },
+      { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
+    );
+    expect(r).toEqual({ tipo: 'kit_em_transferencia' });
+  });
+
+  it('org sem o módulo: nenhuma consulta de kit (as filas das tabelas de kit ficam intactas)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ status: 'paused' }), { status: 200 })));
+    const filas: Record<string, unknown[]> = {
+      familias: [{ ...ALVO_KIT, organizations: { modulos_habilitados: [] } }, [], []],
+      kit_variacao_skus: [['nao-lido']],
+      kit_variacao_componentes: [['nao-lido']],
+      kit_exclusoes: [['nao-lido']],
+      anuncios_externos: [[{ id: 'ext-1', mudando_composicao: false }], [{ mudando_composicao: false }]],
+      anuncios_externos_itens: [[]],
+    };
+    const { admin } = fakeAdmin(filas);
+    const r = await removerPublicado(
+      { admin, ctx: CTX, conexao: CONEXAO },
+      { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
+    );
+    expect(r.tipo).toBe('preservada');
+    expect([filas.kit_variacao_skus, filas.kit_variacao_componentes, filas.kit_exclusoes])
+      .toEqual([[['nao-lido']], [['nao-lido']], [['nao-lido']]]);
+  });
+});

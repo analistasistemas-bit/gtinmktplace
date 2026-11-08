@@ -99,6 +99,17 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
           + 'Encerre o kit no Mercado Livre antes de remover ou republicar este produto.',
       }, 409);
     }
+    case 'kit_com_variacao':
+      await auditarOperacaoSuporte(admin, context, target, 'denied');
+      return json({
+        erro: `SKU deste produto faz parte de kit com variação (${r.skus.join(', ')}). `
+          + 'Remover apagaria o saldo e a composição do kit. Use Republicar. Nada foi alterado.',
+      }, 409);
+    case 'kit_em_transferencia':
+      await auditarOperacaoSuporte(admin, context, target, 'denied');
+      return json({
+        erro: 'SKU deste produto está em transferência de kit com variação. Aguarde terminar e tente de novo — nada foi alterado.',
+      }, 409);
     case 'tem_movimentacao':
       await auditarOperacaoSuporte(admin, context, target, 'denied');
       return json({

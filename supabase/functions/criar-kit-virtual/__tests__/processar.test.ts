@@ -737,3 +737,78 @@ describe('criarKitVirtual — gate fiscal dos componentes (A8)', () => {
     expect(gateMock).not.toHaveBeenCalled();
   });
 });
+
+// ── ADR-0197 (Task 7): peça de kit com variação não entra em Kit Virtual ─────────────────────
+
+/**
+ * Admin que embute o módulo na linha do kit (`organizations(modulos_habilitados)`) e atende as leituras do
+ * guard: `anuncios_externos_itens` (UP → SKU) e as tabelas de kit. Registra cada leitura nova.
+ */
+function adminKit(st: EstadoFake, o: { modulos: string[]; skuPorUp: Record<string, string>; componentes: string[] }) {
+  const base = fakeAdmin(st);
+  const leituras: string[] = [];
+  const admin = {
+    from: (tabela: string) => {
+      if (tabela === 'kits_virtuais') {
+        const c = base.from(tabela) as unknown as Record<string, unknown>;
+        const embutir = (r: { data: unknown; error: unknown }) => ({
+          ...r, data: r.data ? { ...(r.data as object), organizations: { modulos_habilitados: o.modulos } } : r.data,
+        });
+        const single = c.single as () => Promise<{ data: unknown; error: unknown }>;
+        const maybeSingle = c.maybeSingle as () => Promise<{ data: unknown; error: unknown }>;
+        c.single = () => single().then(embutir);
+        c.maybeSingle = () => maybeSingle().then(embutir);
+        return c;
+      }
+      if (!['anuncios_externos_itens', 'kit_variacao_skus', 'kit_variacao_componentes'].includes(tabela)) return base.from(tabela);
+      leituras.push(tabela);
+      let lista: string[] = [];
+      const chain: Record<string, unknown> = {
+        select: () => chain,
+        eq: () => chain,
+        in: (_col: string, vals: string[]) => { lista = vals; return chain; },
+        then: (ok: (v: unknown) => unknown) => Promise.resolve({
+          data: tabela === 'anuncios_externos_itens'
+            ? lista.filter((up) => o.skuPorUp[up]).map((up) => ({ sku: o.skuPorUp[up] }))
+            : tabela === 'kit_variacao_componentes'
+              ? lista.filter((c) => o.componentes.includes(c)).map((codigo) => ({ codigo }))
+              : [],
+          error: null,
+        }).then(ok),
+      };
+      return chain;
+    },
+  } as unknown as SupabaseClient;
+  return { admin, leituras };
+}
+
+describe('criarKitVirtual — componente em kit com variação (ADR-0197)', () => {
+  it('componente sem `codigo` casa pelo user product do anúncio local: recusa, nada vai ao ML, lease liberado', async () => {
+    const st = novoEstado();
+    const criarKitML = vi.fn();
+    const { admin } = adminKit(st, { modulos: ['kit_variacao'], skuPorUp: { MLBU2: '00000002' }, componentes: ['00000002'] });
+    const r = await criarKitVirtual(
+      deps(st, { admin, criarKitML }),
+      inputPadrao({ componentes: [comp('MLBU1'), comp('MLBU2', { codigo: null, codigoPai: null })] }),
+    );
+    expect(r).toMatchObject({ ok: false, motivo: 'componente_em_kit_variacao' });
+    expect((r as { mensagem?: string }).mensagem).toContain('00000002');
+    expect(criarKitML).not.toHaveBeenCalled();
+    expect(st.ops).not.toContain('componentes.insert');
+    expect(st.kits[0].status).toBe('erro');
+  });
+
+  it('com o módulo e componentes fora de kit: segue', async () => {
+    const st = novoEstado();
+    const { admin, leituras } = adminKit(st, { modulos: ['kit_variacao'], skuPorUp: {}, componentes: [] });
+    expect(await criarKitVirtual(deps(st, { admin }), inputPadrao())).toMatchObject({ ok: true });
+    expect(leituras).toEqual(['anuncios_externos_itens', 'kit_variacao_skus', 'kit_variacao_componentes']);
+  });
+
+  it('org sem o módulo: nenhuma leitura nova', async () => {
+    const st = novoEstado();
+    const { admin, leituras } = adminKit(st, { modulos: [], skuPorUp: { MLBU2: '00000002' }, componentes: ['00000002'] });
+    expect(await criarKitVirtual(deps(st, { admin }), inputPadrao())).toMatchObject({ ok: true });
+    expect(leituras).toEqual([]);
+  });
+});

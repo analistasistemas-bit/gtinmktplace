@@ -14,6 +14,7 @@ import type { AtributoSchema } from '../_shared/categoria/schema.ts';
 import { derivarCodigos, codigosJaUsados } from '../_shared/produto/codigos.ts';
 import { gtinOuNull } from '../_shared/produto/gtin.ts';
 import { listarKitsVivos } from '../_shared/estoque/kit.ts';
+import { EMBED_MODULOS, kitLigado, skusParticipantes } from '../_shared/kit-variacao/politica.ts';
 import { mensagemNcm, ncmsInvalidos } from '../_shared/fiscal/ncm-oficial.ts';
 import { forcarMarcaDoProduto, marcaParaCriacao } from '../_shared/categoria/marca-org.ts';
 
@@ -94,6 +95,8 @@ export const STRIP_FAMILIA_KIT = [
   'capa3_storage_path', 'capa3_ml_picture_id',
   'atacado', 'atacado_status', 'atacado_erro',
   'kit_base_codigo_pai', 'kit_multiplicador',
+  // ADR-0197: embed do módulo na leitura da base, não é coluna.
+  'organizations',
   // I-2: promoção visual não confirmada no preview do kit (default false / nullable).
   'exibir_com_desconto', 'desconto_pct',
   // M-3: rastros de resultado do anúncio-base, sem sentido pro kit recém-criado.
@@ -338,7 +341,7 @@ export async function criarKitsVinculados(
   // 'pronto'/'erro' — mesmo padrão de `adicionar-variacoes-familia/index.ts:84-105`, que
   // RE-ENCADEIA em vez de devolver sucesso fabricado quando a família idempotente não
   // terminou de publicar).
-  const { data: base } = await admin.from('familias').select('*')
+  const { data: base } = await admin.from('familias').select(`*, ${EMBED_MODULOS}`)
     .eq('id', input.familiaBaseId).eq('org_id', orgId).maybeSingle();
   if (!base) return { ok: false, motivo: 'base_nao_encontrada' };
 
@@ -357,6 +360,19 @@ export async function criarKitsVinculados(
 
     // Kit de kit não existe.
     if (base.kit_multiplicador != null) return { ok: false, motivo: 'base_e_kit' };
+
+    // ADR-0197: peça de kit com variação só muda de oferta pela transferência; um kit vinculado daria a ela
+    // outra oferta fora desse controle. Org sem o módulo não consulta nada.
+    try {
+      if ((await skusParticipantes(admin, orgId, [baseVar.codigo as string], kitLigado(base))).size > 0) {
+        return {
+          ok: false, motivo: 'base_em_kit_variacao',
+          mensagem: 'Este produto faz parte de um kit com variação. Kit vinculado não pode usar a mesma peça.',
+        };
+      }
+    } catch (e) {
+      return { ok: false, motivo: 'falha_leitura', mensagem: e instanceof Error ? e.message : String(e) };
+    }
 
     // Custo alimenta markup (ADR-0055): nunca pode nascer 0 nem null.
     const custoBase = baseVar.custo == null ? null : Number(baseVar.custo);

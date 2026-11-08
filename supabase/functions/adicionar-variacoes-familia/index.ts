@@ -390,6 +390,9 @@ Deno.serve(async (req) => {
     // Mesma limpeza do famErr acima: lote dedicado sem família não deve sobrar na tela Lotes.
     await admin.from('lotes').delete().eq('id', loteId);
     await auditarOperacaoSuporte(admin, context, target, 'failed');
+    // ADR-0197: o trigger `variacoes_kit_saldo_copia` grava o saldo da cópia de SKU em kit com variação
+    // e recusa com transferência aberta — espera, não falha do sistema.
+    if (varErr.message.startsWith('sku_em_transferencia')) return json({ error: varErr.message }, 409);
     return json({ error: varErr.message }, 500);
   }
 

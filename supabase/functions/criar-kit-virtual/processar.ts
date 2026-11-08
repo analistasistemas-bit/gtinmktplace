@@ -19,6 +19,7 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import type { PayloadKitVirtual, RespostaKitML } from '../_shared/ml/kit-virtual.ts';
 import { moduloHabilitadoStrict } from '../_shared/produto/modulo.ts';
 import { exigirFiscalCompletoSePreciso, type FamiliaFiscalRow } from '../_shared/fiscal/gate.ts';
+import { EMBED_MODULOS, kitLigado, skusParticipantes } from '../_shared/kit-variacao/politica.ts';
 
 export interface ComponenteKitVirtual {
   userProductId: string;
@@ -74,6 +75,7 @@ export type MotivoCriarKitVirtual =
   | 'foto_obrigatoria'
   | 'falha_leitura'
   | 'fiscal_componente'
+  | 'componente_em_kit_variacao'
   | 'em_andamento'
   | 'falha_criar_kit'
   | 'falha_componentes'
@@ -105,7 +107,8 @@ interface LinhaKit {
   atualizado_em: string;
 }
 
-const COLUNAS_KIT = 'id, status, ml_item_id, ml_user_product_id, ml_permalink, foto_storage_path, foto_ml_picture_id, listing_type_id, atualizado_em';
+// ADR-0197: o módulo da org vem embutido na leitura do kit (org sem `kit_variacao` não consulta nada a mais).
+const COLUNAS_KIT = `id, status, ml_item_id, ml_user_product_id, ml_permalink, foto_storage_path, foto_ml_picture_id, listing_type_id, atualizado_em, ${EMBED_MODULOS}`;
 
 /**
  * Lease de `status='publicando'`: acima disso a linha é considerada abandonada (a Edge Function
@@ -362,6 +365,34 @@ async function recusaFiscalComponentes(
   }
 }
 
+/**
+ * ADR-0197: peça de kit com variação só muda de oferta pela transferência; o Kit Virtual daria a ela outra
+ * oferta fora desse controle. `codigo` do componente é best-effort (D-12), então o SKU também sai do user
+ * product do anúncio local. Falha de leitura recusa (`falha_leitura`).
+ */
+async function recusaKitVariacao(
+  deps: CriarKitVirtualDeps, componentes: ComponenteKitVirtual[], ligado: boolean,
+): Promise<{ motivo: 'componente_em_kit_variacao' | 'falha_leitura'; mensagem: string } | null> {
+  if (!ligado) return null;
+  try {
+    const { data, error } = await deps.admin.from('anuncios_externos_itens').select('sku')
+      .eq('org_id', deps.orgId).in('user_product_id', componentes.map((c) => c.userProductId));
+    if (error) throw new Error(`anuncios_externos_itens: ${error.message}`);
+    const codigos = [...new Set([
+      ...componentes.map((c) => c.codigo).filter((c): c is string => !!c),
+      ...(data ?? []).map((r) => r.sku as string),
+    ])];
+    const emKit = [...await skusParticipantes(deps.admin, deps.orgId, codigos, true)].sort();
+    if (emKit.length === 0) return null;
+    return {
+      motivo: 'componente_em_kit_variacao',
+      mensagem: `${emKit.join(', ')} faz(em) parte de kit com variação: o Kit Virtual não pode usar a mesma peça.`,
+    };
+  } catch (e) {
+    return { motivo: 'falha_leitura', mensagem: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export async function criarKitVirtual(
   deps: CriarKitVirtualDeps, input: CriarKitVirtualInput,
 ): Promise<ResultadoCriarKitVirtual> {
@@ -430,6 +461,13 @@ export async function criarKitVirtual(
       mlPermalink: kit.ml_permalink,
       jaExistia: true,
     };
+  }
+
+  // ── 1a. Kit com variação (ADR-0197): mesmo ponto e mesma liberação de lease do fiscal ────────
+  const recusaKit = await recusaKitVariacao(deps, input.componentes, kitLigado(kit));
+  if (recusaKit) {
+    await marcarErro(deps, kit.id, recusaKit.mensagem);
+    return { ok: false, motivo: recusaKit.motivo, mensagem: recusaKit.mensagem, kitId: kit.id };
   }
 
   // ── 1b. Fiscal dos componentes (A8): DEPOIS do replay (kit já no ML não cria nada) e ANTES de
