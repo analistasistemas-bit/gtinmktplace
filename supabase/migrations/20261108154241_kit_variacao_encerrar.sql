@@ -270,28 +270,37 @@ create trigger kit_transferencias_guarda_encerrado
 
 -- Exclusão de SKU de kit encerrando/encerrado: só para transferência (a `encerrar`; as outras o trigger acima recusa).
 -- Publicação, ativação e republicação (`preparar_republicacao` insere a exclusão antes de apagar vínculos e virar
--- CREATE) são recusadas e desfazem a operação inteira.
--- AFTER INSERT: roda depois da espera pelo índice único (o BEFORE não é reexecutado na rechecagem), então quem esperou
--- a exclusão de um encerramento lê o status já commitado mesmo sem travar o kit.
-create or replace function public.kit_exclusoes_guarda_encerrado()
+-- CREATE) são recusadas e desfazem a operação inteira. Duas etapas:
+-- 1. BEFORE INSERT (publicação e ativação): trava o kit `for share` antes de pôr a linha, na mesma ordem do
+--    encerramento (kit, depois exclusão). Travar depois de inserir faria o ciclo "encerramento espera a exclusão,
+--    publicação espera o kit". A republicação não trava: ela segura `familias` FOR UPDATE, e `kit_variacao_adicionar`
+--    (kit FOR UPDATE, depois FK da variação nova na família) fecharia outro ciclo; contra o encerramento ela é
+--    serializada pela própria linha de exclusão.
+-- 2. AFTER INSERT (todos menos transferência): lê o status depois da espera pelo índice único (o BEFORE não é
+--    reexecutado na rechecagem; função volátil em READ COMMITTED lê o commit de quem ela esperou).
+create or replace function public.kit_exclusoes_trava_kit()
 returns trigger language plpgsql security definer set search_path = ''
 as $$
 begin
-  if new.dono_tipo = 'transferencia' then
-    return null;
-  end if;
-  -- Mesmo lock da guarda de transferência: espera o encerramento em curso e lê o status commitado. A republicação
-  -- não trava: ela segura `familias` FOR UPDATE, e `kit_variacao_adicionar` (kit FOR UPDATE, depois FK da variação
-  -- nova na família) fecharia um ciclo. Contra o encerramento, ela é serializada pela própria exclusão (os dois
-  -- disputam a mesma linha) e lê o status depois dessa espera (AFTER); se terminar antes, o encerramento sem vínculo
-  -- recusa (`sem_vinculo`).
-  if new.dono_tipo <> 'republicacao' then
+  if new.dono_tipo in ('publicacao', 'ativacao') then
     perform 1 from public.kits_variacao k
     where k.org_id = new.org_id
       and k.id in (select s.kit_id from public.kit_variacao_skus s where s.org_id = new.org_id and s.codigo = new.codigo)
     order by k.id for share;
   end if;
-  if exists (
+  return new;
+end $$;
+
+drop trigger if exists kit_exclusoes_trava_kit on public.kit_exclusoes;
+create trigger kit_exclusoes_trava_kit
+  before insert on public.kit_exclusoes
+  for each row execute procedure public.kit_exclusoes_trava_kit();
+
+create or replace function public.kit_exclusoes_guarda_encerrado()
+returns trigger language plpgsql security definer set search_path = ''
+as $$
+begin
+  if new.dono_tipo <> 'transferencia' and exists (
     select 1 from public.kit_variacao_skus s join public.kits_variacao k on k.id = s.kit_id and k.org_id = s.org_id
     where s.org_id = new.org_id and s.codigo = new.codigo and k.status in ('encerrando', 'encerrado')
   ) then
@@ -467,6 +476,7 @@ revoke all on function public.kit_encerrar_finalizar(uuid, uuid, uuid) from publ
 revoke all on function public.kits_variacao_guarda_encerrado() from public, anon, authenticated;
 revoke all on function public.kit_transferencias_guarda_encerrado() from public, anon, authenticated;
 revoke all on function public.kit_exclusoes_guarda_encerrado() from public, anon, authenticated;
+revoke all on function public.kit_exclusoes_trava_kit() from public, anon, authenticated;
 grant execute on function public.kit_encerrar_aplicar(uuid, uuid) to service_role;
 grant execute on function public.kit_variacao_encerrar(uuid, uuid, integer) to service_role;
 grant execute on function public.kit_encerrar_finalizar(uuid, uuid, uuid) to service_role;

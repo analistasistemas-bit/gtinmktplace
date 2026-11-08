@@ -59,7 +59,7 @@ corrida() {
   if echo "$B_OUT" | grep -q '40P01'; then falha "$nome: deadlock"; fi
 }
 
-# Kit n (n = 1..4): base 0997n000 (peças 0997n001 e 0997n002), kit 0998n000 com o SKU 0998n001 publicado (UP próprio).
+# Kit n (n = 1..5): base 0997n000 (peças 0997n001 e 0997n002), kit 0998n000 com o SKU 0998n001 publicado (UP próprio).
 kit() { echo "97600000-0000-0000-0000-00000000000$1"; }
 limpar
 trap limpar EXIT
@@ -72,7 +72,7 @@ psql_ -c "
   insert into public.lotes (id, user_id, org_id, status, origem) values ('$LOTE', '$USR', '$ORG', 'processando', 'planilha');
   insert into public.familias (lote_id, user_id, org_id, codigo_pai, nome_pai, operacao, origem, chave_cadastro, criado_em, ml_item_id, status)
   select '$LOTE', '$USR', '$ORG', p, p, 'CREATE', 'nacional', gen_random_uuid(), now() - interval '1 day', 'MLB' || p, 'publicado'
-  from (select '0997' || n || '000' p from generate_series(1, 4) n union all select '0998' || n || '000' from generate_series(1, 4) n) x;
+  from (select '0997' || n || '000' p from generate_series(1, 5) n union all select '0998' || n || '000' from generate_series(1, 5) n) x;
   insert into public.variacoes (familia_id, user_id, org_id, codigo, nome, cor, tamanho, preco, estoque)
   select f.id, '$USR', '$ORG', c, c, c, 'M', 50, 0
   from public.familias f
@@ -82,16 +82,16 @@ psql_ -c "
   where f.org_id = '$ORG';
   insert into public.kits_variacao (id, org_id, codigo_pai_base, codigo_pai_kit, pecas_por_kit, preco, status)
   select ('97600000-0000-0000-0000-00000000000' || n)::uuid, '$ORG', '0997' || n || '000', '0998' || n || '000', 2, 90, 'publicado'
-  from generate_series(1, 4) n;
+  from generate_series(1, 5) n;
   insert into public.kit_variacao_skus (id, org_id, kit_id, codigo, tamanho, cores, rotulo_cor)
   select ('97600000-0000-0000-0000-00000000010' || n)::uuid, '$ORG', ('97600000-0000-0000-0000-00000000000' || n)::uuid,
          '0998' || n || '001', 'M', array['A', 'B'], 'A + B'
-  from generate_series(1, 4) n;
+  from generate_series(1, 5) n;
   insert into public.kit_variacao_componentes (kit_sku_id, org_id, codigo, quantidade)
   select ('97600000-0000-0000-0000-00000000010' || n)::uuid, '$ORG', '0997' || n || p, 1
-  from generate_series(1, 4) n cross join (values ('001'), ('002')) x(p);
+  from generate_series(1, 5) n cross join (values ('001'), ('002')) x(p);
   insert into public.anuncios_externos (user_id, org_id, canal, codigo_pai, particao, status)
-  select '$USR', '$ORG', 'mercado_livre', '0998' || n || '000', 0, 'publicado' from generate_series(1, 4) n;
+  select '$USR', '$ORG', 'mercado_livre', '0998' || n || '000', 0, 'publicado' from generate_series(1, 5) n;
   insert into public.anuncios_externos_itens (anuncio_externo_id, org_id, sku, item_externo_id, user_product_id, status)
   select a.id, '$ORG', left(a.codigo_pai, 5) || '001', 'MLB-K' || substr(a.codigo_pai, 5, 1), 'UP-K' || substr(a.codigo_pai, 5, 1), 'pausado'
   from public.anuncios_externos a where a.org_id = '$ORG';
@@ -156,4 +156,12 @@ corrida "encerrar×republicação (sem vínculo)" \
   "insert into public.kit_exclusoes (org_id, codigo, dono_tipo, dono_id) values ('$ORG', '09984001', 'republicacao', gen_random_uuid())"
 echo "$B_OUT" | grep -q kit_encerrado || falha "republicação depois do encerramento devia recusar ($B_OUT)"
 [ "$(status_kit "$(kit 4)")" = encerrado ] || falha "kit 4 devia estar encerrado"
-echo "OK: 6 corridas sem deadlock"
+# 7. Encerrar × publicação (rodada 6 do Codex): A encerra o kit 5 (kit FOR UPDATE, depois exclusões) e segura; B pega a
+# exclusão de publicação do SKU do kit: a trava BEFORE espera o kit antes de pôr a linha (sem ciclo) e, depois do
+# commit, a linha da transferência `encerrar` já está lá: B recusa sem deadlock.
+corrida "encerrar×publicação" \
+  "select public.kit_variacao_encerrar('$ORG', '$(kit 5)', $(versao "$(kit 5)"))->>'ok'" \
+  "select public.kit_adquirir_exclusao('$ORG', array['09985001'], 'publicacao', gen_random_uuid())->>'ok'"
+[ "$B_OUT" = false ] || falha "encerrar×publicação: B devia recusar ($B_OUT)"
+[ "$(status_kit "$(kit 5)")" = encerrando ] || falha "kit 5 devia estar encerrando"
+echo "OK: 7 corridas sem deadlock"

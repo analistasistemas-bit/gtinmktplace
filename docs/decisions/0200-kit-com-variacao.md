@@ -205,8 +205,9 @@ kit de Publicados e devolve as peças da base ao estado Normal, sem apagar varia
    travam os kits envolvidos (`for share`, em ordem de id) antes de ler o status: quem esperou o `for update` de
    `kit_variacao_encerrar` lê o status já commitado, e nenhuma publicação nova passa no meio. Exceção: a exclusão da
    republicação não trava o kit (ela segura `familias` FOR UPDATE e `kit_variacao_adicionar` faz kit → família:
-   deadlock); contra o encerramento ela é serializada pela própria linha de exclusão, e a guarda de `kit_exclusoes`
-   é AFTER INSERT (roda depois da espera pelo índice único e lê o status já commitado); a republicação que termina
+   deadlock); contra o encerramento ela é serializada pela própria linha de exclusão. Em `kit_exclusoes` são duas
+   etapas: BEFORE INSERT trava o kit (publicação e ativação, na ordem kit → exclusão do encerramento) e AFTER INSERT
+   confere o status (roda depois da espera pelo índice único e lê o commit esperado); a republicação que termina
    antes deixa o kit sem vínculo, que o encerramento recusa.
    - `kits_variacao`: recusa sair de `encerrando`/`encerrado` (só `encerrando → encerrado`) e ligar
      `so_em_kit`/`reposicao_auto` (cobre ligar, adicionar com SKU novo, montar via gerenciar);
