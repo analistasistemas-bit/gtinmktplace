@@ -72,6 +72,8 @@ vi.mock('../../_shared/canais/registry.ts', () => ({
   getConnector: () => ({
     atualizarStatus: async (_c: unknown, id: string, status: string) => {
       f.eventos.push(`put:${id}:${status}`);
+      // O ML aplica o PUT aceito: a leitura seguinte vê o status novo (Task 14 só apaga o registro de item lido ativo).
+      if (f.put.ok) f.statusVivo = status;
       return f.put;
     },
   }),

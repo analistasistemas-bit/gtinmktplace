@@ -302,7 +302,8 @@ describe('prepararStatusOperador (Task 6: pausar/reativar pelo operador)', () =>
     const lidos: string[] = [];
     const r = await reativarPausaAutomatica(f.admin, {
       orgId: 'O', codigo: 'P1', itemId: 'MLB1',
-      lerStatus: async (id) => { lidos.push(id); return 'pausado'; },
+      // Fix 2: depois do PUT o item é lido ativo; a cópia de catálogo segue pausada.
+      lerStatus: async (id) => { lidos.push(id); return puts.includes(id) ? 'ativo' : 'pausado'; },
       putAtivo: async (id) => { puts.push(id); return { ok: true }; },
       alertar: async () => {},
     });
@@ -315,11 +316,40 @@ describe('prepararStatusOperador (Task 6: pausar/reativar pelo operador)', () =>
 
   it('Fix 1b: reativação confirmada do operador apaga o registro da pausa da automação daquele item', async () => {
     const f = falso(banco({ politicas: [pol()], pausas: [{ org_id: 'O', item_id: 'MLB1', codigo: 'P1' }, { org_id: 'O', item_id: 'MLB9', codigo: 'X' }] }));
-    const p = await preparar(f).r;
+    let ativado = false;
+    const p = await preparar(f, { lerStatus: async () => (ativado ? 'ativo' : 'pausado') }).r;
     if (!('concluir' in p)) throw new Error('recusou');
     expect(f.banco.pausas).toHaveLength(2);           // antes do PUT confirmado, nada sai
-    expect(await p.concluir({ ok: true })).toBe(true);
+    ativado = true;
+    expect((await p.concluir({ ok: true })).liberado).toBe(true);
     expect(f.banco.pausas).toEqual([{ org_id: 'O', item_id: 'MLB9', codigo: 'X' }]);
+  });
+
+  it('Fix 2 (P1): operador tenta reativar e o ML recusa (400): o registro fica, e a reposição ainda recupera', async () => {
+    const f = falso(banco({ politicas: [pol({ estado: 'sobra' })], pausas: [{ org_id: 'O', item_id: 'MLB1', codigo: 'P1' }] }));
+    const p = await preparar(f).r;   // leitura segue `pausado`
+    if (!('concluir' in p)) throw new Error('recusou');
+    const c = await p.concluir({ ok: false, erro: { status: 400 } });
+    expect(c.liberado).toBe(true);                    // exclusão sai (resultado definitivo)
+    expect(c.status).toMatchObject({ MLB1: 'pausado' });
+    expect(f.banco.pausas).toHaveLength(1);           // propriedade da pausa preservada
+    // A rodada seguinte reativa o registro que ficou.
+    const puts: string[] = [];
+    const r = await reativarPausaAutomatica(f.admin, {
+      orgId: 'O', codigo: 'P1', itemId: 'MLB1',
+      lerStatus: async (id) => (puts.includes(id) ? 'ativo' : 'pausado'),
+      putAtivo: async (id) => { puts.push(id); return { ok: true }; }, alertar: async () => {},
+    });
+    expect(r).toBe('reativado');
+  });
+
+  it('Fix 2 (P2): PUT aceito mas o item segue lido pausado: não conta como reativado (mantém e repete)', async () => {
+    const f = falso(banco({ politicas: [pol({ estado: 'sobra' })] }));
+    const r = await reativarPausaAutomatica(f.admin, {
+      orgId: 'O', codigo: 'P1', itemId: 'MLB1', lerStatus: async () => 'pausado',
+      putAtivo: async () => ({ ok: true }), alertar: async () => {},
+    });
+    expect(r).toBe('manter');
   });
 
   it('Fix 1b: item visto ativo ou inexistente na leitura: sem PUT, sem exclusão', async () => {
@@ -358,7 +388,7 @@ describe('prepararStatusOperador (Task 6: pausar/reativar pelo operador)', () =>
     expect(reiv).toMatchObject({ p_org: 'O', p_dono: dono, p_item: 'MLB1', p_alvos: ['MLB1', 'MLB1C'], p_codigos: ['P1'], p_prazo_s: 600 });
     expect(args(f, 'kit_adquirir_exclusao')[0]).toMatchObject({ p_codigos: ['P1'], p_dono_tipo: 'ativacao', p_dono_id: dono });
     expect(args(f, 'kit_politica_operador')[0]).toEqual({ p_org: 'O', p_codigos: ['P1'], p_bloquear: false, p_versoes: { P1: 4 } });
-    expect(await p.concluir({ ok: true })).toBe(true);
+    expect((await p.concluir({ ok: true })).liberado).toBe(true);
     expect(lidos).toEqual(['MLB1', 'MLB1', 'MLB1C']);   // pré-checagem + os dois alvos
     expect(args(f, 'kit_ativacao_liberar')).toEqual([{ p_org: 'O', p_dono: dono, p_geracao: reiv.p_geracao, p_apagar: true }]);
     expect(f.eventos).not.toContain('rpc:kit_soltar_exclusao');
@@ -379,7 +409,7 @@ describe('prepararStatusOperador (Task 6: pausar/reativar pelo operador)', () =>
     const [a, b] = args(f, 'kit_ativacao_reivindicar');
     expect(a.p_dono).toBe(b.p_dono);
     expect(a.p_geracao).not.toBe(b.p_geracao);
-    expect(await p1.concluir({ ok: true })).toBe(false);
+    expect((await p1.concluir({ ok: true })).liberado).toBe(false);
     expect(args(f, 'kit_ativacao_liberar')[0].p_geracao).toBe(a.p_geracao);
   });
 
@@ -387,7 +417,7 @@ describe('prepararStatusOperador (Task 6: pausar/reativar pelo operador)', () =>
     const f = falso(banco());
     const p = await preparar(f).r;
     if (!('concluir' in p)) throw new Error('recusou');
-    expect(await p.concluir({ ok: false, erro: { status: 400 } })).toBe(true);
+    expect((await p.concluir({ ok: false, erro: { status: 400 } })).liberado).toBe(true);
     expect(args(f, 'kit_ativacao_liberar')[0]).toMatchObject({ p_apagar: true });
   });
 
@@ -401,7 +431,7 @@ describe('prepararStatusOperador (Task 6: pausar/reativar pelo operador)', () =>
     const { r, alertas } = preparar(f);
     const p = await r;
     if (!('concluir' in p)) throw new Error('recusou');
-    expect(await p.concluir(put)).toBe(false);
+    expect((await p.concluir(put)).liberado).toBe(false);
     expect(args(f, 'kit_ativacao_liberar')).toEqual([]);
     expect(alertas).toEqual([expect.stringContaining('não foi confirmada')]);
   });
@@ -412,7 +442,7 @@ describe('prepararStatusOperador (Task 6: pausar/reativar pelo operador)', () =>
     const { r, alertas } = preparar(f, { lerStatus: async () => { if (++n === 3) throw new Error('ML 500'); return 'pausado'; } });
     const p = await r;
     if (!('concluir' in p)) throw new Error('recusou');
-    expect(await p.concluir({ ok: true })).toBe(false);
+    expect((await p.concluir({ ok: true })).liberado).toBe(false);
     expect(args(f, 'kit_ativacao_liberar')).toEqual([]);
     expect(alertas).toHaveLength(1);
   });

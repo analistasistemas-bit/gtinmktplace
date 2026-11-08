@@ -38,7 +38,7 @@ describe('depsStatus.prepararKit (massa) × leitura estrita', () => {
     const deps = depsStatus(admin(), { token: 'tok' } as never, { id: 'OP', org_id: 'O', acao: 'reativar' }, 'k', true);
     const p = await deps.prepararKit('MLB1', 'ativo');
     if (!('concluir' in p)) throw new Error(`recusou: ${JSON.stringify(p)}`);
-    expect(await p.concluir({ ok: true })).toBe(true);
+    expect((await p.concluir({ ok: true })).liberado).toBe(true);
     expect(m.estrita).toEqual(['tok:MLB1', 'tok:MLB1']);
     expect(m.frouxa).toEqual([]);
   });

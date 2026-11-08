@@ -115,12 +115,16 @@ const PRAZO_ATIVACAO_S = 600;
 /** Resultado do PUT de status (`ResultadoCanal`): `erro.status` ausente = sem resposta HTTP. */
 export interface ResultadoPutStatus { ok: boolean; erro?: { status?: number } }
 
-/** `concluir(resultado do PUT)`: true = exclusão liberada (resultado confirmado no ML). */
+/**
+ * `concluir(resultado do PUT)`: `liberado` = exclusão solta (resultado definitivo e todos os alvos lidos); `status` = o
+ * que cada alvo leu agora. Liberar não prova ativação: um 400 também libera. Ativo só pelo `status`.
+ */
+export interface Conclusao { liberado: boolean; status: Record<string, StatusAnuncioCanal | null> }
 export type PreparoStatus =
   /** `retentar`: espera (outra geração da ativação no prazo), não bloqueio definitivo. */
   | { recusa: string; retentar?: boolean }
-  | { criouBloqueio: boolean; concluir: (r: ResultadoPutStatus) => Promise<boolean> };
-const NADA: PreparoStatus = { criouBloqueio: false, concluir: () => Promise.resolve(true) };
+  | { criouBloqueio: boolean; concluir: (r: ResultadoPutStatus) => Promise<Conclusao> };
+const NADA: PreparoStatus = { criouBloqueio: false, concluir: () => Promise.resolve({ liberado: true, status: {} }) };
 
 export interface OpcoesStatusOperador {
   orgId: string;
@@ -183,7 +187,7 @@ export async function prepararStatusOperador(admin: SupabaseClient, o: OpcoesSta
 
   if (o.alvo === 'pausado') {
     const r = await politicaOperador(admin, orgId, codigos, true, { origem: o.origem });
-    return { criouBloqueio: r.criou, concluir: () => Promise.resolve(true) };
+    return { criouBloqueio: r.criou, concluir: () => Promise.resolve({ liberado: true, status: {} }) };
   }
 
   const politicas = await lerPoliticas(admin, orgId, codigos);
@@ -245,20 +249,23 @@ export async function prepararStatusOperador(admin: SupabaseClient, o: OpcoesSta
     async concluir(r) {
       if (!ambiguo(r)) {
         try {
-          for (const id of alvos) await o.lerStatus(id);   // lança = resultado não confirmado
+          const status: Record<string, StatusAnuncioCanal | null> = {};
+          for (const id of alvos) status[id] = await o.lerStatus(id);   // lança = resultado não confirmado
           if (await liberar(true)) {
-            // Task 14: o operador reativou; a pausa da automação deste item deixa de existir. Uma pausa posterior
-            // (inclusive fora do app) nunca é desfeita pela reposição. Falha aqui só loga: a rodada que vir o item
-            // ativo também apaga o registro.
-            if (!o.automatico) {
-              const { error: ep } = await admin.from('kit_pausas_automaticas').delete().eq('org_id', orgId).in('item_id', alvos);
+            // Task 14: item LIDO ativo depois da reativação do operador perde o registro de pausa da automação; uma
+            // pausa posterior (inclusive fora do app) nunca é desfeita pela reposição. Recusa (400) ou leitura
+            // pausada mantém o registro: a reposição ainda recupera. Falha aqui só loga: a rodada que vir o item
+            // ativo também apaga.
+            const ativos = alvos.filter((id) => status[id] === 'ativo');
+            if (!o.automatico && ativos.length > 0) {
+              const { error: ep } = await admin.from('kit_pausas_automaticas').delete().eq('org_id', orgId).in('item_id', ativos);
               if (ep) console.error('kit_pausa_registro_nao_apagado', orgId, mlItemId, ep.message);
             }
-            return true;
+            return { liberado: true, status };
           }
           // Outra geração assumiu (prazo vencido): ela confirma e libera.
           console.error('kit_ativacao_geracao_perdida', orgId, mlItemId, geracao);
-          return false;
+          return { liberado: false, status };
         } catch (e) {
           console.error('kit_ativacao_sem_confirmacao', orgId, mlItemId, String(e));
         }
@@ -266,7 +273,7 @@ export async function prepararStatusOperador(admin: SupabaseClient, o: OpcoesSta
       await o.alertar(`Kit com variação: a reativação de ${mlItemId} (${codigos.join(', ')}) não foi confirmada no `
         + 'Mercado Livre. O SKU segue reservado: confira o anúncio e clique em Reativar de novo.')
         .catch((e) => console.error('kit_ativacao_alerta_falhou', orgId, mlItemId, String(e)));
-      return false;
+      return { liberado: false, status: {} };
     },
   };
 }

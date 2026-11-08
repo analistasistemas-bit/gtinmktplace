@@ -9,7 +9,7 @@
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import type { StatusAnuncioCanal } from '../canais/contrato.ts';
 import {
-  lerPoliticas, MSG_KIT_MODERADO, podeReativar, prepararStatusOperador, type ResultadoPutStatus,
+  type Conclusao, lerPoliticas, MSG_KIT_MODERADO, podeReativar, prepararStatusOperador, type ResultadoPutStatus,
 } from './politica.ts';
 
 export type EstadoSku = 'normal' | 'guardado' | 'sobra';
@@ -377,13 +377,14 @@ export async function reativarPausaAutomatica(admin: SupabaseClient, o: {
   });
   if ('recusa' in prep) return prep.recusa === MSG_KIT_MODERADO ? 'abandonar' : 'manter';
   let r: ResultadoPutStatus = { ok: false };   // exceção = ambíguo
-  let confirmado = false;
+  let c: Conclusao = { liberado: false, status: {} };
   try {
     r = await o.putAtivo(o.itemId);
   } finally {
-    confirmado = await prep.concluir(r);
+    c = await prep.concluir(r);
   }
-  if (r.ok) return confirmado ? 'reativado' : 'manter';
+  // Reativado só com o item LIDO ativo depois do PUT; resposta ok com leitura pausada repete.
+  if (r.ok) return c.liberado && c.status[o.itemId] === 'ativo' ? 'reativado' : 'manter';
   const st = r.erro?.status;
   if (st !== undefined && st >= 400 && st < 500 && st !== 408 && st !== 429) {
     // Recusa definitiva do ML: repetir não muda nada; o operador decide.
