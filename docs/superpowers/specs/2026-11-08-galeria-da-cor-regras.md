@@ -20,8 +20,12 @@ gera cobrança [REV].
 
 R1.1 [A1][A2] Antes do roteiro, o sistema monta a Ficha Verdade: cada campo com valor, fonte, estado e evidência.
 
-R1.2 [REV] **Só o cadastro afirma.** Um valor só é `CONFIRMADO` se o código encontrar o trecho literal nos dados
-da família (campo e trecho guardados como evidência). Foto e etiqueta nunca são fonte de afirmação.
+R1.2 [REV][Diego, 08/11] **Só o que uma pessoa afirmou vira fato.** `CONFIRMADO` = valor das colunas da planilha
+(nome, descrição do fornecedor, medidas, peso, GTIN, marca, origem) ou atributo editado pelo operador, com campo e
+trecho guardados como evidência. O que veio de texto escrito por IA (`titulo_ml`, `descricao_ml`, atributos
+inferidos) entra no roteiro como `SUGERIDO`: o operador confirma com um clique (vira fato daquela família, com quem
+e quando) ou descarta. Foto e etiqueta nunca são fonte de afirmação. Motivo: a IA confirmaria a própria invenção
+(renda: descrição "100% poliéster" × etiqueta poliamida; regata: descrição "96% poliéster" × atributo "Poliamida").
 
 R1.3 Conferência com a etiqueta (visão), por campo, em um de quatro resultados [REV]:
 - `consistente` — a etiqueta legível mostra o mesmo valor → segue.

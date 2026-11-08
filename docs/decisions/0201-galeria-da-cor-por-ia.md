@@ -50,6 +50,9 @@ descrição do anúncio. O cliente que pedir paga por imagem.
     textos acrescentados e medidas na imagem. As missões viram fotos nos planos que o ML pede (frente, costas, corpo
     inteiro, em uso, detalhe do tecido); benefícios e ficha técnica ficam fora (já estão nos atributos). Demais
     categorias seguem com texto composto. Lista de categorias de Moda fixa em código, revisada quando o ML mudar.
+12. **Fato confirmado vem de pessoa:** planilha e atributos editados pelo operador. Título, descrição e atributos
+    escritos por IA aparecem como "sugerido" e só viram fato com um clique do operador (registrado por família).
+    Aceitar tudo o que está no anúncio publicado foi descartado: a IA confirmaria a própria invenção.
 
 ## Alternativas descartadas
 
