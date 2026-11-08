@@ -450,6 +450,25 @@ describe('avancarSaga', () => {
     expect(c.s.alvos.find((a) => a.codigo === 'P')!.pagos_passo1).toEqual(['O-1159']);
   });
 
+  it('baixa que falha no passo 1 não grava snapshot; repetida e baixada, a transferência avança (rodada 2)', async () => {
+    const c = cenario();
+    c.s.ups['UP-P'].quantidade = 4;   // ML já descontou a venda das 11h59; o local ainda não
+    c.s.pagos = [vendaDas1159()];
+    c.s.falhasImportacao = ['pedido O-1159: P: timeout'];
+    await passo(c);   // pausa
+    await passo(c);   // confirma a pausa; a baixa falha
+    const p = c.s.alvos.find((a) => a.codigo === 'P')!;
+    expect(c.s.t.passo).toBe('pausar');
+    expect([p.passo1_em, p.qtd_passo1, p.pagos_passo1]).toEqual([null, null, undefined]);
+    expect(c.s.alertas.some((x) => x.includes('pedidos sem baixa no passo 1'))).toBe(true);
+    // A baixa volta a funcionar: o local chega a 4 e a coorte é provada.
+    c.s.falhasImportacao = [];
+    c.s.saldo.P = 4;
+    await rodar(c);
+    expect(c.s.t.estado).toBe('concluida');
+    expect(c.s.alvos.find((a) => a.codigo === 'P')!.pagos_passo1).toEqual(['O-1159']);
+  });
+
   it('pago sem prova no passo 1 (local ainda sem a baixa) continua bloqueando (achado 3)', async () => {
     const c = cenario();
     c.s.ups['UP-P'].quantidade = 4;   // ML já descontou; o local não

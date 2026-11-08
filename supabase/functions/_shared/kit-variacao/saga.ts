@@ -357,16 +357,17 @@ async function pausar(ctx: Ctx): Promise<ResultadoPasso> {
   // Passo 1 da conciliação: sai da leitura que confirmou a pausa. Sem os pendentes não há cobertura.
   const pendentes = await ctx.deps.ml.listarPendentes();
   const agora = iso(ctx);
+  // Tudo calculado antes de gravar: baixa que falhou não deixa snapshot com coorte vazia para sempre. O passo 1 não
+  // avança; a próxima invocação relê a oferta e refaz o passo inteiro.
+  const passo1: Array<{ alvo: AlvoSaga; patch: Partial<AlvoSaga> }> = [];
   for (const [i, alvo] of ctx.alvos.entries()) {
     const oferta = ofertas[i];
     const ids = oferta ? idsDoItem(oferta.itens.map((x) => x.id), pendentes) : [];
-    await salvarAlvo(ctx, alvo, {
-      qtd_passo1: oferta?.quantidade ?? 0,
-      passo1_em: agora,
-      ids_passo1: ids,
-      pagos_passo1: oferta ? await pagosIncorporados(ctx, alvo, oferta, agora, ids) : [],
-    });
+    const pagos = oferta ? await pagosIncorporados(ctx, alvo, oferta, agora, ids) : [];
+    if ('falhas' in pagos) return reagendar(ctx, `pedidos sem baixa no passo 1: ${pagos.falhas.join('; ')}`, REAGENDAR_S, true);
+    passo1.push({ alvo, patch: { qtd_passo1: oferta?.quantidade ?? 0, passo1_em: agora, ids_passo1: ids, pagos_passo1: pagos } });
   }
+  for (const { alvo, patch } of passo1) await salvarAlvo(ctx, alvo, patch);
   return avancar(ctx, 'aguardar', ctx.deps.quarentenaS);
 }
 
@@ -386,16 +387,16 @@ async function alertarBaixas(ctx: Ctx, imp: ResultadoImportacao): Promise<void> 
  * Pagos que a leitura do passo 1 já contém. Prova: todos os pagos do item baixados localmente (importação sem
  * falha) e o saldo local, já com essas baixas, fechando com a quantidade lida no ML (`divergencia` nula). Então
  * o ML também já tinha descontado cada um, e a conciliação não os reserva de novo: sem isso, um pago dentro da
- * margem de `pagosDesde` e já baixado nunca solta, porque a queda desde o passo 1 é zero. Sem prova, nenhum: o
- * pago segue bloqueando como antes. Id pendente no passo 1 fica de fora (a cobertura por id cuida dele).
+ * margem de `pagosDesde` e já baixado nunca solta, porque a queda desde o passo 1 é zero. Baixa que falhou
+ * devolve as falhas e o passo 1 não avança. Divergência sem falha: nenhum, e o pago segue bloqueando. Id pendente no passo 1 fica de fora (a cobertura por id cuida dele).
  */
 async function pagosIncorporados(
   ctx: Ctx, alvo: AlvoSaga, oferta: OfertaUP, passo1: string, ids: string[],
-): Promise<string[]> {
+): Promise<string[] | { falhas: string[] }> {
   const imp = await ctx.deps.ml.importarPedidos(
     oferta.itens.map((i) => i.id), new Date(Date.parse(passo1) - JANELA_PEDIDOS_MS).toISOString(), ids, () => vivo(ctx));
   await alertarBaixas(ctx, imp);
-  if (imp.falhas.length > 0) return [];
+  if (imp.falhas.length > 0) return { falhas: imp.falhas };
   if (divergencia(alvo, await conferirSaldo(ctx, alvo.codigo), oferta.quantidade)) return [];
   return imp.pagos.map((o) => String(o.id)).filter((id) => !ids.includes(id));
 }
