@@ -85,9 +85,45 @@ describe('DialogGerenciarKit', () => {
     await user.type(screen.getByLabelText('Quantidade Preto e Branco M'), '2');
     await user.click(screen.getByRole('button', { name: 'Montar mais' }));
     await user.click(screen.getByRole('button', { name: 'Montar' }));
-    await waitFor(() => expect(gerenciarKitEdge).toHaveBeenCalledWith({
-      kitId: 'K1', acao: 'montar', versao: 7, itens: [{ codigo: 'KPB-M', quantidade: 2 }],
-    }));
+    await waitFor(() => expect(gerenciarKitEdge).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(gerenciarKitEdge).mock.calls[0][0]).toMatchObject({
+      kitId: 'K1', acao: 'montar', versao: 7, itens: [{ codigo: 'KPB-M', quantidade: 2 }], chave: expect.any(String),
+    });
+  });
+
+  it('repetir o mesmo pedido depois de falha usa a mesma chave (a RPC devolve a transferência original)', async () => {
+    const user = userEvent.setup();
+    vi.mocked(gerenciarKitEdge).mockResolvedValueOnce({ ok: false, motivo: 'rede', mensagem: 'Failed to fetch' });
+    abrir();
+    await user.type(screen.getByLabelText('Quantidade Preto e Branco M'), '2');
+    await user.click(screen.getByRole('button', { name: 'Montar mais' }));
+    await user.click(screen.getByRole('button', { name: 'Montar' }));
+    await waitFor(() => expect(gerenciarKitEdge).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole('button', { name: 'Montar mais' }));
+    await user.click(screen.getByRole('button', { name: 'Montar' }));
+    await waitFor(() => expect(gerenciarKitEdge).toHaveBeenCalledTimes(2));
+    const [a, b] = vi.mocked(gerenciarKitEdge).mock.calls.map((c) => c[0]);
+    expect(b.chave).toBe(a.chave);
+    // Pedido diferente = operação nova = chave nova.
+    await user.clear(screen.getByLabelText('Quantidade Preto e Branco M'));
+    await user.type(screen.getByLabelText('Quantidade Preto e Branco M'), '1');
+    await user.click(screen.getByRole('button', { name: 'Montar mais' }));
+    await user.click(screen.getByRole('button', { name: 'Montar' }));
+    await waitFor(() => expect(gerenciarKitEdge).toHaveBeenCalledTimes(3));
+    expect(vi.mocked(gerenciarKitEdge).mock.calls[2][0].chave).not.toBe(a.chave);
+  });
+
+  it('a versão devolvida pela RPC vale para a operação seguinte', async () => {
+    const user = userEvent.setup();
+    vi.mocked(gerenciarKitEdge).mockResolvedValueOnce({ ok: true, versao: 8 });
+    abrir({ soEmKit: true, reposicaoAuto: true });
+    await user.clear(screen.getByLabelText('Meta'));
+    await user.type(screen.getByLabelText('Meta'), '5');
+    await user.click(screen.getByRole('button', { name: 'Salvar meta' }));
+    await waitFor(() => expect(gerenciarKitEdge).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole('switch', { name: 'Reposição automática' }));
+    await waitFor(() => expect(gerenciarKitEdge).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(gerenciarKitEdge).mock.calls[1][0]).toMatchObject({ acao: 'desligar_reposicao', versao: 8 });
   });
 
   it('desmontar além do saldo bloqueia', async () => {
@@ -106,9 +142,11 @@ describe('DialogGerenciarKit', () => {
     expect(screen.getByText(/voltam como guardadas, sem oferta/)).toBeInTheDocument();
     await user.click(screen.getByRole('checkbox', { name: /Desligar também "Vender só em kit"/ }));
     await user.click(screen.getByRole('button', { name: 'Desmontar kits' }));
-    await waitFor(() => expect(gerenciarKitEdge).toHaveBeenCalledTimes(2));
-    expect(vi.mocked(gerenciarKitEdge).mock.calls[0][0]).toMatchObject({ acao: 'desmontar', versao: 7 });
-    expect(vi.mocked(gerenciarKitEdge).mock.calls[1][0]).toMatchObject({ acao: 'desligar_so_em_kit', versao: 8 });
+    // Uma chamada só, com a intenção: a RPC desliga a política antes de a transferência capturar a versão.
+    await waitFor(() => expect(gerenciarKitEdge).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(gerenciarKitEdge).mock.calls[0][0]).toMatchObject({
+      acao: 'desmontar', versao: 7, desligarSoEmKit: true, chave: expect.any(String), itens: [{ codigo: 'KPB-M', quantidade: 1 }],
+    });
   });
 
   it('desligar "Vender só em kit" pede confirmação antes', async () => {
@@ -118,7 +156,8 @@ describe('DialogGerenciarKit', () => {
     expect(gerenciarKitEdge).not.toHaveBeenCalled();
     expect(within(screen.getByRole('alertdialog')).getByText(/reativa os anúncios individuais/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Desligar' }));
-    await waitFor(() => expect(gerenciarKitEdge).toHaveBeenCalledWith({ kitId: 'K1', acao: 'desligar_so_em_kit', versao: 7 }));
+    await waitFor(() => expect(gerenciarKitEdge).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(gerenciarKitEdge).mock.calls[0][0]).toMatchObject({ kitId: 'K1', acao: 'desligar_so_em_kit', versao: 7 });
   });
 
   it('alterar a meta envia a versão lida', async () => {
@@ -127,7 +166,8 @@ describe('DialogGerenciarKit', () => {
     await user.clear(screen.getByLabelText('Meta'));
     await user.type(screen.getByLabelText('Meta'), '5');
     await user.click(screen.getByRole('button', { name: 'Salvar meta' }));
-    await waitFor(() => expect(gerenciarKitEdge).toHaveBeenCalledWith({ kitId: 'K1', acao: 'alterar_meta', versao: 7, meta: 5 }));
+    await waitFor(() => expect(gerenciarKitEdge).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(gerenciarKitEdge).mock.calls[0][0]).toMatchObject({ kitId: 'K1', acao: 'alterar_meta', versao: 7, meta: 5 });
   });
 
   it('quem não é admin só vê o saldo', () => {
@@ -159,7 +199,7 @@ describe('DialogGerenciarKit', () => {
       await waitFor(() => expect(adicionarAoKitEdge).toHaveBeenCalledTimes(1));
       const chamada = vi.mocked(adicionarAoKitEdge).mock.calls[0][0];
       expect(chamada).toMatchObject({
-        kitId: 'K1',
+        kitId: 'K1', versao: 7,
         quantidades: [
           { cores: ['Preto', 'Branco'], tamanho: 'M', quantidade: 1 },
           { cores: ['Preto', 'Marrom'], tamanho: 'M', quantidade: 2 },
@@ -188,5 +228,16 @@ describe('DialogGerenciarKit', () => {
       expect(screen.getByText(/Preto M: precisa 4, há 3/)).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Montar mais' })).toBeDisabled();
     });
+  });
+
+  it('Desmontar usa só as combinações publicadas: a matriz nova não habilita nem entra no total', async () => {
+    const user = userEvent.setup();
+    abrir();
+    await user.click(screen.getByRole('button', { name: /Combinação ou tamanho novo/ }));
+    await user.type(screen.getByLabelText('Nova Preto e Branco GG'), '3');
+    expect(screen.getByRole('button', { name: 'Desmontar' })).toBeDisabled();
+    await user.type(screen.getByLabelText('Quantidade Preto e Branco M'), '1');
+    await user.click(screen.getByRole('button', { name: 'Desmontar' }));
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('Desmontar 1 kit?');
   });
 });

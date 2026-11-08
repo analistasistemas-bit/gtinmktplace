@@ -1,5 +1,6 @@
 // ADR-0197 (Task 13): edge da tela Gerenciar kit. Casca: autenticação, gate de admin (montar, desmontar e "Vender só
-// em kit" pausam anúncios, ADR-0060), módulo `kit_variacao` e as portas reais de `processar.ts`.
+// em kit" pausam anúncios, ADR-0060), módulo `kit_variacao` e as portas reais de `processar.ts`. Cada operação é uma
+// RPC (`kit_variacao_gerenciar`): CAS de versão e efeito na mesma transação.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
@@ -7,9 +8,8 @@ import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { enfileirarReposicao, enfileirarSaga } from '../_shared/queue.ts';
-import { criarTransferencia } from '../_shared/kit-variacao/saga.ts';
-import { alvosDe, desligarSoEmKit, ligarSoEmKit } from '../_shared/kit-variacao/reposicao.ts';
-import { gerenciarKit, type AcaoKit, type DepsGerenciarKit, type GerenciarKitInput } from './processar.ts';
+import { alvosDe } from '../_shared/kit-variacao/reposicao.ts';
+import { gerenciarKit, type AcaoKit, type DepsGerenciarKit, type GerenciarKitInput, type RespostaRpcGerenciar } from './processar.ts';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -17,20 +17,12 @@ function json(body: unknown, status = 200): Response {
 
 const STATUS_POR_MOTIVO: Record<string, number> = {
   kit_nao_encontrado: 404, modulo_desligado: 403, versao: 409, up_ocupado: 409, alvos_invalidos: 409,
-  sku_sem_anuncio: 409, so_em_kit_desligado: 409,
+  sku_sem_anuncio: 409, so_em_kit_desligado: 409, pedido_diferente: 409,
 };
 
 function portas(admin: SupabaseClient, orgId: string): DepsGerenciarKit {
   return {
     orgId,
-    async lerKit(kitId) {
-      const { data, error } = await admin.from('kits_variacao').select('id, so_em_kit, reposicao_auto, meta, versao')
-        .eq('id', kitId).eq('org_id', orgId).maybeSingle();
-      if (error) throw new Error(`kits_variacao: ${error.message}`);
-      return data
-        ? { id: data.id, soEmKit: data.so_em_kit, reposicaoAuto: data.reposicao_auto, meta: data.meta, versao: data.versao }
-        : null;
-    },
     async skusDoKit(kitId) {
       const { data, error } = await admin.from('kit_variacao_skus')
         .select('codigo, kit_variacao_componentes(codigo, quantidade)').eq('kit_id', kitId).eq('org_id', orgId);
@@ -41,18 +33,14 @@ function portas(admin: SupabaseClient, orgId: string): DepsGerenciarKit {
       }));
     },
     alvosDe: (codigos) => alvosDe(admin, orgId, codigos),
-    async casKit(kitId, versao, patch) {
-      const { data, error } = await admin.from('kits_variacao').update({
-        ...(patch.meta !== undefined ? { meta: patch.meta } : {}),
-        ...(patch.reposicaoAuto !== undefined ? { reposicao_auto: patch.reposicaoAuto } : {}),
-        versao: versao + 1,
-      }).eq('id', kitId).eq('org_id', orgId).eq('versao', versao).select('id');
-      if (error) throw new Error(`kits_variacao: ${error.message}`);
-      return (data ?? []).length > 0;
+    async rpc(a) {
+      const { data, error } = await admin.rpc('kit_variacao_gerenciar', {
+        p_org: orgId, p_kit: a.kitId, p_acao: a.acao, p_versao: a.versao, p_chave: a.chave, p_hash: a.hash, p_meta: a.meta,
+        p_itens: a.itens, p_alvos: a.alvos, p_desligar_so_em_kit: a.desligarSoEmKit,
+      });
+      if (error) throw new Error(`kit_variacao_gerenciar: ${error.message}`);
+      return data as RespostaRpcGerenciar;
     },
-    ligarSoEmKit: (kitId) => ligarSoEmKit(admin, orgId, kitId, (id) => enfileirarSaga(id, orgId)),
-    desligarSoEmKit: (kitId) => desligarSoEmKit(admin, orgId, kitId, (id) => enfileirarReposicao(orgId, id)),
-    criarTransferencia: (input) => criarTransferencia(admin, input),
     enfileirarSaga: (id) => enfileirarSaga(id, orgId),
     enfileirarReposicao: (kitId) => enfileirarReposicao(orgId, kitId),
   };
@@ -64,6 +52,8 @@ function parse(body: Record<string, unknown>): GerenciarKitInput | null {
     kitId: body.kit_id, acao: body.acao as AcaoKit,
     ...(typeof body.versao === 'number' ? { versao: body.versao } : {}),
     ...(typeof body.meta === 'number' ? { meta: body.meta } : {}),
+    ...(typeof body.chave === 'string' && body.chave ? { chave: body.chave } : {}),
+    ...(body.desligar_so_em_kit === true ? { desligarSoEmKit: true } : {}),
     ...(Array.isArray(body.itens)
       ? { itens: (body.itens as Array<Record<string, unknown>>).map((i) => ({ codigo: String(i?.codigo ?? ''), quantidade: Number(i?.quantidade) })) }
       : {}),

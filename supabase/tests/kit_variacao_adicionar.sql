@@ -28,8 +28,7 @@ from (values
   ('97300000-0000-0000-0000-000000000301'::uuid, '09800001'),   -- preto
   ('97300000-0000-0000-0000-000000000301'::uuid, '09800002'),   -- branco
   ('97300000-0000-0000-0000-000000000301'::uuid, '09800003'),   -- azul
-  ('97300000-0000-0000-0000-000000000302'::uuid, '09810001'),   -- kit preto e branco (já publicado)
-  ('97300000-0000-0000-0000-000000000302'::uuid, '09810002')    -- kit preto e azul (novo, gravado pela edge)
+  ('97300000-0000-0000-0000-000000000302'::uuid, '09810001')    -- kit preto e branco (já publicado)
 ) x(f, c);
 
 create temp table ctx on commit drop as
@@ -47,11 +46,12 @@ create function pg_temp.linhas(p_org uuid) returns text language sql as $$
   select (select count(*) from public.kit_variacao_skus where org_id = p_org) || '/'
       || (select count(*) from public.kit_marca_ml where org_id = p_org) || '/'
       || (select count(*) from public.kit_transferencias where org_id = p_org) || '/'
-      || (select count(*) from public.kit_exclusoes where org_id = p_org)
+      || (select count(*) from public.kit_exclusoes where org_id = p_org) || '/'
+      || (select count(*) from public.variacoes where org_id = p_org)
 $$;
 
 do $$
-declare f text := 'public.kit_variacao_adicionar(uuid, uuid, uuid, text, jsonb, jsonb, jsonb, jsonb)';
+declare f text := 'public.kit_variacao_adicionar(uuid, uuid, integer, uuid, uuid, text, jsonb, jsonb, jsonb, jsonb)';
 begin
   perform pg_temp.afirmar(not has_function_privilege('anon', f, 'execute'), f || ' exposta a anon');
   perform pg_temp.afirmar(not has_function_privilege('authenticated', f, 'execute'), f || ' exposta a authenticated');
@@ -84,41 +84,62 @@ update public.kits_variacao set status = 'publicado' where org_id = (select org 
 set local role service_role;
 do $$
 declare
-  c record; r jsonb; r2 jsonb; t uuid; k uuid;
+  c record; r jsonb; r2 jsonb; t uuid; k uuid; v integer;
+  FK constant uuid := '97300000-0000-0000-0000-000000000302';
   P constant text := '09800001'; B constant text := '09800002'; A constant text := '09800003';
   K1 constant text := '09810001'; K2 constant text := '09810002';
   novos jsonb := '[{"codigo":"09810002","tamanho":"M","cores":["Preto","Azul"],"rotulo_cor":"Preto e Azul","quantidade":1,
-                    "componentes":[{"codigo":"09800001","quantidade":1},{"codigo":"09800003","quantidade":1}]}]';
+                    "componentes":[{"codigo":"09800001","quantidade":1},{"codigo":"09800003","quantidade":1}],
+                    "variacao":{"user_id":"97300000-0000-0000-0000-000000000101","nome":"Preto e Azul","cor":"Preto e Azul",
+                                "tamanho":"M","preco":99.9,"custo":40,"imagem_path":"ORG/pa.jpg","ml_picture_id":"PIC-PA"}}]';
   existentes jsonb := '[{"codigo":"09810001","quantidade":1}]';
   baseline jsonb := '[{"codigo":"09800003","ml":5}]';
   alvos jsonb := '[{"codigo":"09800001","up_id":"UP-P","item_ids":["MLB-P"]},{"codigo":"09800002","up_id":"UP-B","item_ids":["MLB-B"]},
                    {"codigo":"09800003","up_id":"UP-A","item_ids":["MLB-A"]},{"codigo":"09810001","up_id":"UP-K1","item_ids":["MLB-K1"]}]';
 begin
   select * into c from ctx;
-  select id into k from public.kits_variacao where org_id = c.org;
+  select id, versao into k, v from public.kits_variacao where org_id = c.org;
 
   -- Kit de outra org (ou inexistente): recusa sem gravar.
-  r := public.kit_variacao_adicionar(c.org, gen_random_uuid(), c.chave, 'H1', novos, existentes, baseline, alvos);
+  r := public.kit_variacao_adicionar(c.org, gen_random_uuid(), v, FK, c.chave, 'H1', novos, existentes, baseline, alvos);
   perform pg_temp.afirmar(r->>'motivo' = 'kit_nao_encontrado', 'kit inexistente: ' || r::text);
-  perform pg_temp.afirmar(pg_temp.linhas(c.org) = '1/3/1/0', 'recusa gravou algo: ' || pg_temp.linhas(c.org));
+  perform pg_temp.afirmar(pg_temp.linhas(c.org) = '1/3/1/0/4', 'recusa gravou algo: ' || pg_temp.linhas(c.org));
 
   -- Combinação já publicada, com as cores em outra ordem: é a mesma (conjunto), recusa.
-  r := public.kit_variacao_adicionar(c.org, k, c.chave, 'H1',
+  r := public.kit_variacao_adicionar(c.org, k, v, FK, c.chave, 'H1',
     '[{"codigo":"09810002","tamanho":"M","cores":["Branco","Preto"],"rotulo_cor":"Branco e Preto","quantidade":1,
-       "componentes":[{"codigo":"09800001","quantidade":1},{"codigo":"09800002","quantidade":1}]}]', '[]', '[]', alvos);
+       "componentes":[{"codigo":"09800001","quantidade":1},{"codigo":"09800002","quantidade":1}],"variacao":{"nome":"x"}}]',
+    '[]', '[]', alvos);
   perform pg_temp.afirmar(r->>'motivo' = 'combinacao_existente', 'duplicada por conjunto passou: ' || r::text);
-  perform pg_temp.afirmar(pg_temp.linhas(c.org) = '1/3/1/0', 'duplicada gravou algo');
+  perform pg_temp.afirmar(pg_temp.linhas(c.org) = '1/3/1/0/4', 'duplicada gravou algo');
 
   -- Peça nova sem baseline: recusa.
-  r := public.kit_variacao_adicionar(c.org, k, c.chave, 'H1', novos, existentes, '[]', alvos);
+  r := public.kit_variacao_adicionar(c.org, k, v, FK, c.chave, 'H1', novos, existentes, '[]', alvos);
   perform pg_temp.afirmar(r->>'motivo' = 'baseline_incompleto', 'baseline incompleto: ' || r::text);
 
-  -- Caminho feliz, com "Vender só em kit" ligado: a peça nova é reivindicada antes da transferência.
-  update public.kits_variacao set so_em_kit = true where id = k;
-  r := public.kit_variacao_adicionar(c.org, k, c.chave, 'H1', novos, existentes, baseline, alvos);
+  -- Versão velha e família que não é a canônica do kit: recusam sem gravar.
+  r := public.kit_variacao_adicionar(c.org, k, v - 1, FK, c.chave, 'H1', novos, existentes, baseline, alvos);
+  perform pg_temp.afirmar(r->>'motivo' = 'versao', 'versão velha passou: ' || r::text);
+  r := public.kit_variacao_adicionar(c.org, k, v, '97300000-0000-0000-0000-000000000301', c.chave, 'H1', novos, existentes, baseline, alvos);
+  perform pg_temp.afirmar(r->>'motivo' = 'familia_divergente', 'família errada passou: ' || r::text);
+
+  -- Baseline divergente (recusa dentro do bloco): nem a variação nova fica na família publicada.
+  r := public.kit_variacao_adicionar(c.org, k, v, FK, c.chave, 'H1', novos, existentes, '[{"codigo":"09800003","ml":4}]', alvos);
+  perform pg_temp.afirmar(r->>'motivo' = 'baseline_divergente', 'baseline divergente: ' || r::text);
+  perform pg_temp.afirmar(pg_temp.linhas(c.org) = '1/3/1/0/4', 'recusa deixou variação órfã: ' || pg_temp.linhas(c.org));
+
+  -- Caminho feliz, com "Vender só em kit" ligado e reposição DESLIGADA pelo operador: a peça nova é reivindicada antes
+  -- da transferência, e a reposição continua desligada.
+  update public.kits_variacao set so_em_kit = true, reposicao_auto = false where id = k;
+  r := public.kit_variacao_adicionar(c.org, k, v, FK, c.chave, 'H1', novos, existentes, baseline, alvos);
   perform pg_temp.afirmar((r->>'ok')::boolean and r->>'transferencia_id' is not null, 'adicionar falhou: ' || r::text);
   t := (r->>'transferencia_id')::uuid;
-  perform pg_temp.afirmar(pg_temp.linhas(c.org) = '2/5/2/5', 'linhas: ' || pg_temp.linhas(c.org));
+  perform pg_temp.afirmar(pg_temp.linhas(c.org) = '2/5/2/5/5', 'linhas: ' || pg_temp.linhas(c.org));
+  perform pg_temp.afirmar((select reposicao_auto = false and versao = v + 1 from public.kits_variacao where id = k),
+    'reposição religada ou versão não incrementada');
+  perform pg_temp.afirmar((select familia_id = FK and estoque = 0 and imagem_path = 'ORG/pa.jpg' and ml_picture_id = 'PIC-PA'
+                           and not excluida_da_publicacao
+                           from public.variacoes where org_id = c.org and codigo = K2), 'variação nova na família do kit');
   perform pg_temp.afirmar((select tipo = 'montar' and kit_id = k and chave_cadastro = c.chave and pedido_hash = 'H1'
                            from public.kit_transferencias where id = t), 'transferência com chave e hash');
   perform pg_temp.afirmar((select criar and delta = 1 from public.kit_transferencia_alvos where transferencia_id = t and codigo = K2),
@@ -136,10 +157,10 @@ begin
                            from public.kit_variacao_skus where org_id = c.org and codigo = K2), 'SKU novo no mesmo kit');
 
   -- Mesma chave: a mesma transferência, nada novo.
-  r2 := public.kit_variacao_adicionar(c.org, k, c.chave, 'H1', novos, existentes, baseline, alvos);
+  r2 := public.kit_variacao_adicionar(c.org, k, v, FK, c.chave, 'H1', novos, existentes, baseline, alvos);
   perform pg_temp.afirmar((r2->>'existente')::boolean and r2->>'transferencia_id' = t::text, 'idempotência: ' || r2::text);
-  perform pg_temp.afirmar(pg_temp.linhas(c.org) = '2/5/2/5', 'repetição gravou de novo');
+  perform pg_temp.afirmar(pg_temp.linhas(c.org) = '2/5/2/5/5', 'repetição gravou de novo');
   -- Mesma chave, outro pedido: recusa.
-  r2 := public.kit_variacao_adicionar(c.org, k, c.chave, 'H2', novos, existentes, baseline, alvos);
+  r2 := public.kit_variacao_adicionar(c.org, k, v, FK, c.chave, 'H2', novos, existentes, baseline, alvos);
   perform pg_temp.afirmar(r2->>'motivo' = 'pedido_diferente', 'pedido diferente aceito: ' || r2::text);
 end $$;

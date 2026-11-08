@@ -23,7 +23,7 @@ import { AVISO_SELETOR_ML } from '../_shared/kit-variacao/combinacoes.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import {
   adicionarAoKit, criarKitVariacao, itensPorFoto, moderadosDoBulk, type AdicionarKitInput, type CriarKitVariacaoInput,
-  type DepsCriarKitVariacao,
+  type DepsCriarKitVariacao, type ResultadoRpcKit,
 } from './processar.ts';
 
 function json(body: unknown, status = 200): Response {
@@ -37,7 +37,8 @@ const STATUS_POR_MOTIVO: Record<string, number> = {
   base_multi_origem: 409, base_moderada: 409, foto_moderada: 409, peca_insuficiente: 409,
   baseline_divergente: 409, up_ocupado: 409, pedido_diferente: 409, cadastro_parcial_divergente: 409,
   foto_nao_autorizada: 403, previa_usada: 409, previa_divergente: 409, previa_invalida: 400,
-  kit_nao_encontrado: 404, sku_sem_anuncio: 409, combinacao_existente: 409, sku_inexistente: 409,
+  kit_nao_encontrado: 404, sku_sem_anuncio: 409, combinacao_existente: 409, sku_inexistente: 409, versao: 409,
+  familia_divergente: 409,
 };
 
 type Linha = Record<string, unknown>;
@@ -269,18 +270,14 @@ function portas(admin: SupabaseClient, orgId: string, userId: string): DepsCriar
           })),
         };
       },
-      gravar: async (a) => await lerUm(admin.rpc('kit_variacao_adicionar', {
-        p_org: orgId, p_kit: a.kitId, p_chave: a.chave, p_hash: a.hash, p_novos: a.novos, p_existentes: a.existentes,
-        p_baseline: a.baseline, p_alvos: a.alvos,
-      }), 'kit_variacao_adicionar'),
-      async atualizarFoto(familiaId, codigo, path, pictureId) {
-        const { error } = await admin.from('variacoes').update({ imagem_path: path, ml_picture_id: pictureId })
-          .eq('familia_id', familiaId).eq('codigo', codigo);
-        if (error) throw new Error(`foto da variação: ${error.message}`);
-      },
-      async desfazerVariacoes(familiaId, codigos) {
-        const { error } = await admin.from('variacoes').delete().eq('familia_id', familiaId).in('codigo', codigos);
-        if (error) console.error('kit_adicionar_desfazer_falhou', familiaId, error.message);
+      // 40001 (`canonica_trocou` no insert da variação): a transação inteira é desfeita e repetida.
+      async gravar(a) {
+        const { data, error } = await comRetryConcorrencia(() => admin.rpc('kit_variacao_adicionar', {
+          p_org: orgId, p_kit: a.kitId, p_versao: a.versao, p_familia: a.familiaId, p_chave: a.chave, p_hash: a.hash,
+          p_novos: a.novos, p_existentes: a.existentes, p_baseline: a.baseline, p_alvos: a.alvos,
+        }));
+        if (error) throw new Error(`kit_variacao_adicionar: ${error.message}`);
+        return data as ResultadoRpcKit;
       },
     },
   };
@@ -292,6 +289,7 @@ function parseAdicionar(body: Linha): AdicionarKitInput | null {
     || (body.fotos != null && typeof body.fotos !== 'object')) return null;
   return {
     kitId: body.kit_id, chaveCadastro: body.chave_cadastro, fotos: (body.fotos ?? {}) as Record<string, string>,
+    ...(typeof body.versao === 'number' ? { versao: body.versao } : {}),
     quantidades: quantidades.map((q) => ({
       cores: Array.isArray(q.cores) ? q.cores.map(String) : [], tamanho: String(q.tamanho ?? ''), quantidade: Number(q.quantidade),
     })),

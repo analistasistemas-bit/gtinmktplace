@@ -433,7 +433,8 @@ describe('prévia do texto por IA (Task 11, rodada 1)', () => {
 });
 
 // ---------------------------------------------------------------------------------------------------------------
-// Task 13 (ajuste): Montar mais com combinação/tamanho nunca publicado vira SKU novo no MESMO kit.
+// Task 13 (ajuste + fix round 1): Montar mais com combinação/tamanho nunca publicado vira SKU novo no MESMO kit. A
+// variação nova vai DENTRO da RPC (`kit_variacao_adicionar`): nada fica na família publicada fora da transação.
 
 function cenarioAdicao() {
   const c = cenario();
@@ -441,14 +442,12 @@ function cenarioAdicao() {
     kitLido: true,
     existente: null as { kitId: string; transferenciaId: string; pedidoHash: string } | null,
     variacoesKit: [
-      { codigo: 'K-PB-M', cor: 'Preto e Branco', tamanho: 'M', imagem_path: 'ORG/kits/pb-antiga.jpg', ml_picture_id: 'PIC-OLD' },
-    ] as Linha[],
+      { codigo: 'K-PB-M', cor: 'Preto e Branco', tamanho: 'M', imagemPath: 'ORG/kits/pb-antiga.jpg', pictureId: 'PIC-OLD' },
+    ],
     vinculosKit: [{ sku: 'K-PB-M', item_externo_id: 'MLB-K-PB-M', user_product_id: 'UP-K-PB-M', catalog_listing_id: null }] as
       Array<{ sku: string; item_externo_id: string | null; user_product_id: string | null; catalog_listing_id: string | null }>,
     rpc: { ok: true, kit_id: 'KIT1', transferencia_id: 'T9' } as ResultadoRpcKit,
     gravacoes: [] as Array<Parameters<DepsAdicao['gravar']>[0]>,
-    fotosAtualizadas: [] as string[],
-    desfeitas: [] as string[][],
     subidas: [] as string[],
   };
   const subir = c.deps.subirFoto;
@@ -460,36 +459,35 @@ function cenarioAdicao() {
       return {
         kitId: 'KIT1', baseId: 'FAM-BASE', familiaKitId: 'FAM-KIT', pecasPorKit: 2, preco: 89.9,
         skus: [{ codigo: 'K-PB-M', cores: ['Preto', 'Branco'], tamanho: 'M', rotulo: 'Preto e Branco' }],
-        variacoes: a.variacoesKit.map((v) => ({
-          codigo: v.codigo as string, cor: v.cor as string, tamanho: v.tamanho as string,
-          imagemPath: v.imagem_path as string, pictureId: v.ml_picture_id as string,
-        })),
-        vinculos: a.vinculosKit,
+        variacoes: a.variacoesKit, vinculos: a.vinculosKit,
       };
     },
     async gravar(args) { a.gravacoes.push(args); return a.rpc; },
-    async atualizarFoto(_fam, codigo) { a.fotosAtualizadas.push(codigo); },
-    async desfazerVariacoes(_fam, codigos) { a.desfeitas.push(codigos); },
   };
   c.deps.adicao = adicao;
   return { ...c, a };
 }
 
 const montarMais = (extra: Partial<AdicionarKitInput> = {}): AdicionarKitInput => ({
-  kitId: 'KIT1', chaveCadastro: 'CH-ADD', fotos: {},
+  kitId: 'KIT1', versao: 5, chaveCadastro: 'CH-ADD', fotos: {},
   quantidades: [{ cores: ['Preto', 'Branco'], tamanho: 'M', quantidade: 1 }],
   ...extra,
 });
 
 describe('adicionarAoKit (Montar mais com SKU novo)', () => {
-  it('só combinação publicada: aumenta o saldo, sem SKU novo nem foto', async () => {
+  it('sem a versão lida recusa sem gravar', async () => {
+    const c = cenarioAdicao();
+    expect(await adicionarAoKit(c.deps, montarMais({ versao: undefined }))).toMatchObject({ ok: false, motivo: 'versao' });
+    expect(c.a.gravacoes).toEqual([]);
+  });
+
+  it('só combinação publicada: aumenta o saldo, sem SKU novo nem foto; versão e família do kit vão à RPC', async () => {
     const c = cenarioAdicao();
     const r = await adicionarAoKit(c.deps, montarMais({ quantidades: [{ cores: ['Branco', 'Preto'], tamanho: 'M', quantidade: 2 }] }));
     expect(r).toMatchObject({ ok: true, transferenciaId: 'T9' });
-    expect(c.s.variacoesGravadas).toEqual([]);
-    expect(c.a.gravacoes[0].novos).toEqual([]);
-    expect(c.a.gravacoes[0].existentes).toEqual([{ codigo: 'K-PB-M', quantidade: 2 }]);
-    expect(c.a.gravacoes[0].alvos.map((x) => x.codigo).sort()).toEqual(['B-M', 'K-PB-M', 'P-M']);
+    const g = c.a.gravacoes[0];
+    expect(g).toMatchObject({ kitId: 'KIT1', versao: 5, familiaId: 'FAM-KIT', novos: [], existentes: [{ codigo: 'K-PB-M', quantidade: 2 }] });
+    expect(g.alvos.map((x) => x.codigo).sort()).toEqual(['B-M', 'K-PB-M', 'P-M']);
     expect(c.s.sagas).toEqual(['T9']);
   });
 
@@ -500,7 +498,7 @@ describe('adicionarAoKit (Montar mais com SKU novo)', () => {
     expect(c.s.variacoesGravadas.length + c.a.gravacoes.length).toBe(0);
   });
 
-  it('combinação nova: variação na família do kit, SKU novo na RPC (alvo criar), foto sobe antes', async () => {
+  it('combinação nova: a linha da variação vai DENTRO da RPC (nenhum insert antes), com a foto que subiu', async () => {
     const c = cenarioAdicao();
     const r = await adicionarAoKit(c.deps, montarMais({
       quantidades: [
@@ -510,16 +508,18 @@ describe('adicionarAoKit (Montar mais com SKU novo)', () => {
       fotos: { 'Preto e Marrom': 'ORG/kits/pm.jpg' },
     }));
     expect(r).toMatchObject({ ok: true, transferenciaId: 'T9' });
-    expect(c.s.variacoesGravadas).toHaveLength(1);
-    expect(c.s.variacoesGravadas[0]).toMatchObject({
-      familia_id: 'FAM-KIT', cor: 'Preto e Marrom', tamanho: 'M', estoque: 0, preco: 89.9,
+    expect(c.s.variacoesGravadas).toEqual([]);
+    const g = c.a.gravacoes[0];
+    expect(g.novos).toHaveLength(1);
+    const novo = g.novos[0] as Record<string, unknown>;
+    expect(novo).toMatchObject({
+      tamanho: 'M', cores: ['Preto', 'Marrom'], rotulo_cor: 'Preto e Marrom', quantidade: 2,
+      componentes: [{ codigo: 'P-M', quantidade: 1 }, { codigo: 'M-M', quantidade: 1 }],
+    });
+    expect(novo.variacao).toMatchObject({
+      familia_id: 'FAM-KIT', codigo: novo.codigo, cor: 'Preto e Marrom', tamanho: 'M', estoque: 0, preco: 89.9,
       imagem_path: 'ORG/kits/pm.jpg', ml_picture_id: 'PIC-ORG/kits/pm.jpg', custo: 38.5,
     });
-    const g = c.a.gravacoes[0];
-    expect(g.novos).toEqual([{
-      codigo: c.s.variacoesGravadas[0].codigo, tamanho: 'M', cores: ['Preto', 'Marrom'], rotulo_cor: 'Preto e Marrom', quantidade: 2,
-      componentes: [{ codigo: 'P-M', quantidade: 1 }, { codigo: 'M-M', quantidade: 1 }],
-    }]);
     expect(g.existentes).toEqual([{ codigo: 'K-PB-M', quantidade: 1 }]);
     expect(g.baseline.map((b) => b.codigo).sort()).toEqual(['B-M', 'M-M', 'P-M']);
     expect(c.a.subidas).toEqual(['ORG/kits/pm.jpg']);
@@ -529,23 +529,10 @@ describe('adicionarAoKit (Montar mais com SKU novo)', () => {
     const c = cenarioAdicao();
     const r = await adicionarAoKit(c.deps, montarMais({ quantidades: [{ cores: ['Branco', 'Preto'], tamanho: 'G', quantidade: 1 }] }));
     expect(r).toMatchObject({ ok: true });
-    expect(c.s.variacoesGravadas[0]).toMatchObject({
-      cor: 'Preto e Branco', tamanho: 'G', imagem_path: 'ORG/kits/pb-antiga.jpg', ml_picture_id: 'PIC-OLD',
-    });
-    expect(c.a.gravacoes[0].novos[0]).toMatchObject({ cores: ['Preto', 'Branco'], rotulo_cor: 'Preto e Branco', tamanho: 'G' });
+    const novo = c.a.gravacoes[0].novos[0] as Record<string, unknown>;
+    expect(novo).toMatchObject({ cores: ['Preto', 'Branco'], rotulo_cor: 'Preto e Branco', tamanho: 'G' });
+    expect(novo.variacao).toMatchObject({ cor: 'Preto e Branco', tamanho: 'G', imagem_path: 'ORG/kits/pb-antiga.jpg', ml_picture_id: 'PIC-OLD' });
     expect(c.a.subidas).toEqual([]);
-  });
-
-  it('variação órfã de tentativa anterior é reaproveitada (sem código novo) e ganha a foto deste pedido', async () => {
-    const c = cenarioAdicao();
-    c.a.variacoesKit.push({ codigo: 'K-ORF', cor: 'Preto e Marrom', tamanho: 'M', imagem_path: 'ORG/velha.jpg', ml_picture_id: 'PIC-V' });
-    const r = await adicionarAoKit(c.deps, montarMais({
-      quantidades: [{ cores: ['Preto', 'Marrom'], tamanho: 'M', quantidade: 1 }], fotos: { 'Preto e Marrom': 'ORG/kits/pm.jpg' },
-    }));
-    expect(r).toMatchObject({ ok: true });
-    expect(c.s.variacoesGravadas).toEqual([]);
-    expect(c.a.fotosAtualizadas).toEqual(['K-ORF']);
-    expect(c.a.gravacoes[0].novos[0].codigo).toBe('K-ORF');
   });
 
   it('SKU publicado sem anúncio (UP) recusa', async () => {
@@ -565,7 +552,7 @@ describe('adicionarAoKit (Montar mais com SKU novo)', () => {
       fotos: { 'Preto e Marrom': 'ORG/kits/pm.jpg' },
     }));
     expect(r).toMatchObject({ ok: false, motivo: 'peca_insuficiente' });
-    expect(c.s.variacoesGravadas.length + c.a.gravacoes.length).toBe(0);
+    expect(c.a.gravacoes).toEqual([]);
   });
 
   it('kit de outra org ou inexistente recusa', async () => {
@@ -585,14 +572,14 @@ describe('adicionarAoKit (Montar mais com SKU novo)', () => {
       .toMatchObject({ ok: false, motivo: 'pedido_diferente' });
   });
 
-  it('recusa definitiva da RPC apaga as variações novas (família publicada não fica com órfã)', async () => {
+  it('recusa da RPC: nada a desfazer (a variação só existiria dentro da transação recusada)', async () => {
     const c = cenarioAdicao();
-    c.a.rpc = { ok: false, motivo: 'combinacao_existente' };
+    c.a.rpc = { ok: false, motivo: 'versao' };
     const r = await adicionarAoKit(c.deps, montarMais({
       quantidades: [{ cores: ['Preto', 'Marrom'], tamanho: 'M', quantidade: 1 }], fotos: { 'Preto e Marrom': 'ORG/kits/pm.jpg' },
     }));
-    expect(r).toMatchObject({ ok: false, motivo: 'combinacao_existente' });
-    expect(c.a.desfeitas).toEqual([[c.s.variacoesGravadas[0].codigo]]);
+    expect(r).toMatchObject({ ok: false, motivo: 'versao' });
+    expect(c.s.variacoesGravadas).toEqual([]);
     expect(c.s.sagas).toEqual([]);
   });
 

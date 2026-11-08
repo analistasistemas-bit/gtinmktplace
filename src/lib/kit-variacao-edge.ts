@@ -34,11 +34,11 @@ export function criarKitVariacaoEdge(i: CriarKitVariacaoInput) {
 
 /** Montar mais (Task 13, ajuste): o que já é SKU do kit só aumenta; combinação × tamanho novo vira SKU no mesmo kit. */
 export function adicionarAoKitEdge(p: {
-  kitId: string; quantidades: { cores: string[]; tamanho: string; quantidade: number }[];
+  kitId: string; versao: number; quantidades: { cores: string[]; tamanho: string; quantidade: number }[];
   fotos: Record<string, string>; chaveCadastro: string;
 }) {
   return invocar<{ transferenciaId?: string; aviso?: string }>('criar-kit-variacao', {
-    kit_id: p.kitId, quantidades: p.quantidades, fotos: p.fotos, chave_cadastro: p.chaveCadastro,
+    kit_id: p.kitId, versao: p.versao, quantidades: p.quantidades, fotos: p.fotos, chave_cadastro: p.chaveCadastro,
   });
 }
 
@@ -62,11 +62,18 @@ export type AcaoKit =
   | 'montar' | 'desmontar';
 
 export function gerenciarKitEdge(p: {
-  kitId: string; acao: AcaoKit; versao?: number; meta?: number; itens?: Array<{ codigo: string; quantidade: number }>;
+  kitId: string; acao: AcaoKit; versao: number; meta?: number; itens?: Array<{ codigo: string; quantidade: number }>;
+  /** Montar/desmontar: chave estável da operação (a repetição devolve a transferência original). */
+  chave?: string;
+  /** Desmontar: desliga também "Vender só em kit", na mesma transação. */
+  desligarSoEmKit?: boolean;
 }) {
-  return invocar<{ transferencia_id?: string; transferenciaId?: string; reposicaoDesligada?: boolean; soEmKit?: boolean }>(
+  return invocar<{ transferenciaId?: string; reposicaoDesligada?: boolean; soEmKit?: boolean; versao?: number }>(
     'gerenciar-kit-variacao',
-    { kit_id: p.kitId, acao: p.acao, versao: p.versao, meta: p.meta, itens: p.itens },
+    {
+      kit_id: p.kitId, acao: p.acao, versao: p.versao, meta: p.meta, itens: p.itens, chave: p.chave,
+      desligar_so_em_kit: p.desligarSoEmKit === true,
+    },
   );
 }
 

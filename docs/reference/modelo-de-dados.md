@@ -1638,8 +1638,10 @@ A saga. `kit_id` (nulo só em `entrada` e `sair_sobra`), `tipo`
 `execucao_ate` (claim atômico), `criado_em`, `passo_em`. `itens`, `tipo` e `kit_id` são imutáveis desde a
 criação (trigger `kit_transferencias_imutavel`): alvos, deltas e exclusões saíram deles.
 *Saga: `_shared/kit-variacao/saga.ts`, worker `kit-transferencia`; migration `20261107212019_kit_variacao_saga.sql`.*
-`chave_cadastro uuid` (único por org) e `pedido_hash`: idempotência do "Montar mais" com SKU novo
-(`kit_variacao_adicionar`, Task 13): a mesma chave devolve a mesma transferência; outro hash recusa (`pedido_diferente`).
+`chave_cadastro uuid` (único por org) e `pedido_hash`: idempotência das operações da tela Gerenciar kit (Task 13):
+montar/desmontar (`kit_variacao_gerenciar`) e "Montar mais" com SKU novo (`kit_variacao_adicionar`). A mesma chave devolve
+a mesma transferência; outro hash recusa (`pedido_diferente`). As duas RPCs conferem `kits_variacao.versao` sob o lock do
+kit e a incrementam com o efeito, na mesma transação.
 *Migration `20261108073740_kit_variacao_adicionar.sql`.*
 
 ### `kit_transferencia_alvos`

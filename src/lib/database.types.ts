@@ -5767,10 +5767,27 @@ export type Database = {
           p_baseline: Json
           p_chave: string
           p_existentes: Json
+          p_familia: string
           p_hash: string
           p_kit: string
           p_novos: Json
           p_org: string
+          p_versao: number
+        }
+        Returns: Json
+      }
+      kit_variacao_gerenciar: {
+        Args: {
+          p_acao: string
+          p_alvos: Json
+          p_chave: string
+          p_desligar_so_em_kit: boolean
+          p_hash: string
+          p_itens: Json
+          p_kit: string
+          p_meta: number
+          p_org: string
+          p_versao: number
         }
         Returns: Json
       }

@@ -65,18 +65,26 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
   const [novoAberto, setNovoAberto] = useState(false);
   const [novaQtd, setNovaQtd] = useState<Record<string, string>>({});
   const [fotos, setFotos] = useState<Record<string, File>>({});
-  const chave = useRef(crypto.randomUUID());
+  // Chave estável por operação: o mesmo pedido repetido (resposta perdida, falha de rede) usa a mesma chave, e a RPC
+  // devolve a transferência original. Pedido diferente = chave nova. Sai a cada sucesso e a cada abertura.
+  const operacao = useRef<{ assinatura: string; chave: string } | null>(null);
+  const chaveDe = (assinatura: string) => {
+    if (operacao.current?.assinatura !== assinatura) operacao.current = { assinatura, chave: crypto.randomUUID() };
+    return operacao.current.chave;
+  };
   const enviadas = useRef(new Map<string, { file: File; path: string }>());
 
   useEffect(() => {
     if (!open) return;
     setQtd({}); setConfirmar(null); setDesligarJunto(false); setNovaQtd({}); setFotos({}); setNovoAberto(false);
-    chave.current = crypto.randomUUID();
+    operacao.current = null;
     enviadas.current.clear();
   }, [open]);
 
   const itens = skus.map((s) => ({ codigo: s.codigo, quantidade: inteiro(qtd[s.codigo]) })).filter((i) => i.quantidade > 0);
   const alemDoSaldo = itens.some((i) => i.quantidade > (skus.find((s) => s.codigo === i.codigo)?.saldo ?? 0));
+  // Desmontar só mexe nas combinações publicadas: a matriz nova participa apenas da montagem.
+  const totalDesmontar = itens.reduce((s, i) => s + i.quantidade, 0);
   const ocupado = enviando || abertas.length > 0;
 
   // Base canônica: cores, tamanhos e saldo das peças.
@@ -118,13 +126,18 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
   ];
   const conferiu = !!baseQ.data && !baseQ.isError;
 
-  async function acao(a: AcaoKit, extra: { meta?: number; itens?: typeof itens } = {}, v = versao): Promise<boolean> {
-    const r = await gerenciarKitEdge({ kitId: kit.id, acao: a, versao: v, ...extra });
+  async function acao(
+    a: AcaoKit, extra: { meta?: number; itens?: typeof itens; chave?: string; desligarSoEmKit?: boolean } = {},
+  ): Promise<{ ok: boolean; reposicaoDesligada?: boolean }> {
+    const r = await gerenciarKitEdge({ kitId: kit.id, acao: a, versao, ...extra });
     if (!r.ok) {
       toast.error('Não foi possível concluir', { description: r.mensagem });
-      return false;
+      return { ok: false };
     }
-    return true;
+    // Toda decisão aceita incrementa a versão do kit; a RPC devolve a nova (a releitura chega depois).
+    setVersao((x) => (typeof r.versao === 'number' ? r.versao : x + 1));
+    operacao.current = null;
+    return { ok: true, reposicaoDesligada: r.reposicaoDesligada };
   }
 
   async function executar(f: () => Promise<void>) {
@@ -140,20 +153,21 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
   const montar = () => executar(async () => {
     let ok: boolean;
     if (novos.length === 0) {
-      ok = await acao('montar', { itens });
+      ok = (await acao('montar', { itens, chave: chaveDe(JSON.stringify(['montar', itens])) })).ok;
     } else {
+      const chave = chaveDe(JSON.stringify(['adicionar', itens, novos, rotulosNovos.map((r) => [r, fotos[r]?.name, fotos[r]?.size])]));
       // Foto já enviada nesta abertura reaproveita o caminho: a repetição mantém o pedido (hash) da chave.
       const caminhos: Record<string, string> = {};
       for (const rotulo of rotulosNovos) {
         const file = fotos[rotulo];
         const ja = enviadas.current.get(rotulo);
         if (ja?.file === file) { caminhos[rotulo] = ja.path; continue; }
-        const path = await enviarFotoKit(`kit-variacao-${chave.current}`, rotulo, file);
+        const path = await enviarFotoKit(`kit-variacao-${chave}`, rotulo, file);
         enviadas.current.set(rotulo, { file, path });
         caminhos[rotulo] = path;
       }
       const r = await adicionarAoKitEdge({
-        kitId: kit.id, chaveCadastro: chave.current, fotos: caminhos,
+        kitId: kit.id, versao, chaveCadastro: chave, fotos: caminhos,
         quantidades: [
           ...itens.map((i) => {
             const s = skus.find((x) => x.codigo === i.codigo)!;
@@ -164,7 +178,7 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
       });
       ok = r.ok;
       if (!r.ok) toast.error('Não foi possível concluir', { description: r.mensagem });
-      else { chave.current = crypto.randomUUID(); enviadas.current.clear(); }
+      else { setVersao((x) => x + 1); operacao.current = null; enviadas.current.clear(); }
     }
     if (ok) {
       setQtd({}); setNovaQtd({}); setFotos({});
@@ -174,22 +188,24 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
     }
   });
 
+  // Uma chamada: a RPC desliga a reposição (e, se pedido, "Vender só em kit") antes de criar a transferência.
   const desmontar = () => executar(async () => {
-    if (!(await acao('desmontar', { itens }))) return;
-    let v = versao;
-    if (kit.reposicaoAuto) { v += 1; setVersao(v); }
-    setQtd({});
-    toast.success(`Desmontagem de ${totalKits} ${totalKits === 1 ? 'kit' : 'kits'} começou`, {
-      description: kit.reposicaoAuto ? 'A reposição automática foi desligada.' : undefined,
+    const desligar = desligarJunto && kit.soEmKit;
+    const r = await acao('desmontar', {
+      itens, desligarSoEmKit: desligar, chave: chaveDe(JSON.stringify(['desmontar', itens, desligar])),
     });
-    if (desligarJunto && kit.soEmKit && await acao('desligar_so_em_kit', {}, v)) {
-      setVersao(v + 1);
-      toast.success('"Vender só em kit" desligado. Os anúncios individuais voltam a vender.');
-    }
+    if (!r.ok) return;
+    setQtd({});
+    toast.success(`Desmontagem de ${totalDesmontar} ${totalDesmontar === 1 ? 'kit' : 'kits'} começou`, {
+      description: [
+        r.reposicaoDesligada ? 'A reposição automática foi desligada.' : '',
+        desligar ? '"Vender só em kit" desligado: os anúncios individuais voltam a vender.' : '',
+      ].filter(Boolean).join(' ') || undefined,
+    });
   });
 
   const politica = (a: AcaoKit, sucesso: string, extra: { meta?: number } = {}) => executar(async () => {
-    if (await acao(a, extra)) { setVersao((x) => x + 1); toast.success(sucesso); }
+    if ((await acao(a, extra)).ok) toast.success(sucesso);
   });
 
   const status = STATUS[kit.status] ?? { rotulo: kit.status, tom: 'neutral' as const };
@@ -282,7 +298,7 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
             {isAdmin && (
               <div className="flex flex-wrap items-center justify-end gap-2">
                 {alemDoSaldo && <span className="mr-auto text-xs text-danger">Desmontar além do saldo do kit não é possível.</span>}
-                <Button variant="outline" disabled={ocupado || totalKits === 0 || alemDoSaldo} onClick={() => setConfirmar('desmontar')}>
+                <Button variant="outline" disabled={ocupado || totalDesmontar === 0 || alemDoSaldo} onClick={() => setConfirmar('desmontar')}>
                   Desmontar
                 </Button>
                 <Button
@@ -474,7 +490,7 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin }: {
           {confirmar === 'desmontar' && (
             <>
               <AlertDialogHeader>
-                <AlertDialogTitle>Desmontar {totalKits} {totalKits === 1 ? 'kit' : 'kits'}?</AlertDialogTitle>
+                <AlertDialogTitle>Desmontar {totalDesmontar} {totalDesmontar === 1 ? 'kit' : 'kits'}?</AlertDialogTitle>
                 <AlertDialogDescription asChild>
                   <div className="grid gap-2">
                     <p>As peças voltam aos anúncios individuais. O kit fica pausado alguns minutos durante a transferência.</p>

@@ -107,6 +107,8 @@ export interface DepsCriarKitVariacao {
 /** Montar mais: quantidades por combinação × tamanho; o que já é SKU do kit só aumenta, o resto vira SKU novo. */
 export interface AdicionarKitInput {
   kitId: string;
+  /** `kits_variacao.versao` lida pela tela: a RPC recusa decisão sobre estado velho. */
+  versao?: number;
   quantidades: { cores: string[]; tamanho: string; quantidade: number }[];
   /** Foto por rótulo da combinação nova. Tamanho novo de combinação publicada reaproveita a foto dela. */
   fotos: Record<string, string>;
@@ -122,7 +124,7 @@ export interface KitParaAdicionar {
   pecasPorKit: number;
   preco: number;
   skus: Array<{ codigo: string; cores: string[]; tamanho: string; rotulo: string }>;
-  /** Variações da família do kit (inclui órfã de tentativa anterior, sem SKU de kit). */
+  /** Variações da família do kit (a foto de combinação publicada vale para um tamanho novo dela). */
   variacoes: Array<{ codigo: string; cor: string; tamanho: string; imagemPath: string | null; pictureId: string | null }>;
   /** Vínculo ML dos SKUs do kit (raiz do PAI do kit). */
   vinculos: Array<{ sku: string; item_externo_id: string | null; user_product_id: string | null; catalog_listing_id: string | null }>;
@@ -133,15 +135,14 @@ export interface DepsAdicao {
   existente(chave: string): Promise<{ kitId: string; transferenciaId: string; pedidoHash: string | null } | null>;
   /** Por id E org. */
   lerKit(kitId: string): Promise<KitParaAdicionar | null>;
-  /** `kit_variacao_adicionar`. */
+  /**
+   * `kit_variacao_adicionar`: confere a versão e grava variação nova, SKU de kit, composição, marca e transferência numa
+   * transação (cada item de `novos` leva a linha de `variacoes` em `variacao`). Nada fica fora dela.
+   */
   gravar(a: {
-    kitId: string; chave: string; hash: string; novos: Linha[]; existentes: Array<{ codigo: string; quantidade: number }>;
-    baseline: Array<{ codigo: string; ml: number }>; alvos: Linha[];
+    kitId: string; versao: number; familiaId: string; chave: string; hash: string; novos: Linha[];
+    existentes: Array<{ codigo: string; quantidade: number }>; baseline: Array<{ codigo: string; ml: number }>; alvos: Linha[];
   }): Promise<ResultadoRpcKit>;
-  /** Variação órfã reaproveitada recebe a foto deste pedido (senão a saga postaria a antiga). */
-  atualizarFoto(familiaId: string, codigo: string, path: string, pictureId: string): Promise<void>;
-  /** Recusa definitiva: as variações novas saem da família publicada do kit. */
-  desfazerVariacoes(familiaId: string, codigos: string[]): Promise<void>;
 }
 
 export interface SkuKitCriado { codigo: string; rotulo: string; tamanho: string; quantidade: number }
@@ -596,6 +597,7 @@ const conjunto = (cores: string[]) => [...cores].map(texto).sort().join('|');
 export async function adicionarAoKit(deps: DepsCriarKitVariacao, input: AdicionarKitInput): Promise<ResultadoCriarKitVariacao> {
   const ad = deps.adicao;
   if (!ad) throw new Error('adicionarAoKit sem as portas de adição');
+  if (!Number.isInteger(input.versao)) return recusa('versao', 'O kit mudou em outra tela. Feche e abra de novo.');
 
   const vistas = new Set<string>();
   const pedidos: Array<{ cores: string[]; tamanho: string; quantidade: number }> = [];
@@ -700,37 +702,27 @@ export async function adicionarAoKit(deps: DepsCriarKitVariacao, input: Adiciona
     }
   }
 
-  // Variação órfã (tentativa anterior sem SKU de kit) com a mesma combinação e tamanho é reaproveitada.
-  const orfa = (c: Combinacao) => kit.variacoes.find((v) => v.cor === c.rotulo && texto(v.tamanho) === c.tamanho
-    && !kit.skus.some((s) => s.codigo === v.codigo));
-  const faltam = novas.filter((c) => !orfa(c));
-  const reserva = faltam.length > 0 ? await deps.reservarCodigos(faltam.length + 1) : null;   // o PAI reservado sobra
-  const livres = [...(reserva?.codigos ?? [])];
-  const codigos = novas.map((c) => orfa(c)?.codigo ?? livres.shift()!);
-  try {
-    for (const [i, c] of novas.entries()) {
-      const f = fotoDe.get(c.rotulo)!;
-      const pictureId = f.pictureId ?? pictureIds.get(f.path)!;
-      if (orfa(c)) {
-        await ad.atualizarFoto(kit.familiaKitId, codigos[i], f.path, pictureId);
-        continue;
-      }
-      await deps.gravar.variacao(montarVariacaoKitVariacao(c, {
-        familiaId: kit.familiaKitId, codigo: codigos[i], preco: kit.preco, foto: f.path, pictureId, pecas: kit.pecasPorKit,
-      }));
-    }
-  } catch (e) {
-    return recusa('falha_gravar', `${e instanceof Error ? e.message : String(e)}. Tente de novo: o pedido é retomado.`);
-  }
+  // Códigos novos (o PAI reservado sobra). A linha da variação vai para a RPC: variação, SKU de kit, composição e
+  // transferência nascem juntos, sem janela de variação na família publicada sem SKU de kit.
+  const reserva = novas.length > 0 ? await deps.reservarCodigos(novas.length + 1) : null;
+  const codigos = [...(reserva?.codigos ?? [])];
+  const novos = novas.map((c, i) => {
+    const f = fotoDe.get(c.rotulo)!;
+    return {
+      codigo: codigos[i], tamanho: c.tamanho, cores: c.cores, rotulo_cor: c.rotulo, quantidade: c.quantidade,
+      componentes: c.componentes.map((v) => ({ codigo: v.codigo, quantidade: 1 })),
+      variacao: montarVariacaoKitVariacao(c, {
+        familiaId: kit.familiaKitId, codigo: codigos[i], preco: kit.preco, foto: f.path,
+        pictureId: f.pictureId ?? pictureIds.get(f.path)!, pecas: kit.pecasPorKit,
+      }),
+    };
+  });
 
   let r: ResultadoRpcKit;
   try {
     r = await ad.gravar({
-      kitId: kit.kitId, chave: input.chaveCadastro, hash, existentes, baseline: conferidas.baseline, alvos,
-      novos: novas.map((c, i) => ({
-        codigo: codigos[i], tamanho: c.tamanho, cores: c.cores, rotulo_cor: c.rotulo, quantidade: c.quantidade,
-        componentes: c.componentes.map((v) => ({ codigo: v.codigo, quantidade: 1 })),
-      })),
+      kitId: kit.kitId, versao: input.versao as number, familiaId: kit.familiaKitId, chave: input.chaveCadastro, hash,
+      existentes, baseline: conferidas.baseline, alvos, novos,
     });
   } catch (e) {
     const outra = await ad.existente(input.chaveCadastro).catch(() => null);
@@ -739,8 +731,7 @@ export async function adicionarAoKit(deps: DepsCriarKitVariacao, input: Adiciona
     r = { ok: true, kit_id: outra.kitId, transferencia_id: outra.transferenciaId, existente: true };
   }
   if (!r.ok || !r.transferencia_id) {
-    if (codigos.length > 0) await ad.desfazerVariacoes(kit.familiaKitId, codigos);
-    return recusa(r.motivo ?? 'falha_gravar', r.mensagem ?? r.codigo);
+    return recusa(r.motivo ?? 'falha_gravar', r.motivo === 'versao' ? 'O kit mudou em outra tela. Feche e abra de novo.' : r.mensagem ?? r.codigo);
   }
   await deps.enfileirarSaga(r.transferencia_id);
   return {
