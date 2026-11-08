@@ -30,6 +30,10 @@ const f = vi.hoisted(() => ({
   custo: 0.041 as number | undefined,
   chamadasImagem: [] as Array<Record<string, unknown>>,
   chamadasVisao: 0,
+  chamadasFicha: 0,
+  verificacoes: [] as unknown[],
+  pedidosVerificacao: [] as Array<Record<string, unknown>>,
+  atrasoVerificacaoMs: 0,
   linhas: [] as Array<Record<string, unknown>>,
   uploads: [] as string[],
   downloads: [] as string[],
@@ -52,6 +56,21 @@ vi.mock('../../criar-kit-variacao/fotos-moderadas.ts', () => ({
     return f.moderadas;
   }),
 }));
+// Sem decodificação real de pixels no teste: a cor fica só com o inspetor (o ΔE tem teste próprio em `cor.ts`).
+vi.mock('../../_shared/ai/pixels.ts', () => ({ decodificar: () => null }));
+const FICHA_IA = {
+  tipo_peca: 'jaqueta', comprimento: 'cintura', comprimento_descricao: 'jaqueta curta, termina na cintura',
+  proporcao_altura_largura: 0.8, modelagem: 'reta', caimento: 'solto', cos: 'elástico', cordao: 'sem cordão',
+  bolsos_quantidade: 2, bolsos: '2 frontais', etiquetas: 'nenhuma visível', barra: 'elástica', textura: 'nylon',
+  cores: [{ cor: 'Preto', nome_tom: 'preto' }, { cor: 'Branco', nome_tom: 'branco gelo' }],
+};
+const igual = { ok: true, nota: 'igual' };
+const pecaOk = (posicao: number) => ({
+  posicao, comprimento: 'cintura', proporcao_altura_largura: 0.8, modelagem: igual, cos: igual, cordao: igual,
+  bolsos: igual, etiquetas: igual, barra: igual, textura: igual, cor: igual,
+});
+const APROVADA = { quantidade_pecas: 2, fundo_claro_neutro: true, pecas: [pecaOk(1), pecaOk(2)] };
+const LONGA = { ...APROVADA, pecas: [{ ...pecaOk(1), comprimento: 'joelho', proporcao_altura_largura: 1.2 }, pecaOk(2)] };
 vi.mock('../../_shared/ai/client.ts', () => ({
   openrouterClient: () => ({
     chat: { completions: { create: async (a: Record<string, unknown>) => {
@@ -71,7 +90,18 @@ vi.mock('../../_shared/ai/client.ts', () => ({
         };
       }
       f.chamadasVisao++;
-      return { choices: [{ message: { content: 'cropped jacket, elastic hem' } }], usage: { prompt_tokens: 900, completion_tokens: 60, cost: 0.003 } };
+      const nome = (a.response_format as { json_schema?: { name?: string } } | undefined)?.json_schema?.name;
+      if (nome === 'ficha_peca') {
+        f.chamadasFicha++;
+        return { choices: [{ message: { content: JSON.stringify(FICHA_IA) } }], usage: { prompt_tokens: 900, completion_tokens: 200, cost: 0.004 } };
+      }
+      if (nome !== 'verificacao_foto') throw new Error(`visão inesperada: ${nome}`);
+      f.pedidosVerificacao.push(a);
+      f.deslocamento += f.atrasoVerificacaoMs;
+      if (f.atrasoVerificacaoMs) vi.advanceTimersByTime(f.atrasoVerificacaoMs);
+      const v = f.verificacoes.length > 0 ? f.verificacoes.shift() : APROVADA;
+      if (v === 'erro') throw Object.assign(new Error('visão caiu'), { status: 503 });
+      return { choices: [{ message: { content: typeof v === 'string' ? v : JSON.stringify(v) } }], usage: { prompt_tokens: 1200, completion_tokens: 300, cost: 0.005 } };
     } } },
   }),
 }));
@@ -80,9 +110,12 @@ function tabela(t: string) {
   const filtros: Record<string, unknown> = {};
   let op: 'select' | 'insert' | 'update' | 'delete' = 'select';
   let payload: Record<string, unknown> = {};
-  const achar = () => f.linhas.find((l) => l.org_id === filtros.org_id && l.request_id === filtros.request_id);
+  const casam = () => f.linhas.filter((l) => l.org_id === filtros.org_id && l.request_id === filtros.request_id
+    && (filtros.tentativa === undefined || Number(l.tentativa ?? 1) === filtros.tentativa));
+  const achar = () => casam()[0];
   const q: Record<string, unknown> = {
     select: () => q,
+    order: () => q,
     eq: (c: string, v: unknown) => { filtros[c] = v; return q; },
     lt: (c: string, v: unknown) => { filtros[`${c}<`] = v; return q; },
     insert: (row: Record<string, unknown>) => {
@@ -108,11 +141,16 @@ function tabela(t: string) {
     then: (res: (v: unknown) => void) => {
       if (t === 'profiles') return res({ data: [{ id: 'u1' }], error: null });
       if (t === 'kit_variacao_imagens') {
+        if (op === 'select') {
+          return res({ data: casam().map((l) => ({ ...l })).sort((a, b) => Number(a.tentativa ?? 1) - Number(b.tentativa ?? 1)), error: null });
+        }
         if (op === 'insert') {
-          if (f.linhas.some((l) => l.org_id === payload.org_id && l.request_id === payload.request_id)) {
+          // unique (org, request, tentativa) + índice único parcial: uma tentativa viva (fora de recusada) por pedido.
+          const mesmo = f.linhas.filter((l) => l.org_id === payload.org_id && l.request_id === payload.request_id);
+          if (mesmo.some((l) => Number(l.tentativa ?? 1) === Number(payload.tentativa ?? 1) || l.status !== 'recusada')) {
             return res({ data: null, error: { code: '23505', message: 'duplicate' } });
           }
-          f.linhas.push({ ...payload });
+          f.linhas.push({ tentativa: 1, criado_em: new Date(Date.now()).toISOString(), ...payload });
         } else if (op === 'update') {
           // UPDATE condicional: só afeta a linha que casa com o filtro de status; devolve as linhas afetadas.
           const l = achar();
@@ -157,6 +195,7 @@ vi.mock('../../_shared/supabase.ts', () => ({
           error: null,
         }),
         createSignedUrl: async (p: string) => ({ data: { signedUrl: `https://x/${p}?t=1` }, error: null }),
+        createSignedUrls: async (ps: string[]) => ({ data: ps.map((p) => ({ path: p, signedUrl: `https://x/${p}?t=1` })), error: null }),
       }),
     },
   }),
@@ -177,6 +216,7 @@ beforeEach(() => {
   f.atrasoImagemMs = 0; f.uploadTrava = false; f.codigoErro = undefined;
   f.uploadAtrasoMs = 0; f.objetos = new Set(); f.listaExiste = [];
   f.uploadErroVira = ''; f.leiturasImagens = 0; f.falhaLeituraN = 0; f.imagemB64 = PNG_VERTICAL; f.custo = 0.041; f.chamadasImagem = []; f.chamadasVisao = 0;
+  f.chamadasFicha = 0; f.verificacoes = []; f.pedidosVerificacao = []; f.atrasoVerificacaoMs = 0;
   f.linhas = []; f.uploads = []; f.downloads = []; f.escritasProibidas = [];
   f.base = {
     nome_pai: 'Jaqueta', titulo_ml: 'Jaqueta Corta Vento',
@@ -205,18 +245,32 @@ describe('gerar-foto-kit', () => {
     expect(f.chamadasImagem).toHaveLength(0);
   });
 
-  it('gera: descreve por visão, pede ao modelo padrão com a descrição, grava a geração com custo > 0', async () => {
+  it('gera: ficha por visão de todas as fotos de cada cor, pedido ancorado, verificação aprovada, custo > 0', async () => {
     const r = await post(ok);
     expect(r.status).toBe(200);
     const j = await r.json();
-    expect(f.chamadasVisao).toBe(1);
+    expect(f.chamadasFicha).toBe(1);
+    expect(f.pedidosVerificacao).toHaveLength(1);
     expect(f.chamadasImagem).toHaveLength(1);
     const pedido = f.chamadasImagem[0];
     expect(pedido.model).toBe('google/gemini-nano-banana-2.1');
-    expect(JSON.stringify(pedido.messages)).toContain('cropped jacket, elastic hem');
-    // Uma foto de origem por cor (a primeira da cor), em base64.
+    // A ficha vai como dado (parte separada das instruções).
+    const textos = (pedido.messages as Array<{ content: Array<{ type: string; text?: string }> }>)[0].content.filter((c) => c.type === 'text');
+    expect(textos).toHaveLength(2);
+    expect(textos[0].text).not.toContain('jaqueta curta');
+    expect(textos[1].text).toContain('jaqueta curta, termina na cintura');
+    // Todas as fotos de cada cor (Preto tem 2, Branco 1), em base64.
     const conteudo = (pedido.messages as Array<{ content: Array<{ type: string }> }>)[0].content;
-    expect(conteudo.filter((c) => c.type === 'image_url')).toHaveLength(2);
+    expect(conteudo.filter((c) => c.type === 'image_url')).toHaveLength(3);
+    // Verificação: as originais + a gerada (última).
+    const imgsVerif = (f.pedidosVerificacao[0].messages as Array<{ content: unknown }>)[1].content as Array<{ type: string }>;
+    expect(imgsVerif.filter((c) => c.type === 'image_url')).toHaveLength(4);
+    expect(j).toMatchObject({ aprovado: true, proxima: false, tentativa: 1 });
+    expect(j.verificacao.itens.every((i: { ok: boolean }) => i.ok)).toBe(true);
+    expect(j.originais).toEqual([
+      { cor: 'Preto', urls: ['https://x/org-1/lote/preto.jpg?t=1', 'https://x/org-1/lote/preto-g.jpg?t=1'] },
+      { cor: 'Branco', urls: ['https://x/u1/lote/branco.jpg?t=1'] },
+    ]);
     expect(j.path).toBe(`org-1/kit-variacao-ia/${REQ}.png`);
     expect(j.url).toContain('https://x/');
     expect(j.custo_centavos).toBeGreaterThan(0);
@@ -233,12 +287,88 @@ describe('gerar-foto-kit', () => {
     expect(f.escritasProibidas).toEqual([]);
   });
 
-  it('mesmo request_id repete sem chamar a IA de novo', async () => {
+  it('mesmo request_id repete sem chamar a IA de novo (devolve a verificação e as originais)', async () => {
     const a = await (await post(ok)).json();
     const b = await (await post(ok)).json();
     expect(f.chamadasImagem).toHaveLength(1);
+    expect(f.chamadasVisao).toBe(2);
     expect(b.path).toBe(a.path);
+    expect(b).toMatchObject({ existente: true, aprovado: true });
+    expect(b.verificacao).toEqual(a.verificacao);
+    expect(b.originais).toEqual(a.originais);
     expect(f.linhas).toHaveLength(1);
+  });
+
+  it('verificação reprovada: tentativa recusada (custo registrado, sem cobrança) e a repetição gera a próxima com os motivos', async () => {
+    f.verificacoes = [LONGA];
+    const r1 = await post(ok);
+    expect(r1.status).toBe(200);
+    const j1 = await r1.json();
+    expect(j1).toMatchObject({ aprovado: false, proxima: true, tentativa: 1 });
+    expect(j1.path).toBeUndefined();
+    expect(j1.motivos.join(' ')).toMatch(/Preto: termina no joelho; a original termina na cintura/);
+    expect(f.linhas).toHaveLength(1);
+    expect(f.linhas[0]).toMatchObject({ tentativa: 1, status: 'recusada' });
+    expect(Number(f.linhas[0].custo_usd)).toBeGreaterThan(0);
+    expect((f.linhas[0].verificacao as { aprovado: boolean }).aprovado).toBe(false);
+
+    const r2 = await post(ok);
+    const j2 = await r2.json();
+    expect(j2).toMatchObject({ aprovado: true, tentativa: 2, path: `org-1/kit-variacao-ia/${REQ}.png` });
+    expect(f.chamadasImagem).toHaveLength(2);
+    expect(f.chamadasFicha).toBe(1);   // ficha guardada na 1ª tentativa
+    const dados = JSON.stringify(f.chamadasImagem[1].messages);
+    expect(dados).toContain('corrigir');
+    expect(dados).toContain('Preto: termina no joelho');
+    expect(f.linhas.map((l) => [l.tentativa, l.status])).toEqual([[1, 'recusada'], [2, 'gerada']]);
+  });
+
+  it('3 reprovações: para (proxima false), nunca gerada, sem path; repetir não chama a IA', async () => {
+    f.verificacoes = [LONGA, LONGA, LONGA];
+    const js = [];
+    for (let i = 0; i < 3; i++) js.push(await (await post(ok)).json());
+    expect(js.map((j) => [j.tentativa, j.aprovado, j.proxima])).toEqual([[1, false, true], [2, false, true], [3, false, false]]);
+    expect(js[2].path).toBeUndefined();
+    expect(js[2].motivos.length).toBeGreaterThan(0);
+    expect(f.linhas.every((l) => l.status === 'recusada')).toBe(true);
+    expect(f.linhas.every((l) => Number(l.custo_usd) > 0)).toBe(true);
+    const r4 = await post(ok);
+    const j4 = await r4.json();
+    expect(r4.status).toBe(200);
+    expect(j4).toMatchObject({ aprovado: false, proxima: false, tentativa: 3, existente: true });
+    expect(j4.path).toBeUndefined();
+    expect(f.chamadasImagem).toHaveLength(3);
+  });
+
+  it('verificação indisponível ou ilegível reprova (fail-closed), nunca aprova', async () => {
+    f.verificacoes = ['erro', 'não é json', { aprovado: true }];
+    for (let i = 0; i < 3; i++) {
+      const j = await (await post(ok)).json();
+      expect(j.aprovado).toBe(false);
+      expect(j.path).toBeUndefined();
+    }
+    expect(f.linhas.some((l) => l.status === 'gerada')).toBe(false);
+  });
+
+  it('tentativa seguinte em andamento → 409 em_andamento, sem IA', async () => {
+    f.linhas.push(
+      { org_id: 'org-1', request_id: REQ, tentativa: 1, status: 'recusada', rotulo: 'Preto e Branco', familia_base_id: 'fam-1', cores: ['Preto', 'Branco'], custo_usd: 0.05, verificacao: { aprovado: false, itens: [], motivos: ['x'] }, criado_em: new Date().toISOString() },
+      { org_id: 'org-1', request_id: REQ, tentativa: 2, status: 'pendente', rotulo: 'Preto e Branco', familia_base_id: 'fam-1', cores: ['Preto', 'Branco'], criado_em: new Date().toISOString() },
+    );
+    const r = await post(ok);
+    expect(r.status).toBe(409);
+    expect((await r.json()).motivo).toBe('em_andamento');
+    expect(f.chamadasImagem).toHaveLength(0);
+  });
+
+  it('falha do provedor na 2ª tentativa libera só ela: a 1ª reprovada (com custo) fica', async () => {
+    f.verificacoes = [LONGA];
+    await post(ok);
+    f.imagemFalha = true;
+    expect((await post(ok)).status).toBe(502);
+    expect(f.linhas.map((l) => [l.tentativa, l.status])).toEqual([[1, 'recusada']]);
+    f.imagemFalha = false;
+    expect((await (await post(ok)).json())).toMatchObject({ aprovado: true, tentativa: 2 });
   });
 
   it('repetição com outra família base (mesmas cores) → 409 pedido_diferente, sem devolver a foto anterior', async () => {
@@ -286,7 +416,8 @@ describe('gerar-foto-kit', () => {
   it('pior caso de tempo: IA lenta + upload travado responde antes de 150 s (relógio falso)', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
-      f.atrasoImagemMs = 128_000;   // a geração consome quase todo o prazo
+      f.atrasoImagemMs = 95_000;    // a geração consome quase todo o prazo
+      f.atrasoVerificacaoMs = 30_000;   // e a verificação passa da fatia dela
       f.uploadTrava = true;         // e o storage nunca responde
       const inicio = Date.now();
       let resposta: Response | undefined;
@@ -328,7 +459,7 @@ describe('gerar-foto-kit', () => {
 
   it('duas repetições concorrentes de pendente_upload: a que perde a corrida responde pelo estado final (gerada → 200)', async () => {
     f.linhas.push({
-      org_id: 'org-1', request_id: REQ, status: 'pendente_upload', rotulo: 'Preto e Branco', familia_base_id: 'fam-1',
+      org_id: 'org-1', request_id: REQ, tentativa: 1, status: 'pendente_upload', rotulo: 'Preto e Branco', familia_base_id: 'fam-1',
       cores: ['Preto', 'Branco'], storage_path: `org-1/kit-variacao-ia/${REQ}.png`, custo_usd: 0.041, criado_em: new Date(Date.now() - 10 * 60_000).toISOString(),
       atualizado_em: new Date(Date.now() - 10 * 60_000).toISOString(),   // prazo da execução original já venceu
     });
@@ -384,7 +515,7 @@ describe('gerar-foto-kit', () => {
 
   it('estado já gerada → UPDATE sem linhas → releitura falha: resposta incerta, nunca falha_storage', async () => {
     f.uploadErroVira = 'gerada';
-    f.falhaLeituraN = 2;   // 1ª leitura: repetição no início; 2ª: releitura depois do UPDATE sem linhas
+    f.falhaLeituraN = 1;   // a leitura inicial é lista (não conta); 1ª maybeSingle = releitura depois do UPDATE sem linhas
     const r = await post(ok);
     const j = await r.json();
     expect(r.status).toBe(503);
@@ -394,7 +525,7 @@ describe('gerar-foto-kit', () => {
 
   it('pendente_upload sem objeto no storage: recusada (sem cobrança), nunca gera de novo', async () => {
     f.linhas.push({
-      org_id: 'org-1', request_id: REQ, status: 'pendente_upload', rotulo: 'Preto e Branco', familia_base_id: 'fam-1',
+      org_id: 'org-1', request_id: REQ, tentativa: 1, status: 'pendente_upload', rotulo: 'Preto e Branco', familia_base_id: 'fam-1',
       cores: ['Preto', 'Branco'], storage_path: `org-1/kit-variacao-ia/${REQ}.png`, custo_usd: 0.041, criado_em: new Date(Date.now() - 10 * 60_000).toISOString(),
       atualizado_em: new Date(Date.now() - 10 * 60_000).toISOString(),   // prazo da execução original já venceu
     });
@@ -406,13 +537,13 @@ describe('gerar-foto-kit', () => {
   });
 
   it('request_id em andamento → 409, sem IA', async () => {
-    f.linhas.push({ org_id: 'org-1', request_id: REQ, status: 'pendente', rotulo: 'Preto e Branco', familia_base_id: 'fam-1', cores: ['Preto', 'Branco'], criado_em: new Date().toISOString() });
+    f.linhas.push({ org_id: 'org-1', request_id: REQ, tentativa: 1, status: 'pendente', rotulo: 'Preto e Branco', familia_base_id: 'fam-1', cores: ['Preto', 'Branco'], criado_em: new Date().toISOString() });
     expect((await post(ok)).status).toBe(409);
     expect(f.chamadasImagem).toHaveLength(0);
   });
 
   it('reserva pendente abandonada (edge morreu) não trava o request_id: gera de novo', async () => {
-    f.linhas.push({ org_id: 'org-1', request_id: REQ, status: 'pendente', rotulo: 'Preto e Branco', familia_base_id: 'fam-1', cores: ['Preto', 'Branco'], criado_em: new Date(Date.now() - 10 * 60_000).toISOString() });
+    f.linhas.push({ org_id: 'org-1', request_id: REQ, tentativa: 1, status: 'pendente', rotulo: 'Preto e Branco', familia_base_id: 'fam-1', cores: ['Preto', 'Branco'], criado_em: new Date(Date.now() - 10 * 60_000).toISOString() });
     expect((await post(ok)).status).toBe(200);
     expect(f.chamadasImagem).toHaveLength(1);
     expect(f.linhas).toHaveLength(1);
@@ -433,12 +564,15 @@ describe('gerar-foto-kit', () => {
     expect(Number(f.linhas[0].custo_usd)).toBeGreaterThan(0);
   });
 
-  it('imagem horizontal não serve ao ML: não entrega e fica fora da cobrança', async () => {
+  it('imagem horizontal não serve ao ML: tentativa reprovada, fora da cobrança, nada no caminho da aprovada', async () => {
     const be = (n: number) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
     f.imagemB64 = btoa(String.fromCharCode(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, ...be(1200), ...be(800), 8, 6, 0, 0, 0));
-    expect((await post(ok)).status).toBe(502);
+    const r = await post(ok);
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ aprovado: false, proxima: true });
     expect(f.linhas[0]).toMatchObject({ status: 'recusada' });
-    expect(f.uploads).toHaveLength(0);
+    expect(f.pedidosVerificacao).toHaveLength(0);
+    expect(f.uploads).not.toContain(`org-1/kit-variacao-ia/${REQ}.png`);
   });
 
   it('cor fora da base → 400, sem IA', async () => {

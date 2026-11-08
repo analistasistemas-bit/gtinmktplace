@@ -132,3 +132,39 @@ inexistente.
 - A imagem deixa de ser dormente no ADR-0074 quando a Fase 4 for entregue (emenda).
 - Ainda a medir: tempo de quarentena e efeito das pausas no ranking do ML; individual pausado em campanha de
   promoção.
+
+## Adendo 1 (08/11) — foto por IA fiel à peça, com verificação automática
+
+**Por quê.** Falha real em 08/11 (Zaven, "Short Bermuda Linho Mauricinho", kit Bege Cru + Cinza Escuro): detalhes
+fiéis, mas a peça saiu longa (bermuda no joelho; o original é short no meio da coxa) e o Cinza Escuro saiu mais
+escuro. A descrição livre por visão não captou comprimento nem proporção. Regra do Diego: zero falha de fidelidade
+(comprimento, modelagem, cor, textura, detalhes).
+
+**Decisão.**
+
+1. **Ficha estruturada antes de gerar**, por visão, com todas as fotos de cada cor (variações da cor, fora de item
+   moderado, até 3 por cor): tipo e comprimento relativo ao corpo, proporção altura/largura, modelagem e caimento,
+   cós, cordão, bolsos, etiquetas, barra, textura e cor por cor do kit. O hex médio da cor é amostrado em código
+   (pixels da peça, fundo excluído pela cor dos cantos), não pedido ao modelo. As capas da família ficam fora: não
+   têm cor declarada.
+2. **Geração ancorada**: fotos de cada cor + a ficha (como dado, separado das instruções); o pedido proíbe alongar,
+   encurtar, trocar modelagem ou inventar detalhe. Enquadramento do kit: N peças lado a lado, mesma escala, numa
+   linha, fundo claro neutro, quadrada.
+3. **Verificação automática**: 2ª chamada de visão compara a gerada com as originais item a item da ficha e devolve
+   JSON estruturado; o veredito é calculado em código (nunca um "aprovado" do modelo). Comprimento por categoria e
+   proporção por número com tolerância; cor também por ΔE entre o hex amostrado da original e o da peça gerada.
+   Erro ou resposta ilegível na verificação reprova (fail-closed). Foto gerada horizontal ou pequena também reprova
+   a tentativa.
+4. **Até 3 tentativas por `request_id`** (1 + 2 automáticas), cada uma numa linha de `kit_variacao_imagens`
+   (`tentativa` 1..3). A reprovada vira `recusada` com o custo real e os motivos (`verificacao`) e não é cobrada; a
+   seguinte recebe os motivos no pedido. Uma linha viva por pedido (índice único parcial fora de `recusada`) e uma
+   `gerada` no máximo: a cobrança continua uma por `(org, request_id)`. **Emenda a decisão 9**: só a imagem
+   aprovada pela verificação é cobrada (a descartada pelo operador depois de aprovada continua cobrada).
+5. **Prazo de 145 s: uma tentativa por chamada.** Cada chamada faz no máximo uma geração + verificação; a ficha é
+   calculada na 1ª e guardada na linha. A tela repete o mesmo `request_id` enquanto a resposta trouxer
+   `proxima: true`. A repetição de uma tentativa já decidida devolve o estado gravado, sem IA. 3 reprovações: a tela
+   mostra "A IA não conseguiu uma foto fiel" com os motivos, sugere enviar foto própria e não oferece
+   "Usar esta foto" (resposta reprovada nunca traz `path`).
+
+**Ainda a medir:** taxa de aprovação na 1ª tentativa e tolerâncias (proporção 15%, ΔE 15) com produtos reais
+(`scripts/medir-foto-kit-fiel.ts`).
