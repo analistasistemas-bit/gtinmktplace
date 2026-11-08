@@ -7,9 +7,9 @@
 --   replay viram passo neutro (res = ant), então quantidade valorizada, custo e nota atravessam intactos.
 -- - Venda, estorno e ajuste do kit mudam o total de C em delta × composição, como venda/estorno de peça.
 -- Cada passo do grupo de C (movimentos de C e dos kits que o contêm, na `ordem` global) recebe ant/res em
--- peças: nível dos outros membros antes do passo (último resultante de cada um, ou o anterior do primeiro
--- movimento, ou o saldo de hoje) + trânsito acumulado + o próprio movimento × peso. Lacuna em qualquer
--- membro aparece como ant ≠ res anterior, igual a hoje. Marco e corte são os de C.
+-- peças: nível do grupo antes do passo (soma acumulada por janela) trocando o nível do membro pelo `ant`
+-- dele, + o próprio movimento × peso. Lacuna em qualquer membro aparece como ant ≠ res anterior, igual a
+-- hoje. Marco e corte são os de C.
 -- SKU fora de qualquer composição passa pelo ramo original, sem nenhum termo novo: resultado idêntico.
 create or replace function public.inventario_calcular(p_org uuid)
 returns table (
@@ -84,6 +84,51 @@ as $$
      where n.org_id = p_org and n.status = 'importada' and d.codigo in (select s.codigo from sku s)
      group by 1, 2
   ),
+  -- Movimentos do grupo de cada componente. prev_res = nível do membro antes do passo (resultante do
+  -- movimento anterior dele; no primeiro, o próprio anterior). Lacuna = ant ≠ prev_res.
+  gmov as (
+    select g.alvo, g.w, m.codigo as membro, m.ordem, m.id, m.referencia_externa as ref, m.motivo, m.criado_em,
+           m.estoque_anterior as ant, m.estoque_resultante as res,
+           coalesce(lag(m.estoque_resultante) over (partition by g.alvo, g.membro order by m.ordem, m.id),
+                    m.estoque_anterior) as prev_res,
+           m.motivo in ('kit_saida', 'kit_entrada') as transf
+      from grupo g
+      join public.estoque_movimentos m on m.org_id = p_org and m.codigo = g.membro
+     where g.alvo in (select s.codigo from sku s)
+       and m.estoque_anterior is not null and m.estoque_resultante is not null
+  ),
+  -- Nível em peças do grupo antes do primeiro passo: anterior do 1º movimento de cada membro, ou o saldo
+  -- de hoje de membro sem movimento.
+  g0 as (
+    select g.alvo, sum(g.w * coalesce(i.ant, sm.estoque, 0)) as nivel
+      from grupo g
+      left join (select distinct on (x.alvo, x.membro) x.alvo, x.membro, x.ant
+                   from gmov x order by x.alvo, x.membro, x.ordem, x.id) i
+             on i.alvo = g.alvo and i.membro = g.membro
+      left join saldo_membro sm on sm.codigo = g.membro
+     group by g.alvo
+  ),
+  -- Variação do nível do grupo em cada passo: o membro sai de prev_res para res; transferência devolve o
+  -- próprio delta ao trânsito (neutra). Acumulada por `ordem` numa janela só: linear no histórico.
+  gnivel as (
+    select x.*, g0.nivel + coalesce(sum(x.w * (x.res - x.prev_res)
+                                        - case when x.transf then x.w * (x.res - x.ant) else 0 end)
+                                      over (partition by x.alvo order by x.ordem, x.id
+                                            rows between unbounded preceding and 1 preceding), 0) as antes_do_passo
+      from gmov x join g0 on g0.alvo = x.alvo
+  ),
+  gpassos as (
+    select gn.alvo, gn.ordem, gn.id, gn.ref,
+           (gn.antes_do_passo - gn.w * gn.prev_res + gn.w * gn.ant)::int as ant,
+           (gn.antes_do_passo - gn.w * gn.prev_res + gn.w * gn.ant
+              + case when gn.transf then 0 else gn.w * (gn.res - gn.ant) end)::int as res,
+           nt.q, nt.u,
+           coalesce(gn.criado_em <= mc.marco, false) or coalesce(gn.ordem <= cb.ate_ordem, false) as antes
+      from gnivel gn
+      left join nota nt on nt.ref = gn.ref and nt.codigo = gn.membro and gn.motivo = 'entrada'
+      left join marco mc on mc.codigo = gn.alvo
+      left join public.inventario_corte_backfill cb on cb.org_id = p_org and cb.codigo = gn.alvo
+  ),
   mov as (
     -- SKU comum: corpo de 20261016233218 sem mudança.
     select m.codigo, m.ordem, m.id, m.referencia_externa as ref, m.estoque_anterior as ant,
@@ -97,37 +142,9 @@ as $$
        and m.codigo not in (select g.alvo from grupo g)
        and m.estoque_anterior is not null and m.estoque_resultante is not null
     union all
-    -- Componente de kit: passos do grupo em peças.
-    select g.alvo, m.ordem, m.id, m.referencia_externa,
-           (x.nivel + g.w * m.estoque_anterior)::int,
-           (x.nivel + g.w * case when m.motivo in ('kit_saida', 'kit_entrada') then m.estoque_anterior
-                                 else m.estoque_resultante end)::int,
-           nt.q, nt.u,
-           coalesce(m.criado_em <= mc.marco, false) or coalesce(m.ordem <= cb.ate_ordem, false)
-      from grupo g
-      join public.estoque_movimentos m on m.org_id = p_org and m.codigo = g.membro
-      left join nota nt on nt.ref = m.referencia_externa and nt.codigo = m.codigo and m.motivo = 'entrada'
-      left join marco mc on mc.codigo = g.alvo
-      left join public.inventario_corte_backfill cb on cb.org_id = p_org and cb.codigo = g.alvo
-      cross join lateral (
-        select coalesce(sum(o.w * coalesce(
-                 (select m2.estoque_resultante from public.estoque_movimentos m2
-                   where m2.org_id = p_org and m2.codigo = o.membro and m2.ordem < m.ordem
-                     and m2.estoque_anterior is not null and m2.estoque_resultante is not null
-                   order by m2.ordem desc limit 1),
-                 (select m2.estoque_anterior from public.estoque_movimentos m2
-                   where m2.org_id = p_org and m2.codigo = o.membro and m2.ordem > m.ordem
-                     and m2.estoque_anterior is not null and m2.estoque_resultante is not null
-                   order by m2.ordem limit 1),
-                 sm.estoque, 0)) filter (where o.membro <> g.membro), 0)
-               - coalesce(sum(o.w * (select sum(t.quantidade) from public.estoque_movimentos t
-                                      where t.org_id = p_org and t.codigo = o.membro and t.ordem < m.ordem
-                                        and t.motivo in ('kit_saida', 'kit_entrada'))), 0) as nivel
-          from grupo o left join saldo_membro sm on sm.codigo = o.membro
-         where o.alvo = g.alvo
-      ) x
-     where g.alvo in (select s.codigo from sku s)
-       and m.estoque_anterior is not null and m.estoque_resultante is not null
+    -- Componente de kit: passos do grupo em peças (gpassos).
+    select gp.alvo, gp.ordem, gp.id, gp.ref, gp.ant, gp.res, gp.q, gp.u, gp.antes
+      from gpassos gp
   ),
   passos as (
     select mv.codigo, row_number() over (partition by mv.codigo order by mv.ordem, mv.id) as n,

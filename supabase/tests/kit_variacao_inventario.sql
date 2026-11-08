@@ -207,4 +207,199 @@ begin
 end $$;
 reset role;
 
+-- ---------------------------------------------------------------------------------------------
+-- Confirmação do inventário (ADR-0181) com kit montado. A foto conta peças (avulso + kit + trânsito);
+-- confirmar_inventario aplica a diferença ao avulso. Org 2: falta coberta pelo avulso, sobra e retry.
+-- Org 3: falta maior que o avulso. Org 4: transferência aberta. Recusa = nada gravado.
+-- Cada org: P 3 @ 10 e B 3 @ 20 por nota; K = P + B.
+-- ---------------------------------------------------------------------------------------------
+create function pg_temp.org_kit(o uuid) returns void language plpgsql as $$
+declare u uuid := gen_random_uuid(); l uuid := gen_random_uuid(); fb uuid := gen_random_uuid();
+  fk uuid := gen_random_uuid(); k uuid := gen_random_uuid(); ks uuid := gen_random_uuid(); chave text;
+  nota uuid; item uuid; c record;
+begin
+  insert into public.organizations (id, nome, slug, tipo_pessoa, modulos_habilitados, is_test)
+  values (o, 'Kit inv ' || o, 'kit-inv-' || o, 'pj', array['kit_variacao'], true);
+  insert into public.empresa_fiscal (org_id, cnpj, inscricao_estadual, razao_social)
+  values (o, '11222333000181', '111111111', 'Empresa Kit Teste');
+  insert into auth.users (id, email, raw_user_meta_data)
+  values (u, u || '@teste.local', jsonb_build_object('org_id', o));
+  insert into public.profiles (id, org_id, is_active) values (u, o, true)
+  on conflict (id) do update set org_id = excluded.org_id, is_active = true;
+  insert into public.lotes (id, user_id, org_id, status, origem) values (l, u, o, 'processando', 'manual');
+  insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai, operacao, origem, chave_cadastro,
+    ncm, unidade) values
+    (fb, l, u, o, '09790000', 'Blusa', 'CREATE', 'nacional', gen_random_uuid(), '62034900', 'UN'),
+    (fk, l, u, o, '09791000', 'Kit blusa', 'CREATE', 'nacional', gen_random_uuid(), '62034900', 'UN');
+  insert into public.variacoes (familia_id, user_id, org_id, codigo, nome, cor, tamanho, preco, estoque) values
+    (fb, u, o, '09790001', 'P', 'Preto', 'M', 50, 0), (fb, u, o, '09790002', 'B', 'Branco', 'M', 50, 0),
+    (fk, u, o, '09791001', 'K', 'Preto + Branco', 'M', 90, 0);
+  insert into public.kits_variacao (id, org_id, codigo_pai_base, codigo_pai_kit, pecas_por_kit, preco)
+  values (k, o, '09790000', '09791000', 2, 99.90);
+  insert into public.kit_variacao_skus (id, org_id, kit_id, codigo, tamanho, cores, rotulo_cor)
+  values (ks, o, k, '09791001', 'M', array['Preto','Branco'], 'Preto + Branco');
+  insert into public.kit_variacao_componentes (kit_sku_id, org_id, codigo, quantidade)
+  values (ks, o, '09790001', 1), (ks, o, '09790002', 1);
+
+  chave := '979' || repeat('0', 38) || right(o::text, 3);   -- 44 dígitos, um por org
+  insert into public.notas_compra (org_id, chave, numero, serie, emitente_cnpj, emitente_nome, emitida_em,
+    valor_total, assinada, xml_path)
+  values (o, chave, 1, 1, '11222333000181', 'Fornecedor Teste', now(), 90, false, o || '/x.xml')
+  returning id into nota;
+  for c in select * from (values (1, '09790001', 10), (2, '09790002', 20)) x(n, codigo, custo) loop
+    insert into public.notas_compra_itens (nota_id, org_id, n_item, cprod, xprod, cfop, ucom, qcom, v_prod, codigo_pai)
+    values (nota, o, c.n, 'REF', 'Item', '5102', 'UN', 3, 3 * c.custo, '09790000') returning id into item;
+    insert into public.notas_compra_distribuicao (item_id, org_id, codigo, quantidade, custo_aquisicao_unit,
+      custo_precificacao_unit)
+    values (item, o, c.codigo, 3, c.custo, round(c.custo * 1.4, 2));
+    perform public.registrar_entrada(o, c.codigo, 3, null, 'NF', null, u,
+      'nfe:' || chave || ':' || c.n || ':' || c.codigo);
+  end loop;
+end $$;
+
+create function pg_temp.montar(o uuid, n int, p_creditar boolean) returns uuid language plpgsql as $$
+declare t uuid;
+begin
+  insert into public.kit_transferencias (org_id, kit_id, tipo, versao_politica, itens)
+  select o, k.id, 'montar', 1, jsonb_build_array(jsonb_build_object('codigo', '09791001', 'quantidade', n))
+    from public.kits_variacao k where k.org_id = o
+  returning id into t;
+  perform pg_temp.ok(public.kit_reservar_transferencia(o, t), 'montar reservar');
+  if p_creditar then
+    perform pg_temp.ok(public.kit_creditar_transferencia(o, t), 'montar creditar');
+    update public.kit_transferencias set estado = 'concluida' where id = t;
+  end if;
+  return t;
+end $$;
+
+create function pg_temp.avulso(o uuid, p_codigo text) returns int language sql as $$
+  select estoque from public.variacoes where org_id = o and codigo = p_codigo
+$$;
+
+create function pg_temp.foto(o uuid) returns uuid language sql as $$
+  select id from public.inventarios where org_id = o and data_base = '2026-12-31'
+$$;
+
+-- Recusa integral: erro com a mensagem esperada, sem movimento de inventário, foto aberta e sem finais.
+create function pg_temp.recusa_integral(o uuid, p_msg text) returns void language plpgsql as $$
+declare v_id uuid := pg_temp.foto(o); v_saldos text;
+begin
+  select string_agg(codigo || '=' || estoque, ',' order by codigo) into v_saldos from public.variacoes where org_id = o;
+  begin
+    perform public.confirmar_inventario(o, v_id, 1, null);
+    raise exception 'confirmar deveria recusar (%)', p_msg;
+  exception when others then
+    if position(p_msg in sqlerrm) = 0 then raise exception 'esperava "%", veio: %', p_msg, sqlerrm; end if;
+  end;
+  if exists (select 1 from public.estoque_movimentos where org_id = o and referencia_externa like 'inventario:%')
+     or (select status from public.inventarios where id = v_id) <> 'aberto'
+     or exists (select 1 from public.inventarios_itens where inventario_id = v_id and qtd_final is not null)
+     or (select string_agg(codigo || '=' || estoque, ',' order by codigo) from public.variacoes where org_id = o)
+        is distinct from v_saldos then
+    raise exception 'recusa (%) gravou algo', p_msg;
+  end if;
+end $$;
+
+select pg_temp.org_kit('97900000-0000-0000-0000-000000000002');
+select pg_temp.org_kit('97900000-0000-0000-0000-000000000003');
+select pg_temp.org_kit('97900000-0000-0000-0000-000000000004');
+
+set local role service_role;
+select pg_temp.montar('97900000-0000-0000-0000-000000000002', 1, true);    -- avulso P 2, B 2; K 1
+select pg_temp.montar('97900000-0000-0000-0000-000000000003', 2, true);    -- avulso P 1, B 1; K 2
+select pg_temp.montar('97900000-0000-0000-0000-000000000004', 1, true);    -- avulso P 2, B 2; K 1
+reset role;
+
+do $$
+declare o uuid; it record;
+begin
+  foreach o in array array['97900000-0000-0000-0000-000000000002', '97900000-0000-0000-0000-000000000003',
+                           '97900000-0000-0000-0000-000000000004']::uuid[] loop
+    if public.gerar_foto_inventario_org(o, '2026-12-31', 'manual') <> 'gerada' then
+      raise exception 'foto não gerada para %', o;
+    end if;
+    -- Foto em peças: P e B com 3 valorizadas a custo da nota; o kit não é item da foto.
+    for it in select * from public.inventarios_itens where inventario_id = pg_temp.foto(o) loop
+      if it.codigo not in ('09790001', '09790002') or it.quantidade_sistema <> 3 or it.qtd_valorizada <> 3
+         or it.custo_medio <> (case it.codigo when '09790001' then 10 else 20 end) then
+        raise exception 'foto %: %', o, row_to_json(it);
+      end if;
+    end loop;
+    if (select count(*) from public.inventarios_itens where inventario_id = pg_temp.foto(o)) <> 2 then
+      raise exception 'foto % com itens a mais ou a menos', o;
+    end if;
+  end loop;
+end $$;
+
+-- Contagens: org 2 falta 1 P (avulso 2 cobre) e sobra 2 B; org 3 falta 2 P (avulso 1) e sobra 1 B;
+-- org 4 falta 1 P e sobra 1 B, com uma montagem aberta depois da foto.
+select public.salvar_contagem_inventario('97900000-0000-0000-0000-000000000002',
+  pg_temp.foto('97900000-0000-0000-0000-000000000002'), 0,
+  '[{"codigo":"09790001","quantidade_contada":2,"justificativa":"quebra"},
+    {"codigo":"09790002","quantidade_contada":5,"justificativa":"achado"}]');
+select public.salvar_contagem_inventario('97900000-0000-0000-0000-000000000003',
+  pg_temp.foto('97900000-0000-0000-0000-000000000003'), 0,
+  '[{"codigo":"09790001","quantidade_contada":1,"justificativa":"quebra"},
+    {"codigo":"09790002","quantidade_contada":4,"justificativa":"achado"}]');
+select public.salvar_contagem_inventario('97900000-0000-0000-0000-000000000004',
+  pg_temp.foto('97900000-0000-0000-0000-000000000004'), 0,
+  '[{"codigo":"09790001","quantidade_contada":2,"justificativa":"quebra"},
+    {"codigo":"09790002","quantidade_contada":4,"justificativa":"achado"}]');
+
+set local role service_role;
+select pg_temp.montar('97900000-0000-0000-0000-000000000004', 1, false);   -- P e B em trânsito
+do $$
+declare o constant uuid := '97900000-0000-0000-0000-000000000002'; v_id uuid := pg_temp.foto(o); v jsonb; v2 jsonb;
+  it record; m record; n int;
+begin
+  -- Org 3: falta 2 com avulso 1 (a outra peça está no kit) → recusa tudo, inclusive a sobra de B.
+  perform pg_temp.recusa_integral('97900000-0000-0000-0000-000000000003', 'saldo de hoje insuficiente');
+  -- Org 4: P e B em transferência aberta → recusa tudo.
+  perform pg_temp.recusa_integral('97900000-0000-0000-0000-000000000004', 'sku_em_transferencia');
+
+  -- Org 2: falta coberta pelo avulso (P 2 → 1) e sobra sem custo (B 2 → 4); o kit não é tocado.
+  v := public.confirmar_inventario(o, v_id, 1, null);
+  if v <> '{"produtos":[{"codigo_pai":"09790000","reativar":true}]}'::jsonb then raise exception 'retorno: %', v; end if;
+  if pg_temp.avulso(o, '09790001') <> 1 or pg_temp.avulso(o, '09790002') <> 4 or pg_temp.avulso(o, '09791001') <> 1 then
+    raise exception 'saldos após confirmar: P % B % K %', pg_temp.avulso(o, '09790001'), pg_temp.avulso(o, '09790002'),
+      pg_temp.avulso(o, '09791001');
+  end if;
+  select * into m from public.estoque_movimentos where org_id = o and referencia_externa = 'inventario:' || v_id || ':09790001';
+  if m.motivo <> 'ajuste' or m.quantidade <> -1 or m.estoque_anterior <> 2 or m.estoque_resultante <> 1 then
+    raise exception 'falta: movimento %', row_to_json(m);
+  end if;
+  select * into m from public.estoque_movimentos where org_id = o and referencia_externa = 'inventario:' || v_id || ':09790002';
+  if m.motivo <> 'entrada' or m.quantidade <> 2 or m.custo_unitario is not null or m.estoque_resultante <> 4 then
+    raise exception 'sobra: movimento %', row_to_json(m);
+  end if;
+  -- Finais da foto: falta consome sem nota primeiro (não há) → 2 valorizadas; sobra entra sem nota.
+  select * into it from public.inventarios_itens where inventario_id = v_id and codigo = '09790001';
+  if it.qtd_final <> 2 or it.qtd_valorizada_final <> 2 or it.qtd_sem_nota_final <> 0 or it.valor_final <> 20 then
+    raise exception 'falta: finais %', row_to_json(it);
+  end if;
+  select * into it from public.inventarios_itens where inventario_id = v_id and codigo = '09790002';
+  if it.qtd_final <> 5 or it.qtd_valorizada_final <> 3 or it.qtd_sem_nota_final <> 2 or it.valor_final <> 60 then
+    raise exception 'sobra: finais %', row_to_json(it);
+  end if;
+  if (select status from public.inventarios where id = v_id) <> 'confirmado' then raise exception 'não confirmou'; end if;
+  -- Inventário de hoje em peças (avulso + kit) bate com os finais.
+  select * into it from public.inventario_calcular(o) i where i.codigo = '09790001';
+  if it.quantidade_sistema <> 2 or it.qtd_valorizada <> 2 or it.custo_medio <> 10 or it.valor_total <> 20 then
+    raise exception 'inventário P após confirmar: %', row_to_json(it);
+  end if;
+  select * into it from public.inventario_calcular(o) i where i.codigo = '09790002';
+  if it.quantidade_sistema <> 5 or it.qtd_valorizada <> 3 or it.qtd_sem_nota <> 2 or it.valor_total <> 60 then
+    raise exception 'inventário B após confirmar: %', row_to_json(it);
+  end if;
+
+  -- Retry idempotente: mesma resposta, nenhum movimento novo, saldos iguais.
+  select count(*) into n from public.estoque_movimentos where org_id = o;
+  v2 := public.confirmar_inventario(o, v_id, 1, null);
+  if v2 is distinct from v or (select count(*) from public.estoque_movimentos where org_id = o) <> n
+     or pg_temp.avulso(o, '09790001') <> 1 or pg_temp.avulso(o, '09790002') <> 4 then
+    raise exception 'retry não idempotente: %', v2;
+  end if;
+end $$;
+reset role;
+
 rollback;
