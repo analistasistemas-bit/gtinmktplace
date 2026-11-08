@@ -62,7 +62,7 @@ export function gerarTextoKitEdge(p: { familiaBaseId: string; pecasPorKit: numbe
 
 /** Foto da combinação por IA (Task 15). Mesmo `requestId` repete sem gerar de novo; a foto só vale aprovada na tela. */
 export function gerarFotoKitEdge(p: { requestId: string; familiaBaseId: string; cores: string[] }) {
-  return invocar<{ path: string; url: string | null }>('gerar-foto-kit', {
+  return invocar<RespostaFotoKit>('gerar-foto-kit', {
     request_id: p.requestId, familia_base_id: p.familiaBaseId, cores: p.cores,
   });
 }
@@ -201,4 +201,19 @@ export async function fetchDetalheKitVariacao(kitId: string, codigoPaiBase: stri
     abertas: ((transR.data ?? []) as LinhaTransferencia[]).map(transferenciaDe),
     baseFamiliaId: baseR.data?.[0]?.id ?? null,
   };
+}
+
+/** Resposta 200 de `gerar-foto-kit` (ADR-0200, Adendo 1). `path` só vem na aprovada pela verificação. */
+export interface ItemVerificado { campo: string; rotulo: string; ok: boolean; nota: string }
+export interface RespostaFotoKit {
+  path?: string;
+  url?: string | null;
+  tentativa?: number;
+  /** false = reprovada pela verificação; `proxima` diz se a edge tenta de novo com o mesmo request_id. */
+  aprovado?: boolean;
+  proxima?: boolean;
+  verificacao?: { aprovado: boolean; itens: ItemVerificado[]; motivos: string[] } | null;
+  motivos?: string[];
+  previa_url?: string | null;
+  originais?: Array<{ cor: string; urls: string[] }>;
 }

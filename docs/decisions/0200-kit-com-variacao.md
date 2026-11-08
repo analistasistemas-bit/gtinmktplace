@@ -292,3 +292,62 @@ e a saga resolveu sozinha 20 s depois; o texto ficou em `kit_transferencias.aler
   `kit_fim:<transferência>` e mesma marca `aviso_fim_enviado_em`, gravada só depois do envio.
 - **Concluída sem alerta velho.** `kit_saga_finalizar` grava na concluída o alerta recebido (a saga manda null, ou o
   "política não autoriza reativar"); abortada segue com `coalesce`.
+
+## Adendo 1 (08/11) — foto por IA fiel à peça, com verificação automática
+
+**Por quê.** Falha real em 08/11 (Zaven, "Short Bermuda Linho Mauricinho", kit Bege Cru + Cinza Escuro): detalhes
+fiéis, mas a peça saiu longa (bermuda no joelho; o original é short no meio da coxa) e o Cinza Escuro saiu mais
+escuro. A descrição livre por visão não captou comprimento nem proporção. Regra do Diego: zero falha de fidelidade
+(comprimento, modelagem, cor, textura, detalhes).
+
+**Decisão.**
+
+1. **Ficha estruturada antes de gerar**, por visão, com todas as fotos de cada cor (variações da cor, fora de item
+   moderado, até 3 por cor): tipo e comprimento relativo ao corpo, proporção altura/largura, modelagem e caimento,
+   cós, cordão, bolsos, etiquetas, barra, textura e cor por cor do kit. Fotos repetidas por conteúdo (o mesmo
+   arquivo em um caminho por tamanho) contam uma vez. **Sem hex amostrado em código**: medido em 08/11 em 7 kits
+   reais, a foto vestida e o cenário contaminam a média mesmo dentro da caixa da peça apontada pelo modelo e com
+   filtro de pele (o preto saiu marrom), e o hex errado no pedido puxou a geração para o marrom (falso positivo no
+   kit Preto Mesclado). A cor fica com as fotos, o nome do tom e o inspetor; voltar ao hex só com segmentação da
+   peça. As capas da família ficam fora: não têm cor declarada.
+2. **Geração ancorada**: fotos de cada cor + a ficha (como dado, separado das instruções); o pedido proíbe alongar,
+   encurtar, trocar modelagem ou inventar detalhe. Enquadramento do kit: N peças lado a lado, mesma escala, numa
+   linha, fundo claro neutro, quadrada.
+3. **Verificação automática**: 2ª chamada de visão compara a gerada com as originais item a item da ficha e devolve
+   JSON estruturado; o veredito é calculado em código (nunca um "aprovado" do modelo). Comprimento comparado direto
+   com a original (mais longa, igual, mais curta) e proporção altura/largura da original e da gerada lidas na mesma
+   resposta, com tolerância de 15% (a categoria absoluta lida numa foto estendida contra uma vestida deu ruído na
+   medição de 08/11); cor por matiz e escurecimento contra as originais da cor (cinza que puxa para o marrom é
+   divergência).
+   Erro ou resposta ilegível na verificação reprova (fail-closed). Foto gerada horizontal ou pequena também reprova
+   a tentativa.
+4. **Até 3 tentativas por `request_id`** (1 + 2 automáticas), cada uma numa linha de `kit_variacao_imagens`
+   (`tentativa` 1..3). A reprovada vira `recusada` com o custo real e os motivos (`verificacao`) e não é cobrada; a
+   seguinte recebe os motivos no pedido. Uma linha viva por pedido (índice único parcial fora de `recusada`) e uma
+   `gerada` no máximo: a cobrança continua uma por `(org, request_id)`. **Emenda a decisão 9**: só a imagem
+   aprovada pela verificação é cobrada (a descartada pelo operador depois de aprovada continua cobrada).
+5. **Prazo de 145 s: uma tentativa por chamada.** Cada chamada faz no máximo uma geração + verificação; a ficha é
+   calculada na 1ª e guardada na linha. A tela repete o mesmo `request_id` enquanto a resposta trouxer
+   `proxima: true`. A repetição de uma tentativa já decidida devolve o estado gravado, sem IA. 3 reprovações: a tela
+   mostra "A IA não conseguiu uma foto fiel" com os motivos, sugere enviar foto própria e não oferece
+   "Usar esta foto" (resposta reprovada nunca traz `path`).
+
+**Ainda a medir:** taxa de aprovação na 1ª tentativa, falso positivo (aprovada não fiel na conferência humana) e
+tolerância de proporção (15%) com produtos reais (`scripts/medir-foto-kit-fiel.ts`). A base tem só 9 roupas com
+2+ cores fotografadas (2 lojas; a "Camisa" é uma camiseta gola careca), e em todas o dedupe deixou 1 foto distinta
+por cor (o mesmo arquivo em cada tamanho): frente/costas separadas não ocorreram nesta base.
+
+**Medição de 08/11 (12 kits, 6 de 2 cores e 6 de 3; Nano Banana 2.1 + gpt-4o; ~US$ 0,05–0,06 por tentativa).**
+A verificação aprovou os 12 em até 3 tentativas (7 na 1ª). Na conferência humana das 12 aprovadas: 3 fiéis
+(inclusive o caso Zaven), 7 em dúvida (etiqueta de gola inventada em 6; tom de Cáqui/Caramelo) e 2 não fiéis
+(etiqueta inventada no cós; decote quadrado no lugar do arredondado). A verificação reduz a falha, não a elimina:
+a aprovação humana ("Usar esta foto", depois de ampliar e comparar com as originais) continua sendo a trava.
+Reteste de 6 desses kits já com a proibição de etiqueta inventada no pedido e no inspetor: 4 aprovados (1 na 1ª);
+o inspetor passou a cobrar etiqueta "ausente" quando a ficha descreve etiqueta não visível (ponto a ajustar na
+ficha). Ficha levou até 29 s, verificação até 36 s e geração de 9 a 82 s: fatias de ficha e verificação de 35 s; uma
+geração acima de ~60 s na 1ª tentativa estoura o prazo e a chamada falha sem cobrança (o mesmo pedido repete).
+
+**Modelo mais forte (08/11):** `openai/gpt-5.4-image-2` (catálogo: imagem na entrada e na saída) não gerou imagem
+pelo OpenRouter em nenhuma qualidade (low, medium, high): `Complexity '…' is not supported for this image model`
+(`provider_unavailable`), como em 07/11. `google/gemini-3-pro-image` ficou fora por decisão do Diego (~3× o custo).
+Fica o Nano Banana 2.1; o script de medição aceita `--modelo` e `--qualidade` para repetir a comparação.

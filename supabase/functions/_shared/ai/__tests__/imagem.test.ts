@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../client.ts', () => ({ openrouterClient: () => { throw new Error('IA real proibida em teste'); } }));
 import {
-  adequadaAoML, custoImagemUsd, dimensoesImagem, extrairImagem, montarPedidoImagem, MODELO_IMAGEM_PADRAO,
+  adequadaAoML, custoImagemUsd, dimensoesImagem, extrairImagem, MODELO_IMAGEM_PADRAO,
 } from '../imagem.ts';
 import { PRECOS } from '../tokens.ts';
 import { MODELOS_IMAGEM } from '../../../../../src/lib/ai-modelos.ts';
@@ -17,18 +17,6 @@ function png(largura: number, altura: number): number[] {
 function jpeg(largura: number, altura: number): number[] {
   return [0xff, 0xd8, 0xff, 0xe0, 0, 4, 0, 0, 0xff, 0xc0, 0, 11, 8, altura >> 8, altura & 255, largura >> 8, largura & 255, 3, 0, 0, 0];
 }
-
-describe('montarPedidoImagem', () => {
-  it('leva a descrição da peça, a quantidade e cada cor, sem pessoa e sem texto', () => {
-    const p = montarPedidoImagem({ cores: ['Preto', 'Azul Royal', 'Caramelo'], descricao: 'cropped jacket, elastic hem and cuffs' });
-    expect(p).toContain('cropped jacket, elastic hem and cuffs');
-    expect(p).toContain('3-piece kit');
-    for (const c of ['Preto', 'Azul Royal', 'Caramelo']) expect(p).toContain(c);
-    expect(p).toMatch(/no person/i);
-    expect(p).toMatch(/no text/i);
-    expect(p).toMatch(/white background/i);
-  });
-});
 
 describe('extrairImagem', () => {
   it('lê o data URL da resposta do OpenRouter', () => {
