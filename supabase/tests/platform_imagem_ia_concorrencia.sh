@@ -25,6 +25,8 @@ limpar() {
   psql_ -c "set session_replication_role = replica;
             do \$\$ begin if to_regclass('public.ml_item_travas') is not null then
               delete from public.ml_item_travas where org_id = '$ORG2';
+              delete from public.galeria_aplicacao_itens where org_id = '$ORG2';
+              delete from public.galeria_aplicacoes where org_id = '$ORG2';
               delete from public.galeria_imagens where org_id = '$ORG2';
               delete from public.galeria_pedidos where org_id = '$ORG2';
               delete from public.galeria_roteiros where org_id = '$ORG2';
@@ -161,5 +163,45 @@ corrida "5 trava×trava" \
   "select public.ml_travar_itens('$ORG2', array['MLB-CONC'], 'escritor', gen_random_uuid(), 600)"
 [ "$(grep -x 't' "$OUT_A")" = 't' ] && [ "$(echo "$B_OUT" | tail -1)" = 'f' ] \
   || falha "5: as duas sessões venceram ou nenhuma (A=$(cat "$OUT_A") B=$B_OUT)"
+
+# 6. Delete do anúncio × galeria_confirmar_aplicacao, nas duas ordens (ordem de locks anúncio → aplicação):
+#    nunca 40P01; ou o delete é recusado (galeria_em_execucao) ou o confirmar devolve desatualizada.
+aplicacao_preparada() {  # $1 = partição nova; devolve o id da aplicação preparada (roteiro aprovado, 1 item)
+  psql_ -c "with a as (insert into public.anuncios_externos (user_id, org_id, canal, codigo_pai, particao, status)
+                       values ('$USR2', '$ORG2', 'mercado_livre', '09760000', $1, 'publicado') returning id),
+                 r as (insert into public.galeria_roteiros (org_id, anuncio_externo_id, familia_id, versao, conteudo, fatos_hash, moda, status)
+                       select '$ORG2', a.id, f.id, 1, '{}'::jsonb, 'h1', false, 'aprovado'
+                         from a, public.familias f where f.org_id = '$ORG2' returning id, anuncio_externo_id, familia_id),
+                 ap as (insert into public.galeria_aplicacoes (org_id, anuncio_externo_id, familia_id, cor, modo, manifesto, roteiro_id, fatos_hash)
+                        select '$ORG2', anuncio_externo_id, familia_id, 'Preto', 'substituir', '[]'::jsonb, id, 'h1' from r
+                        returning id, anuncio_externo_id)
+            insert into public.galeria_aplicacao_itens (org_id, anuncio_externo_id, aplicacao_id, item_id)
+            select '$ORG2', anuncio_externo_id, id, 'MLB-CONC-$1' from ap returning aplicacao_id"
+}
+confirmar() {  # $1 = aplicação
+  echo "select public.galeria_confirmar_aplicacao('$ORG2', (select familia_id from public.galeria_aplicacoes where id = '$1'),
+          '$1', (select roteiro_id from public.galeria_aplicacoes where id = '$1'), 'h1')"
+}
+apagar_anuncio() {  # $1 = aplicação
+  echo "delete from public.anuncios_externos where id = (select anuncio_externo_id from public.galeria_aplicacoes where id = '$1')"
+}
+
+# 6a. confirmar (A, segura o key share do anúncio) × delete (B): B espera e o gatilho vê em_andamento → recusa.
+AP1=$(aplicacao_preparada 1 | head -1)
+corrida "6a confirmar×delete" "$(confirmar "$AP1")" "$(apagar_anuncio "$AP1")"
+grep -qx 'ok' "$OUT_A" || falha "6a: confirmar não devolveu ok ($(cat "$OUT_A"))"
+echo "$B_OUT" | grep -q 'galeria_em_execucao' || falha "6a: delete não foi recusado ($B_OUT)"
+[ "$(psql_ -c "select a.status || '/' || (a.anuncio_externo_id is not null) || '/' || (select count(*) from public.ml_item_travas t
+               where t.dono_id = a.id) from public.galeria_aplicacoes a where a.id = '$AP1'")" = 'em_andamento/true/1' ] \
+  || falha "6a: estado incoerente depois da recusa"
+
+# 6b. delete (A, preparada não bloqueia; set null da aplicação) × confirmar (B): B espera o anúncio e devolve
+#     desatualizada, sem trava.
+AP2=$(aplicacao_preparada 2 | head -1)
+corrida "6b delete×confirmar" "$(apagar_anuncio "$AP2")" "$(confirmar "$AP2")"
+[ "$(echo "$B_OUT" | tail -1)" = 'desatualizada' ] || falha "6b: confirmar não devolveu desatualizada ($B_OUT)"
+[ "$(psql_ -c "select a.status || '/' || (a.anuncio_externo_id is null) || '/' || (select count(*) from public.ml_item_travas t
+               where t.dono_id = a.id) from public.galeria_aplicacoes a where a.id = '$AP2'")" = 'preparada/true/0' ] \
+  || falha "6b: estado incoerente depois do delete"
 
 echo "platform_imagem_ia_concorrencia: OK"

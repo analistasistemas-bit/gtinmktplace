@@ -497,11 +497,22 @@ returns text language plpgsql security definer set search_path = '' as $$
 declare
   v_apl public.galeria_aplicacoes%rowtype;
   v_itens text[];
+  v_anuncio uuid;
+  v_anuncio_vivo boolean;
 begin
-  select * into v_apl from public.galeria_aplicacoes a where a.id = p_aplicacao and a.org_id = p_org for update;
+  -- Ordem única de locks da saga: anúncio → aplicação → itens → travas. O key share no anúncio vem ANTES do
+  -- for update da aplicação: um delete concorrente do anúncio (que segura a linha do anúncio e, no set null,
+  -- espera a da aplicação) nunca forma ciclo com esta RPC (sem 40P01). Se esta RPC chegou primeiro, o delete
+  -- espera o commit e o gatilho dele vê o estado novo; se o delete chegou primeiro, o anúncio sumiu (ou é
+  -- nulo) e a aplicação é só histórico → desatualizada.
+  select a.anuncio_externo_id into v_anuncio from public.galeria_aplicacoes a
+   where a.id = p_aplicacao and a.org_id = p_org;
   if not found then
     raise exception 'aplicacao_inexistente' using errcode = 'P0002';
   end if;
+  perform 1 from public.anuncios_externos x where x.id = v_anuncio for key share;
+  v_anuncio_vivo := found;
+  select * into v_apl from public.galeria_aplicacoes a where a.id = p_aplicacao and a.org_id = p_org for update;
   -- Repetição depois de commit com resposta perdida: já está no estado-alvo → ok sem gravar nada.
   if v_apl.status = 'em_andamento' then
     return 'ok';
@@ -509,10 +520,8 @@ begin
   if v_apl.status <> 'preparada' then
     return 'desatualizada';
   end if;
-  -- key share no anúncio: um delete concorrente espera este commit e o gatilho dele vê em_andamento; se o
-  -- delete veio antes, o anúncio sumiu (ou é nulo) e a aplicação é só histórico.
-  perform 1 from public.anuncios_externos x where x.id = v_apl.anuncio_externo_id for key share;
-  if not found then
+  -- Anúncio apagado (ou aplicação já com anúncio nulo): só histórico, nunca executa.
+  if not v_anuncio_vivo or v_apl.anuncio_externo_id is distinct from v_anuncio then
     return 'desatualizada';
   end if;
   -- Vigência: família, roteiro e fatos do preparo; roteiro ainda o aprovado do anúncio; todo item do
@@ -549,11 +558,22 @@ returns text language plpgsql security definer set search_path = '' as $$
 declare
   v_apl public.galeria_aplicacoes%rowtype;
   v_itens text[];
+  v_anuncio uuid;
+  v_anuncio_vivo boolean;
 begin
-  select * into v_apl from public.galeria_aplicacoes a where a.id = p_aplicacao and a.org_id = p_org for update;
+  -- Ordem única de locks da saga: anúncio → aplicação → itens → travas. O key share no anúncio vem ANTES do
+  -- for update da aplicação: um delete concorrente do anúncio (que segura a linha do anúncio e, no set null,
+  -- espera a da aplicação) nunca forma ciclo com esta RPC (sem 40P01). Se esta RPC chegou primeiro, o delete
+  -- espera o commit e o gatilho dele vê o estado novo; se o delete chegou primeiro, o anúncio sumiu (ou é
+  -- nulo) e a aplicação é só histórico → desatualizada.
+  select a.anuncio_externo_id into v_anuncio from public.galeria_aplicacoes a
+   where a.id = p_aplicacao and a.org_id = p_org;
   if not found then
     raise exception 'aplicacao_inexistente' using errcode = 'P0002';
   end if;
+  perform 1 from public.anuncios_externos x where x.id = v_anuncio for key share;
+  v_anuncio_vivo := found;
+  select * into v_apl from public.galeria_aplicacoes a where a.id = p_aplicacao and a.org_id = p_org for update;
   -- Repetição depois de commit com resposta perdida: já está no estado-alvo → ok sem gravar nada.
   if v_apl.status = 'revertendo' then
     return 'ok';
@@ -561,9 +581,8 @@ begin
   if v_apl.status <> 'aplicada' then
     return 'desatualizada';
   end if;
-  -- Mesmo key share de galeria_confirmar_aplicacao: anúncio apagado (nulo) → só histórico, nada a reverter.
-  perform 1 from public.anuncios_externos x where x.id = v_apl.anuncio_externo_id for key share;
-  if not found then
+  -- Anúncio apagado (nulo): só histórico, nada a reverter.
+  if not v_anuncio_vivo or v_apl.anuncio_externo_id is distinct from v_anuncio then
     return 'desatualizada';
   end if;
   v_itens := public.galeria_itens_da_aplicacao(p_aplicacao);
