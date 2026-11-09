@@ -89,6 +89,50 @@ export async function freteEstavelGrossUp(
   return frete;
 }
 
+/** Comissão (Clássico) e frete que o vendedor absorve, lidos num preço específico. */
+export interface TarifaNoPreco {
+  comissao: Comissao;
+  frete: number;
+}
+
+/**
+ * Gross-up do ramo próprio com comissão E frete lidos no preço candidato (emenda ADR-0076,
+ * 2026-11-09). A comissão percentual do ML muda com o preço em algumas categorias (MLB277368:
+ * 12% até ~R$100, 11% acima); lê-la só a R$20 publicava a franja da Avil a R$231,60 em vez de
+ * R$228,45. Itera até o ponto fixo; sem ponto fixo (oscilação na fronteira de faixa), devolve o
+ * menor preço visitado cujo líquido, na tarifa DAQUELE preço, cobre o piso. Nunca devolve preço
+ * não conferido: sem nenhum verificado → `null`. `tarifaEm` falhou → devolve o verificado se
+ * houver, senão relança (o chamador decide o fallback).
+ */
+export async function precoProprioEstavel(
+  piso: number,
+  aliquotaPct: number,
+  inicial: Comissao,
+  tarifaEm: (preco: number) => Promise<TarifaNoPreco>,
+  maxIter = 6,
+): Promise<number | null> {
+  const seguros: number[] = [];
+  const visitados = new Set<number>();
+  const menorSeguro = () => (seguros.length ? Math.min(...seguros) : null);
+  let preco = grossUp(piso, inicial.percentual, inicial.fixa, 0, aliquotaPct);
+  for (let i = 0; i < maxIter; i++) {
+    let t: TarifaNoPreco;
+    try {
+      t = await tarifaEm(preco);
+    } catch (e) {
+      if (seguros.length) return menorSeguro();
+      throw e;
+    }
+    visitados.add(preco);
+    // 1e-9: ruído de ponto flutuante; grossUp arredonda pra cima, então o ponto fixo sempre passa.
+    if (liquidoClassico(preco, t.comissao, t.frete, aliquotaPct) >= piso - 1e-9) seguros.push(preco);
+    const novo = grossUp(piso, t.comissao.percentual, t.comissao.fixa, t.frete, aliquotaPct);
+    if (novo === preco || visitados.has(novo)) break; // ponto fixo ou ciclo
+    preco = novo;
+  }
+  return menorSeguro();
+}
+
 /**
  * Sugere o preço de venda (ADR-0020 + ADR-0023 + ADR-0059). `piso` = PRECO da planilha
  * (líquido mínimo). Com concorrente → mercado (× (1 − descontoConcorrenciaPct/100), configurável
