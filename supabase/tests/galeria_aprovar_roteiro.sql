@@ -51,7 +51,7 @@ set local request.jwt.claims = '{"sub":"97700000-0000-0000-0000-000000000101","r
 do $$ begin
   begin
     perform public.galeria_aprovar_roteiro('97700000-0000-0000-0000-000000000001', '97700000-0000-0000-0000-0000000000b2',
-      '97700000-0000-0000-0000-0000000000fb', 'h', '{}', null);
+      '97700000-0000-0000-0000-0000000000fb', 'h', '{}', '{}', null);
     raise exception 'authenticated executou galeria_aprovar_roteiro';
   exception when insufficient_privilege then null;
   end;
@@ -64,14 +64,19 @@ declare r text;
 begin
   -- Outra org e família não vigente: nada muda.
   if public.galeria_aprovar_roteiro('97700000-0000-0000-0000-000000000002', '97700000-0000-0000-0000-0000000000b2',
-       '97700000-0000-0000-0000-0000000000fb', 'h', '{}', null) <> 'nao_encontrado' then raise exception 'outra org aprovou'; end if;
+       '97700000-0000-0000-0000-0000000000fb', 'h', '{"v":2}', '{}', null) <> 'nao_encontrado' then raise exception 'outra org aprovou'; end if;
   if public.galeria_aprovar_roteiro('97700000-0000-0000-0000-000000000001', '97700000-0000-0000-0000-0000000000b2',
-       '97700000-0000-0000-0000-0000000000fa', 'h', '{}', null) <> 'familia_nao_vigente' then raise exception 'família errada aprovou'; end if;
+       '97700000-0000-0000-0000-0000000000fa', 'h', '{"v":2}', '{}', null) <> 'familia_nao_vigente' then raise exception 'família errada aprovou'; end if;
+  -- Corrida salvar × aprovar: o rascunho mudou desde a leitura da edge → recusa sem gravar.
+  if public.galeria_aprovar_roteiro('97700000-0000-0000-0000-000000000001', '97700000-0000-0000-0000-0000000000b2',
+       '97700000-0000-0000-0000-0000000000fb', 'h', '{"v":1}', '{"v":9}', null) <> 'conteudo_mudou' then raise exception 'aprovou conteúdo velho'; end if;
   if (select status from public.galeria_roteiros where id = '97700000-0000-0000-0000-0000000000b1') <> 'aprovado' then
     raise exception 'recusa alterou a v1'; end if;
+  if (select status <> 'rascunho' or conteudo <> '{"v":2}'::jsonb from public.galeria_roteiros where id = '97700000-0000-0000-0000-0000000000b2') then
+    raise exception 'recusa alterou a v2'; end if;
 
   r := public.galeria_aprovar_roteiro('97700000-0000-0000-0000-000000000001', '97700000-0000-0000-0000-0000000000b2',
-         '97700000-0000-0000-0000-0000000000fb', 'h-vigencia', '{"v":2,"ok":true}', '97700000-0000-0000-0000-000000000101');
+         '97700000-0000-0000-0000-0000000000fb', 'h-vigencia', '{"v":2}', '{"v":2,"ok":true}', '97700000-0000-0000-0000-000000000101');
   if r <> 'ok' then raise exception 'aprovar devolveu %', r; end if;
 
   if (select status from public.galeria_roteiros where id = '97700000-0000-0000-0000-0000000000b1') <> 'desatualizado' then
@@ -92,7 +97,7 @@ begin
 
   -- Repetir: a v2 já não é rascunho.
   if public.galeria_aprovar_roteiro('97700000-0000-0000-0000-000000000001', '97700000-0000-0000-0000-0000000000b2',
-       '97700000-0000-0000-0000-0000000000fb', 'h2', '{}', null) <> 'nao_rascunho' then raise exception 'reaprovou'; end if;
+       '97700000-0000-0000-0000-0000000000fb', 'h2', '{"v":2,"ok":true}', '{}', null) <> 'nao_rascunho' then raise exception 'reaprovou'; end if;
 end $$;
 reset role;
 rollback;

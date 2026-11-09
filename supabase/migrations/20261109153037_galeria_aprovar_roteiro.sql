@@ -7,9 +7,11 @@
 --   gerada|aprovada fora de manifesto de aplicação `aplicada` → desatualizada;
 --   submetendo|gerando não mudam (o worker com posse conclui e grava gerada/desatualizada pela vigência).
 -- Serializado por anúncio (advisory lock): duas aprovações simultâneas nunca estouram o índice.
--- Devolve código, nunca levanta por estado: ok | nao_encontrado | nao_rascunho | familia_nao_vigente.
+-- Corrida salvar × aprovar: a edge valida o conteúdo que leu e o manda em p_conteudo_lido; se o rascunho mudou
+-- desde a leitura, recusa (conteudo_mudou) sem gravar nada.
+-- Devolve código, nunca levanta por estado: ok | nao_encontrado | nao_rascunho | familia_nao_vigente | conteudo_mudou.
 create function public.galeria_aprovar_roteiro(
-  p_org uuid, p_roteiro uuid, p_familia uuid, p_fatos_hash text, p_conteudo jsonb, p_usuario uuid
+  p_org uuid, p_roteiro uuid, p_familia uuid, p_fatos_hash text, p_conteudo_lido jsonb, p_conteudo jsonb, p_usuario uuid
 ) returns text
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -23,6 +25,7 @@ begin
   select * into v_r from public.galeria_roteiros where id = p_roteiro and org_id = p_org for update;
   if v_r.status <> 'rascunho' then return 'nao_rascunho'; end if;
   if v_r.familia_id <> p_familia then return 'familia_nao_vigente'; end if;
+  if v_r.conteudo is distinct from p_conteudo_lido then return 'conteudo_mudou'; end if;
 
   update public.galeria_roteiros set status = 'desatualizado'
     where org_id = p_org and anuncio_externo_id = v_anuncio and status = 'aprovado';
@@ -44,5 +47,5 @@ begin
   return 'ok';
 end;
 $$;
-revoke all on function public.galeria_aprovar_roteiro(uuid, uuid, uuid, text, jsonb, uuid) from public, anon, authenticated;
-grant execute on function public.galeria_aprovar_roteiro(uuid, uuid, uuid, text, jsonb, uuid) to service_role;
+revoke all on function public.galeria_aprovar_roteiro(uuid, uuid, uuid, text, jsonb, jsonb, uuid) from public, anon, authenticated;
+grant execute on function public.galeria_aprovar_roteiro(uuid, uuid, uuid, text, jsonb, jsonb, uuid) to service_role;
