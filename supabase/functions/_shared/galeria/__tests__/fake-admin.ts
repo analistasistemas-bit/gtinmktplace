@@ -1,5 +1,6 @@
 // Banco em memória para os testes da galeria (sem rede). Cobre só o que fatos/referências/galeria-fatos usam:
-// filtros eq/neq/in/is/not-is, order, limit, select/insert/update/upsert e o bucket `imagens`.
+// filtros eq/neq/in/is/not-is, order, limit, select/insert/update/upsert, o bucket `imagens` e `rpc`
+// (gravada em `rpcs`; resposta por `respostasRpc[nome]`, senão `{ data: null }`).
 type Linha = Record<string, unknown>;
 type Pred = (l: Linha) => boolean;
 
@@ -8,6 +9,8 @@ export interface Escrita { tabela: string; op: string; payload: unknown; afetada
 export function fakeAdmin(db: Record<string, Linha[]>, arquivos: Map<string, Uint8Array> = new Map()) {
   const escritas: Escrita[] = [];
   const uploads: string[] = [];
+  const rpcs: Array<{ nome: string; args: Record<string, unknown> }> = [];
+  const respostasRpc: Record<string, (args: Record<string, unknown>) => unknown> = {};
   let seq = 0;
 
   function from(tabela: string) {
@@ -93,7 +96,12 @@ export function fakeAdmin(db: Record<string, Linha[]>, arquivos: Map<string, Uin
     }),
   };
 
-  return { admin: { from, storage }, escritas, uploads, arquivos };
+  const rpc = async (nome: string, args: Record<string, unknown>) => {
+    rpcs.push({ nome, args });
+    return { data: respostasRpc[nome]?.(args) ?? null, error: null };
+  };
+
+  return { admin: { from, storage, rpc }, escritas, uploads, arquivos, rpcs, respostasRpc };
 }
 
 export const JPEG = (marca: string) => new Uint8Array([0xff, 0xd8, 0xff, 0xe0, ...new TextEncoder().encode(marca)]);

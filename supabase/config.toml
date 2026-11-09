@@ -269,3 +269,7 @@ verify_jwt = true
 # ADR-0201 (Galeria da cor por IA): Ficha Verdade e referências. Chamada pela tela com o JWT do operador.
 [functions.galeria-fatos]
 verify_jwt = true
+
+# ADR-0201 (Galeria da cor por IA): roteiro (criar/salvar/aprovar). Chamada pela tela com o JWT do operador.
+[functions.galeria-roteiro]
+verify_jwt = true

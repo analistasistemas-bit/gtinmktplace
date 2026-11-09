@@ -152,6 +152,20 @@ describe('termosProibidos', () => {
     expect(termosProibidos('anselo', 'geral')).toEqual([])
     expect(termosProibidos('Reserva de R e S', 'geral')).toEqual([])
   })
+  it('claim 100% flexionado em gênero e número (minor da Task 3)', () => {
+    for (const t of ['100% orgânica', '100% orgânicos', '100% segura', '100% seguros', '100% eficazes', '100% naturais', '100% pura'])
+      expect(termosProibidos(t, 'geral'), t).toContain('100% (claim)')
+  })
+  it('"100% puro algodão" é composição, não claim', () => {
+    expect(termosProibidos('100% puro algodão', 'geral')).toEqual([])
+    expect(termosProibidos('100% pura seda', 'geral')).toEqual([])
+    expect(termosProibidos('100% puro', 'geral')).toContain('100% (claim)')
+    expect(termosProibidos('100% puro e natural', 'geral')).toContain('100% (claim)')
+  })
+  it('plural em -ões ("promoções")', () => {
+    expect(termosProibidos('Promoções da semana', 'geral')).toContain('promocao')
+    expect(termosProibidos('promoção', 'geral')).toContain('promocao')
+  })
   it('texto limpo não devolve nada', () => {
     expect(termosProibidos('Largura certa: 20 mm', 'geral')).toEqual([])
   })

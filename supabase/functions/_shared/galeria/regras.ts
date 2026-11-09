@@ -118,8 +118,13 @@ const PROIBIDOS_POR_CATEGORIA: Record<CategoriaProibidos, string[]> = { geral: [
 
 const FORA = '(?<![\\p{L}\\p{N}])'
 const FIM = '(?![\\p{L}\\p{N}])'
-// "100%" sozinho é composição ("100% poliamida", fato confirmado): só o claim é proibido.
-const CLAIM_100 = '100%\\s+(?:natural|naturais|garantid[oa]s?|original|originais|puro|pura|puros|puras|organico|seguro|eficaz|aprovad[oa]s?)'
+// "100%" sozinho é composição ("100% poliamida", fato confirmado): só o claim é proibido, em qualquer flexão.
+// "100% puro algodão" também é composição: "puro" seguido de material não é claim.
+// ponytail: lista curta de materiais; material fora dela depois de "puro" ainda vira claim (falso positivo
+// visível na tela, nunca um claim que passa) — ampliar a lista quando aparecer.
+const MATERIAL = '(?:algodao|poliester|poliamida|linho|seda|la|viscose|elastano|nylon|acrilico|couro|lycra|modal|cetim|juta|bambu)'
+const CLAIM_100 = '100%\\s+(?:natura(?:l|is)|garantid[oa]s?|origina(?:l|is)|organic[oa]s?|segur[oa]s?|eficaz(?:es)?|aprovad[oa]s?'
+  + `|pur[oa]s?(?!\\s+${MATERIAL}(?![\\p{L}\\p{N}])))`
 // Valor monetário: "R$ 19,90", "R$19".
 const VALOR = 'r\\$\\s*\\d'
 
@@ -130,7 +135,8 @@ export function termosProibidos(texto: string, categoria: CategoriaProibidos): s
   const alvo = normalizar(texto)
   const acha = (fonte: string) => new RegExp(`${FORA}${fonte}${FIM}`, 'u').test(alvo)
   const achados = [...PROIBIDOS_GLOBAIS, ...PROIBIDOS_POR_CATEGORIA[categoria]].filter((termo) =>
-    acha(`${termo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:s|es)?`),
+    // Plural: s/es; termo em -ao também em -oes ("promocoes").
+    acha(termo.endsWith('ao') ? `${termo.slice(0, -2)}(?:ao|oes)` : `${termo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:s|es)?`),
   )
   if (acha(CLAIM_100)) achados.push('100% (claim)')
   if (new RegExp(`${FORA}${VALOR}`, 'u').test(alvo)) achados.push('valor em R$')
