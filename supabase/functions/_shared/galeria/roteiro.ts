@@ -49,26 +49,36 @@ const palavra = (alvo: string, termo: string) =>
   new RegExp(`(?<![\\p{L}\\p{N}])${termo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'u').test(alvo);
 const unidadeDoCampo = (campo: string) => (/_cm$/.test(campo) ? 'cm' : /_gramas$/.test(campo) ? 'g' : null);
 
+const TOKEN_NUM = new RegExp(`(${NUM})\\s*(%|[a-z]+)?`, 'g');
+
+/** Medidas citadas no valor do fato: cada "número + unidade" do texto, mais o valor inteiro com a unidade da coluna. */
+function medidasDoFato(f: Fato) {
+  const un = unidadeDoCampo(f.campo);
+  return [...[...norm(f.valor).matchAll(TOKEN_NUM)].map(([, n, u]) => (u ? medida(`${n} ${u}`) : null)),
+    medida(f.valor), un ? medida(`${f.valor} ${un}`) : null].filter((x): x is NonNullable<typeof x> => !!x);
+}
+
 /**
- * Âncora mínima do texto livre (regra do código, não do modelo): todo número (com ou sem unidade) e todo material
- * que aparece no texto precisa estar no valor de um fato utilizável citado. Devolve os trechos sem âncora.
+ * Âncora mínima do texto livre (regra do código, não do modelo). Devolve os trechos sem âncora:
+ * - número com unidade conhecida (mm, cm, m, g, kg, ml, l…) só passa com a MESMA medida (convertida) num fato
+ *   citado — dígito igual não basta ("20 metros" ≠ largura_cm 20);
+ * - número sem unidade (ou com %/palavra comum) passa se o número está no valor de um fato citado;
+ * - material de `MATERIAIS` no texto (palavra inteira, COM acento) precisa estar no valor de um fato citado.
  */
 function semAncora(texto: string, fatos: Fato[]): string[] {
   const t = norm(texto);
   const faltam: string[] = [];
-  for (const [token, n, u] of t.matchAll(new RegExp(`(${NUM})\\s*(%|[a-z]+)?`, 'g'))) {
-    const ok = fatos.some((f) => {
-      const nums = (norm(f.valor).match(new RegExp(NUM, 'g')) ?? []).map(numero);
-      if (nums.includes(numero(n))) return true;
-      const mt = u ? medida(`${n} ${u}`) : null;
-      const un = unidadeDoCampo(f.campo);
-      const mf = medida(f.valor) ?? (un ? medida(`${f.valor} ${un}`) : null);
-      return !!mt && !!mf && mt.dim === mf.dim && mt.valor === mf.valor;
-    });
+  for (const [token, n, u] of t.matchAll(TOKEN_NUM)) {
+    const mt = u ? medida(`${n} ${u}`) : null;
+    const ok = fatos.some((f) => (mt
+      ? medidasDoFato(f).some((mf) => mf.dim === mt.dim && mf.valor === mt.valor)
+      : (norm(f.valor).match(new RegExp(NUM, 'g')) ?? []).map(numero).includes(numero(n))));
     if (!ok) faltam.push(token.trim());
   }
+  // ponytail: material fora de MATERIAIS não é ancorado (limite conhecido); texto sem acento ("algodao") também não.
+  const comAcento = texto.normalize('NFC').toLowerCase();
   for (const mat of MATERIAIS) {
-    if (palavra(t, mat) && !fatos.some((f) => palavra(norm(f.valor), mat))) faltam.push(mat);
+    if (palavra(comAcento, mat) && !fatos.some((f) => palavra(norm(f.valor), norm(mat)))) faltam.push(mat);
   }
   return faltam;
 }
@@ -140,11 +150,12 @@ export function validarRoteiro(r: Roteiro, fatos: Fato[], moda: boolean, vistas:
     const usados = citados(m).map((c) => porCampo.get(c)).filter((f): f is Fato => !!f && UTILIZAVEL.has(f.estado));
     if (exigeFato(m, moda) && usados.length === 0) erros.push(`${p} sem fato confirmado (missão não é oferecida)`);
     for (const t of new Set(textoLivre(m).flatMap((x) => semAncora(x, usados)))) erros.push(`${p} "${t}" no texto não vem de fato citado`);
-    // Etapa ("como usar") só é trecho de texto escrito na família e confirmado (R5.3), nunca frase livre.
-    const confirmados = usados.filter((f) => f.estado === 'CONFIRMADO').map((f) => norm(f.valor));
+    // Etapa ("como usar") = oração INTEIRA de fato CONFIRMADO citado (R5.3), nunca frase livre nem pedaço: separar
+    // por . ; ! ? e quebra de linha e exigir igualdade normalizada mantém a negação ("Não lavar…" ≠ "lavar…").
+    const fim = (x: string) => norm(x).replace(/[.;!?,:]+$/, '').trim();
+    const oracoes = new Set(usados.filter((f) => f.estado === 'CONFIRMADO').flatMap((f) => f.valor.split(/[.;!?\n]+/)).map(fim).filter(Boolean));
     for (const e of m.etapas ?? []) {
-      const trecho = norm(e).replace(/[.!;:,]+$/, '');
-      if (trecho === '' || !confirmados.some((v) => v.includes(trecho))) erros.push(`${p} etapa "${e}" não é trecho de fato confirmado citado`);
+      if (!oracoes.has(fim(e))) erros.push(`${p} etapa "${e}" não é trecho de fato confirmado citado (oração inteira)`);
     }
   }
   return erros;
@@ -165,6 +176,13 @@ export function cienciaPendente(r: Roteiro, fatos: Fato[]): string[] {
   return fatos.filter((f) => f.estado === 'NAO_CONFERIDO' && !ciente.has(f.campo)
     && (cit.has(f.campo) || (norm(f.valor) !== '' && palavra(texto, norm(f.valor)))))
     .map((f) => f.campo).sort();
+}
+
+/** Erros agrupados para a tela: chave = número da missão, ou `geral` (ficha, contrato, capa ausente). */
+export function errosPorMissao(erros: string[]): Record<string, string[]> {
+  const grupos: Record<string, string[]> = {};
+  for (const e of erros) (grupos[/^Missão (\d):/.exec(e)?.[1] ?? 'geral'] ??= []).push(e);
+  return grupos;
 }
 
 /** R6.2: todo texto em NFC (acento e cedilha preservados). */
@@ -273,12 +291,10 @@ export async function gerarRoteiroIA({ modelo, categoria, moda, vistas, fatos }:
 
   const missoes = disponiveis.map((d): MissaoRoteiro => {
     const m = porMissao.get(d.missao);
+    // Só a missão OMITIDA pelo modelo nasce inativa (a capa nunca). Missão com conteúdo e erro fica ativa: o erro
+    // aparece na tela e o operador corrige ou desativa conscientemente.
     const base: MissaoRoteiro = { missao: d.missao, ativa: !!m || d.missao === 1, cena: str(m?.cena), fatosUsados: strs(m?.fatosUsados) };
     return d.comTexto && m ? { ...base, ...textosDe(m) } : base;
   });
-  // A capa é sempre gerada; as demais que o código reprova (omitidas, sem cena, sem fato, texto sem âncora…)
-  // nascem inativas, com o conteúdo à vista: o rascunho não nasce travado e o operador liga e corrige.
-  const erros = validarRoteiro(normalizarRoteiro({ categoria, contrato: str(ia.contrato), missoes }), fatos, moda, vistas);
-  for (const m of missoes) if (m.missao !== 1 && erros.some((e) => e.startsWith(`Missão ${m.missao}:`))) m.ativa = false;
   return normalizarRoteiro({ categoria, contrato: str(ia.contrato), missoes });
 }

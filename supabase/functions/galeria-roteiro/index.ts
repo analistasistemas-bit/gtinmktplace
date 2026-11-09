@@ -8,7 +8,7 @@ import { requireUserOrg } from '../_shared/auth.ts';
 import { carregarAnuncio, resolverAnuncio, type AnuncioGaleria } from '../_shared/galeria/anuncio.ts';
 import { calcularVigencia } from '../_shared/galeria/referencias.ts';
 import { conferirEtiqueta } from '../_shared/galeria/etiqueta.ts';
-import { cienciaPendente, gerarRoteiroIA, sanearRoteiro, validarRoteiro, type Roteiro } from '../_shared/galeria/roteiro.ts';
+import { cienciaPendente, errosPorMissao, gerarRoteiroIA, sanearRoteiro, validarRoteiro, type Roteiro } from '../_shared/galeria/roteiro.ts';
 import { ehModa, type Vista } from '../_shared/galeria/regras.ts';
 import { resolverConexaoEstrita } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
@@ -78,12 +78,11 @@ async function inserirRascunho(
 const vigencia = (admin: Admin, orgId: string, a: AnuncioGaleria) =>
   calcularVigencia(admin, orgId, a, (ctx) => conferirEtiqueta(admin, orgId, a, ctx));
 
-const resposta = (linha: LinhaRoteiro, v: Vigencia) => ({
-  roteiro: linha,
-  erros: validarRoteiro(linha.conteudo, v.fatos, linha.moda, vistasDe(v)),
-  ciencia_pendente: cienciaPendente(linha.conteudo, v.fatos),
-  fatos: v.fatos,
-});
+/** `erros` + `erros_por_missao`: a tela mostra o erro na missão (que segue ativa) até o operador corrigir ou desativar. */
+const resposta = (linha: LinhaRoteiro, v: Vigencia) => {
+  const erros = validarRoteiro(linha.conteudo, v.fatos, linha.moda, vistasDe(v));
+  return { roteiro: linha, erros, erros_por_missao: errosPorMissao(erros), ciencia_pendente: cienciaPendente(linha.conteudo, v.fatos), fatos: v.fatos };
+};
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -166,7 +165,7 @@ Deno.serve(async (req) => {
     // reprova a aprovação (R1.3).
     const v = await vigencia(admin, orgId, a);
     const erros = validarRoteiro(linha.conteudo, v.fatos, linha.moda, vistasDe(v));
-    if (erros.length > 0) return json({ error: 'roteiro_invalido', erros }, 422);
+    if (erros.length > 0) return json({ error: 'roteiro_invalido', erros, erros_por_missao: errosPorMissao(erros) }, 422);
     let conteudo = linha.conteudo;
     const pendentes = cienciaPendente(conteudo, v.fatos);
     if (pendentes.length > 0) {

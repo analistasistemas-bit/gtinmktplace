@@ -118,20 +118,31 @@ describe('galeria-roteiro: criar', () => {
     expect(r.body.erros).toEqual([])
   })
 
-  it('fora de Moda: rascunho do modelo válido nasce com erros = [] e ciência vazia', async () => {
+  it('fora de Moda: erro do código fica visível por missão, a missão segue ativa e aprovar recusa até corrigir', async () => {
     f.ia.mockResolvedValueOnce(respostaIA([
       missaoIA(1, { fatosUsados: ['nome'] }),
       missaoIA(4, { headline: 'Renda Búfalo', beneficios: ['Largura de 20 cm'], fatosUsados: ['nome', 'largura_cm'] }),
       missaoIA(5, { headline: 'Ficha técnica', specs: [{ campo: 'largura_cm', rotulo: 'Largura', valor: '20 cm' }] }),
-      missaoIA(6, { etapas: ['Frase livre inventada'], fatosUsados: ['nome'] }),
+      missaoIA(6, { etapas: ['Lave em água quente'], fatosUsados: ['nome'] }),
     ]))
     const r = await chamar({ ...base, acao: 'criar' })
     expect(r.status).toBe(200)
-    expect(r.body).toMatchObject({ erros: [], ciencia_pendente: [] })
     expect(db.galeria_roteiros[0]).toMatchObject({ moda: false })
-    // A etapa livre do modelo não tem âncora: a missão 6 nasce inativa (conteúdo preservado).
+    // Erro visível: a missão 6 continua ativa e o erro vem por missão para a tela.
     const m6 = (db.galeria_roteiros[0].conteudo as { missoes: Linha[] }).missoes.find((m) => m.missao === 6)
-    expect(m6).toMatchObject({ ativa: false, etapas: ['Frase livre inventada'] })
+    expect(m6).toMatchObject({ ativa: true, etapas: ['Lave em água quente'] })
+    expect(r.body).toMatchObject({
+      erros: [expect.stringMatching(/Missão 6: etapa "Lave em água quente" não é trecho/)],
+      erros_por_missao: { 6: [expect.stringMatching(/etapa "Lave em água quente"/)] },
+      ciencia_pendente: [],
+    })
+    // Aprovar recusa até o operador corrigir ou desativar.
+    const id = db.galeria_roteiros[0].id
+    expect(await chamar({ ...base, acao: 'aprovar', roteiro_id: id })).toMatchObject({ status: 422, body: { error: 'roteiro_invalido' } })
+    const conteudo = structuredClone(db.galeria_roteiros[0].conteudo) as { missoes: Linha[] }
+    conteudo.missoes.find((m) => m.missao === 6)!.ativa = false
+    expect((await chamar({ ...base, acao: 'salvar', roteiro_id: id, conteudo })).body).toMatchObject({ erros: [] })
+    expect((await chamar({ ...base, acao: 'aprovar', roteiro_id: id })).status).toBe(200)
   })
 
   it('criar confere a etiqueta (mesmo gancho do montar): DIVERGENTE nova recusa antes da IA', async () => {

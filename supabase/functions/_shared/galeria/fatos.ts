@@ -148,12 +148,13 @@ function composicao(s: string): Map<string, string> | null {
 }
 
 // Medida "número + unidade": massa em g, comprimento em cm. `null` = não reconhecida.
-const FATOR: Record<string, { dim: 'g' | 'cm'; f: number }> = {
+const FATOR: Record<string, { dim: 'g' | 'cm' | 'ml'; f: number }> = {
   mg: { dim: 'g', f: 0.001 }, g: { dim: 'g', f: 1 }, gr: { dim: 'g', f: 1 }, grama: { dim: 'g', f: 1 }, gramas: { dim: 'g', f: 1 },
   kg: { dim: 'g', f: 1000 }, quilo: { dim: 'g', f: 1000 }, quilos: { dim: 'g', f: 1000 },
+  ml: { dim: 'ml', f: 1 }, l: { dim: 'ml', f: 1000 }, litro: { dim: 'ml', f: 1000 }, litros: { dim: 'ml', f: 1000 },
   mm: { dim: 'cm', f: 0.1 }, cm: { dim: 'cm', f: 1 }, m: { dim: 'cm', f: 100 }, metro: { dim: 'cm', f: 100 }, metros: { dim: 'cm', f: 100 },
 };
-export function medida(s: string): { dim: 'g' | 'cm'; valor: number } | null {
+export function medida(s: string): { dim: 'g' | 'cm' | 'ml'; valor: number } | null {
   const m = new RegExp(`^\\s*(${NUM})\\s*([a-z]+)\\.?\\s*$`).exec(norm(s));
   const u = m && FATOR[m[2]];
   const n = m ? Number(numero(m[1])) : NaN;

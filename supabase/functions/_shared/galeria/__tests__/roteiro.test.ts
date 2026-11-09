@@ -17,7 +17,7 @@ const FATOS: Fato[] = [
   fato('comprimento_cm', '60 / 62', 'VARIA_POR_TAMANHO'),
   fato('titulo_ml', 'Renda Búfalo Poliéster Premium', 'SUGERIDO'),
   fato('marca', 'Avil', 'NAO_CONFERIDO'),
-  fato('descricao_fornecedor', 'Lavar à mão em água fria. Secar à sombra.'),
+  fato('descricao_fornecedor', 'Lavar à mão em água fria. Secar à sombra.\nNão lavar em água quente; nunca usar alvejante!'),
 ]
 
 const renda = (): Roteiro => ({
@@ -139,13 +139,38 @@ describe('validarRoteiro', () => {
     const fatos = FATOS.map((f) => (f.campo === 'atributo:MAIN_MATERIAL' ? { ...f, valor: '100% poliéster' } : f))
     const r = comMissao({ headline: '100% algodão', beneficios: [], fatosUsados: ['atributo:MAIN_MATERIAL'] })
     r.missoes = r.missoes.filter((m) => m.missao !== 5)
-    expect(validarRoteiro(r, fatos, false)).toEqual([expect.stringMatching(/Missão 4: "algodao" no texto não vem de fato citado/)])
+    expect(validarRoteiro(r, fatos, false)).toEqual([expect.stringMatching(/Missão 4: "algodão" no texto não vem de fato citado/)])
   })
 
   it('texto ancorado: número sem fato citado → erro; medida convertida do fato citado passa', () => {
     expect(validarRoteiro(comMissao({ beneficios: ['Rolo com 50 metros'] }), FATOS, false))
       .toEqual([expect.stringMatching(/Missão 4: "50 metros" no texto não vem de fato citado/)])
     expect(validarRoteiro(comMissao({ beneficios: ['Largura de 200 mm'] }), FATOS, false)).toEqual([])
+  })
+
+  it('unidade conhecida compara por medida: largura_cm "20" × "Rolo de 20 metros" → erro; "20 cm" e "200 mm" → ok', () => {
+    expect(validarRoteiro(comMissao({ beneficios: ['Rolo de 20 metros'] }), FATOS, false))
+      .toEqual([expect.stringMatching(/Missão 4: "20 metros" no texto não vem de fato citado/)])
+    expect(validarRoteiro(comMissao({ beneficios: ['Largura de 20 cm'] }), FATOS, false)).toEqual([])
+    expect(validarRoteiro(comMissao({ beneficios: ['Largura de 200 mm'] }), FATOS, false)).toEqual([])
+  })
+
+  it('etapa = oração inteira do fato; negação não pode ser cortada', () => {
+    const comEtapas = (etapas: string[]) => {
+      const r = renda()
+      r.missoes.push({ missao: 6, ativa: true, cena: 'cuidados', etapas, fatosUsados: ['descricao_fornecedor'] })
+      return validarRoteiro(r, FATOS, false)
+    }
+    expect(comEtapas(['lavar em água quente'])).toEqual([expect.stringMatching(/etapa "lavar em água quente" não é trecho/)])
+    expect(comEtapas(['usar alvejante'])).toEqual([expect.stringMatching(/etapa "usar alvejante" não é trecho/)])
+    expect(comEtapas(['Lavar à mão'])).toEqual([expect.stringMatching(/etapa "Lavar à mão" não é trecho/)])
+    expect(comEtapas(['Não lavar em água quente', 'Nunca usar alvejante!', 'Secar à sombra'])).toEqual([])
+  })
+
+  it('"lá" (advérbio) não vira o material "lã"; "lã" sem fato citado continua barrada', () => {
+    expect(validarRoteiro(comMissao({ beneficios: ['Fica lá no ateliê'] }), FATOS, false)).toEqual([])
+    expect(validarRoteiro(comMissao({ beneficios: ['Toque de lã'] }), FATOS, false))
+      .toEqual([expect.stringMatching(/Missão 4: "lã" no texto não vem de fato citado/)])
   })
 
   it('missão 2 ou 7 com texto e sem fato utilizável citado → erro', () => {
@@ -226,7 +251,7 @@ describe('gerarRoteiroIA', () => {
     expect(r.missoes).toHaveLength(7)
   })
 
-  it('missão ≠ 1 omitida, sem cena ou sem fato utilizável nasce inativa; o rascunho não nasce travado', async () => {
+  it('só a missão omitida nasce inativa; missão com conteúdo e erro fica ativa e o erro aparece', async () => {
     ia.create.mockResolvedValueOnce(resposta({
       contrato: 'Renda de poliamida', missoes: [
         { missao: 1, cena: 'capa', headline: '', subheadline: '', beneficios: [], specs: [], etapas: [], legendas: [], fatosUsados: ['nome'] },
@@ -236,8 +261,12 @@ describe('gerarRoteiroIA', () => {
       ],
     }))
     const r = await gerarRoteiroIA({ modelo: 'm', categoria: 'Rendas', moda: false, vistas: ['frente'], fatos: FATOS })
-    expect(r.missoes.filter((m) => m.ativa).map((m) => m.missao)).toEqual([1, 4])
-    expect(validarRoteiro(r, FATOS, false)).toEqual([])
+    expect(r.missoes.filter((m) => m.ativa).map((m) => m.missao)).toEqual([1, 2, 3, 4])
+    expect(validarRoteiro(r, FATOS, false)).toEqual([
+      expect.stringMatching(/Missão 2: cena vazia/),
+      expect.stringMatching(/Missão 3: "titulo_ml" é SUGERIDO/),
+      expect.stringMatching(/Missão 3: sem fato confirmado/),
+    ])
   })
 
   it('resposta fora do formato lança (a edge não grava rascunho)', async () => {
