@@ -112,6 +112,7 @@ acesso/sem promoções/erro (dados injetados); 4 defeitos visuais achados e corr
 
 - Em promoção: 20 anúncios por página em cada campanha (20/50/100), ordem por descrição; "Selecionar todos" e as ações valem para todas as páginas.
 - Operação concluída com itens em erro (ex.: ML 500 transitório): **Tentar novamente N com erro** abre o mesmo preview com a mesma ação, só esses itens e no preço da operação; cria operação nova (sem origem — validação completa no servidor). Quem já entrou por outro caminho aparece bloqueado. Não vale para Reverter nem pausar/reativar/reajustar.
+- ML 400 `OFFER_SIBLING_CREATION_IN_PROCESS` (AVIL, Black Friday 09/11): aderir o pai legado multivariação faz o ML propagar a oferta às cópias de catálogo; a adesão das cópias logo em seguida volta esse 400. Desde 09/11 o app relê: entrou → "Já estava"; ainda convidado → "Bloqueado" (atualize a Central em alguns minutos).
 - ML 500 na adesão é transitório (Regata, 2 de 17): readerir resolveu. Não há retry automático de 5xx no aderir.
 - Publicados: selo "Em promoção · X de Y variações · N sem estoque" — SKU UP zerado é pausado pelo ML e não entra em campanha (fica convidado).
 

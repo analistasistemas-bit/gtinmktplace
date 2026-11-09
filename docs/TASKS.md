@@ -1,5 +1,10 @@
 # PubliAI — Tasks
 
+## Adesão: 400 OFFER_SIBLING_CREATION_IN_PROCESS (emenda ADR-0174) — 2026-11-09
+
+- [x] AVIL, Black Friday 2026: o pai legado multivariação aderiu e o ML propagou a oferta às cópias de catálogo; o POST de cada cópia voltou 400 SIBLING (28 de 30 "erros" já estavam `pending`).
+- [x] `executar.ts`: SIBLING relê a campanha — participando → `ja_estava`; ainda convidado → `bloqueado` (fora do "Tentar novamente", oferta fixa mantém a etapa); releitura que falha → `erro`. Main `d904c872`, `operacoes-massa` v51.
+
 ## Atributos visuais de roupa pela foto (ADR-0202) — 2026-11-08
 
 - [x] `process-familia` (ramo genérico): visão na foto da 1ª variação preenche `SLEEVE_TYPE`, `WEDGE_SHAPE`, gola e capuz que o texto deixou vazios; valor só dentro da lista da categoria; falha preserva o texto.

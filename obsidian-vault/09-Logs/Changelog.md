@@ -9,6 +9,10 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
 
+## 2026-11-09
+
+- **Adesão com 400 SIBLING não vira erro** (emenda [[0174-operacoes-em-massa-promocoes-v2|ADR-0174]]): na Black Friday da AVIL, 30 de 32 adesões deram "Erro", mas 28 já estavam na campanha — o ML propagou a oferta do pai legado às cópias de catálogo. O executor relê o ML: "Já estava" ou "Bloqueado"; falha na releitura segue "Erro". Em produção desde 2026-11-09 (main `d904c872`; `operacoes-massa` v51).
+
 ## 2026-11-08
 
 - **Campo Marca / Fabricante no cadastro** (emenda [[0188-marca-por-produto|ADR-0188]]): o cadastro pela nota gravava o emitente (uma revenda) como fornecedor e, sem marca, ele ia ao ML como BRAND/MANUFACTURER — anúncio bloqueado. O campo aparece em toda org (simples e grade) e grava `familias.marca`; obrigatório e vazio no cadastro pela nota; edge recusa nota sem marca e trata marca trocada no retry como divergência. Em produção desde 2026-11-08 (main `a3e180dc`; `cadastrar-produto` v44, `adicionar-variacoes-familia` v31).
