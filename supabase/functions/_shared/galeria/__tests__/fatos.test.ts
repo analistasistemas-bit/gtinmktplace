@@ -146,6 +146,13 @@ describe('mesmoValor', () => {
     expect(mesmoValor('90% Poliéster, Elastano 10%', '10% Elastano 90% Poliéster')).toBe(true)
     expect(mesmoValor('90% Poliéster, Elastano 10%', '90% Poliéster 10% Algodão')).toBe(false)
   })
+  it('com % em qualquer lado, composição não reconhecida nunca é igual (sem fallback por sequência)', () => {
+    expect(mesmoValor('90% Poliéster 10% Elastano linho', '90% Poliéster, 10% Elastano, linho')).toBe(false)
+    expect(mesmoValor('90% Poliéster 10% Elastano', '90% Poliéster 10 Elastano')).toBe(false)
+    expect(mesmoValor('Poliamida algodão', '100% Poliamida')).toBe(false)
+    expect(mesmoValor('100% Poliamida algodão', '100% Poliamida algodão')).toBe(true) // material composto idêntico
+    expect(mesmoValor('70% Fibra de Bambu, 30% Algodão', '30% algodao 70% fibra de bambu')).toBe(true)
+  })
   it('números pt-BR: "1.500" é milhar, "1,5" é decimal', () => {
     expect(mesmoValor('1.500 m', '1,5 m')).toBe(false)
     expect(mesmoValor('1.500 m', '1500 m')).toBe(true)

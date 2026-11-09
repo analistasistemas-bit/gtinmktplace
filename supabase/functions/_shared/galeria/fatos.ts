@@ -132,20 +132,21 @@ function composicao(s: string): Map<string, string> | null {
 /**
  * Mesmo valor com formatação diferente. Números e unidades contam ("20 mm" ≢ "35 mm", "1.500 m" ≢ "1,5 m");
  * composição compara o percentual de cada material, com todos os termos casados; só "100% X" ≡ "X".
- * Composição não reconhecida: só igual se a sequência de números e palavras for a mesma.
+ * Com % e composição não reconhecida em qualquer lado: nunca igual.
  */
 export function mesmoValor(a: string, b: string): boolean {
   const sequencia = (s: string) =>
     (norm(s).match(new RegExp(`${NUM}|\\p{L}+`, 'gu')) ?? []).map((t) => (/\d/.test(t) ? numero(t) : t)).join(' ');
   const temPct = (s: string) => s.includes('%');
   if (!temPct(a) && !temPct(b)) return sequencia(a) === sequencia(b);
+  // Com % em qualquer lado não há fallback por sequência: composição não reconhecida nunca é igual.
+  // Material de várias palavras só casa se for idêntico (chave exata do mapa).
   const ca = composicao(a);
   const cb = composicao(b);
-  if (ca && cb) return ca.size === cb.size && [...ca].every(([k, v]) => cb.get(k) === v);
+  if (temPct(a) && temPct(b)) return !!ca && !!cb && ca.size === cb.size && [...ca].every(([k, v]) => cb.get(k) === v);
   // "100% X" ≡ "X": o lado sem % é o material inteiro.
-  const [comp, puro] = ca && !temPct(b) ? [ca, b] : cb && !temPct(a) ? [cb, a] : [null, ''];
-  if (comp) return comp.size === 1 && [...comp.values()][0] === '100' && comp.has(sequencia(puro));
-  return sequencia(a) === sequencia(b);
+  const [comp, puro] = temPct(a) ? [ca, b] : [cb, a];
+  return !!comp && comp.size === 1 && [...comp.values()][0] === '100' && comp.has(sequencia(puro));
 }
 
 export function aplicarEtiqueta(fatos: Fato[], leitura: Record<string, LeituraCampo>): Fato[] {
