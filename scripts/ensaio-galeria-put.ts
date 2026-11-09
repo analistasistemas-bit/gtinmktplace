@@ -9,6 +9,7 @@
 //   deno run -A scripts/ensaio-galeria-put.ts upload <MLB> <picture_id>    baixa a foto do item e re-sobe (multipart)
 //   deno run -A scripts/ensaio-galeria-put.ts put <MLB> <corpo.json> [fotos_esperadas] [restauro.json]
 //       guarda → PUT → GET → compara invariantes; se algo mudar, PUT do restauro na hora e sai com 2
+//   deno run -A scripts/ensaio-galeria-put.ts inverso estoque|preco|plano   (h): PUT sem fotos com os valores atuais
 // Saída bruta em /tmp/ensaio-galeria/ (fora do repo).
 
 const PROJETO = 'txvncrgkoynoxwopfkbp';
@@ -188,8 +189,95 @@ async function put(id: string, arquivo: string, fotosEsperadas?: number, restaur
   }
 }
 
+// (h) O inverso: PUT SEM fotos, com os valores ATUAIS lidos no GET imediatamente antes (nada muda de fato).
+//   estoque → Legacy { variations: [{ id, available_quantity }] } (todas)  — atualizarEstoque/montarVariacoesUpdate
+//   preco   → Legacy { variations: [{ id, price }] } (todas)              — reajuste/ml.ts putPreco
+//   plano   → UP     { price, available_quantity }                        — atualizarItemPlanoML / kit putQuantidade
+// Compara o recorte inteiro (menos tags) logo depois e ~60 s depois; se mudar, restaura valores e fotos.
+const AUTORIZADO_H: Record<string, string> = { estoque: 'MLB7168683146', preco: 'MLB7168683146', plano: 'MLB7245326808' };
+// deno-lint-ignore no-explicit-any
+const semTags = (r: any) => JSON.stringify({ ...r, tags: undefined });
+async function inverso(modo: string) {
+  const id = AUTORIZADO_H[modo];
+  if (!id) throw new Error('modo: estoque | preco | plano');
+  const antes = await snap(id, `h-${modo}-antes-${Date.now()}`);
+  guarda(antes.rec);
+  const vs = antes.rec.variations;
+  if ((modo === 'plano') !== (vs.length === 0)) throw new Error(`BLOCKED: formato inesperado (${vs.length} variações)`);
+  // deno-lint-ignore no-explicit-any
+  const corpo = modo === 'estoque' ? { variations: vs.map((v: any) => ({ id: v.id, available_quantity: v.available_quantity })) }
+    // deno-lint-ignore no-explicit-any
+    : modo === 'preco' ? { variations: vs.map((v: any) => ({ id: v.id, price: v.price })) }
+    : { price: antes.rec.price, available_quantity: antes.rec.available_quantity };
+  // Preço promocional no GET reenviado como `price` sobrescreveria o preço-base: só segue sem promoção ativa.
+  const precos = async () => {
+    const it = await getItem(id);
+    const p = await (await fetch(`${API}/items/${id}/prices`, { headers: { ...auth, 'show-all-prices': 'TRUE' } })).json();
+    // deno-lint-ignore no-explicit-any
+    return { original_price: it.original_price, var_original: (it.variations ?? []).map((v: any) => v.original_price ?? null), prices: p.prices ?? p };
+  };
+  const precoAntes = await precos();
+  console.log(JSON.stringify({ precos_antes: precoAntes }));
+  if (modo !== 'estoque') {
+    // deno-lint-ignore no-explicit-any
+    const lista: any[] = Array.isArray(precoAntes.prices) ? precoAntes.prices : [];
+    const padrao = lista.filter((x) => x.type === 'standard');
+    const outros = lista.filter((x) => x.type !== 'standard');
+    // deno-lint-ignore no-explicit-any
+    const alvos = vs.length ? vs.map((v: any) => v.price) : [antes.rec.price];
+    if (precoAntes.original_price != null || precoAntes.var_original.some((x: unknown) => x != null) || outros.length
+      || !padrao.length || !alvos.every((a: number) => padrao.some((s) => s.amount === a))) {
+      throw new Error('BLOCKED: preço com promoção/original_price ou standard != GET — PUT de preço não enviado');
+    }
+  }
+  const quando = new Date().toISOString();
+  const r = await fetch(`${API}/items/${id}`, { method: 'PUT', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+  const resp = await r.text();
+  console.log(JSON.stringify({ quando, put: id, corpo, http: r.status }));
+  if (!r.ok) console.log(resp.slice(0, 2000));
+  const leituras = [];
+  for (const espera of [0, 60_000]) {
+    await new Promise((s) => setTimeout(s, espera));
+    const d = await snap(id, `h-${modo}-depois${espera}-${Date.now()}`);
+    const igual = semTags(antes.rec) === semTags(d.rec);
+    leituras.push({ apos_ms: espera, quando: new Date().toISOString(), recorte_igual: igual });
+    if (!igual) {
+      console.log(`ALERTA\nANTES ${semTags(antes.rec)}\nDEPOIS ${semTags(d.rec)}`);
+      // Venda real no meio: restaurar quantidade antiga venderia estoque inexistente → para sem escrever.
+      if (d.rec.sold_quantity !== antes.rec.sold_quantity) { console.log('BLOCKED: venda durante o ensaio; sem restauro automático'); Deno.exit(3); }
+      // Restauro em partes, cada uma no formato já provado: fotos como em (b)/(d); valores no mesmo corpo de (h).
+      // deno-lint-ignore no-explicit-any
+      const fotosDe = (x: any) => JSON.stringify([x.pictures.map((p: any) => p.id), x.variations.map((v: any) => v.picture_ids)]);
+      const restauros = [];
+      if (fotosDe(antes.rec) !== fotosDe(d.rec)) {
+        // deno-lint-ignore no-explicit-any
+        const pictures = antes.rec.pictures.map((p: any) => ({ id: p.id }));
+        // deno-lint-ignore no-explicit-any
+        restauros.push(vs.length ? { pictures, variations: vs.map((v: any) => ({ id: v.id, picture_ids: v.picture_ids })) } : { pictures });
+      }
+      if (semTags({ ...antes.rec, pictures: 0, variations: vs.map((v: { picture_ids: unknown }) => ({ ...v, picture_ids: 0 })) })
+        // deno-lint-ignore no-explicit-any
+        !== semTags({ ...d.rec, pictures: 0, variations: d.rec.variations.map((v: any) => ({ ...v, picture_ids: 0 })) })) restauros.push(corpo);
+      for (const rest of restauros) {
+        const rr = await fetch(`${API}/items/${id}`, { method: 'PUT', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify(rest) });
+        console.log(JSON.stringify({ restauro: id, corpo: rest, http: rr.status, quando: new Date().toISOString() }));
+      }
+      Deno.exit(2);
+    }
+  }
+  const precoDepois = await precos();
+  console.log(JSON.stringify({ precos_iguais: JSON.stringify(precoAntes) === JSON.stringify(precoDepois), precos_depois: precoDepois }));
+  console.log(JSON.stringify({
+    leituras,
+    fotos: antes.rec.pictures.map((p: { id: string }) => p.id),
+    // deno-lint-ignore no-explicit-any
+    picture_ids: vs.map((v: any) => [v.id, v.picture_ids]),
+  }, null, 2));
+}
+
 const [cmd, a, b] = Deno.args;
-if (cmd === 'snap') console.log(JSON.stringify(await snap(a, b ?? `snap-${Date.now()}`), null, 2));
+if (cmd === 'inverso') await inverso(a);
+else if (cmd === 'snap') console.log(JSON.stringify(await snap(a, b ?? `snap-${Date.now()}`), null, 2));
 else if (cmd === 'upload') await upload(a, b);
 else if (cmd === 'put') await put(a, b, Deno.args[3] ? Number(Deno.args[3]) : undefined, Deno.args[4]);
 else console.error('uso: snap <MLB> [rotulo] | upload <MLB> <picture_id> | put <MLB> <corpo.json>');
