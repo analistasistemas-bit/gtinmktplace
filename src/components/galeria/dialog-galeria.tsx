@@ -1,0 +1,91 @@
+// ADR-0201 (Task 7b): Galeria IA da linha de Publicados. Identidade = `ml_item_id` da linha (+ `codigo_pai` só para o
+// título); a família vigente volta da edge e é ela que a tela reenvia. Passos: fatos/referências → roteiro.
+import { useCallback, useEffect, useState } from 'react';
+import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  ERROS_DE_RECARGA, mensagemErro, montarFicha,
+  type Ficha, type Res, type RespostaRoteiro,
+} from '@/lib/galeria/api';
+import { PassoFatos } from './passo-fatos';
+import { PassoRoteiro } from './passo-roteiro';
+
+type Falha = Extract<Res<unknown>, { ok: false }>;
+
+export function DialogGaleria({ mlItemId, codigoPai, open, onOpenChange, isAdmin }: {
+  mlItemId: string; codigoPai: string; open: boolean; onOpenChange: (v: boolean) => void; isAdmin: boolean;
+}) {
+  const [ficha, setFicha] = useState<Ficha | null>(null);
+  const [resp, setResp] = useState<RespostaRoteiro | null>(null);
+  const [passo, setPasso] = useState<'fatos' | 'roteiro'>('fatos');
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const carregar = useCallback(async () => {
+    setCarregando(true);
+    const r = await montarFicha(mlItemId);
+    // Não limpa o erro: a mensagem que motivou a recarga (categoria_mudou etc.) tem de sobreviver a ela.
+    if (r.ok) setFicha(r.dados); else setErro(mensagemErro(r.erro));
+    setCarregando(false);
+  }, [mlItemId]);
+
+  useEffect(() => {
+    if (!open) return;
+    setResp(null); setPasso('fatos');
+    void carregar();
+  }, [open, carregar]);
+
+  /** Falha de qualquer ação: mensagem clara; erros que invalidam o chão recarregam a ficha e descartam o roteiro em tela. */
+  const falhou = useCallback((f: Falha) => {
+    setErro(mensagemErro(f.erro));
+    if (f.erro === 'roteiro_invalido') {
+      setResp((r) => (r ? { ...r, erros: (f.corpo.erros as string[]) ?? r.erros, erros_por_missao: (f.corpo.erros_por_missao as Record<string, string[]>) ?? r.erros_por_missao } : r));
+    } else if (f.erro === 'ciencia_pendente') {
+      setResp((r) => (r ? { ...r, ciencia_pendente: (f.corpo.campos as string[]) ?? r.ciencia_pendente } : r));
+    }
+    if (ERROS_DE_RECARGA.has(f.erro)) { setResp(null); void carregar(); }
+  }, [carregar]);
+
+  const aoMudarFicha = useCallback((r: Res<Ficha>) => {
+    if (r.ok) { setFicha(r.dados); setErro(null); } else falhou(r);
+  }, [falhou]);
+
+  const roteiroAprovado = useCallback(() => {
+    toast.success('Roteiro aprovado');
+    setResp(null);
+    void carregar();
+  }, [carregar]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Galeria IA · {codigoPai}</DialogTitle>
+          <DialogDescription>Confira os fatos do produto e aprove o roteiro das imagens.</DialogDescription>
+        </DialogHeader>
+
+        {erro && <p role="alert" className="rounded border border-red-500/40 bg-red-500/10 p-2 text-sm">{erro}</p>}
+        {carregando && !ficha && <Loader2 className="mx-auto h-5 w-5 animate-spin" aria-label="Carregando" />}
+
+        {ficha && (
+          <>
+            <div role="tablist" className="flex gap-2">
+              <Button role="tab" aria-selected={passo === 'fatos'} size="sm" variant={passo === 'fatos' ? 'default' : 'outline'}
+                onClick={() => setPasso('fatos')}>1. Fatos e referências</Button>
+              <Button role="tab" aria-selected={passo === 'roteiro'} size="sm" variant={passo === 'roteiro' ? 'default' : 'outline'}
+                onClick={() => setPasso('roteiro')}>2. Roteiro</Button>
+            </div>
+            {passo === 'fatos'
+              ? <PassoFatos mlItemId={mlItemId} ficha={ficha} moda={resp ? resp.roteiro.moda : null} aoMudar={aoMudarFicha} />
+              : <PassoRoteiro mlItemId={mlItemId} ficha={ficha} isAdmin={isAdmin} resp={resp}
+                aoResposta={(r) => { setResp(r); setErro(null); }} aoFalhar={falhou} aoAprovar={roteiroAprovado} />}
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}

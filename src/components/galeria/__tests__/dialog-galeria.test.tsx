@@ -1,0 +1,197 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { DialogGaleria } from '../dialog-galeria';
+import type { Fato, Ficha, RespostaRoteiro, Res } from '@/lib/galeria/api';
+
+const api = vi.hoisted(() => ({
+  montarFicha: vi.fn(), confirmarFato: vi.fn(), descartarFato: vi.fn(), manterCadastro: vi.fn(),
+  corrigirCadastro: vi.fn(), enviarVista: vi.fn(), criarRoteiro: vi.fn(), salvarRoteiro: vi.fn(), aprovarRoteiro: vi.fn(),
+}));
+vi.mock('@/lib/galeria/api', async (orig) => ({ ...(await orig<typeof import('@/lib/galeria/api')>()), ...api }));
+vi.mock('@/lib/storage', () => ({ signedUrl: vi.fn(async () => 'https://x.test/etiqueta.jpg') }));
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+
+const ok = <T,>(dados: T): Res<T> => ({ ok: true, dados });
+const falha = (status: number, erro: string, corpo: Record<string, unknown> = {}): Res<never> => ({ ok: false, status, erro, corpo });
+
+const fato = (campo: string, estado: Fato['estado'], valor = 'v', extra: Partial<Fato> = {}): Fato =>
+  ({ campo, valor, estado, origem: 'planilha', ...extra });
+const ficha = (fatos: Fato[], extra: Partial<Ficha> = {}): Ficha => ({
+  anuncio_externo_id: 'A1', familia_id: 'F1', codigo_pai: '0001', cores: ['Preto'], fatos, fatos_hash: 'h',
+  roteiro_desatualizado: false, referencias: {}, ...extra,
+});
+const missao = (n: number, extra = {}) => ({ missao: n, ativa: true, cena: `cena ${n}`, fatosUsados: [], ...extra });
+const resposta = (extra: Partial<RespostaRoteiro> & { moda?: boolean; status?: string } = {}): RespostaRoteiro => {
+  const { moda = false, status = 'rascunho', ...resto } = extra;
+  return {
+    roteiro: { id: 'R1', familia_id: 'F1', versao: 1, status, moda, conteudo: { categoria: 'c', contrato: 'contrato', missoes: [missao(1), missao(2, { headline: 'um dois três quatro cinco seis' })] } },
+    erros: [], erros_por_missao: {}, ciencia_pendente: [], fatos: [], ...resto,
+  };
+};
+
+function abrir(mlItemId = 'MLB1', isAdmin = true) {
+  return render(<DialogGaleria mlItemId={mlItemId} codigoPai="0001" open onOpenChange={() => undefined} isAdmin={isAdmin} />);
+}
+async function irParaRoteiro() {
+  await userEvent.click(await screen.findByRole('tab', { name: /Roteiro/ }));
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  api.montarFicha.mockResolvedValue(ok(ficha([])));
+});
+
+describe('DialogGaleria — identidade', () => {
+  it('linhas split da mesma família mandam ml_item_id diferentes', async () => {
+    const a = abrir('MLB-A');
+    await waitFor(() => expect(api.montarFicha).toHaveBeenCalledWith('MLB-A'));
+    a.unmount();
+    abrir('MLB-B');
+    await waitFor(() => expect(api.montarFicha).toHaveBeenCalledWith('MLB-B'));
+  });
+
+  it('criar roteiro manda ml_item_id da linha e a família vigente devolvida pela edge', async () => {
+    api.criarRoteiro.mockResolvedValue(ok(resposta()));
+    abrir('MLB-B');
+    await irParaRoteiro();
+    await userEvent.click(screen.getByRole('button', { name: 'Criar roteiro' }));
+    expect(api.criarRoteiro).toHaveBeenCalledWith('MLB-B', 'F1');
+  });
+});
+
+describe('Passo fatos', () => {
+  it('DIVERGENTE mostra o recorte e deixa "Usar o da etiqueta" pré-selecionado; aplicar corrige o cadastro', async () => {
+    api.montarFicha.mockResolvedValue(ok(ficha([fato('atributo:FABRIC', 'DIVERGENTE', 'Poliéster', {
+      etiqueta: { legivel: true, valor: 'Algodão', foto: { origem: 'referencia', ref: 'o/a.jpg' }, caixa: { x: 0.1, y: 0.2, w: 0.5, h: 0.3 } },
+    })])));
+    api.corrigirCadastro.mockResolvedValue(ok(ficha([fato('atributo:FABRIC', 'CONFIRMADO', 'Algodão')])));
+    abrir();
+    expect(await screen.findByRole('img', { name: 'Recorte da etiqueta' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Usar o da etiqueta/ })).toBeChecked();
+    await userEvent.click(screen.getByRole('button', { name: 'Aplicar' }));
+    expect(api.corrigirCadastro).toHaveBeenCalledWith('MLB1', 'F1', 'atributo:FABRIC', 'Algodão');
+  });
+
+  it('DIVERGENTE de campo não corrigível (ORIGEM) só permite manter o cadastro', async () => {
+    api.montarFicha.mockResolvedValue(ok(ficha([fato('ORIGEM', 'DIVERGENTE', 'NACIONAL', { etiqueta: { legivel: true, valor: 'China' } })])));
+    api.manterCadastro.mockResolvedValue(ok(ficha([])));
+    abrir();
+    expect(await screen.findByRole('radio', { name: /Usar o da etiqueta/ })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Aplicar' }));
+    expect(api.manterCadastro).toHaveBeenCalledWith('MLB1', 'F1', 'ORIGEM');
+  });
+
+  it('SUGERIDO tem Confirmar e Descartar', async () => {
+    api.montarFicha.mockResolvedValue(ok(ficha([fato('atributo:SLEEVE', 'SUGERIDO', 'Curta')])));
+    api.confirmarFato.mockResolvedValue(ok(ficha([fato('atributo:SLEEVE', 'SUGERIDO', 'Curta')])));
+    api.descartarFato.mockResolvedValue(ok(ficha([])));
+    abrir();
+    await userEvent.click(await screen.findByRole('button', { name: 'Confirmar' }));
+    expect(api.confirmarFato).toHaveBeenCalledWith('MLB1', 'F1', 'atributo:SLEEVE');
+    await userEvent.click(screen.getByRole('button', { name: 'Descartar' }));
+    expect(api.descartarFato).toHaveBeenCalledWith('MLB1', 'F1', 'atributo:SLEEVE');
+  });
+
+  it('VARIA_POR_TAMANHO é explicado', async () => {
+    api.montarFicha.mockResolvedValue(ok(ficha([fato('largura_cm', 'VARIA_POR_TAMANHO', '20')])));
+    abrir();
+    expect(await screen.findByText(/muda de um tamanho para outro/)).toBeInTheDocument();
+  });
+
+  it('roteiro desatualizado avisa já na ficha', async () => {
+    api.montarFicha.mockResolvedValue(ok(ficha([], { roteiro_desatualizado: true })));
+    abrir();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/desatualizado/);
+  });
+
+  it('Moda oferece "Enviar foto de costas"; fora de Moda a oferta some', async () => {
+    api.criarRoteiro.mockResolvedValue(ok(resposta({ moda: true })));
+    abrir();
+    expect(await screen.findByRole('button', { name: 'Enviar foto de costas' })).toBeInTheDocument();
+    await irParaRoteiro();
+    await userEvent.click(screen.getByRole('button', { name: 'Criar roteiro' }));
+    await userEvent.click(await screen.findByRole('tab', { name: /Fatos/ }));
+    expect(screen.getByRole('button', { name: 'Enviar foto de costas' })).toBeInTheDocument();
+  });
+
+  it('roteiro de categoria fora de Moda esconde o envio de costas', async () => {
+    api.criarRoteiro.mockResolvedValue(ok(resposta({ moda: false })));
+    abrir();
+    await irParaRoteiro();
+    await userEvent.click(screen.getByRole('button', { name: 'Criar roteiro' }));
+    await userEvent.click(await screen.findByRole('tab', { name: /Fatos/ }));
+    expect(screen.queryByRole('button', { name: 'Enviar foto de costas' })).toBeNull();
+  });
+});
+
+describe('Passo roteiro', () => {
+  async function comRoteiro(r: RespostaRoteiro) {
+    api.criarRoteiro.mockResolvedValue(ok(r));
+    abrir();
+    await irParaRoteiro();
+    await userEvent.click(screen.getByRole('button', { name: 'Criar roteiro' }));
+    await screen.findByText(/Versão 1/);
+  }
+
+  it('contador de palavras fica vermelho acima do limite', async () => {
+    await comRoteiro(resposta());
+    const m2 = screen.getByRole('region', { name: 'Missão 2' });
+    expect(within(m2).getByLabelText('6 de 5 palavras')).toHaveAttribute('data-excedeu', 'true');
+  });
+
+  it('erros_por_missao aparecem na missão, que segue ativa; aprovar fica desabilitado', async () => {
+    await comRoteiro(resposta({ erros: ['Missão 2: título longo'], erros_por_missao: { '2': ['Missão 2: título longo'] } }));
+    const m2 = screen.getByRole('region', { name: 'Missão 2' });
+    expect(within(m2).getByRole('alert')).toHaveTextContent('título longo');
+    expect(within(m2).getByRole('checkbox', { name: 'Missão 2 ativa' })).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Aprovar roteiro' })).toBeDisabled();
+  });
+
+  it('ciência obrigatória quando há fato não conferido citado; aprovar manda os campos', async () => {
+    await comRoteiro(resposta({ ciencia_pendente: ['atributo:FABRIC'] }));
+    api.aprovarRoteiro.mockResolvedValue(ok({ roteiro_id: 'R1', status: 'aprovado', fatos_hash: 'h' }));
+    const aprovar = screen.getByRole('button', { name: 'Aprovar roteiro' });
+    expect(aprovar).toBeDisabled();
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Ciente: atributo:FABRIC' }));
+    expect(aprovar).toBeEnabled();
+    await userEvent.click(aprovar);
+    expect(api.aprovarRoteiro).toHaveBeenCalledWith('MLB1', 'F1', 'R1', ['atributo:FABRIC']);
+  });
+
+  it('não-admin não aprova (com motivo no title)', async () => {
+    api.criarRoteiro.mockResolvedValue(ok(resposta()));
+    abrir('MLB1', false);
+    await irParaRoteiro();
+    await userEvent.click(screen.getByRole('button', { name: 'Criar roteiro' }));
+    const b = await screen.findByRole('button', { name: 'Aprovar roteiro' });
+    expect(b).toBeDisabled();
+    expect(b).toHaveAttribute('title', expect.stringMatching(/administradores/));
+  });
+
+  it('roteiro desatualizado mostra aviso', async () => {
+    await comRoteiro(resposta({ status: 'desatualizado' }));
+    expect(screen.getByRole('alert')).toHaveTextContent(/desatualizado/);
+  });
+
+  it.each([
+    ['categoria_mudou', /categoria do anúncio mudou/],
+    ['conteudo_mudou', /alterado em outra aba/],
+  ])('409 %s mostra mensagem clara e recarrega a ficha', async (codigo, msg) => {
+    await comRoteiro(resposta());
+    api.aprovarRoteiro.mockResolvedValue(falha(409, codigo as string));
+    api.montarFicha.mockClear();
+    await userEvent.click(screen.getByRole('button', { name: 'Aprovar roteiro' }));
+    expect(await screen.findByText(msg as RegExp)).toBeInTheDocument();
+    await waitFor(() => expect(api.montarFicha).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('button', { name: 'Criar roteiro' })).toBeInTheDocument();
+  });
+
+  it('503 categoria_indisponivel avisa sem descartar o roteiro', async () => {
+    api.criarRoteiro.mockResolvedValue(falha(503, 'categoria_indisponivel'));
+    abrir();
+    await irParaRoteiro();
+    await userEvent.click(screen.getByRole('button', { name: 'Criar roteiro' }));
+    expect(await screen.findByText(/ler a categoria no Mercado Livre/)).toBeInTheDocument();
+  });
+});
