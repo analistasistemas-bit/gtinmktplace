@@ -153,6 +153,27 @@ describe('mesmoValor', () => {
     expect(mesmoValor('100% Poliamida algodão', '100% Poliamida algodão')).toBe(true) // material composto idêntico
     expect(mesmoValor('70% Fibra de Bambu, 30% Algodão', '30% algodao 70% fibra de bambu')).toBe(true)
   })
+  it('reflexivo: texto normalizado idêntico é igual mesmo com % não reconhecido', () => {
+    for (const x of ['90% Poliéster 10 Elastano', '90% Poliéster 10% Elastano linho', '100% Poliamida, algodão']) {
+      expect(mesmoValor(x, x)).toBe(true)
+    }
+    expect(mesmoValor('90% Poliéster 10 Elastano', '90%  POLIESTER 10 elastano')).toBe(true)
+    expect(mesmoValor('90% Poliéster 10 Elastano', '90% Poliéster 10% Elastano')).toBe(false)
+    expect(mesmoValor('90% Poliéster 10% Elastano linho', '90% Poliéster, 10% Elastano, linho')).toBe(false)
+  })
+  it('manter cadastro com leitura % não reconhecida destrava; leitura mudou → DIVERGENTE de novo', () => {
+    const lida = '90% Poliéster 10 Elastano'
+    const ficha = montarFicha({
+      ...base,
+      planilha: { composicao: '100% Poliamida' },
+      confirmados: [{
+        campo: 'composicao', valor: '100% Poliamida', origem: 'planilha',
+        evidencia: { manter_cadastro: true, etiqueta_lida: lida }, descartado: false,
+      }],
+    })
+    expect(fato(aplicarEtiqueta(ficha, { composicao: { legivel: true, valor: lida } }), 'composicao')?.estado).toBe('CONFIRMADO')
+    expect(fato(aplicarEtiqueta(ficha, { composicao: { legivel: true, valor: '90% Poliéster 10 Elastano linho' } }), 'composicao')?.estado).toBe('DIVERGENTE')
+  })
   it('números pt-BR: "1.500" é milhar, "1,5" é decimal', () => {
     expect(mesmoValor('1.500 m', '1,5 m')).toBe(false)
     expect(mesmoValor('1.500 m', '1500 m')).toBe(true)

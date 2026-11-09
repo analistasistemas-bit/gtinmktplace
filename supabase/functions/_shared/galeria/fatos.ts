@@ -87,6 +87,8 @@ export function montarFicha({ planilha, medidasPorSku, atributosML, textosIA, co
 }
 
 const norm = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+// Texto exato normalizado: sem acento, minúsculo, espaço colapsado; dígitos, %, vírgula e ponto intocados.
+const textoNorm = (s: string) => norm(s).normalize('NFC').replace(/\s+/g, ' ').trim();
 // Número pt-BR: "1.500" = mil e quinhentos (milhar), "1,5" = um e meio; "1.5" (sem grupo de 3) = um e meio.
 const NUM = '\\d+(?:[.,]\\d+)*';
 function numero(n: string): string {
@@ -135,6 +137,7 @@ function composicao(s: string): Map<string, string> | null {
  * Com % e composição não reconhecida em qualquer lado: nunca igual.
  */
 export function mesmoValor(a: string, b: string): boolean {
+  if (textoNorm(a) === textoNorm(b)) return true; // reflexivo: mesmo texto nunca diverge
   const sequencia = (s: string) =>
     (norm(s).match(new RegExp(`${NUM}|\\p{L}+`, 'gu')) ?? []).map((t) => (/\d/.test(t) ? numero(t) : t)).join(' ');
   const temPct = (s: string) => s.includes('%');
@@ -157,9 +160,9 @@ export function aplicarEtiqueta(fatos: Fato[], leitura: Record<string, LeituraCa
       return { ...fato, etiqueta: l, estado: fato.estado === 'CONFIRMADO' ? 'NAO_CONFERIDO' : fato.estado };
     }
     if (mesmoValor(l.valor, fato.valor)) return { ...fato, etiqueta: l };
-    // "Manter cadastro" (R1.3) destrava só a mesma leitura que o operador viu.
+    // "Manter cadastro" (R1.3) destrava só a mesma leitura que o operador viu (texto exato, não semântico).
     const mantida = fato.evidencia.manter_cadastro === true && temTexto(fato.evidencia.etiqueta_lida)
-      && mesmoValor(fato.evidencia.etiqueta_lida, l.valor);
+      && textoNorm(fato.evidencia.etiqueta_lida) === textoNorm(l.valor);
     return { ...fato, etiqueta: l, estado: mantida ? fato.estado : 'DIVERGENTE' };
   });
   // Fato que só existe na etiqueta não vira texto: entra como sugestão para o operador incluir.
