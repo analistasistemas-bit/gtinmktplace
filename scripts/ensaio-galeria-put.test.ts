@@ -22,7 +22,7 @@ const precos = { prices: [{ id: '1', type: 'standard', amount: 10 }] };
 type Cenario = { getsFalhos?: Set<number>; aoFalhar?: (item: ReturnType<typeof itemInicial>) => void; pricesLanca?: number };
 
 async function rodar(c: Cenario) {
-  let item = itemInicial();
+  const item = itemInicial();
   let gets = 0, pricesN = 0;
   const puts: unknown[] = [];
   const original = globalThis.fetch;

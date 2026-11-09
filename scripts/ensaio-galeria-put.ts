@@ -66,6 +66,7 @@ async function getItem(id: string) {
 }
 
 // deno-lint-ignore no-explicit-any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Rec = any;
 // Recorte comparável: fotos (o que a galeria muda) e o resto (o que NUNCA pode mudar).
 function recorte(it: Rec) {
@@ -199,7 +200,7 @@ export async function put(id: string, arquivo: string, passo: string): Promise<n
   let p = { ok: false, http: 0, quando: '' };
   let depois: Rec = null;
   let erros: string[] = ['sem leitura pós-PUT'];
-  let ok = false;
+  let ok: boolean;
   try {
     p = await putItem(id, corpo);
     depois = await snap(id, `${passo}-depois`);
