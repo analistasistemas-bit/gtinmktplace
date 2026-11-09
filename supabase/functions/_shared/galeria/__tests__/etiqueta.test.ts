@@ -289,6 +289,34 @@ describe('conferirEtiqueta + lerFicha', () => {
     expect(tabela()[0]).toMatchObject({ falhou: false })
   })
 
+  it('referência com URL assinada falhando não conta como vista: a mesma imagem entra pela via do ML (leitura parcial)', async () => {
+    const storage = (fake.admin as unknown as { storage: { from: (b: string) => Record<string, unknown> } }).storage
+    const de = storage.from
+    storage.from = (b: string) => ({ ...de(b), createSignedUrl: async () => ({ data: null, error: { message: 'boom' } }) })
+    bytesFoto = { P_CAPA: 'ref-preto' } // mesma imagem da referência
+    v.create.mockResolvedValueOnce(resposta([]))
+    await conferir()
+    expect(urlsEnviadas()).toEqual(['https://ml/P_CAPA.jpg', 'https://ml/P_ETQ.jpg'])
+    expect(tabela()[0]).toMatchObject({ falhou: false, parcial: true })
+  })
+
+  it('foto em 500 dentro do teto com outra boa → parcial; o montar seguinte relê (parcial não é cache)', async () => {
+    const base = globalThis.fetch as unknown as (u: string) => Promise<Response>
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => (url === 'https://ml/P_CAPA.jpg' ? new Response('x', { status: 500 }) : base(url))))
+    v.create.mockResolvedValue(resposta([lido('marca', 'Avil')]))
+    await conferir()
+    expect(urlsEnviadas()).not.toContain('https://ml/P_CAPA.jpg')
+    expect(tabela()[0]).toMatchObject({ falhou: false, parcial: true })
+    expect(await conferir()).toBe(true)
+    expect(v.create).toHaveBeenCalledTimes(2)
+    // Foto voltou: leitura completa → cache.
+    vi.stubGlobal('fetch', vi.fn(base))
+    await conferir()
+    expect(tabela()[0]).toMatchObject({ parcial: false })
+    expect(await conferir()).toBe(false)
+    expect(v.create).toHaveBeenCalledTimes(3)
+  })
+
   it('nenhuma foto pôde ser lida → falhou com todos indisponivel, e a próxima tenta de novo', async () => {
     refs = []
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {

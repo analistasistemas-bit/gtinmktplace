@@ -176,7 +176,8 @@ const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
  * Chamada pelo `montar` (via `calcularVigencia`), depois das referências e antes do hash. Fotos: referências
  * imutáveis (Task 6) primeiro, depois as do ML do anúncio fora de `fotosAplicadas`, sem repetir a que já é
  * referência (mesmo sha). Chave = campos + ids das fotos (picture_id do ML é imutável; referência = sha).
- * Mesma chave sem falha → nada. Devolve true se gravou leitura nova.
+ * Mesma chave, leitura completa e sem falha → nada. Leitura parcial (foto pulada por erro ou sem vaga) não é cache:
+ * a próxima montagem relê. Devolve true se gravou leitura nova.
  * Falha antes da chave (ML fora do ar): com leitura gravada, nada muda; sem leitura, grava `indisponivel`.
  * Falha depois da chave (URL, download, visão): grava `indisponivel` com `falhou` para a chave nova — nunca reaproveita
  * a leitura de fotos/campos antigos. `falhou` nunca é cache: a próxima montagem tenta de novo.
@@ -213,12 +214,17 @@ export async function conferirEtiqueta(
     if (atual) return false;
     return gravar({ chave: null, falhou: true, parcial: false, leitura: todos(campos, 'indisponivel') });
   }
-  if (atual && !atual.falhou && atual.chave === chave) return false;
+  if (atual && !atual.falhou && !atual.parcial && atual.chave === chave) return false;
   if (campos.length === 0) return gravar({ chave, falhou: false, parcial: false, leitura: {} });
 
   try {
     // Foto que falha (URL, download) é pulada e registrada; só sem nenhuma foto lida a leitura é `indisponivel`.
-    const pular = (qual: string, e: unknown) => { console.error('[galeria-etiqueta] foto pulada', qual, (e as Error).message); return null; };
+    let pulou = false;
+    const pular = (qual: string, e: unknown) => {
+      pulou = true;
+      console.error('[galeria-etiqueta] foto pulada', qual, (e as Error).message);
+      return null;
+    };
     const fotos: FotoEtiqueta[] = [];
     for (const r of dasRefs) {
       if (fotos.length >= MAX_FOTOS) break;
@@ -228,7 +234,8 @@ export async function conferirEtiqueta(
     }
     // Foto do ML: baixa para o sha (dedupe com as referências e recorte rastreável), só na leitura nova e só o
     // necessário para encher o teto: lotes do tamanho das vagas restantes, na ordem.
-    const vistos = new Set(dasRefs.map((r) => r.sha256));
+    // Só a referência que entrou conta como vista: a que falhou pode chegar pela cópia do ML.
+    const vistos = new Set(fotos.map((f) => f.sha256));
     const baixar = (pid: string) => (async () => {
       const url = await buscarSecureUrlFotoML(token, pid);
       const resp = await fetch(url);
@@ -245,7 +252,7 @@ export async function conferirEtiqueta(
         if (fotos.length < MAX_FOTOS) fotos.push(f);
       }
     }
-    const parcial = dasRefs.length > MAX_FOTOS || i < doMl.length;
+    const parcial = pulou || dasRefs.length > MAX_FOTOS || i < doMl.length;
     if (fotos.length === 0 && dasRefs.length + doMl.length > 0) throw new Error('nenhuma foto pôde ser lida');
     const cadastro = Object.fromEntries(alvo.map((f) => [f.campo, f.valor]));
     return gravar({ chave, falhou: false, parcial, leitura: await lerEtiquetaPorVisao({ fotos, campos, cadastro, parcial }) });
