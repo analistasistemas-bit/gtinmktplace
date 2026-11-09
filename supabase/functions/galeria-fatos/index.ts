@@ -80,7 +80,9 @@ async function valorDoAtributo(admin: Admin, orgId: string, categoriaId: string,
   const cx = await resolverConexaoEstrita(admin, orgId, 'mercado_livre');
   if (!cx) throw new Error('Organização sem conexão com o Mercado Livre');
   const schema = await lerSchemaAtributos(await getValidAccessTokenConexao(cx), categoriaId);
-  const v = validarValorAtributo(schema, atributoId, bruto);
+  // Lista fechada: a sugestão da etiqueta "100% X" vira o valor "X" do dicionário, se existir.
+  const puro = /^\s*100\s*%\s*(.+)$/.exec(bruto)?.[1];
+  const v = validarValorAtributo(schema, atributoId, bruto) ?? (puro ? validarValorAtributo(schema, atributoId, puro) : null);
   if (!v) return null;
   const nome = v.value_name ?? schema.find((x) => x.id === atributoId)?.valores.find((x) => x.id === v.value_id)?.nome;
   return nome ? { value_id: v.value_id, value_name: nome } : null;
@@ -173,7 +175,11 @@ Deno.serve(async (req) => {
       a.vigente.atributos_ml = novos;
       linha = {
         ...chave, ...quem, campo, valor, origem: 'confirmado_operador',
-        evidencia: { ...fato.evidencia, corrigido_cadastro: true, valor_anterior: fato.valor }, descartado: false,
+        // A leitura superada fica gravada (como no manter): o fato não volta a DIVERGENTE enquanto ela não mudar.
+        evidencia: {
+          ...fato.evidencia, corrigido_cadastro: true, valor_anterior: fato.valor,
+          ...(fato.etiqueta?.legivel && fato.etiqueta.valor ? { etiqueta_lida: fato.etiqueta.valor } : {}),
+        }, descartado: false,
       };
     }
     const { error } = await admin.from('galeria_fatos').upsert(linha, { onConflict: CONFLITO_FATO });

@@ -10,7 +10,7 @@ import { buscarSecureUrlFotoML } from '../ml/fotos.ts';
 import { fotoDaOrg } from '../../criar-kit-variacao/processar.ts';
 import { carregarAnuncio, coresDoAnuncio, skusDaCor, type AnuncioGaleria } from './anuncio.ts';
 import { aplicarEtiqueta, hashFatos, montarFicha, type Fato, type FatoGravado } from './fatos.ts';
-import { CAMPO_ETIQUETA, lerLeituraEtiqueta } from './etiqueta.ts';
+import { lerLeituraEtiqueta, type ContextoConferencia } from './etiqueta.ts';
 import type { Vista } from './regras.ts';
 
 export interface Referencia { id: string; path: string; sha256: string }
@@ -152,9 +152,10 @@ const VISTAS: Vista[] = ['frente', 'costas', 'lateral'];
 export async function lerFicha(admin: SupabaseClient, orgId: string, a: AnuncioGaleria): Promise<Fato[]> {
   const leitura = await lerLeituraEtiqueta(admin, orgId, a);
   const { data, error } = await admin.from('galeria_fatos').select('campo, valor, origem, evidencia, descartado')
-    .eq('org_id', orgId).eq('anuncio_externo_id', a.anuncioId).eq('familia_id', a.vigente.id).neq('campo', CAMPO_ETIQUETA);
+    .eq('org_id', orgId).eq('anuncio_externo_id', a.anuncioId).eq('familia_id', a.vigente.id);
   if (error) throw new Error(error.message);
   const f = a.vigente;
+  const gravados = (data ?? []) as FatoGravado[];
   return aplicarEtiqueta(montarFicha({
     planilha: { nome: f.nome_pai, descricao_fornecedor: f.descricao_pai, marca: f.marca, origem: f.origem },
     // R1.5 sobre todos os SKUs vivos do anúncio (o roteiro é um só para todas as cores).
@@ -163,12 +164,12 @@ export async function lerFicha(admin: SupabaseClient, orgId: string, a: AnuncioG
     )])),
     atributosML: f.atributos_ml ?? [],
     textosIA: { titulo_ml: f.titulo_ml, descricao_ml: f.descricao_ml },
-    confirmados: (data ?? []) as FatoGravado[],
-  }), leitura);
+    confirmados: gravados,
+  }), leitura, new Set(gravados.filter((g) => g.descartado).map((g) => g.campo)));
 }
 
 /** Gancho do `montar` para conferir a etiqueta (Task 6b) entre as referências e o hash; true = leitura nova gravada. */
-export type ConferirEtiqueta = (ctx: { refs: Referencia[]; fatos: Fato[]; aplicadas: Set<string> }) => Promise<boolean>;
+export type ConferirEtiqueta = (ctx: ContextoConferencia) => Promise<boolean>;
 
 /**
  * Vigência do anúncio: ficha + referências (todas as cores × frente/costas/lateral) + `fatos_hash`.
@@ -190,7 +191,11 @@ export async function calcularVigencia(admin: SupabaseClient, orgId: string, a: 
   let fatos = await lerFicha(admin, orgId, a);
   if (conferir) {
     const refs = Object.values(referencias).flatMap((porVista) => Object.values(porVista)).filter((r): r is Referencia => !('erro' in r));
-    if (await conferir({ refs, fatos, aplicadas })) fatos = await lerFicha(admin, orgId, a);
+    const { data, error } = await admin.from('galeria_fatos').select('campo')
+      .eq('org_id', orgId).eq('anuncio_externo_id', a.anuncioId).eq('familia_id', a.vigente.id).eq('descartado', true);
+    if (error) throw new Error(error.message);
+    const descartados = (data ?? []).map((d: { campo: string }) => d.campo);
+    if (await conferir({ refs, fatos, descartados, aplicadas })) fatos = await lerFicha(admin, orgId, a);
   }
   return { fatos, referencias, fatos_hash: hashFatos(fatos, shas) };
 }

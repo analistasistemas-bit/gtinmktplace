@@ -15,7 +15,7 @@ vi.mock('../../_shared/supabase.ts', () => ({ adminClient: () => f.fake.admin })
 vi.mock('../../_shared/canais/conexao.ts', () => ({ resolverConexaoEstrita: vi.fn(async () => ({ id: 'cx' })) }))
 vi.mock('../../_shared/ml/token.ts', () => ({ getValidAccessTokenConexao: vi.fn(async () => 'tok') }))
 vi.mock('../../_shared/galeria/etiqueta.ts', () => ({
-  CAMPO_ETIQUETA: '__etiqueta', lerLeituraEtiqueta: vi.fn(async () => f.leitura), conferirEtiqueta: f.conferir,
+  lerLeituraEtiqueta: vi.fn(async () => f.leitura), conferirEtiqueta: f.conferir,
 }))
 // Dicionário da categoria (closed-set): o mesmo formato que a Revisão usa em validarValorAtributo.
 vi.mock('../../_shared/categoria/schema.ts', () => ({
@@ -99,11 +99,12 @@ describe('galeria-fatos', () => {
     const r = await chamar({ acao: 'montar', ml_item_id: 'MLB1' })
     expect(r.status).toBe(200)
     expect(f.conferir).toHaveBeenCalledTimes(1)
-    const [, org, a, ctx] = f.conferir.mock.calls[0] as [unknown, string, { anuncioId: string }, { refs: Linha[]; fatos: Linha[]; aplicadas: Set<string> }]
+    const [, org, a, ctx] = f.conferir.mock.calls[0] as [unknown, string, { anuncioId: string }, { refs: Linha[]; fatos: Linha[]; descartados: string[]; aplicadas: Set<string> }]
     expect([org, a.anuncioId]).toEqual(['org', 'an1'])
     expect(ctx.refs.map((x) => x.path)).toEqual([expect.stringMatching(/^org\/galeria-ia\/famB\/referencias\/preto-frente-/)])
     expect(ctx.fatos.some((x) => x.campo === 'atributo:MAIN_MATERIAL')).toBe(true)
     expect(ctx.aplicadas).toBeInstanceOf(Set)
+    expect(ctx.descartados).toEqual([])
   })
 
   it('montar com hash diferente do roteiro aprovado: pendente→falhou, não aplicadas→desatualizada, submetendo/gerando intactas, roteiro desatualizado', async () => {

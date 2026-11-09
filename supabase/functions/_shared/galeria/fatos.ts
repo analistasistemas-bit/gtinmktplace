@@ -16,6 +16,8 @@ export interface LeituraCampo {
   legivel: boolean;
   valor?: string | null;
   recorte?: string;
+  /** Texto como impresso na etiqueta, quando difere de `valor` (origem mapeada, unidade convertida). */
+  cru?: string | null;
   // Só na leitura não legível (inconclusiva = ilegível; indisponivel = ausente ou fora do formato).
   estado?: 'inconclusiva' | 'indisponivel';
   foto?: { origem: 'referencia' | 'ml'; ref: string } | null;
@@ -145,8 +147,22 @@ function composicao(s: string): Map<string, string> | null {
   return pctPendente === null && matPendente === null ? mapa : null;
 }
 
+// Medida "número + unidade": massa em g, comprimento em cm. `null` = não reconhecida.
+const FATOR: Record<string, { dim: 'g' | 'cm'; f: number }> = {
+  mg: { dim: 'g', f: 0.001 }, g: { dim: 'g', f: 1 }, gr: { dim: 'g', f: 1 }, grama: { dim: 'g', f: 1 }, gramas: { dim: 'g', f: 1 },
+  kg: { dim: 'g', f: 1000 }, quilo: { dim: 'g', f: 1000 }, quilos: { dim: 'g', f: 1000 },
+  mm: { dim: 'cm', f: 0.1 }, cm: { dim: 'cm', f: 1 }, m: { dim: 'cm', f: 100 }, metro: { dim: 'cm', f: 100 }, metros: { dim: 'cm', f: 100 },
+};
+export function medida(s: string): { dim: 'g' | 'cm'; valor: number } | null {
+  const m = new RegExp(`^\\s*(${NUM})\\s*([a-z]+)\\.?\\s*$`).exec(norm(s));
+  const u = m && FATOR[m[2]];
+  const n = m ? Number(numero(m[1])) : NaN;
+  return u && Number.isFinite(n) ? { dim: u.dim, valor: Math.round(n * u.f * 1000) / 1000 } : null;
+}
+
 /**
  * Mesmo valor com formatação diferente. Números e unidades contam ("20 mm" ≢ "35 mm", "1.500 m" ≢ "1,5 m");
+ * medida em outra unidade da mesma grandeza converte ("500 g" ≡ "0,5 kg", "60 cm" ≡ "600 mm");
  * composição compara o percentual de cada material, com todos os termos casados; só "100% X" ≡ "X".
  * Com % e composição não reconhecida em qualquer lado: nunca igual.
  */
@@ -155,7 +171,12 @@ export function mesmoValor(a: string, b: string): boolean {
   const sequencia = (s: string) =>
     (norm(s).match(new RegExp(`${NUM}|\\p{L}+`, 'gu')) ?? []).map((t) => (/\d/.test(t) ? numero(t) : t)).join(' ');
   const temPct = (s: string) => s.includes('%');
-  if (!temPct(a) && !temPct(b)) return sequencia(a) === sequencia(b);
+  if (!temPct(a) && !temPct(b)) {
+    if (sequencia(a) === sequencia(b)) return true;
+    const ma = medida(a);
+    const mb = medida(b);
+    return !!ma && !!mb && ma.dim === mb.dim && ma.valor === mb.valor;
+  }
   // Com % em qualquer lado não há fallback por sequência: composição não reconhecida nunca é igual.
   // Material de várias palavras só casa se for idêntico (chave exata do mapa).
   const ca = composicao(a);
@@ -166,7 +187,7 @@ export function mesmoValor(a: string, b: string): boolean {
   return !!comp && comp.size === 1 && [...comp.values()][0] === '100' && comp.has(sequencia(puro));
 }
 
-export function aplicarEtiqueta(fatos: Fato[], leitura: Record<string, LeituraCampo>): Fato[] {
+export function aplicarEtiqueta(fatos: Fato[], leitura: Record<string, LeituraCampo>, descartados: ReadonlySet<string> = new Set()): Fato[] {
   const saida = fatos.map((fato): Fato => {
     const l = leitura[fato.campo];
     if (!l || fato.estado === 'VARIA_POR_TAMANHO') return fato;
@@ -174,14 +195,15 @@ export function aplicarEtiqueta(fatos: Fato[], leitura: Record<string, LeituraCa
       return { ...fato, etiqueta: l, estado: fato.estado === 'CONFIRMADO' ? 'NAO_CONFERIDO' : fato.estado };
     }
     if (mesmoValor(l.valor, fato.valor)) return { ...fato, etiqueta: l };
-    // "Manter cadastro" (R1.3) destrava só a mesma leitura que o operador viu (texto exato, não semântico).
-    const mantida = fato.evidencia.manter_cadastro === true && temTexto(fato.evidencia.etiqueta_lida)
+    // "Manter cadastro" e "Corrigir cadastro" (R1.3) destravam só a mesma leitura que o operador viu (texto exato).
+    const decidiu = fato.evidencia.manter_cadastro === true || fato.evidencia.corrigido_cadastro === true;
+    const mantida = decidiu && temTexto(fato.evidencia.etiqueta_lida)
       && textoNorm(fato.evidencia.etiqueta_lida) === textoNorm(l.valor);
     return { ...fato, etiqueta: l, estado: mantida ? fato.estado : 'DIVERGENTE' };
   });
-  // Fato que só existe na etiqueta não vira texto: entra como sugestão para o operador incluir.
+  // Fato que só existe na etiqueta não vira texto: entra como sugestão para o operador incluir (descartado não volta).
   for (const [campo, l] of Object.entries(leitura)) {
-    if (l.legivel && temTexto(l.valor) && !saida.some((f) => f.campo === campo)) {
+    if (l.legivel && temTexto(l.valor) && !descartados.has(campo) && !saida.some((f) => f.campo === campo)) {
       saida.push({ campo, valor: l.valor.trim(), estado: 'SUGERIDO', origem: 'etiqueta', evidencia: { recorte: l.recorte ?? null }, etiqueta: l });
     }
   }
