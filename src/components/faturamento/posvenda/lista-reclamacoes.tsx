@@ -11,6 +11,7 @@ import {
 import { verificarAcaoPosvenda, type TentativaAtivaPosvenda } from '@/lib/posvenda';
 import { labelTipoDevolucao, type Devolucao } from '@/lib/devolucoes';
 import { fmtBRL } from '@/lib/formato';
+import { tempoRelativo } from '@/lib/sonar-buscas-recentes';
 import { urlVendaML } from '@/lib/ml-status';
 import { QK_POSVENDA, useProdutosPedidos } from '@/hooks/usePosvenda';
 import { ThumbProduto } from '@/components/faturamento/pilha-thumbs';
@@ -59,6 +60,8 @@ export function CardFila({ d, travas, agora, produto, acaoPrimaria }: {
   const ativas = (travas ?? []).filter((t) => t.claim_id === d.claim_id);
   // Trava por RECURSO (revisão = return:{id}); tentativa de mensagem não trava a revisão.
   const travado = travas === null || travada(travas, 'revisar_ok', d.claim_id, d.return_id ?? null);
+  // `agora` é fixado na montagem da lista: leitura posterior (detalhe aberto) daria '' no tempoRelativo.
+  const atualizadoEm = d.lido_em ?? d.enriquecido_em;
   const vencido = d.prazo != null && Date.parse(d.prazo) < agora.getTime();
   return (
     <div className="flex flex-col gap-3 rounded-lg border bg-card p-3 sm:flex-row sm:items-center" data-classe={classe}>
@@ -82,6 +85,7 @@ export function CardFila({ d, travas, agora, produto, acaoPrimaria }: {
           {d.vez_de && <StatusPill tone={d.vez_de === 'vendedor' ? 'warning' : 'neutral'}>{VEZ[d.vez_de]}</StatusPill>}
           {d.prazo && <StatusPill tone={vencido ? 'danger' : 'neutral'}>{vencido ? 'Venceu' : 'Até'} {fmtDataHora(d.prazo).slice(0, 5)}</StatusPill>}
         </div>
+        {atualizadoEm && <div className="text-muted-foreground">Atualizado {tempoRelativo(atualizadoEm, agora) || 'agora há pouco'}</div>}
         {ativas.length > 0 && (
           <div role="status" className="space-y-1 text-info">
             <div>{MSG_TRAVA}</div>

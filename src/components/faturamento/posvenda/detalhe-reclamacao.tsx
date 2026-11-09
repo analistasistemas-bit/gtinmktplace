@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Paperclip } from 'lucide-react';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -204,6 +204,11 @@ export function PainelReclamacao({ item, travas, onOpenChange }: {
     queryKey: [...QK_POSVENDA, 'detalhe', claim], enabled: claim != null, staleTime: 0, gcTime: 0,
     queryFn: () => buscarDetalheReclamacao(String(claim)),
   });
+  const qc = useQueryClient();
+  // Detalhe lido → a edge regravou ml_devolucoes; a lista reflete na hora.
+  useEffect(() => {
+    if (q.isSuccess) void qc.invalidateQueries({ queryKey: ['devolucoes'] });
+  }, [q.isSuccess, q.dataUpdatedAt, qc]);
   const e = q.data?.estado;
   return (
     <Sheet open={item != null} onOpenChange={onOpenChange}>
