@@ -7,6 +7,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { carregarAnuncio, resolverAnuncio, type AnuncioGaleria } from '../_shared/galeria/anuncio.ts';
 import { calcularVigencia } from '../_shared/galeria/referencias.ts';
+import { conferirEtiqueta } from '../_shared/galeria/etiqueta.ts';
 import { cienciaPendente, gerarRoteiroIA, sanearRoteiro, validarRoteiro, type Roteiro } from '../_shared/galeria/roteiro.ts';
 import { ehModa, type Vista } from '../_shared/galeria/regras.ts';
 import { resolverConexaoEstrita } from '../_shared/canais/conexao.ts';
@@ -152,8 +153,10 @@ Deno.serve(async (req) => {
 
     // aprovar
     if (linha.status !== 'rascunho') return json({ error: 'nao_rascunho' }, 409);
-    // fatos_hash pela MESMA função do `montar` (calcularVigencia): outro cálculo desatualizaria o roteiro na hora.
-    const v = await calcularVigencia(admin, orgId, a);
+    // fatos_hash pela MESMA chamada do `montar` (calcularVigencia + conferência da etiqueta): sem a conferência,
+    // leitura velha daria outro hash e o próximo `montar` desatualizaria o roteiro na hora. A conferência só
+    // chama a visão se fotos/campos/família mudaram (cache); DIVERGENTE nova reprova a aprovação (R1.3).
+    const v = await calcularVigencia(admin, orgId, a, (ctx) => conferirEtiqueta(admin, orgId, a, ctx));
     const erros = validarRoteiro(linha.conteudo, v.fatos, linha.moda, vistasDe(v));
     if (erros.length > 0) return json({ error: 'roteiro_invalido', erros }, 422);
     let conteudo = linha.conteudo;

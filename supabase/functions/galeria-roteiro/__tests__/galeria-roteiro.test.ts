@@ -5,6 +5,7 @@ const f = vi.hoisted(() => ({
   serve: vi.fn(), fake: null as unknown as { admin: unknown },
   leitura: {} as Record<string, unknown>,
   ia: vi.fn(),
+  conferir: vi.fn(async (..._a: unknown[]) => false),
 }))
 
 vi.mock('../../_shared/cors.ts', () => ({ corsHeaders: {}, handleOptions: () => new Response() }))
@@ -14,7 +15,7 @@ vi.mock('../../_shared/auth.ts', () => ({
 vi.mock('../../_shared/supabase.ts', () => ({ adminClient: () => f.fake.admin }))
 vi.mock('../../_shared/canais/conexao.ts', () => ({ resolverConexaoEstrita: vi.fn(async () => ({ id: 'cx' })) }))
 vi.mock('../../_shared/ml/token.ts', () => ({ getValidAccessTokenConexao: vi.fn(async () => 'tok') }))
-vi.mock('../../_shared/galeria/etiqueta.ts', () => ({ lerLeituraEtiqueta: vi.fn(async () => f.leitura), conferirEtiqueta: vi.fn() }))
+vi.mock('../../_shared/galeria/etiqueta.ts', () => ({ lerLeituraEtiqueta: vi.fn(async () => f.leitura), conferirEtiqueta: f.conferir }))
 vi.mock('../../_shared/ai/client.ts', () => ({ openrouterClient: () => ({ chat: { completions: { create: f.ia } } }) }))
 
 import { calcularVigencia } from '../../_shared/galeria/referencias'
@@ -25,13 +26,16 @@ let db: Record<string, Linha[]>
 let fake: ReturnType<typeof fakeAdmin>
 let fetchs: string[]
 let handler: (req: Request) => Promise<Response>
+let handlerFatos: (req: Request) => Promise<Response>
 // path_from_root da categoria lido "ao vivo" (fetch mockado): Rendas (fora de Moda) ou Blusas (Moda).
 let caminho: Array<{ id: string; name: string }>
 
 beforeAll(async () => {
   vi.stubGlobal('Deno', { serve: f.serve, env: { get: () => undefined } })
   await import('../index.ts')
+  await import('../../galeria-fatos/index.ts')
   handler = f.serve.mock.calls[0][0] as (req: Request) => Promise<Response>
+  handlerFatos = f.serve.mock.calls[1][0] as (req: Request) => Promise<Response>
 })
 
 const respostaIA = (missoes: Linha[]) => ({ choices: [{ message: { content: JSON.stringify({ moda: false, contrato: 'Renda de poliamida', missoes }) } }] })
@@ -62,6 +66,8 @@ beforeEach(() => {
   f.fake = fake
   f.leitura = {}
   f.ia.mockReset()
+  f.conferir.mockReset()
+  f.conferir.mockImplementation(async () => false)
   caminho = [{ id: 'MLB1574', name: 'Casa' }, { id: 'MLB9999', name: 'Rendas' }]
   fetchs = []
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
@@ -183,6 +189,22 @@ describe('galeria-roteiro: aprovar', () => {
       p_org: 'org', p_roteiro: 'r2', p_familia: 'famB', p_fatos_hash: fatos_hash, p_usuario: 'u1',
     }) }])
     expect(r.body).toMatchObject({ status: 'aprovado', fatos_hash })
+  })
+
+  it('aprovar e depois montar (galeria-fatos): o roteiro continua aprovado, mesmo com a leitura da etiqueta velha', async () => {
+    confirmarMaterial()
+    roteiro({ id: 'r2', versao: 2, status: 'rascunho' })
+    fake.respostasRpc.galeria_aprovar_roteiro = (args) => {
+      Object.assign(db.galeria_roteiros.find((x) => x.id === args.p_roteiro)!, { status: 'aprovado', fatos_hash: args.p_fatos_hash })
+      return 'ok'
+    }
+    // Leitura gravada velha: a primeira conferência lê a etiqueta (marca ilegível → NAO_CONFERIDO); depois, cache.
+    f.conferir.mockImplementationOnce(async () => { f.leitura = { marca: { legivel: false, estado: 'indisponivel' } }; return true })
+    expect((await chamar({ ...base, acao: 'aprovar', roteiro_id: 'r2' })).status).toBe(200)
+    const r = await handlerFatos(new Request('http://x/galeria-fatos', { method: 'POST', body: JSON.stringify({ acao: 'montar', ml_item_id: 'MLB1' }) }))
+    const montado = await r.json() as Linha
+    expect(montado.roteiro_desatualizado).toBe(false)
+    expect(db.galeria_roteiros[0]).toMatchObject({ status: 'aprovado', fatos_hash: montado.fatos_hash })
   })
 
   it('roteiro inválido não aprova (erros do código)', async () => {
