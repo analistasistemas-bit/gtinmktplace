@@ -157,17 +157,35 @@ describe('conferirEtiqueta + lerFicha', () => {
     expect((await fato('atributo:MAIN_MATERIAL'))?.estado).toBe('SUGERIDO')
   })
 
-  it('falha de transporte → todos indisponivel gravados (nunca a leitura antiga) e a próxima conferência tenta de novo', async () => {
+  it('falha de transporte com leitura gravada → nada muda (false); a próxima conferência tenta de novo', async () => {
     v.create.mockResolvedValueOnce(resposta([lido('marca', 'Avil')]))
     await conferir()
-    expect((await fato('marca'))?.estado).toBe('CONFIRMADO')
     fotosItem = [...fotosItem, 'P_NOVA']
+    v.create.mockRejectedValueOnce(new Error('timeout'))
+    expect(await conferir()).toBe(false)
+    expect((await fato('marca'))?.estado).toBe('CONFIRMADO')
+    v.create.mockResolvedValueOnce(resposta([lido('marca', 'Outra Marca')]))
+    expect(await conferir()).toBe(true)
+    expect(v.create).toHaveBeenCalledTimes(3)
+    expect((await fato('marca'))?.estado).toBe('DIVERGENTE')
+  })
+
+  it('ML fora do ar com leitura em cache → false, sem visão, sentinela intacta', async () => {
+    v.create.mockResolvedValueOnce(resposta([lido('marca', 'Avil')]))
+    await conferir()
+    const antes = structuredClone(db.galeria_fatos.find((l) => l.campo === CAMPO_ETIQUETA)!.evidencia)
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 500 })))
+    expect(await conferir()).toBe(false)
+    expect(v.create).toHaveBeenCalledTimes(1)
+    expect(db.galeria_fatos.find((l) => l.campo === CAMPO_ETIQUETA)!.evidencia).toEqual(antes)
+  })
+
+  it('primeira leitura que falha → todos indisponivel (marca NAO_CONFERIDO) e a próxima tenta de novo', async () => {
     v.create.mockRejectedValueOnce(new Error('timeout'))
     expect(await conferir()).toBe(true)
     expect((await fato('marca'))?.estado).toBe('NAO_CONFERIDO')
     v.create.mockResolvedValueOnce(resposta([lido('marca', 'Avil')]))
-    await conferir()
-    expect(v.create).toHaveBeenCalledTimes(3)
+    expect(await conferir()).toBe(true)
     expect((await fato('marca'))?.estado).toBe('CONFIRMADO')
   })
 

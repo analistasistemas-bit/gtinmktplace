@@ -164,8 +164,8 @@ export async function lerLeituraEtiqueta(admin: SupabaseClient, orgId: string, a
  * Chamada pelo `montar` (via `calcularVigencia`), depois das referências e antes do hash. Fotos: todas as do ML do
  * anúncio fora de `fotosAplicadas` + referências imutáveis (Task 6). Chave = campos + ids das fotos (picture_id do ML
  * é imutável: foto nova = id novo; referência = sha). Mesma chave sem falha → nada. Devolve true se gravou leitura nova.
- * Falha (ML, URL, visão) → grava todos `indisponivel` com `falhou` (nunca deixa a leitura de fotos antigas valendo)
- * e a próxima montagem tenta de novo.
+ * Falha (ML, URL, visão): com leitura já gravada, não grava nada (false); sem leitura, grava todos `indisponivel`
+ * com `falhou` e a próxima montagem tenta de novo.
  */
 export async function conferirEtiqueta(
   admin: SupabaseClient, orgId: string, a: AnuncioGaleria,
@@ -196,6 +196,9 @@ export async function conferirEtiqueta(
     s = { chave, falhou: false, campos: await lerEtiquetaPorVisao({ fotos, campos, cadastro }) };
   } catch (e) {
     console.error('[galeria-etiqueta]', (e as Error).message);
+    // Falha transitória (ML 429, rede, timeout) nunca substitui leitura existente: trocar o hash desatualizaria o
+    // roteiro aprovado sem volta. A chave gravada continua: foto nova de fato → chave diferente → nova tentativa.
+    if (atual) return false;
     s = { chave: null, falhou: true, campos: indisponivel(campos) };
   }
   const { error } = await admin.from('galeria_fatos').upsert({
