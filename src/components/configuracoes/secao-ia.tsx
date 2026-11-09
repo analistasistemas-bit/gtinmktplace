@@ -3,7 +3,7 @@ import {
   useModeloTexto, useSalvarModeloTexto, useModeloImagem, useSalvarModeloImagem, useModeloGaleria, useSalvarModeloGaleria,
 } from '@/hooks/useConfiguracoes';
 import { useProfile } from '@/hooks/useProfile';
-import { MODELOS_TEXTO, MODELOS_IMAGEM, MODELOS_GALERIA_UI } from '@/lib/ai-modelos';
+import { MODELOS_TEXTO, MODELOS_IMAGEM, MODELOS_GALERIA_UI, slugGaleriaExibido } from '@/lib/ai-modelos';
 import { usePermissoesConfig } from './permissoes';
 import { AvisoLeitura, EstadoSalvo, SettingsGroup, SettingsRow, estadoDeMutation } from './settings-row';
 
@@ -16,7 +16,7 @@ export function SecaoIA() {
   // Galeria da cor: só o admin da plataforma vê e troca (o banco recusa os demais por trigger).
   const { profile } = useProfile();
   const superAdmin = !!profile?.is_super_admin;
-  const { data: modeloGaleria } = useModeloGaleria();
+  const { data: modeloGaleria } = useModeloGaleria(superAdmin);
   const salvarGaleria = useSalvarModeloGaleria();
 
   return (
@@ -74,7 +74,7 @@ export function SecaoIA() {
           estado={<EstadoSalvo estado={estadoDeMutation(salvarGaleria)} />}
         >
           <Select
-            value={modeloGaleria ?? MODELOS_GALERIA_UI[0].slug}
+            value={slugGaleriaExibido(modeloGaleria)}
             onValueChange={(v) => salvarGaleria.mutate(v)}
             disabled={!podeEditarConfig}
           >

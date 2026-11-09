@@ -132,10 +132,10 @@ export function useSalvarModeloImagem() {
   });
 }
 
-export function useModeloGaleria() {
-  // Org na chave: o super-admin troca de org pela sessão de suporte.
+export function useModeloGaleria(superAdmin: boolean) {
+  // Org na chave: o super-admin troca de org pela sessão de suporte. Só ele vê a seção, então só ele consulta.
   const orgId = useOrgEfetivaId();
-  return useQuery({ queryKey: ['configuracoes', 'ai_model_galeria', orgId], queryFn: fetchModeloGaleria, enabled: orgId != null });
+  return useQuery({ queryKey: ['configuracoes', 'ai_model_galeria', orgId], queryFn: fetchModeloGaleria, enabled: superAdmin && orgId != null });
 }
 export function useSalvarModeloGaleria() {
   const qc = useQueryClient();

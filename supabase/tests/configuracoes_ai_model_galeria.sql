@@ -4,6 +4,7 @@
 -- Rodar: python3 scripts/teste-sql-desfeito.py supabase/tests/configuracoes_ai_model_galeria.sql \
 --   supabase/migrations/20261109122959_configuracoes_ai_model_galeria.sql
 begin;
+set local lock_timeout = '5s';
 insert into public.organizations (id, nome, slug) values
   ('97500000-0000-0000-0000-000000000001', 'Galeria test', 'galeria-test');
 insert into auth.users (id, email, raw_app_meta_data, raw_user_meta_data) values

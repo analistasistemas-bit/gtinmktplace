@@ -32,3 +32,9 @@ export const MODELOS_GALERIA_UI: (OpcaoModeloIA & { indisponivel?: string })[] =
   { slug: 'alibaba/qwen-image-3/edit', label: 'Qwen Image 3 Edit', precoLabel: '~US$ 0,04 por imagem' },
   { slug: 'xai/grok-imagine-image-2.0', label: 'Grok Imagine 2', precoLabel: '~US$ 0,06 por imagem', indisponivel: 'referência a confirmar' },
 ];
+
+// Valor do seletor da galeria: slug desconhecido ou indisponível cai no padrão (como o back-end faz).
+export function slugGaleriaExibido(slug: string | null | undefined): string {
+  const m = MODELOS_GALERIA_UI.find((o) => o.slug === slug);
+  return m && !m.indisponivel ? m.slug : MODELOS_GALERIA_UI[0].slug;
+}

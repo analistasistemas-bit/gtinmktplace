@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MODELOS_GALERIA_UI } from '@/lib/ai-modelos';
+import { MODELOS_GALERIA_UI, slugGaleriaExibido } from '@/lib/ai-modelos';
 import { MODELOS_GALERIA, MODELO_GALERIA_PADRAO } from '../../../supabase/functions/_shared/galeria/modelos';
 
 describe('MODELOS_GALERIA_UI', () => {
@@ -18,5 +18,13 @@ describe('MODELOS_GALERIA_UI', () => {
       const semReferencia = back.provedor === 'higgsfield' && !back.campoReferencia;
       expect(Boolean(m.indisponivel)).toBe(semReferencia);
     }
+  });
+
+  it('seletor mostra o padrão para slug nulo, desconhecido ou indisponível', () => {
+    const padrao = MODELOS_GALERIA_UI[0].slug;
+    expect(slugGaleriaExibido(null)).toBe(padrao);
+    expect(slugGaleriaExibido('xyz/desconhecido')).toBe(padrao);
+    for (const m of MODELOS_GALERIA_UI.filter((o) => o.indisponivel)) expect(slugGaleriaExibido(m.slug)).toBe(padrao);
+    expect(slugGaleriaExibido('alibaba/qwen-image-3/edit')).toBe('alibaba/qwen-image-3/edit');
   });
 });
