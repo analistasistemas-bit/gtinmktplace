@@ -23,3 +23,12 @@ export const MODELOS_IMAGEM: OpcaoModeloIA[] = [
   { slug: 'google/gemini-nano-banana-2.1', label: 'Gemini Nano Banana 2.1 (padrão)', precoLabel: '~US$ 0,041 por imagem' },
   { slug: 'google/gemini-2.5-flash-image', label: 'Gemini 2.5 Flash Image (pode alterar a peça)', precoLabel: '~US$ 0,039 por imagem' },
 ];
+
+// Galeria da cor por IA. Mesmos slugs de `_shared/galeria/modelos.ts::MODELOS_GALERIA` e do check
+// `configuracoes_ai_model_galeria_check` (teste em __tests__/ai-modelos-galeria.test.ts). O primeiro é o padrão.
+// `indisponivel`: o back-end (resolverModeloGaleria) ignora o modelo e usa o padrão; a UI mostra a opção desligada.
+export const MODELOS_GALERIA_UI: (OpcaoModeloIA & { indisponivel?: string })[] = [
+  { slug: 'google/gemini-nano-banana-2.1', label: 'Nano Banana 2.1 (padrão)', precoLabel: '~US$ 0,039 por imagem' },
+  { slug: 'alibaba/qwen-image-3/edit', label: 'Qwen Image 3 Edit', precoLabel: '~US$ 0,04 por imagem' },
+  { slug: 'xai/grok-imagine-image-2.0', label: 'Grok Imagine 2', precoLabel: '~US$ 0,06 por imagem', indisponivel: 'referência a confirmar' },
+];

@@ -9,6 +9,7 @@ import {
   fetchTelegramConfig, salvarTelegramConfig, enviarTesteTelegram, verificarModeradosAgora,
   fetchModeloTexto, upsertModeloTexto,
   fetchModeloImagem, upsertModeloImagem,
+  fetchModeloGaleria, upsertModeloGaleria,
   fetchEmpresaFiscal, upsertEmpresaFiscal, type EmpresaFiscalRow,
 } from '@/lib/queries';
 import { useOrgEfetivaId } from '@/hooks/useOrgEfetivaId';
@@ -128,5 +129,18 @@ export function useSalvarModeloImagem() {
   return useMutation({
     mutationFn: (slug: string) => upsertModeloImagem(slug),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['configuracoes', 'ai_model_imagem'] }),
+  });
+}
+
+export function useModeloGaleria() {
+  // Org na chave: o super-admin troca de org pela sessão de suporte.
+  const orgId = useOrgEfetivaId();
+  return useQuery({ queryKey: ['configuracoes', 'ai_model_galeria', orgId], queryFn: fetchModeloGaleria, enabled: orgId != null });
+}
+export function useSalvarModeloGaleria() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (slug: string) => upsertModeloGaleria(slug),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['configuracoes', 'ai_model_galeria'] }),
   });
 }

@@ -1,6 +1,9 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useModeloTexto, useSalvarModeloTexto, useModeloImagem, useSalvarModeloImagem } from '@/hooks/useConfiguracoes';
-import { MODELOS_TEXTO, MODELOS_IMAGEM } from '@/lib/ai-modelos';
+import {
+  useModeloTexto, useSalvarModeloTexto, useModeloImagem, useSalvarModeloImagem, useModeloGaleria, useSalvarModeloGaleria,
+} from '@/hooks/useConfiguracoes';
+import { useProfile } from '@/hooks/useProfile';
+import { MODELOS_TEXTO, MODELOS_IMAGEM, MODELOS_GALERIA_UI } from '@/lib/ai-modelos';
 import { usePermissoesConfig } from './permissoes';
 import { AvisoLeitura, EstadoSalvo, SettingsGroup, SettingsRow, estadoDeMutation } from './settings-row';
 
@@ -10,6 +13,11 @@ export function SecaoIA() {
   const salvarTexto = useSalvarModeloTexto();
   const { data: modeloImagem } = useModeloImagem();
   const salvarImagem = useSalvarModeloImagem();
+  // Galeria da cor: só o admin da plataforma vê e troca (o banco recusa os demais por trigger).
+  const { profile } = useProfile();
+  const superAdmin = !!profile?.is_super_admin;
+  const { data: modeloGaleria } = useModeloGaleria();
+  const salvarGaleria = useSalvarModeloGaleria();
 
   return (
     <SettingsGroup
@@ -58,6 +66,31 @@ export function SecaoIA() {
           </SelectContent>
         </Select>
       </SettingsRow>
+
+      {superAdmin && (
+        <SettingsRow
+          titulo="Galeria da cor"
+          descricao="Gera as fotos da galeria de cada cor do anúncio. Só o admin da plataforma troca."
+          estado={<EstadoSalvo estado={estadoDeMutation(salvarGaleria)} />}
+        >
+          <Select
+            value={modeloGaleria ?? MODELOS_GALERIA_UI[0].slug}
+            onValueChange={(v) => salvarGaleria.mutate(v)}
+            disabled={!podeEditarConfig}
+          >
+            <SelectTrigger aria-label="Modelo da galeria" className="h-8 w-[300px] max-w-full text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {MODELOS_GALERIA_UI.map((m) => (
+                <SelectItem key={m.slug} value={m.slug} disabled={!!m.indisponivel}>
+                  {m.label} — {m.indisponivel ?? m.precoLabel}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingsRow>
+      )}
     </SettingsGroup>
   );
 }

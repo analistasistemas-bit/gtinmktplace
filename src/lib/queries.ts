@@ -915,6 +915,25 @@ export async function upsertModeloImagem(slug: string): Promise<void> {
   if (error) throw error;
 }
 
+// Galeria da cor por IA: a escrita é só do super-admin (trigger configuracoes_proteger_ai_model_galeria).
+export async function fetchModeloGaleria(): Promise<string | null> {
+  const orgId = effectiveOrgId();
+  if (!orgId) return null;
+  const { data, error } = await supabase.from('configuracoes')
+    .select('ai_model_galeria').eq('org_id', orgId).maybeSingle();
+  if (error) throw error;
+  return data?.ai_model_galeria ?? null;
+}
+
+export async function upsertModeloGaleria(slug: string): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  const orgId = effectiveOrgId();
+  if (!user || !orgId) throw new Error('sem sessão');
+  const { error } = await supabase.from('configuracoes')
+    .upsert({ org_id: orgId, user_id: user.id, ai_model_galeria: slug, atualizado_em: new Date().toISOString() }, { onConflict: 'org_id' });
+  if (error) throw error;
+}
+
 // ── Alertas no Telegram (configuração na tela Configurações) ──────────────────
 
 export interface TelegramConfig {

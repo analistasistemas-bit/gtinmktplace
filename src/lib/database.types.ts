@@ -248,6 +248,7 @@ export type Database = {
       }
       configuracoes: {
         Row: {
+          ai_model_galeria: string | null
           ai_model_imagem: string | null
           ai_model_texto: string | null
           alertas_promocoes_ativo: boolean
@@ -271,6 +272,7 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          ai_model_galeria?: string | null
           ai_model_imagem?: string | null
           ai_model_texto?: string | null
           alertas_promocoes_ativo?: boolean
@@ -294,6 +296,7 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          ai_model_galeria?: string | null
           ai_model_imagem?: string | null
           ai_model_texto?: string | null
           alertas_promocoes_ativo?: boolean

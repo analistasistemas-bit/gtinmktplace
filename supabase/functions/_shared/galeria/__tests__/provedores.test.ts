@@ -81,8 +81,11 @@ describe('corpoHF', () => {
 
 describe('resolverModeloGaleria', () => {
   it('usa o slug configurado na org', async () => {
-    const m = await resolverModeloGaleria(fakeAdmin('xai/grok-imagine-image-2.0'), 'org')
-    expect(m.slug).toBe('xai/grok-imagine-image-2.0')
+    const m = await resolverModeloGaleria(fakeAdmin('alibaba/qwen-image-3/edit'), 'org')
+    expect(m.slug).toBe('alibaba/qwen-image-3/edit')
+  })
+  it('modelo sem campo de referência confirmado (Grok) cai no padrão', async () => {
+    expect(await resolverModeloGaleria(fakeAdmin('xai/grok-imagine-image-2.0'), 'o')).toBe(MODELO_GALERIA_PADRAO)
   })
   it('null, desconhecido ou erro caem no padrão', async () => {
     expect(await resolverModeloGaleria(fakeAdmin(null), 'o')).toBe(MODELO_GALERIA_PADRAO)
