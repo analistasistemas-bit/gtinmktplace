@@ -279,6 +279,12 @@ describe('precoProprioEstavel (comissão + frete lidos no preço candidato)', ()
     expect(await precoProprioEstavel(143.5, 16, com(12), t)).toBe(228.45);
   });
 
+  it('comissão que SOBE com o preço: sobe até o ponto fixo e não devolve o 1º palpite (que ficaria abaixo do piso)', async () => {
+    // 11% → 106,75 (≥ 100 cobra 13%: líquido 92,87 < 95); 13% → 109,20 (líquido 95,00).
+    const t = tarifa((p) => ({ comissao: com(p < 100 ? 11 : 13), frete: 0 }));
+    expect(await precoProprioEstavel(95, 0, com(11), t)).toBe(109.2);
+  });
+
   it('tarifa constante = grossUp com o frete', async () => {
     const t = tarifa(() => ({ comissao: com(13), frete: 10 }));
     expect(await precoProprioEstavel(80, 8, com(13), t)).toBe(grossUp(80, 13, 0, 10, 8));
