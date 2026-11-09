@@ -1,14 +1,17 @@
 -- ADR-0201 (Galeria da cor por IA), Task 2: tabelas, saga e cobrança compartilhada.
 --
 -- 1. Identidade = anúncio/partição: toda tabela galeria_* (exceto galeria_cursores) grava anuncio_externo_id.
---    FK com `on delete cascade`: "Remover" (remover-publicado) e preparar_republicacao apagam
---    anuncios_externos; restrict quebraria esses fluxos. familia_id é só a versão dos dados (sem FK: famílias
---    antigas são apagadas por esses mesmos fluxos). A cobrança não se perde: platform_image_deliveries não
---    referencia a galeria.
+--    FK com `on delete set null` (coluna anulável só por isso): "Remover" (remover-publicado) e
+--    preparar_republicacao apagam anuncios_externos; o histórico da galeria fica, com anúncio nulo, e linha
+--    com anúncio nulo é só histórico (nenhuma RPC a seleciona para trabalho novo). Um gatilho BEFORE DELETE
+--    em anuncios_externos recusa (galeria_em_execucao) apagar anúncio com aplicação em_andamento|abortando|
+--    revertendo — as únicas que seguram trava `galeria`, que nunca expira e ficaria órfã. familia_id é só a
+--    versão dos dados (sem FK: famílias antigas são apagadas por esses mesmos fluxos).
 -- 2. Trava de escrita por MLB (ml_item_travas) com ml_travar_itens (tudo ou nada; primeira aquisição por
 --    insert … on conflict do nothing), ml_estender_trava e ml_soltar_itens; adiamento durável dos escritores
 --    comuns em ml_escritas_adiadas.
 -- 3. Saga: galeria_confirmar_aplicacao / galeria_iniciar_reversao (ok | item_ocupado | escrita_pendente |
+--    desatualizada; nunca levantam por estado: repetição já no estado-alvo → ok sem gravar, outro estado →
 --    desatualizada) e galeria_concluir_item (item terminal + agregação + soltura das travas com a quarentena
 --    do último PUT, numa transação).
 -- 4. Relógio no banco (pg_cron, 5 min, só SQL): ciclo_ate vencido sem lease vigente → reversao_incompleta;
@@ -79,7 +82,7 @@ $$;
 create table public.galeria_fatos (
   id uuid primary key default gen_random_uuid(),
   org_id uuid not null references public.organizations(id),
-  anuncio_externo_id uuid not null references public.anuncios_externos(id) on delete cascade,
+  anuncio_externo_id uuid references public.anuncios_externos(id) on delete set null,
   familia_id uuid not null,
   campo text not null,
   valor text,
@@ -95,7 +98,7 @@ create table public.galeria_fatos (
 create table public.galeria_referencias (
   id uuid primary key default gen_random_uuid(),
   org_id uuid not null references public.organizations(id),
-  anuncio_externo_id uuid not null references public.anuncios_externos(id) on delete cascade,
+  anuncio_externo_id uuid references public.anuncios_externos(id) on delete set null,
   familia_id uuid not null,
   cor text not null,
   vista text not null check (vista in ('frente', 'costas', 'lateral')),
@@ -109,7 +112,7 @@ create table public.galeria_referencias (
 create table public.galeria_roteiros (
   id uuid primary key default gen_random_uuid(),
   org_id uuid not null references public.organizations(id),
-  anuncio_externo_id uuid not null references public.anuncios_externos(id) on delete cascade,
+  anuncio_externo_id uuid references public.anuncios_externos(id) on delete set null,
   familia_id uuid not null,
   versao integer not null check (versao >= 1),
   conteudo jsonb not null,
@@ -130,7 +133,7 @@ create unique index galeria_roteiros_um_aprovado_uidx
 create table public.galeria_pedidos (
   id uuid primary key,
   org_id uuid not null references public.organizations(id),
-  anuncio_externo_id uuid not null references public.anuncios_externos(id) on delete cascade,
+  anuncio_externo_id uuid references public.anuncios_externos(id) on delete set null,
   familia_id uuid not null,
   roteiro_id uuid not null references public.galeria_roteiros(id),
   itens jsonb not null check (jsonb_typeof(itens) = 'array'),
@@ -152,7 +155,7 @@ create table public.galeria_cursores (
 create table public.galeria_imagens (
   id uuid primary key default gen_random_uuid(),
   org_id uuid not null references public.organizations(id),
-  anuncio_externo_id uuid not null references public.anuncios_externos(id) on delete cascade,
+  anuncio_externo_id uuid references public.anuncios_externos(id) on delete set null,
   familia_id uuid not null,
   pedido_id uuid not null references public.galeria_pedidos(id),
   roteiro_id uuid not null references public.galeria_roteiros(id),
@@ -197,7 +200,7 @@ create index galeria_imagens_pedido_idx on public.galeria_imagens (pedido_id);
 create table public.galeria_aplicacoes (
   id uuid primary key default gen_random_uuid(),
   org_id uuid not null references public.organizations(id),
-  anuncio_externo_id uuid not null references public.anuncios_externos(id) on delete cascade,
+  anuncio_externo_id uuid references public.anuncios_externos(id) on delete set null,
   familia_id uuid not null,
   cor text not null,
   modo text not null check (modo in ('substituir', 'adicionar')),
@@ -220,7 +223,7 @@ create table public.galeria_aplicacoes (
 create table public.galeria_aplicacao_itens (
   id uuid primary key default gen_random_uuid(),
   org_id uuid not null references public.organizations(id),
-  anuncio_externo_id uuid not null references public.anuncios_externos(id) on delete cascade,
+  anuncio_externo_id uuid references public.anuncios_externos(id) on delete set null,
   aplicacao_id uuid not null references public.galeria_aplicacoes(id),
   item_id text not null,
   fotos_antes jsonb,
@@ -248,7 +251,7 @@ create table public.galeria_aplicacao_itens (
 create table public.galeria_imagem_itens (
   id uuid primary key default gen_random_uuid(),
   org_id uuid not null references public.organizations(id),
-  anuncio_externo_id uuid not null references public.anuncios_externos(id) on delete cascade,
+  anuncio_externo_id uuid references public.anuncios_externos(id) on delete set null,
   imagem_id uuid not null references public.galeria_imagens(id),
   aplicacao_id uuid not null references public.galeria_aplicacoes(id),
   item_id text not null,
@@ -283,8 +286,11 @@ create table public.ml_escritas_adiadas (
   job jsonb not null,
   adiado_desde timestamptz not null default now(),   -- relógio do teto; nunca regravado
   proxima_em timestamptz not null default now(),
-  posse uuid,
+  posse uuid,                                          -- claim da linha (novo a cada claim)
   assumida_ate timestamptz,
+  -- Dono da trava escritor do job que assumiu a linha (o p_dono de ml_travar_itens/ml_estender_trava),
+  -- gravado junto com o claim. É por ele que o relógio vê se o job ainda segura a trava.
+  trava_dono uuid,
   unique (familia_id, lote_id, endpoint)
 );
 create index ml_escritas_adiadas_org_itens_idx on public.ml_escritas_adiadas using gin (itens);
@@ -317,6 +323,25 @@ create trigger galeria_aplicacoes_manifesto_imutavel
   before update of manifesto on public.galeria_aplicacoes
   for each row when (old.manifesto is distinct from new.manifesto)
   execute function public.galeria_manifesto_imutavel();
+
+-- Anúncio com saga em execução não pode sumir: a trava `galeria` dela nunca expira e o relógio só encerra
+-- aplicação que ainda existe. preparada não segura trava (e nunca executa com anúncio nulo); terminais já
+-- soltaram as travas (quarentena vence sozinha). O delete inteiro falha, nada é apagado.
+create function public.galeria_bloquear_delete_anuncio() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if exists (select 1 from public.galeria_aplicacoes a
+              where a.anuncio_externo_id = old.id and a.status in ('em_andamento', 'abortando', 'revertendo')) then
+    raise exception 'galeria_em_execucao' using errcode = '55006',
+      detail = 'anúncio ' || old.id || ' tem aplicação da galeria em execução; aguarde o fim ou a reversão';
+  end if;
+  return old;
+end;
+$$;
+revoke all on function public.galeria_bloquear_delete_anuncio() from public, anon, authenticated;
+create trigger anuncios_externos_galeria_em_execucao
+  before delete on public.anuncios_externos
+  for each row execute function public.galeria_bloquear_delete_anuncio();
 
 -- ───────────────────────── 3. Trava de escrita por MLB ─────────────────────────
 
@@ -477,8 +502,18 @@ begin
   if not found then
     raise exception 'aplicacao_inexistente' using errcode = 'P0002';
   end if;
+  -- Repetição depois de commit com resposta perdida: já está no estado-alvo → ok sem gravar nada.
+  if v_apl.status = 'em_andamento' then
+    return 'ok';
+  end if;
   if v_apl.status <> 'preparada' then
-    raise exception 'aplicacao_nao_preparada' using errcode = '22023';
+    return 'desatualizada';
+  end if;
+  -- key share no anúncio: um delete concorrente espera este commit e o gatilho dele vê em_andamento; se o
+  -- delete veio antes, o anúncio sumiu (ou é nulo) e a aplicação é só histórico.
+  perform 1 from public.anuncios_externos x where x.id = v_apl.anuncio_externo_id for key share;
+  if not found then
+    return 'desatualizada';
   end if;
   -- Vigência: família, roteiro e fatos do preparo; roteiro ainda o aprovado do anúncio; todo item do
   -- manifesto ainda é a aprovada daquele roteiro com o mesmo sha. Não muda nada (continua preparada).
@@ -519,8 +554,17 @@ begin
   if not found then
     raise exception 'aplicacao_inexistente' using errcode = 'P0002';
   end if;
+  -- Repetição depois de commit com resposta perdida: já está no estado-alvo → ok sem gravar nada.
+  if v_apl.status = 'revertendo' then
+    return 'ok';
+  end if;
   if v_apl.status <> 'aplicada' then
-    raise exception 'aplicacao_nao_aplicada' using errcode = '22023';
+    return 'desatualizada';
+  end if;
+  -- Mesmo key share de galeria_confirmar_aplicacao: anúncio apagado (nulo) → só histórico, nada a reverter.
+  perform 1 from public.anuncios_externos x where x.id = v_apl.anuncio_externo_id for key share;
+  if not found then
+    return 'desatualizada';
   end if;
   v_itens := public.galeria_itens_da_aplicacao(p_aplicacao);
   if exists (select 1 from public.ml_escritas_adiadas e where e.org_id = p_org and e.itens && v_itens) then
@@ -757,13 +801,14 @@ begin
      and (g.lease_ate is null or g.lease_ate < now());
   get diagnostics v_img = row_count;
 
-  -- (c) Escrita adiada órfã (260 min, não assumida, sem trava escritor vigente da posse): erro só sobre
+  -- (c) Escrita adiada órfã (260 min, não assumida, sem trava escritor vigente do job — trava_dono, não a
+  -- posse do claim, que muda a cada claim): erro só sobre
   -- publicando, lote recalculado, linha apagada. Não toca em variacoes.
   for r in select e.id, e.familia_id, e.lote_id from public.ml_escritas_adiadas e
             where e.adiado_desde + interval '260 minutes' < now()
               and (e.assumida_ate is null or e.assumida_ate < now())
               and not exists (select 1 from public.ml_item_travas t where t.org_id = e.org_id
-                               and t.dono_tipo = 'escritor' and t.dono_id = e.posse and t.expira_em > now())
+                               and t.dono_tipo = 'escritor' and t.dono_id = e.trava_dono and t.expira_em > now())
             for update of e skip locked loop
     update public.familias f set status = 'erro', erro_mensagem = 'item_reservado_galeria'
      where f.id = r.familia_id and f.status = 'publicando';

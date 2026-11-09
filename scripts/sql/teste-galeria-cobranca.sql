@@ -424,6 +424,24 @@ begin
     and ciclo_ate = now() + interval '3 hours' from public.galeria_aplicacoes where id = a), 'confirmar não gravou estado/relógio');
   perform pg_temp.afirmar((select count(*) = 3 and bool_and(dono_tipo = 'galeria' and expira_em is null)
     from public.ml_item_travas where dono_id = a), 'confirmar não travou os 3 itens');
+  -- Repetição depois de commit com resposta perdida (já em_andamento) → ok, sem gravar (ctid igual = sem update).
+  perform set_config('teste.ctid', (select ctid::text from public.galeria_aplicacoes where id = a), true);
+  s := public.galeria_confirmar_aplicacao(o, f, a, r, 'h1');
+  perform pg_temp.afirmar(s = 'ok' and (select ctid::text = current_setting('teste.ctid') from public.galeria_aplicacoes where id = a)
+    and (select count(*) = 3 from public.ml_item_travas where dono_id = a), 'confirmar repetido: ' || s);
+  -- Fora de preparada/em_andamento → desatualizada, sem exceção e sem efeito.
+  a2 := pg_temp.aplicacao(o, an, f, r, array['MLB-I1'], 'aplicada');
+  s := public.galeria_confirmar_aplicacao(o, f, a2, r, 'h1');
+  perform pg_temp.afirmar(s = 'desatualizada' and (select status = 'aplicada' from public.galeria_aplicacoes where id = a2)
+    and not exists (select 1 from public.ml_item_travas where dono_id = a2), 'confirmar em aplicada: ' || s);
+  -- Reverter fora de aplicada/revertendo (em_andamento, preparada) → desatualizada, sem efeito.
+  s := public.galeria_iniciar_reversao(o, f, a);
+  perform pg_temp.afirmar(s = 'desatualizada' and (select status = 'em_andamento' from public.galeria_aplicacoes where id = a),
+    'reverter em em_andamento: ' || s);
+  a2 := pg_temp.aplicacao(o, an, f, r, array['MLB-I2'], 'preparada');
+  s := public.galeria_iniciar_reversao(o, f, a2);
+  perform pg_temp.afirmar(s = 'desatualizada' and not exists (select 1 from public.ml_item_travas where dono_id = a2),
+    'reverter em preparada: ' || s);
   begin
     update public.galeria_aplicacoes set manifesto = '[]'::jsonb where id = a;
     raise exception 'FALHA: manifesto alterado';
@@ -506,6 +524,12 @@ begin
     from public.galeria_aplicacao_itens where aplicacao_id = a), 'reversão não pôs os itens em compensando');
   perform pg_temp.afirmar((select count(*) = 3 from public.ml_item_travas where dono_id = a and dono_tipo = 'galeria'),
     'reversão não travou');
+  -- Repetição da reversão (já revertendo) → ok, sem gravar.
+  perform set_config('teste.ctid', (select ctid::text from public.galeria_aplicacoes where id = a), true);
+  s := public.galeria_iniciar_reversao(o, f, a);
+  perform pg_temp.afirmar(s = 'ok' and (select ctid::text = current_setting('teste.ctid') from public.galeria_aplicacoes where id = a)
+    and (select bool_and(status = 'compensando') from public.galeria_aplicacao_itens where aplicacao_id = a),
+    'reverter repetido: ' || s);
 end $$;
 
 -- Agregação.
@@ -564,7 +588,7 @@ declare
   f uuid := current_setting('teste.f7')::uuid; an uuid := current_setting('teste.an7')::uuid;
   r uuid := current_setting('teste.r7')::uuid;
   a uuid; s text; n int; img1 uuid; img2 uuid; img3 uuid;
-  la uuid; lb uuid; fa1 uuid; fb1 uuid; fa3 uuid; posse uuid := gen_random_uuid(); v uuid;
+  la uuid; lb uuid; lc uuid; fa1 uuid; fb1 uuid; fa3 uuid; fa4 uuid; job uuid := gen_random_uuid(); v uuid;
 begin
   perform pg_temp.afirmar((select count(*) = 1 from cron.job where jobname = 'galeria-relogio'
     and schedule = '*/5 * * * *' and command like '%galeria_relogio%'), 'cron do relógio ausente');
@@ -649,15 +673,25 @@ begin
   fb1 := pg_temp.familia(o, lb, '09778002', 'publicado');
   update public.familias set erro_mensagem = null where id = fb1;
   fa3 := pg_temp.familia(o, la, '09778003', 'erro');
-  insert into public.ml_escritas_adiadas (org_id, familia_id, lote_id, endpoint, itens, job, adiado_desde, posse, assumida_ate)
-  values (o, fa1, la, 'update-familia-ml', array['MLB-W1'], '{}', now() - interval '261 minutes', null, null),
-         (o, fb1, lb, 'update-familia-ml', array['MLB-W2'], '{}', now() - interval '261 minutes', null, null),
-         (o, fa3, la, 'e-assumida', array['MLB-W3'], '{}', now() - interval '261 minutes', gen_random_uuid(), now() + interval '5 minutes'),
-         (o, fa3, la, 'e-travada', array['MLB-W4'], '{}', now() - interval '261 minutes', posse, null),
-         (o, fa3, la, 'e-recente', array['MLB-W5'], '{}', now() - interval '200 minutes', null, null);
+  -- Job vivo: claim (posse) vencido, mas a trava escritor do job (dono = uuid do job, estendida em 15 min
+  -- pelo antesDoPut) vigente → não é órfã. Família publicando em lote próprio, para provar que não vira erro.
+  lc := pg_temp.lote(o, 'publicando');
+  fa4 := pg_temp.familia(o, lc, '09778004', 'publicando');
+  insert into public.ml_escritas_adiadas (org_id, familia_id, lote_id, endpoint, itens, job, adiado_desde, posse, assumida_ate,
+    trava_dono)
+  values (o, fa1, la, 'update-familia-ml', array['MLB-W1'], '{}', now() - interval '261 minutes', null, null, null),
+         (o, fb1, lb, 'update-familia-ml', array['MLB-W2'], '{}', now() - interval '261 minutes', null, null, null),
+         (o, fa3, la, 'e-assumida', array['MLB-W3'], '{}', now() - interval '261 minutes', gen_random_uuid(), now() + interval '5 minutes', null),
+         (o, fa4, lc, 'update-familia-ml', array['MLB-W4'], '{}', now() - interval '261 minutes', gen_random_uuid(),
+          now() - interval '1 minute', job),
+         (o, fa3, la, 'e-recente', array['MLB-W5'], '{}', now() - interval '200 minutes', null, null, null);
   insert into public.ml_item_travas (org_id, item_id, dono_tipo, dono_id, expira_em)
-  values (o, 'MLB-W4', 'escritor', posse, now() + interval '5 minutes');
+  values (o, 'MLB-W4', 'escritor', job, now() + interval '15 minutes');
   perform public.galeria_relogio();
+  perform pg_temp.afirmar((select status = 'publicando' from public.familias where id = fa4)
+    and exists (select 1 from public.ml_escritas_adiadas where familia_id = fa4)
+    and (select status = 'publicando' from public.lotes where id = lc),
+    'escrita adiada com trava vigente do job virou órfã (comparou com a posse do claim)');
   perform pg_temp.afirmar((select status = 'erro' and erro_mensagem = 'item_reservado_galeria' from public.familias where id = fa1),
     'família publicando não virou erro');
   perform pg_temp.afirmar((select status = 'revisao' from public.lotes where id = la), 'lote não recalculado');
@@ -667,28 +701,98 @@ begin
   perform pg_temp.afirmar((select status = 'concluido' from public.lotes where id = lb), 'lote da publicada mudou');
   perform pg_temp.afirmar(not exists (select 1 from public.ml_escritas_adiadas where familia_id in (fa1, fb1)),
     'linhas órfãs não apagadas');
-  perform pg_temp.afirmar((select count(*) = 3 from public.ml_escritas_adiadas where familia_id = fa3),
-    'relógio apagou escrita assumida/travada/recente');
+  perform pg_temp.afirmar((select count(*) = 2 from public.ml_escritas_adiadas where familia_id = fa3),
+    'relógio apagou escrita assumida/recente');
 end $$;
 
--- Paridade lote_decidir_status × decidirStatusLote (casos de _shared/lote/__tests__/finalizar.test.ts).
+-- ═════════════ 7b. Apagar o anúncio: bloqueado com saga em execução; senão histórico com anúncio nulo ═════════════
+do $$
+declare
+  o uuid := '97700000-0000-0000-0000-000000000001';
+  l uuid; f uuid; an uuid; r uuid; img uuid; a uuid; ap uuid; aa uuid; s text; p uuid := gen_random_uuid(); ok boolean;
+begin
+  l := pg_temp.lote(o); f := pg_temp.familia(o, l, '09778500'); an := pg_temp.anuncio(o, '09778500');
+  r := pg_temp.roteiro(o, an, f, 1, 'aprovado');
+  img := pg_temp.uma(o, an, f, r, 50, current_setting('teste.t1')::uuid, true, 'Preto', 1);
+  insert into public.galeria_fatos (org_id, anuncio_externo_id, familia_id, campo, valor, origem)
+  values (o, an, f, 'material', 'algodão', 'planilha');
+  insert into public.galeria_referencias (org_id, anuncio_externo_id, familia_id, cor, vista, path, sha256, origem)
+  values (o, an, f, 'Preto', 'frente', 'x/galeria-ia/ref.jpg', 'sha-ref', 'storage');
+  a := pg_temp.aplicacao(o, an, f, r, array['MLB-D1', 'MLB-D2'], 'preparada');
+  insert into public.galeria_imagem_itens (org_id, anuncio_externo_id, imagem_id, aplicacao_id, item_id)
+  values (o, an, img, a, 'MLB-D1');
+  perform pg_temp.afirmar(public.galeria_confirmar_aplicacao(o, f, a, r, 'h1') = 'ok', 'confirmar D');
+  -- em_andamento → delete recusado (galeria_em_execucao), nada apagado, travas intactas.
+  ok := false;
+  begin
+    delete from public.anuncios_externos where id = an;
+  exception when object_in_use then
+    ok := sqlerrm = 'galeria_em_execucao';
+  end;
+  perform pg_temp.afirmar(ok, 'delete com aplicação em_andamento não foi recusado');
+  perform pg_temp.afirmar(exists (select 1 from public.anuncios_externos where id = an)
+    and (select anuncio_externo_id = an from public.galeria_aplicacoes where id = a)
+    and (select count(*) = 2 from public.ml_item_travas where dono_id = a and dono_tipo = 'galeria'),
+    'delete recusado apagou algo');
+  -- Saga termina (os dois itens aplicado, sem PUT recente) → aplicada, travas apagadas; outra preparada e
+  -- outra aplicada no mesmo anúncio não seguram trava → delete passa.
+  perform pg_temp.rodando(a, 'MLB-D1', 'aplicando', p);
+  perform public.galeria_concluir_item(pg_temp.item(a, 'MLB-D1'), p, 'aplicado', '{}');
+  perform pg_temp.rodando(a, 'MLB-D2', 'aplicando', p);
+  perform pg_temp.afirmar(public.galeria_concluir_item(pg_temp.item(a, 'MLB-D2'), p, 'aplicado', '{}') = 'aplicada', 'D aplicada');
+  ap := pg_temp.aplicacao(o, an, f, r, array['MLB-D3'], 'preparada');
+  aa := pg_temp.aplicacao(o, an, f, r, array['MLB-D4'], 'aplicada');
+  update public.galeria_aplicacao_itens set status = 'aplicado' where aplicacao_id = aa;
+  delete from public.anuncios_externos where id = an;
+  perform pg_temp.afirmar(not exists (select 1 from public.anuncios_externos where id = an), 'anúncio terminal não foi apagado');
+  -- Histórico continua, com anúncio nulo, em todas as tabelas.
+  perform pg_temp.afirmar((select anuncio_externo_id is null from public.galeria_roteiros where id = r)
+    and (select anuncio_externo_id is null from public.galeria_imagens where id = img)
+    and (select p2.anuncio_externo_id is null from public.galeria_pedidos p2 join public.galeria_imagens g on g.pedido_id = p2.id where g.id = img)
+    and (select count(*) = 3 and bool_and(anuncio_externo_id is null) from public.galeria_aplicacoes where id in (a, ap, aa))
+    and (select count(*) = 4 and bool_and(anuncio_externo_id is null) from public.galeria_aplicacao_itens where aplicacao_id in (a, ap, aa))
+    and (select count(*) = 1 and bool_and(anuncio_externo_id is null) from public.galeria_imagem_itens where aplicacao_id = a)
+    and (select count(*) = 1 and bool_and(anuncio_externo_id is null) from public.galeria_fatos where familia_id = f)
+    and (select count(*) = 1 and bool_and(anuncio_externo_id is null) from public.galeria_referencias where familia_id = f),
+    'histórico da galeria não ficou com anúncio nulo');
+  perform pg_temp.afirmar(not exists (select 1 from public.ml_item_travas where dono_id in (a, ap, aa)), 'trava órfã após o delete');
+  -- Linha com anúncio nulo é só histórico: confirmar/reverter → desatualizada, zero travas.
+  s := public.galeria_confirmar_aplicacao(o, f, ap, r, 'h1');
+  perform pg_temp.afirmar(s = 'desatualizada' and (select status = 'preparada' from public.galeria_aplicacoes where id = ap)
+    and not exists (select 1 from public.ml_item_travas where dono_id = ap), 'confirmar com anúncio nulo: ' || s);
+  s := public.galeria_iniciar_reversao(o, f, aa);
+  perform pg_temp.afirmar(s = 'desatualizada' and (select status = 'aplicada' from public.galeria_aplicacoes where id = aa)
+    and not exists (select 1 from public.ml_item_travas where dono_id = aa), 'reverter com anúncio nulo: ' || s);
+  -- Nem pedido nem exibição alcançam o histórico pelo anúncio.
+  perform pg_temp.afirmar(public.galeria_confirmar_exibicao(o, null, array[img]) = 0, 'exibição de imagem sem anúncio cobrou');
+end $$;
+
+-- Paridade lote_decidir_status × decidirStatusLote: casos gerados de
+-- supabase/functions/_shared/lote/__tests__/decidir-status-lote.casos.json (fonte única; o finalizar.test.ts
+-- falha se o bloco abaixo divergir dela).
 do $$
 declare
   o uuid := '97700000-0000-0000-0000-000000000001';
   c record; l uuid; st text; k int := 0;
 begin
   for c in select * from (values
-      (array['publicando'], null::text),
-      (array['pronto', 'pronto'], 'revisao'),
-      (array['pendente'], 'processando'),
-      (array['pronto', 'pendente'], 'revisao'),
-      (array['erro'], 'revisao'),
-      (array['publicado', 'erro'], 'concluido'),
-      (array[]::text[], 'concluido')) as t(estados, esperado) loop
+      -- paridade:inicio
+      (array['publicando']::text[], null::text),
+      (array['publicando', 'pronto', 'erro']::text[], null::text),
+      (array['pronto', 'pronto']::text[], 'revisao'::text),
+      (array['pendente']::text[], 'processando'::text),
+      (array['processando', 'publicado']::text[], 'processando'::text),
+      (array['pronto', 'pendente']::text[], 'revisao'::text),
+      (array['erro']::text[], 'revisao'::text),
+      (array['publicado', 'erro']::text[], 'concluido'::text),
+      (array['publicado']::text[], 'concluido'::text),
+      (array[]::text[], 'concluido'::text)
+      -- paridade:fim
+      ) as t(estados, esperado) loop
     l := pg_temp.lote(o);
     foreach st in array c.estados loop
       k := k + 1;
-      perform pg_temp.familia(o, l, '0977900' || k, st);
+      perform pg_temp.familia(o, l, '09779' || lpad(k::text, 3, '0'), st);
     end loop;
     perform pg_temp.afirmar(public.lote_decidir_status(l) is not distinct from c.esperado,
       'paridade ' || array_to_string(c.estados, ',') || ': ' || coalesce(public.lote_decidir_status(l), 'null'));
@@ -705,7 +809,8 @@ begin
     'public.galeria_reservar_pedido(jsonb)', 'public.galeria_registrar_entrega(uuid)',
     'public.galeria_confirmar_exibicao(uuid,uuid,uuid[])', 'public.platform_imagem_competencia(uuid)',
     'public.lote_decidir_status(uuid)', 'public.galeria_relogio()', 'public.galeria_soltar_travas(uuid,uuid)',
-    'public.galeria_agregar_aplicacao(uuid)', 'public.galeria_itens_da_aplicacao(uuid)'] loop
+    'public.galeria_agregar_aplicacao(uuid)', 'public.galeria_itens_da_aplicacao(uuid)',
+    'public.galeria_bloquear_delete_anuncio()'] loop
     perform pg_temp.afirmar(not has_function_privilege('authenticated', fn, 'execute')
       and not has_function_privilege('anon', fn, 'execute'), 'authenticated/anon executa ' || fn);
   end loop;

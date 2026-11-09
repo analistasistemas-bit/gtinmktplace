@@ -1,0 +1,12 @@
+[
+  { "estados": ["publicando"], "esperado": null },
+  { "estados": ["publicando", "pronto", "erro"], "esperado": null },
+  { "estados": ["pronto", "pronto"], "esperado": "revisao" },
+  { "estados": ["pendente"], "esperado": "processando" },
+  { "estados": ["processando", "publicado"], "esperado": "processando" },
+  { "estados": ["pronto", "pendente"], "esperado": "revisao" },
+  { "estados": ["erro"], "esperado": "revisao" },
+  { "estados": ["publicado", "erro"], "esperado": "concluido" },
+  { "estados": ["publicado"], "esperado": "concluido" },
+  { "estados": [], "esperado": "concluido" }
+]

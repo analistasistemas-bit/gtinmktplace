@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { decidirStatusLote, contarFamilias, talvezFinalizarLote } from '../finalizar';
 
 const ZEROS = { publicando: 0, pronto: 0, emPreparo: 0, publicado: 0, erro: 0 };
@@ -28,6 +30,39 @@ describe('decidirStatusLote', () => {
   });
   it('nada em curso → concluido', () => {
     expect(decidirStatusLote(ZEROS)).toBe('concluido');
+  });
+});
+
+// Paridade com o espelho SQL public.lote_decidir_status (ADR-0201, relógio da galeria): os casos vêm de UM
+// arquivo, consumido aqui e embutido em scripts/sql/teste-galeria-cobranca.sql entre os marcadores
+// `-- paridade:inicio` / `-- paridade:fim`. Mudou o JSON → regerar o bloco SQL com
+// `ATUALIZAR_PARIDADE_SQL=1 pnpm vitest run finalizar` e rodar o teste SQL de novo.
+interface CasoLote { estados: string[]; esperado: 'revisao' | 'processando' | 'concluido' | null }
+const CASOS: CasoLote[] = JSON.parse(readFileSync(resolve(process.cwd(), 'supabase/functions/_shared/lote/__tests__/decidir-status-lote.casos.json'), 'utf8'));
+const SQL_PARIDADE = resolve(process.cwd(), 'scripts/sql/teste-galeria-cobranca.sql');
+const MARCA = /(-- paridade:inicio\n)[\s\S]*?([ \t]*-- paridade:fim)/;
+
+function blocoSql(casos: CasoLote[]): string {
+  const lit = (v: string | null) => (v === null ? 'null' : `'${v}'`);
+  return casos.map((c, i) => `      (array[${c.estados.map(lit).join(', ')}]::text[], ${lit(c.esperado)}::text)`
+    + (i < casos.length - 1 ? ',' : '')).join('\n');
+}
+
+describe('paridade decidirStatusLote × lote_decidir_status', () => {
+  it('a tabela de casos cobre cada retorno, inclusive publicando → null', () => {
+    const esperados = new Set(CASOS.map((c) => c.esperado));
+    expect([...esperados].sort()).toEqual(['concluido', 'processando', 'revisao', null].sort());
+    expect(CASOS).toContainEqual({ estados: ['publicando'], esperado: null });
+  });
+  it.each(CASOS)('TS: $estados → $esperado', ({ estados, esperado }) => {
+    expect(decidirStatusLote(contarFamilias(estados.map((status) => ({ status }))))).toBe(esperado);
+  });
+  it('o bloco embutido no teste SQL é o gerado desta mesma tabela', () => {
+    const sql = readFileSync(SQL_PARIDADE, 'utf8');
+    expect(sql).toMatch(MARCA);
+    const gerado = sql.replace(MARCA, `$1${blocoSql(CASOS)}\n$2`);
+    if (process.env.ATUALIZAR_PARIDADE_SQL === '1') { writeFileSync(SQL_PARIDADE, gerado); return; }
+    expect(sql).toBe(gerado);
   });
 });
 
