@@ -8,7 +8,7 @@
 
 **Tech Stack:** Deno edge functions (Supabase), vitest, QStash (`_shared/queue.ts`).
 
-**Spec:** causa raiz da investigação de 09/11 + ADR-0160 dívida nº 9 (`docs/decisions/0160-preco-por-variacao-sob-user-products.md:222-225`) e §"Categoria nunca publicada + preços divergentes = bloqueio" (`:189-191`). Revisão Grok 4.7 xhigh (rodada 1: REVISE, 10 achados — todos incorporados abaixo).
+**Spec:** causa raiz da investigação de 09/11 + ADR-0160 dívida nº 9 (`docs/decisions/0160-preco-por-variacao-sob-user-products.md:222-225`) e §"Categoria nunca publicada + preços divergentes = bloqueio" (`:189-191`). Revisão Grok 4.7 xhigh (rodada 1: REVISE, 10 achados; rodada 2: REVISE, 3 achados — todos incorporados abaixo).
 
 ## Contexto (causa raiz, verificada)
 
@@ -27,6 +27,7 @@
 - Reenfileirar = o **objeto do body parseado inteiro** (inclui `versoes_kit`, `listing_type_id`), via `enfileirarPublicacoes([{ job, alvo: 'publish' }], familia.user_id)`. Status continua `publicando`. Worker devolve 200; **não** chama `talvezFinalizarLote`.
 - `FORMATO_INCOMPATIVEL` no split nunca retenta: tratado antes de `decidirRetryTransitorio`.
 - Falha do enqueue: capturada no próprio ramo (não cai no catch genérico) → `status='erro'`, mensagem "Categoria {cat} identificada como User Products. Selecione a família e publique de novo." e 200. Com o cache semeado, publicar de novo cai na Parte 1.
+- **Todo ramo novo que grava `status='erro'` e responde 200 chama `talvezFinalizarLote(admin, job.lote_id)`** (hoje só o catch chama, `publicar-split-ml/index.ts:580`); sem isso o lote fica `publicando` para sempre.
 - Emenda ao ADR-0160 **antes** do código.
 - Deploy: `publicar-familias` e `publicar-split-ml` (nenhum `_shared/` alterado; se o executor alterar, redeployar consumidores e conferir versão).
 
@@ -44,7 +45,7 @@
 
 **Files:** Modify `docs/decisions/0160-preco-por-variacao-sob-user-products.md` (dívidas, item 9; §"Categoria nunca publicada…").
 
-- [ ] **Step 1:** dívida nº 9 resolvida em 2026-11-09; seção "Emenda 2026-11-09 — CREATE consulta o cache; split descobre UP" com as regras de Architecture + Global Constraints, a ordem ≥2 cores primeiro e os limites declarados: (a) todas as faixas com 1 cor → comportamento atual (N itens planos, um por faixa); (b) estado misto (algo no ar) → erro explícito, sem reenfileirar; (c) kit com preço divergente em categoria fora do cache continua barrado no gate do kit (`publicar-split-ml/index.ts:137-149`) antes de descobrir o formato. Atualizar "Categoria nunca publicada…": a descoberta acontece no split sem ação do operador quando há faixa com ≥2 cores.
+- [ ] **Step 1:** dívida nº 9 resolvida em 2026-11-09; seção "Emenda 2026-11-09 — CREATE consulta o cache; split descobre UP" com as regras de Architecture + Global Constraints, a ordem ≥2 cores primeiro e os limites declarados: (a) todas as faixas com 1 cor → comportamento atual (N itens planos, um por faixa); (b) estado misto (algo no ar — inclusive item de 1 cor criado pelo worker antigo antes deste fix) → erro explícito, sem reenfileirar; (b2) >100 cores em categoria UP → erro explícito; (c) kit com preço divergente em categoria fora do cache continua barrado no gate do kit (`publicar-split-ml/index.ts:137-149`) antes de descobrir o formato. Atualizar "Categoria nunca publicada…": a descoberta acontece no split sem ação do operador quando há faixa com ≥2 cores.
 - [ ] **Step 2:** commit `docs(adr-0160): emenda — CREATE divergente em categoria UP vai pra saga`.
 
 ### Task 2: `publicar-familias` roteia CREATE pelo cache de formato
@@ -82,7 +83,7 @@
 Regra:
 1. **Pré-check** logo após o `if (familia.status !== 'publicando')` (`:77-81`), antes do gate de kit (`:137`), fotos (`:168`) e título (`:282`): nada no ar **e** cores ≤ `MAX_VARIACOES_ML` **e** `lerFormatoPublicacao(formatoRepoSupabase(admin), conexao.id, familia.categoria_ml_id) === 'user_products'` → reenfileirar, 200 `{ ok: true, reroteado: 'publish' }`. (`conexao` hoje é resolvida em `:85` — mover a resolução para antes do pré-check ou resolver ali; sem conexão, pula o pré-check.)
 2. **Ordem do CREATE:** quando nada no ar, iterar as partições com ≥2 cores antes das de 1 cor (índices `p` intactos — só muda a ordem de iteração do loop `:267`).
-3. **Reativo:** erro com `codigo === 'FORMATO_INCOMPATIVEL'`, tratado no catch **antes** de `decidirRetryTransitorio`: `confirmarFormatoPublicacao(..., 'user_products')`; se `particaoNoAr === false` e nada no ar no início do job → reenfileirar, 200. Senão → `status='erro'`, mensagem "Categoria {cat} é User Products, mas parte desta família já está no ar como anúncio antigo — não dá para misturar os dois modelos automaticamente (ADR-0160).", 200 (sem retry).
+3. **Reativo:** erro com `codigo === 'FORMATO_INCOMPATIVEL'`, tratado no catch **antes** de `decidirRetryTransitorio`: `confirmarFormatoPublicacao(..., 'user_products')`; se `particaoNoAr === false` **e** nada no ar no início do job **e** cores ≤ `MAX_VARIACOES_ML` → reenfileirar, 200. Com >100 cores → `status='erro'`, mensagem "Categoria {cat} é User Products e a família tem mais de 100 cores — o ML não aceita mais de 100 itens por família; divida a família na planilha.", 200 (sem retry). Senão → `status='erro'`, mensagem "Categoria {cat} é User Products, mas parte desta família já está no ar como anúncio antigo — não dá para misturar os dois modelos automaticamente (ADR-0160).", 200 (sem retry).
 4. Enqueue falhou (pré-check ou reativo) → `status='erro'` com "Categoria {cat} identificada como User Products. Selecione a família e publique de novo.", 200.
 
 - [ ] **Step 1: testes** em `handler-formato-up.test.ts`:
@@ -92,7 +93,9 @@ Regra:
   - `'raiz da saga com item_externo_id nulo conta como nada no ar'` → reenfileira (Review Focus 2).
   - `'>100 cores com cache user_products não reenfileira'` (Review Focus 4).
   - `'FORMATO_INCOMPATIVEL com partição já no ar não reenfileira e não retenta'` → partição ≥2 cores criada ok, outra com FORMATO_INCOMPATIVEL → cache semeado, sem enqueue, `status='erro'` com "já está no ar", resposta 200.
-  - `'falha no enqueue vira erro com instrução de publicar de novo'` → `erro_mensagem` contém "publique de novo", resposta 200.
+  - `'>100 cores sem cache: FORMATO_INCOMPATIVEL no reativo não reenfileira'` → cache semeado, sem enqueue, `status='erro'` com "mais de 100 cores", 200.
+  - `'falha no enqueue vira erro com instrução de publicar de novo'` → `erro_mensagem` contém "publique de novo", resposta 200, `talvezFinalizarLote` chamado.
+  - no teste de estado misto, asserir também `talvezFinalizarLote` chamado.
   - `'erro de foto retentável segue retentando'` → 500 (regressão).
 - [ ] **Step 2:** `pnpm test -- supabase/functions/publicar-split-ml` → novos FALHAM.
 - [ ] **Step 3:** implementar a Regra. No PR, citar os guards de idempotência do `publish` listados no Contexto (sem trava nova).
@@ -103,6 +106,7 @@ Regra:
 
 - [ ] **Step 1:** revisão pré-merge (Grok xhigh no diff da branch), CI verde, merge fast-forward na `main`.
 - [ ] **Step 2:** `supabase functions deploy publicar-familias publicar-split-ml`; conferir versão nova (`supabase functions list`).
+- [ ] **Step 3a:** antes de republicar, conferir por SELECT que a família `75250990-97a5-4841-9423-51d7779e713c` segue com `ml_item_id` nulo, `operacao='CREATE'` e nenhuma linha em `anuncios_externos` com `item_externo_id` (investigação de 09/11: nada criado, a partição 0 era a de 6 cores). Se houver resíduo, parar e escalar — não limpar sem o Diego.
 - [ ] **Step 3:** Diego seleciona a família PAI 02994283 e publica de novo (não "Reenviar" — esse reprocessa). Esperado: split → faixa de 6 cores → FORMATO_INCOMPATIVEL → cache MLB277368=`user_products` → publish → saga → 8 itens UP com 133,15 / 141,35 / 155,70. Conferir por SELECT `ml_formato_publicacao` e `familias.status='publicado'`. Se a tela não deixar publicar família em `erro`, usar Reenviar e publicar após o reprocessamento.
 - [ ] **Step 4:** docs vivos (skill `docs-update-checklist`): `docs/reference/edge-functions.md` e `docs/project-status.md`.
 
