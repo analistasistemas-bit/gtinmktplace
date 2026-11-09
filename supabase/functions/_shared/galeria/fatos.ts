@@ -5,8 +5,22 @@ import { createHash } from 'node:crypto';
 export type EstadoFato = 'CONFIRMADO' | 'SUGERIDO' | 'DIVERGENTE' | 'NAO_CONFERIDO' | 'VARIA_POR_TAMANHO';
 export type OrigemFato = 'planilha' | 'confirmado_operador' | 'atributo_ml' | 'titulo_ml' | 'descricao_ml' | 'etiqueta';
 
-/** Leitura da etiqueta para um campo (R1.3). `legivel: false` = ilegível ou ausente. */
-export interface LeituraCampo { legivel: boolean; valor?: string | null; recorte?: string }
+/** Caixa do recorte na foto, em frações 0..1 (x,y = canto superior esquerdo). */
+export interface Caixa { x: number; y: number; w: number; h: number }
+
+/**
+ * Leitura da etiqueta para um campo (R1.3). `legivel: false` = ilegível ou ausente.
+ * `estado`/`foto`/`caixa` vêm da leitura por visão (etiqueta.ts) e vão à tela para o recorte.
+ */
+export interface LeituraCampo {
+  legivel: boolean;
+  valor?: string | null;
+  recorte?: string;
+  // Só na leitura não legível (inconclusiva = ilegível; indisponivel = ausente ou fora do formato).
+  estado?: 'inconclusiva' | 'indisponivel';
+  foto?: { origem: 'referencia' | 'ml'; ref: string } | null;
+  caixa?: Caixa | null;
+}
 
 export interface Fato {
   campo: string;

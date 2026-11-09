@@ -89,6 +89,7 @@ export function fakeAdmin(db: Record<string, Linha[]>, arquivos: Map<string, Uin
         arquivos.set(p, new Uint8Array(await corpo.arrayBuffer()));
         return { data: { path: p }, error: null };
       },
+      createSignedUrl: async (p: string) => ({ data: { signedUrl: `https://signed/${p}` }, error: null }),
     }),
   };
 

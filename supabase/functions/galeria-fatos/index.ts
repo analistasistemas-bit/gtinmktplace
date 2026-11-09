@@ -8,6 +8,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { carregarAnuncio, coresDoAnuncio, resolverAnuncio, type AnuncioGaleria } from '../_shared/galeria/anuncio.ts';
 import { calcularVigencia, ehJpeg, gravarReferencia, lerFicha } from '../_shared/galeria/referencias.ts';
+import { conferirEtiqueta } from '../_shared/galeria/etiqueta.ts';
 import { resolverConexaoEstrita } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
@@ -65,7 +66,8 @@ async function aplicarVigencia(admin: Admin, orgId: string, anuncioId: string, f
 }
 
 async function montar(admin: Admin, orgId: string, a: AnuncioGaleria) {
-  const v = await calcularVigencia(admin, orgId, a);
+  // Uma visão da etiqueta só quando fotos/campos/família mudaram (cache na sentinela); nunca mais que uma por montar.
+  const v = await calcularVigencia(admin, orgId, a, (ctx) => conferirEtiqueta(admin, orgId, a, ctx));
   const desatualizado = await aplicarVigencia(admin, orgId, a.anuncioId, v.fatos_hash);
   return {
     anuncio_externo_id: a.anuncioId, familia_id: a.vigente.id, codigo_pai: a.codigoPai, cores: coresDoAnuncio(a),

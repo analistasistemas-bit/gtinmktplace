@@ -10,7 +10,7 @@ import { buscarSecureUrlFotoML } from '../ml/fotos.ts';
 import { fotoDaOrg } from '../../criar-kit-variacao/processar.ts';
 import { carregarAnuncio, coresDoAnuncio, skusDaCor, type AnuncioGaleria } from './anuncio.ts';
 import { aplicarEtiqueta, hashFatos, montarFicha, type Fato, type FatoGravado } from './fatos.ts';
-import { lerLeituraEtiqueta } from './etiqueta.ts';
+import { CAMPO_ETIQUETA, lerLeituraEtiqueta } from './etiqueta.ts';
 import type { Vista } from './regras.ts';
 
 export interface Referencia { id: string; path: string; sha256: string }
@@ -152,7 +152,7 @@ const VISTAS: Vista[] = ['frente', 'costas', 'lateral'];
 export async function lerFicha(admin: SupabaseClient, orgId: string, a: AnuncioGaleria): Promise<Fato[]> {
   const leitura = await lerLeituraEtiqueta(admin, orgId, a);
   const { data, error } = await admin.from('galeria_fatos').select('campo, valor, origem, evidencia, descartado')
-    .eq('org_id', orgId).eq('anuncio_externo_id', a.anuncioId).eq('familia_id', a.vigente.id);
+    .eq('org_id', orgId).eq('anuncio_externo_id', a.anuncioId).eq('familia_id', a.vigente.id).neq('campo', CAMPO_ETIQUETA);
   if (error) throw new Error(error.message);
   const f = a.vigente;
   return aplicarEtiqueta(montarFicha({
@@ -167,11 +167,15 @@ export async function lerFicha(admin: SupabaseClient, orgId: string, a: AnuncioG
   }), leitura);
 }
 
+/** Gancho do `montar` para conferir a etiqueta (Task 6b) entre as referências e o hash; true = leitura nova gravada. */
+export type ConferirEtiqueta = (ctx: { refs: Referencia[]; fatos: Fato[]; aplicadas: Set<string> }) => Promise<boolean>;
+
 /**
  * Vigência do anúncio: ficha + referências (todas as cores × frente/costas/lateral) + `fatos_hash`.
  * Única fonte do hash: quem grava `galeria_roteiros.fatos_hash` (aprovar, Task 7) usa esta mesma função.
+ * `conferir` (só o `montar`) atualiza a leitura da etiqueta antes do hash; sem ele, vale a leitura gravada.
  */
-export async function calcularVigencia(admin: SupabaseClient, orgId: string, a: AnuncioGaleria) {
+export async function calcularVigencia(admin: SupabaseClient, orgId: string, a: AnuncioGaleria, conferir?: ConferirEtiqueta) {
   const aplicadas = await carregarFotosAplicadas(admin, orgId, a.anuncioId);
   const referencias: Record<string, Record<string, Referencia | { erro: 'sem_referencia' }>> = {};
   const shas: Record<string, string> = {};
@@ -183,6 +187,10 @@ export async function calcularVigencia(admin: SupabaseClient, orgId: string, a: 
       if (!('erro' in r)) shas[`${cor}:${vista}`] = r.sha256;
     }
   }
-  const fatos = await lerFicha(admin, orgId, a);
+  let fatos = await lerFicha(admin, orgId, a);
+  if (conferir) {
+    const refs = Object.values(referencias).flatMap((porVista) => Object.values(porVista)).filter((r): r is Referencia => !('erro' in r));
+    if (await conferir({ refs, fatos, aplicadas })) fatos = await lerFicha(admin, orgId, a);
+  }
   return { fatos, referencias, fatos_hash: hashFatos(fatos, shas) };
 }

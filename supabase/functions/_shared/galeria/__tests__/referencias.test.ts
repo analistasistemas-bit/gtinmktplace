@@ -3,6 +3,7 @@ import { fakeAdmin, JPEG } from './fake-admin'
 
 vi.mock('../../canais/conexao.ts', () => ({ resolverConexaoEstrita: vi.fn(async () => ({ id: 'cx' })) }))
 vi.mock('../../ml/token.ts', () => ({ getValidAccessTokenConexao: vi.fn(async () => 'tok') }))
+vi.mock('../../ai/client.ts', () => ({ openrouterClient: () => { throw new Error('IA real proibida em teste') } }))
 
 const { prepararReferencia, carregarFotosAplicadas, corSlug } = await import('../referencias')
 const { resolverAnuncio, carregarAnuncio } = await import('../anuncio')

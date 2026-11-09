@@ -4,6 +4,7 @@ import { fakeAdmin, JPEG } from '../../_shared/galeria/__tests__/fake-admin'
 const f = vi.hoisted(() => ({
   serve: vi.fn(), fake: null as unknown as { admin: unknown },
   leitura: {} as Record<string, { legivel: boolean; valor?: string; recorte?: string }>,
+  conferir: vi.fn(async (..._a: unknown[]) => false),
 }))
 
 vi.mock('../../_shared/cors.ts', () => ({ corsHeaders: {}, handleOptions: () => new Response() }))
@@ -13,7 +14,9 @@ vi.mock('../../_shared/auth.ts', () => ({
 vi.mock('../../_shared/supabase.ts', () => ({ adminClient: () => f.fake.admin }))
 vi.mock('../../_shared/canais/conexao.ts', () => ({ resolverConexaoEstrita: vi.fn(async () => ({ id: 'cx' })) }))
 vi.mock('../../_shared/ml/token.ts', () => ({ getValidAccessTokenConexao: vi.fn(async () => 'tok') }))
-vi.mock('../../_shared/galeria/etiqueta.ts', () => ({ lerLeituraEtiqueta: vi.fn(async () => f.leitura) }))
+vi.mock('../../_shared/galeria/etiqueta.ts', () => ({
+  CAMPO_ETIQUETA: '__etiqueta', lerLeituraEtiqueta: vi.fn(async () => f.leitura), conferirEtiqueta: f.conferir,
+}))
 // Dicionário da categoria (closed-set): o mesmo formato que a Revisão usa em validarValorAtributo.
 vi.mock('../../_shared/categoria/schema.ts', () => ({
   lerSchemaAtributos: vi.fn(async () => [
@@ -89,6 +92,18 @@ describe('galeria-fatos', () => {
     expect(fatoDe(r.body, 'comprimento_cm')).toMatchObject({ estado: 'VARIA_POR_TAMANHO' })
     expect(r.body.referencias).toMatchObject({ Preto: { frente: { path: expect.stringMatching(/^org\/galeria-ia\/famB\/referencias\/preto-frente-/) } } })
     expect(r.body.fatos_hash).toMatch(/^[0-9a-f]{64}$/)
+  })
+
+  it('montar confere a etiqueta (Task 6b) com as referências reais e a ficha, antes do hash', async () => {
+    f.conferir.mockClear()
+    const r = await chamar({ acao: 'montar', ml_item_id: 'MLB1' })
+    expect(r.status).toBe(200)
+    expect(f.conferir).toHaveBeenCalledTimes(1)
+    const [, org, a, ctx] = f.conferir.mock.calls[0] as [unknown, string, { anuncioId: string }, { refs: Linha[]; fatos: Linha[]; aplicadas: Set<string> }]
+    expect([org, a.anuncioId]).toEqual(['org', 'an1'])
+    expect(ctx.refs.map((x) => x.path)).toEqual([expect.stringMatching(/^org\/galeria-ia\/famB\/referencias\/preto-frente-/)])
+    expect(ctx.fatos.some((x) => x.campo === 'atributo:MAIN_MATERIAL')).toBe(true)
+    expect(ctx.aplicadas).toBeInstanceOf(Set)
   })
 
   it('montar com hash diferente do roteiro aprovado: pendente→falhou, não aplicadas→desatualizada, submetendo/gerando intactas, roteiro desatualizado', async () => {
