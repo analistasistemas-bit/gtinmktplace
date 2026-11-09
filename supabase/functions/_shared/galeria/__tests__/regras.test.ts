@@ -162,6 +162,11 @@ describe('termosProibidos', () => {
     expect(termosProibidos('100% puro', 'geral')).toContain('100% (claim)')
     expect(termosProibidos('100% puro e natural', 'geral')).toContain('100% (claim)')
   })
+  it('claim com "de" opcional ("100% de natural", "100% de puro")', () => {
+    expect(termosProibidos('100% de natural', 'geral')).toContain('100% (claim)')
+    expect(termosProibidos('100% de puro', 'geral')).toContain('100% (claim)')
+    expect(termosProibidos('100% de algodão', 'geral')).toEqual([])
+  })
   it('plural em -ões ("promoções")', () => {
     expect(termosProibidos('Promoções da semana', 'geral')).toContain('promocao')
     expect(termosProibidos('promoção', 'geral')).toContain('promocao')

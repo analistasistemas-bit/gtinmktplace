@@ -106,8 +106,8 @@ const norm = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCas
 // Texto exato normalizado: sem acento, minúsculo, espaço colapsado; dígitos, %, vírgula e ponto intocados.
 const textoNorm = (s: string) => norm(s).normalize('NFC').replace(/\s+/g, ' ').trim();
 // Número pt-BR: "1.500" = mil e quinhentos (milhar), "1,5" = um e meio; "1.5" (sem grupo de 3) = um e meio.
-const NUM = '\\d+(?:[.,]\\d+)*';
-function numero(n: string): string {
+export const NUM = '\\d+(?:[.,]\\d+)*';
+export function numero(n: string): string {
   const t = /^\d{1,3}(?:\.\d{3})+(?:,\d+)?$/.test(n) ? n.replace(/\./g, '').replace(',', '.') : n.replace(',', '.');
   const v = Number(t);
   return Number.isFinite(v) ? String(v) : n;

@@ -30,16 +30,17 @@ const texto = (v: unknown, max: number) => (typeof v === 'string' && v.trim() !=
 const vistasDe = (v: Vigencia): Vista[] =>
   (['frente', 'costas', 'lateral'] as Vista[]).filter((vista) => Object.values(v.referencias).some((porVista) => porVista[vista] && !('erro' in porVista[vista])));
 
-/** Categoria do item lida ao vivo (o ML reclassifica: a da família é só reserva). `null` = ilegível → recusa. */
+/**
+ * Categoria lida ao vivo: GET do item no ML → categoria → path_from_root (público). Sem fallback para a categoria
+ * gravada na família: qualquer falha → `null` e a ação recusa, sem decidir Moda.
+ */
 async function lerCategoria(admin: Admin, orgId: string, a: AnuncioGaleria): Promise<{ nome: string; moda: boolean } | null> {
   try {
-    let categoriaId = a.vigente.categoria_ml_id ?? null;
     const itemId = Object.values(a.itemPorSku)[0];
-    if (itemId) {
-      const cx = await resolverConexaoEstrita(admin, orgId, 'mercado_livre');
-      if (!cx) return null;
-      categoriaId = (await buscarItemML(await getValidAccessTokenConexao(cx), itemId)).categoriaId ?? categoriaId;
-    }
+    if (!itemId) return null;
+    const cx = await resolverConexaoEstrita(admin, orgId, 'mercado_livre');
+    if (!cx) return null;
+    const categoriaId = (await buscarItemML(await getValidAccessTokenConexao(cx), itemId)).categoriaId;
     if (!categoriaId) return null;
     const r = await fetch(`https://api.mercadolibre.com/categories/${categoriaId}`, { signal: AbortSignal.timeout(10_000) });
     if (!r.ok) return null;
@@ -73,6 +74,10 @@ async function inserirRascunho(
   return data as LinhaRoteiro;
 }
 
+/** Vigência com a mesma conferência da etiqueta do `montar` (visão só quando o cache da leitura venceu). */
+const vigencia = (admin: Admin, orgId: string, a: AnuncioGaleria) =>
+  calcularVigencia(admin, orgId, a, (ctx) => conferirEtiqueta(admin, orgId, a, ctx));
+
 const resposta = (linha: LinhaRoteiro, v: Vigencia) => ({
   roteiro: linha,
   erros: validarRoteiro(linha.conteudo, v.fatos, linha.moda, vistasDe(v)),
@@ -105,12 +110,11 @@ Deno.serve(async (req) => {
     if (body.familia_id !== a.vigente.id) return json({ error: 'familia_nao_vigente', familia_id_vigente: a.vigente.id }, 409);
 
     if (acao === 'criar') {
-      // Leitura gravada da etiqueta (sem nova chamada de visão: isso é do `montar` de galeria-fatos).
-      const v = await calcularVigencia(admin, orgId, a);
+      const v = await vigencia(admin, orgId, a);
       const divergentes = v.fatos.filter((f) => f.estado === 'DIVERGENTE').map((f) => f.campo);
       if (divergentes.length > 0) return json({ error: 'fato_divergente', campos: divergentes }, 409);
       const cat = await lerCategoria(admin, orgId, a);
-      if (!cat) return json({ error: 'categoria_indisponivel' }, 502);
+      if (!cat) return json({ error: 'categoria_indisponivel' }, 503);
       let conteudo: Roteiro;
       try {
         conteudo = await gerarRoteiroIA({
@@ -138,7 +142,7 @@ Deno.serve(async (req) => {
       // Categoria e Moda são da edge (gravadas no criar); a ciência só o `aprovar` grava.
       const conteudo = sanearRoteiro(body.conteudo, linha.conteudo.categoria);
       if (!conteudo) return json({ error: 'conteudo_invalido' }, 400);
-      const v = await calcularVigencia(admin, orgId, a);
+      const v = await vigencia(admin, orgId, a);
       if (linha.status === 'rascunho') {
         const { data, error } = await admin.from('galeria_roteiros').update({ conteudo })
           .eq('id', linha.id).eq('org_id', orgId).eq('status', 'rascunho').select();
@@ -153,10 +157,14 @@ Deno.serve(async (req) => {
 
     // aprovar
     if (linha.status !== 'rascunho') return json({ error: 'nao_rascunho' }, 409);
+    // Moda ao vivo de novo: se a categoria mudou de lado desde o criar, o roteiro não vale (texto × sem texto).
+    const cat = await lerCategoria(admin, orgId, a);
+    if (!cat) return json({ error: 'categoria_indisponivel' }, 503);
+    if (cat.moda !== linha.moda) return json({ error: 'categoria_mudou', moda: cat.moda }, 409);
     // fatos_hash pela MESMA chamada do `montar` (calcularVigencia + conferência da etiqueta): sem a conferência,
-    // leitura velha daria outro hash e o próximo `montar` desatualizaria o roteiro na hora. A conferência só
-    // chama a visão se fotos/campos/família mudaram (cache); DIVERGENTE nova reprova a aprovação (R1.3).
-    const v = await calcularVigencia(admin, orgId, a, (ctx) => conferirEtiqueta(admin, orgId, a, ctx));
+    // leitura velha daria outro hash e o próximo `montar` desatualizaria o roteiro na hora. DIVERGENTE nova
+    // reprova a aprovação (R1.3).
+    const v = await vigencia(admin, orgId, a);
     const erros = validarRoteiro(linha.conteudo, v.fatos, linha.moda, vistasDe(v));
     if (erros.length > 0) return json({ error: 'roteiro_invalido', erros }, 422);
     let conteudo = linha.conteudo;
@@ -170,7 +178,9 @@ Deno.serve(async (req) => {
       conteudo = { ...conteudo, ciencia_nao_conferido: { campos, por: userId, em: new Date().toISOString() } };
     }
     const { data: codigo, error } = await admin.rpc('galeria_aprovar_roteiro', {
-      p_org: orgId, p_roteiro: linha.id, p_familia: a.vigente.id, p_fatos_hash: v.fatos_hash, p_conteudo: conteudo, p_usuario: userId,
+      // p_conteudo_lido: o que foi validado; salvo no meio → conteudo_mudou, sem gravar.
+      p_org: orgId, p_roteiro: linha.id, p_familia: a.vigente.id, p_fatos_hash: v.fatos_hash,
+      p_conteudo_lido: linha.conteudo, p_conteudo: conteudo, p_usuario: userId,
     });
     if (error) throw new Error(error.message);
     if (codigo !== 'ok') return json({ error: codigo }, 409);

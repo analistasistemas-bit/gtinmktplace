@@ -113,6 +113,33 @@ describe('galeria-roteiro: criar', () => {
     expect(conteudo.categoria).toBe('Blusas')
     expect(conteudo.missoes.map((m) => m.missao)).toEqual([1, 2, 5, 6, 7]) // sem costas/lateral: sem referência
     expect(conteudo.missoes.some((m) => 'headline' in m)).toBe(false)
+    // Missões que o modelo omitiu nascem inativas: o rascunho não nasce travado.
+    expect(conteudo.missoes.filter((m) => m.ativa).map((m) => m.missao)).toEqual([1, 2])
+    expect(r.body.erros).toEqual([])
+  })
+
+  it('fora de Moda: rascunho do modelo válido nasce com erros = [] e ciência vazia', async () => {
+    f.ia.mockResolvedValueOnce(respostaIA([
+      missaoIA(1, { fatosUsados: ['nome'] }),
+      missaoIA(4, { headline: 'Renda Búfalo', beneficios: ['Largura de 20 cm'], fatosUsados: ['nome', 'largura_cm'] }),
+      missaoIA(5, { headline: 'Ficha técnica', specs: [{ campo: 'largura_cm', rotulo: 'Largura', valor: '20 cm' }] }),
+      missaoIA(6, { etapas: ['Frase livre inventada'], fatosUsados: ['nome'] }),
+    ]))
+    const r = await chamar({ ...base, acao: 'criar' })
+    expect(r.status).toBe(200)
+    expect(r.body).toMatchObject({ erros: [], ciencia_pendente: [] })
+    expect(db.galeria_roteiros[0]).toMatchObject({ moda: false })
+    // A etapa livre do modelo não tem âncora: a missão 6 nasce inativa (conteúdo preservado).
+    const m6 = (db.galeria_roteiros[0].conteudo as { missoes: Linha[] }).missoes.find((m) => m.missao === 6)
+    expect(m6).toMatchObject({ ativa: false, etapas: ['Frase livre inventada'] })
+  })
+
+  it('criar confere a etiqueta (mesmo gancho do montar): DIVERGENTE nova recusa antes da IA', async () => {
+    f.conferir.mockImplementationOnce(async () => { f.leitura = { marca: { legivel: true, valor: 'Outra Marca' } }; return true })
+    const r = await chamar({ ...base, acao: 'criar' })
+    expect(r).toMatchObject({ status: 409, body: { error: 'fato_divergente', campos: ['marca'] } })
+    expect(f.conferir).toHaveBeenCalledTimes(1)
+    expect(f.ia).not.toHaveBeenCalled()
   })
 
   it('recusa com fato DIVERGENTE pendente (sem chamar o modelo)', async () => {
@@ -126,7 +153,18 @@ describe('galeria-roteiro: criar', () => {
   it('categoria ilegível → recusa; nunca presume "não é Moda"', async () => {
     caminho = []
     const r = await chamar({ ...base, acao: 'criar' })
-    expect(r).toMatchObject({ status: 502, body: { error: 'categoria_indisponivel' } })
+    expect(r).toMatchObject({ status: 503, body: { error: 'categoria_indisponivel' } })
+    expect(f.ia).not.toHaveBeenCalled()
+  })
+
+  it('GET do item falhou → recusa; nunca usa a categoria gravada na família', async () => {
+    vi.mocked(fetch).mockImplementation(async (url) => {
+      fetchs.push(String(url))
+      return new Response('{}', { status: 500 })
+    })
+    const r = await chamar({ ...base, acao: 'criar' })
+    expect(r).toMatchObject({ status: 503, body: { error: 'categoria_indisponivel' } })
+    expect(fetchs.some((u) => u.includes('/categories/'))).toBe(false)
     expect(f.ia).not.toHaveBeenCalled()
   })
 
@@ -158,6 +196,7 @@ describe('galeria-roteiro: salvar', () => {
     expect((db.galeria_roteiros[1].conteudo as Linha).contrato).toBe('Contrato editado')
     // categoria é a da edge, nunca a do cliente.
     expect((db.galeria_roteiros[1].conteudo as Linha).categoria).toBe('Rendas')
+    expect(f.conferir).toHaveBeenCalledTimes(1) // mesmo gancho da etiqueta do montar
   })
 
   it('rascunho é editado no lugar e revalidado com a Moda da linha (não a do cliente)', async () => {
@@ -187,6 +226,7 @@ describe('galeria-roteiro: aprovar', () => {
     const { fatos_hash } = await calcularVigencia(fake.admin as never, 'org', a)
     expect(fake.rpcs).toEqual([{ nome: 'galeria_aprovar_roteiro', args: expect.objectContaining({
       p_org: 'org', p_roteiro: 'r2', p_familia: 'famB', p_fatos_hash: fatos_hash, p_usuario: 'u1',
+      p_conteudo_lido: db.galeria_roteiros[0].conteudo,
     }) }])
     expect(r.body).toMatchObject({ status: 'aprovado', fatos_hash })
   })
@@ -205,6 +245,32 @@ describe('galeria-roteiro: aprovar', () => {
     const montado = await r.json() as Linha
     expect(montado.roteiro_desatualizado).toBe(false)
     expect(db.galeria_roteiros[0]).toMatchObject({ status: 'aprovado', fatos_hash: montado.fatos_hash })
+  })
+
+  it('aprovar relê a categoria: Moda mudou desde o criar → 409 categoria_mudou, sem aprovar', async () => {
+    confirmarMaterial()
+    roteiro({ id: 'r2', versao: 2, status: 'rascunho', moda: false })
+    caminho = [{ id: 'MLB1430', name: 'Calçados, Roupas e Bolsas' }, { id: 'MLB3112', name: 'Blusas' }]
+    const r = await chamar({ ...base, acao: 'aprovar', roteiro_id: 'r2' })
+    expect(r).toMatchObject({ status: 409, body: { error: 'categoria_mudou' } })
+    expect(fake.rpcs).toHaveLength(0)
+  })
+
+  it('aprovar com categoria ilegível → 503, sem aprovar', async () => {
+    confirmarMaterial()
+    roteiro({ id: 'r2', versao: 2, status: 'rascunho' })
+    caminho = []
+    const r = await chamar({ ...base, acao: 'aprovar', roteiro_id: 'r2' })
+    expect(r).toMatchObject({ status: 503, body: { error: 'categoria_indisponivel' } })
+    expect(fake.rpcs).toHaveLength(0)
+  })
+
+  it('RPC recusa conteúdo que mudou (salvar no meio) → 409 conteudo_mudou', async () => {
+    confirmarMaterial()
+    roteiro({ id: 'r2', versao: 2, status: 'rascunho' })
+    fake.respostasRpc.galeria_aprovar_roteiro = () => 'conteudo_mudou'
+    const r = await chamar({ ...base, acao: 'aprovar', roteiro_id: 'r2' })
+    expect(r).toMatchObject({ status: 409, body: { error: 'conteudo_mudou' } })
   })
 
   it('roteiro inválido não aprova (erros do código)', async () => {

@@ -4,7 +4,7 @@ import type { Fato } from '../fatos'
 const ia = vi.hoisted(() => ({ create: vi.fn() }))
 vi.mock('../../ai/client.ts', () => ({ openrouterClient: () => ({ chat: { completions: { create: ia.create } } }) }))
 
-import { cienciaPendente, gerarRoteiroIA, validarRoteiro, type Roteiro } from '../roteiro'
+import { cienciaPendente, gerarRoteiroIA, sanearRoteiro, validarRoteiro, type Roteiro } from '../roteiro'
 
 const fato = (campo: string, valor: string, estado: Fato['estado'] = 'CONFIRMADO'): Fato =>
   ({ campo, valor, estado, origem: 'planilha', evidencia: {} })
@@ -17,6 +17,7 @@ const FATOS: Fato[] = [
   fato('comprimento_cm', '60 / 62', 'VARIA_POR_TAMANHO'),
   fato('titulo_ml', 'Renda Búfalo Poliéster Premium', 'SUGERIDO'),
   fato('marca', 'Avil', 'NAO_CONFERIDO'),
+  fato('descricao_fornecedor', 'Lavar à mão em água fria. Secar à sombra.'),
 ]
 
 const renda = (): Roteiro => ({
@@ -84,7 +85,7 @@ describe('validarRoteiro', () => {
 
   it('fatosUsados com SUGERIDO também reprova', () => {
     expect(validarRoteiro(comMissao({ fatosUsados: ['titulo_ml'] }), FATOS, false))
-      .toEqual([expect.stringMatching(/titulo_ml.*SUGERIDO/), expect.stringMatching(/sem fato confirmado/)])
+      .toEqual(expect.arrayContaining([expect.stringMatching(/titulo_ml.*SUGERIDO/), expect.stringMatching(/sem fato confirmado/)]))
   })
 
   it('"premium" no texto da imagem (R4.3)', () => {
@@ -118,7 +119,48 @@ describe('validarRoteiro', () => {
   })
 
   it('missão 3–6 fora de Moda sem fato confirmado não é oferecida (R2.1, R5.3)', () => {
-    expect(validarRoteiro(comMissao({ fatosUsados: [] }), FATOS, false)).toEqual([expect.stringMatching(/Missão 4: .*sem fato/)])
+    expect(validarRoteiro(comMissao({ fatosUsados: [], headline: undefined, beneficios: undefined }), FATOS, false))
+      .toEqual([expect.stringMatching(/Missão 4: .*sem fato/)])
+  })
+
+  it('texto ancorado: etapa de frase livre ("Lave em água quente") com fatosUsados ["nome"] → erro', () => {
+    const r = renda()
+    r.missoes.push({ missao: 6, ativa: true, cena: 'mãos lavando a renda', etapas: ['Lave em água quente'], fatosUsados: ['nome'] })
+    expect(validarRoteiro(r, FATOS, false)).toEqual([expect.stringMatching(/Missão 6: etapa "Lave em água quente" não é trecho de fato confirmado/)])
+  })
+
+  it('texto ancorado: etapa que é trecho da descrição confirmada citada passa', () => {
+    const r = renda()
+    r.missoes.push({ missao: 6, ativa: true, cena: 'mãos lavando a renda', etapas: ['Lavar à mão em água fria.', 'Secar à sombra'], fatosUsados: ['descricao_fornecedor'] })
+    expect(validarRoteiro(r, FATOS, false)).toEqual([])
+  })
+
+  it('texto ancorado: headline "100% algodão" com fato "100% poliéster" → erro (material fora do fato)', () => {
+    const fatos = FATOS.map((f) => (f.campo === 'atributo:MAIN_MATERIAL' ? { ...f, valor: '100% poliéster' } : f))
+    const r = comMissao({ headline: '100% algodão', beneficios: [], fatosUsados: ['atributo:MAIN_MATERIAL'] })
+    r.missoes = r.missoes.filter((m) => m.missao !== 5)
+    expect(validarRoteiro(r, fatos, false)).toEqual([expect.stringMatching(/Missão 4: "algodao" no texto não vem de fato citado/)])
+  })
+
+  it('texto ancorado: número sem fato citado → erro; medida convertida do fato citado passa', () => {
+    expect(validarRoteiro(comMissao({ beneficios: ['Rolo com 50 metros'] }), FATOS, false))
+      .toEqual([expect.stringMatching(/Missão 4: "50 metros" no texto não vem de fato citado/)])
+    expect(validarRoteiro(comMissao({ beneficios: ['Largura de 200 mm'] }), FATOS, false)).toEqual([])
+  })
+
+  it('missão 2 ou 7 com texto e sem fato utilizável citado → erro', () => {
+    const r = renda()
+    r.missoes.push({ missao: 2, ativa: true, cena: 'ateliê', headline: 'Para seus projetos', fatosUsados: [] })
+    r.missoes.push({ missao: 7, ativa: true, cena: 'recorte', legendas: ['Acabamento'], fatosUsados: ['titulo_ml'] })
+    expect(validarRoteiro(r, FATOS, false)).toEqual(expect.arrayContaining([
+      expect.stringMatching(/Missão 2: sem fato confirmado/), expect.stringMatching(/Missão 7: sem fato confirmado/),
+    ]))
+  })
+
+  it('spec sem rótulo → erro (e sanearRoteiro não apaga a spec parcial)', () => {
+    const r = sanearRoteiro(comMissao({ specs: [{ campo: 'largura_cm', rotulo: '', valor: '20 cm' }] }, 5), 'Rendas')!
+    expect(r.missoes.find((m) => m.missao === 5)?.specs).toEqual([{ campo: 'largura_cm', rotulo: '', valor: '20 cm' }])
+    expect(validarRoteiro(r, FATOS, false)).toEqual([expect.stringMatching(/Missão 5: spec sem rótulo/)])
   })
 
   it('missão inativa não é validada', () => {
@@ -128,10 +170,18 @@ describe('validarRoteiro', () => {
 
 describe('cienciaPendente (R1.3: não conferido na etiqueta)', () => {
   it('fato NAO_CONFERIDO citado exige ciência; registrada, nada pendente', () => {
-    const r = comMissao({ fatosUsados: ['atributo:MAIN_MATERIAL', 'marca'] })
+    const r = comMissao({ fatosUsados: ['atributo:MAIN_MATERIAL', 'largura_cm', 'marca'] })
     expect(validarRoteiro(r, FATOS, false)).toEqual([])
     expect(cienciaPendente(r, FATOS)).toEqual(['marca'])
     expect(cienciaPendente({ ...r, ciencia_nao_conferido: { campos: ['marca'], por: 'u1', em: 'x' } }, FATOS)).toEqual([])
+  })
+})
+
+describe('cienciaPendente: valor NAO_CONFERIDO no texto, fora de fatosUsados', () => {
+  it('marca "Avil" no headline exige ciência', () => {
+    const r = comMissao({ headline: 'Renda Avil 100% Poliamida' })
+    expect(validarRoteiro(r, FATOS, false)).toEqual([])
+    expect(cienciaPendente(r, FATOS)).toEqual(['marca'])
   })
 })
 
@@ -174,6 +224,20 @@ describe('gerarRoteiroIA', () => {
     expect(r.missoes.find((m) => m.missao === 4)?.headline).toBe('Renda Búfalo'.normalize('NFC'))
     expect(r.missoes.find((m) => m.missao === 4)?.beneficios).toEqual(['Leve'])
     expect(r.missoes).toHaveLength(7)
+  })
+
+  it('missão ≠ 1 omitida, sem cena ou sem fato utilizável nasce inativa; o rascunho não nasce travado', async () => {
+    ia.create.mockResolvedValueOnce(resposta({
+      contrato: 'Renda de poliamida', missoes: [
+        { missao: 1, cena: 'capa', headline: '', subheadline: '', beneficios: [], specs: [], etapas: [], legendas: [], fatosUsados: ['nome'] },
+        { missao: 2, cena: '', headline: '', subheadline: '', beneficios: [], specs: [], etapas: [], legendas: [], fatosUsados: ['nome'] },
+        { missao: 3, cena: 'objeção', headline: 'Renda Búfalo', subheadline: '', beneficios: [], specs: [], etapas: [], legendas: [], fatosUsados: ['titulo_ml'] },
+        { missao: 4, cena: 'benefícios', headline: 'Renda Búfalo 100% Poliamida', subheadline: '', beneficios: ['Largura de 20 cm'], specs: [], etapas: [], legendas: [], fatosUsados: ['atributo:MAIN_MATERIAL', 'largura_cm'] },
+      ],
+    }))
+    const r = await gerarRoteiroIA({ modelo: 'm', categoria: 'Rendas', moda: false, vistas: ['frente'], fatos: FATOS })
+    expect(r.missoes.filter((m) => m.ativa).map((m) => m.missao)).toEqual([1, 4])
+    expect(validarRoteiro(r, FATOS, false)).toEqual([])
   })
 
   it('resposta fora do formato lança (a edge não grava rascunho)', async () => {

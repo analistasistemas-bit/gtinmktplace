@@ -122,8 +122,11 @@ const FIM = '(?![\\p{L}\\p{N}])'
 // "100% puro algodão" também é composição: "puro" seguido de material não é claim.
 // ponytail: lista curta de materiais; material fora dela depois de "puro" ainda vira claim (falso positivo
 // visível na tela, nunca um claim que passa) — ampliar a lista quando aparecer.
-const MATERIAL = '(?:algodao|poliester|poliamida|linho|seda|la|viscose|elastano|nylon|acrilico|couro|lycra|modal|cetim|juta|bambu)'
-const CLAIM_100 = '100%\\s+(?:natura(?:l|is)|garantid[oa]s?|origina(?:l|is)|organic[oa]s?|segur[oa]s?|eficaz(?:es)?|aprovad[oa]s?'
+/** Materiais reconhecidos (sem acento, minúsculos): composição no claim e âncora de texto no roteiro. */
+export const MATERIAIS = ['algodao', 'poliester', 'poliamida', 'linho', 'seda', 'la', 'viscose', 'elastano', 'nylon',
+  'acrilico', 'couro', 'lycra', 'modal', 'cetim', 'juta', 'bambu'] as const
+const MATERIAL = `(?:${MATERIAIS.join('|')})`
+const CLAIM_100 = '100%\\s+(?:de\\s+)?(?:natura(?:l|is)|garantid[oa]s?|origina(?:l|is)|organic[oa]s?|segur[oa]s?|eficaz(?:es)?|aprovad[oa]s?'
   + `|pur[oa]s?(?!\\s+${MATERIAL}(?![\\p{L}\\p{N}])))`
 // Valor monetário: "R$ 19,90", "R$19".
 const VALOR = 'r\\$\\s*\\d'
