@@ -24,7 +24,7 @@ do $$ begin
     raise exception 'leitura não-objeto aceita';
   exception when check_violation then null;
   end;
-  if (select falhou or not parcial from public.galeria_leituras_etiqueta where chave = 'k1') then
+  if (select falhou or pulou_por_erro or not parcial from public.galeria_leituras_etiqueta where chave = 'k1') then
     raise exception 'defaults/parcial errados';
   end if;
 end $$;

@@ -300,13 +300,13 @@ describe('conferirEtiqueta + lerFicha', () => {
     expect(tabela()[0]).toMatchObject({ falhou: false, parcial: true })
   })
 
-  it('foto em 500 dentro do teto com outra boa → parcial; o montar seguinte relê (parcial não é cache)', async () => {
+  it('foto em 500 dentro do teto com outra boa → pulou_por_erro; o montar seguinte relê (não é cache)', async () => {
     const base = globalThis.fetch as unknown as (u: string) => Promise<Response>
     vi.stubGlobal('fetch', vi.fn(async (url: string) => (url === 'https://ml/P_CAPA.jpg' ? new Response('x', { status: 500 }) : base(url))))
     v.create.mockResolvedValue(resposta([lido('marca', 'Avil')]))
     await conferir()
     expect(urlsEnviadas()).not.toContain('https://ml/P_CAPA.jpg')
-    expect(tabela()[0]).toMatchObject({ falhou: false, parcial: true })
+    expect(tabela()[0]).toMatchObject({ falhou: false, parcial: true, pulou_por_erro: true })
     expect(await conferir()).toBe(true)
     expect(v.create).toHaveBeenCalledTimes(2)
     // Foto voltou: leitura completa → cache.
@@ -314,6 +314,24 @@ describe('conferirEtiqueta + lerFicha', () => {
     await conferir()
     expect(tabela()[0]).toMatchObject({ parcial: false })
     expect(await conferir()).toBe(false)
+    expect(v.create).toHaveBeenCalledTimes(3)
+  })
+
+  it('20 fotos boas (parcial só pelo teto) → cache: o segundo montar não chama a visão; 1 foto em 500 → chama', async () => {
+    refs = []
+    fotosItem = Array.from({ length: 20 }, (_, i) => `P${i + 1}`)
+    v.create.mockResolvedValue(resposta([lido('marca', 'Avil')]))
+    await conferir()
+    expect(tabela()[0]).toMatchObject({ parcial: true, pulou_por_erro: false })
+    expect(await conferir()).toBe(false)
+    expect(v.create).toHaveBeenCalledTimes(1)
+
+    db.galeria_leituras_etiqueta = []
+    const base = globalThis.fetch as unknown as (u: string) => Promise<Response>
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => (url === 'https://ml/P5.jpg' ? new Response('x', { status: 500 }) : base(url))))
+    await conferir()
+    expect(tabela()[0]).toMatchObject({ parcial: true, pulou_por_erro: true })
+    expect(await conferir()).toBe(true)
     expect(v.create).toHaveBeenCalledTimes(3)
   })
 

@@ -143,10 +143,11 @@ export async function lerEtiquetaPorVisao({ fotos, campos, cadastro, parcial = f
   }));
 }
 
-interface Gravada { chave: string | null; falhou: boolean; parcial: boolean; leitura: LeituraEtiqueta }
+/** `parcial` = alguma foto ficou fora (teto ou erro); `pulou_por_erro` = alguma ficou fora por erro (não é cache). */
+interface Gravada { chave: string | null; falhou: boolean; parcial: boolean; pulou_por_erro: boolean; leitura: LeituraEtiqueta }
 
 async function lerGravada(admin: SupabaseClient, orgId: string, a: AnuncioGaleria): Promise<Gravada | null> {
-  const { data, error } = await admin.from(TABELA).select('chave, falhou, parcial, leitura')
+  const { data, error } = await admin.from(TABELA).select('chave, falhou, parcial, pulou_por_erro, leitura')
     .eq('org_id', orgId).eq('anuncio_externo_id', a.anuncioId).eq('familia_id', a.vigente.id).maybeSingle();
   if (error) throw new Error(error.message);
   return (data as Gravada | null) ?? null;
@@ -176,8 +177,8 @@ const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
  * Chamada pelo `montar` (via `calcularVigencia`), depois das referências e antes do hash. Fotos: referências
  * imutáveis (Task 6) primeiro, depois as do ML do anúncio fora de `fotosAplicadas`, sem repetir a que já é
  * referência (mesmo sha). Chave = campos + ids das fotos (picture_id do ML é imutável; referência = sha).
- * Mesma chave, leitura completa e sem falha → nada. Leitura parcial (foto pulada por erro ou sem vaga) não é cache:
- * a próxima montagem relê. Devolve true se gravou leitura nova.
+ * Mesma chave, sem falha e sem foto pulada por erro → nada (parcial só pelo teto é cache: mesmas fotos, mesmo
+ * resultado). Foto pulada por erro → a próxima montagem relê. Devolve true se gravou leitura nova.
  * Falha antes da chave (ML fora do ar): com leitura gravada, nada muda; sem leitura, grava `indisponivel`.
  * Falha depois da chave (URL, download, visão): grava `indisponivel` com `falhou` para a chave nova — nunca reaproveita
  * a leitura de fotos/campos antigos. `falhou` nunca é cache: a próxima montagem tenta de novo.
@@ -212,10 +213,10 @@ export async function conferirEtiqueta(
     console.error('[galeria-etiqueta] antes da chave:', (e as Error).message);
     // Falha transitória sem mudança conhecida: trocar o hash desatualizaria o roteiro aprovado sem volta.
     if (atual) return false;
-    return gravar({ chave: null, falhou: true, parcial: false, leitura: todos(campos, 'indisponivel') });
+    return gravar({ chave: null, falhou: true, parcial: false, pulou_por_erro: false, leitura: todos(campos, 'indisponivel') });
   }
-  if (atual && !atual.falhou && !atual.parcial && atual.chave === chave) return false;
-  if (campos.length === 0) return gravar({ chave, falhou: false, parcial: false, leitura: {} });
+  if (atual && !atual.falhou && !atual.pulou_por_erro && atual.chave === chave) return false;
+  if (campos.length === 0) return gravar({ chave, falhou: false, parcial: false, pulou_por_erro: false, leitura: {} });
 
   try {
     // Foto que falha (URL, download) é pulada e registrada; só sem nenhuma foto lida a leitura é `indisponivel`.
@@ -255,9 +256,9 @@ export async function conferirEtiqueta(
     const parcial = pulou || dasRefs.length > MAX_FOTOS || i < doMl.length;
     if (fotos.length === 0 && dasRefs.length + doMl.length > 0) throw new Error('nenhuma foto pôde ser lida');
     const cadastro = Object.fromEntries(alvo.map((f) => [f.campo, f.valor]));
-    return gravar({ chave, falhou: false, parcial, leitura: await lerEtiquetaPorVisao({ fotos, campos, cadastro, parcial }) });
+    return gravar({ chave, falhou: false, parcial, pulou_por_erro: pulou, leitura: await lerEtiquetaPorVisao({ fotos, campos, cadastro, parcial }) });
   } catch (e) {
     console.error('[galeria-etiqueta]', (e as Error).message);
-    return gravar({ chave, falhou: true, parcial: false, leitura: todos(campos, 'indisponivel') });
+    return gravar({ chave, falhou: true, parcial: false, pulou_por_erro: false, leitura: todos(campos, 'indisponivel') });
   }
 }
