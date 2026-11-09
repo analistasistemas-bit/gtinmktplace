@@ -28,6 +28,13 @@ describe('CardCampanha', () => {
     expect(screen.getByText('2 participando com líquido abaixo do custo')).toBeTruthy();
   });
 
+  it('futura com itens já aderidos: mostra participando, não esconde atrás de convidados 0', () => {
+    renderCard({ ...base, contagem: { ...base.contagem!, convidados: 0, convidados_verde: 0, participando: 22, verde: 3, amarelo: 19, vermelho: 0, indisponivel: 0 } });
+    expect(screen.getByText('22')).toBeTruthy();
+    expect(screen.getByText('Participando')).toBeTruthy();
+    expect(screen.queryByText('Vale a pena', { selector: 'dt' })).toBeNull();
+  });
+
   it('ML banca: maior parte bancada entre os anúncios', () => {
     renderCard({ ...base, contagem: { ...base.contagem!, ml_pct_max: 30 } });
     expect(screen.getByText(/ML banca até 30%/)).toBeTruthy();

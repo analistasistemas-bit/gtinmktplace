@@ -17,7 +17,8 @@ export function CardCampanha({ promocao: p, agoraMs }: { promocao: Promocao; ago
   const IconeTipo = ICONE_TIPO[p.tipo] ?? Megaphone;
 
   const stats = p.contagem && (
-    p.status === 'started'
+    // Futura com item já aderido (status `pending` do item) conta em participando — mostrar, senão o topo diz 0.
+    p.status === 'started' || p.contagem.participando > 0
       ? [{ label: 'Participando', valor: p.contagem.participando }, { label: 'Convidados', valor: p.contagem.convidados }]
       : [{ label: 'Convidados', valor: p.contagem.convidados }, { label: 'Vale a pena', valor: p.contagem.convidados_verde }]
   );
