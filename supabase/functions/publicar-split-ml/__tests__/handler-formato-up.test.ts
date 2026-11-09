@@ -14,6 +14,7 @@ const f = vi.hoisted(() => ({
   formatoIncompativel: true,
   okPrimeiros: 0, // as N primeiras criações passam mesmo com >1 cor (estado misto)
   erroFotoRetentavel: false,
+  erroLinhas: false,
   subirFoto: vi.fn(async () => 'PIC'),
 }));
 
@@ -21,7 +22,9 @@ function builder(tabela: string) {
   const resolver = (): { data: unknown; error: null } => {
     if (tabela === 'familias') return { data: { ...f.familia, organizations: { modulos_habilitados: [] } }, error: null };
     if (tabela === 'variacoes') return { data: f.variacoes, error: null };
-    if (tabela === 'anuncios_externos') return { data: f.linhas, error: null };
+    if (tabela === 'anuncios_externos') {
+      return (f.erroLinhas ? { data: null, error: { message: 'timeout' } } : { data: f.linhas, error: null }) as never;
+    }
     if (tabela === 'lotes') return { data: { origem: 'planilha' }, error: null };
     return { data: [], error: null };
   };
@@ -87,7 +90,9 @@ vi.mock('../../_shared/canais/registry.ts', () => ({
         },
       };
     },
-    atualizarAnuncio: async () => ({ ok: true, valor: { variacoesExternas: {} } }),
+    atualizarAnuncio: async (_c: unknown, a: { novas: Array<{ sku: string }> }) => ({
+      ok: true, valor: { variacoesExternas: Object.fromEntries(a.novas.map((n) => [n.sku, '9'])) },
+    }),
   }),
 }));
 
@@ -121,7 +126,7 @@ const statusErro = () => f.updates.find((u) => u.tabela === 'familias' && u.patc
 
 beforeEach(() => {
   f.familia = { ...FAMILIA }; f.linhas = []; f.updates = []; f.criados = [];
-  f.formatoIncompativel = true; f.okPrimeiros = 0; f.erroFotoRetentavel = false;
+  f.formatoIncompativel = true; f.okPrimeiros = 0; f.erroFotoRetentavel = false; f.erroLinhas = false;
   f.variacoes = [cor('A', 'Amarelo', 20), ...SEIS];
   f.subirFoto.mockClear();
   vi.mocked(enfileirarPublicacoes).mockReset().mockResolvedValue(['msg-1']);
@@ -252,5 +257,61 @@ describe('publicar-split-ml — pré-check do cache de formato', () => {
     const r = await rodar();
     expect(r.status).toBe(200);
     expect(enfileirarPublicacoes).not.toHaveBeenCalled();
+  });
+});
+
+// Cada indicador de "algo no ar" bloqueia sozinho o reenfileiramento — no pré-check e no reativo.
+// As 6 cores ficam ancoradas numa partição SEM item (CREATE), então o que está no ar nunca é
+// tocado neste attempt (particaoNoAr segue false): só `nadaNoAr` pode barrar.
+const SEIS_ANCORADAS = Object.fromEntries(SEIS.map((v) => [v.codigo as string, {}]));
+const cenarios: Array<[string, () => void]> = [
+  ['só familia.ml_item_id', () => {
+    f.familia = { ...FAMILIA, ml_item_id: 'MLB0' };
+    f.linhas = [{ particao: 1, item_externo_id: null, variacoes_externas: SEIS_ANCORADAS }];
+    f.variacoes = [...SEIS];
+  }],
+  ['só linha com item_externo_id em partição ≠ 0', () => {
+    f.linhas = [
+      { particao: 0, item_externo_id: null, variacoes_externas: SEIS_ANCORADAS },
+      { particao: 1, item_externo_id: 'MLB9', variacoes_externas: { Z: {} } },
+    ];
+    f.variacoes = [...SEIS, cor('Z', 'Zinco', 20, { ml_variation_id: '9' })];
+  }],
+];
+
+describe.each(cenarios)('publicar-split-ml — algo no ar (%s)', (_nome, montar) => {
+  it('pré-check não reenfileira com cache user_products', async () => {
+    montar();
+    vi.mocked(lerFormatoPublicacao).mockResolvedValue('user_products');
+    f.formatoIncompativel = false;
+    const r = await rodar();
+    expect(r.status).toBe(200);
+    expect(enfileirarPublicacoes).not.toHaveBeenCalled();
+    expect(f.criados.length).toBeGreaterThan(0);
+  });
+
+  it('reativo não reenfileira: erro "já está no ar", sem retry', async () => {
+    montar();
+    const r = await rodar();
+    expect(r.status).toBe(200);
+    expect(f.criados.map((a) => a.variacoes.length)).toEqual([6]);
+    expect(enfileirarPublicacoes).not.toHaveBeenCalled();
+    expect(String(statusErro()?.patch.erro_mensagem)).toContain('já está no ar');
+    expect(talvezFinalizarLote).toHaveBeenCalledWith(expect.anything(), 'lote-1');
+  });
+});
+
+describe('publicar-split-ml — falha na leitura de anuncios_externos', () => {
+  it('retenta (500) sem enqueue, foto nem POST', async () => {
+    vi.mocked(lerFormatoPublicacao).mockResolvedValue('user_products');
+    f.erroLinhas = true;
+    f.variacoes = f.variacoes.map((v) => ({ ...v, ml_picture_id: null }));
+    const r = await rodar();
+    expect(r.status).toBe(500);
+    expect(enfileirarPublicacoes).not.toHaveBeenCalled();
+    expect(lerFormatoPublicacao).not.toHaveBeenCalled();
+    expect(f.criados).toEqual([]);
+    expect(f.subirFoto).not.toHaveBeenCalled();
+    expect(statusErro()).toBeUndefined();
   });
 });

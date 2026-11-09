@@ -143,9 +143,16 @@ Deno.serve(async (req) => {
     const { data: variacoes } = await admin.from('variacoes')
       .select('*').eq('familia_id', job.familia_id).eq('excluida_da_publicacao', false);
     // Partições já no ar (fonte da ancoragem) — lidas aqui, antes das fotos, para o gate fiscal.
-    const { data: linhas } = await admin.from('anuncios_externos')
+    const { data: linhas, error: erroLinhas } = await admin.from('anuncios_externos')
       .select('particao, item_externo_id, permalink, titulo, variacoes_externas, atacado_status')
       .eq('org_id', familia.org_id).eq('canal', 'mercado_livre').eq('codigo_pai', familia.codigo_pai);
+    // Falha de leitura não pode virar "nenhuma partição no ar": reroteia família já publicada ou
+    // recria partição. 500 → o QStash retenta, sem enqueue nem escrita no ML.
+    if (erroLinhas) {
+      const err = new Error(`Leitura de anuncios_externos falhou: ${erroLinhas.message}`) as Error & { status?: number };
+      err.status = 500;
+      throw err;
+    }
     const ancoragem = montarAncoragem(linhas ?? []);
 
     // "Nada no ar": sem ml_item_id e nenhuma linha com item_externo_id. A raiz da saga UP
