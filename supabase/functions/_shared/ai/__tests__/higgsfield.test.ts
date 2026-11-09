@@ -11,6 +11,11 @@ describe('credenciaisHF', () => {
   it('com 2 partes mantém', () => {
     expect(credenciaisHF('ID:SECRET')).toBe('ID:SECRET')
   })
+  it('ausente, vazia ou sem ID:SECRET lança', () => {
+    for (const ruim of [undefined, null, '', '  ', 'so-um-valor', 'ID:']) {
+      expect(() => credenciaisHF(ruim)).toThrow()
+    }
+  })
 })
 
 describe('submeterHF', () => {
@@ -23,6 +28,23 @@ describe('submeterHF', () => {
     expect(init.method).toBe('POST')
     expect(init.headers.Authorization).toBe('Key a:b')
     expect(JSON.parse(init.body)).toEqual({ prompt: 'p' })
+  })
+  it('credencial inválida lança antes de qualquer fetch', async () => {
+    const f = vi.fn(async () => resp(200, {}))
+    await expect(submeterHF('x', {}, { fetchFn: f as any, credenciais: '' })).rejects.toThrow(/HF_CREDENTIALS/)
+    await expect(consultarHF('r', { fetchFn: f as any, credenciais: 'x' })).rejects.toThrow(/HF_CREDENTIALS/)
+    expect(f).not.toHaveBeenCalled()
+  })
+  it('credencial de 3 partes envia só ID:SECRET', async () => {
+    const f = vi.fn(async (..._a: any[]) => resp(200, { request_id: 'r1' }))
+    await submeterHF('x', {}, { fetchFn: f as any, credenciais: 'copy:ID:SECRET' })
+    expect((f.mock.calls[0] as any)[1].headers.Authorization).toBe('Key ID:SECRET')
+  })
+  it('timeout: fetch que nunca resolve aborta no teto', async () => {
+    const pendura = ((_u: string, init: RequestInit) =>
+      new Promise((_r, rej) => init.signal!.addEventListener('abort', () => rej(init.signal!.reason)))) as any
+    await expect(submeterHF('x', {}, { fetchFn: pendura, credenciais: 'a:b', timeoutMs: 20 })).rejects.toBeTruthy()
+    await expect(consultarHF('r', { fetchFn: pendura, credenciais: 'a:b', timeoutMs: 20 })).rejects.toBeTruthy()
   })
   it('401 lança erro com o status', async () => {
     const f = vi.fn(async () => resp(401, { detail: 'no' }))
@@ -51,5 +73,7 @@ describe('consultarHF', () => {
     const f = vi.fn(async (..._a: any[]) => resp(401, {}))
     await expect(consultarHF('r9', { fetchFn: f as any, credenciais: 'a:b' })).rejects.toMatchObject({ status: 401 })
     expect((f.mock.calls[0] as any)[0]).toBe('https://api.higgsfield.ai/requests/r9/status')
+    expect((f.mock.calls[0] as any)[1].method).toBe('GET')
+    expect((f.mock.calls[0] as any)[1].headers.Authorization).toBe('Key a:b')
   })
 })

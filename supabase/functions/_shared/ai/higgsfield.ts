@@ -10,13 +10,20 @@ export interface OpcoesHF {
   fetchFn?: typeof fetch
   /** `ID:SECRET` (ou o valor cru de HF_CREDENTIALS). Padrão: env HF_CREDENTIALS. */
   credenciais?: string
+  /** Teto da chamada. O lease da galeria é 150 s; a chamada não passa de 100 s. */
+  timeoutMs?: number
 }
+
+export const TIMEOUT_HF_MS = 100_000
 
 export type ErroHF = Error & { status: number }
 
 /** HF_CREDENTIALS pode ter 3 partes (Copy ID + ID:SECRET); só as duas últimas autenticam. */
-export function credenciaisHF(bruto: string): string {
-  const partes = bruto.trim().split(':')
+export function credenciaisHF(bruto: string | undefined | null): string {
+  const partes = (bruto ?? '').trim().split(':')
+  if (partes.length < 2 || partes.slice(-2).some((p) => !p)) {
+    throw new Error('HF_CREDENTIALS ausente ou fora do formato ID:SECRET')
+  }
   return partes.slice(-2).join(':')
 }
 
@@ -26,8 +33,8 @@ function cabecalho(op: OpcoesHF): Record<string, string> {
   return { Authorization: `Key ${credenciaisHF(bruto)}`, 'Content-Type': 'application/json' }
 }
 
-async function chamar(url: string, init: RequestInit, op: OpcoesHF): Promise<any> {
-  const res = await (op.fetchFn ?? globalThis.fetch)(url, init)
+async function chamar(url: string, init: RequestInit, op: OpcoesHF): Promise<Record<string, unknown>> {
+  const res = await (op.fetchFn ?? globalThis.fetch)(url, { ...init, signal: AbortSignal.timeout(op.timeoutMs ?? TIMEOUT_HF_MS) })
   if (!res.ok) {
     const corpo = await res.text().catch(() => '')
     const erro = new Error(`Higgsfield HTTP ${res.status}: ${corpo.slice(0, 200)}`) as ErroHF
@@ -39,13 +46,14 @@ async function chamar(url: string, init: RequestInit, op: OpcoesHF): Promise<any
 
 /** Submete a geração e devolve o request_id. */
 export async function submeterHF(endpoint: string, entrada: Record<string, unknown>, op: OpcoesHF = {}): Promise<string> {
+  const headers = cabecalho(op) // valida credencial antes de qualquer fetch
   const json = await chamar(
     `${BASE}/${endpoint}`,
-    { method: 'POST', headers: cabecalho(op), body: JSON.stringify(entrada) },
+    { method: 'POST', headers, body: JSON.stringify(entrada) },
     op,
   )
-  if (!json?.request_id) throw Object.assign(new Error('Higgsfield sem request_id'), { status: 200 })
-  return json.request_id as string
+  if (typeof json?.request_id !== 'string' || !json.request_id) throw Object.assign(new Error('Higgsfield sem request_id'), { status: 200 })
+  return json.request_id
 }
 
 export interface ConsultaHF {
@@ -55,10 +63,11 @@ export interface ConsultaHF {
 }
 
 export async function consultarHF(requestId: string, op: OpcoesHF = {}): Promise<ConsultaHF> {
-  const json = await chamar(`${BASE}/requests/${requestId}/status`, { method: 'GET', headers: cabecalho(op) }, op)
+  const headers = cabecalho(op)
+  const json = await chamar(`${BASE}/requests/${requestId}/status`, { method: 'GET', headers }, op)
   const status = String(json?.status ?? '')
   if (status === 'completed') {
-    const url = json.images?.[0]?.url
+    const url = (json.images as { url?: string }[] | undefined)?.[0]?.url
     return url ? { status: 'concluida', url } : { status: 'falhou', erro: 'sem_imagem' }
   }
   if (status === 'nsfw') return { status: 'falhou', erro: 'nsfw' }

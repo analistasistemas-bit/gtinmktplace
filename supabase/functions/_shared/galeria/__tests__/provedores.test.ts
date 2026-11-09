@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  CAMPO_PROPORCAO_HF,
   corpoHF,
   MODELO_GALERIA_PADRAO,
   MODELOS_GALERIA,
@@ -48,19 +47,35 @@ describe('modeloGaleria', () => {
   })
 })
 
-describe('corpoHF', () => {
-  it('pede 3:4 no corpo para cada modelo Higgsfield', () => {
+describe('custos e endpoints', () => {
+  it('custo exato de cada modelo (medição de 08/11)', () => {
+    expect(MODELOS_GALERIA['google/gemini-nano-banana-2.1'].custoUsd).toBe(0.039)
+    expect(MODELOS_GALERIA['xai/grok-imagine-image-2.0'].custoUsd).toBe(0.06)
+    expect(MODELOS_GALERIA['alibaba/qwen-image-3/edit'].custoUsd).toBe(0.04)
+  })
+  it('todo modelo higgsfield tem endpoint não vazio', () => {
     for (const m of Object.values(MODELOS_GALERIA).filter((x) => x.provedor === 'higgsfield')) {
-      const corpo = corpoHF(m, 'cena', ['https://a/1.jpg'])
-      expect(corpo[CAMPO_PROPORCAO_HF]).toBe('3:4')
-      expect(corpo.prompt).toBe('cena')
+      expect(m.endpoint?.length).toBeGreaterThan(0)
     }
   })
-  it('corta referências além do máximo do modelo e mantém prompt_extend', () => {
+})
+
+describe('corpoHF', () => {
+  it('qwen: referências em image_urls (literal), corta em 3 e mantém prompt_extend', () => {
     const q = modeloGaleria('alibaba/qwen-image-3/edit')
     const corpo = corpoHF(q, 'x', ['a', 'b', 'c', 'd'])
-    expect(corpo.image_urls).toEqual(['a', 'b', 'c'])
-    expect(corpo.prompt_extend).toBe(true)
+    expect(corpo).toEqual({ prompt: 'x', image_urls: ['a', 'b', 'c'], prompt_extend: true })
+  })
+  it('grok: sem campo de referência medido, recusa referência e sem referência só envia prompt', () => {
+    const g = modeloGaleria('xai/grok-imagine-image-2.0')
+    expect(g.maxReferencias).toBe(0)
+    expect(() => corpoHF(g, 'x', ['a'])).toThrow()
+    expect(corpoHF(g, 'x', [])).toEqual({ prompt: 'x' })
+  })
+  it('proporção não medida: nenhum campo de proporção é enviado', () => {
+    for (const m of Object.values(MODELOS_GALERIA).filter((x) => x.provedor === 'higgsfield')) {
+      expect(Object.keys(corpoHF(m, 'x', [])).some((k) => /aspect|ratio|proporc/i.test(k))).toBe(false)
+    }
   })
 })
 
