@@ -3,7 +3,7 @@
 **Data:** 2026-11-09 (UTC). **Script:** `scripts/ensaio-galeria-put.ts` (fora da suíte; guarda de item, corpo só-fotos, restauro automático; comando `inverso` para (h)).
 **Status:** (a)–(h) medidos. (h) medido em 2026-11-09 ~10:54–10:59Z, com 3 escritas autorizadas pelo Diego (valores atuais, sem mudança real). **Portão: PASSOU nas formas medidas** (ver (h)).
 
-Anúncios autorizados pelo Diego (org Avil), só escrita de fotos, originais restauradas no fim:
+Anúncios autorizados pelo Diego (org Avil). (a)–(g): só escrita de fotos, originais restauradas no fim; (h): 3 PUTs de estoque/preço com os valores atuais (ver (h)):
 
 | MLB | Formato | Fotos | Guarda (sold=0, active, catalog=false, sem migration_pending) |
 |---|---|---|---|
@@ -74,7 +74,7 @@ Casamento: **por id** (o ML não renomeia) e a ordem do GET é a ordem enviada. 
 
 `tags` só mudaram de **ordem** após cada PUT (conjunto igual).
 
-## Escritas feitas (todas em MLB autorizado, só fotos)
+## Escritas feitas em (a)–(g) (todas em MLB autorizado, só fotos; as de (h) estão na seção (h))
 
 | UTC | MLB | Corpo | HTTP |
 |---|---|---|---|
@@ -130,4 +130,4 @@ Brutos (GET antes/depois) em `/tmp/ensaio-galeria/` (fora do repo).
 | `putQuantidade` do kit `{available_quantity}` e reajuste plano `{price}` | subconjunto do PUT 3 (mesmo item plano, corpo raiz sem `pictures`) — **inferido do PUT 3**, não medido isoladamente | sim |
 | `sincronizar-marca-ml` `{attributes}` e `atualizarItemPlanoML` com `attributes` | **inferido, não medido**: PUT de BRAND/atributos em filho UP pode reagrupar a família (memória "BRAND reagrupa família UP"), por isso não foi escrito. A regra observada nos 3 PUTs (o ML trata o corpo parcial por campo e não toca `pictures`/`picture_ids` omitidos) é a mesma; risco residual documentado | sim, por inferência |
 
-**Portão:** (a)–(h) passaram → **PASSOU nas formas medidas** (estoque Legacy, preço Legacy, preço+estoque no item plano UP): `pictures`/`picture_ids` omitidos são preservados, sem mudança assíncrona em ~60 s. O PUT `{attributes}` fica coberto por inferência, não por medição. Galeria liberada para seguir, com essa ressalva registrada.
+**Portão:** (a)–(h) passaram → **PASSOU nas formas medidas** (estoque Legacy, preço Legacy, preço+estoque no item plano UP): `pictures`/`picture_ids` omitidos são preservados, sem mudança assíncrona em ~60 s. O PUT `{attributes}` fica coberto por inferência, não por medição. Liberar a galeria com essa ressalva é decisão do Diego.
