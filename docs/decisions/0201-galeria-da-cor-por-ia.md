@@ -1,6 +1,6 @@
 # ADR-0201 — Galeria da cor por IA: gerada e aplicada em Publicados
 
-- **Status:** proposto (desenho fechado em sessão de perguntas; falta medição de modelos e plano)
+- **Status:** proposto (desenho fechado em sessão de perguntas; falta medição de modelos; plano escrito e aprovado em `docs/superpowers/plans/2026-11-08-galeria-da-cor.md`, v23)
 - **Data:** 2026-11-08
 - **Decisores:** Diego
 - **Refina:** ADR-0200 (gerador de imagem e modelo por organização), ADR-0074 (modelo de IA por organização), ADR-0060 (ação em anúncio no ar restrita a admin)
@@ -80,15 +80,15 @@ descrição do anúncio. O cliente que pedir paga por imagem.
 
 ## Adendo técnico
 
-Decisões de implementação do plano v23, com os riscos aceitos.
+Decisões de implementação registradas pelo plano `docs/superpowers/plans/2026-11-08-galeria-da-cor.md` (v23, aprovado), com os riscos aceitos.
 
 - **(a) Composição no navegador.** As edges têm 2 s de CPU, então a composição final não roda em worker. O arquivo final vem do navegador do operador da própria org; o servidor valida formato, dimensões e peso e guarda o hash. Risco aceito: o servidor não refaz a composição.
 - **(b) Fila na linha e despachante.** O estado vive na linha como fila de trabalho; `galeria-despachante` (1 min) é o único retomador. Cada worker executa uma fase com claim e lease e não encadeia mensagens. A Higgsfield é consultada pelo despachante, com prazo de 12 min. Risco aceito: queda durante uma chamada paga permite no máximo 1 nova submissão (custo da Daludi; o cliente é cobrado uma vez).
 - **(c) Cobrança na exibição confirmada.** O navegador confirma a exibição pela RPC atômica `galeria_confirmar_exibicao`, ao preço confirmado no pedido; a RPC chama `galeria_registrar_entrega` por imagem.
 - **(d) Aplicar como saga.** Saga persistida com manifesto imutável e portão de aborto, na fila `publish-ml-${familias.user_id}`.
 - **(e) Recortes sem gerador.** Os recortes não passam pelo gerador de imagem.
-- **(f) Relógio do QStash.** Prazos e retomadas usam agendamento do QStash.
+- **(f) Relógio das retomadas.** É o agendamento de 1 min do `galeria-despachante` no QStash; o `pg_cron` de (i) é só a rede de segurança em SQL e não publica no QStash.
 - **(g) Trava de escrita por MLB.** `ml_item_travas` é compartilhada entre a galeria e os escritores comuns (`update-familia-ml`, `publicar-split-ml`), porque a fila `publish-ml-${user_id}` não serializa por anúncio desde a E7. Job adiado acorda fora da fila serial; o adiamento fica persistido em `ml_escritas_adiadas` e o despachante o retoma.
-- **(h) Identidade da galeria = anúncio/partição.** A chave é `anuncio_externo_id`, resolvido no servidor a partir do `ml_item_id` da linha clicada em Publicados. A família é só a versão dos dados: a vigente é a de maior `publicado_em` do `codigo_pai` com SKU vivo no anúncio. Trabalho novo exige a vigente; operações históricas (listar, confirmar exibição, reverter) aceitam qualquer família do mesmo anúncio.
-- **(i) Relógio no banco como rede de segurança.** Um `pg_cron` (só SQL) encerra ciclo de aplicação vencido (`ciclo_ate`, 3 h por ciclo), soltando a trava com quarentena de 15 min desde o último PUT; expira imagem órfã após 60 min e escrita adiada órfã após 260 min. Risco aceito: a rede de segurança é grosseira e só limpa; quem retoma é o despachante.
-- **(j) Cobrança por `galeria_registrar_entrega`.** Preço, `terms_id` e elegibilidade ficam congelados no pedido, sem `platform_resolve_terms`. O gatilho do kit (`platform_image_delivery_on_generated`) não é reescrito; só tem extraído o helper `platform_imagem_competencia` (lock da org + mês fechado), reutilizado pela galeria.
+- **(h) Identidade da galeria = anúncio/partição.** A chave é `anuncio_externo_id`, resolvido no servidor a partir do `ml_item_id` da linha clicada em Publicados; nenhum ou mais de um anúncio → 409 `anuncio_ambiguo`. A família é só a versão dos dados: a vigente é a de maior `publicado_em` não nulo entre as famílias do `codigo_pai` que contêm SKU vivo deste anúncio/partição. Trabalho novo exige a vigente (`familia_nao_vigente` caso contrário); operações históricas (listar, `confirmar_exibicao`, consultar aplicação e `reverter`) aceitam qualquer família do mesmo anúncio.
+- **(i) Relógio no banco como rede de segurança.** Um `pg_cron` (só SQL) encerra aplicação `em_andamento|abortando|revertendo` com `ciclo_ate` vencido (3 h por ciclo) e nenhum item com lease vigente: grava `reversao_incompleta` e solta as travas com a quarentena de 15 min desde o último PUT; nenhum PUT depois do estado terminal. Imagem órfã (`pendente|submetendo|gerando` com `criado_em + 60 min < now()` e lease nulo ou vencido) vai a `falhou` (`expirada`), sem nova chamada. Escrita adiada órfã (`adiado_desde + 260 min`, `assumida_ate` nulo ou vencido e nenhuma trava `escritor` vigente) vira `erro` só sobre família ainda `publicando`, com o lote recalculado por `lote_decidir_status` e a linha apagada, sem tocar `variacoes`. Risco aceito: a foto que ficar no anúncio aparece na tela como `reversao_incompleta`; soltar a trava é preferível a travá-lo para sempre.
+- **(j) Cobrança por `galeria_registrar_entrega`.** Preço, `terms_id` e elegibilidade vêm congelados do pedido, sem `platform_resolve_terms`. O gatilho do kit (`platform_image_delivery_on_generated`) passa a chamar o helper `platform_imagem_competencia` (lock da org + laço de mês fechado) no lugar do trecho idêntico, uma cópia só; o resto do gatilho (preço do kit via `platform_resolve_terms`) não muda. A galeria usa o mesmo helper.
