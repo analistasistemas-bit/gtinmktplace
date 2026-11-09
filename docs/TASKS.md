@@ -1,5 +1,12 @@
 # PubliAI — Tasks
 
+## Atributos visuais de roupa pela foto (ADR-0202) — 2026-11-08
+
+- [x] `process-familia` (ramo genérico): visão na foto da 1ª variação preenche `SLEEVE_TYPE`, `WEDGE_SHAPE`, gola e capuz que o texto deixou vazios; valor só dentro da lista da categoria; falha preserva o texto.
+- [x] `familias.atributos_por_foto` + bloco "Pela foto (IA) — confira" no card de categoria da Revisão (corrige pelo `atributos-familia`); troca de categoria limpa a coluna.
+- [x] Teste real no `gpt-4o`: 4 de 4 corretos (3 blusas sem manga, 1 jaqueta de manga longa).
+- [ ] Conferir no próximo lote de blusa que o Tipo de manga já chega preenchido.
+
 ## Preços por unidade a partir de agora (emenda ADR-0155) — 2026-11-08
 
 - [x] RPC `platform_save_unit_prices` (versão nova do termo na competência aberta; só Sonar/Imagem IA) + lock da org na entrega do Sonar.

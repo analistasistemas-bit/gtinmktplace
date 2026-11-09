@@ -720,6 +720,7 @@ export type Database = {
           atributos_editados_pelo_operador: boolean
           atributos_faltantes: Json | null
           atributos_ml: Json
+          atributos_por_foto: Json | null
           atualizado_em: string
           can_invoice: boolean | null
           can_invoice_causa: string | null
@@ -810,6 +811,7 @@ export type Database = {
           atributos_editados_pelo_operador?: boolean
           atributos_faltantes?: Json | null
           atributos_ml?: Json
+          atributos_por_foto?: Json | null
           atualizado_em?: string
           can_invoice?: boolean | null
           can_invoice_causa?: string | null
@@ -900,6 +902,7 @@ export type Database = {
           atributos_editados_pelo_operador?: boolean
           atributos_faltantes?: Json | null
           atributos_ml?: Json
+          atributos_por_foto?: Json | null
           atualizado_em?: string
           can_invoice?: boolean | null
           can_invoice_causa?: string | null

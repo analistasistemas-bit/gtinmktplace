@@ -695,6 +695,7 @@ export function familiaFromRow(
     origem: r.origem,
     atributosFaltantes: (r.atributos_faltantes as string[] | null) ?? null,
     atributosMl: (r.atributos_ml as AtributoMl[] | null) ?? [],
+    atributosPorFoto: (r.atributos_por_foto as Familia['atributosPorFoto'] | null) ?? undefined,
     precoMin,
     precoMax,
     precoAbaixo20pc,

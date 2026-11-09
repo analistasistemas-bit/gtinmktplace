@@ -23,7 +23,8 @@ import { decidirRetryPorErro } from '../_shared/publicacao/retry.ts';
 import { buscarListingPrice, buscarComissaoParaPreco, comissaoDe } from '../_shared/ml/listing-prices.ts';
 import { buscarFreteVendedor } from '../_shared/ml/frete.ts';
 import { montarAtributosML, preencherUnitsPerPack, preencherNomeObrigatorio, faltanteKitSemContagem, categoriaParaTipo, type AtributoML } from '../_shared/categoria/atributos.ts';
-import { resolverAtributosGenericos } from '../_shared/categoria/resolver-atributos-genericos.ts';
+import { resolverAtributosGenericos, type AtributoPorFoto } from '../_shared/categoria/resolver-atributos-genericos.ts';
+import { atributosPorVisaoLLM } from '../_shared/ai/atributos-visao.ts';
 import { resolverCategoria, type InputCategoria } from '../_shared/categoria/resolver.ts';
 import { inputCategoriaDaFamilia, categoriaPorCatalogo, categoriaPorBuscaCatalogo } from './categoria-familia.ts';
 import { buscarProdutoCatalogoPorGtin, buscarCategoriaFicha, buscarFichasCatalogoPorTexto } from '../_shared/ml/catalogo.ts';
@@ -331,7 +332,10 @@ Deno.serve(async (req) => {
 
     let atributosMl: AtributoML[] = [];
     let faltantes: string[] = [];
+    // ADR-0202: undefined = preserva a coluna (edição do operador); null = limpa; lista = pela foto.
+    let atributosPorFoto: AtributoPorFoto[] | null | undefined = null;
     if (claimed.atributos_editados_pelo_operador && categoriaMlId === claimed.categoria_ml_id) {
+      atributosPorFoto = undefined;
       // Camada 2B (ADR-0052): o operador completou atributos manualmente na Revisão. Preserva a
       // edição contra o reprocessamento (espelha título/descrição) — SÓ se a categoria não mudou;
       // se o preditor recalcular outra categoria, a edição é de outro schema → deixa recalcular.
@@ -371,11 +375,20 @@ Deno.serve(async (req) => {
             return lerSchemaAtributos(token, id);
           },
           llm: (input, alvos) => desempatarAtributosLLM(input, alvos, modeloTexto, acumularDesempate),
+          // ADR-0202: atributo visual (ex.: Tipo de manga) pela foto da 1ª variação com imagem.
+          visao: async (alvos) => {
+            const comFoto = resolvidas.find((v) => v.imagem_path && !v.excluida_da_publicacao);
+            if (!comFoto?.imagem_path) return {};
+            const { data: signed } = await admin.storage.from('imagens').createSignedUrl(comFoto.imagem_path, 3600);
+            if (!signed?.signedUrl) return {};
+            return atributosPorVisaoLLM(signed.signedUrl, alvos, acumularDesempate);
+          },
         },
         marcaPadrao,
       );
       atributosMl = r.atributosMl;
       faltantes = r.faltantes;
+      atributosPorFoto = r.porFoto.length ? r.porFoto : null;
     }
     // ADR-0188: a marca do produto vale também para o ramo de atributos editados pelo operador.
     atributosMl = forcarMarcaDoProduto(atributosMl, claimed.marca as string | null);
@@ -641,6 +654,7 @@ Deno.serve(async (req) => {
       categoria_nome: categoriaNome,
       atributos_ml: atributosMl,
       atributos_faltantes: faltantes,
+      ...(atributosPorFoto !== undefined ? { atributos_por_foto: atributosPorFoto } : {}),
       analise_mercado: analiseMercado,
       status: 'pronto',
     }).eq('id', job.familia_id);

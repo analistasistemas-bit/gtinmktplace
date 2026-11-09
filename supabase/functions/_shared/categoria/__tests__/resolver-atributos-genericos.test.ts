@@ -65,3 +65,52 @@ describe('resolverAtributosGenericos', () => {
     expect(r.faltantes).toEqual(['atributos da categoria (não validados — revise)']);
   });
 });
+
+// ADR-0202: atributos visuais (Tipo de manga) que o texto não traz saem da foto.
+describe('resolverAtributosGenericos — visão (ADR-0202)', () => {
+  const MANGAS = [{ id: '10', nome: 'Curta' }, { id: '11', nome: 'Sem mangas' }];
+  const SCHEMA_BLUSA: AtributoSchema[] = [
+    A({ id: 'BRAND', nome: 'Marca', required: true }),
+    A({ id: 'MODEL', nome: 'Modelo', required: true }),
+    A({ id: 'SLEEVE_TYPE', nome: 'Tipo de manga', required: true, valueType: 'list', valores: MANGAS }),
+    A({ id: 'BLOUSE_MATERIAL', nome: 'Material', required: true, valueType: 'list', valores: [{ id: '20', nome: 'Poliamida' }] }),
+  ];
+  const input = { nome: 'Blusa Feminina Um Ombro Só Poliamida', fornecedor: 'Zaven' };
+  const llmTexto = async () => ({ BLOUSE_MATERIAL: '20' });
+
+  it('preenche o atributo visual pela foto e registra em porFoto', async () => {
+    const visao = vi.fn().mockResolvedValue({ SLEEVE_TYPE: '11' });
+    const r = await resolverAtributosGenericos('MLB3112', input, { lerSchema: async () => SCHEMA_BLUSA, llm: llmTexto, visao });
+    expect(r.atributosMl).toEqual(expect.arrayContaining([{ id: 'SLEEVE_TYPE', value_id: '11' }, { id: 'BLOUSE_MATERIAL', value_id: '20' }]));
+    expect(r.faltantes).toEqual([]);
+    expect(r.porFoto).toEqual([{ id: 'SLEEVE_TYPE', nome: 'Tipo de manga', valores: MANGAS }]);
+    // Só atributo visual vai para a foto (material não se prova olhando).
+    expect(visao.mock.calls[0][0].map((a: { id: string }) => a.id)).toEqual(['SLEEVE_TYPE']);
+  });
+
+  it('valor fora da lista é descartado e o atributo segue faltante', async () => {
+    const r = await resolverAtributosGenericos('MLB3112', input, {
+      lerSchema: async () => SCHEMA_BLUSA, llm: llmTexto, visao: async () => ({ SLEEVE_TYPE: 'Tomara que caia' }),
+    });
+    expect(r.atributosMl.find((a) => a.id === 'SLEEVE_TYPE')).toBeUndefined();
+    expect(r.faltantes).toEqual(['Tipo de manga']);
+    expect(r.porFoto).toEqual([]);
+  });
+
+  it('falha na visão preserva o que o texto preencheu', async () => {
+    const r = await resolverAtributosGenericos('MLB3112', input, {
+      lerSchema: async () => SCHEMA_BLUSA, llm: llmTexto, visao: async () => { throw new Error('timeout'); },
+    });
+    expect(r.atributosMl).toEqual(expect.arrayContaining([{ id: 'BLOUSE_MATERIAL', value_id: '20' }]));
+    expect(r.faltantes).toEqual(['Tipo de manga']);
+    expect(r.porFoto).toEqual([]);
+  });
+
+  it('texto já trouxe o atributo visual → não chama a visão', async () => {
+    const visao = vi.fn();
+    await resolverAtributosGenericos('MLB3112', input, {
+      lerSchema: async () => SCHEMA_BLUSA, llm: async () => ({ BLOUSE_MATERIAL: '20', SLEEVE_TYPE: '10' }), visao,
+    });
+    expect(visao).not.toHaveBeenCalled();
+  });
+});

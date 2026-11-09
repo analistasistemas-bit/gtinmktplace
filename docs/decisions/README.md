@@ -60,3 +60,4 @@ Veja o [README principal](../README.md#onde-encontrar-o-quê) para a tabela comp
 - [ADR-0199](0199-tirar-familia-da-revisao.md) — Tirar uma família da Revisão: edge `excluir-familia`, só não publicada em `pronto`/`erro`, recusa se for a única linha de um anúncio vivo no ML.
 - [ADR-0193](0193-relatorio-mensal-do-cliente-e-fechamento-automatico.md) — Relatório mensal do cliente (PDF de prestação de contas), fechamento automático no dia 01 e Central premium (aceito).
 - [ADR-0200](0200-kit-com-variacao.md) — Kit com variação: página única no ML, estoque separado e escrita de quantidade só com anúncio pausado (aceito, em implementação).
+- [ADR-0202](0202-atributos-visuais-pela-foto.md) — Atributos visuais de roupa (Tipo de manga, caimento, gola, capuz) preenchidos pela foto, só closed-set, marcados "confira" na Revisão.
