@@ -8,7 +8,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import {
-  ERROS_DE_RECARGA, mensagemErro, montarFicha,
+  ERROS_DE_RECARGA, lerRoteiro, mensagemErro, montarFicha,
   type Ficha, type Res, type RespostaRoteiro,
 } from '@/lib/galeria/api';
 import { PassoFatos } from './passo-fatos';
@@ -21,21 +21,28 @@ export function DialogGaleria({ mlItemId, codigoPai, open, onOpenChange, isAdmin
 }) {
   const [ficha, setFicha] = useState<Ficha | null>(null);
   const [resp, setResp] = useState<RespostaRoteiro | null>(null);
+  const [moda, setModa] = useState<boolean | null>(null);
   const [passo, setPasso] = useState<'fatos' | 'roteiro'>('fatos');
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
-    const r = await montarFicha(mlItemId);
+    const [r, l] = await Promise.all([montarFicha(mlItemId), lerRoteiro(mlItemId)]);
     // Não limpa o erro: a mensagem que motivou a recarga (categoria_mudou etc.) tem de sobreviver a ela.
     if (r.ok) setFicha(r.dados); else setErro(mensagemErro(r.erro));
+    if (l.ok) {
+      // Moda só vale se a edge a leu ao vivo (null = desconhecida: nada de Moda é oferecido).
+      setModa(l.dados.moda);
+      setResp(l.dados.roteiro ? (l.dados as RespostaRoteiro) : null);
+      if (l.dados.aviso) setErro(mensagemErro(l.dados.aviso));
+    } else setErro(mensagemErro(l.erro));
     setCarregando(false);
   }, [mlItemId]);
 
   useEffect(() => {
     if (!open) return;
-    setResp(null); setPasso('fatos');
+    setResp(null); setModa(null); setPasso('fatos');
     void carregar();
   }, [open, carregar]);
 
@@ -56,7 +63,6 @@ export function DialogGaleria({ mlItemId, codigoPai, open, onOpenChange, isAdmin
 
   const roteiroAprovado = useCallback(() => {
     toast.success('Roteiro aprovado');
-    setResp(null);
     void carregar();
   }, [carregar]);
 
@@ -80,9 +86,9 @@ export function DialogGaleria({ mlItemId, codigoPai, open, onOpenChange, isAdmin
                 onClick={() => setPasso('roteiro')}>2. Roteiro</Button>
             </div>
             {passo === 'fatos'
-              ? <PassoFatos mlItemId={mlItemId} ficha={ficha} moda={resp ? resp.roteiro.moda : null} aoMudar={aoMudarFicha} />
+              ? <PassoFatos mlItemId={mlItemId} ficha={ficha} moda={moda} aoMudar={aoMudarFicha} />
               : <PassoRoteiro mlItemId={mlItemId} ficha={ficha} isAdmin={isAdmin} resp={resp}
-                aoResposta={(r) => { setResp(r); setErro(null); }} aoFalhar={falhou} aoAprovar={roteiroAprovado} />}
+                aoResposta={(r) => { setResp(r); setModa(r.roteiro.moda); setErro(null); }} aoFalhar={falhou} aoAprovar={roteiroAprovado} />}
           </>
         )}
       </DialogContent>

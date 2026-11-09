@@ -5,7 +5,6 @@ import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { StatusPill } from '@/components/ui/status-pill';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { signedUrl } from '@/lib/storage';
 import {
   confirmarFato, corrigirCadastro, descartarFato, enviarVista, manterCadastro,
   type Caixa, type Fato, type Ficha, type Res,
@@ -14,7 +13,7 @@ import {
 interface Props {
   mlItemId: string;
   ficha: Ficha;
-  /** `true`/`false` quando já se sabe pelo roteiro; `null` = ainda não se sabe. */
+  /** Moda lida ao vivo pela edge; só `true` oferece o envio de costas/lateral (`null` = desconhecida). */
   moda: boolean | null;
   aoMudar: (r: Res<Ficha>) => void;
 }
@@ -22,16 +21,13 @@ interface Props {
 /** Só `atributo:<ID>` (menos BRAND) pode ser corrigido no cadastro pela etiqueta; ORIGEM nunca é checada (decisão do dono). */
 const corrigivel = (campo: string) => campo.startsWith('atributo:') && campo !== 'atributo:BRAND';
 
-/** Recorte da leitura da etiqueta: a caixa (frações 0..1) sobre a foto em que o servidor leu. */
-function Recorte({ foto, caixa }: { foto: { origem: 'referencia' | 'ml'; ref: string }; caixa: Caixa }) {
-  const [url, setUrl] = useState<string | null>(foto.origem === 'ml' ? `https://http2.mlstatic.com/D_${foto.ref}-O.jpg` : null);
-  useEffect(() => {
-    if (foto.origem !== 'referencia') return;
-    let vivo = true;
-    signedUrl('imagens', foto.ref, 600).then((u) => { if (vivo) setUrl(u); }).catch(() => undefined);
-    return () => { vivo = false; };
-  }, [foto.origem, foto.ref]);
-  if (!url) return null;
+type EstadoRecorte = 'carregando' | 'ok' | 'erro';
+
+/**
+ * Recorte da leitura da etiqueta: a caixa (frações 0..1) sobre a foto em que o servidor leu. A URL vem pronta da edge;
+ * o `<img>` oculto só detecta se a foto carregou (sem recorte visível o operador não pode aceitar a leitura).
+ */
+function Recorte({ url, caixa, aoEstado }: { url: string; caixa: Caixa; aoEstado: (e: EstadoRecorte) => void }) {
   const { x, y, w, h } = caixa;
   return (
     <div
@@ -43,7 +39,9 @@ function Recorte({ foto, caixa }: { foto: { origem: 'referencia' | 'ml'; ref: st
         backgroundSize: `${100 / w}% ${100 / h}%`,
         backgroundPosition: `${w >= 1 ? 0 : (x / (1 - w)) * 100}% ${h >= 1 ? 0 : (y / (1 - h)) * 100}%`,
       }}
-    />
+    >
+      <img src={url} alt="" className="hidden" onLoad={() => aoEstado('ok')} onError={() => aoEstado('erro')} />
+    </div>
   );
 }
 
@@ -51,13 +49,28 @@ function Divergente({ fato, ocupado, onUsarEtiqueta, onManter }: {
   fato: Fato; ocupado: boolean; onUsarEtiqueta: (valor: string) => void; onManter: () => void;
 }) {
   const lido = fato.etiqueta?.valor ?? '';
-  const podeCorrigir = corrigivel(fato.campo) && lido !== '';
-  const [escolha, setEscolha] = useState<'etiqueta' | 'cadastro'>(podeCorrigir ? 'etiqueta' : 'cadastro');
+  const url = fato.etiqueta?.foto?.url;
+  const caixa = fato.etiqueta?.caixa;
+  const [recorte, setRecorte] = useState<EstadoRecorte>(url && caixa ? 'carregando' : 'erro');
+  const corrige = corrigivel(fato.campo) && lido !== '';
+  // Só se aceita a leitura da etiqueta vendo o recorte: sem imagem carregada nada vem pré-selecionado.
+  const podeCorrigir = corrige && recorte === 'ok';
+  // Campo que a etiqueta não corrige (ORIGEM, planilha…) tem só uma opção segura: o cadastro vem marcado.
+  const [escolha, setEscolha] = useState<'etiqueta' | 'cadastro' | null>(corrige ? null : 'cadastro');
+  useEffect(() => { if (podeCorrigir) setEscolha((e) => e ?? 'etiqueta'); }, [podeCorrigir]);
+  useEffect(() => { if (corrige && recorte === 'erro') setEscolha((e) => (e === 'etiqueta' ? null : e)); }, [corrige, recorte]);
   const nome = `div-${fato.campo}`;
   return (
     <div className="mt-2 flex flex-wrap gap-3">
-      {fato.etiqueta?.foto && fato.etiqueta.caixa && <Recorte foto={fato.etiqueta.foto} caixa={fato.etiqueta.caixa} />}
+      {url && caixa && <Recorte url={url} caixa={caixa} aoEstado={setRecorte} />}
       <div className="flex flex-col gap-1 text-sm">
+        {corrige && recorte !== 'ok' && (
+          <p className="text-muted-foreground">
+            {recorte === 'carregando'
+              ? 'Carregando o recorte da etiqueta…'
+              : 'Não foi possível mostrar o recorte da etiqueta, então a leitura dela não pode ser aplicada. Mantenha o cadastro ou confira a etiqueta nas fotos.'}
+          </p>
+        )}
         <label className="flex items-center gap-2">
           <input type="radio" name={nome} checked={escolha === 'etiqueta'} disabled={!podeCorrigir}
             onChange={() => setEscolha('etiqueta')} />
@@ -67,7 +80,7 @@ function Divergente({ fato, ocupado, onUsarEtiqueta, onManter }: {
           <input type="radio" name={nome} checked={escolha === 'cadastro'} onChange={() => setEscolha('cadastro')} />
           Manter o do cadastro: <strong>{fato.valor}</strong>
         </label>
-        <Button size="sm" className="mt-1 w-fit" disabled={ocupado}
+        <Button size="sm" className="mt-1 w-fit" disabled={ocupado || escolha === null}
           onClick={() => (escolha === 'etiqueta' ? onUsarEtiqueta(lido) : onManter())}>
           Aplicar
         </Button>
@@ -113,8 +126,7 @@ export function PassoFatos({ mlItemId, ficha, moda, aoMudar }: Props) {
   }
 
   const temVista = (v: 'costas' | 'lateral') => !!ficha.referencias[cor]?.[v] && !('erro' in (ficha.referencias[cor][v] ?? {}));
-  // Moda é conhecida pelo roteiro; antes dele a oferta fica aberta (a edge ignora vistas fora de Moda).
-  const ofereceVistas = moda !== false;
+  const ofereceVistas = moda === true;
 
   return (
     <div className="space-y-4">

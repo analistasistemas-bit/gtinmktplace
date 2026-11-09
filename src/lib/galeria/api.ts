@@ -9,7 +9,8 @@ export interface Caixa { x: number; y: number; w: number; h: number }
 export interface LeituraEtiqueta {
   legivel: boolean;
   valor?: string | null;
-  foto?: { origem: 'referencia' | 'ml'; ref: string } | null;
+  /** `url` vem resolvida da edge (assinada ou secure_url do ML); a tela nunca monta URL de CDN. */
+  foto?: { origem: 'referencia' | 'ml'; ref: string; url?: string } | null;
   caixa?: Caixa | null;
 }
 export interface Fato {
@@ -38,6 +39,10 @@ export interface RespostaRoteiro {
   roteiro: LinhaRoteiro; erros: string[]; erros_por_missao: Record<string, string[]>; ciencia_pendente: string[]; fatos: Fato[];
 }
 
+/** Resposta de `ler`: roteiro vigente da família (ou null) e Moda ao vivo (null = categoria ilegível, com `aviso`). */
+export type RespostaLer = { roteiro: null; moda: boolean | null; familia_id: string; aviso?: string }
+  | (RespostaRoteiro & { moda: boolean | null; familia_id: string; aviso?: string });
+
 export type Res<T> = { ok: true; dados: T } | { ok: false; status: number; erro: string; corpo: Record<string, unknown> };
 
 async function chamar<T>(edge: string, body: Record<string, unknown>): Promise<Res<T>> {
@@ -58,6 +63,8 @@ export const corrigirCadastro = (mlItemId: string, familiaId: string, campo: str
   fatos('corrigir_cadastro', mlItemId, { familia_id: familiaId, campo, valor });
 export const enviarVista = (mlItemId: string, familiaId: string, cor: string, vista: 'costas' | 'lateral', imagemBase64: string) =>
   fatos('enviar_vista', mlItemId, { familia_id: familiaId, cor, vista, imagem_base64: imagemBase64 });
+
+export const lerRoteiro = (mlItemId: string) => chamar<RespostaLer>('galeria-roteiro', { acao: 'ler', ml_item_id: mlItemId });
 
 const roteiro = (acao: string, mlItemId: string, familiaId: string, extra: Record<string, unknown> = {}) =>
   chamar<RespostaRoteiro>('galeria-roteiro', { acao, ml_item_id: mlItemId, familia_id: familiaId, ...extra });

@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DialogGaleria } from '../dialog-galeria';
+import { BotaoGaleria } from '../botao-galeria';
 import type { Fato, Ficha, RespostaRoteiro, Res } from '@/lib/galeria/api';
 
 const api = vi.hoisted(() => ({
-  montarFicha: vi.fn(), confirmarFato: vi.fn(), descartarFato: vi.fn(), manterCadastro: vi.fn(),
+  montarFicha: vi.fn(), lerRoteiro: vi.fn(), confirmarFato: vi.fn(), descartarFato: vi.fn(), manterCadastro: vi.fn(),
   corrigirCadastro: vi.fn(), enviarVista: vi.fn(), criarRoteiro: vi.fn(), salvarRoteiro: vi.fn(), aprovarRoteiro: vi.fn(),
 }));
 vi.mock('@/lib/galeria/api', async (orig) => ({ ...(await orig<typeof import('@/lib/galeria/api')>()), ...api }));
@@ -40,6 +41,7 @@ async function irParaRoteiro() {
 beforeEach(() => {
   vi.clearAllMocks();
   api.montarFicha.mockResolvedValue(ok(ficha([])));
+  api.lerRoteiro.mockResolvedValue(ok({ roteiro: null, moda: false, familia_id: 'F1' }));
 });
 
 describe('DialogGaleria — identidade', () => {
@@ -61,16 +63,50 @@ describe('DialogGaleria — identidade', () => {
 });
 
 describe('Passo fatos', () => {
-  it('DIVERGENTE mostra o recorte e deixa "Usar o da etiqueta" pré-selecionado; aplicar corrige o cadastro', async () => {
-    api.montarFicha.mockResolvedValue(ok(ficha([fato('atributo:FABRIC', 'DIVERGENTE', 'Poliéster', {
-      etiqueta: { legivel: true, valor: 'Algodão', foto: { origem: 'referencia', ref: 'o/a.jpg' }, caixa: { x: 0.1, y: 0.2, w: 0.5, h: 0.3 } },
-    })])));
+  const divergente = (foto: { origem: 'referencia' | 'ml'; ref: string; url?: string }) => ficha([fato('atributo:FABRIC', 'DIVERGENTE', 'Poliéster', {
+    etiqueta: { legivel: true, valor: 'Algodão', foto, caixa: { x: 0.1, y: 0.2, w: 0.5, h: 0.3 } },
+  })]);
+  const carregarRecorte = async (evento: 'load' | 'error') => {
+    const recorte = await screen.findByRole('img', { name: 'Recorte da etiqueta' });
+    fireEvent[evento](recorte.querySelector('img')!);
+  };
+
+  it('DIVERGENTE: com o recorte carregado, "Usar o da etiqueta" vem pré-selecionado; aplicar corrige o cadastro', async () => {
+    api.montarFicha.mockResolvedValue(ok(divergente({ origem: 'referencia', ref: 'o/a.jpg', url: 'https://x.test/a.jpg' })));
     api.corrigirCadastro.mockResolvedValue(ok(ficha([fato('atributo:FABRIC', 'CONFIRMADO', 'Algodão')])));
     abrir();
-    expect(await screen.findByRole('img', { name: 'Recorte da etiqueta' })).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: /Usar o da etiqueta/ })).toBeChecked();
+    await carregarRecorte('load');
+    expect(await screen.findByRole('radio', { name: /Usar o da etiqueta/ })).toBeChecked();
     await userEvent.click(screen.getByRole('button', { name: 'Aplicar' }));
     expect(api.corrigirCadastro).toHaveBeenCalledWith('MLB1', 'F1', 'atributo:FABRIC', 'Algodão');
+  });
+
+  it('DIVERGENTE de foto do ML usa a URL que veio da edge (a tela não monta URL de CDN)', async () => {
+    api.montarFicha.mockResolvedValue(ok(divergente({ origem: 'ml', ref: 'PIC1', url: 'https://http2.mlstatic.com/D_NQ_X-O.jpg' })));
+    abrir();
+    const recorte = await screen.findByRole('img', { name: 'Recorte da etiqueta' });
+    expect(recorte.querySelector('img')).toHaveAttribute('src', 'https://http2.mlstatic.com/D_NQ_X-O.jpg');
+    expect(recorte.style.backgroundImage).toContain('https://http2.mlstatic.com/D_NQ_X-O.jpg');
+  });
+
+  it('DIVERGENTE com a imagem do recorte falhando: nada pré-selecionado, etiqueta desabilitada e Aplicar bloqueado', async () => {
+    api.montarFicha.mockResolvedValue(ok(divergente({ origem: 'referencia', ref: 'o/a.jpg', url: 'https://x.test/quebrada.jpg' })));
+    abrir();
+    await carregarRecorte('error');
+    expect(await screen.findByText(/Não foi possível mostrar o recorte/)).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Usar o da etiqueta/ })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: /Usar o da etiqueta/ })).not.toBeChecked();
+    expect(screen.getByRole('radio', { name: /Manter o do cadastro/ })).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Aplicar' })).toBeDisabled();
+    expect(api.corrigirCadastro).not.toHaveBeenCalled();
+  });
+
+  it('DIVERGENTE sem URL de recorte (edge não resolveu): nada pré-selecionado', async () => {
+    api.montarFicha.mockResolvedValue(ok(divergente({ origem: 'ml', ref: 'PIC1' })));
+    abrir();
+    expect(await screen.findByText(/Não foi possível mostrar o recorte/)).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Usar o da etiqueta/ })).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Aplicar' })).toBeDisabled();
   });
 
   it('DIVERGENTE de campo não corrigível (ORIGEM) só permite manter o cadastro', async () => {
@@ -105,23 +141,21 @@ describe('Passo fatos', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/desatualizado/);
   });
 
-  it('Moda oferece "Enviar foto de costas"; fora de Moda a oferta some', async () => {
-    api.criarRoteiro.mockResolvedValue(ok(resposta({ moda: true })));
+  it.each([[false], [null]])('sem Moda confirmada (moda=%s) o envio de costas nunca aparece', async (moda) => {
+    api.lerRoteiro.mockResolvedValue(ok({ roteiro: null, moda, familia_id: 'F1' }));
     abrir();
-    expect(await screen.findByRole('button', { name: 'Enviar foto de costas' })).toBeInTheDocument();
-    await irParaRoteiro();
-    await userEvent.click(screen.getByRole('button', { name: 'Criar roteiro' }));
-    await userEvent.click(await screen.findByRole('tab', { name: /Fatos/ }));
-    expect(screen.getByRole('button', { name: 'Enviar foto de costas' })).toBeInTheDocument();
+    await screen.findByText('Ficha verdade');
+    expect(screen.queryByRole('button', { name: 'Enviar foto de costas' })).toBeNull();
   });
 
-  it('roteiro de categoria fora de Moda esconde o envio de costas', async () => {
-    api.criarRoteiro.mockResolvedValue(ok(resposta({ moda: false })));
+  it('com Moda confirmada pela edge o envio aparece só depois da resposta', async () => {
+    let resolver: (v: unknown) => void = () => undefined;
+    api.lerRoteiro.mockReturnValue(new Promise((ok2) => { resolver = ok2; }));
     abrir();
-    await irParaRoteiro();
-    await userEvent.click(screen.getByRole('button', { name: 'Criar roteiro' }));
-    await userEvent.click(await screen.findByRole('tab', { name: /Fatos/ }));
+    await screen.findByRole('tab', { name: /Roteiro/ }).catch(() => undefined);
     expect(screen.queryByRole('button', { name: 'Enviar foto de costas' })).toBeNull();
+    resolver(ok({ roteiro: null, moda: true, familia_id: 'F1' }));
+    expect(await screen.findByRole('button', { name: 'Enviar foto de costas' })).toBeInTheDocument();
   });
 });
 
@@ -187,11 +221,44 @@ describe('Passo roteiro', () => {
     expect(screen.getByRole('button', { name: 'Criar roteiro' })).toBeInTheDocument();
   });
 
-  it('503 categoria_indisponivel avisa sem descartar o roteiro', async () => {
-    api.criarRoteiro.mockResolvedValue(falha(503, 'categoria_indisponivel'));
+  it('503 categoria_indisponivel no aprovar: mensagem clara e o roteiro continua na tela', async () => {
+    await comRoteiro(resposta());
+    api.aprovarRoteiro.mockResolvedValue(falha(503, 'categoria_indisponivel'));
+    await userEvent.click(screen.getByRole('button', { name: 'Aprovar roteiro' }));
+    expect(await screen.findByText(/ler a categoria no Mercado Livre/)).toBeInTheDocument();
+    expect(screen.getByText(/Versão 1/)).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Missão 2' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Aprovar roteiro' })).toBeEnabled();
+  });
+
+  it('ao abrir, mostra o roteiro existente devolvido por ler (sem precisar criar)', async () => {
+    api.lerRoteiro.mockResolvedValue(ok({ ...resposta({ status: 'aprovado' }), moda: false, familia_id: 'F1' }));
     abrir();
     await irParaRoteiro();
-    await userEvent.click(screen.getByRole('button', { name: 'Criar roteiro' }));
-    expect(await screen.findByText(/ler a categoria no Mercado Livre/)).toBeInTheDocument();
+    expect(await screen.findByText(/Versão 1/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Criar roteiro' })).toBeNull();
+  });
+
+  it('spec que não bate pode ser removida da missão', async () => {
+    const r = resposta();
+    r.roteiro.conteudo.missoes[1].specs = [{ campo: 'largura_cm', rotulo: 'Largura', valor: '99 cm' }];
+    await comRoteiro(r);
+    const m2 = screen.getByRole('region', { name: 'Missão 2' });
+    await userEvent.click(within(m2).getByRole('button', { name: 'Remover spec Largura' }));
+    expect(within(m2).queryByText('99 cm')).toBeNull();
+    api.salvarRoteiro.mockResolvedValue(ok(resposta()));
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }));
+    expect(api.salvarRoteiro.mock.calls[0][3].missoes[1].specs).toEqual([]);
+  });
+});
+
+describe('BotaoGaleria (gate do módulo imagem_ia)', () => {
+  it('sem o módulo não há botão; com o módulo há, e abre com o mlItemId da linha', async () => {
+    const abrirGaleria = vi.fn();
+    const { rerender } = render(<BotaoGaleria temImagemIA={false} mlItemId="MLB9" codigoPai="0009" onAbrir={abrirGaleria} />);
+    expect(screen.queryByRole('button', { name: 'Galeria IA' })).toBeNull();
+    rerender(<BotaoGaleria temImagemIA mlItemId="MLB9" codigoPai="0009" onAbrir={abrirGaleria} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Galeria IA' }));
+    expect(abrirGaleria).toHaveBeenCalledWith({ mlItemId: 'MLB9', codigoPai: '0009' });
   });
 });

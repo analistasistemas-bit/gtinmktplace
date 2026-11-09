@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { RefreshCw, ExternalLink, Trash2, Pause, Play, PackageOpen, PackagePlus, ArrowUp, ArrowDown, ChevronsUpDown, Wallet, ChevronRight, AlertTriangle, RotateCcw, Boxes, Package, Split, Loader2, Layers, Settings2, Images } from 'lucide-react';
+import { RefreshCw, ExternalLink, Trash2, Pause, Play, PackageOpen, PackagePlus, ArrowUp, ArrowDown, ChevronsUpDown, Wallet, ChevronRight, AlertTriangle, RotateCcw, Boxes, Package, Split, Loader2, Layers, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { PageHeader } from '@/components/ui/page-header';
@@ -83,6 +83,7 @@ import { AuraTransferencia, EtapaTransferencia } from '@/components/kit-variacao
 import { DialogCriarKitVirtual } from '@/components/kit-virtual/DialogCriarKitVirtual';
 import { DialogCriarKitVariacao } from '@/components/kit-variacao/dialog-criar-kit-variacao';
 import { DialogGerenciarKit } from '@/components/kit-variacao/dialog-gerenciar-kit';
+import { BotaoGaleria } from '@/components/galeria/botao-galeria';
 import { DialogGaleria } from '@/components/galeria/dialog-galeria';
 import { useKitsVariacao } from '@/hooks/useKitsVariacao';
 import type { KitVariacaoResumo } from '@/lib/kit-variacao-edge';
@@ -565,18 +566,7 @@ function LinhaTabela({
             <PackagePlus className="h-3 w-3" />
           </Button>
 
-          {temImagemIA && (
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-label="Galeria IA"
-              title="Galeria IA"
-              className="h-7 px-2 text-xs"
-              onClick={(e) => { e.stopPropagation(); onAbrirGaleria({ mlItemId: item.mlItemId, codigoPai: item.codigoPai }); }}
-            >
-              <Images className="h-3 w-3" />
-            </Button>
-          )}
+          <BotaoGaleria temImagemIA={temImagemIA} mlItemId={item.mlItemId} codigoPai={item.codigoPai} onAbrir={onAbrirGaleria} />
 
           {temKitVariacao && !kitVariacao && temVariacaoDeCor && (
             <Button

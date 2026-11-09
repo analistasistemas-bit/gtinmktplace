@@ -147,7 +147,15 @@ export function PassoRoteiro({ mlItemId, ficha, isAdmin, resp, aoResposta, aoFal
               <Lista rotulo="Legendas" itens={m.legendas ?? []} limite={LIMITES.legenda} aoMudar={(v) => editar(m.missao, { legendas: v })} />
               {(m.specs ?? []).length > 0 && (
                 <dl className="text-sm">
-                  {m.specs!.map((s) => <div key={s.campo} className="flex gap-2"><dt className="font-medium">{s.rotulo}:</dt><dd>{s.valor}</dd></div>)}
+                  {m.specs!.map((s) => (
+                    <div key={s.campo} className="flex items-center gap-2">
+                      <dt className="font-medium">{s.rotulo}:</dt><dd>{s.valor}</dd>
+                      <Button type="button" variant="ghost" size="sm" className="h-6 px-1 text-xs" aria-label={`Remover spec ${s.rotulo}`}
+                        onClick={() => editar(m.missao, { specs: m.specs!.filter((x) => x.campo !== s.campo) })}>
+                        Remover
+                      </Button>
+                    </div>
+                  ))}
                 </dl>
               )}
             </>
