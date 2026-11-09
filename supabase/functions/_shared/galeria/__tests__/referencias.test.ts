@@ -177,6 +177,47 @@ describe('prepararReferencia', () => {
     expect(await prepararReferencia(fake.admin as never, 'org', 'an1', 'Preto', 'frente', new Set(), await ctx())).toEqual({ erro: 'sem_referencia' })
   })
 
+  it('(1) não-JPEG em imagem_path nunca vai para .jpg: segue para o ML; foto do ML não-JPEG → tenta a próxima', async () => {
+    fake.arquivos.set('org/lote/00100P.jpg', new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1]))
+    fotosML = { 11: ['PNG1', 'R2'], 12: [], 13: [] }
+    const fetchOriginal = globalThis.fetch as unknown as (u: string, i?: RequestInit) => Promise<Response>
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => (
+      url.includes('PNG1-F.jpg') ? new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47])) : fetchOriginal(url, init))))
+    const r = await prepararReferencia(fake.admin as never, 'org', 'an1', 'Preto', 'frente', new Set(), await ctx())
+    if ('erro' in r) throw new Error('sem referência')
+    expect(fake.arquivos.get(r.path)).toEqual(JPEG('ml-R2'))
+    expect(db.galeria_referencias).toHaveLength(1)
+  })
+
+  it('só fotos não-JPEG → sem_referencia, nada gravado', async () => {
+    fake.arquivos.set('org/lote/00100P.jpg', new Uint8Array([0x52, 0x49, 0x46, 0x46]))
+    fotosML = { 11: ['PNG1'], 12: [], 13: [] }
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.startsWith('https://api.mercadolibre.com/items/')) return Response.json({ id: 'MLB1', pictures: [], variations: [{ id: 11, seller_custom_field: '100P', picture_ids: ['PNG1'] }] })
+      if (url.includes('/pictures/')) return Response.json({ variations: [{ secure_url: 'https://http2.mlstatic.com/PNG1-F.jpg' }] })
+      return new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47]))
+    }))
+    expect(await prepararReferencia(fake.admin as never, 'org', 'an1', 'Preto', 'frente', new Set(), await ctx())).toEqual({ erro: 'sem_referencia' })
+    expect(db.galeria_referencias).toHaveLength(0)
+    expect(fake.uploads).toEqual([])
+  })
+
+  it('(1) famílias não vigentes: vence a variação da família publicada mais recente, não o SKU alfabético', async () => {
+    db.anuncios_externos[0].variacoes_externas = { '100A': {}, '100B': {}, '100C': {} }
+    db.familias = [
+      { id: 'famA', org_id: 'org', codigo_pai: '100', publicado_em: '2026-11-01T10:00:00Z', variacoes: [{ codigo: '100A', cor: 'Preto', imagem_path: 'org/lote/a.jpg' }] },
+      { id: 'famB', org_id: 'org', codigo_pai: '100', publicado_em: '2026-11-03T10:00:00Z', variacoes: [{ codigo: '100B', cor: 'Preto', imagem_path: 'org/lote/b.jpg' }] },
+      { id: 'famC', org_id: 'org', codigo_pai: '100', publicado_em: '2026-11-05T10:00:00Z', variacoes: [{ codigo: '100C', cor: 'Preto', imagem_path: null }] },
+    ]
+    fake.arquivos.set('org/lote/a.jpg', JPEG('a'))
+    fake.arquivos.set('org/lote/b.jpg', JPEG('b'))
+    const a = await ctx()
+    expect(a.vigente.id).toBe('famC')
+    const r = await prepararReferencia(fake.admin as never, 'org', 'an1', 'Preto', 'frente', new Set(), a)
+    if ('erro' in r) throw new Error('sem referência')
+    expect(fake.arquivos.get(r.path)).toEqual(JPEG('b'))
+  })
+
   it('corSlug', () => {
     expect(corSlug('Off White / Rosa Bebê')).toBe('off-white-rosa-bebe')
   })

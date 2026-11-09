@@ -86,11 +86,44 @@ export function montarFicha({ planilha, medidasPorSku, atributosML, textosIA, co
   return fatos;
 }
 
-// Material sem percentual: "100% Poliamida" ≡ "Poliamida"; "96% poliéster" ≢ "Poliamida".
-// ponytail: compara o conjunto de palavras; percentuais diferentes do mesmo material passam (a etiqueta
-// costuma arredondar). Endurecer aqui se aparecer caso real de proporção trocada.
-const tokens = (s: string) =>
-  [...new Set(s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().split(/[^\p{L}]+/u).filter((t) => t.length > 1))].sort().join(' ');
+const norm = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+const numero = (n: string) => String(Number(n.replace(',', '.')));
+
+/** Composição "90% Poliéster 10% Elastano" ou "Poliéster 90%, Elastano 10%" → material → %. Sem % → null. */
+function composicao(s: string): Map<string, string> | null {
+  // Itens: percentual ou material (palavras seguidas; "e", vírgula, barra e percentual separam).
+  const itens: Array<{ pct?: string; mat?: string }> = [...norm(s).matchAll(/(\d+(?:[.,]\d+)?)\s*%|(\p{L}+(?:\s+(?!e\s|e$)\p{L}+)*)/gu)]
+    .map((m) => (m[1] !== undefined ? { pct: numero(m[1]) } : { mat: m[2] }))
+    .filter((i) => i.mat !== 'e');
+  if (!itens.some((i) => i.pct !== undefined)) return null;
+  const pctAntes = itens[0].pct !== undefined;
+  const mapa = new Map<string, string>();
+  for (let i = 0; i < itens.length; i++) {
+    const pct = itens[i].pct;
+    if (pct === undefined) continue;
+    const mat = itens[pctAntes ? i + 1 : i - 1]?.mat;
+    if (mat === undefined) return null;
+    mapa.set(mat, pct);
+  }
+  return mapa;
+}
+
+/**
+ * Mesmo valor com formatação diferente. Números e unidades contam ("20 mm" ≢ "35 mm"); composição compara
+ * o percentual de cada material ("90% Poliéster 10% Elastano" ≢ "10% Poliéster 90% Elastano"); só
+ * "100% X" ≡ "X". Sem percentual: mesma sequência de números e palavras ("20mm" ≡ "20 mm").
+ */
+export function mesmoValor(a: string, b: string): boolean {
+  const ca = composicao(a);
+  const cb = composicao(b);
+  const igualMapa = (x: Map<string, string>, y: Map<string, string>) =>
+    x.size === y.size && [...x].every(([k, v]) => y.get(k) === v);
+  const sequencia = (s: string) => (norm(s).match(/\d+(?:[.,]\d+)?|\p{L}+/gu) ?? []).map((t) => (/\d/.test(t) ? numero(t) : t)).join(' ');
+  if (ca && cb) return igualMapa(ca, cb);
+  const [comp, puro] = ca ? [ca, b] : cb ? [cb, a] : [null, null];
+  if (comp && puro !== null) return comp.size === 1 && [...comp.values()][0] === '100' && comp.has(sequencia(puro));
+  return sequencia(a) === sequencia(b);
+}
 
 export function aplicarEtiqueta(fatos: Fato[], leitura: Record<string, LeituraCampo>): Fato[] {
   const saida = fatos.map((fato): Fato => {
@@ -99,10 +132,10 @@ export function aplicarEtiqueta(fatos: Fato[], leitura: Record<string, LeituraCa
     if (!l.legivel || !temTexto(l.valor)) {
       return { ...fato, etiqueta: l, estado: fato.estado === 'CONFIRMADO' ? 'NAO_CONFERIDO' : fato.estado };
     }
-    if (tokens(l.valor) === tokens(fato.valor)) return { ...fato, etiqueta: l };
+    if (mesmoValor(l.valor, fato.valor)) return { ...fato, etiqueta: l };
     // "Manter cadastro" (R1.3) destrava só a mesma leitura que o operador viu.
     const mantida = fato.evidencia.manter_cadastro === true && temTexto(fato.evidencia.etiqueta_lida)
-      && tokens(fato.evidencia.etiqueta_lida) === tokens(l.valor);
+      && mesmoValor(fato.evidencia.etiqueta_lida, l.valor);
     return { ...fato, etiqueta: l, estado: mantida ? fato.estado : 'DIVERGENTE' };
   });
   // Fato que só existe na etiqueta não vira texto: entra como sugestão para o operador incluir.

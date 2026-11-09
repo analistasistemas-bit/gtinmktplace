@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aplicarEtiqueta, hashFatos, montarFicha, type Fato } from '../fatos'
+import { aplicarEtiqueta, hashFatos, mesmoValor, montarFicha, type Fato } from '../fatos'
 
 const base = {
   planilha: { nome: 'Renda Búfalo', marca: 'Avil', descricao_fornecedor: '' },
@@ -113,6 +113,27 @@ describe('aplicarEtiqueta', () => {
   it('fato que só existe na etiqueta entra como SUGERIDO (nunca vira texto sozinho)', () => {
     const fs = aplicarEtiqueta(montarFicha(base), { composicao: { legivel: true, valor: '100% Poliamida' } })
     expect(fato(fs, 'composicao')).toMatchObject({ estado: 'SUGERIDO', origem: 'etiqueta', valor: '100% Poliamida' })
+  })
+})
+
+describe('mesmoValor', () => {
+  it('números e unidades contam: "20 mm" × "35 mm" diferem', () => {
+    expect(mesmoValor('20 mm', '35 mm')).toBe(false)
+    expect(mesmoValor('Largura 2 cm', 'Largura 2 m')).toBe(false)
+  })
+  it('composição compara o percentual de cada material', () => {
+    expect(mesmoValor('90% Poliéster 10% Elastano', '10% Poliéster 90% Elastano')).toBe(false)
+    expect(mesmoValor('96% poliéster e 4% elastano', '100% Poliéster')).toBe(false)
+    expect(mesmoValor('Poliamida', '96% poliéster')).toBe(false)
+    expect(mesmoValor('100% POLIÉSTER', '100% Poliamida')).toBe(false)
+  })
+  it('mesmo valor com formatação diferente é igual; só "100% X" ≡ "X"', () => {
+    expect(mesmoValor('90% Poliéster 10% Elastano', 'Poliéster 90%, Elastano 10%')).toBe(true)
+    expect(mesmoValor('96% poliéster e 4% elastano', '4% ELASTANO / 96% POLIESTER')).toBe(true)
+    expect(mesmoValor('100% Poliamida', 'Poliamida')).toBe(true)
+    expect(mesmoValor('20mm', '20 mm')).toBe(true)
+    expect(mesmoValor('1,5 m', '1.5 m')).toBe(true)
+    expect(mesmoValor('90% Algodão', 'Algodão')).toBe(false)
   })
 })
 

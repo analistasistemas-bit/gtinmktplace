@@ -7,7 +7,11 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { carregarAnuncio, coresDoAnuncio, resolverAnuncio, type AnuncioGaleria } from '../_shared/galeria/anuncio.ts';
-import { calcularVigencia, gravarReferencia, lerFicha } from '../_shared/galeria/referencias.ts';
+import { calcularVigencia, ehJpeg, gravarReferencia, lerFicha } from '../_shared/galeria/referencias.ts';
+import { resolverConexaoEstrita } from '../_shared/canais/conexao.ts';
+import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
+import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
+import { validarValorAtributo } from '../_shared/categoria/faltantes-editaveis.ts';
 
 type Admin = ReturnType<typeof adminClient>;
 const ACOES = new Set(['montar', 'confirmar', 'descartar', 'manter_cadastro', 'corrigir_cadastro', 'enviar_vista']);
@@ -18,41 +22,66 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 const texto = (v: unknown, max: number) => (typeof v === 'string' && v.trim() !== '' && v.length <= max ? v.trim() : null);
 
-/** Vigência editorial × execução: só `pendente` e as produzidas não aplicadas mudam; submetendo|gerando concluem sozinhas. */
-async function desatualizar(admin: Admin, orgId: string, anuncioId: string, roteiroId: string) {
+/**
+ * Vigência editorial × execução, em todo `montar`:
+ * - roteiro aprovado com hash diferente → `pendente` vai a falhou/roteiro_trocado e o roteiro, por último, a desatualizado;
+ * - varredura: `gerada|aprovada` fora de manifesto de aplicação `aplicada` cujo roteiro não é o aprovado vigente
+ *   com o hash atual → `desatualizada` (pega a `submetendo|gerando` que concluiu `gerada` depois da troca).
+ * `submetendo|gerando` nunca mudam aqui: o worker com posse conclui.
+ */
+async function aplicarVigencia(admin: Admin, orgId: string, anuncioId: string, fatosHash: string): Promise<boolean> {
   const agora = new Date().toISOString();
-  const r1 = await admin.from('galeria_imagens').update({ status: 'falhou', erro: 'roteiro_trocado', atualizado_em: agora })
-    .eq('org_id', orgId).eq('anuncio_externo_id', anuncioId).eq('status', 'pendente');
-  if (r1.error) throw new Error(r1.error.message);
+  const { data: roteiro, error } = await admin.from('galeria_roteiros').select('id, fatos_hash')
+    .eq('org_id', orgId).eq('anuncio_externo_id', anuncioId).eq('status', 'aprovado').maybeSingle();
+  if (error) throw new Error(error.message);
+  const desatualizado = !!roteiro && roteiro.fatos_hash !== fatosHash;
+  const vigente = roteiro && !desatualizado ? roteiro.id : null;
+
+  if (desatualizado) {
+    const r1 = await admin.from('galeria_imagens').update({ status: 'falhou', erro: 'roteiro_trocado', atualizado_em: agora })
+      .eq('org_id', orgId).eq('anuncio_externo_id', anuncioId).eq('status', 'pendente');
+    if (r1.error) throw new Error(r1.error.message);
+  }
   const { data: aps, error: eAp } = await admin.from('galeria_aplicacoes').select('manifesto')
     .eq('org_id', orgId).eq('anuncio_externo_id', anuncioId).eq('status', 'aplicada');
   if (eAp) throw new Error(eAp.message);
   const aplicadas = new Set((aps ?? []).flatMap((ap: { manifesto: Array<{ imagem_id: string }> }) => ap.manifesto.map((m) => m.imagem_id)));
-  const { data: prontas, error: eIm } = await admin.from('galeria_imagens').select('id')
+  const { data: prontas, error: eIm } = await admin.from('galeria_imagens').select('id, roteiro_id')
     .eq('org_id', orgId).eq('anuncio_externo_id', anuncioId).in('status', ['gerada', 'aprovada']);
   if (eIm) throw new Error(eIm.message);
-  const ids = (prontas ?? []).map((i: { id: string }) => i.id).filter((id: string) => !aplicadas.has(id));
+  const ids = (prontas ?? []).filter((i: { id: string; roteiro_id: string }) => i.roteiro_id !== vigente && !aplicadas.has(i.id))
+    .map((i: { id: string }) => i.id);
   if (ids.length > 0) {
     const r2 = await admin.from('galeria_imagens').update({ status: 'desatualizada', atualizado_em: agora })
       .eq('org_id', orgId).in('id', ids).in('status', ['gerada', 'aprovada']);
     if (r2.error) throw new Error(r2.error.message);
   }
   // Por último: queda no meio deixa o roteiro aprovado e a próxima montagem refaz tudo.
-  const r3 = await admin.from('galeria_roteiros').update({ status: 'desatualizado' }).eq('id', roteiroId).eq('status', 'aprovado');
-  if (r3.error) throw new Error(r3.error.message);
+  if (desatualizado) {
+    const r3 = await admin.from('galeria_roteiros').update({ status: 'desatualizado' }).eq('id', roteiro.id).eq('status', 'aprovado');
+    if (r3.error) throw new Error(r3.error.message);
+  }
+  return desatualizado;
 }
 
 async function montar(admin: Admin, orgId: string, a: AnuncioGaleria) {
   const v = await calcularVigencia(admin, orgId, a);
-  const { data: roteiro, error } = await admin.from('galeria_roteiros').select('id, fatos_hash')
-    .eq('org_id', orgId).eq('anuncio_externo_id', a.anuncioId).eq('status', 'aprovado').maybeSingle();
-  if (error) throw new Error(error.message);
-  const desatualizado = !!roteiro && roteiro.fatos_hash !== v.fatos_hash;
-  if (desatualizado) await desatualizar(admin, orgId, a.anuncioId, roteiro.id);
+  const desatualizado = await aplicarVigencia(admin, orgId, a.anuncioId, v.fatos_hash);
   return {
     anuncio_externo_id: a.anuncioId, familia_id: a.vigente.id, codigo_pai: a.codigoPai, cores: coresDoAnuncio(a),
     ...v, roteiro_desatualizado: desatualizado,
   };
+}
+
+/** Valor do atributo pela regra da Revisão (`atributos-familia`): closed-set grava o `value_id` do dicionário. */
+async function valorDoAtributo(admin: Admin, orgId: string, categoriaId: string, atributoId: string, bruto: string) {
+  const cx = await resolverConexaoEstrita(admin, orgId, 'mercado_livre');
+  if (!cx) throw new Error('Organização sem conexão com o Mercado Livre');
+  const schema = await lerSchemaAtributos(await getValidAccessTokenConexao(cx), categoriaId);
+  const v = validarValorAtributo(schema, atributoId, bruto);
+  if (!v) return null;
+  const nome = v.value_name ?? schema.find((x) => x.id === atributoId)?.valores.find((x) => x.id === v.value_id)?.nome;
+  return nome ? { value_id: v.value_id, value_name: nome } : null;
 }
 
 Deno.serve(async (req) => {
@@ -94,7 +123,7 @@ Deno.serve(async (req) => {
       try { bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)); }
       catch { return json({ error: 'foto_invalida' }, 400); }
       // Só JPEG: o caminho imutável é .jpg.
-      if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) return json({ error: 'foto_nao_jpeg' }, 400);
+      if (!ehJpeg(bytes)) return json({ error: 'foto_nao_jpeg' }, 400);
       await gravarReferencia(admin, orgId, a, cor, vista, bytes, 'upload_operador');
       return json(await montar(admin, orgId, a));
     }
@@ -119,16 +148,22 @@ Deno.serve(async (req) => {
         evidencia: { ...fato.evidencia, manter_cadastro: true, etiqueta_lida: etiqueta }, descartado: false,
       };
     } else {
-      // corrigir_cadastro: só atributo da família vigente; o anúncio no ML segue pelo fluxo normal de atualização.
-      const valor = texto(body.valor, 255);
+      // corrigir_cadastro: só atributo da família vigente; o anúncio no ML segue pelo fluxo normal de atualização
+      // (UP compara por value_id: sem ele o UPDATE acharia que "confere" e nunca reenviaria).
+      const bruto = texto(body.valor, 255);
       const id = campo.startsWith('atributo:') ? campo.slice('atributo:'.length) : null;
       const atributos = a.vigente.atributos_ml ?? [];
-      if (!id || !valor || !atributos.some((x) => x.id === id)) return json({ error: 'campo_nao_corrigivel' }, 400);
-      // value_id é do valor antigo: sai junto.
+      // BRAND tem fluxo próprio (marca por produto, ADR-0186/0188).
+      if (!id || id === 'BRAND' || !bruto || !a.vigente.categoria_ml_id || !atributos.some((x) => x.id === id)) {
+        return json({ error: 'campo_nao_corrigivel' }, 400);
+      }
+      const novo = await valorDoAtributo(admin, orgId, a.vigente.categoria_ml_id, id, bruto);
+      if (!novo) return json({ error: 'valor_invalido' }, 422);
+      const valor = novo.value_name;
       const novos = atributos.map((x) => {
         if (x.id !== id) return x;
         const { value_id: _antigo, ...resto } = x;
-        return { ...resto, value_name: valor };
+        return { ...resto, value_name: novo.value_name, ...(novo.value_id ? { value_id: novo.value_id } : {}) };
       });
       const { error } = await admin.from('familias').update({ atributos_ml: novos, atributos_editados_pelo_operador: true })
         .eq('id', a.vigente.id).eq('org_id', orgId);
