@@ -14,6 +14,8 @@ cmd = {
     # codex: -i é variádico; se anexar imagem, o prompt vem ANTES dos -i
     'codex': ['codex', 'exec', '-m', 'gpt-6.1-sol', '-c', 'model_reasoning_effort=high', '-s', 'read-only', prompt],
     'grok': ['cursor-agent', '-p', '--mode', 'ask', '--model', 'grok-4.7-xhigh', prompt],
+    # reserva do Codex quando a cota acabar (memória feedback_revisor_fallback_kimi)
+    'gemini': ['cursor-agent', '-p', '--mode', 'ask', '--model', 'gemini-4-argon-high', prompt],
 }[quem]
 with open(saida, 'w') as out:
     subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, timeout=1800)
