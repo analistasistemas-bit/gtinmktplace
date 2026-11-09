@@ -80,6 +80,40 @@ describe('DialogGaleria — abertura sequencial', () => {
     expect(await screen.findByText('desatualizado')).toBeInTheDocument();
   });
 
+  it('com ler pendente não há "Criar roteiro"; com ler → roteiro null ele aparece', async () => {
+    let liberarLer: (v: unknown) => void = () => undefined;
+    api.lerRoteiro.mockReturnValue(new Promise((r) => { liberarLer = r; }));
+    abrir();
+    await waitFor(() => expect(api.lerRoteiro).toHaveBeenCalled());
+    expect(screen.queryByRole('tab', { name: /Roteiro/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Criar roteiro' })).toBeNull();
+    liberarLer(ok({ roteiro: null, moda: false, familia_id: 'F1' }));
+    await irParaRoteiro();
+    expect(screen.getByRole('button', { name: 'Criar roteiro' })).toBeInTheDocument();
+  });
+
+  it('ler falhou: não oferece "Criar roteiro" (não sabe se há roteiro vigente)', async () => {
+    api.lerRoteiro.mockResolvedValue(falha(500, 'falha_interna'));
+    abrir();
+    await irParaRoteiro();
+    expect(screen.queryByRole('button', { name: 'Criar roteiro' })).toBeNull();
+  });
+
+  it('troca de mlItemId no meio da abertura descarta a resposta antiga', async () => {
+    const lentas: Record<string, (v: unknown) => void> = {};
+    api.montarFicha.mockImplementation((id: string) => new Promise((r) => { lentas[id] = r; }));
+    const { rerender } = abrir('MLB-A');
+    await waitFor(() => expect(api.montarFicha).toHaveBeenCalledWith('MLB-A'));
+    rerender(<DialogGaleria mlItemId="MLB-B" codigoPai="0002" open onOpenChange={() => undefined} isAdmin />);
+    await waitFor(() => expect(api.montarFicha).toHaveBeenCalledWith('MLB-B'));
+    lentas['MLB-B'](ok(ficha([fato('nome', 'CONFIRMADO', 'Produto B')])));
+    expect(await screen.findByText('Produto B')).toBeInTheDocument();
+    lentas['MLB-A'](ok(ficha([fato('nome', 'CONFIRMADO', 'Produto A')])));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByText('Produto A')).toBeNull();
+    expect(api.lerRoteiro).not.toHaveBeenCalledWith('MLB-A');
+  });
+
   it('montar falhou: mostra o erro e não chama ler', async () => {
     api.montarFicha.mockResolvedValue(falha(500, 'falha_interna'));
     abrir();

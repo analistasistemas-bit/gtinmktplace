@@ -53,6 +53,8 @@ interface Props {
   mlItemId: string;
   ficha: Ficha;
   isAdmin: boolean;
+  /** `ler` respondeu `roteiro: null`: só então "Criar roteiro" existe (senão criaria outra versão por cima do vigente). */
+  podeCriar: boolean;
   resp: RespostaRoteiro | null;
   aoResposta: (r: RespostaRoteiro) => void;
   /** Resultado de falha de qualquer ação (o diálogo traduz, recarrega e limpa o roteiro conforme o erro). */
@@ -60,7 +62,7 @@ interface Props {
   aoAprovar: () => void;
 }
 
-export function PassoRoteiro({ mlItemId, ficha, isAdmin, resp, aoResposta, aoFalhar, aoAprovar }: Props) {
+export function PassoRoteiro({ mlItemId, ficha, isAdmin, podeCriar, resp, aoResposta, aoFalhar, aoAprovar }: Props) {
   const [rascunho, setRascunho] = useState<Roteiro | null>(resp?.roteiro.conteudo ?? null);
   const [ocupado, setOcupado] = useState(false);
   const [ciente, setCiente] = useState<Set<string>>(new Set());
@@ -78,6 +80,7 @@ export function PassoRoteiro({ mlItemId, ficha, isAdmin, resp, aoResposta, aoFal
   }
 
   if (!resp || !rascunho) {
+    if (!podeCriar) return <p className="text-sm text-muted-foreground">Não foi possível ler o roteiro existente. Feche e abra a galeria de novo.</p>;
     return (
       <div className="space-y-3">
         <p className="text-sm text-muted-foreground">

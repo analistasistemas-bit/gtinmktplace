@@ -1,6 +1,6 @@
 // ADR-0201 (Task 7b): Galeria IA da linha de Publicados. Identidade = `ml_item_id` da linha (+ `codigo_pai` só para o
 // título); a família vigente volta da edge e é ela que a tela reenvia. Passos: fatos/referências → roteiro.
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -26,18 +26,28 @@ export function DialogGaleria({ mlItemId, codigoPai, open, onOpenChange, isAdmin
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
+  // Id da abertura/recarga em curso: respostas de aberturas antigas (troca de anúncio, recarga) são descartadas.
+  const abertura = useRef(0);
+  // `ler` respondeu nesta abertura: só então a aba Roteiro sabe se há roteiro vigente e pode oferecer "Criar roteiro".
+  const [roteiroLido, setRoteiroLido] = useState(false);
+
   const carregar = useCallback(async () => {
-    setCarregando(true);
+    const id = ++abertura.current;
+    setCarregando(true); setRoteiroLido(false);
     // Sequencial: `montar` pode chamar a visão paga e desatualizar o roteiro; `ler` só depois, já vendo esse estado.
     const r = await montarFicha(mlItemId);
+    if (id !== abertura.current) return;
     // Não limpa o erro: a mensagem que motivou a recarga (categoria_mudou etc.) tem de sobreviver a ela.
     if (!r.ok) { setErro(mensagemErro(r.erro)); setCarregando(false); return; }
-    setFicha(r.dados);
     const l = await lerRoteiro(mlItemId);
+    if (id !== abertura.current) return;
+    // Ficha e roteiro entram juntos, ao fim da mesma abertura.
+    setFicha(r.dados);
     if (l.ok) {
       // Moda só vale se a edge a leu ao vivo (null = desconhecida: nada de Moda é oferecido).
       setModa(l.dados.moda);
       setResp(l.dados.roteiro ? (l.dados as RespostaRoteiro) : null);
+      setRoteiroLido(true);
       if (l.dados.aviso) setErro(mensagemErro(l.dados.aviso));
     } else setErro(mensagemErro(l.erro));
     setCarregando(false);
@@ -45,8 +55,11 @@ export function DialogGaleria({ mlItemId, codigoPai, open, onOpenChange, isAdmin
 
   useEffect(() => {
     if (!open) return;
-    setResp(null); setModa(null); setPasso('fatos');
+    setFicha(null); setResp(null); setModa(null); setPasso('fatos');
     void carregar();
+    // Contador, não nó do DOM: invalidar a abertura em curso é exatamente o que a limpeza quer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { abertura.current++; };
   }, [open, carregar]);
 
   /** Falha de qualquer ação: mensagem clara; erros que invalidam o chão recarregam a ficha e descartam o roteiro em tela. */
@@ -78,9 +91,9 @@ export function DialogGaleria({ mlItemId, codigoPai, open, onOpenChange, isAdmin
         </DialogHeader>
 
         {erro && <p role="alert" className="rounded border border-red-500/40 bg-red-500/10 p-2 text-sm">{erro}</p>}
-        {carregando && !ficha && <Loader2 className="mx-auto h-5 w-5 animate-spin" aria-label="Carregando" />}
+        {carregando && <Loader2 className="mx-auto h-5 w-5 animate-spin" aria-label="Carregando" />}
 
-        {ficha && (
+        {ficha && !carregando && (
           <>
             <div role="tablist" className="flex gap-2">
               <Button role="tab" aria-selected={passo === 'fatos'} size="sm" variant={passo === 'fatos' ? 'default' : 'outline'}
@@ -90,7 +103,7 @@ export function DialogGaleria({ mlItemId, codigoPai, open, onOpenChange, isAdmin
             </div>
             {passo === 'fatos'
               ? <PassoFatos mlItemId={mlItemId} ficha={ficha} moda={moda} aoMudar={aoMudarFicha} />
-              : <PassoRoteiro mlItemId={mlItemId} ficha={ficha} isAdmin={isAdmin} resp={resp}
+              : <PassoRoteiro mlItemId={mlItemId} ficha={ficha} isAdmin={isAdmin} resp={resp} podeCriar={roteiroLido}
                 aoResposta={(r) => { setResp(r); setModa(r.roteiro.moda); setErro(null); }} aoFalhar={falhou} aoAprovar={roteiroAprovado} />}
           </>
         )}
