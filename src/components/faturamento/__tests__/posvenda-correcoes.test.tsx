@@ -219,6 +219,20 @@ describe('7. contadores filtram a lista', () => {
   });
 });
 
+describe('9. abrir o detalhe atualiza o card da fila', () => {
+  it('fila é relida após o detalhe chegar, sem reler o ML em loop', async () => {
+    const user = userEvent.setup();
+    const antes = dev({ claim_id: 9, order_id: 1, type: 'mediations', return_id: null, revisao_pendente: false, vez_de: 'vendedor' });
+    filaMock.mockResolvedValueOnce([antes]).mockResolvedValue([{ ...antes, vez_de: 'comprador' }]);
+    detalheMock.mockResolvedValue(detalhe({ claim_id: 9, acoes: [], revisoes: [], estado: { titulo: 'Devolução em preparação', descricao: null, problema: null, prazo: null, vez_de: 'comprador' } }));
+    comQuery(<AbaPosvenda sub="reclamacoes" onSub={() => {}} />);
+    await user.click(await screen.findByRole('button', { name: 'Ver detalhe' }));
+    await waitFor(() => expect(filaMock).toHaveBeenCalledTimes(2));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(detalheMock).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('8. Histórico é botão dentro de Devoluções', () => {
   it('não é sub-aba; o botão mostra a tabela e dá para voltar à fila', async () => {
     const user = userEvent.setup();

@@ -205,9 +205,12 @@ export function PainelReclamacao({ item, travas, onOpenChange }: {
     queryFn: () => buscarDetalheReclamacao(String(claim)),
   });
   const qc = useQueryClient();
-  // Detalhe lido → a edge regravou ml_devolucoes; a lista reflete na hora.
+  // Detalhe lido → a edge regravou ml_devolucoes; a fila (e a lista de devoluções) refletem na hora.
+  // Só a chave 'fila': invalidar QK_POSVENDA inteiro relê este detalhe → loop de leituras no ML.
   useEffect(() => {
-    if (q.isSuccess) void qc.invalidateQueries({ queryKey: ['devolucoes'] });
+    if (!q.isSuccess) return;
+    void qc.invalidateQueries({ queryKey: [...QK_POSVENDA, 'fila'] });
+    void qc.invalidateQueries({ queryKey: ['devolucoes'] });
   }, [q.isSuccess, q.dataUpdatedAt, qc]);
   const e = q.data?.estado;
   return (
