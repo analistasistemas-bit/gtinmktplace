@@ -62,6 +62,32 @@ describe('DialogGaleria — identidade', () => {
   });
 });
 
+describe('DialogGaleria — abertura sequencial', () => {
+  it('chama montar e só depois ler; o selo reflete o estado pós-montar (desatualizado)', async () => {
+    const ordem: string[] = [];
+    let liberarMontar: (v: unknown) => void = () => undefined;
+    api.montarFicha.mockImplementation(() => { ordem.push('montar'); return new Promise((r) => { liberarMontar = r; }); });
+    api.lerRoteiro.mockImplementation(async () => {
+      ordem.push('ler');
+      return ok({ ...resposta({ status: 'desatualizado' }), moda: false, familia_id: 'F1' });
+    });
+    abrir();
+    await waitFor(() => expect(ordem).toEqual(['montar']));
+    expect(api.lerRoteiro).not.toHaveBeenCalled();
+    liberarMontar(ok(ficha([])));
+    await waitFor(() => expect(ordem).toEqual(['montar', 'ler']));
+    await irParaRoteiro();
+    expect(await screen.findByText('desatualizado')).toBeInTheDocument();
+  });
+
+  it('montar falhou: mostra o erro e não chama ler', async () => {
+    api.montarFicha.mockResolvedValue(falha(500, 'falha_interna'));
+    abrir();
+    expect(await screen.findByText(/Erro interno/)).toBeInTheDocument();
+    expect(api.lerRoteiro).not.toHaveBeenCalled();
+  });
+});
+
 describe('Passo fatos', () => {
   const divergente = (foto: { origem: 'referencia' | 'ml'; ref: string; url?: string }) => ficha([fato('atributo:FABRIC', 'DIVERGENTE', 'Poliéster', {
     etiqueta: { legivel: true, valor: 'Algodão', foto, caixa: { x: 0.1, y: 0.2, w: 0.5, h: 0.3 } },

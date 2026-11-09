@@ -28,9 +28,12 @@ export function DialogGaleria({ mlItemId, codigoPai, open, onOpenChange, isAdmin
 
   const carregar = useCallback(async () => {
     setCarregando(true);
-    const [r, l] = await Promise.all([montarFicha(mlItemId), lerRoteiro(mlItemId)]);
+    // Sequencial: `montar` pode chamar a visão paga e desatualizar o roteiro; `ler` só depois, já vendo esse estado.
+    const r = await montarFicha(mlItemId);
     // Não limpa o erro: a mensagem que motivou a recarga (categoria_mudou etc.) tem de sobreviver a ela.
-    if (r.ok) setFicha(r.dados); else setErro(mensagemErro(r.erro));
+    if (!r.ok) { setErro(mensagemErro(r.erro)); setCarregando(false); return; }
+    setFicha(r.dados);
+    const l = await lerRoteiro(mlItemId);
     if (l.ok) {
       // Moda só vale se a edge a leu ao vivo (null = desconhecida: nada de Moda é oferecido).
       setModa(l.dados.moda);
