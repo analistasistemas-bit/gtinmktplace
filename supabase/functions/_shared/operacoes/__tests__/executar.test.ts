@@ -85,6 +85,7 @@ const DEAL_ADERIR: OperacaoRow = {
 const SAIR: OperacaoRow = { ...DEAL_ADERIR, acao: 'sair' };
 const SAIR_SMART: OperacaoRow = { ...SAIR, promocao_tipo: 'SMART' };
 const OPTS = { limiteMs: 60_000, lote: 10 };
+const SIBLING = 'ML 400: Errors: OFFER_SIBLING_CREATION_IN_PROCESS - Creation of sibling offer in process';
 
 describe('proximoIntervalo', () => {
   it('5, 10, 20, 40 min e depois 60 min', () => {
@@ -234,6 +235,27 @@ describe('executar — aderir', () => {
     expect(itens[1].status).toBe('aplicado');
   });
 
+  // AVIL 09/11 (Black Friday): o pai legado aderiu e o ML propagou às cópias de catálogo; o POST de cada cópia voltou
+  // 400 SIBLING enquanto propagava, e 28 de 30 "erros" já estavam pending.
+  it('400 SIBLING e o ML já mostra participando → ja_estava e espelha', async () => {
+    const itens = [item('MLB1')];
+    const { deps, ml } = montar(itens, { campanha: (_id, n) => (n === 1 ? conv() : conv({ status: 'pending' })) });
+    vi.mocked(ml.post).mockRejectedValueOnce(new Error(SIBLING));
+    await executar(DEAL_ADERIR, deps, OPTS);
+    expect(itens[0]).toMatchObject({ status: 'ja_estava', mensagem: 'Inscrito pelo ML junto com o anúncio principal' });
+    expect(deps.espelharStatusCentral).toHaveBeenCalledWith('P-1', 'DEAL', 'MLB1', 'pending');
+  });
+
+  it('400 SIBLING ainda candidate → bloqueado (fora do "Tentar novamente"), não erro', async () => {
+    const itens = [item('MLB1')];
+    const { deps, ml } = montar(itens);
+    vi.mocked(ml.post).mockRejectedValueOnce(new Error(SIBLING));
+    await executar(DEAL_ADERIR, deps, OPTS);
+    expect(itens[0].status).toBe('bloqueado');
+    expect(itens[0].mensagem).toMatch(/anúncio principal/);
+    expect(deps.espelharStatusCentral).not.toHaveBeenCalled();
+  });
+
   it('falha ao gravar depois do 201 → relança e o item fica enviando', async () => {
     const itens = [item('MLB1')];
     const { deps } = montar(itens);
@@ -280,6 +302,16 @@ describe('executar — LIGHTNING', () => {
 
   // Emenda 2026-11-08 (2): um horário participando e outro convidado.
   const participandoComConvite = conv({ status: 'pending', offer_id: 'OFFER-X-1', convite });
+  it('400 SIBLING participando com convite aberto → bloqueado, não ja_estava (o horário pedido não entrou)', async () => {
+    const itens = [item('MLB1', { preco: 24.65 })];
+    const { deps, ml } = montar(itens, { campanha: () => participandoComConvite, oferta: () => ofertaConvite });
+    vi.mocked(ml.post).mockRejectedValueOnce(new Error(SIBLING));
+    await executar(LGH, deps, OPTS);
+    expect(ml.post).toHaveBeenCalledTimes(1);
+    expect(itens[0].status).toBe('bloqueado');
+    expect(deps.espelharStatusCentral).not.toHaveBeenCalled();
+  });
+
   it('participando em um horário com convite aberto: grava o CANDIDATE antes e posta pelo convite', async () => {
     const itens = [item('MLB1', { preco: 24.65 })];
     const { deps, ml } = montar(itens, {
@@ -708,6 +740,14 @@ describe('ofertas de preço fixo', () => {
       expect(itens[0]).toMatchObject({ status: 'aplicado', mensagem: null });
       expect(deps.espelharStatusCentral).toHaveBeenCalledWith('P-MLB18099366', 'PRICE_MATCHING', 'MLB1', 'started');
       expect(deps.espelharPreco).toHaveBeenCalledWith('P-MLB18099366', 'MLB1', 69.98);
+    });
+
+    it('400 SIBLING → ja_estava com a etapa limpa (retomada não vira aplicado)', async () => {
+      const itens = [item('MLB1', { preco: 69.98 })];
+      const { deps, ml } = montar(itens, { campanha: (_id, n) => (n === 1 ? convPM() : part('started')) });
+      vi.mocked(ml.post).mockRejectedValueOnce(new Error(SIBLING));
+      await executar(PM, deps, OPTS);
+      expect(itens[0]).toMatchObject({ status: 'ja_estava', etapa: null });
     });
 
     it('releitura já participando vale mais que o padrão do tipo', async () => {

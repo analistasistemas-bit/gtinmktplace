@@ -276,6 +276,7 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar, p
   try {
     resposta = await ml.post(id, d.body);
   } catch (e) {
+    if (mensagemDe(e).includes('OFFER_SIBLING_CREATION_IN_PROCESS')) return inscritoPeloPrincipal(op, id, deps);
     if (fixa) {
       if (escritaIncerta(id, e)) return;
       // Recusa clara: nada foi escrito; sem isto adesaoRecente seguraria a nova tentativa como se a adesão propagasse.
@@ -300,6 +301,22 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar, p
   // no SMART o POST manda só o offer_id e o preço é o do ML (achado Codex P1). O retry `ja_estava` (acima) não
   // espelha preço de propósito: a leitura do ML não traz o preço da oferta, e o item pode já participar com outro.
   if (it.preco != null && op.promocao_tipo !== 'SMART') await deps.espelharPreco(op.promocao_id, id, it.preco).catch(() => {});
+}
+
+/** 400 OFFER_SIBLING_CREATION_IN_PROCESS (AVIL 09/11): o ML já cria esta oferta propagando a de um anúncio irmão
+ *  (pai legado → cópias de catálogo). Não é erro: relê uma vez; ainda convidado → `bloqueado`, fora do "Tentar novamente". */
+async function inscritoPeloPrincipal(op: OperacaoRow, id: string, deps: DepsExecutar): Promise<void> {
+  // Oferta fixa: o POST foi recusado; sem a etapa, uma retomada não confunde a propagação com adesão nossa (achado Codex).
+  if (ofertaFixaNova(op.promocao_tipo)) await deps.gravarItem(op.id, id, { etapa: null }).catch(() => {});
+  const f = await deps.ml.lerNaCampanha(op.promocao_id, op.promocao_tipo, id).catch(() => null);
+  // Relâmpago participando com convite de outro horário ainda aberto: o horário pedido não entrou (achado Codex).
+  if (f && ehParticipando(f.status) && !f.convite) {
+    await gravarPos(deps.gravarItem(op.id, id, { status: 'ja_estava', mensagem: 'Inscrito pelo ML junto com o anúncio principal' }));
+    return espelhar(deps, op, id, espelhoAderido(op, f));
+  }
+  await gravarPos(deps.gravarItem(op.id, id, {
+    status: 'bloqueado', mensagem: 'O ML está inscrevendo este anúncio pelo anúncio principal — atualize a Central em alguns minutos',
+  }));
 }
 
 /** Oferta fixa: exceção antes de adquirir a escrita também só encerra com a posse (o laço gravaria `erro` por cima). */
