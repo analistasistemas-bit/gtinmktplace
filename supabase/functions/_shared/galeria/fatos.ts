@@ -188,6 +188,8 @@ export function mesmoValor(a: string, b: string): boolean {
 }
 
 export function aplicarEtiqueta(fatos: Fato[], leitura: Record<string, LeituraCampo>, descartados: ReadonlySet<string> = new Set()): Fato[] {
+  // Origem obedece o cadastro (imposto 8%/16%): nenhuma leitura de etiqueta conta para ela (decisão do Diego, 09/11).
+  leitura = Object.fromEntries(Object.entries(leitura).filter(([campo]) => campo !== 'origem'));
   const saida = fatos.map((fato): Fato => {
     const l = leitura[fato.campo];
     if (!l || fato.estado === 'VARIA_POR_TAMANHO') return fato;

@@ -22,7 +22,7 @@ export type EstadoLeitura = 'consistente' | 'divergente' | 'inconclusiva' | 'ind
 export interface FotoEtiqueta { url: string; sha256: string | null; origem: 'referencia' | 'ml'; ref: string }
 export interface LeituraEtiquetaCampo {
   estado: EstadoLeitura;
-  /** Valor no formato do cadastro (origem mapeada, unidade convertida): é o que `aplicarEtiqueta` compara. */
+  /** Valor no formato do cadastro (unidade convertida): é o que `aplicarEtiqueta` compara. */
   valor_lido: string | null;
   /** Texto como impresso, quando difere de `valor_lido` (a tela mostra este). */
   valor_cru?: string;
@@ -33,11 +33,12 @@ export interface LeituraEtiquetaCampo {
 }
 export type LeituraEtiqueta = Record<string, LeituraEtiquetaCampo>;
 
-// Campos da ficha que uma etiqueta pode trazer: material/composição, medidas, peso, marca, origem, conteúdo.
+// Campos da ficha que uma etiqueta pode trazer: material/composição, medidas, peso, marca, conteúdo.
+// Origem NUNCA: obedece o cadastro (define o imposto 8%/16%; decisão do Diego, 09/11).
 const UNIDADE: Record<string, 'g' | 'cm'> = { peso_gramas: 'g', altura_cm: 'cm', largura_cm: 'cm', comprimento_cm: 'cm' };
-const ATRIBUTO_DE_ETIQUETA = /MATERIAL|COMPOSITION|BRAND|WEIGHT|LENGTH|WIDTH|HEIGHT|DEPTH|UNITS_PER|VOLUME|ORIGIN/;
+const ATRIBUTO_DE_ETIQUETA = /MATERIAL|COMPOSITION|BRAND|WEIGHT|LENGTH|WIDTH|HEIGHT|DEPTH|UNITS_PER|VOLUME/;
 const ehCampoDeEtiqueta = (campo: string) =>
-  campo === 'marca' || campo === 'origem' || campo in UNIDADE
+  campo === 'marca' || campo in UNIDADE
   || (campo.startsWith('atributo:') && ATRIBUTO_DE_ETIQUETA.test(campo.slice('atributo:'.length)));
 
 const SISTEMA = 'You read product labels (care/composition tags, packaging) in photos. For each requested field, copy '
@@ -82,23 +83,9 @@ function caixaValida(c: unknown): Caixa | null {
   return ok ? { x: X, y: Y, w: W, h: H } : null;
 }
 
-const semAcento = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
-
-/** Origem da etiqueta → NACIONAL/IMPORTADO (o cadastro define o imposto); texto que não é origem fica cru. */
-export function origemDaEtiqueta(v: string): string {
-  const t = semAcento(v);
-  if (/^(nacional|importado)$/.test(t.trim())) return t.trim().toUpperCase();
-  if (/\bbra[sz]il\b|industria brasileira|produto brasileiro|\bnacional\b/.test(t)) return 'NACIONAL';
-  if (/made in|fabricado (na|no|em|nos|nas)|produzido (na|no|em|nos|nas)|feito (na|no|em)|importad|origem:|origin:|\b(china|chinese|india|vietnam|bangladesh|paraguai|paraguay|turquia|turkey|indonesia|portugal|italia|italy|eua|usa|estados unidos|argentina|peru|camboja|cambodia|taiwan|coreia|korea|japao|japan|tailandia|thailand|paquistao|pakistan|mexico|espanha|spain)\b/.test(t)) {
-    return 'IMPORTADO';
-  }
-  return v.trim();
-}
-
-/** Valor lido no formato do cadastro (origem mapeada, medida convertida para a unidade do campo); senão cru. */
+/** Valor lido no formato do cadastro (medida convertida para a unidade do campo); senão cru. */
 function normalizar(campo: string, valor: string): string {
   const v = valor.trim();
-  if (campo === 'origem') return origemDaEtiqueta(v);
   const un = UNIDADE[campo];
   if (un) {
     const m = medida(v);
@@ -230,28 +217,36 @@ export async function conferirEtiqueta(
   if (campos.length === 0) return gravar({ chave, falhou: false, parcial: false, leitura: {} });
 
   try {
+    // Foto que falha (URL, download) é pulada e registrada; só sem nenhuma foto lida a leitura é `indisponivel`.
+    const pular = (qual: string, e: unknown) => { console.error('[galeria-etiqueta] foto pulada', qual, (e as Error).message); return null; };
     const fotos: FotoEtiqueta[] = [];
     for (const r of dasRefs) {
       if (fotos.length >= MAX_FOTOS) break;
       const { data, error } = await admin.storage.from('imagens').createSignedUrl(r.path, 600);
-      if (error || !data?.signedUrl) throw new Error(`URL da referência: ${error?.message ?? 'vazia'}`);
+      if (error || !data?.signedUrl) { pular(r.path, new Error(error?.message ?? 'URL vazia')); continue; }
       fotos.push({ url: data.signedUrl, sha256: r.sha256, origem: 'referencia', ref: r.path });
     }
-    // Foto do ML: baixa para o sha (dedupe com as referências e recorte rastreável). Só aqui, na leitura nova.
+    // Foto do ML: baixa para o sha (dedupe com as referências e recorte rastreável), só na leitura nova e só o
+    // necessário para encher o teto: lotes do tamanho das vagas restantes, na ordem.
     const vistos = new Set(dasRefs.map((r) => r.sha256));
-    const ml = await Promise.all(doMl.map(async (pid) => {
+    const baixar = (pid: string) => (async () => {
       const url = await buscarSecureUrlFotoML(token, pid);
       const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`Foto ${pid} do ML (${resp.status})`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       return { url, sha256: sha(new Uint8Array(await resp.arrayBuffer())), origem: 'ml' as const, ref: pid };
-    }));
-    let parcial = dasRefs.length > MAX_FOTOS;
-    for (const f of ml) {
-      if (vistos.has(f.sha256)) continue;
-      vistos.add(f.sha256);
-      if (fotos.length >= MAX_FOTOS) { parcial = true; continue; }
-      fotos.push(f);
+    })().catch((e) => pular(pid, e));
+    let i = 0;
+    while (i < doMl.length && fotos.length < MAX_FOTOS) {
+      const lote = doMl.slice(i, i + MAX_FOTOS - fotos.length);
+      i += lote.length;
+      for (const f of await Promise.all(lote.map(baixar))) {
+        if (!f || vistos.has(f.sha256)) continue;
+        vistos.add(f.sha256);
+        if (fotos.length < MAX_FOTOS) fotos.push(f);
+      }
     }
+    const parcial = dasRefs.length > MAX_FOTOS || i < doMl.length;
+    if (fotos.length === 0 && dasRefs.length + doMl.length > 0) throw new Error('nenhuma foto pôde ser lida');
     const cadastro = Object.fromEntries(alvo.map((f) => [f.campo, f.valor]));
     return gravar({ chave, falhou: false, parcial, leitura: await lerEtiquetaPorVisao({ fotos, campos, cadastro, parcial }) });
   } catch (e) {

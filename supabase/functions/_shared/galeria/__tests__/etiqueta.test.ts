@@ -96,40 +96,29 @@ describe('lerEtiquetaPorVisao', () => {
     expect(r.comprimento_cm).toMatchObject({ valor_lido: '60', valor_cru: '600 mm' })
   })
 
-  it('origem mapeada no código: cadastro NACIONAL × "Made in China" → divergente com o texto cru; "Fabricado na China" ≡ IMPORTADO', async () => {
-    v.create.mockResolvedValueOnce(resposta([lido('origem', 'Made in China')]))
-    const nac = await lerEtiquetaPorVisao({ fotos: [FOTO], campos: ['origem'], cadastro: { origem: 'NACIONAL' } })
-    expect(nac.origem).toMatchObject({ estado: 'divergente', valor_lido: 'IMPORTADO', valor_cru: 'Made in China' })
-    for (const [txt, cad, estado] of [['Fabricado na China', 'IMPORTADO', 'consistente'], ['Indústria Brasileira', 'NACIONAL', 'consistente'],
-      ['Made in Brazil', 'IMPORTADO', 'divergente'], ['Lote 4471', 'IMPORTADO', 'divergente']]) {
-      v.create.mockResolvedValueOnce(resposta([lido('origem', txt)]))
-      expect((await lerEtiquetaPorVisao({ fotos: [FOTO], campos: ['origem'], cadastro: { origem: cad } })).origem.estado).toBe(estado)
-    }
-  })
-
   it('resposta ilegível ou fora do formato → todos indisponivel (nunca consistente por omissão)', async () => {
     v.create.mockResolvedValueOnce({ choices: [{ message: { content: 'não consegui ler' } }] })
-    const r = await lerEtiquetaPorVisao({ fotos: [FOTO], campos: ['marca', 'origem'], cadastro: { marca: 'Avil', origem: 'IMPORTADO' } })
+    const r = await lerEtiquetaPorVisao({ fotos: [FOTO], campos: ['marca', 'atributo:BRAND'], cadastro: { marca: 'Avil', 'atributo:BRAND': 'Avil' } })
     expect(Object.values(r).map((x) => x.estado)).toEqual(['indisponivel', 'indisponivel'])
   })
 
   it('campo omitido, foto fora da lista ou caixa fora de [0,1] → indisponivel; ilegível → inconclusiva; parcial: não achado → inconclusiva', async () => {
     const corpo = resposta([
-      lido('marca', 'Avil', 7), lido('origem', 'IMPORTADO', 1, { x: 0.5, y: 0.5, w: 0.9, h: 0.1 }),
+      lido('marca', 'Avil', 7), lido('atributo:BRAND', 'Avil', 1, { x: 0.5, y: 0.5, w: 0.9, h: 0.1 }),
       { campo: 'peso_gramas', situacao: 'ilegivel', valor: null, foto: null, caixa: null },
       { campo: 'largura_cm', situacao: 'ausente', valor: null, foto: null, caixa: null },
     ])
     const entrada = {
-      fotos: [FOTO], campos: ['marca', 'origem', 'peso_gramas', 'largura_cm', 'altura_cm'],
-      cadastro: { marca: 'Avil', origem: 'IMPORTADO', peso_gramas: '150', largura_cm: '3', altura_cm: '2' },
+      fotos: [FOTO], campos: ['marca', 'atributo:BRAND', 'peso_gramas', 'largura_cm', 'altura_cm'],
+      cadastro: { marca: 'Avil', 'atributo:BRAND': 'Avil', peso_gramas: '150', largura_cm: '3', altura_cm: '2' },
     }
     v.create.mockResolvedValueOnce(corpo)
     const estados = (r: Record<string, { estado: string }>) => Object.fromEntries(Object.entries(r).map(([k, x]) => [k, x.estado]))
     expect(estados(await lerEtiquetaPorVisao(entrada)))
-      .toEqual({ marca: 'indisponivel', origem: 'indisponivel', peso_gramas: 'inconclusiva', largura_cm: 'indisponivel', altura_cm: 'indisponivel' })
+      .toEqual({ marca: 'indisponivel', 'atributo:BRAND': 'indisponivel', peso_gramas: 'inconclusiva', largura_cm: 'indisponivel', altura_cm: 'indisponivel' })
     v.create.mockResolvedValueOnce(corpo)
     expect(estados(await lerEtiquetaPorVisao({ ...entrada, parcial: true })))
-      .toEqual({ marca: 'inconclusiva', origem: 'inconclusiva', peso_gramas: 'inconclusiva', largura_cm: 'inconclusiva', altura_cm: 'inconclusiva' })
+      .toEqual({ marca: 'inconclusiva', 'atributo:BRAND': 'inconclusiva', peso_gramas: 'inconclusiva', largura_cm: 'inconclusiva', altura_cm: 'inconclusiva' })
   })
 
   it('maxRetries 0 e AbortSignal.timeout(60000) na chamada', async () => {
@@ -170,7 +159,7 @@ describe('conferirEtiqueta + lerFicha', () => {
     expect(fotosBaixadas).not.toContain('P_APL')
     const texto = (v.create.mock.calls[0][0].messages[1].content[0] as { text: string }).text
     const pedido = JSON.parse(texto.slice(texto.indexOf('{')))
-    expect(pedido.campos.map((c: { campo: string }) => c.campo).sort()).toEqual(['atributo:MAIN_MATERIAL', 'comprimento_cm', 'marca', 'origem'])
+    expect(pedido.campos.map((c: { campo: string }) => c.campo).sort()).toEqual(['atributo:MAIN_MATERIAL', 'comprimento_cm', 'marca'])
   })
 
   it('teto: 6 cores × 3 fotos → referências primeiro, corta no teto, grava parcial e não achado vira inconclusiva', async () => {
@@ -243,6 +232,74 @@ describe('conferirEtiqueta + lerFicha', () => {
     v.create.mockResolvedValueOnce(resposta([lido('marca', 'Avil')]))
     expect(await conferir()).toBe(true)
     expect((await fato('marca'))?.estado).toBe('CONFIRMADO')
+  })
+
+  it('origem obedece o cadastro: NACIONAL + etiqueta "Made in China" → CONFIRMADO, sem trava nem sugestão; origem não vai à visão', async () => {
+    db.familias[0] = { ...db.familias[0], origem: 'NACIONAL' }
+    v.create.mockResolvedValueOnce(resposta([lido('origem', 'Made in China'), lido('marca', 'Avil')]))
+    await conferir()
+    const texto = (v.create.mock.calls[0][0].messages[1].content[0] as { text: string }).text
+    expect(texto).not.toContain('origem')
+    // Mesmo uma leitura gravada com origem divergente não conta.
+    ;(tabela()[0].leitura as Record<string, Linha>).origem = { estado: 'divergente', valor_lido: 'IMPORTADO', foto: null, caixa: null, foto_sha256: null }
+    const fs = await lerFicha(fake.admin as never, 'org', anuncio())
+    expect(fs.filter((f) => f.campo === 'origem')).toEqual([expect.objectContaining({ estado: 'CONFIRMADO', valor: 'NACIONAL', origem: 'planilha' })])
+    expect(fs.find((f) => f.campo === 'origem')?.etiqueta).toBeUndefined()
+  })
+
+  it('foto do ML com erro é pulada (6 refs + 20 do ML, a 18ª em 404 e a 3ª em 500): leitura normal, sem falhou; baixa só o necessário', async () => {
+    const cores = ['preto', 'branco', 'azul', 'rosa', 'verde', 'cinza']
+    refs = cores.map((c, i) => ({ id: `r${i}`, path: `org/galeria-ia/famB/referencias/${c}-frente.jpg`, sha256: hex(`ref-${c}`) }))
+    fotosItem = Array.from({ length: 20 }, (_, i) => `P${i + 1}`)
+    const baixadas: string[] = []
+    const base = globalThis.fetch as unknown as (u: string) => Promise<Response>
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const ml = url.match(/^https:\/\/ml\/(\w+)\.jpg$/)
+      if (ml) baixadas.push(ml[1])
+      if (url === 'https://ml/P18.jpg') return new Response('x', { status: 404 })
+      if (url === 'https://ml/P3.jpg') return new Response('x', { status: 500 })
+      return base(url)
+    }))
+    v.create.mockResolvedValueOnce(resposta([lido('marca', 'Avil', 8)]))
+    await conferir()
+    const urls = urlsEnviadas()
+    expect(urls).toHaveLength(MAX_FOTOS)
+    expect(urls.slice(6)).toEqual(['P1', 'P2', 'P4', 'P5', 'P6', 'P7', 'P8', 'P9', 'P10', 'P11'].map((p) => `https://ml/${p}.jpg`))
+    expect(baixadas).not.toContain('P18') // só o necessário para o teto
+    expect(tabela()[0]).toMatchObject({ falhou: false, parcial: true })
+    expect((await fato('marca'))?.estado).toBe('CONFIRMADO')
+  })
+
+  it('a 18ª em 404 quando precisa ser baixada (sem refs, P2/P3 repetem P1): pulada, a 19ª completa o teto', async () => {
+    refs = []
+    fotosItem = Array.from({ length: 20 }, (_, i) => `P${i + 1}`)
+    bytesFoto = { P2: 'P1', P3: 'P1' }
+    const baixadas: string[] = []
+    const base = globalThis.fetch as unknown as (u: string) => Promise<Response>
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.startsWith('https://ml/')) baixadas.push(url)
+      return url === 'https://ml/P18.jpg' ? new Response('x', { status: 404 }) : base(url)
+    }))
+    v.create.mockResolvedValueOnce(resposta([lido('marca', 'Avil')]))
+    await conferir()
+    expect(baixadas).toContain('https://ml/P18.jpg')
+    expect(urlsEnviadas()).toHaveLength(MAX_FOTOS)
+    expect(urlsEnviadas()).not.toContain('https://ml/P18.jpg')
+    expect(urlsEnviadas().at(-1)).toBe('https://ml/P19.jpg')
+    expect(tabela()[0]).toMatchObject({ falhou: false })
+  })
+
+  it('nenhuma foto pôde ser lida → falhou com todos indisponivel, e a próxima tenta de novo', async () => {
+    refs = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.startsWith('https://api.mercadolibre.com/items/MLB1')) return Response.json({ id: 'MLB1', pictures: [{ id: 'P1' }], variations: [] })
+      if (url.startsWith('https://api.mercadolibre.com/pictures/')) return Response.json({ variations: [{ secure_url: 'https://ml/P1.jpg' }] })
+      return new Response('x', { status: 404 })
+    }))
+    expect(await conferir()).toBe(true)
+    expect(v.create).not.toHaveBeenCalled()
+    expect(tabela()[0]).toMatchObject({ falhou: true })
+    expect((await fato('marca'))?.estado).toBe('NAO_CONFERIDO')
   })
 
   it('sem campos de etiqueta → não chama a visão', async () => {
