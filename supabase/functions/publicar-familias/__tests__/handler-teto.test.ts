@@ -117,16 +117,44 @@ describe('publicar-familias — CREATE acima do teto (ADR-0195)', () => {
     erro.mockRestore();
   });
 
-  it('soma dentro do limite → publish, sem ler o cache', async () => {
+  it('soma dentro do limite e preço uniforme → publish', async () => {
     f.variacoes = [cor(60_000), cor(39_999)];
     expect(await publicar()).toEqual(['publish']);
-    expect(f.leituras).not.toContain('ml_formato_publicacao');
   });
 
   it('UPDATE acima do limite nunca lê o cache nem divide por soma', async () => {
     f.create = []; f.update = [FAMILIA];
     expect(await publicar()).toEqual(['update']);
     expect(f.leituras).not.toContain('ml_formato_publicacao');
+  });
+});
+
+// ADR-0160 (emenda 2026-11-09): CREATE divergente consulta o cache; categoria `user_products` vai à saga.
+describe('publicar-familias — CREATE com preços divergentes (ADR-0160)', () => {
+  const comPreco = (preco: number, estoque = 10): Linha => ({ ...cor(estoque), preco_publicacao: preco });
+  const divergentes = () => [comPreco(133.15), comPreco(141.35), comPreco(155.7)];
+
+  it('CREATE divergente com categoria user_products no cache → publish', async () => {
+    f.variacoes = divergentes();
+    f.formatos = [{ categoria_id: 'MLB1', formato: 'user_products' }];
+    expect(await publicar()).toEqual(['publish']);
+  });
+
+  it('CREATE divergente sem cache → split', async () => {
+    f.variacoes = divergentes();
+    f.formatos = [];
+    expect(await publicar()).toEqual(['split']);
+  });
+
+  it('CREATE divergente com cache legacy → split', async () => {
+    f.variacoes = divergentes();
+    expect(await publicar()).toEqual(['split']);
+  });
+
+  it('CREATE divergente acima do teto com cache user_products → publish', async () => {
+    f.variacoes = [comPreco(133.15, 60_000), comPreco(141.35, 60_000), comPreco(155.7, 60_000)];
+    f.formatos = [{ categoria_id: 'MLB1', formato: 'user_products' }];
+    expect(await publicar()).toEqual(['publish']);
   });
 });
 
