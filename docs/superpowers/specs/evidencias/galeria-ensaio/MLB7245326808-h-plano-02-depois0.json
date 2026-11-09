@@ -1,0 +1,22 @@
+{
+  "mlb": "MLB7245326808",
+  "passo": "h-plano",
+  "rotulo": "depois0",
+  "horario_utc": "2026-11-09T10:57:50.753000Z",
+  "http": 200,
+  "put_utc": "2026-11-09T10:57:50.418Z",
+  "corpo_enviado": {
+    "price": 39.9,
+    "available_quantity": 90
+  },
+  "status": "active",
+  "price": 39.9,
+  "available_quantity": 90,
+  "sold_quantity": 0,
+  "seller_custom_field": "02994780",
+  "catalog_listing": false,
+  "pictures": [
+    "943890-MLB113772297516_072026"
+  ],
+  "variations": []
+}

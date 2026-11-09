@@ -1,0 +1,22 @@
+{
+  "mlb": "MLB7245326842",
+  "passo": "up-ordem-7-recheck",
+  "rotulo": "get",
+  "horario_utc": "2026-11-09T11:03:29.667Z",
+  "status": "active",
+  "price": 39.9,
+  "available_quantity": 363,
+  "sold_quantity": 0,
+  "seller_custom_field": "02994801",
+  "catalog_listing": false,
+  "pictures": [
+    "805387-MLB115302598605_072026",
+    "659969-MLB113772252896_072026",
+    "661753-MLB115302243179_072026",
+    "701750-MLB115302037427_072026",
+    "641756-MLB115301715427_072026",
+    "999451-MLB113986734954_072026",
+    "831619-MLB115302777311_072026"
+  ],
+  "variations": []
+}

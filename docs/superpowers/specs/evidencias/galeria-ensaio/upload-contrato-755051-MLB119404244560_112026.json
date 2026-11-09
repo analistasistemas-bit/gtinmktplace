@@ -1,0 +1,25 @@
+{
+  "endpoint": "POST /pictures/items/upload (multipart, campo file)",
+  "http": 201,
+  "horario_utc": "2026-11-09T11:03:24.414Z",
+  "campos_resposta": [
+    "crop",
+    "dominant_color",
+    "hash",
+    "id",
+    "max_size",
+    "origin",
+    "status",
+    "variations"
+  ],
+  "id": "755051-MLB119404244560_112026",
+  "status": "ACTIVE",
+  "max_size": "859x906",
+  "variations_campos": [
+    "secure_url",
+    "size",
+    "url"
+  ],
+  "variations_tem_id": false,
+  "variations_qtd": 17
+}

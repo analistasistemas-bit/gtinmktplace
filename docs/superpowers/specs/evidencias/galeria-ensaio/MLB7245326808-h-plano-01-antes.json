@@ -1,0 +1,16 @@
+{
+  "mlb": "MLB7245326808",
+  "passo": "h-plano",
+  "rotulo": "antes",
+  "horario_utc": "2026-11-09T10:57:48.979000Z",
+  "status": "active",
+  "price": 39.9,
+  "available_quantity": 90,
+  "sold_quantity": 0,
+  "seller_custom_field": "02994780",
+  "catalog_listing": false,
+  "pictures": [
+    "943890-MLB113772297516_072026"
+  ],
+  "variations": []
+}

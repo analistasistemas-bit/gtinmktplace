@@ -1,7 +1,9 @@
 # Galeria da cor — ensaio do contrato do ML (Task 1)
 
-**Data:** 2026-11-09 (UTC). **Script:** `scripts/ensaio-galeria-put.ts` (fora da suíte; guarda de item, corpo só-fotos, restauro automático; comando `inverso` para (h)).
-**Status:** (a)–(h) medidos. (h) medido em 2026-11-09 ~10:54–10:59Z, com 3 escritas autorizadas pelo Diego (valores atuais, sem mudança real). **Portão: PASSOU nas formas medidas** (ver (h)).
+**Data:** 2026-11-09 (UTC). **Script:** `scripts/ensaio-galeria-put.ts` (fora da suíte). Desde o fix round 1: medição só aprova com HTTP 2xx **e** fotos do GET iguais ao corpo enviado (ids, ordem e quantidade, no item e em cada variação) **e** o resto igual; corpo de restauro gravado **antes** de cada escrita; GET pós-PUT com novas tentativas; restauro só é declarado depois de GET igual ao retrato. Comando `inverso` para (h)..
+**Status:** (a)–(h) medidos. (h) medido em 2026-11-09 ~10:54–10:59Z, com 3 escritas autorizadas pelo Diego (valores atuais, sem mudança real). **Portão: PASSOU nas formas medidas** (ver (h)). Fix round 1 (11:03Z): (i) UP com 7 fotos medido; contrato do upload registrado; evidência sanitizada versionada.
+
+**Evidência versionada:** `docs/superpowers/specs/evidencias/galeria-ensaio/` (JSON por MLB e passo: horário, preço, estoque, status, SKU, `attribute_combinations`, ids de fotos na ordem, por variação; sem token nem dado de comprador). **Limite da prova:** os brutos de (a)–(g) (09:55–09:57Z) não existem mais (`/tmp/ensaio-galeria` foi limpo); o que o doc diz dessas etapas vem do registro feito à época, e a prova versionada do estado final delas é o GET de 11:03:07–08Z (`*-estado-final-*.json`, MLB7168683146 e MLB7245326808) e o retrato de MLB7245326842 antes de (i) (7 fotos, como registrado). Os de 7168683146 e 7245326808 batem com os valores escritos em (b), (d) e (h) (preço, estoque, SKUs, fotos originais 667978…/943890…); isso prova o estado final, não cada passo intermediário. Não há como reprovar retroativamente (b)/(d) por variação; (b)/(d) conferiram o recorte com o script antigo, que **não** comparava as fotos contra o corpo enviado (só invariantes e contagem) — o casamento de ids/ordem de (f) foi lido à mão no GET.
 
 Anúncios autorizados pelo Diego (org Avil). (a)–(g): só escrita de fotos, originais restauradas no fim; (h): 3 PUTs de estoque/preço com os valores atuais (ver (h)):
 
@@ -26,6 +28,23 @@ Nos 3 itens o ML devolve `catalog_listing: false` **explícito** em: GET complet
 |---|---|---|---|---|---|---|
 | 667978-MLB113299208758_072026 (Legacy) | 198313 | 201 | 1156 | 897793-MLB121113625135_112026 | 1024x1024 | 1446 |
 | 943890-MLB113772297516_072026 (UP 808) | 126810 | 201 | 909 | 823064-MLB119401209710_112026 | 807x953 | 1152 |
+
+### Endpoint usado pela galeria (ruling do controller)
+
+O brief pedia `POST /pictures`; o **medido** foi `POST /pictures/items/upload` (multipart, campo `file`, `User-Agent: Mozilla/5.0`). **A galeria usa o endpoint medido.** `POST /pictures` com `{source}` (URL; usado hoje em `_shared/ml/fotos.ts`) **não foi medido** neste ensaio e **não é usado pela galeria**.
+
+Contrato observado (2ª medição, fix round 1, 11:03:24Z, re-subida da foto 659969-MLB113772252896_072026 do próprio MLB7245326842; evidência `upload-contrato-755051-MLB119404244560_112026.json`):
+
+| Campo | Observado |
+|---|---|
+| HTTP | 201, ~950 ms |
+| campos da resposta | `crop`, `dominant_color`, `hash`, `id`, `max_size`, `origin`, `status`, `variations` |
+| `id` | `755051-MLB119404244560_112026` (formato igual ao dos ids do item) |
+| `status` | `ACTIVE` |
+| `variations[]` | 17 tamanhos, cada um só com `size`, `url`, `secure_url` — **não existe `variations[].id`** |
+| `max_size` | 859x906 (a mesma foto no item está como 860x906: a re-subida pode diferir 1 px; não usar `max_size` para casar foto) |
+
+Identidade: **id do upload = id enviado no PUT = id lido no GET** (provado em (f) com 897793-… e 823064-…). O casamento é só por `id`; `variations[]` do upload são tamanhos da imagem, não variações do anúncio. Esta 2ª re-subida não foi usada em PUT (órfã, como a de 500 px).
 
 Resposta do upload já vem com `status: ACTIVE` e `variations[].secure_url` (`D_NQ_NP_<id>-F.jpg`); `GET /pictures/{id}` → 200/ACTIVE logo depois. A foto fica utilizável em ~1–1,5 s.
 Achados: (1) `secure_url` do item (`D_<id>-O.jpg`) é a versão de **500 px**; a original está em `D_NQ_NP_<id>-F.<ext>` — uma 1ª re-subida pela `-O` gerou `858776-MLB119401207702_112026` (500x500, nunca usada em PUT, órfã). (2) `mlstatic` responde **405 a HEAD**: sondar com GET. (3) Mesmos bytes → id **novo** (sem deduplicação).
@@ -62,7 +81,7 @@ Nunca `available_quantity`, `price`, `attributes`.
 | id enviado no PUT | o mesmo | o mesmo |
 | id lido no GET | o mesmo, na posição enviada (`pictures[0]` e `variations[0].picture_ids[0]`) | o mesmo (`pictures[0]`) |
 
-Casamento: **por id** (o ML não renomeia) e a ordem do GET é a ordem enviada. `max_size` do GET do item = do upload. Ids removidos podem ser reenviados depois (o restauro reusou os originais).
+Casamento: **por id** (o ML não renomeia) e a ordem do GET é a ordem enviada. `max_size` do GET do item = do upload nesses dois casos (mas ver o achado de 1 px acima). Ids removidos podem ser reenviados depois (o restauro reusou os originais).
 
 ## (g) Restauro
 
@@ -73,6 +92,23 @@ Casamento: **por id** (o ML não renomeia) e a ordem do GET é a ordem enviada. 
 | MLB7245326842 | não escrito | — | recorte igual ao inicial |
 
 `tags` só mudaram de **ordem** após cada PUT (conjunto igual).
+
+## (i) UP com N>1 fotos — reordenar a lista completa (fix round 1)
+
+Dentro da autorização original (só fotos, 3 MLBs). MLB7245326842 (UP plano, 7 fotos, SKU 02994801, preço 39,9, estoque 363, vendidos 0, active, `catalog_listing=false`). Lista sempre **completa** (o script recusa lista parcial).
+
+| UTC | Passo | Corpo / leitura | HTTP | Conferência |
+|---|---|---|---|---|
+| 11:03:15.2 | GET antes | ordem `805387, 659969, 661753, 701750, 641756, 999451, 831619` | — | guarda ok; restauro gravado antes da escrita |
+| 11:03:15.5 | PUT | `{pictures:[659969, 805387, 661753, 701750, 641756, 999451, 831619]}` (2 primeiras trocadas) | 200 | GET 11:03:15.8: ordem = corpo, 7 fotos, nenhuma perdida; preço, estoque, status, SKU iguais |
+| 11:03:16.3 | PUT restauro | `{pictures:[ordem original]}` | 200 | GET 11:03:16.5: igual ao retrato (ids e ordem) |
+| 11:03:29 · 11:04:04 · 11:05:02 (~106 s após o restauro) | GET de novo | — | — | igual ao retrato |
+
+Ids completos nos JSON `MLB7245326842-up-ordem-7-*`. **Resultado:** no UP, `{pictures}` com a lista completa aplica a ordem enviada (inclusive a capa) e preserva todas as fotos; restauro conferido.
+
+## UP com 2 tamanhos da mesma cor — não aplicável na AVIL
+
+O brief pedia uma família UP com ≥2 tamanhos da mesma cor. Na AVIL isso não existe: a família 02994771 (Lantejoula Búfalo) tem 1 MLB por cor (informado pelo coordenador; Diego ciente). Fica coberto pelos testes automáticos e pela validação real da Task 16.
 
 ## Escritas feitas em (a)–(g) (todas em MLB autorizado, só fotos; as de (h) estão na seção (h))
 
@@ -96,10 +132,10 @@ Corpos lidos no código e conferidos antes de enviar:
 
 | Caminho | Corpo no código |
 |---|---|
-| `atualizarEstoque` (`_shared/canais/mercado-livre.ts` → `montarVariacoesUpdate(..., somenteEstoque=true)` + `atualizarItemML`) | Legacy `{variations:[{id, available_quantity}]}` (todas) |
+| push de estoque, `atualizarEstoque` (`_shared/canais/mercado-livre.ts:430`, variações: `montarVariacoesUpdate(..., somenteEstoque=true)` + `atualizarItemML`; `:422`, item plano: `atualizarItemPlanoML`) — chamado de `sincronizar-estoque/processar.ts:586` | Legacy `{variations:[{id, available_quantity}]}` (todas); plano `{available_quantity}` |
 | reajuste em massa (`_shared/operacoes/reajuste/ml.ts`, `putPreco`) | Legacy `{variations:[{id, price}]}` (todas, mesmo preço); plano `{price}` |
 | `atualizarItemPlanoML` (`_shared/ml/atualizar-item.ts`; reposição UP e push de estoque de item plano) | `{price?, available_quantity?, attributes?}` |
-| `putQuantidade` (`kit-transferencia/index.ts:133`) | `{available_quantity}` |
+| `putQuantidade` do kit (injetado e chamado em `_shared/kit-variacao/saga.ts:596`; corpo em `kit-transferencia/index.ts:133`) | `{available_quantity}` |
 | `sincronizar-marca-ml` (`index.ts:117`) | `{attributes}` |
 
 ### Escritas e resultado
@@ -118,7 +154,7 @@ GET antes = depois (~60 s), por item:
 | 7245326808 | 39,9 | 90 | 0 | active | — (plano; SKU 02994780) | 943890-MLB113772297516_072026 |
 
 `tags`: só mudaram de **ordem** (conjunto igual) após os PUTs de estoque e do item plano — o mesmo de (g).
-Brutos (GET antes/depois) em `/tmp/ensaio-galeria/` (fora do repo).
+Evidência sanitizada: `evidencias/galeria-ensaio/MLB7168683146-h-estoque-*`, `MLB7168683146-h-preco-*`, `MLB7245326808-h-plano-*` (antes, logo após, ~60 s). Não houve restauro em (h): nada mudou.
 
 ### Resultado por caminho (dispensados da trava)
 
@@ -126,8 +162,8 @@ Brutos (GET antes/depois) em `/tmp/ensaio-galeria/` (fora do repo).
 |---|---|---|
 | `atualizarEstoque`, Legacy | **medido** (PUT 1) | sim |
 | reajuste em massa, Legacy | **medido** (PUT 2) | sim |
-| `atualizarItemPlanoML` com `price`+`available_quantity` (reposição UP; push de estoque de item plano) | **medido** (PUT 3) | sim |
-| `putQuantidade` do kit `{available_quantity}` e reajuste plano `{price}` | subconjunto do PUT 3 (mesmo item plano, corpo raiz sem `pictures`) — **inferido do PUT 3**, não medido isoladamente | sim |
+| `atualizarItemPlanoML` com `price`+`available_quantity` (reposição UP) | **medido** (PUT 3) | sim |
+| push de estoque de item plano e `putQuantidade` do kit `{available_quantity}`; reajuste plano `{price}` | subconjunto do PUT 3 (mesmo item plano, corpo raiz sem `pictures`) — **inferido do PUT 3**, não medido isoladamente | sim |
 | `sincronizar-marca-ml` `{attributes}` e `atualizarItemPlanoML` com `attributes` | **inferido, não medido**: PUT de BRAND/atributos em filho UP pode reagrupar a família (memória "BRAND reagrupa família UP"), por isso não foi escrito. A regra observada nos 3 PUTs (o ML trata o corpo parcial por campo e não toca `pictures`/`picture_ids` omitidos) é a mesma; risco residual documentado | sim, por inferência |
 
-**Portão:** (a)–(h) passaram → **PASSOU nas formas medidas** (estoque Legacy, preço Legacy, preço+estoque no item plano UP): `pictures`/`picture_ids` omitidos são preservados, sem mudança assíncrona em ~60 s. O PUT `{attributes}` fica coberto por inferência, não por medição. Liberar a galeria com essa ressalva é decisão do Diego.
+**Portão:** (a)–(i) passaram → **PASSOU nas formas medidas** (estoque Legacy, preço Legacy, preço+estoque no item plano UP): `pictures`/`picture_ids` omitidos são preservados, sem mudança assíncrona em ~60 s. O PUT `{attributes}` fica coberto por inferência, não por medição. Liberar a galeria com essa ressalva é decisão do Diego.

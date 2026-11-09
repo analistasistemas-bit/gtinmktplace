@@ -1,0 +1,64 @@
+{
+  "mlb": "MLB7168683146",
+  "passo": "h-preco",
+  "rotulo": "depois0",
+  "horario_utc": "2026-11-09T10:56:42.523000Z",
+  "http": 200,
+  "put_utc": "2026-11-09T10:56:42.218Z",
+  "corpo_enviado": {
+    "variations": [
+      {
+        "id": 197626117402,
+        "price": 28.35
+      },
+      {
+        "id": 197626117404,
+        "price": 28.35
+      }
+    ]
+  },
+  "status": "active",
+  "price": 28.35,
+  "available_quantity": 1445,
+  "sold_quantity": 0,
+  "seller_custom_field": null,
+  "catalog_listing": false,
+  "pictures": [
+    "667978-MLB113299208758_072026",
+    "651426-MLB114535152117_072026",
+    "667002-MLB114543264129_072026",
+    "657019-MLB114543264329_072026",
+    "727809-MLB114535230381_072026",
+    "933412-MLB114543440809_072026"
+  ],
+  "variations": [
+    {
+      "id": 197626117402,
+      "price": 28.35,
+      "available_quantity": 838,
+      "seller_custom_field": "02864002",
+      "attribute_combinations": [
+        "COLOR=Branco"
+      ],
+      "picture_ids": [
+        "667978-MLB113299208758_072026",
+        "651426-MLB114535152117_072026",
+        "667002-MLB114543264129_072026"
+      ]
+    },
+    {
+      "id": 197626117404,
+      "price": 28.35,
+      "available_quantity": 607,
+      "seller_custom_field": "02928469",
+      "attribute_combinations": [
+        "COLOR=Preto"
+      ],
+      "picture_ids": [
+        "657019-MLB114543264329_072026",
+        "727809-MLB114535230381_072026",
+        "933412-MLB114543440809_072026"
+      ]
+    }
+  ]
+}
