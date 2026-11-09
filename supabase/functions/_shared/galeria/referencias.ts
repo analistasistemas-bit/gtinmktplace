@@ -8,7 +8,8 @@ import { getValidAccessTokenConexao } from '../ml/token.ts';
 import { buscarItemML, type ItemMLAtual } from '../ml/atualizar-item.ts';
 import { buscarSecureUrlFotoML } from '../ml/fotos.ts';
 import { fotoDaOrg } from '../../criar-kit-variacao/processar.ts';
-import { carregarAnuncio, skusDaCor, type AnuncioGaleria } from './anuncio.ts';
+import { carregarAnuncio, coresDoAnuncio, skusDaCor, type AnuncioGaleria } from './anuncio.ts';
+import { hashFatos, montarFicha, type Fato, type FatoGravado } from './fatos.ts';
 import type { Vista } from './regras.ts';
 
 export interface Referencia { id: string; path: string; sha256: string }
@@ -119,4 +120,45 @@ export async function prepararReferencia(
     return await gravarReferencia(admin, orgId, a, cor, vista, new Uint8Array(await resp.arrayBuffer()), 'ml');
   }
   return { erro: 'sem_referencia' };
+}
+
+const MEDIDAS = ['peso_gramas', 'altura_cm', 'largura_cm', 'comprimento_cm'] as const;
+const VISTAS: Vista[] = ['frente', 'costas', 'lateral'];
+
+/** Ficha Verdade da família vigente do anúncio, com as decisões do operador (`galeria_fatos`). */
+export async function lerFicha(admin: SupabaseClient, orgId: string, a: AnuncioGaleria): Promise<Fato[]> {
+  const { data, error } = await admin.from('galeria_fatos').select('campo, valor, origem, evidencia, descartado')
+    .eq('org_id', orgId).eq('anuncio_externo_id', a.anuncioId).eq('familia_id', a.vigente.id);
+  if (error) throw new Error(error.message);
+  const f = a.vigente;
+  return montarFicha({
+    planilha: { nome: f.nome_pai, descricao_fornecedor: f.descricao_pai, marca: f.marca, origem: f.origem },
+    // R1.5 sobre todos os SKUs vivos do anúncio (o roteiro é um só para todas as cores).
+    medidasPorSku: Object.fromEntries(a.skus.filter((s) => a.porSku[s]).map((s) => [s, Object.fromEntries(
+      MEDIDAS.filter((m) => a.porSku[s][m] != null).map((m) => [m, String(a.porSku[s][m])]),
+    )])),
+    atributosML: f.atributos_ml ?? [],
+    textosIA: { titulo_ml: f.titulo_ml, descricao_ml: f.descricao_ml },
+    confirmados: (data ?? []) as FatoGravado[],
+  });
+}
+
+/**
+ * Vigência do anúncio: ficha + referências (todas as cores × frente/costas/lateral) + `fatos_hash`.
+ * Única fonte do hash: quem grava `galeria_roteiros.fatos_hash` (aprovar, Task 7) usa esta mesma função.
+ */
+export async function calcularVigencia(admin: SupabaseClient, orgId: string, a: AnuncioGaleria) {
+  const aplicadas = await carregarFotosAplicadas(admin, orgId, a.anuncioId);
+  const referencias: Record<string, Record<string, Referencia | { erro: 'sem_referencia' }>> = {};
+  const shas: Record<string, string> = {};
+  for (const cor of coresDoAnuncio(a)) {
+    referencias[cor] = {};
+    for (const vista of VISTAS) {
+      const r = await prepararReferencia(admin, orgId, a.anuncioId, cor, vista, aplicadas, a);
+      referencias[cor][vista] = r;
+      if (!('erro' in r)) shas[`${cor}:${vista}`] = r.sha256;
+    }
+  }
+  const fatos = await lerFicha(admin, orgId, a);
+  return { fatos, referencias, fatos_hash: hashFatos(fatos, shas) };
 }

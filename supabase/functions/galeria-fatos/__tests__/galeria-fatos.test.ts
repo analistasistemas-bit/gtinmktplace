@@ -131,12 +131,11 @@ describe('galeria-fatos', () => {
     expect(db.galeria_fatos[0]).toMatchObject({ campo: 'atributo:PATTERN', descartado: true })
   })
 
-  it('manter_cadastro grava a decisão com a leitura da etiqueta', async () => {
+  // A leitura vem do servidor: o cliente não pré-autoriza ignorar etiqueta nem confirma SUGERIDO por este caminho.
+  it('manter_cadastro em fato que não está DIVERGENTE → 409, sem gravar (mesmo com etiqueta no corpo)', async () => {
     const r = await chamar({ acao: 'manter_cadastro', ml_item_id: 'MLB1', familia_id: 'famB', campo: 'atributo:MAIN_MATERIAL', etiqueta: '100% Poliamida' })
-    expect(r.status).toBe(200)
-    expect(db.galeria_fatos[0]).toMatchObject({
-      valor: '100% POLIÉSTER', origem: 'confirmado_operador', evidencia: expect.objectContaining({ manter_cadastro: true, etiqueta_lida: '100% Poliamida' }),
-    })
+    expect(r).toMatchObject({ status: 409, body: { error: 'campo_nao_divergente' } })
+    expect(db.galeria_fatos).toHaveLength(0)
   })
 
   it('corrigir_cadastro: grava só na família vigente (atributo), confirma o fato e não toca no ML', async () => {

@@ -7,36 +7,16 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { carregarAnuncio, coresDoAnuncio, resolverAnuncio, type AnuncioGaleria } from '../_shared/galeria/anuncio.ts';
-import { hashFatos, montarFicha, type Fato, type FatoGravado } from '../_shared/galeria/fatos.ts';
-import { carregarFotosAplicadas, gravarReferencia, prepararReferencia, type Referencia } from '../_shared/galeria/referencias.ts';
-import type { Vista } from '../_shared/galeria/regras.ts';
+import { calcularVigencia, gravarReferencia, lerFicha } from '../_shared/galeria/referencias.ts';
 
 type Admin = ReturnType<typeof adminClient>;
 const ACOES = new Set(['montar', 'confirmar', 'descartar', 'manter_cadastro', 'corrigir_cadastro', 'enviar_vista']);
-const VISTAS: Vista[] = ['frente', 'costas', 'lateral'];
-const MEDIDAS = ['peso_gramas', 'altura_cm', 'largura_cm', 'comprimento_cm'] as const;
 const MAX_FOTO_BYTES = 8 * 1024 * 1024;
 const CONFLITO_FATO = 'org_id,anuncio_externo_id,familia_id,campo';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 const texto = (v: unknown, max: number) => (typeof v === 'string' && v.trim() !== '' && v.length <= max ? v.trim() : null);
-
-async function lerFicha(admin: Admin, orgId: string, a: AnuncioGaleria): Promise<Fato[]> {
-  const { data, error } = await admin.from('galeria_fatos').select('campo, valor, origem, evidencia, descartado')
-    .eq('org_id', orgId).eq('anuncio_externo_id', a.anuncioId).eq('familia_id', a.vigente.id);
-  if (error) throw new Error(error.message);
-  const f = a.vigente;
-  return montarFicha({
-    planilha: { nome: f.nome_pai, descricao_fornecedor: f.descricao_pai, marca: f.marca, origem: f.origem },
-    medidasPorSku: Object.fromEntries(a.skus.filter((s) => a.porSku[s]).map((s) => [s, Object.fromEntries(
-      MEDIDAS.filter((m) => a.porSku[s][m] != null).map((m) => [m, String(a.porSku[s][m])]),
-    )])),
-    atributosML: f.atributos_ml ?? [],
-    textosIA: { titulo_ml: f.titulo_ml, descricao_ml: f.descricao_ml },
-    confirmados: (data ?? []) as FatoGravado[],
-  });
-}
 
 /** Vigência editorial × execução: só `pendente` e as produzidas não aplicadas mudam; submetendo|gerando concluem sozinhas. */
 async function desatualizar(admin: Admin, orgId: string, anuncioId: string, roteiroId: string) {
@@ -63,28 +43,15 @@ async function desatualizar(admin: Admin, orgId: string, anuncioId: string, rote
 }
 
 async function montar(admin: Admin, orgId: string, a: AnuncioGaleria) {
-  const aplicadas = await carregarFotosAplicadas(admin, orgId, a.anuncioId);
-  const cores = coresDoAnuncio(a);
-  const referencias: Record<string, Record<string, Referencia | { erro: 'sem_referencia' }>> = {};
-  const shas: Record<string, string> = {};
-  for (const cor of cores) {
-    referencias[cor] = {};
-    for (const vista of VISTAS) {
-      const r = await prepararReferencia(admin, orgId, a.anuncioId, cor, vista, aplicadas, a);
-      referencias[cor][vista] = r;
-      if (!('erro' in r)) shas[`${cor}:${vista}`] = r.sha256;
-    }
-  }
-  const fatos = await lerFicha(admin, orgId, a);
-  const fatosHash = hashFatos(fatos, shas);
+  const v = await calcularVigencia(admin, orgId, a);
   const { data: roteiro, error } = await admin.from('galeria_roteiros').select('id, fatos_hash')
     .eq('org_id', orgId).eq('anuncio_externo_id', a.anuncioId).eq('status', 'aprovado').maybeSingle();
   if (error) throw new Error(error.message);
-  const desatualizado = !!roteiro && roteiro.fatos_hash !== fatosHash;
+  const desatualizado = !!roteiro && roteiro.fatos_hash !== v.fatos_hash;
   if (desatualizado) await desatualizar(admin, orgId, a.anuncioId, roteiro.id);
   return {
-    anuncio_externo_id: a.anuncioId, familia_id: a.vigente.id, codigo_pai: a.codigoPai, cores,
-    fatos, referencias, fatos_hash: fatosHash, roteiro_desatualizado: desatualizado,
+    anuncio_externo_id: a.anuncioId, familia_id: a.vigente.id, codigo_pai: a.codigoPai, cores: coresDoAnuncio(a),
+    ...v, roteiro_desatualizado: desatualizado,
   };
 }
 
@@ -144,8 +111,9 @@ Deno.serve(async (req) => {
         evidencia: { ...fato.evidencia, origem_sugestao: fato.origem }, descartado: acao === 'descartar',
       };
     } else if (acao === 'manter_cadastro') {
-      const etiqueta = texto(body.etiqueta, 500);
-      if (!etiqueta || fato.estado === 'VARIA_POR_TAMANHO') return json({ error: 'campo_invalido' }, 400);
+      // Só destrava divergência que o servidor leu; a leitura gravada é a do servidor, nunca a do cliente.
+      const etiqueta = fato.etiqueta?.valor;
+      if (fato.estado !== 'DIVERGENTE' || !etiqueta) return json({ error: 'campo_nao_divergente' }, 409);
       linha = {
         ...chave, ...quem, campo, valor: fato.valor, origem: fato.origem === 'planilha' ? 'planilha' : 'confirmado_operador',
         evidencia: { ...fato.evidencia, manter_cadastro: true, etiqueta_lida: etiqueta }, descartado: false,
