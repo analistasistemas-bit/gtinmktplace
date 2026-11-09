@@ -7,7 +7,7 @@ Sessão anterior encerrada por limite de contexto. Tudo abaixo está commitado n
 - **Desenho fechado** (Diego): ADR-0201 §1–§13, regras `docs/superpowers/specs/2026-11-08-galeria-da-cor-regras.md`, glossário `CONTEXT.md` ("Imagens do anúncio por IA").
 - **Plano:** `docs/superpowers/plans/2026-11-08-galeria-da-cor.md`, versão **v9**. Nenhum código escrito.
 - **Revisão do plano:** 9 rodadas de Codex (`gpt-6.1-sol` high) e Grok 4.7 xhigh, todas REVISAR, com bloqueadores caindo (Codex: 8 → 1). Regra do Diego: **continuar as rodadas até os dois aprovarem sem nenhum BLOQUEADOR** ("não pode haver erro"; "sem pressa"; consultar GPT e Grok sempre).
-- **Decisão pendente de ciência do Diego:** teto de 3 gerações **por versão do roteiro** (R8.2), tomada pelo agente; Diego pode vetar.
+- **Teto de 3 gerações por versão do roteiro (R8.2):** confirmado pelo Diego em 08/11.
 - **Execução:** depois do plano aprovado, perguntar ao Diego o método (recomendado: subagent-driven). A Task 1 (ensaio no ML) exige que o Diego escolha 1 anúncio Legacy e 1 família UP de teste.
 
 ## Pendentes da 9ª rodada (aplicar na v10)

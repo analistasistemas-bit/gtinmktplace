@@ -149,7 +149,7 @@ R8.1 Defeitos [A2 graus + A1 lista]:
 - Leve: sombra, espaçamento, alinhamento (aprovável com ressalva).
 Erro factual ou de identidade nunca é aprovado com ressalva [A2].
 
-R8.2 [REV] **Teto total:** a geração inicial + até 2 novas gerações por missão e cor **em cada versão do roteiro** (decisão de 08/11, sujeita a veto do Diego: corrigir um fato e aprovar roteiro novo desatualiza as imagens anteriores e abre 3 vagas), qualquer que seja o defeito.
+R8.2 [REV] **Teto total:** a geração inicial + até 2 novas gerações por missão e cor **em cada versão do roteiro** (confirmado pelo Diego em 08/11: corrigir um fato e aprovar roteiro novo desatualiza as imagens anteriores e abre 3 vagas), qualquer que seja o defeito.
 Nenhuma nova geração automática escondida: cada uma é um clique com o preço na tela. Depois do teto, só
 alternativas sem custo de imagem (recorte da foto real, ajuste de composição).
 
