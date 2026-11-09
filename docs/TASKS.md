@@ -1,5 +1,12 @@
 # PubliAI — Tasks
 
+## CREATE divergente em categoria User Products (emenda ADR-0160) — 2026-11-09
+
+- [x] `publicar-familias`: CREATE consulta `ml_formato_publicacao`; categoria `user_products` vai para `publish` (saga UP) mesmo com preços divergentes. UPDATE inalterado.
+- [x] `publicar-split-ml`: pré-check do cache reenfileira no `publish`; sem cache, tenta primeiro faixa com ≥2 cores; `FORMATO_INCOMPATIVEL` semeia o cache e reenfileira (sem retry); estado misto, >100 cores e falha de enqueue viram erro explícito; falha ao ler `anuncios_externos` → 500 (retry).
+- [x] ADR-0160 emendado (dívida nº 9 resolvida); testes em `publicar-split-ml/__tests__/handler-formato-up.test.ts` e `publicar-familias/__tests__/handler-teto.test.ts`.
+- [ ] Deploy (só com OK do Diego): `publicar-familias` e `publicar-split-ml`; conferir versões ativas.
+
 ## Adesão: 400 OFFER_SIBLING_CREATION_IN_PROCESS (emenda ADR-0174) — 2026-11-09
 
 - [x] AVIL, Black Friday 2026: o pai legado multivariação aderiu e o ML propagou a oferta às cópias de catálogo; o POST de cada cópia voltou 400 SIBLING (28 de 30 "erros" já estavam `pending`).

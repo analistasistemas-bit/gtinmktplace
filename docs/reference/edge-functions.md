@@ -588,6 +588,10 @@ mesmo por engano.
   Products (tem linha em `anuncios_externos_itens`, sinalizada por `ehUP`) publica preços diferentes
   direto, sem dividir — lá cada cor já é um item ML próprio. Os outros dois gatilhos valem nos dois
   modelos.
+  **Emenda ADR-0160 (2026-11-09):** no CREATE a família não tem itens, então `ehUP` estrutural é
+  falso; passa a consultar o cache `ml_formato_publicacao` — categoria `user_products` conta como
+  `ehUP` e o alvo vira `publish` (saga UP, preço por cor) mesmo com preços divergentes. `decidirSplit`
+  não muda; o UPDATE segue sem ler o cache.
   **Trava da oferta (ADR-0196, emenda 2026-11-07 — em produção desde 2026-11-07):** antes das reservas, UPDATE com
   `ml_item_id` e sem "somente estoque" é conferido por `recusasDoLote` (`_shared/publicacao/trava-oferta.ts`), só onde
   o preço novo fica abaixo do vivo. Reprovado volta em `recusadas` e não é reservado; os demais seguem. CREATE e
@@ -786,6 +790,13 @@ mesmo por engano.
   base do preço do grupo; `anuncios_externos.atacado_status`/`atacado_erro` guardam o resultado por
   partição, agregados em `familias.atacado_status` no fim (`agregarAtacadoStatus`: algum erro → erro,
   senão algum aplicado → aplicado).
+  **CREATE em categoria User Products (ADR-0160, emenda 2026-11-09):** com nada no ar (`familias.ml_item_id`
+  nulo e nenhuma linha de `anuncios_externos` ML com `item_externo_id`) e ≤100 cores, um pré-check do cache
+  `ml_formato_publicacao` reenfileira o job inteiro no `publish` quando a categoria é `user_products`. Sem
+  cache, cria primeiro a faixa com ≥2 cores (só ela revela `FORMATO_INCOMPATIVEL`); o erro semeia o cache e
+  reenfileira no `publish`, sem retry. Estado misto, >100 cores em categoria UP e falha do enqueue viram erro
+  explícito (`status='erro'`, lote finalizado). Falha ao ler `anuncios_externos` devolve 500 (QStash retenta)
+  em vez de virar "nada no ar".
   **Controle de preço no UPDATE (ADR-0078, Fase 1):** mesmo comportamento do `update-familia-ml` no
   ramo UPDATE — em "somente estoque" nenhum push de preço/atacado; cor nova adota o preço vivo do
   anúncio (falha LOUD sem preço vivo válido); `preco_publicado_ml` gravado por SKU no sucesso
