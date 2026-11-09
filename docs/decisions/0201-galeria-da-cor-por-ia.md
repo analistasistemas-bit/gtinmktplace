@@ -77,3 +77,18 @@ descrição do anúncio. O cliente que pedir paga por imagem.
   já ficou preso em processamento.
 - Pendentes antes do plano: medição real de fidelidade e texto em português (Nano Banana × modelos Higgsfield) e
   conferência dos limites de fotos por categoria.
+
+## Adendo técnico
+
+Decisões de implementação do plano v23, com os riscos aceitos.
+
+- **(a) Composição no navegador.** As edges têm 2 s de CPU, então a composição final não roda em worker. O arquivo final vem do navegador do operador da própria org; o servidor valida formato, dimensões e peso e guarda o hash. Risco aceito: o servidor não refaz a composição.
+- **(b) Fila na linha e despachante.** O estado vive na linha como fila de trabalho; `galeria-despachante` (1 min) é o único retomador. Cada worker executa uma fase com claim e lease e não encadeia mensagens. A Higgsfield é consultada pelo despachante, com prazo de 12 min. Risco aceito: queda durante uma chamada paga permite no máximo 1 nova submissão (custo da Daludi; o cliente é cobrado uma vez).
+- **(c) Cobrança na exibição confirmada.** O navegador confirma a exibição pela RPC atômica `galeria_confirmar_exibicao`, ao preço confirmado no pedido; a RPC chama `galeria_registrar_entrega` por imagem.
+- **(d) Aplicar como saga.** Saga persistida com manifesto imutável e portão de aborto, na fila `publish-ml-${familias.user_id}`.
+- **(e) Recortes sem gerador.** Os recortes não passam pelo gerador de imagem.
+- **(f) Relógio do QStash.** Prazos e retomadas usam agendamento do QStash.
+- **(g) Trava de escrita por MLB.** `ml_item_travas` é compartilhada entre a galeria e os escritores comuns (`update-familia-ml`, `publicar-split-ml`), porque a fila `publish-ml-${user_id}` não serializa por anúncio desde a E7. Job adiado acorda fora da fila serial; o adiamento fica persistido em `ml_escritas_adiadas` e o despachante o retoma.
+- **(h) Identidade da galeria = anúncio/partição.** A chave é `anuncio_externo_id`, resolvido no servidor a partir do `ml_item_id` da linha clicada em Publicados. A família é só a versão dos dados: a vigente é a de maior `publicado_em` do `codigo_pai` com SKU vivo no anúncio. Trabalho novo exige a vigente; operações históricas (listar, confirmar exibição, reverter) aceitam qualquer família do mesmo anúncio.
+- **(i) Relógio no banco como rede de segurança.** Um `pg_cron` (só SQL) encerra ciclo de aplicação vencido (`ciclo_ate`, 3 h por ciclo), soltando a trava com quarentena de 15 min desde o último PUT; expira imagem órfã após 60 min e escrita adiada órfã após 260 min. Risco aceito: a rede de segurança é grosseira e só limpa; quem retoma é o despachante.
+- **(j) Cobrança por `galeria_registrar_entrega`.** Preço, `terms_id` e elegibilidade ficam congelados no pedido, sem `platform_resolve_terms`. O gatilho do kit (`platform_image_delivery_on_generated`) não é reescrito; só tem extraído o helper `platform_imagem_competencia` (lock da org + mês fechado), reutilizado pela galeria.
