@@ -1,6 +1,6 @@
 // ADR-0201 (Galeria da cor por IA), Task 7: roteiro. Chamada pela tela com o JWT do operador (verify_jwt = true).
 // A tela manda o MLB da linha de Publicados; a edge resolve o anúncio/partição e a família vigente.
-// Ações: criar | salvar | aprovar. Validação sempre em código (validarRoteiro); Moda é da edge, pelo path_from_root
+// Ações: ler | criar | salvar | aprovar. Validação sempre em código (validarRoteiro); Moda é da edge, pelo path_from_root
 // da categoria lida ao vivo. Nunca escreve no Mercado Livre (só GET do item e da categoria).
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
@@ -20,7 +20,7 @@ type Vigencia = Awaited<ReturnType<typeof calcularVigencia>>;
 interface LinhaRoteiro {
   id: string; familia_id: string; versao: number; status: string; moda: boolean; conteudo: Roteiro;
 }
-const ACOES = new Set(['criar', 'salvar', 'aprovar']);
+const ACOES = new Set(['ler', 'criar', 'salvar', 'aprovar']);
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -105,6 +105,21 @@ Deno.serve(async (req) => {
     if ('erro' in r) return json({ error: r.erro }, 409);
     const a = await carregarAnuncio(admin, orgId, r.anuncioId);
     if ('erro' in a) return json({ error: a.erro }, 409);
+    if (acao === 'ler') {
+      // Roteiro vigente da família vigente: a versão mais alta (rascunho mais novo que o aprovado vence; senão o aprovado).
+      // Moda ao vivo, sem fallback do banco: leitura falhou → moda null + aviso, a tela segue.
+      const cat = await lerCategoria(admin, orgId, a);
+      const moda = cat ? cat.moda : null;
+      const aviso = cat ? undefined : 'categoria_indisponivel';
+      const { data: vigente, error: eL } = await admin.from('galeria_roteiros').select('id, familia_id, versao, status, moda, conteudo')
+        .eq('org_id', orgId).eq('anuncio_externo_id', a.anuncioId).eq('familia_id', a.vigente.id)
+        .in('status', ['rascunho', 'aprovado', 'desatualizado'])
+        .order('versao', { ascending: false }).limit(1).maybeSingle();
+      if (eL) throw new Error(eL.message);
+      if (!vigente) return json({ roteiro: null, moda, familia_id: a.vigente.id, ...(aviso ? { aviso } : {}) });
+      return json({ ...resposta(vigente as LinhaRoteiro, await vigencia(admin, orgId, a)), moda, familia_id: a.vigente.id, ...(aviso ? { aviso } : {}) });
+    }
+
     // Trabalho novo só na família vigente (a tela manda a que mostrou).
     if (body.familia_id !== a.vigente.id) return json({ error: 'familia_nao_vigente', familia_id_vigente: a.vigente.id }, 409);
 

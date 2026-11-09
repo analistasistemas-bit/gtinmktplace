@@ -20,7 +20,8 @@ export interface LeituraCampo {
   cru?: string | null;
   // Só na leitura não legível (inconclusiva = ilegível; indisponivel = ausente ou fora do formato).
   estado?: 'inconclusiva' | 'indisponivel';
-  foto?: { origem: 'referencia' | 'ml'; ref: string } | null;
+  /** `url` só na resposta do `montar` (resolvida pela edge para o recorte); nunca gravada nem entra no hash. */
+  foto?: { origem: 'referencia' | 'ml'; ref: string; url?: string } | null;
   caixa?: Caixa | null;
 }
 

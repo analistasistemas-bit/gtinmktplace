@@ -192,6 +192,47 @@ describe('galeria-roteiro: criar', () => {
   })
 })
 
+describe('galeria-roteiro: ler', () => {
+  it('sem roteiro → roteiro null e Moda ao vivo; não escreve nada', async () => {
+    const r = await chamar({ ml_item_id: 'MLB1', acao: 'ler' })
+    expect(r).toMatchObject({ status: 200, body: { roteiro: null, moda: false, familia_id: 'famB' } })
+    expect(db.galeria_roteiros).toEqual([])
+  })
+
+  it('rascunho mais novo que o aprovado vence; devolve erros, erros_por_missao, ciencia_pendente e moda ao vivo', async () => {
+    confirmarMaterial()
+    roteiro({ id: 'r1', versao: 1, status: 'aprovado' })
+    roteiro({ id: 'r2', versao: 2, status: 'rascunho', conteudo: { ...rendaValida(), missoes: [...rendaValida().missoes, { missao: 6, ativa: true, cena: 'x', etapas: ['Lave em água quente'], fatosUsados: ['nome'] }] } })
+    const r = await chamar({ ml_item_id: 'MLB1', acao: 'ler' })
+    expect(r.status).toBe(200)
+    expect(r.body).toMatchObject({ moda: false, roteiro: { id: 'r2', versao: 2, status: 'rascunho' }, ciencia_pendente: [], erros_por_missao: { 6: [expect.any(String)] } })
+    expect((r.body.erros as string[]).length).toBeGreaterThan(0)
+  })
+
+  it('sem rascunho mais novo, devolve o aprovado vigente', async () => {
+    confirmarMaterial()
+    roteiro({ id: 'r1', versao: 1, status: 'aprovado' })
+    const r = await chamar({ ml_item_id: 'MLB1', acao: 'ler' })
+    expect(r.body).toMatchObject({ roteiro: { id: 'r1', status: 'aprovado' }, erros: [] })
+  })
+
+  it('só da família vigente: roteiro de família antiga não aparece', async () => {
+    roteiro({ id: 'rA', familia_id: 'famA', versao: 3, status: 'aprovado' })
+    expect((await chamar({ ml_item_id: 'MLB1', acao: 'ler' })).body.roteiro).toBeNull()
+  })
+
+  it('categoria ilegível → moda null + aviso, sem quebrar nem cair no banco', async () => {
+    roteiro({ id: 'r1', versao: 1, status: 'rascunho', moda: true })
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 500 })))
+    const r = await chamar({ ml_item_id: 'MLB1', acao: 'ler' })
+    expect(r).toMatchObject({ status: 200, body: { moda: null, aviso: 'categoria_indisponivel', roteiro: { id: 'r1' } } })
+  })
+
+  it('MLB que não identifica um único anúncio → 409', async () => {
+    expect((await chamar({ ml_item_id: 'MLB404', acao: 'ler' })).status).toBe(409)
+  })
+})
+
 describe('galeria-roteiro: salvar', () => {
   it('sobre a versão aprovada cria a versão seguinte em rascunho e a aprovada continua igual', async () => {
     confirmarMaterial()

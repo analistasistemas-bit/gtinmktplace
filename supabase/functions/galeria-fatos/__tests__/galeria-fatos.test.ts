@@ -202,6 +202,26 @@ describe('galeria-fatos', () => {
     expect(fatoDe(r.body, 'atributo:MAIN_MATERIAL')).toMatchObject({ estado: 'CONFIRMADO' })
   })
 
+  it('DIVERGENTE devolve a URL do recorte já resolvida: referência assinada e foto do ML pela secure_url; falha → sem url', async () => {
+    const foto = (origem: string, ref: string) => ({ legivel: true, valor: '100% Poliamida', foto: { origem, ref }, caixa: { x: 0.1, y: 0.1, w: 0.5, h: 0.5 } })
+    f.leitura = { 'atributo:MAIN_MATERIAL': foto('referencia', 'org/r.jpg') } as typeof f.leitura
+    const ref = await chamar({ acao: 'montar', ml_item_id: 'MLB1' })
+    expect(fatoDe(ref.body, 'atributo:MAIN_MATERIAL')).toMatchObject({ estado: 'DIVERGENTE', etiqueta: { foto: { origem: 'referencia', url: 'https://signed/org/r.jpg' } } })
+
+    f.leitura = { 'atributo:MAIN_MATERIAL': foto('ml', 'PIC1') } as typeof f.leitura
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      fetchs.push(`GET ${url}`)
+      return url === 'https://api.mercadolibre.com/pictures/PIC1' ? Response.json({ variations: [{ secure_url: 'https://http2.mlstatic.com/D_NQ_X-O.jpg' }] }) : new Response('{}', { status: 500 })
+    }))
+    const ml = await chamar({ acao: 'montar', ml_item_id: 'MLB1' })
+    expect(fatoDe(ml.body, 'atributo:MAIN_MATERIAL')).toMatchObject({ etiqueta: { foto: { origem: 'ml', ref: 'PIC1', url: 'https://http2.mlstatic.com/D_NQ_X-O.jpg' } } })
+
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 500 })))
+    const falhou = await chamar({ acao: 'montar', ml_item_id: 'MLB1' })
+    expect(falhou.status).toBe(200)
+    expect((fatoDe(falhou.body, 'atributo:MAIN_MATERIAL') as { etiqueta: { foto: Linha } }).etiqueta.foto.url).toBeUndefined()
+  })
+
   it('varredura em todo montar: submetendo que conclui gerada depois da troca do roteiro vira desatualizada', async () => {
     db.galeria_roteiros.push({ id: 'r1', org_id: 'org', anuncio_externo_id: 'an1', familia_id: 'famB', status: 'aprovado', fatos_hash: 'velho' })
     db.galeria_imagens.push({ id: 'i2', org_id: 'org', anuncio_externo_id: 'an1', roteiro_id: 'r1', status: 'submetendo' })

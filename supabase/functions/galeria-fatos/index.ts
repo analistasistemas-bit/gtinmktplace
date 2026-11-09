@@ -9,10 +9,12 @@ import { requireUserOrg } from '../_shared/auth.ts';
 import { carregarAnuncio, coresDoAnuncio, resolverAnuncio, type AnuncioGaleria } from '../_shared/galeria/anuncio.ts';
 import { calcularVigencia, ehJpeg, gravarReferencia, lerFicha } from '../_shared/galeria/referencias.ts';
 import { conferirEtiqueta } from '../_shared/galeria/etiqueta.ts';
+import type { Fato } from '../_shared/galeria/fatos.ts';
 import { resolverConexaoEstrita } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
 import { validarValorAtributo } from '../_shared/categoria/faltantes-editaveis.ts';
+import { buscarSecureUrlFotoML } from '../_shared/ml/fotos.ts';
 
 type Admin = ReturnType<typeof adminClient>;
 const ACOES = new Set(['montar', 'confirmar', 'descartar', 'manter_cadastro', 'corrigir_cadastro', 'enviar_vista']);
@@ -65,13 +67,44 @@ async function aplicarVigencia(admin: Admin, orgId: string, anuncioId: string, f
   return desatualizado;
 }
 
+/**
+ * URL da foto do recorte, resolvida aqui (a tela nunca monta URL de CDN): referência = URL assinada do Storage;
+ * ML = `secure_url` lida do ML. Falhou → sem `url` e a tela não pré-seleciona a correção pela etiqueta.
+ */
+function comUrlDoRecorte(admin: Admin, orgId: string, fatos: Fato[]): Promise<Fato[]> {
+  let token: string | null = null;
+  const url = async (foto: { origem: 'referencia' | 'ml'; ref: string }): Promise<string | undefined> => {
+    try {
+      if (foto.origem === 'referencia') {
+        const { data, error } = await admin.storage.from('imagens').createSignedUrl(foto.ref, 600);
+        return error ? undefined : data?.signedUrl;
+      }
+      if (!token) {
+        const cx = await resolverConexaoEstrita(admin, orgId, 'mercado_livre');
+        if (!cx) return undefined;
+        token = await getValidAccessTokenConexao(cx);
+      }
+      return await buscarSecureUrlFotoML(token, foto.ref);
+    } catch (e) {
+      console.error('[galeria-fatos] url do recorte', (e as Error).message);
+      return undefined;
+    }
+  };
+  return Promise.all(fatos.map(async (f) => {
+    const foto = f.estado === 'DIVERGENTE' ? f.etiqueta?.foto : null;
+    if (!foto || !f.etiqueta) return f;
+    const u = await url(foto);
+    return u ? { ...f, etiqueta: { ...f.etiqueta, foto: { ...foto, url: u } } } : f;
+  }));
+}
+
 async function montar(admin: Admin, orgId: string, a: AnuncioGaleria) {
   // Uma visão da etiqueta só quando fotos/campos/família mudaram (cache na sentinela); nunca mais que uma por montar.
   const v = await calcularVigencia(admin, orgId, a, (ctx) => conferirEtiqueta(admin, orgId, a, ctx));
   const desatualizado = await aplicarVigencia(admin, orgId, a.anuncioId, v.fatos_hash);
   return {
     anuncio_externo_id: a.anuncioId, familia_id: a.vigente.id, codigo_pai: a.codigoPai, cores: coresDoAnuncio(a),
-    ...v, roteiro_desatualizado: desatualizado,
+    ...v, fatos: await comUrlDoRecorte(admin, orgId, v.fatos), roteiro_desatualizado: desatualizado,
   };
 }
 
