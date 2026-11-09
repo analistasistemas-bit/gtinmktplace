@@ -11,16 +11,21 @@
 // Medição aprovada = HTTP 2xx + fotos do GET iguais ao corpo (ids, ordem e quantidade, por variação) + resto igual.
 // Todo `put` restaura o retrato de antes (corpo de restauro gravado ANTES da escrita) e confere por GET.
 // Saída: brutos em /tmp/ensaio-galeria/; evidência sanitizada em docs/superpowers/specs/evidencias/galeria-ensaio/.
-// Códigos de saída: 0 ok · 1 PUT não-2xx · 2 medição reprovou (restauro conferido) · 4 restauro NÃO conferido.
+// Códigos de saída: 0 ok · 1 PUT não-2xx · 2 medição reprovou · 3 medição NÃO conferida (leitura de conferência
+// falhou) · 4 restauro NÃO conferido. Teste sem rede: `deno test -A scripts/ensaio-galeria-put.test.ts`.
 
 const PROJETO = 'txvncrgkoynoxwopfkbp';
 const CONEXAO_AVIL = '085fd9d3-a3dd-439c-a482-5ad24459a30a';
 const PERMITIDOS = new Set(['MLB7168683146', 'MLB7245326808', 'MLB7245326842']);
 const API = 'https://api.mercadolibre.com';
-const SAIDA = '/tmp/ensaio-galeria';
-const EVID = new URL('../docs/superpowers/specs/evidencias/galeria-ensaio/', import.meta.url);
-await Deno.mkdir(SAIDA, { recursive: true });
-await Deno.mkdir(EVID, { recursive: true });
+// Sem efeito colateral no import (o teste importa o módulo): diretórios, espera e token são ajustáveis.
+export const cfg = {
+  saida: '/tmp/ensaio-galeria',
+  evid: new URL('../docs/superpowers/specs/evidencias/galeria-ensaio/', import.meta.url) as URL,
+  espera: (ms: number) => new Promise<void>((s) => setTimeout(s, ms)),
+};
+let auth: Record<string, string> = {};
+export function definirToken(t: string) { auth = { Authorization: `Bearer ${t}` }; }
 
 function tokenSupabase(): string {
   const env = Deno.readTextFileSync(new URL('../.env.local', import.meta.url));
@@ -46,9 +51,7 @@ async function tokenML(): Promise<string> {
   }
   throw new Error('NEEDS_CONTEXT: token ML indisponível');
 }
-const TOKEN = await tokenML();
-const auth = { Authorization: `Bearer ${TOKEN}` };
-const espera = (ms: number) => new Promise((s) => setTimeout(s, ms));
+const espera = (ms: number) => cfg.espera(ms);
 
 // GET com nova tentativa: falha de leitura não pode virar "medição ok" nem disparar restauro às cegas.
 async function getItem(id: string) {
@@ -98,13 +101,13 @@ async function evid(id: string, passo: string, rotulo: string, rec: Rec, extra: 
   };
   const nome = `${id}-${passo}-${String(++seq).padStart(2, '0')}-${rotulo}.json`;
   // Nunca lança: falha ao gravar evidência não pode impedir restauro nem conferência.
-  try { await Deno.writeTextFile(new URL(nome, EVID), JSON.stringify(s, null, 2) + '\n'); } catch (e) { console.log(`EVIDÊNCIA NÃO GRAVADA (${nome}): ${e}`); }
+  try { await Deno.writeTextFile(new URL(nome, cfg.evid), JSON.stringify(s, null, 2) + '\n'); } catch (e) { console.log(`EVIDÊNCIA NÃO GRAVADA (${nome}): ${e}`); }
 }
 
 async function snap(id: string, rotulo: string) {
   const bruto = await getItem(id);
   const rec = recorte(bruto);
-  await Deno.writeTextFile(`${SAIDA}/${id}-${rotulo}-${Date.now()}.json`, JSON.stringify(rec, null, 2));
+  await Deno.writeTextFile(`${cfg.saida}/${id}-${rotulo}-${Date.now()}.json`, JSON.stringify(rec, null, 2));
   return rec;
 }
 
@@ -160,11 +163,17 @@ async function putItem(id: string, corpo: Rec) {
   return { ok: r.ok, http: r.status, quando };
 }
 
-// Restaura e só declara restaurado depois do GET igual ao retrato (fotos com ids/ordem por variação e o resto).
-async function restaurar(id: string, passo: string, antes: Rec, corpos: Rec[]): Promise<boolean> {
-  for (const c of corpos) {
-    const p = await putItem(id, c);
-    if (!p.ok) { console.log(`RESTAURO FALHOU (HTTP ${p.http})`); return false; }
+// Reconcilia (GET do estado atual) → restaura se diferir do retrato → só declara restaurado depois de um GET,
+// feito após o restauro, igual ao retrato (fotos com ids/ordem por variação e o resto). Sem leitura não escreve.
+export async function restaurar(id: string, passo: string, antes: Rec, corpos: Rec[]): Promise<boolean> {
+  let atual: Rec;
+  try { atual = await snap(id, `${passo}-reconcilia`); } catch (e) { console.log(`RECONCILIAÇÃO SEM LEITURA, restauro não enviado: ${e}`); return false; }
+  if (atual.sold_quantity !== antes.sold_quantity) { console.log('BLOCKED: venda durante o ensaio; sem restauro automático'); return false; }
+  if (semTags(atual) !== semTags(antes)) {
+    for (const c of corpos) {
+      const p = await putItem(id, c);
+      if (!p.ok) { console.log(`RESTAURO FALHOU (HTTP ${p.http})`); return false; }
+    }
   }
   let d: Rec = null;
   for (const ms of [0, 5000, 15000]) {
@@ -179,13 +188,13 @@ async function restaurar(id: string, passo: string, antes: Rec, corpos: Rec[]): 
 
 // Experimento só-fotos: guarda → restauro preparado → PUT → GET confere o corpo → restaura (SEMPRE, finally)
 // → GET confere o retrato → só então grava a evidência (que nunca lança).
-async function put(id: string, arquivo: string, passo: string) {
+export async function put(id: string, arquivo: string, passo: string): Promise<number> {
   const corpo = JSON.parse(await Deno.readTextFile(arquivo));
   const antes = await snap(id, `${passo}-antes`);
   guarda(antes);
   corpoSoFotos(corpo, antes);
   const restauro = corpoRestauro(antes);
-  await Deno.writeTextFile(`${SAIDA}/${id}-${passo}-restauro.json`, JSON.stringify(restauro)); // preparado antes da escrita
+  await Deno.writeTextFile(`${cfg.saida}/${id}-${passo}-restauro.json`, JSON.stringify(restauro)); // preparado antes da escrita
   await evid(id, passo, 'antes', antes);
   let p = { ok: false, http: 0, quando: '' };
   let depois: Rec = null;
@@ -203,12 +212,12 @@ async function put(id: string, arquivo: string, passo: string) {
   if (depois) await evid(id, passo, 'depois', depois, { http: p.http, put_utc: p.quando, corpo_enviado: corpo, conferencia: erros.length ? erros : 'igual ao corpo enviado' });
   if (depois && semTags(depois) === semTags(antes)) await evid(id, passo, 'restaurado', depois, { conferido_igual_ao_antes: true, nota: 'nada mudou; sem PUT de restauro' });
   console.log(JSON.stringify({ medicao: erros.length ? 'REPROVOU' : 'ok', erros, restauro_conferido: ok }, null, 2));
-  if (!ok) Deno.exit(4);
-  if (!p.ok) Deno.exit(1);
-  if (erros.length) Deno.exit(2);
+  if (!ok) return 4;
+  if (!p.ok) return 1;
+  return erros.length ? 2 : 0;
 }
 
-async function upload(id: string, pictureId: string) {
+async function upload(id: string, pictureId: string): Promise<number> {
   if (!PERMITIDOS.has(id)) throw new Error('item fora da lista autorizada');
   const it = await getItem(id);
   const foto = (it.pictures ?? []).find((p: Rec) => p.id === pictureId);
@@ -222,9 +231,9 @@ async function upload(id: string, pictureId: string) {
   const r = await fetch(`${API}/pictures/items/upload`, { method: 'POST', headers: { ...auth, 'User-Agent': 'Mozilla/5.0' }, body: form });
   const txt = await r.text();
   console.log(JSON.stringify({ endpoint: '/pictures/items/upload', http: r.status, ms: Date.now() - t0, bytes: bytes.length, origem: pictureId }));
-  if (!r.ok) { console.log(txt.slice(0, 500)); Deno.exit(1); }
+  if (!r.ok) { console.log(txt.slice(0, 500)); return 1; }
   const up = JSON.parse(txt);
-  await Deno.writeTextFile(`${SAIDA}/upload-${up.id}.json`, txt);
+  await Deno.writeTextFile(`${cfg.saida}/upload-${up.id}.json`, txt);
   // Contrato observado (só nomes de campos e ids públicos de foto).
   const contrato = {
     endpoint: 'POST /pictures/items/upload (multipart, campo file)', http: r.status, horario_utc: new Date().toISOString(),
@@ -233,8 +242,9 @@ async function upload(id: string, pictureId: string) {
     variations_tem_id: (up.variations ?? []).some((v: Rec) => 'id' in v),
     variations_qtd: (up.variations ?? []).length,
   };
-  await Deno.writeTextFile(new URL(`upload-contrato-${up.id}.json`, EVID), JSON.stringify(contrato, null, 2) + '\n');
+  await Deno.writeTextFile(new URL(`upload-contrato-${up.id}.json`, cfg.evid), JSON.stringify(contrato, null, 2) + '\n');
   console.log(JSON.stringify(contrato, null, 2));
+  return 0;
 }
 
 // (h) O inverso: PUT SEM fotos, com os valores ATUAIS lidos no GET imediatamente antes (nada muda de fato).
@@ -243,7 +253,7 @@ async function upload(id: string, pictureId: string) {
 //   plano   → UP     { price, available_quantity }                        — atualizarItemPlanoML / kit putQuantidade
 // Confere o recorte inteiro logo depois e ~60 s depois; se mudar, restaura (fotos e valores) e confere por GET.
 const AUTORIZADO_H: Record<string, string> = { estoque: 'MLB7168683146', preco: 'MLB7168683146', plano: 'MLB7245326808' };
-async function inverso(modo: string) {
+export async function inverso(modo: string): Promise<number> {
   const id = AUTORIZADO_H[modo];
   if (!id) throw new Error('modo: estoque | preco | plano');
   const passo = `h-${modo}`;
@@ -271,12 +281,15 @@ async function inverso(modo: string) {
     }
   }
   const restauros = [corpoRestauro(antes), corpo];
-  await Deno.writeTextFile(`${SAIDA}/${id}-${passo}-restauro.json`, JSON.stringify(restauros)); // preparado antes da escrita
+  await Deno.writeTextFile(`${cfg.saida}/${id}-${passo}-restauro.json`, JSON.stringify(restauros)); // preparado antes da escrita
   await evid(id, passo, 'antes', antes);
   let p = { ok: false, http: 0, quando: '' };
   const leituras: { ms: number; d: Rec; erros: string[] }[] = [];
-  let falhou = true; // até prova em contrário (GET que lança = estado desconhecido)
-  let ok = true;
+  // Só é conferida com PUT 2xx E as DUAS leituras (imediata e ~60 s) feitas e iguais ao retrato.
+  // Qualquer leitura que lance deixa a medição não conferida e força reconciliação + restauro + GET de conferência.
+  let conferida = false;
+  let leituraFalhou = false;
+  let restauro: 'desnecessario' | 'conferido' | 'nao_conferido' = 'desnecessario';
   try {
     p = await putItem(id, corpo);
     for (const ms of [0, 60_000]) {
@@ -286,34 +299,39 @@ async function inverso(modo: string) {
       leituras.push({ ms, d, erros });
       if (!p.ok || erros.length) break;
     }
-    falhou = !p.ok || leituras.length < 2 || leituras.some((l) => l.erros.length);
+    conferida = p.ok && leituras.length === 2 && leituras.every((l) => !l.erros.length);
   } catch (e) {
+    leituraFalhou = true;
     console.log(`falha entre o PUT e a leitura: ${e}`);
   } finally {
-    const ult = leituras.at(-1)?.d;
-    if (falhou && !(ult && semTags(ult) === semTags(antes))) {
-      if (ult && ult.sold_quantity !== antes.sold_quantity) { console.log('BLOCKED: venda durante o ensaio; sem restauro automático'); ok = false; }
-      else ok = await restaurar(id, passo, antes, restauros); // reconcilia (GET dentro) e confere o retrato
-    }
+    if (!conferida) restauro = await restaurar(id, passo, antes, restauros) ? 'conferido' : 'nao_conferido';
   }
   for (const l of leituras) {
     await evid(id, passo, `depois-${l.ms / 1000}s`, l.d, { http: p.http, put_utc: p.quando, corpo_enviado: corpo, conferencia: l.erros.length ? l.erros : 'igual ao antes' });
   }
+  // /prices (atacado incluso): leitura de conferência que falha reprova; nunca vira ok.
   let precoDepois: Rec = null;
-  try { precoDepois = await precos(); } catch (e) { console.log(`/prices depois falhou: ${e}`); }
-  const precosIguais = JSON.stringify(precoAntes) === JSON.stringify(precoDepois);
-  // /prices (atacado incluso) também vai para a evidência.
+  try { precoDepois = await precos(); } catch (e) { leituraFalhou = true; console.log(`/prices depois falhou: ${e}`); }
+  const precosIguais = precoDepois !== null && JSON.stringify(precoAntes) === JSON.stringify(precoDepois);
   try {
-    await Deno.writeTextFile(new URL(`${id}-${passo}-prices.json`, EVID), JSON.stringify({ mlb: id, passo, precos_antes: precoAntes, precos_depois: precoDepois, iguais: precosIguais }, null, 2) + '\n');
+    await Deno.writeTextFile(new URL(`${id}-${passo}-prices.json`, cfg.evid), JSON.stringify({ mlb: id, passo, precos_antes: precoAntes, precos_depois: precoDepois, iguais: precosIguais }, null, 2) + '\n');
   } catch (e) { console.log(`EVIDÊNCIA /prices NÃO GRAVADA: ${e}`); }
-  console.log(JSON.stringify({ medicao: falhou ? 'REPROVOU' : 'ok', http: p.http, precos_iguais: precosIguais, restauro_conferido: ok }));
-  if (!ok) Deno.exit(4);
-  if (falhou) Deno.exit(p.ok ? 2 : 1);
+  const medicao = leituraFalhou ? 'nao_conferida' : !p.ok ? 'put_recusado' : (!conferida || !precosIguais) ? 'REPROVOU' : 'ok';
+  console.log(JSON.stringify({ medicao, http: p.http, precos_iguais: precosIguais, restauro }));
+  if (restauro === 'nao_conferido') return 4;
+  return { ok: 0, put_recusado: 1, REPROVOU: 2, nao_conferida: 3 }[medicao];
 }
 
-const [cmd, a, b, c] = Deno.args;
-if (cmd === 'inverso') await inverso(a);
-else if (cmd === 'snap') { const r = await snap(a, b); await evid(a, b, 'get', r); console.log(JSON.stringify(r, null, 2)); }
-else if (cmd === 'upload') await upload(a, b);
-else if (cmd === 'put') await put(a, b, c);
-else console.error('uso: snap <MLB> <passo> | upload <MLB> <picture_id> | put <MLB> <corpo.json> <passo> | inverso <modo>');
+if (import.meta.main) {
+  const [cmd, a, b, c] = Deno.args;
+  await Deno.mkdir(cfg.saida, { recursive: true });
+  await Deno.mkdir(cfg.evid, { recursive: true });
+  definirToken(await tokenML());
+  let codigo = 0;
+  if (cmd === 'inverso') codigo = await inverso(a);
+  else if (cmd === 'snap') { const r = await snap(a, b); await evid(a, b, 'get', r); console.log(JSON.stringify(r, null, 2)); }
+  else if (cmd === 'upload') codigo = await upload(a, b);
+  else if (cmd === 'put') codigo = await put(a, b, c);
+  else { console.error('uso: snap <MLB> <passo> | upload <MLB> <picture_id> | put <MLB> <corpo.json> <passo> | inverso <modo>'); codigo = 64; }
+  Deno.exit(codigo);
+}
