@@ -5,26 +5,15 @@ Sessão anterior encerrada por limite de contexto. Tudo abaixo está commitado n
 ## Onde estamos
 
 - **Desenho fechado** (Diego): ADR-0201 §1–§13, regras `docs/superpowers/specs/2026-11-08-galeria-da-cor-regras.md`, glossário `CONTEXT.md` ("Imagens do anúncio por IA").
-- **Plano:** `docs/superpowers/plans/2026-11-08-galeria-da-cor.md`, versão **v9**. Nenhum código escrito.
-- **Revisão do plano:** 9 rodadas de Codex (`gpt-6.1-sol` high) e Grok 4.7 xhigh, todas REVISAR, com bloqueadores caindo (Codex: 8 → 1). Regra do Diego: **continuar as rodadas até os dois aprovarem sem nenhum BLOQUEADOR** ("não pode haver erro"; "sem pressa"; consultar GPT e Grok sempre).
+- **Plano:** `docs/superpowers/plans/2026-11-08-galeria-da-cor.md`, versão **v23 — APROVADA** por Codex e Grok na 23ª rodada (09/11), sem BLOQUEADOR; MENORES registrados na seção "Aprovação (23ª rodada)". Nenhum código escrito.
+- **Revisão do plano:** concluída. 23 rodadas de Codex (`gpt-6.1-sol` high) e Grok 4.7 xhigh; da 10ª à 23ª o desenho ganhou trava de escrita por MLB compartilhada com os escritores comuns, adiamento durável, identidade por anúncio/partição, relógio no banco e cobrança da galeria separada do gatilho do kit. Regra do Diego cumprida: os dois aprovaram sem nenhum BLOQUEADOR.
 - **Teto de 3 gerações por versão do roteiro (R8.2):** confirmado pelo Diego em 08/11.
 - **Execução:** depois do plano aprovado, perguntar ao Diego o método (recomendado: subagent-driven). A Task 1 (ensaio no ML) exige que o Diego escolha 1 anúncio Legacy e 1 família UP de teste.
 
-## Pendentes da 9ª rodada (aplicar na v10)
+## Próximos passos (dependem do Diego)
 
-**Codex — BLOQUEADOR:** (Task 9) a trava `where posse = …` protege o banco, não o Storage; upload tardio de um worker que perdeu a posse sobrescreve ou ocupa o caminho da cena. Correção: objeto imutável por tentativa/posse (caminho com `posse`), `cena_path` publicado só por update condicional; arquivos perdedores ficam sem referência e a retenção limpa. Teste: upload antigo terminando por último → bytes servidos são os do vencedor.
-
-**Grok — BLOQUEADOR 1:** (Tasks 13/14) na compensação, depois que o item já aplicou, o GET tem as fotos novas e `planejarFotosItem` devolve `mudou` → nunca restaura. Correção: na volta, a cor-alvo compara com `fotos_depois` e as outras cores com o retrato; cor-alvo divergente → `reversao_incompleta` sem PUT; igual → corpo restaura `fotos_antes` levando as demais cores como estão no GET. Teste com `atual` já contendo as fotos novas.
-
-**Grok — BLOQUEADOR 2:** (Tasks 8/14) cada foto é uma fase e o SQL ignora itens com `publicado_em` nos últimos 3 min mesmo com lease livre; 7 fotos + espera de `pronta` × P/M/G estoura o prazo de 30 min. Correção: os 3 min só seguram mensagem ainda em voo — fase concluída zera `publicado_em` ou publica a fase seguinte na hora em `publish-ml-${familias.user_id}`. O prazo corta só a ida; a compensação segue até `revertida` ou `reversao_incompleta`.
-
-**Menores (Codex e Grok):**
-- `somenteEstoque=true` com cor nova (`criandoNovas`) também respeita a reserva; dispensa só quando o corpo efetivo não altera fotos nem variações. Teste explícito.
-- Trocar roteiro durante `submetendo|gerando`: separar vigência editorial de execução (o worker conclui a geração, mas a imagem nasce `desatualizada` e não pode ser aprovada/aplicada). Testar na consulta Higgsfield e na resposta OpenRouter.
-- Portão da compensação: vigência e prazo bloqueiam só o avanço; restauração usa reserva + conferência de fotos. Testar compensação com aborto, roteiro novo, prazo vencido e reversão dias depois.
-- `buscarItemBackfill` devolvendo `null` → `conjunto_incompleto`.
-- `update-familia-ml` adiado mantém `familias.status = 'publicando'`; aos 35 min, desfecho `erro` grava o status e finaliza o lote.
-- Família UP em `update-familia-ml` cai em `rodarUP` antes de `atualizarAnuncio`: confirmar que esse ramo não reenvia fotos (ressalva, sem bloqueio).
+1. Escolher o método de execução (recomendado: subagent-driven, com revisão Codex + Grok no diff de cada task).
+2. Escolher 1 anúncio Legacy com ≥2 variações e 1 família UP com ≥2 tamanhos da mesma cor para o ensaio da Task 1 (portão: se algum PUT sem `pictures` apagar fotos, a galeria não é liberada e o desenho volta ao Diego).
 
 ## Como rodar uma rodada de revisão
 
