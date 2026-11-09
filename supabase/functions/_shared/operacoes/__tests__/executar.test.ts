@@ -256,6 +256,14 @@ describe('executar — aderir', () => {
     expect(deps.espelharStatusCentral).not.toHaveBeenCalled();
   });
 
+  it('400 SIBLING e a releitura falha → erro retentável, não bloqueado', async () => {
+    const itens = [item('MLB1')];
+    const { deps, ml } = montar(itens, { campanha: (_id, n) => { if (n > 1) throw new Error('ML 500: Oops!'); return conv(); } });
+    vi.mocked(ml.post).mockRejectedValueOnce(new Error(SIBLING));
+    await executar(DEAL_ADERIR, deps, OPTS);
+    expect(itens[0]).toMatchObject({ status: 'erro', mensagem: 'ML 500: Oops!' });
+  });
+
   it('falha ao gravar depois do 201 → relança e o item fica enviando', async () => {
     const itens = [item('MLB1')];
     const { deps } = montar(itens);
@@ -748,6 +756,14 @@ describe('ofertas de preço fixo', () => {
       vi.mocked(ml.post).mockRejectedValueOnce(new Error(SIBLING));
       await executar(PM, deps, OPTS);
       expect(itens[0]).toMatchObject({ status: 'ja_estava', etapa: null });
+    });
+
+    it('400 SIBLING ainda candidate → bloqueado mantendo a etapa (trava de adesaoRecente)', async () => {
+      const itens = [item('MLB1', { preco: 69.98 })];
+      const { deps, ml } = montar(itens, { campanha: () => convPM() });
+      vi.mocked(ml.post).mockRejectedValueOnce(new Error(SIBLING));
+      await executar(PM, deps, OPTS);
+      expect(itens[0]).toMatchObject({ status: 'bloqueado', etapa: 'escrita_pedida' });
     });
 
     it('releitura já participando vale mais que o padrão do tipo', async () => {

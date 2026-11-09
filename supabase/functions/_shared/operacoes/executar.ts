@@ -306,12 +306,16 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar, p
 /** 400 OFFER_SIBLING_CREATION_IN_PROCESS (AVIL 09/11): o ML já cria esta oferta propagando a de um anúncio irmão
  *  (pai legado → cópias de catálogo). Não é erro: relê uma vez; ainda convidado → `bloqueado`, fora do "Tentar novamente". */
 async function inscritoPeloPrincipal(op: OperacaoRow, id: string, deps: DepsExecutar): Promise<void> {
-  // Oferta fixa: o POST foi recusado; sem a etapa, uma retomada não confunde a propagação com adesão nossa (achado Codex).
-  if (ofertaFixaNova(op.promocao_tipo)) await deps.gravarItem(op.id, id, { etapa: null }).catch(() => {});
-  const f = await deps.ml.lerNaCampanha(op.promocao_id, op.promocao_tipo, id).catch(() => null);
+  // Falha na releitura sobe (achado Grok): vira `erro` retentável, e SemEscritaPromocoes para a conta como nas outras leituras.
+  const f = await deps.ml.lerNaCampanha(op.promocao_id, op.promocao_tipo, id);
   // Relâmpago participando com convite de outro horário ainda aberto: o horário pedido não entrou (achado Codex).
   if (f && ehParticipando(f.status) && !f.convite) {
-    await gravarPos(deps.gravarItem(op.id, id, { status: 'ja_estava', mensagem: 'Inscrito pelo ML junto com o anúncio principal' }));
+    // Oferta fixa: etapa limpa na mesma escrita — a retomada não confunde a propagação com adesão nossa (achado Codex).
+    // Em `bloqueado` a etapa fica: é ela que segura outra adesão em adesaoRecente enquanto o ML propaga (achado Grok).
+    await gravarPos(deps.gravarItem(op.id, id, {
+      status: 'ja_estava', mensagem: 'Inscrito pelo ML junto com o anúncio principal',
+      ...(ofertaFixaNova(op.promocao_tipo) ? { etapa: null } : {}),
+    }));
     return espelhar(deps, op, id, espelhoAderido(op, f));
   }
   await gravarPos(deps.gravarItem(op.id, id, {
