@@ -1,9 +1,9 @@
 # Galeria da cor — ensaio do contrato do ML (Task 1)
 
-**Data:** 2026-11-09 (UTC). **Script:** `scripts/ensaio-galeria-put.ts` (fora da suíte). Desde o fix round 1: medição só aprova com HTTP 2xx **e** fotos do GET iguais ao corpo enviado (ids, ordem e quantidade, no item e em cada variação) **e** o resto igual; corpo de restauro gravado **antes** de cada escrita; GET pós-PUT com novas tentativas; restauro só é declarado depois de GET igual ao retrato. Comando `inverso` para (h)..
+**Data:** 2026-11-09 (UTC). **Script:** `scripts/ensaio-galeria-put.ts` (fora da suíte). Desde o fix round 1: medição só aprova com HTTP 2xx **e** fotos do GET iguais ao corpo enviado (ids, ordem e quantidade, no item e em cada variação) **e** o resto igual; corpo de restauro gravado **antes** de cada escrita; GET pós-PUT com novas tentativas; restauro só é declarado depois de GET igual ao retrato. Desde o fix round 2: o restauro roda **sempre** (`finally`, também em `inverso`) quando o estado pós-PUT não é comprovadamente igual ao retrato, inclusive se o GET lançar; a gravação de evidência nunca lança e é feita **depois** do restauro. Comando `inverso` para (h).
 **Status:** (a)–(h) medidos. (h) medido em 2026-11-09 ~10:54–10:59Z, com 3 escritas autorizadas pelo Diego (valores atuais, sem mudança real). **Portão: PASSOU nas formas medidas** (ver (h)). Fix round 1 (11:03Z): (i) UP com 7 fotos medido; contrato do upload registrado; evidência sanitizada versionada.
 
-**Evidência versionada:** `docs/superpowers/specs/evidencias/galeria-ensaio/` (JSON por MLB e passo: horário, preço, estoque, status, SKU, `attribute_combinations`, ids de fotos na ordem, por variação; sem token nem dado de comprador). **Limite da prova:** os brutos de (a)–(g) (09:55–09:57Z) não existem mais (`/tmp/ensaio-galeria` foi limpo); o que o doc diz dessas etapas vem do registro feito à época, e a prova versionada do estado final delas é o GET de 11:03:07–08Z (`*-estado-final-*.json`, MLB7168683146 e MLB7245326808) e o retrato de MLB7245326842 antes de (i) (7 fotos, como registrado). Os de 7168683146 e 7245326808 batem com os valores escritos em (b), (d) e (h) (preço, estoque, SKUs, fotos originais 667978…/943890…); isso prova o estado final, não cada passo intermediário. Não há como reprovar retroativamente (b)/(d) por variação; (b)/(d) conferiram o recorte com o script antigo, que **não** comparava as fotos contra o corpo enviado (só invariantes e contagem) — o casamento de ids/ordem de (f) foi lido à mão no GET.
+**Evidência versionada:** `docs/superpowers/specs/evidencias/galeria-ensaio/` (JSON por MLB e passo: horário, preço, estoque, status, SKU, `attribute_combinations`, ids de fotos na ordem, por variação; sem token nem dado de comprador). **Limite da prova:** (b) foi **re-medido** no fix round 2 com evidência versionada (ver (b)-4). Os brutos de (a), (c), (e)–(g) (09:55–09:57Z) não existem mais (`/tmp/ensaio-galeria` foi limpo); o que o doc diz dessas etapas vem do registro feito à época, e a prova versionada do estado final delas é o GET de 11:03:07–08Z (`*-estado-final-*.json`, MLB7168683146 e MLB7245326808) e o retrato de MLB7245326842 antes de (i) (7 fotos, como registrado). Os de 7168683146 e 7245326808 batem com os valores escritos em (b), (d) e (h) (preço, estoque, SKUs, fotos originais 667978…/943890…); isso prova o estado final, não cada passo intermediário. As medições originais de (b)/(d) conferiram o recorte com o script antigo, que **não** comparava as fotos contra o corpo enviado (só invariantes e contagem) — o casamento de ids/ordem de (f) foi lido à mão no GET. O contrato do upload tem JSON próprio (ver (e)).
 
 Anúncios autorizados pelo Diego (org Avil). (a)–(g): só escrita de fotos, originais restauradas no fim; (h): 3 PUTs de estoque/preço com os valores atuais (ver (h)):
 
@@ -54,6 +54,16 @@ Achados: (1) `secure_url` do item (`D_<id>-O.jpg`) é a versão de **500 px**; a
 1. `PUT {variations:[{id, picture_ids}] ×2}` com id novo (não presente em `pictures` do item) → **400** `item.pictures.invalid.missing_ids` (cause_id 287): *"Variations pictures [897793-…] are not present in item pictures list."* Nada mudou (GET depois igual).
 2. `PUT {pictures:[6 ids, o novo no lugar de 667978], variations:[{id, picture_ids}] ×2}` → **200**. Preço, estoque (item 1445; variações 838/607), status, `seller_custom_field` (02864002/02928469), `attribute_combinations` e contagem (6) iguais; só a foto trocou.
 3. `PUT {variations:[{id, picture_ids}] ×2}` só **reordenando ids já existentes** → **200**, invariantes iguais.
+4. **Re-medição com evidência (fix round 2, script corrigido):** `PUT {pictures:[6 ids, ordem atual], variations:[{id:197626117402, picture_ids:[651426, 667978, 667002]} (duas primeiras trocadas), {id:197626117404, picture_ids:[sem mudança]}]}`, sem upload novo:
+
+| UTC | Passo | HTTP | Conferência |
+|---|---|---|---|
+| 11:18:26.0 | GET antes | — | guarda ok; restauro gravado antes da escrita |
+| 11:18:26.4 | PUT (formato de (b)-2) | 200 | GET: `pictures` do item na ordem enviada (6, inalterada); variação 197626117402 = `[651426, 667978, 667002]`; 197626117404 inalterada; preço 28,35, estoque 1445 (838/607), status, SKUs e combinações iguais |
+| 11:18:27.1 | PUT restauro | 200 | GET 11:18:27.4 igual ao retrato (ids e ordem por variação) |
+| 11:19:15 e 11:19:21 (~54 s após o restauro) | GET de novo | — | igual ao retrato |
+
+Evidência: `MLB7168683146-b-legacy-ordem-var-*`. Achado: a ordem por variação é independente da ordem de `pictures` do item.
 
 **(c) não se aplica:** o ML **não** exige `available_quantity`; a recusa de (1) é só a foto fora da lista do item. Formato Legacy **não bloqueado**.
 Todas as variações foram enviadas em todo PUT (variação omitida pode ser apagada no Legacy — não medido de propósito).
@@ -154,7 +164,7 @@ GET antes = depois (~60 s), por item:
 | 7245326808 | 39,9 | 90 | 0 | active | — (plano; SKU 02994780) | 943890-MLB113772297516_072026 |
 
 `tags`: só mudaram de **ordem** (conjunto igual) após os PUTs de estoque e do item plano — o mesmo de (g).
-Evidência sanitizada: `evidencias/galeria-ensaio/MLB7168683146-h-estoque-*`, `MLB7168683146-h-preco-*`, `MLB7245326808-h-plano-*` (antes, logo após, ~60 s). Não houve restauro em (h): nada mudou.
+Evidência sanitizada: `evidencias/galeria-ensaio/MLB7168683146-h-estoque-*`, `MLB7168683146-h-preco-*`, `MLB7245326808-h-plano-*` (antes, logo após, ~60 s). `/prices` antes/depois em `*-h-*-prices.json`: transcritos da saída de console das execuções (os JSON de recorte não traziam esse corpo); o script agora grava esse arquivo direto. Não houve restauro em (h): nada mudou.
 
 ### Resultado por caminho (dispensados da trava)
 
@@ -166,4 +176,6 @@ Evidência sanitizada: `evidencias/galeria-ensaio/MLB7168683146-h-estoque-*`, `M
 | push de estoque de item plano e `putQuantidade` do kit `{available_quantity}`; reajuste plano `{price}` | subconjunto do PUT 3 (mesmo item plano, corpo raiz sem `pictures`) — **inferido do PUT 3**, não medido isoladamente | sim |
 | `sincronizar-marca-ml` `{attributes}` e `atualizarItemPlanoML` com `attributes` | **inferido, não medido**: PUT de BRAND/atributos em filho UP pode reagrupar a família (memória "BRAND reagrupa família UP"), por isso não foi escrito. A regra observada nos 3 PUTs (o ML trata o corpo parcial por campo e não toca `pictures`/`picture_ids` omitidos) é a mesma; risco residual documentado | sim, por inferência |
 
-**Portão:** (a)–(i) passaram → **PASSOU nas formas medidas** (estoque Legacy, preço Legacy, preço+estoque no item plano UP): `pictures`/`picture_ids` omitidos são preservados, sem mudança assíncrona em ~60 s. O PUT `{attributes}` fica coberto por inferência, não por medição. Liberar a galeria com essa ressalva é decisão do Diego.
+**Portão:** (a)–(i) passaram → **PASSOU nas formas medidas** (estoque Legacy, preço Legacy, preço+estoque no item plano UP): `pictures`/`picture_ids` omitidos são preservados, sem mudança assíncrona em ~60 s. O PUT `{attributes}` fica coberto por inferência, não por medição.
+
+**Ruling do controller (fix round 2):** os PUTs inferidos de (h) — `{attributes}`/marca, `putQuantidade` isolado e `{price}` isolado no item plano — ficam aceitos por inferência; a conferência real é na validação da Task 16.

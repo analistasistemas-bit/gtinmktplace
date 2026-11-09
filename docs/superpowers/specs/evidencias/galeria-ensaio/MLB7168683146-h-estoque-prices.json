@@ -1,0 +1,118 @@
+{
+  "mlb": "MLB7168683146",
+  "passo": "h-estoque",
+  "fonte": "saída de console da execução (GET /items/{id}/prices, show-all-prices), antes do PUT e após a leitura de ~60 s; antes e depois idênticos",
+  "precos_antes": {
+    "original_price": null,
+    "var_original": [
+      null,
+      null
+    ],
+    "prices": [
+      {
+        "id": "1",
+        "type": "standard",
+        "amount": 28.35,
+        "regular_amount": null,
+        "currency_id": "BRL",
+        "last_updated": "2026-07-14T18:02:37Z",
+        "conditions": {
+          "context_restrictions": [],
+          "start_time": null,
+          "end_time": null
+        }
+      },
+      {
+        "id": "2",
+        "type": "standard",
+        "amount": 26.93,
+        "regular_amount": null,
+        "currency_id": "BRL",
+        "last_updated": "2026-07-14T18:02:40Z",
+        "conditions": {
+          "context_restrictions": [
+            "channel_marketplace",
+            "user_type_business"
+          ],
+          "start_time": null,
+          "end_time": null,
+          "min_purchase_unit": 5
+        }
+      },
+      {
+        "id": "3",
+        "type": "standard",
+        "amount": 25.52,
+        "regular_amount": null,
+        "currency_id": "BRL",
+        "last_updated": "2026-07-14T18:02:40Z",
+        "conditions": {
+          "context_restrictions": [
+            "channel_marketplace",
+            "user_type_business"
+          ],
+          "start_time": null,
+          "end_time": null,
+          "min_purchase_unit": 10
+        }
+      }
+    ]
+  },
+  "precos_depois": {
+    "original_price": null,
+    "var_original": [
+      null,
+      null
+    ],
+    "prices": [
+      {
+        "id": "1",
+        "type": "standard",
+        "amount": 28.35,
+        "regular_amount": null,
+        "currency_id": "BRL",
+        "last_updated": "2026-07-14T18:02:37Z",
+        "conditions": {
+          "context_restrictions": [],
+          "start_time": null,
+          "end_time": null
+        }
+      },
+      {
+        "id": "2",
+        "type": "standard",
+        "amount": 26.93,
+        "regular_amount": null,
+        "currency_id": "BRL",
+        "last_updated": "2026-07-14T18:02:40Z",
+        "conditions": {
+          "context_restrictions": [
+            "channel_marketplace",
+            "user_type_business"
+          ],
+          "start_time": null,
+          "end_time": null,
+          "min_purchase_unit": 5
+        }
+      },
+      {
+        "id": "3",
+        "type": "standard",
+        "amount": 25.52,
+        "regular_amount": null,
+        "currency_id": "BRL",
+        "last_updated": "2026-07-14T18:02:40Z",
+        "conditions": {
+          "context_restrictions": [
+            "channel_marketplace",
+            "user_type_business"
+          ],
+          "start_time": null,
+          "end_time": null,
+          "min_purchase_unit": 10
+        }
+      }
+    ]
+  },
+  "iguais": true
+}

@@ -97,7 +97,8 @@ async function evid(id: string, passo: string, rotulo: string, rec: Rec, extra: 
     })),
   };
   const nome = `${id}-${passo}-${String(++seq).padStart(2, '0')}-${rotulo}.json`;
-  await Deno.writeTextFile(new URL(nome, EVID), JSON.stringify(s, null, 2) + '\n');
+  // Nunca lança: falha ao gravar evidência não pode impedir restauro nem conferência.
+  try { await Deno.writeTextFile(new URL(nome, EVID), JSON.stringify(s, null, 2) + '\n'); } catch (e) { console.log(`EVIDÊNCIA NÃO GRAVADA (${nome}): ${e}`); }
 }
 
 async function snap(id: string, rotulo: string) {
@@ -165,18 +166,19 @@ async function restaurar(id: string, passo: string, antes: Rec, corpos: Rec[]): 
     const p = await putItem(id, c);
     if (!p.ok) { console.log(`RESTAURO FALHOU (HTTP ${p.http})`); return false; }
   }
+  let d: Rec = null;
   for (const ms of [0, 5000, 15000]) {
     await espera(ms);
-    const d = await snap(id, `${passo}-restaurado`);
+    try { d = await snap(id, `${passo}-restaurado`); } catch (e) { console.log(`GET do restauro falhou: ${e}`); continue; }
     if (semTags(d) === semTags(antes)) { await evid(id, passo, 'restaurado', d, { conferido_igual_ao_antes: true }); return true; }
   }
-  const d = await snap(id, `${passo}-restaurado`);
-  await evid(id, passo, 'restaurado', d, { conferido_igual_ao_antes: false });
-  console.log(`RESTAURO NÃO CONFERIDO\nANTES ${semTags(antes)}\nDEPOIS ${semTags(d)}`);
+  if (d) await evid(id, passo, 'restaurado', d, { conferido_igual_ao_antes: false });
+  console.log(`RESTAURO NÃO CONFERIDO\nANTES ${semTags(antes)}\nDEPOIS ${d ? semTags(d) : '(sem leitura)'}`);
   return false;
 }
 
-// Experimento só-fotos: guarda → restauro preparado → PUT → GET confere o corpo → restaura → GET confere o retrato.
+// Experimento só-fotos: guarda → restauro preparado → PUT → GET confere o corpo → restaura (SEMPRE, finally)
+// → GET confere o retrato → só então grava a evidência (que nunca lança).
 async function put(id: string, arquivo: string, passo: string) {
   const corpo = JSON.parse(await Deno.readTextFile(arquivo));
   const antes = await snap(id, `${passo}-antes`);
@@ -185,20 +187,22 @@ async function put(id: string, arquivo: string, passo: string) {
   const restauro = corpoRestauro(antes);
   await Deno.writeTextFile(`${SAIDA}/${id}-${passo}-restauro.json`, JSON.stringify(restauro)); // preparado antes da escrita
   await evid(id, passo, 'antes', antes);
-  const p = await putItem(id, corpo);
-  let depois: Rec;
+  let p = { ok: false, http: 0, quando: '' };
+  let depois: Rec = null;
+  let erros: string[] = ['sem leitura pós-PUT'];
+  let ok = false;
   try {
+    p = await putItem(id, corpo);
     depois = await snap(id, `${passo}-depois`);
+    erros = p.ok ? conferirCorpo(corpo, antes, depois) : (semTags(depois) === semTags(antes) ? ['PUT recusado; nada mudou'] : ['PUT recusado E item mudou']);
   } catch (e) {
-    console.log(`GET pós-PUT falhou após novas tentativas: ${e}`); // sem leitura não há como saber o estado: restaura e confere
-    Deno.exit(await restaurar(id, passo, antes, [restauro]) ? 2 : 4);
+    console.log(`falha entre o PUT e a leitura: ${e}`); // estado desconhecido: o finally restaura e confere
+  } finally {
+    ok = depois && semTags(depois) === semTags(antes) ? true : await restaurar(id, passo, antes, [restauro]);
   }
-  const erros = p.ok ? conferirCorpo(corpo, antes, depois) : (semTags(depois) === semTags(antes) ? ['PUT recusado; nada mudou'] : ['PUT recusado E item mudou']);
-  await evid(id, passo, 'depois', depois, { http: p.http, put_utc: p.quando, corpo_enviado: corpo, conferencia: erros.length ? erros : 'igual ao corpo enviado' });
-  console.log(JSON.stringify({ medicao: erros.length ? 'REPROVOU' : 'ok', erros }, null, 2));
-  const precisa = semTags(depois) !== semTags(antes);
-  const ok = precisa ? await restaurar(id, passo, antes, [restauro]) : true;
-  if (!precisa) await evid(id, passo, 'restaurado', depois, { conferido_igual_ao_antes: true, nota: 'nada mudou; sem PUT de restauro' });
+  if (depois) await evid(id, passo, 'depois', depois, { http: p.http, put_utc: p.quando, corpo_enviado: corpo, conferencia: erros.length ? erros : 'igual ao corpo enviado' });
+  if (depois && semTags(depois) === semTags(antes)) await evid(id, passo, 'restaurado', depois, { conferido_igual_ao_antes: true, nota: 'nada mudou; sem PUT de restauro' });
+  console.log(JSON.stringify({ medicao: erros.length ? 'REPROVOU' : 'ok', erros, restauro_conferido: ok }, null, 2));
   if (!ok) Deno.exit(4);
   if (!p.ok) Deno.exit(1);
   if (erros.length) Deno.exit(2);
@@ -269,21 +273,42 @@ async function inverso(modo: string) {
   const restauros = [corpoRestauro(antes), corpo];
   await Deno.writeTextFile(`${SAIDA}/${id}-${passo}-restauro.json`, JSON.stringify(restauros)); // preparado antes da escrita
   await evid(id, passo, 'antes', antes);
-  const p = await putItem(id, corpo);
-  for (const ms of [0, 60_000]) {
-    await espera(ms);
-    const d = await snap(id, `${passo}-depois${ms}`);
-    const erros = conferirCorpo({}, antes, d); // corpo sem fotos: fotos e resto têm de ficar iguais ao antes
-    await evid(id, passo, `depois-${ms / 1000}s`, d, { http: p.http, put_utc: p.quando, corpo_enviado: corpo, conferencia: erros.length ? erros : 'igual ao antes' });
-    if (!p.ok || erros.length) {
-      console.log(JSON.stringify({ medicao: 'REPROVOU', http: p.http, erros }));
-      if (d.sold_quantity !== antes.sold_quantity) { console.log('BLOCKED: venda durante o ensaio; sem restauro automático'); Deno.exit(4); }
-      if (semTags(d) !== semTags(antes) && !await restaurar(id, passo, antes, restauros)) Deno.exit(4);
-      Deno.exit(p.ok ? 2 : 1);
+  let p = { ok: false, http: 0, quando: '' };
+  const leituras: { ms: number; d: Rec; erros: string[] }[] = [];
+  let falhou = true; // até prova em contrário (GET que lança = estado desconhecido)
+  let ok = true;
+  try {
+    p = await putItem(id, corpo);
+    for (const ms of [0, 60_000]) {
+      await espera(ms);
+      const d = await snap(id, `${passo}-depois${ms}`);
+      const erros = conferirCorpo({}, antes, d); // corpo sem fotos: fotos e resto têm de ficar iguais ao antes
+      leituras.push({ ms, d, erros });
+      if (!p.ok || erros.length) break;
+    }
+    falhou = !p.ok || leituras.length < 2 || leituras.some((l) => l.erros.length);
+  } catch (e) {
+    console.log(`falha entre o PUT e a leitura: ${e}`);
+  } finally {
+    const ult = leituras.at(-1)?.d;
+    if (falhou && !(ult && semTags(ult) === semTags(antes))) {
+      if (ult && ult.sold_quantity !== antes.sold_quantity) { console.log('BLOCKED: venda durante o ensaio; sem restauro automático'); ok = false; }
+      else ok = await restaurar(id, passo, antes, restauros); // reconcilia (GET dentro) e confere o retrato
     }
   }
-  const precoDepois = await precos();
-  console.log(JSON.stringify({ medicao: 'ok', precos_iguais: JSON.stringify(precoAntes) === JSON.stringify(precoDepois) }));
+  for (const l of leituras) {
+    await evid(id, passo, `depois-${l.ms / 1000}s`, l.d, { http: p.http, put_utc: p.quando, corpo_enviado: corpo, conferencia: l.erros.length ? l.erros : 'igual ao antes' });
+  }
+  let precoDepois: Rec = null;
+  try { precoDepois = await precos(); } catch (e) { console.log(`/prices depois falhou: ${e}`); }
+  const precosIguais = JSON.stringify(precoAntes) === JSON.stringify(precoDepois);
+  // /prices (atacado incluso) também vai para a evidência.
+  try {
+    await Deno.writeTextFile(new URL(`${id}-${passo}-prices.json`, EVID), JSON.stringify({ mlb: id, passo, precos_antes: precoAntes, precos_depois: precoDepois, iguais: precosIguais }, null, 2) + '\n');
+  } catch (e) { console.log(`EVIDÊNCIA /prices NÃO GRAVADA: ${e}`); }
+  console.log(JSON.stringify({ medicao: falhou ? 'REPROVOU' : 'ok', http: p.http, precos_iguais: precosIguais, restauro_conferido: ok }));
+  if (!ok) Deno.exit(4);
+  if (falhou) Deno.exit(p.ok ? 2 : 1);
 }
 
 const [cmd, a, b, c] = Deno.args;
