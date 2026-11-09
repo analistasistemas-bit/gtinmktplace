@@ -31,7 +31,7 @@ const GERAL: ReadonlyArray<Omit<MissaoDisponivel, 'vista'>> = [
   { missao: 7, nome: 'Detalhes', comTexto: true, usaGerador: false },
 ]
 
-// R5.5. `vista` = foto de referência exigida; a 5 é recorte da frente.
+// R5.5. `vista` = foto de referência exigida; a 5 e a 7 são recortes da frente (R3.3), sem gerador.
 const MODA: ReadonlyArray<Omit<MissaoDisponivel, 'comTexto'>> = [
   { missao: 1, nome: 'Capa', usaGerador: true, vista: 'frente' },
   { missao: 2, nome: 'Em uso', usaGerador: true, vista: 'frente' },
@@ -39,7 +39,7 @@ const MODA: ReadonlyArray<Omit<MissaoDisponivel, 'comTexto'>> = [
   { missao: 4, nome: 'Lateral', usaGerador: true, vista: 'lateral' },
   { missao: 5, nome: 'Detalhe do tecido', usaGerador: false, vista: 'frente' },
   { missao: 6, nome: 'Combinação', usaGerador: true, vista: 'frente' },
-  { missao: 7, nome: 'Detalhe de alça, gola ou costura', usaGerador: true, vista: 'frente' },
+  { missao: 7, nome: 'Detalhe de alça, gola ou costura', usaGerador: false, vista: 'frente' },
 ]
 
 /** Missões oferecidas; vistas "De costas"/"Lateral" só com referência cadastrada (R3.2). */
@@ -105,27 +105,34 @@ export function contarPalavras(texto: string): number {
 
 export type CategoriaProibidos = 'geral' | 'vestuario'
 
-// R4.2/R4.3 (globais) + R4.4 (por categoria). Termos já sem acento e minúsculos.
-// ponytail: lista mínima do que a spec nomeia; as listas completas por categoria (cosméticos,
-// tecidos, eletrônicos) entram quando a Task do roteiro as definir.
+// R4.2/R4.3 (globais). Termos sem acento e minúsculos; casam também no plural (s/es).
+// ponytail: lista mínima do que a spec nomeia; as listas por categoria (R4.4: cosméticos,
+// vestuário, tecidos, eletrônicos) são fechadas na task do roteiro — termos como "impermeável"
+// são citáveis quando confirmados, então não entram aqui.
 const PROIBIDOS_GLOBAIS = [
-  'preco', 'desconto', 'frete', 'gratis', 'promocao', 'oferta', 'ultimas unidades', 'estoque',
+  'preco', 'desconto', 'frete', 'gratis', 'promocao', 'oferta', 'ultima unidade', 'ultimas unidades','estoque',
   'urgente', 'garantia', 'garantido', 'certificado', 'selo', 'qr code', 'melhor do brasil',
-  'mais vendido', 'premium', '100%',
+  'mais vendido', 'premium',
 ]
-const PROIBIDOS_POR_CATEGORIA: Record<CategoriaProibidos, string[]> = {
-  geral: [],
-  vestuario: ['anti-odor', 'antialergico', 'hipoalergenico', 'protecao uv', 'impermeavel'],
-}
+const PROIBIDOS_POR_CATEGORIA: Record<CategoriaProibidos, string[]> = { geral: [], vestuario: [] }
 
-const normalizar = (s: string) =>
-  s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+const FORA = '(?<![\\p{L}\\p{N}])'
+const FIM = '(?![\\p{L}\\p{N}])'
+// "100%" sozinho é composição ("100% poliamida", fato confirmado): só o claim é proibido.
+const CLAIM_100 = '100%\\s+(?:natural|naturais|garantid[oa]s?|original|originais|puro|pura|puros|puras|organico|seguro|eficaz|aprovad[oa]s?)'
+// Valor monetário: "R$ 19,90", "R$19".
+const VALOR = 'r\\$\\s*\\d'
+
+const normalizar = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
 
 /** Termos proibidos presentes no texto (vazio = limpo). */
 export function termosProibidos(texto: string, categoria: CategoriaProibidos): string[] {
   const alvo = normalizar(texto)
-  return [...PROIBIDOS_GLOBAIS, ...PROIBIDOS_POR_CATEGORIA[categoria]].filter((termo) => {
-    const esc = termo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    return new RegExp(`(?<![\\p{L}\\p{N}])${esc}(?![\\p{L}\\p{N}])`, 'u').test(alvo)
-  })
+  const acha = (fonte: string) => new RegExp(`${FORA}${fonte}${FIM}`, 'u').test(alvo)
+  const achados = [...PROIBIDOS_GLOBAIS, ...PROIBIDOS_POR_CATEGORIA[categoria]].filter((termo) =>
+    acha(`${termo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:s|es)?`),
+  )
+  if (acha(CLAIM_100)) achados.push('100% (claim)')
+  if (new RegExp(`${FORA}${VALOR}`, 'u').test(alvo)) achados.push('valor em R$')
+  return achados
 }

@@ -34,24 +34,30 @@ describe('missoesSugeridas', () => {
 })
 
 describe('missoesDisponiveis', () => {
-  it('fora de Moda: sete missões; só a 7 é recorte (sem gerador); texto nas 2 a 7', () => {
+  const TEXTO_GERAL = { 1: false, 2: true, 3: true, 4: true, 5: true, 6: true, 7: true }
+
+  it('fora de Moda: sete missões; só a 7 é recorte (sem gerador)', () => {
     const m = missoesDisponiveis(false, ['frente'])
     expect(m.map((x) => x.missao)).toEqual([1, 2, 3, 4, 5, 6, 7])
+    expect(m.filter((x) => x.usaGerador).map((x) => x.missao)).toEqual([1, 2, 3, 4, 5, 6])
     expect(m.filter((x) => !x.usaGerador).map((x) => x.missao)).toEqual([7])
-    expect(m.find((x) => x.missao === 1)?.comTexto).toBe(false)
-    expect(m.find((x) => x.missao === 4)?.comTexto).toBe(true)
   })
 
-  it('Moda: nenhuma missão leva texto', () => {
-    const m = missoesDisponiveis(true, ['frente', 'costas', 'lateral'])
-    expect(m).toHaveLength(7)
-    expect(m.every((x) => x.comTexto === false)).toBe(true)
+  it('fora de Moda: a capa não leva texto e as missões 2 a 7 levam, cada uma', () => {
+    const m = missoesDisponiveis(false, ['frente'])
+    for (const x of m) expect(x.comTexto, `missão ${x.missao}`).toBe(TEXTO_GERAL[x.missao])
   })
 
-  it('Moda: a missão 5 (detalhe do tecido) é recorte, sem gerador', () => {
+  it('Moda: nenhuma das sete missões leva texto, cada uma', () => {
     const m = missoesDisponiveis(true, ['frente', 'costas', 'lateral'])
-    expect(m.find((x) => x.missao === 5)?.usaGerador).toBe(false)
-    expect(m.filter((x) => x.usaGerador).map((x) => x.missao)).toEqual([1, 2, 3, 4, 6, 7])
+    expect(m.map((x) => x.missao)).toEqual([1, 2, 3, 4, 5, 6, 7])
+    for (const x of m) expect(x.comTexto, `missão ${x.missao}`).toBe(false)
+  })
+
+  it('Moda: as missões 5 e 7 são recorte (sem gerador); gerador só em 1, 2, 3, 4 e 6', () => {
+    const m = missoesDisponiveis(true, ['frente', 'costas', 'lateral'])
+    expect(m.filter((x) => !x.usaGerador).map((x) => x.missao)).toEqual([5, 7])
+    expect(m.filter((x) => x.usaGerador).map((x) => x.missao)).toEqual([1, 2, 3, 4, 6])
   })
 
   it('Moda sem foto de costas não oferece "De costas"; com foto oferece', () => {
@@ -67,18 +73,38 @@ describe('missoesDisponiveis', () => {
   })
 })
 
+// path_from_root REAL, medido em 2026-11-09 via GET https://api.mercadolibre.com/categories/{id}.
+const PATH_REGATA = [
+  { id: 'MLB1430', name: 'Calçados, Roupas e Bolsas' },
+  { id: 'MLB31447', name: 'Camisetas e Regatas' },
+]
+const PATH_RENDA = [
+  { id: 'MLB1368', name: 'Arte, Papelaria e Armarinho' },
+  { id: 'MLB270263', name: 'Artigos de Armarinho' },
+  { id: 'MLB271477', name: 'Rendas' },
+]
+const PATH_CALCADO = [
+  { id: 'MLB1430', name: 'Calçados, Roupas e Bolsas' },
+  { id: 'MLB23262', name: 'Calçados' },
+  { id: 'MLB275584', name: 'Alpargata' },
+]
+
 describe('ehModa', () => {
-  it('verdadeiro para o caminho de uma regata', () => {
-    expect(ehModa([{ id: 'MLB1430' }, { id: 'MLB31447' }])).toBe(true)
+  it('verdadeiro para o path real de uma regata', () => {
+    expect(ehModa(PATH_REGATA)).toBe(true)
   })
-  it('falso para renda (aviamentos) e calçado', () => {
-    expect(ehModa([{ id: 'MLB1271' }, { id: 'MLB1276' }, { id: 'MLB458220' }])).toBe(false)
-    expect(ehModa([{ id: 'MLB1430' }, { id: 'MLB23262' }])).toBe(false)
+  it('falso para os paths reais de renda (armarinho) e de calçado', () => {
+    expect(ehModa(PATH_RENDA)).toBe(false)
+    // calçado compartilha a raiz MLB1430 com a regata: prova que a raiz sozinha não basta
+    expect(ehModa(PATH_CALCADO)).toBe(false)
   })
-  it('falso para bolsa, calçado de bebê e bolsa esportiva', () => {
+  it('falso para bolsa, calçado de bebê e bolsa esportiva (aninhados sob roupa)', () => {
     expect(ehModa([{ id: 'MLB1430' }, { id: 'MLB1457' }])).toBe(false)
     expect(ehModa([{ id: 'MLB1430' }, { id: 'MLB5366' }, { id: 'MLB28158' }])).toBe(false)
     expect(ehModa([{ id: 'MLB1430' }, { id: 'MLB270215' }, { id: 'MLB432028' }])).toBe(false)
+  })
+  it('falso para Acessórios de Moda (decisão: não é roupa)', () => {
+    expect(ehModa([{ id: 'MLB1430' }, { id: 'MLB1451' }])).toBe(false)
   })
   it('falso para caminho vazio ou ausente', () => {
     expect(ehModa([])).toBe(false)
@@ -101,17 +127,35 @@ describe('contarPalavras', () => {
 describe('termosProibidos', () => {
   it('pega frete e premium (R4.2, R4.3)', () => {
     expect(termosProibidos('Frete grátis e premium', 'geral')).toEqual(
-      expect.arrayContaining(['frete', 'premium']),
+      expect.arrayContaining(['frete', 'gratis', 'premium']),
     )
   })
-  it('pega "100%" como prova/garantia', () => {
-    expect(termosProibidos('100% natural', 'geral')).toContain('100%')
+  it('pega o claim "100% natural", não o percentual de composição', () => {
+    expect(termosProibidos('100% natural', 'geral')).toContain('100% (claim)')
+    expect(termosProibidos('100% Poliamida', 'geral')).toEqual([])
+    expect(termosProibidos('96% poliéster', 'geral')).toEqual([])
+  })
+  it('pega valor em reais', () => {
+    expect(termosProibidos('R$ 19,90', 'geral')).toEqual(['valor em R$'])
+    expect(termosProibidos('R$19', 'geral')).toEqual(['valor em R$'])
+  })
+  it('aceita o plural dos termos', () => {
+    expect(termosProibidos('Descontos especiais', 'geral')).toContain('desconto')
+    expect(termosProibidos('Garantias de fábrica', 'geral')).toContain('garantia')
+    expect(termosProibidos('Mais vendidos', 'geral')).toContain('mais vendido')
+    expect(termosProibidos('fretes', 'geral')).toContain('frete')
+    expect(termosProibidos('selos', 'geral')).toContain('selo')
+  })
+  it('não casa quando o termo só aparece no meio de outra palavra', () => {
+    expect(termosProibidos('freteiro', 'geral')).toEqual([])
+    expect(termosProibidos('preciosa', 'geral')).toEqual([])
+    expect(termosProibidos('anselo', 'geral')).toEqual([])
+    expect(termosProibidos('Reserva de R e S', 'geral')).toEqual([])
   })
   it('texto limpo não devolve nada', () => {
     expect(termosProibidos('Largura certa: 20 mm', 'geral')).toEqual([])
   })
-  it('vestuário acrescenta termos da categoria', () => {
-    expect(termosProibidos('Tecido anti-odor', 'vestuario')).toContain('anti-odor')
-    expect(termosProibidos('Tecido anti-odor', 'geral')).toEqual([])
+  it('vestuário não proíbe termo citável quando confirmado (lista fechada no roteiro)', () => {
+    expect(termosProibidos('Tecido impermeável', 'vestuario')).toEqual([])
   })
 })
