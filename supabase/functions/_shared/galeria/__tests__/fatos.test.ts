@@ -135,6 +135,29 @@ describe('mesmoValor', () => {
     expect(mesmoValor('1,5 m', '1.5 m')).toBe(true)
     expect(mesmoValor('90% Algodão', 'Algodão')).toBe(false)
   })
+  it('composição só é igual quando todos os termos casam: palavra sobrando nunca é ignorada', () => {
+    expect(mesmoValor('100% Poliamida algodão', '100% Poliamida')).toBe(false)
+    expect(mesmoValor('100% Poliamida, algodão', '100% Poliamida')).toBe(false)
+    expect(mesmoValor('90% Poliéster 10% Elastano linho', '90% Poliéster 10% Elastano')).toBe(false)
+    expect(mesmoValor('90% Poliéster, 10% Elastano, linho', '90% Poliéster 10% Elastano')).toBe(false)
+    expect(mesmoValor('100% Poliamida 30', '100% Poliamida')).toBe(false)
+  })
+  it('ordem mista "90% A, B 10%" casa com o mesmo par em outra ordem', () => {
+    expect(mesmoValor('90% Poliéster, Elastano 10%', '10% Elastano 90% Poliéster')).toBe(true)
+    expect(mesmoValor('90% Poliéster, Elastano 10%', '90% Poliéster 10% Algodão')).toBe(false)
+  })
+  it('números pt-BR: "1.500" é milhar, "1,5" é decimal', () => {
+    expect(mesmoValor('1.500 m', '1,5 m')).toBe(false)
+    expect(mesmoValor('1.500 m', '1500 m')).toBe(true)
+    expect(mesmoValor('1.500,5 g', '1500,5 g')).toBe(true)
+  })
+  it('aplicarEtiqueta com palavra sobrando na etiqueta → DIVERGENTE (nunca consistente por omissão)', () => {
+    const fs = aplicarEtiqueta(
+      montarFicha({ ...base, planilha: { composicao: '100% Poliamida' } }),
+      { composicao: { legivel: true, valor: '100% Poliamida algodão' } },
+    )
+    expect(fato(fs, 'composicao')?.estado).toBe('DIVERGENTE')
+  })
 })
 
 describe('hashFatos', () => {

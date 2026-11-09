@@ -87,41 +87,64 @@ export function montarFicha({ planilha, medidasPorSku, atributosML, textosIA, co
 }
 
 const norm = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
-const numero = (n: string) => String(Number(n.replace(',', '.')));
-
-/** Composição "90% Poliéster 10% Elastano" ou "Poliéster 90%, Elastano 10%" → material → %. Sem % → null. */
-function composicao(s: string): Map<string, string> | null {
-  // Itens: percentual ou material (palavras seguidas; "e", vírgula, barra e percentual separam).
-  const itens: Array<{ pct?: string; mat?: string }> = [...norm(s).matchAll(/(\d+(?:[.,]\d+)?)\s*%|(\p{L}+(?:\s+(?!e\s|e$)\p{L}+)*)/gu)]
-    .map((m) => (m[1] !== undefined ? { pct: numero(m[1]) } : { mat: m[2] }))
-    .filter((i) => i.mat !== 'e');
-  if (!itens.some((i) => i.pct !== undefined)) return null;
-  const pctAntes = itens[0].pct !== undefined;
-  const mapa = new Map<string, string>();
-  for (let i = 0; i < itens.length; i++) {
-    const pct = itens[i].pct;
-    if (pct === undefined) continue;
-    const mat = itens[pctAntes ? i + 1 : i - 1]?.mat;
-    if (mat === undefined) return null;
-    mapa.set(mat, pct);
-  }
-  return mapa;
+// Número pt-BR: "1.500" = mil e quinhentos (milhar), "1,5" = um e meio; "1.5" (sem grupo de 3) = um e meio.
+const NUM = '\\d+(?:[.,]\\d+)*';
+function numero(n: string): string {
+  const t = /^\d{1,3}(?:\.\d{3})+(?:,\d+)?$/.test(n) ? n.replace(/\./g, '').replace(',', '.') : n.replace(',', '.');
+  const v = Number(t);
+  return Number.isFinite(v) ? String(v) : n;
 }
 
 /**
- * Mesmo valor com formatação diferente. Números e unidades contam ("20 mm" ≢ "35 mm"); composição compara
- * o percentual de cada material ("90% Poliéster 10% Elastano" ≢ "10% Poliéster 90% Elastano"); só
- * "100% X" ≡ "X". Sem percentual: mesma sequência de números e palavras ("20mm" ≡ "20 mm").
+ * Composição → material → %. `null` = não é composição reconhecida. Conservadora: todo termo precisa
+ * casar em par percentual/material (percentual antes ou depois: "90% A, B 10%"); palavra sem par,
+ * número solto ou material repetido → null (nunca "igual" por omissão).
+ */
+function composicao(s: string): Map<string, string> | null {
+  // Material = palavras seguidas; vírgula, barra, "e" e percentual separam.
+  const re = new RegExp(`(${NUM})\\s*%|(${NUM})|(\\p{L}+(?:\\s+(?!e\\s|e$)\\p{L}+)*)`, 'gu');
+  const itens = [...norm(s).matchAll(re)]
+    .map((m) => ({ pct: m[1] !== undefined ? numero(m[1]) : undefined, solto: m[2] !== undefined, mat: m[3] }))
+    .filter((i) => i.mat !== 'e');
+  if (!itens.some((i) => i.pct !== undefined) || itens.some((i) => i.solto)) return null;
+  const mapa = new Map<string, string>();
+  let pctPendente: string | null = null;
+  let matPendente: string | null = null;
+  const parear = (mat: string, pct: string) => {
+    if (mapa.has(mat)) return false;
+    mapa.set(mat, pct);
+    return true;
+  };
+  for (const i of itens) {
+    if (i.pct !== undefined) {
+      if (pctPendente !== null) return null;
+      if (matPendente !== null) { if (!parear(matPendente, i.pct)) return null; matPendente = null; }
+      else pctPendente = i.pct;
+    } else if (i.mat !== undefined) {
+      if (matPendente !== null) return null;
+      if (pctPendente !== null) { if (!parear(i.mat, pctPendente)) return null; pctPendente = null; }
+      else matPendente = i.mat;
+    }
+  }
+  return pctPendente === null && matPendente === null ? mapa : null;
+}
+
+/**
+ * Mesmo valor com formatação diferente. Números e unidades contam ("20 mm" ≢ "35 mm", "1.500 m" ≢ "1,5 m");
+ * composição compara o percentual de cada material, com todos os termos casados; só "100% X" ≡ "X".
+ * Composição não reconhecida: só igual se a sequência de números e palavras for a mesma.
  */
 export function mesmoValor(a: string, b: string): boolean {
+  const sequencia = (s: string) =>
+    (norm(s).match(new RegExp(`${NUM}|\\p{L}+`, 'gu')) ?? []).map((t) => (/\d/.test(t) ? numero(t) : t)).join(' ');
+  const temPct = (s: string) => s.includes('%');
+  if (!temPct(a) && !temPct(b)) return sequencia(a) === sequencia(b);
   const ca = composicao(a);
   const cb = composicao(b);
-  const igualMapa = (x: Map<string, string>, y: Map<string, string>) =>
-    x.size === y.size && [...x].every(([k, v]) => y.get(k) === v);
-  const sequencia = (s: string) => (norm(s).match(/\d+(?:[.,]\d+)?|\p{L}+/gu) ?? []).map((t) => (/\d/.test(t) ? numero(t) : t)).join(' ');
-  if (ca && cb) return igualMapa(ca, cb);
-  const [comp, puro] = ca ? [ca, b] : cb ? [cb, a] : [null, null];
-  if (comp && puro !== null) return comp.size === 1 && [...comp.values()][0] === '100' && comp.has(sequencia(puro));
+  if (ca && cb) return ca.size === cb.size && [...ca].every(([k, v]) => cb.get(k) === v);
+  // "100% X" ≡ "X": o lado sem % é o material inteiro.
+  const [comp, puro] = ca && !temPct(b) ? [ca, b] : cb && !temPct(a) ? [cb, a] : [null, ''];
+  if (comp) return comp.size === 1 && [...comp.values()][0] === '100' && comp.has(sequencia(puro));
   return sequencia(a) === sequencia(b);
 }
 
