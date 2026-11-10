@@ -12,11 +12,11 @@ describe('MODELOS_GALERIA_UI', () => {
     expect(MODELOS_GALERIA_UI[0].indisponivel).toBeUndefined();
   });
 
-  it('modelo Higgsfield sem campo de referência medido aparece indisponível', () => {
+  it('modelo Higgsfield sem campo de referência ou de proporção confirmado aparece indisponível', () => {
     for (const m of MODELOS_GALERIA_UI) {
       const back = MODELOS_GALERIA[m.slug];
-      const semReferencia = back.provedor === 'higgsfield' && !back.campoReferencia;
-      expect(Boolean(m.indisponivel)).toBe(semReferencia);
+      const naoConfirmado = back.provedor === 'higgsfield' && (!back.campoReferencia || !back.campoProporcao);
+      expect(Boolean(m.indisponivel)).toBe(naoConfirmado);
     }
   });
 
@@ -25,6 +25,6 @@ describe('MODELOS_GALERIA_UI', () => {
     expect(slugGaleriaExibido(null)).toBe(padrao);
     expect(slugGaleriaExibido('xyz/desconhecido')).toBe(padrao);
     for (const m of MODELOS_GALERIA_UI.filter((o) => o.indisponivel)) expect(slugGaleriaExibido(m.slug)).toBe(padrao);
-    expect(slugGaleriaExibido('alibaba/qwen-image-3/edit')).toBe('alibaba/qwen-image-3/edit');
+    expect(slugGaleriaExibido('xai/grok-imagine-image-2.0')).toBe('xai/grok-imagine-image-2.0');
   });
 });

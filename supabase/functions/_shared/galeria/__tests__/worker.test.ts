@@ -8,7 +8,7 @@ vi.mock('../../ai/client.ts', () => ({ openrouterClient: () => ({ chat: { comple
 vi.mock('../../canais/conexao.ts', () => ({ resolverConexaoEstrita: vi.fn() }))
 vi.mock('../../ml/token.ts', () => ({ getValidAccessTokenConexao: vi.fn() }))
 
-const { executarImagem, proximaFase, LEASE_MS } = await import('../worker-estado')
+const { executarImagem, proximaFase, LEASE_MS, PRAZO_GERACAO_MS, VALIDADE_REFERENCIA_S } = await import('../worker-estado')
 
 type Linha = Record<string, any>
 let db: Record<string, Linha[]>
@@ -163,6 +163,7 @@ describe('OpenRouter', () => {
     expect(await rodar()).toBe('falhou')
     expect(img().cena_path).toBeNull()
   })
+  // Conta só o create do mock (regra de tentativa). "Uma requisição HTTP" com o SDK real: worker-http.denotest.ts.
   it('502 → uma chamada, lease solto com tentativa 1; 2ª queda → falhou sem 3ª chamada', async () => {
     v.create.mockRejectedValue(erroHTTP(502))
     await rodar()
@@ -274,6 +275,38 @@ describe('Higgsfield', () => {
     db.galeria_roteiros[0].status = 'desatualizado'
     hf.status = () => new Response(JSON.stringify({ status: 'completed', images: [{ url: 'https://cdn.hf/x.jpg' }] }))
     expect(await rodar(msg(img(), 'consultar'))).toBe('desatualizada')
+  })
+  it('referência assinada por mais que o prazo inteiro (a Higgsfield baixa quando processa)', async () => {
+    const validades: number[] = []
+    const orig = fake.admin.storage.from
+    fake.admin.storage.from = (b: string) => {
+      const o = orig(b)
+      return { ...o, createSignedUrl: (p: string, s: number) => { validades.push(s); return o.createSignedUrl(p) } }
+    }
+    await rodar()
+    expect(validades).toHaveLength(1)
+    expect(validades[0]).toBeGreaterThanOrEqual(VALIDADE_REFERENCIA_S)
+    expect(VALIDADE_REFERENCIA_S * 1000).toBeGreaterThan(PRAZO_GERACAO_MS)
+  })
+  it('consulta final concluída + 502 no download → só solta o lease; o tick seguinte baixa e grava gerada', async () => {
+    await rodar()
+    agora = T0 + 12 * 60_000 + 1
+    hf.status = () => new Response(JSON.stringify({ status: 'completed', images: [{ url: 'https://cdn.hf/x.jpg' }] }))
+    const bom = hf.download
+    hf.download = () => new Response('bad gateway', { status: 502 })
+    expect(await rodar(msg(img(), 'consultar'))).toBe('liberada')
+    expect(img()).toMatchObject({ status: 'gerando', posse: null, lease_ate: null, cena_path: null, erro: null })
+    hf.download = bom
+    agora += 60_000
+    expect(await rodar(msg(img(), 'consultar'))).toBe('gerada')
+    expect(img()).toMatchObject({ status: 'gerada', custo_usd: 0.04 })
+  })
+  it('consulta final com erro de rede na consulta → só solta o lease (o relógio no banco é o teto)', async () => {
+    await rodar()
+    agora = T0 + 12 * 60_000 + 1
+    hf.status = () => { throw new TypeError('network') }
+    expect(await rodar(msg(img(), 'consultar'))).toBe('liberada')
+    expect(img()).toMatchObject({ status: 'gerando', posse: null, erro: null })
   })
   it('passado o prazo de 12 min: consulta final; pendente → falhou sem custo', async () => {
     await rodar()

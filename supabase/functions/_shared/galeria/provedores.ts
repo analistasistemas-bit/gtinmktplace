@@ -5,7 +5,7 @@ import { MODELO_GALERIA_PADRAO, modeloGaleria, type ModeloGaleria } from './mode
 export { MODELOS_GALERIA, MODELO_GALERIA_PADRAO, modeloGaleria, type ModeloGaleria } from './modelos.ts';
 
 /** configuracoes.ai_model_galeria (coluna criada na Task 5); nulo, desconhecido, erro ou modelo Higgsfield sem campo
- * de referência confirmado → padrão. */
+ * de referência ou de proporção confirmado na saída → padrão. */
 export async function resolverModeloGaleria(admin: SupabaseClient, orgId: string): Promise<ModeloGaleria> {
   try {
     const { data } = await admin
@@ -14,7 +14,7 @@ export async function resolverModeloGaleria(admin: SupabaseClient, orgId: string
       .eq('org_id', orgId)
       .maybeSingle()
     const modelo = modeloGaleria(data?.ai_model_galeria)
-    return modelo.provedor === 'higgsfield' && !modelo.campoReferencia ? MODELO_GALERIA_PADRAO : modelo
+    return modelo.provedor === 'higgsfield' && (!modelo.campoReferencia || !modelo.campoProporcao) ? MODELO_GALERIA_PADRAO : modelo
   } catch {
     return MODELO_GALERIA_PADRAO
   }

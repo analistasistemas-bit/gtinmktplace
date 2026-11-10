@@ -29,7 +29,7 @@ export const MODELOS_IMAGEM: OpcaoModeloIA[] = [
 // `indisponivel`: o back-end (resolverModeloGaleria) ignora o modelo e usa o padrão; a UI mostra a opção desligada.
 export const MODELOS_GALERIA_UI: (OpcaoModeloIA & { indisponivel?: string })[] = [
   { slug: 'google/gemini-nano-banana-2.1', label: 'Nano Banana 2.1 (padrão)', precoLabel: '~US$ 0,039 por imagem' },
-  { slug: 'alibaba/qwen-image-3/edit', label: 'Qwen Image 3 Edit', precoLabel: '~US$ 0,04 por imagem' },
+  { slug: 'alibaba/qwen-image-3/edit', label: 'Qwen Image 3 Edit', precoLabel: '~US$ 0,04 por imagem', indisponivel: 'proporção a confirmar' },
   { slug: 'xai/grok-imagine-image-2.0', label: 'Grok Imagine 2', precoLabel: '~US$ 0,06 por imagem' },
 ];
 

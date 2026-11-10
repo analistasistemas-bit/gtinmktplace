@@ -20,7 +20,7 @@ export interface ModeloGaleria {
 
 // Campos medidos: `image_urls` (≤3) e `prompt_extend` do Qwen em 08/11; na Task 9 Step 5 (10/11) o validador da
 // Higgsfield citou `aspect_ratio` (enum com '3:4') no Qwen e no Grok e `image_urls` (array de string, máx. 10) no
-// Grok, e a geração real do Grok com image_urls reproduziu o produto da referência em 864×1152.
+// Grok, e a geração real do Grok com image_urls + aspect_ratio saiu 3:4 (864×1152) com o produto da referência.
 
 // Custos: medição de 08/11/2026 (o plano não fixa valor).
 // Nano Banana: 0,039 = custo real medido (tabela 0,042).
@@ -52,7 +52,9 @@ export const MODELOS_GALERIA: Record<string, ModeloGaleria> = {
     endpoint: 'alibaba/qwen-image-3/edit',
     maxReferencias: 3, // a API recusa mais de 3 image_urls
     campoReferencia: 'image_urls',
-    campoProporcao: 'aspect_ratio',
+    // O validador aceita `aspect_ratio` ('3:4' no enum), mas a geração da Task 9 Step 5 foi bloqueada (copyright) e
+    // a saída não foi medida: sem proporção confirmada o modelo cai no padrão (resolverModeloGaleria).
+    campoProporcao: null,
     extra: { prompt_extend: true }, // prompt_extend:false é recusado (400)
     custoUsd: 0.04,
     rotulo: 'Qwen Image 3 Edit',

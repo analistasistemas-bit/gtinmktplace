@@ -73,13 +73,10 @@ describe('corpo das chamadas pede 3:4', () => {
     expect(c.modalities).toEqual(['image', 'text'])
     expect(c.messages[0].content).toEqual([{ type: 'text', text: 'P' }, { type: 'image_url', image_url: { url: 'https://signed/ref.jpg' } }])
   })
-  it('Higgsfield: campo de proporção medido recebe 3:4 (Qwen e Grok)', () => {
-    for (const slug of ['alibaba/qwen-image-3/edit', 'xai/grok-imagine-image-2.0']) {
-      const m = MODELOS_GALERIA[slug]
-      expect(m.campoProporcao).not.toBeNull()
-      const refs = m.campoReferencia ? ['https://signed/ref.jpg'] : []
-      expect(corpoHF(m, 'P', refs)[m.campoProporcao!]).toBe('3:4')
-    }
+  it('Higgsfield: campo de proporção medido recebe 3:4 (todo modelo com proporção medida)', () => {
+    const medidos = Object.values(MODELOS_GALERIA).filter((m) => m.provedor === 'higgsfield' && m.campoProporcao)
+    expect(medidos.map((m) => m.slug)).toContain('xai/grok-imagine-image-2.0')
+    for (const m of medidos) expect(corpoHF(m, 'P', ['https://signed/ref.jpg'])[m.campoProporcao!]).toBe('3:4')
   })
 })
 

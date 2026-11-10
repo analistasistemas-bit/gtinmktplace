@@ -18,6 +18,12 @@ import type { Roteiro } from './roteiro.ts';
 export const LEASE_MS = 150_000;
 export const PRAZO_GERACAO_MS = 12 * 60_000;
 export const MIN_BYTES = 40 * 1024;
+/** Vida máxima de uma linha aberta: `galeria_relogio` grava `falhou`/`expirada` em `criado_em + 60 min`. É o teto
+ * das retentativas de consulta/download depois do prazo. */
+export const VIDA_MAXIMA_MS = 60 * 60_000;
+/** A Higgsfield baixa a referência quando processa (pode ser depois do prazo de 12 min): a URL vale a vida inteira
+ * da linha. */
+export const VALIDADE_REFERENCIA_S = Math.max(PRAZO_GERACAO_MS, VIDA_MAXIMA_MS) / 1000;
 /** Teto de cada chamada de imagem (abaixo do lease de 150 s; nunca passar mais que isto à Higgsfield). */
 export const TIMEOUT_GERACAO_MS = Math.min(100_000, TIMEOUT_HF_MS);
 
@@ -150,7 +156,7 @@ export async function executarImagem(admin: SupabaseClient, msg: MensagemWorker 
     const m = roteiro!.conteudo.missoes?.find((x) => x.missao === linha.missao);
     if (!m) return falhar('missao_ausente');
     const prompt = montarPromptCena(m, roteiro!.conteudo, roteiro!.moda, linha.cor, LAYOUT_PADRAO);
-    const refUrl = await urlAssinada(admin, await caminhoReferencia(admin, linha.referencia_id));
+    const refUrl = await urlAssinada(admin, await caminhoReferencia(admin, linha.referencia_id), VALIDADE_REFERENCIA_S);
     if (!refUrl) return falhar('sem_referencia');
     if (modelo.provedor === 'openrouter') {
       let gerada: ReturnType<typeof extrairImagem> & { custo: number };
@@ -174,14 +180,15 @@ export async function executarImagem(admin: SupabaseClient, msg: MensagemWorker 
     return ok ? 'gerando' : 'perdeu_posse';
   }
 
-  // consultar | consulta_final (Higgsfield).
-  const final = fase === 'consulta_final';
+  // consultar | consulta_final (Higgsfield). Só o provedor dizendo pendente/falhou depois do prazo leva a `falhar`;
+  // erro transitório de consulta ou de download (imagem paga, URL válida por 7 dias) só solta o lease e o despachante
+  // repete. ponytail: teto = relógio no banco (`VIDA_MAXIMA_MS`), sem contador próprio.
   let r: ConsultaHF;
   try {
     r = await consultarHF(linha.provider_request_id!, opHF);
   } catch (e) {
     console.error('[galeria-worker] consulta', linha.id, (e as Error).message);
-    return final ? falhar('prazo_esgotado') : liberar();
+    return liberar();
   }
   const depois = proximaFase(linha, msg, deps.agora(), r.status);
   if (depois === 'ignorar') return (await liberar()) === 'liberada' ? 'pendente' : 'perdeu_posse';
@@ -195,7 +202,7 @@ export async function executarImagem(admin: SupabaseClient, msg: MensagemWorker 
     return concluir(bytes, png ? 'png' : 'jpg', png ? 'image/png' : 'image/jpeg', linha.prompt, modelo.custoUsd);
   } catch (e) {
     console.error('[galeria-worker] download', linha.id, (e as Error).message);
-    return final ? falhar('prazo_esgotado') : liberar();
+    return liberar();
   }
 }
 
@@ -219,9 +226,9 @@ async function caminhoReferencia(admin: SupabaseClient, id: string | null): Prom
   return (data?.path as string | undefined) ?? null;
 }
 
-async function urlAssinada(admin: SupabaseClient, path: string | null): Promise<string | null> {
+async function urlAssinada(admin: SupabaseClient, path: string | null, segundos = 600): Promise<string | null> {
   if (!path) return null;
-  const { data, error } = await admin.storage.from('imagens').createSignedUrl(path, 600);
+  const { data, error } = await admin.storage.from('imagens').createSignedUrl(path, segundos);
   return error ? null : data?.signedUrl ?? null;
 }
 
