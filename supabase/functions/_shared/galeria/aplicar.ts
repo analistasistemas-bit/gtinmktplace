@@ -98,14 +98,23 @@ export function planejarFotosItem(e: EntradaIda | EntradaVolta): ResultadoPlano 
 
   if (e.direcao === 'volta') {
     if (!correntes) return falha('reversao_incompleta', `${e.atual.id}:variacao_ausente`);
+    // fotos_antes/fotos_depois vêm de jsonb relido: chave ausente nunca vira lista vazia (apagaria as fotos da cor).
     for (const a of e.variacoesAlvo) {
-      if (!igual(correntes[a.sku], e.fotosDepois[a.sku] ?? [])) return falha('reversao_incompleta', `${e.atual.id}:${a.sku}`);
+      const depois = e.fotosDepois[a.sku];
+      if (!Array.isArray(depois) || !Array.isArray(e.fotosDaCor[a.sku]) || !igual(correntes[a.sku], depois)) {
+        return falha('reversao_incompleta', `${e.atual.id}:${a.sku}`);
+      }
     }
     const novas: FotosPorSku = {};
-    for (const a of e.variacoesAlvo) novas[a.sku] = [...(e.fotosDaCor[a.sku] ?? [])];
+    for (const a of e.variacoesAlvo) novas[a.sku] = [...e.fotosDaCor[a.sku]];
     return { ok: true, corpo: montarCorpo(e.atual, novas, e.variacoesAlvo) };
   }
 
+  // Contrato do chamador (manifesto congelado da preparação): violado → lança, nunca planeja PUT.
+  if (e.fotosDaCor.length === 0) throw new Error('planejarFotosItem: manifesto vazio');
+  if (e.capaAprovada !== e.fotosDaCor.some((f) => f.missao === 1)) {
+    throw new Error('planejarFotosItem: capaAprovada incoerente com a missão 1 do manifesto');
+  }
   if (!correntes) return falha('variacao_ausente', e.atual.id);
   const m = mudou(e.atual, e.retrato);
   if (m) return falha('mudou', `${e.atual.id}:${m}`);

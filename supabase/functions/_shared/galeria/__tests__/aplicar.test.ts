@@ -103,6 +103,12 @@ describe('planejarFotosItem — ida', () => {
     expect(planejarFotosItem(ida(legacy({ tags: ['variations_migration_pending'] })))).toMatchObject({ ok: false, motivo: 'migracao_pendente' })
   })
 
+  it('manifesto vazio ou capaAprovada incoerente com a missão 1 → lança (contrato quebrado, nunca PUT)', () => {
+    expect(() => planejarFotosItem(ida(legacy(), { fotosDaCor: [] }))).toThrow(/manifesto/)
+    expect(() => planejarFotosItem(ida(legacy(), { capaAprovada: true, fotosDaCor: MANIFESTO.slice(1) }))).toThrow(/capa/)
+    expect(() => planejarFotosItem(ida(legacy(), { capaAprovada: false, fotosDaCor: MANIFESTO }))).toThrow(/capa/)
+  })
+
   it('variação-alvo ausente no GET → variacao_ausente', () => {
     expect(planejarFotosItem(ida(legacy(), { variacoesAlvo: [{ sku: '100R', variationId: 99 }] })))
       .toMatchObject({ ok: false, motivo: 'variacao_ausente' })
@@ -142,6 +148,20 @@ describe('planejarFotosItem — volta (compensação)', () => {
     const r = planejarFotosItem(volta(atual))
     expect(r).toMatchObject({ ok: false, motivo: 'reversao_incompleta' })
     expect('corpo' in r).toBe(false)
+  })
+
+  it('SKU-alvo sem chave em fotos_antes ou fotos_depois → reversao_incompleta (nunca restaura lista vazia)', () => {
+    expect(planejarFotosItem(volta(aplicado(), { fotosDaCor: {} }))).toMatchObject({ ok: false, motivo: 'reversao_incompleta' })
+    const semFoto = aplicado()
+    semFoto.variacoes[0].pictureIds = []
+    expect(planejarFotosItem(volta(semFoto, { fotosDepois: {} }))).toMatchObject({ ok: false, motivo: 'reversao_incompleta' })
+  })
+
+  it('cor sem foto: lista vazia presente nas duas pontas é legítima', () => {
+    const semFoto = aplicado()
+    semFoto.variacoes[0].pictureIds = []
+    const r = planejarFotosItem(volta(semFoto, { fotosDepois: { '100R': [] }, fotosDaCor: { '100R': [] } }))
+    expect(r.ok && r.corpo.variations?.[0]).toEqual({ id: 11, picture_ids: [] })
   })
 
   it('variação-alvo ausente no GET → reversao_incompleta', () => {
