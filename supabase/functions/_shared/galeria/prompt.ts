@@ -3,11 +3,8 @@
 import { BLOCO_TECNICO, missoesDisponiveis } from './regras.ts';
 import type { MissaoRoteiro, Roteiro } from './roteiro.ts';
 
-/** Área reservada ao texto que o PubliAI compõe depois (descrição para o gerador; o layout fino é da Task 11). */
+/** Área reservada ao texto que o PubliAI compõe depois (descrição para o gerador; vem de `layout-area.ts`). */
 export interface LayoutCena { areaTexto: string }
-
-// ponytail: uma área fixa para as missões com texto até a Task 11 fixar os layouts por missão.
-export const LAYOUT_PADRAO: LayoutCena = { areaTexto: 'the top third of the frame' };
 
 const NOMES = new Map(
   [false, true].map((moda) => [moda, new Map(missoesDisponiveis(moda, ['frente', 'costas', 'lateral']).map((m) => [m.missao, m.nome]))]),

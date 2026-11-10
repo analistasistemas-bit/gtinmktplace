@@ -240,7 +240,7 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro }: {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {lista.imagens.map((i: ImagemGaleria) => (
             <CartaoImagem key={i.id} imagem={i} onExibida={exibida} onInvalida={invalida} onFalhaCarga={falhaCarga}
-              onGerarDeNovo={(x) => abrir({ cores: [x.cor], missoes: [x.missao] })} />
+              onGerarDeNovo={podePedir ? (x) => abrir({ cores: [x.cor], missoes: [x.missao] }) : undefined} />
           ))}
         </div>
       )}

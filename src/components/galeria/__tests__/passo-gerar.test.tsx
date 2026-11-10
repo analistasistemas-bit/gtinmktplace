@@ -295,6 +295,13 @@ describe('PassoGerar — exibição e cobrança', () => {
     expect(screen.getByText(/6 imagens · R\$\s4,80/)).toBeInTheDocument();
   });
 
+  it('"Gerar de novo" não aparece quando o roteiro aprovado é de família anterior', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([imagem()], 50, aprovado([1, 2], { familia_id: 'F0' }))));
+    passo();
+    await screen.findByText(/família anterior/);
+    expect(screen.queryByRole('button', { name: 'Gerar de novo' })).toBeNull();
+  });
+
   it('"Gerar de novo" abre a confirmação de 1 imagem daquela cor e missão', async () => {
     api.listarImagens.mockResolvedValue(ok(lista([imagem({ cor: 'Rosa', missao: 2 })])));
     passo(['Preto', 'Rosa']);

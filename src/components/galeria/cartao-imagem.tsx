@@ -17,7 +17,8 @@ const ROTULO: Record<string, string> = {
 
 export function CartaoImagem({ imagem, onGerarDeNovo, onAprovar, onExibida, onInvalida, onFalhaCarga }: {
   imagem: ImagemGaleria;
-  onGerarDeNovo: (imagem: ImagemGaleria) => void;
+  /** Sem handler o botão não aparece (roteiro aprovado de outra família: o servidor recusaria). */
+  onGerarDeNovo?: (imagem: ImagemGaleria) => void;
   /** Aprovação é da Task 12 (composição); sem handler o botão não aparece. */
   onAprovar?: (imagem: ImagemGaleria) => void;
   onExibida?: (id: string) => void;
@@ -74,7 +75,7 @@ export function CartaoImagem({ imagem, onGerarDeNovo, onAprovar, onExibida, onIn
         </ul>
       )}
       <div className="flex flex-wrap gap-2">
-        {imagem.origem === 'gerador' && imagem.pode_gerar_de_novo && (
+        {onGerarDeNovo && imagem.origem === 'gerador' && imagem.pode_gerar_de_novo && (
           <Button size="sm" variant="outline" onClick={() => onGerarDeNovo(imagem)}>Gerar de novo</Button>
         )}
         {onAprovar && imagem.status === 'gerada' && <Button size="sm" onClick={() => onAprovar(imagem)}>Aprovar</Button>}

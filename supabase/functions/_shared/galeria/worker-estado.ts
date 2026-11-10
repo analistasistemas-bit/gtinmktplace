@@ -9,7 +9,8 @@ import { openrouterClient } from '../ai/client.ts';
 import { dimensoesImagem, extrairImagem } from '../ai/imagem.ts';
 import { consultarHF, submeterHF, TIMEOUT_HF_MS, type ConsultaHF } from '../ai/higgsfield.ts';
 import { corpoHF, modeloGaleria, type ModeloGaleria } from './provedores.ts';
-import { corpoOpenRouter, LAYOUT_PADRAO, montarPromptCena } from './prompt.ts';
+import { layoutCena } from './layout-area.ts';
+import { corpoOpenRouter, montarPromptCena } from './prompt.ts';
 import { verificarCena } from './alertas.ts';
 import { cenaUtil } from './corte.ts';
 import { corSlug } from './referencias.ts';
@@ -155,7 +156,7 @@ export async function executarImagem(admin: SupabaseClient, msg: MensagemWorker 
   if (submeter) {
     const m = roteiro!.conteudo.missoes?.find((x) => x.missao === linha.missao);
     if (!m) return falhar('missao_ausente');
-    const prompt = montarPromptCena(m, roteiro!.conteudo, roteiro!.moda, linha.cor, LAYOUT_PADRAO);
+    const prompt = montarPromptCena(m, roteiro!.conteudo, roteiro!.moda, linha.cor, layoutCena(m.missao));
     const refUrl = await urlAssinada(admin, await caminhoReferencia(admin, linha.referencia_id), VALIDADE_REFERENCIA_S);
     if (!refUrl) return falhar('sem_referencia');
     if (modelo.provedor === 'openrouter') {
