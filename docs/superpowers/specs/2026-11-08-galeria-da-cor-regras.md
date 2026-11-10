@@ -123,7 +123,7 @@ R6.4 **Estilo A · Catálogo limpo (Diego, 08/11; Codex e Grok concordam).** Int
 contraste ≥4,5:1 (senão, texto escuro). Mockups: `~/Desktop/IA/medicao-galeria-2026-11-08/layouts.html`.
 
 R6.5 Regras de layout, todas com teste automático que reprova o lote [REV]:
-- fonte ≥5% da largura (60 px no arquivo de 1200); títulos 7–8,5%; headline em até 2 linhas, etapa em 1 linha;
+- fonte ≥5% da largura (60 px no arquivo de 1200); títulos 7–8,5%; headline em até 2 linhas, etapa em até 2 linhas (decisão do Diego, 10/11/2026: 7 palavras a 60 px não cabem em 1 linha);
 - contraste ≥4,5:1 medido na cor já composta, sem opacidade sobre texto;
 - área segura: 6% nas laterais, texto entre 12% e 88% da altura; chips e lupas com folga ≥2%;
 - no máximo 3 benefícios e 4 pares na ficha técnica;

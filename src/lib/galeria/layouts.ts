@@ -19,7 +19,26 @@ const TOPO = 185;
 const FIM = 1355;
 const MAX = { beneficios: 3, specs: 4, etapas: 4 };
 
-const altura = (fontePx: number, linhas: number) => Math.round(fontePx * (fontePx >= TITULO ? 1.05 : 1.25)) * linhas;
+// Entrelinha: 1,2 no título (til e cedilha não cruzam a linha de cima), 1,25 no corpo.
+const altura = (fontePx: number, linhas: number) => Math.round(fontePx * (fontePx >= TITULO ? 1.2 : 1.25)) * linhas;
+
+/**
+ * Largura estimada do texto: 0,6 em por caractere (Inter 600–800 mede ~0,52–0,58 em em média; fator majorado ~10%
+ * para nunca subestimar). Serve aos testes e à Task 12 para prever quebra e estouro.
+ */
+export const FATOR_LARGURA = 0.6;
+export function linhasNecessarias(texto: string, fontePx: number, w: number): number {
+  const porLinha = Math.max(1, Math.floor(w / (fontePx * FATOR_LARGURA)));
+  let linhas = 1; let usado = 0;
+  for (const p of texto.trim().split(/\s+/)) {
+    const n = p.length;
+    if (usado === 0) usado = n;
+    else if (usado + 1 + n <= porLinha) usado += 1 + n;
+    else { linhas++; usado = n; }
+    while (usado > porLinha) { linhas++; usado -= porLinha; }
+  }
+  return linhas;
+}
 const caixa = (x: number, y: number, w: number, fontePx: number, linhasMax: number): Caixa =>
   ({ x, y, w, h: altura(fontePx, linhasMax), fontePx, linhasMax });
 
@@ -33,12 +52,12 @@ function cabecalho(w: number, sub: boolean): Caixa[] {
 const COLUNA_X = 170;
 const COLUNA_W = 590;
 
-function coluna(n: number, passo: number, linhasTitulo: number): Caixa[] {
-  const h = caixa(X, TOPO, COLUNA_W + COLUNA_X - X, TITULO, linhasTitulo);
+function coluna(n: number, passo: number, w: number, linhas: number): Caixa[] {
+  const h = caixa(X, TOPO, LARGURA, TITULO, 2); // título na largura segura, faixa de topo reservada ao gerador
   const itens: Caixa[] = [];
-  let y = h.y + h.h + 40;
+  let y = h.y + h.h + 30;
   for (let i = 0; i < n; i++) {
-    const c = caixa(COLUNA_X, y, COLUNA_W, CORPO, 3);
+    const c = caixa(COLUNA_X, y, w, CORPO, linhas);
     itens.push(c);
     y += c.h + passo;
   }
@@ -50,30 +69,33 @@ export function layoutMissao(missao: number, t: TextosMissao): Caixa[] {
     case 2:
       return cabecalho(LARGURA, !!t.subheadline);
     case 3: {
-      const chip = t.legendas?.length ? [caixa(X, 1180, 520, CORPO, 1)] : [];
-      return [...cabecalho(LARGURA, !!t.subheadline), ...chip];
+      // Chip logo abaixo do texto, na faixa de topo reservada (2 linhas: legenda de 5 palavras passa de 1056 px).
+      const cab = cabecalho(LARGURA, !!t.subheadline);
+      const ult = cab[cab.length - 1];
+      return [...cab, ...(t.legendas?.length ? [caixa(X, ult.y + ult.h + 20, LARGURA, CORPO, 2)] : [])];
     }
     case 4:
-      return coluna(Math.min(MAX.beneficios, t.beneficios?.length ?? 0), 40, 2);
+      return coluna(Math.min(MAX.beneficios, t.beneficios?.length ?? 0), 40, COLUNA_W, 3);
     case 5: {
-      // Ficha ancorada embaixo: título + n linhas (rótulo e valor, 1 linha cada; valor longo é da Task 12).
+      // Ficha ancorada embaixo: título (2 linhas) + n linhas (rótulo e valor, 1 linha cada; valor longo é da Task 12).
       const n = Math.min(MAX.specs, t.specs?.length ?? 0);
       const linha = altura(CORPO, 1);
-      const topo = FIM - (altura(TITULO, 1) + 24 + n * linha + Math.max(0, n - 1) * 20);
+      const tit = altura(TITULO, 2);
+      const topo = FIM - (tit + 24 + n * linha + Math.max(0, n - 1) * 20);
       const rows = Array.from({ length: n }, (_, i) => {
-        const y = topo + altura(TITULO, 1) + 24 + i * (linha + 20);
+        const y = topo + tit + 24 + i * (linha + 20);
         return [caixa(X, y, 400, CORPO, 1), caixa(500, y, 628, CORPO, 1)];
       }).flat();
-      return [caixa(X, topo, LARGURA, TITULO, 1), ...rows];
+      return [caixa(X, topo, LARGURA, TITULO, 2), ...rows];
     }
-    case 6: // título em 1 linha: 4 etapas de 3 linhas só cabem assim
-      return coluna(Math.min(MAX.etapas, t.etapas?.length ?? 0), 30, 1);
+    case 6: // etapa em até 2 linhas (decisão do Diego, 10/11): largura toda, 7 palavras a 60 px
+      return coluna(Math.min(MAX.etapas, t.etapas?.length ?? 0), 30, LARGURA + X - COLUNA_X, 2);
     case 7: {
-      // Duas lupas de 408 px (recortes da referência) em y 700–1108; legenda de até 2 linhas embaixo de cada uma.
+      // Duas lupas de 408 px (recortes da referência) em y 700–1108; legenda de até 3 linhas embaixo de cada uma.
       const legs = Math.min(2, t.legendas?.length ?? 0);
       return [
         caixa(X, TOPO, LARGURA, TITULO, 2),
-        ...Array.from({ length: legs }, (_, i) => caixa(i ? 648 : X, 1130, 480, CORPO, 2)),
+        ...Array.from({ length: legs }, (_, i) => caixa(i ? 648 : X, 1130, 480, CORPO, 3)),
       ];
     }
     default:
@@ -83,11 +105,11 @@ export function layoutMissao(missao: number, t: TextosMissao): Caixa[] {
 
 /**
  * Dois recortes quadrados da referência (px da referência) para lupas/detalhes: terço da menor dimensão,
- * um na parte de cima e outro na de baixo, centrados na horizontal. Sem gerador (R3.3).
+ * centrados na horizontal, a 15% e 85% da folga vertical (afastados ≥ um lado: nunca se sobrepõem). Sem gerador (R3.3).
  */
 export function recortesDetalhe(refW: number, refH: number): Array<{ x: number; y: number; w: number; h: number }> {
   const lado = Math.max(1, Math.floor(Math.min(refW, refH) / 3));
-  return [0.35, 0.7].map((fy) => ({
+  return [0.15, 0.85].map((fy) => ({
     x: Math.floor((refW - lado) / 2), y: Math.floor((refH - lado) * fy), w: lado, h: lado,
   }));
 }

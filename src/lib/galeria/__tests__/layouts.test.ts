@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { razaoContraste, corDeAcento } from '../contraste';
-import { layoutMissao, recortesDetalhe, type Caixa } from '../layouts';
+import { layoutMissao, linhasNecessarias, recortesDetalhe, type Caixa } from '../layouts';
 import { planejarCorte } from '../../../../supabase/functions/_shared/galeria/corte';
 import { areaCena, layoutCena } from '../../../../supabase/functions/_shared/galeria/layout-area';
 import { montarPromptCena } from '../../../../supabase/functions/_shared/galeria/prompt';
@@ -84,7 +84,73 @@ describe('layoutMissao', () => {
   });
 });
 
+// Piores casos dos tetos de regras.ts/roteiro.ts (5 palavras longas) medidos com a estimativa conservadora de largura.
+const HEADLINE = 'Aplicação rápida sem ferramenta extra';
+const LEGENDA = 'Acabamento firme que não desfia';
+const SUB = 'Ideal para vestidos juninos e roupas infantis';
+const cabe = (c: Caixa, texto: string) => expect(linhasNecessarias(texto, c.fontePx, c.w)).toBeLessThanOrEqual(c.linhasMax);
+
+describe('textos máximos cabem nas caixas (revisão T11)', () => {
+  it('a estimativa de largura é conservadora e quebra por palavra', () => {
+    expect(linhasNecessarias('a', 60, 1056)).toBe(1);
+    expect(linhasNecessarias(HEADLINE, 84, 400)).toBeGreaterThan(2);
+    expect(linhasNecessarias(HEADLINE, 84, 1056)).toBe(2);
+  });
+
+  it('headline de 5 palavras cabe em até 2 linhas nas missões 2 a 7 (inclusive 4 e 6)', () => {
+    for (const m of [2, 3, 4, 5, 6, 7]) cabe(layoutMissao(m, cheio)[0], HEADLINE);
+  });
+
+  it('subheadline cabe na missão 2/3 e o chip da 3 cabe com a legenda de 5 palavras', () => {
+    const c3 = layoutMissao(3, cheio);
+    cabe(c3[1], SUB);
+    cabe(c3[2], LEGENDA);
+  });
+
+  it('etapas de 7 palavras (piores casos) cabem em 2 linhas a ≥60 px, 4 etapas na área reservada', () => {
+    const cx = layoutMissao(6, cheio);
+    expect(cx).toHaveLength(1 + 4);
+    for (const c of cx.slice(1)) {
+      expect(c.linhasMax).toBe(2);
+      expect(c.h / 2).toBeGreaterThanOrEqual(1.2 * c.fontePx);
+      cabe(c, 'Desenrole a fita e cole na borda');
+      cabe(c, 'Pressione firmemente cada trecho antes de continuar');
+    }
+  });
+
+  it('legendas da missão 7 cabem', () => {
+    for (const c of layoutMissao(7, cheio).slice(1)) cabe(c, LEGENDA);
+  });
+
+  it('entrelinha do título ≥1,2: duas linhas não se cruzam', () => {
+    for (const m of [2, 3, 4, 5, 6, 7]) {
+      const t = layoutMissao(m, cheio)[0];
+      expect(t.h / t.linhasMax).toBeGreaterThanOrEqual(1.2 * t.fontePx);
+    }
+  });
+
+  it('missão 5: título de 2 linhas + 4 pares ficam dentro do retângulo reservado e sem sobreposição', () => {
+    const cx = layoutMissao(5, cheio);
+    const r = areaCena(5)[0];
+    for (const c of cx) { expect(c.y).toBeGreaterThanOrEqual(r.y0); expect(c.y + c.h).toBeLessThanOrEqual(r.y1); }
+    expect(cx[0].linhasMax).toBe(2);
+    const ys = [...new Set(cx.map((c) => c.y))].sort((p, q) => p - q);
+    ys.slice(1).forEach((y, i) => {
+      const fim = Math.max(...cx.filter((c) => c.y === ys[i]).map((c) => c.y + c.h));
+      expect(y).toBeGreaterThanOrEqual(fim);
+    });
+  });
+});
+
 describe('recortesDetalhe', () => {
+  it('os dois recortes não se sobrepõem (referência quadrada inclusive)', () => {
+    for (const [w, h] of [[1000, 1000], [864, 1152], [600, 300], [300, 600]]) {
+      const [a, b] = recortesDetalhe(w, h);
+      const separa = a.y + a.h <= b.y || b.y + b.h <= a.y || a.x + a.w <= b.x || b.x + b.w <= a.x;
+      expect(separa).toBe(true);
+    }
+  });
+
   it('dois recortes quadrados, inteiros e dentro da referência', () => {
     for (const [w, h] of [[1000, 1000], [864, 1152], [600, 300]]) {
       const r = recortesDetalhe(w, h);
