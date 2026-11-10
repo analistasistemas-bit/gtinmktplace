@@ -4,6 +4,11 @@
 @import "@fontsource-variable/geist";
 @import "./motion/motion.css"; /* gerado — fonte única em src/motion/tokens.ts */
 
+/* Galeria da cor (ADR-0201, R6.4): Inter só para compor o arquivo final no canvas. @fontsource/inter 5.2.8, subset
+   latin, OFL (public/fonts/OFL-Inter.txt). */
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 600; font-display: swap; src: url('/fonts/inter-600.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 800; font-display: swap; src: url('/fonts/inter-800.woff2') format('woff2'); }
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

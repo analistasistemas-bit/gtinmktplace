@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { razaoContraste, corDeAcento } from '../contraste';
-import { layoutMissao, linhasNecessarias, recortesDetalhe, type Caixa } from '../layouts';
+import { layoutMissao, linhasNecessarias, lupasMissao, recortesDetalhe, type Caixa } from '../layouts';
 import { planejarCorte } from '../../../../supabase/functions/_shared/galeria/corte';
 import { areaCena, layoutCena } from '../../../../supabase/functions/_shared/galeria/layout-area';
-import { montarPromptCena } from '../../../../supabase/functions/_shared/galeria/prompt';
 
 const cheio = {
   headline: 'Cabe em duas linhas', subheadline: 'Subtítulo',
@@ -73,12 +72,8 @@ describe('layoutMissao', () => {
     for (const m of [2, 3, 4, 5, 6]) for (const c of layoutMissao(m, cheio)) expect(dentro(m, c)).toBe(true);
   });
 
-  it('o prompt das missões com texto cita a área reservada; capa e recorte não têm área', () => {
-    const r = { categoria: 'c', contrato: 'k', missoes: [] };
-    const mis = (n: number) => ({ missao: n, ativa: true, cena: 'x', fatosUsados: [] }) as never;
-    for (const n of [2, 3, 4, 5, 6]) {
-      expect(montarPromptCena(mis(n), r, false, 'Preto', layoutCena(n))).toContain(layoutCena(n)!.areaTexto);
-    }
+  // O prompt citar `areaTexto` é testado em `_shared/galeria/__tests__/cena.test.ts` (prompt.ts puxa a edge para o tsc do app).
+  it('capa e recorte não têm área reservada', () => {
     expect(layoutCena(1)).toBeNull();
     expect(layoutCena(7)).toBeNull();
   });
@@ -164,5 +159,36 @@ describe('recortesDetalhe', () => {
         expect(c.y + c.h).toBeLessThanOrEqual(h);
       }
     }
+  });
+});
+
+// Task 12 (adendo T11): a lupa da missão 3 vai no canto inferior esquerdo, reservado de novo ao gerador.
+describe('lupas (recortes da referência)', () => {
+  const sobrepoe = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) =>
+    a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  const ret = (l: { x: number; y: number; lado: number }) => ({ x: l.x, y: l.y, w: l.lado, h: l.lado });
+
+  it('missão 3: uma lupa dentro de uma área que o prompt reserva, na área segura e longe do texto', () => {
+    const [l, ...resto] = lupasMissao(3);
+    expect(resto).toEqual([]);
+    expect(areaCena(3).some((r) => l.x >= r.x0 && l.x + l.lado <= r.x1 && l.y >= r.y0 && l.y + l.lado <= r.y1)).toBe(true);
+    expect(l.x).toBeGreaterThanOrEqual(72); expect(l.y + l.lado).toBeLessThanOrEqual(1355.2);
+    for (const c of layoutMissao(3, cheio)) expect(sobrepoe(ret(l), c)).toBe(false);
+    expect(layoutCena(3)!.areaTexto).toMatch(/bottom-left/);
+  });
+
+  it('missão 7: duas lupas na área segura, sem sobrepor uma à outra nem ao texto', () => {
+    const ls = lupasMissao(7);
+    expect(ls).toHaveLength(2);
+    expect(sobrepoe(ret(ls[0]), ret(ls[1]))).toBe(false);
+    for (const l of ls) {
+      expect(l.x).toBeGreaterThanOrEqual(72); expect(l.x + l.lado).toBeLessThanOrEqual(1128);
+      expect(l.y).toBeGreaterThanOrEqual(184.8); expect(l.y + l.lado).toBeLessThanOrEqual(1355.2);
+      for (const c of layoutMissao(7, cheio)) expect(sobrepoe(ret(l), c)).toBe(false);
+    }
+  });
+
+  it('demais missões sem lupa', () => {
+    for (const m of [1, 2, 4, 5, 6]) expect(lupasMissao(m)).toEqual([]);
   });
 });

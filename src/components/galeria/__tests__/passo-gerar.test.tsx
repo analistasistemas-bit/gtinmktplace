@@ -9,8 +9,10 @@ import type { Ficha, ImagemGaleria, RespostaListar, RespostaRoteiro, Res, Roteir
 
 const api = vi.hoisted(() => ({
   montarFicha: vi.fn(), lerRoteiro: vi.fn(), listarImagens: vi.fn(), gerarImagens: vi.fn(),
-  confirmarExibicao: vi.fn(), reportarInvalida: vi.fn(),
+  confirmarExibicao: vi.fn(), reportarInvalida: vi.fn(), prepararUploadFinal: vi.fn(), enviarFinal: vi.fn(), aprovarFinal: vi.fn(),
 }));
+const compor = vi.hoisted(() => ({ fn: vi.fn() }));
+vi.mock('@/lib/galeria/compor', async (orig) => ({ ...(await orig<typeof import('@/lib/galeria/compor')>()), comporImagemFinal: compor.fn }));
 vi.mock('@/lib/galeria/api', async (orig) => ({ ...(await orig<typeof import('@/lib/galeria/api')>()), ...api }));
 vi.mock('@/lib/storage', () => ({ signedUrl: vi.fn(async () => 'https://x.test/e.jpg') }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -25,7 +27,7 @@ const ficha = (cores: string[]): Ficha => ({
 });
 const missao = (n: number, ativa = true) => ({ missao: n, ativa, cena: `cena ${n}`, fatosUsados: [] });
 const aprovado = (ativas = [1, 2, 3, 4, 5, 6, 7], extra: Partial<RoteiroAprovado> = {}): RoteiroAprovado =>
-  ({ id: 'R1', versao: 3, familia_id: 'F1', moda: false, missoes_ativas: ativas, ...extra });
+  ({ id: 'R1', versao: 3, familia_id: 'F1', moda: false, missoes_ativas: ativas, textos: { 1: {}, 2: { headline: 'Prende firme' } }, ...extra });
 /** Resposta do `ler` (aba Roteiro). */
 const respRoteiro = (status = 'aprovado', versao = 3): RespostaRoteiro => ({
   roteiro: { id: `R${versao}`, familia_id: 'F1', versao, status, moda: false,
@@ -34,7 +36,7 @@ const respRoteiro = (status = 'aprovado', versao = 3): RespostaRoteiro => ({
 });
 const imagem = (extra: Partial<ImagemGaleria> = {}): ImagemGaleria => ({
   id: 'i1', cor: 'Preto', missao: 1, geracao: 1, origem: 'gerador', status: 'gerada', alertas: [], erro: null,
-  exibida: false, url: 'https://signed/i1.png', pode_gerar_de_novo: true, unit_cents: 50, ...extra,
+  exibida: false, url: 'https://signed/i1.png', ref_url: 'https://signed/ref.jpg', pode_gerar_de_novo: true, unit_cents: 50, ...extra,
 });
 const lista = (imagens: ImagemGaleria[] = [], unit = 50, roteiro: RoteiroAprovado | null = aprovado()): RespostaListar =>
   ({ roteiro, unit_cents: unit, imagens });
@@ -56,6 +58,10 @@ beforeEach(() => {
   api.confirmarExibicao.mockResolvedValue(ok({ cobradas: 1 }));
   api.reportarInvalida.mockResolvedValue(ok({ reportada: true }));
   api.gerarImagens.mockResolvedValue(ok({ pedido_id: 'p', imagens: [] }));
+  compor.fn.mockResolvedValue(new Blob(['x'], { type: 'image/jpeg' }));
+  api.prepararUploadFinal.mockResolvedValue(ok({ path: 'org/galeria-ia/F1/finais/i1-n.jpg', token: 't', signed_url: 'u' }));
+  api.enviarFinal.mockResolvedValue(null);
+  api.aprovarFinal.mockResolvedValue(ok({ status: 'aprovada' }));
 });
 afterEach(() => { vi.useRealTimers(); });
 
@@ -312,6 +318,56 @@ describe('PassoGerar — exibição e cobrança', () => {
   });
 });
 
+describe('PassoGerar — aprovar (Task 12)', () => {
+  it('compõe com a cena, a referência e os textos do roteiro aprovado; sobe pela URL assinada e aprova', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 2 })])));
+    passo();
+    await userEvent.click(await screen.findByRole('button', { name: 'Aprovar' }));
+    await waitFor(() => expect(api.aprovarFinal).toHaveBeenCalledWith('MLB1', 'i1'));
+    expect(compor.fn).toHaveBeenCalledWith({
+      cenaUrl: 'https://signed/i1.png', refUrl: 'https://signed/ref.jpg', missao: 2, textos: { headline: 'Prende firme' }, corProduto: null, moda: false,
+    });
+    expect(api.prepararUploadFinal).toHaveBeenCalledWith('MLB1', 'i1');
+    expect(api.enviarFinal).toHaveBeenCalledWith('org/galeria-ia/F1/finais/i1-n.jpg', 't', expect.any(Blob));
+  });
+
+  it('recorte compõe sem cena', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 7, origem: 'recorte', url: 'https://signed/ref.jpg' })])));
+    passo();
+    await userEvent.click(await screen.findByRole('button', { name: 'Aprovar' }));
+    await waitFor(() => expect(api.aprovarFinal).toHaveBeenCalled());
+    expect(compor.fn.mock.calls[0][0]).toMatchObject({ cenaUrl: null, refUrl: 'https://signed/ref.jpg', missao: 7 });
+  });
+
+  it('texto que estoura: motivo claro no cartão e nada sobe', async () => {
+    compor.fn.mockRejectedValue(new Error('Etapa 1 não cabe em 2 linhas: encurte o texto no roteiro'));
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 2 })])));
+    passo();
+    await userEvent.click(await screen.findByRole('button', { name: 'Aprovar' }));
+    expect(await screen.findByText(/Etapa 1 não cabe em 2 linhas/)).toBeInTheDocument();
+    expect(api.prepararUploadFinal).not.toHaveBeenCalled();
+    expect(api.aprovarFinal).not.toHaveBeenCalled();
+  });
+
+  it('arquivo recusado pelo servidor e referência trocada: motivo no cartão', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 2 })])));
+    api.aprovarFinal.mockResolvedValueOnce(falha(422, 'arquivo_invalido', { erros: ['branca'] }));
+    passo();
+    await userEvent.click(await screen.findByRole('button', { name: 'Aprovar' }));
+    expect(await screen.findByText(/branca/)).toBeInTheDocument();
+    api.aprovarFinal.mockResolvedValueOnce(falha(409, 'referencia_trocada'));
+    await userEvent.click(screen.getByRole('button', { name: 'Aprovar' }));
+    expect(await screen.findByText(/referência/i)).toBeInTheDocument();
+  });
+
+  it('sem botão Aprovar enquanto a verificação por visão não respondeu', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ alertas: null })])));
+    passo();
+    await screen.findByText('Verificando a imagem…');
+    expect(screen.queryByRole('button', { name: 'Aprovar' })).toBeNull();
+  });
+});
+
 describe('CartaoImagem', () => {
   it('mostra os alertas da verificação', () => {
     render(<CartaoImagem imagem={imagem({ alertas: [{ tipo: 'cor', nota: 'Cor diferente da referência' }] })} onGerarDeNovo={vi.fn()} />);
@@ -389,6 +445,14 @@ describe('DialogGaleria — aba Gerar', () => {
       expect(api.listarImagens.mock.calls.every((c) => c[0] === ml)).toBe(true);
       await waitFor(() => expect(api.confirmarExibicao).toHaveBeenCalledWith(ml, ['i1']));
       expect(api.gerarImagens.mock.calls[0][0]).toBe(ml);
+      // Task 12: preparar e aprovar também levam o ml_item_id da própria linha.
+      api.prepararUploadFinal.mockResolvedValue(ok({ path: 'p', token: 't', signed_url: 'u' }));
+      api.enviarFinal.mockResolvedValue(null);
+      api.aprovarFinal.mockResolvedValue(ok({ status: 'aprovada' }));
+      compor.fn.mockResolvedValue(new Blob(['x']));
+      await userEvent.click(screen.getByRole('button', { name: 'Aprovar' }));
+      await waitFor(() => expect(api.aprovarFinal).toHaveBeenCalledWith(ml, 'i1'));
+      expect(api.prepararUploadFinal).toHaveBeenCalledWith(ml, 'i1');
       r.unmount();
     }
   });

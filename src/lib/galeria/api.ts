@@ -3,6 +3,7 @@
 // `functions.invoke` não popula `data` em não-2xx: status e corpo vêm de `corpoDoErroDaEdge`.
 import { supabase } from '@/lib/supabase';
 import { corpoDoErroDaEdge } from '@/lib/edge-erro';
+import type { TextosComposicao } from './compor';
 
 export type EstadoFato = 'CONFIRMADO' | 'SUGERIDO' | 'DIVERGENTE' | 'NAO_CONFERIDO' | 'VARIA_POR_TAMANHO';
 export interface Caixa { x: number; y: number; w: number; h: number }
@@ -85,13 +86,19 @@ export interface ImagemGaleria {
   alertas: AlertaImagem[] | null; erro: string | null;
   /** Já confirmada (cobrada): a tela não confirma de novo. */
   exibida: boolean; url: string | null;
+  /** Referência da cor/vista (assinada): a lupa da composição (Task 12). */
+  ref_url: string | null;
   /** Regra da RPC calculada no servidor: false com 3 gerações válidas, geração aberta ou fora do roteiro aprovado. */
   pode_gerar_de_novo: boolean;
   /** Preço congelado no pedido desta imagem (o que a RPC cobra ao exibir); recorte = 0. */
   unit_cents: number | null;
 }
 /** Roteiro aprovado do anúncio (mesmo com rascunho mais novo por cima). */
-export interface RoteiroAprovado { id: string; versao: number; familia_id: string; moda: boolean; missoes_ativas: number[] }
+export interface RoteiroAprovado {
+  id: string; versao: number; familia_id: string; moda: boolean; missoes_ativas: number[];
+  /** Textos das missões ativas do roteiro aprovado (composição do arquivo final, Task 12). */
+  textos: Record<number, TextosComposicao>;
+}
 /** `unit_cents` = preço do mês, só para pedido novo. Imagens: as do roteiro aprovado + toda cena não exibida do anúncio. */
 export interface RespostaListar { roteiro: RoteiroAprovado | null; unit_cents: number; imagens: ImagemGaleria[] }
 
@@ -106,6 +113,17 @@ export const gerarImagens = (mlItemId: string, p: { pedidoId: string; roteiroVer
     pedido_id: p.pedidoId, ml_item_id: mlItemId, roteiro_versao: p.roteiroVersao, cores: p.cores, missoes: p.missoes,
     unit_cents_exibido: p.unitCentsExibido,
   });
+
+// Task 12: arquivo final composto no navegador → URL de upload assinada (upsert:false) → aprovar (`galeria-aprovar`).
+export const prepararUploadFinal = (mlItemId: string, imagemId: string) =>
+  chamar<{ path: string; token: string; signed_url: string }>('galeria-aprovar', { acao: 'preparar_upload', ml_item_id: mlItemId, imagem_id: imagemId });
+export const aprovarFinal = (mlItemId: string, imagemId: string) =>
+  chamar<{ status: 'aprovada' }>('galeria-aprovar', { acao: 'aprovar', ml_item_id: mlItemId, imagem_id: imagemId });
+/** null = enviado; senão a mensagem do Storage. */
+export async function enviarFinal(path: string, token: string, arquivo: Blob): Promise<string | null> {
+  const { error } = await supabase.storage.from('imagens').uploadToSignedUrl(path, token, arquivo, { contentType: 'image/jpeg' });
+  return error ? error.message : null;
+}
 
 const MENSAGENS: Record<string, string> = {
   catalogo: 'Anúncio de catálogo: a galeria não troca fotos de catálogo.',
@@ -138,6 +156,15 @@ const MENSAGENS: Record<string, string> = {
   foto_invalida: 'Foto inválida ou grande demais (máx. 8 MB).',
   valor_invalido: 'O valor da etiqueta não é aceito para este atributo.',
   nao_rascunho: 'Este roteiro já foi aprovado. Edite para gerar uma nova versão.',
+  ja_aprovada: 'Esta imagem já está aprovada.',
+  desatualizada: 'O roteiro ou os fatos mudaram depois desta imagem: ela não pode mais ser aprovada.',
+  nao_aprovavel: 'Esta imagem não pode ser aprovada no estado atual.',
+  nao_encontrada: 'Imagem não encontrada neste anúncio.',
+  sem_upload: 'O arquivo final não foi preparado. Tente aprovar de novo.',
+  sem_arquivo: 'O arquivo final não chegou ao servidor. Tente aprovar de novo.',
+  upload_trocado: 'Outra aprovação desta imagem está em andamento. Tente de novo.',
+  referencia_trocada: 'A foto de referência da cor mudou depois desta imagem. Gere de novo.',
+  verificacao_pendente: 'A verificação da imagem ainda não terminou. Aguarde alguns segundos.',
   falha_interna: 'Erro interno. Tente de novo.',
   rede: 'Sem conexão com o servidor.',
 };

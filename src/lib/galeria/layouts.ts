@@ -1,13 +1,12 @@
 // Layouts fixos das missões 2–7 no arquivo final 1200×1540 (R6.4/R6.5, estilo A). A Task 12 desenha o texto dentro
 // destas caixas; as áreas que o prompt reserva à cena vêm de `_shared/galeria/layout-area.ts` (fonte única).
 // Área segura: x 72–1128 (6%), y 184,8–1355,2 (12–88%). Fonte ≥60 px (5%); títulos 84 px (7%).
-import type { SpecRoteiro } from '../../../supabase/functions/_shared/galeria/roteiro';
 
 export interface Caixa { x: number; y: number; w: number; h: number; fontePx: number; linhasMax: number }
 
 /** Só as quantidades importam aqui; o texto é da Task 12. */
 export interface TextosMissao {
-  headline?: string; subheadline?: string; beneficios?: unknown[]; specs?: Pick<SpecRoteiro, 'rotulo' | 'valor'>[];
+  headline?: string; subheadline?: string; beneficios?: unknown[]; specs?: Array<{ rotulo: string; valor: string }>;
   etapas?: unknown[]; legendas?: unknown[];
 }
 
@@ -101,6 +100,15 @@ export function layoutMissao(missao: number, t: TextosMissao): Caixa[] {
     default:
       return [];
   }
+}
+
+/** Lupa (recorte da referência, R3.3) no arquivo final: quadrado de `lado` px em (x, y), desenhado em círculo. */
+export interface Lupa { x: number; y: number; lado: number }
+export function lupasMissao(missao: number): Lupa[] {
+  if (missao === 3) return [{ x: X, y: 990, lado: 340 }]; // canto inferior esquerdo reservado (layout-area.ts)
+  // Centradas sobre as legendas (x 72 e 648, largura 480); y 700–1108.
+  if (missao === 7) return [{ x: 108, y: 700, lado: 408 }, { x: 684, y: 700, lado: 408 }];
+  return [];
 }
 
 /**

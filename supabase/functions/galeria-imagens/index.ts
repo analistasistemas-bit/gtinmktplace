@@ -2,7 +2,8 @@
 // (verify_jwt = true). Ações:
 // - listar {ml_item_id}: roteiro aprovado do anúncio e as imagens que ainda importam (as dele + toda cena produzida não
 //   exibida, de qualquer família), com URL assinada, o preço congelado no pedido de cada uma, o preço do mês (só para
-//   pedido novo; mesma fonte do galeria-gerar) e se "Gerar de novo" ainda cabe. Nunca cobra nem grava.
+//   pedido novo; mesma fonte do galeria-gerar) e se "Gerar de novo" ainda cabe. Nunca cobra nem grava. Task 12: cada
+//   imagem traz `ref_url` (referência assinada, para a lupa) e o roteiro traz `textos` por missão ativa (composição).
 // - confirmar_exibicao {ml_item_id, imagem_ids}: o navegador exibiu e validou a imagem → `galeria_confirmar_exibicao`
 //   (cobrança = exibição, Task 2; idempotente). Operação histórica: só exige o mesmo anúncio.
 // - reportar_invalida {ml_item_id, imagem_id}: imagem branca/ilegível no navegador → `falhou` sem cobrança (falha
@@ -23,6 +24,7 @@ const json = (body: unknown, status = 200) =>
 
 // Produzidas e cobráveis ao exibir; descartada/desatualizada de roteiros antigos não voltam à tela.
 const PENDENTES_DE_EXIBICAO = new Set(['gerada', 'aprovada']);
+const CAMPOS_TEXTO = ['headline', 'subheadline', 'beneficios', 'specs', 'etapas', 'legendas'] as const;
 
 interface LinhaImagem extends LinhaVaga {
   id: string; pedido_id: string; cena_path: string | null; referencia_id: string | null; alertas: unknown; erro: string | null; entregue_em: string | null;
@@ -95,7 +97,8 @@ Deno.serve(async (req) => {
       || (l.origem === 'gerador' && PENDENTES_DE_EXIBICAO.has(l.status) && l.entregue_em === null))
       .sort((x, y) => x.cor.localeCompare(y.cor) || x.missao - y.missao || x.geracao - y.geracao);
 
-    const refIds = [...new Set(mostrar.filter((l) => l.origem === 'recorte' && l.referencia_id).map((l) => l.referencia_id!))];
+    // Referência de toda imagem: recorte é a própria imagem; gerador usa para a lupa da composição (Task 12).
+    const refIds = [...new Set(mostrar.filter((l) => l.referencia_id).map((l) => l.referencia_id!))];
     const refPath = new Map<string, string>();
     if (refIds.length > 0) {
       const { data: refs, error: eRef } = await admin.from('galeria_referencias').select('id, path').eq('org_id', orgId).in('id', refIds);
@@ -118,20 +121,27 @@ Deno.serve(async (req) => {
 
     const moda = rot?.moda === true;
     const usaGerador = new Map(missoesDisponiveis(moda, ['frente', 'costas', 'lateral']).map((m) => [m.missao as number, m.usaGerador]));
-    const imagens = await Promise.all(mostrar.map(async (l) => ({
-      id: l.id, cor: l.cor, missao: l.missao, geracao: l.geracao, origem: l.origem, status: l.status,
-      alertas: l.alertas ?? null, erro: l.erro, exibida: l.entregue_em !== null,
-      unit_cents: l.origem === 'gerador' ? precoPedido.get(l.pedido_id) ?? null : 0,
-      url: await assinar(l.origem === 'recorte' ? refPath.get(l.referencia_id ?? '') : l.cena_path),
-      // Gerar novo só pelo roteiro aprovado (o galeria-gerar ainda exige família vigente).
-      pode_gerar_de_novo: !!rot && l.roteiro_id === rot.id && l.origem === 'gerador'
-        && bloqueioDaVaga(linhas, rot.id, l.cor, l.missao, usaGerador.get(l.missao) ?? true) === null,
-    })));
-    const missoesAtivas = rot
-      ? ((rot.conteudo as { missoes?: Array<{ missao: number; ativa: boolean }> })?.missoes ?? []).filter((m) => m.ativa).map((m) => m.missao).sort((x, y) => x - y)
-      : [];
+    const imagens = await Promise.all(mostrar.map(async (l) => {
+      const refUrl = await assinar(refPath.get(l.referencia_id ?? ''));
+      return {
+        id: l.id, cor: l.cor, missao: l.missao, geracao: l.geracao, origem: l.origem, status: l.status,
+        alertas: l.alertas ?? null, erro: l.erro, exibida: l.entregue_em !== null,
+        unit_cents: l.origem === 'gerador' ? precoPedido.get(l.pedido_id) ?? null : 0,
+        url: l.origem === 'recorte' ? refUrl : await assinar(l.cena_path),
+        ref_url: refUrl,
+        // Gerar novo só pelo roteiro aprovado (o galeria-gerar ainda exige família vigente).
+        pode_gerar_de_novo: !!rot && l.roteiro_id === rot.id && l.origem === 'gerador'
+          && bloqueioDaVaga(linhas, rot.id, l.cor, l.missao, usaGerador.get(l.missao) ?? true) === null,
+      };
+    }));
+    const ativas = rot ? ((rot.conteudo as { missoes?: Array<Record<string, unknown>> })?.missoes ?? []).filter((m) => m.ativa === true) : [];
+    const missoesAtivas = ativas.map((m) => m.missao as number).sort((x, y) => x - y);
+    // Textos do roteiro aprovado por missão: o navegador compõe o arquivo final com eles (Task 12).
+    const textos = Object.fromEntries(ativas.map((m) => [m.missao, Object.fromEntries(
+      CAMPOS_TEXTO.filter((c) => m[c] !== undefined).map((c) => [c, m[c]]),
+    )]));
     return json({
-      roteiro: rot ? { id: rot.id, versao: rot.versao, familia_id: rot.familia_id, moda, missoes_ativas: missoesAtivas } : null,
+      roteiro: rot ? { id: rot.id, versao: rot.versao, familia_id: rot.familia_id, moda, missoes_ativas: missoesAtivas, textos } : null,
       unit_cents: unitCents, imagens,
     });
   } catch (e) {

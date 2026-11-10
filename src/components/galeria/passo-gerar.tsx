@@ -4,6 +4,8 @@
 // Cobrança = exibição: a confirmação só sai depois que o <img> carregou e passou em `imagemValida` (no cartão); cada
 // imagem mostra o preço congelado no pedido dela, que é o que a RPC cobra. Polling de 5 s enquanto houver linha
 // aberta, verificação pendente, carga falha ou confirmação pendente; para ao sair do passo/fechar o diálogo.
+// Aprovar (Task 12): compõe o arquivo final no navegador com URLs frescas e os textos do roteiro aprovado, sobe pela URL
+// assinada do `preparar_upload` e aprova; tudo com o `ml_item_id` desta linha.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -11,13 +13,17 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { fmtBRL } from '@/lib/formato';
 import {
-  confirmarExibicao, gerarImagens, listarImagens, mensagemErro, reportarInvalida,
+  aprovarFinal, confirmarExibicao, enviarFinal, gerarImagens, listarImagens, mensagemErro, prepararUploadFinal, reportarInvalida,
   type Ficha, type ImagemGaleria, type RespostaListar,
 } from '@/lib/galeria/api';
+import { comporImagemFinal } from '@/lib/galeria/compor';
 import { missoesDisponiveis, missoesSugeridas } from '../../../supabase/functions/_shared/galeria/regras';
 import { CartaoImagem } from './cartao-imagem';
 
 const POLLING_MS = 5000;
+const ERRO_ARQUIVO: Record<string, string> = {
+  formato: 'não é JPEG', dimensoes: 'fora de 1200×1540', peso: 'acima de 1 MB', branca: 'imagem branca',
+};
 const ABERTOS = new Set(['pendente', 'submetendo', 'gerando']);
 
 interface Alvo { cores: string[]; missoes: number[] }
@@ -124,6 +130,33 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro }: {
     urls.current.delete(id);
     agendarRodada();
   }, [agendarRodada]);
+
+  const aprovar = useCallback(async (img: ImagemGaleria): Promise<string | null> => {
+    // URLs assinadas vencem (10 min): o listar dá a cena, a referência e os textos vigentes no momento do clique.
+    const l = await listarImagens(mlItemId);
+    if (!l.ok) return mensagemErro(l.erro);
+    const i = l.dados.imagens.find((x) => x.id === img.id);
+    if (!i || !l.dados.roteiro) return mensagemErro('nao_aprovavel');
+    let arquivo: Blob;
+    try {
+      arquivo = await comporImagemFinal({
+        cenaUrl: i.origem === 'gerador' ? i.url : null, refUrl: i.ref_url, missao: i.missao,
+        textos: l.dados.roteiro.textos?.[i.missao] ?? {}, corProduto: null, moda: l.dados.roteiro.moda,
+      });
+    } catch (e) { return (e as Error).message; }
+    const p = await prepararUploadFinal(mlItemId, i.id);
+    if (!p.ok) return mensagemErro(p.erro);
+    const falhaEnvio = await enviarFinal(p.dados.path, p.dados.token, arquivo);
+    if (falhaEnvio) return `Falha ao enviar o arquivo final: ${falhaEnvio}`;
+    const a = await aprovarFinal(mlItemId, i.id);
+    if (!a.ok) {
+      return a.erro === 'arquivo_invalido'
+        ? `Arquivo final recusado: ${((a.corpo.erros as string[] | undefined) ?? []).map((x) => ERRO_ARQUIVO[x] ?? x).join(', ')}`
+        : mensagemErro(a.erro);
+    }
+    setRodada((n) => n + 1);
+    return null;
+  }, [mlItemId]);
 
   /** Nova seleção = nova confirmação: limpa recusa e pedido. */
   const abrir = (alvo: Alvo | null) => { pedido.current = null; setAviso(null); setConfirmando(alvo); };
@@ -239,7 +272,7 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro }: {
       {lista && lista.imagens.length > 0 && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {lista.imagens.map((i: ImagemGaleria) => (
-            <CartaoImagem key={i.id} imagem={i} onExibida={exibida} onInvalida={invalida} onFalhaCarga={falhaCarga}
+            <CartaoImagem key={i.id} imagem={i} onExibida={exibida} onInvalida={invalida} onFalhaCarga={falhaCarga} onAprovar={aprovar}
               onGerarDeNovo={podePedir ? (x) => abrir({ cores: [x.cor], missoes: [x.missao] }) : undefined} />
           ))}
         </div>

@@ -7,6 +7,7 @@ import { corpoOpenRouter, montarPromptCena } from '../prompt'
 import { interpretarAlertas } from '../alertas'
 import { BLOCO_TECNICO } from '../regras'
 import { corpoHF, MODELOS_GALERIA } from '../provedores'
+import { layoutCena } from '../layout-area'
 import type { MissaoRoteiro, Roteiro } from '../roteiro'
 
 describe('corte', () => {
@@ -37,6 +38,11 @@ const missao = (n: number, extra: Partial<MissaoRoteiro> = {}): MissaoRoteiro =>
 
 describe('montarPromptCena', () => {
   const layout = { areaTexto: 'o terço superior' }
+  it('missões com texto citam a área reservada de layout-area (Task 11/12)', () => {
+    for (const n of [2, 3, 4, 5, 6]) {
+      expect(montarPromptCena(missao(n), roteiro, false, 'Preto', layoutCena(n))).toContain(layoutCena(n)!.areaTexto)
+    }
+  })
   it('termina literalmente com o BLOCO_TECNICO e repete o contrato e a cor', () => {
     for (const n of [1, 2, 3, 4, 5, 6]) {
       const p = montarPromptCena(missao(n), roteiro, false, 'Rosa Bebê', layout)

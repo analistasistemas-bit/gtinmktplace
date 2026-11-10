@@ -2,6 +2,7 @@
 // `imagemValida` disse sim é que `onExibida` sai; branca/vazia → `onInvalida`; exceção (canvas contaminado) → nada.
 // Falha de carga (rede, URL vencida, CORS) nunca é terminal: avisa e o próximo listar traz URL nova.
 // Alertas da verificação por visão (R8.5) só avisam; nunca escondem a imagem.
+// Aprovar (Task 12): compõe o arquivo final e aprova; recusa (texto que estoura, arquivo, referência) mostra o motivo.
 import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -19,8 +20,8 @@ export function CartaoImagem({ imagem, onGerarDeNovo, onAprovar, onExibida, onIn
   imagem: ImagemGaleria;
   /** Sem handler o botão não aparece (roteiro aprovado de outra família: o servidor recusaria). */
   onGerarDeNovo?: (imagem: ImagemGaleria) => void;
-  /** Aprovação é da Task 12 (composição); sem handler o botão não aparece. */
-  onAprovar?: (imagem: ImagemGaleria) => void;
+  /** Compõe e aprova; devolve o motivo da recusa (null = aprovada). Sem handler o botão não aparece. */
+  onAprovar?: (imagem: ImagemGaleria) => Promise<string | null>;
   onExibida?: (id: string) => void;
   onInvalida?: (id: string) => void;
   /** Não carregou: o pai descarta a URL guardada para o próximo listar trazer outra. */
@@ -29,9 +30,18 @@ export function CartaoImagem({ imagem, onGerarDeNovo, onAprovar, onExibida, onIn
   const nome = `${imagem.cor} · missão ${imagem.missao}`;
   // URL que não carregou (não é prova de imagem ruim — nem confirma nem reporta); URL nova tenta de novo.
   const [urlQuebrada, setUrlQuebrada] = useState<string | null>(null);
+  const [aprovando, setAprovando] = useState(false);
+  const [motivo, setMotivo] = useState<string | null>(null);
   const quebrou = !!imagem.url && urlQuebrada === imagem.url;
   const aberta = ABERTOS.has(imagem.status);
   const cobravel = imagem.origem === 'gerador' && !imagem.exibida;
+
+  async function aprovar() {
+    setAprovando(true); setMotivo(null);
+    try { setMotivo(await onAprovar!(imagem)); } finally { setAprovando(false); }
+  }
+  // Gerador só depois da verificação por visão (`alertas` nulo = pendente; o servidor recusaria).
+  const aprovavel = imagem.status === 'gerada' && !!imagem.url && (imagem.origem === 'recorte' || imagem.alertas !== null);
 
   function carregou(img: HTMLImageElement) {
     if (!cobravel) return;
@@ -78,8 +88,13 @@ export function CartaoImagem({ imagem, onGerarDeNovo, onAprovar, onExibida, onIn
         {onGerarDeNovo && imagem.origem === 'gerador' && imagem.pode_gerar_de_novo && (
           <Button size="sm" variant="outline" onClick={() => onGerarDeNovo(imagem)}>Gerar de novo</Button>
         )}
-        {onAprovar && imagem.status === 'gerada' && <Button size="sm" onClick={() => onAprovar(imagem)}>Aprovar</Button>}
+        {onAprovar && aprovavel && (
+          <Button size="sm" disabled={aprovando} onClick={() => void aprovar()}>
+            {aprovando ? <><Loader2 className="mr-1 h-3 w-3 animate-spin" />Aprovando…</> : 'Aprovar'}
+          </Button>
+        )}
       </div>
+      {motivo && <p role="alert" className="text-xs text-red-600">{motivo}</p>}
     </div>
   );
 }

@@ -91,7 +91,7 @@ describe('galeria-imagens — listar', () => {
     const r = await listar()
     expect(r.status).toBe(200)
     expect(r.body.unit_cents).toBe(80) // mês: só para pedido novo
-    expect(r.body.roteiro).toEqual({ id: 'rot2', versao: 2, familia_id: 'famB', moda: false, missoes_ativas: [1, 2, 3, 7] })
+    expect(r.body.roteiro).toMatchObject({ id: 'rot2', versao: 2, familia_id: 'famB', moda: false, missoes_ativas: [1, 2, 3, 7] })
     const imgs = r.body.imagens as Linha[]
     expect(imgs.map((i) => i.id)).toEqual([U(1), U(3)])
     expect(imgs[0]).toMatchObject({ url: 'https://signed/org/galeria-ia/famB/cenas/1.png', exibida: false, origem: 'gerador', unit_cents: 50 })
@@ -99,6 +99,17 @@ describe('galeria-imagens — listar', () => {
     expect(fake.escritas).toEqual([])
     expect(fake.rpcs.map((x) => x.nome)).not.toContain('galeria_confirmar_exibicao')
     expect(db.galeria_imagens.every((i) => i.entregue_em === null)).toBe(true)
+  })
+
+  it('Task 12: cada imagem traz a URL da referência (lupa) e o roteiro traz os textos das missões', async () => {
+    db.galeria_roteiros[1].conteudo = { missoes: [
+      { missao: 2, ativa: true, headline: 'Prende firme', subheadline: 'Sem costura', cena: 'x', fatosUsados: [] },
+      { missao: 4, ativa: false, headline: 'Inativa', beneficios: ['a'], cena: 'x', fatosUsados: [] },
+    ] }
+    db.galeria_imagens.push(img(1, { missao: 2 }))
+    const r = await listar()
+    expect((r.body.imagens as Linha[])[0]).toMatchObject({ ref_url: 'https://signed/org/galeria-ia/famB/referencias/rosa.jpg' })
+    expect((r.body.roteiro as Linha).textos).toEqual({ 2: { headline: 'Prende firme', subheadline: 'Sem costura' } })
   })
 
   it('histórico: cenas da família A (B publicada depois) não exibidas aparecem e cobram 1', async () => {
