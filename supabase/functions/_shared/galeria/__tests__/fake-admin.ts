@@ -9,6 +9,7 @@ export interface Escrita { tabela: string; op: string; payload: unknown; afetada
 export function fakeAdmin(db: Record<string, Linha[]>, arquivos: Map<string, Uint8Array> = new Map()) {
   const escritas: Escrita[] = [];
   const uploads: string[] = [];
+  const uploadsAssinados: Array<{ path: string; upsert: boolean }> = [];
   const rpcs: Array<{ nome: string; args: Record<string, unknown> }> = [];
   const respostasRpc: Record<string, (args: Record<string, unknown>) => unknown> = {};
   let seq = 0;
@@ -111,7 +112,13 @@ export function fakeAdmin(db: Record<string, Linha[]>, arquivos: Map<string, Uin
         arquivos.set(p, new Uint8Array(await corpo.arrayBuffer()));
         return { data: { path: p }, error: null };
       },
-      createSignedUrl: async (p: string) => ({ data: { signedUrl: `https://signed/${p}` }, error: null }),    }),
+      createSignedUrl: async (p: string) => ({ data: { signedUrl: `https://signed/${p}` }, error: null }),
+      // URL de upload assinada: o upload por ela é o `upload` acima com as opções gravadas aqui (upsert:false).
+      createSignedUploadUrl: async (p: string, o: { upsert?: boolean } = {}) => {
+        uploadsAssinados.push({ path: p, upsert: o.upsert === true });
+        return { data: { signedUrl: `https://upload/${p}?token=t`, token: 't', path: p }, error: null };
+      },
+    }),
   };
 
   const rpc = async (nome: string, args: Record<string, unknown>) => {
@@ -120,7 +127,7 @@ export function fakeAdmin(db: Record<string, Linha[]>, arquivos: Map<string, Uin
     catch (e) { return { data: null, error: e as { message: string; code?: string } }; }
   };
 
-  return { admin: { from, storage, rpc }, escritas, uploads, arquivos, rpcs, respostasRpc };
+  return { admin: { from, storage, rpc }, escritas, uploads, uploadsAssinados, arquivos, rpcs, respostasRpc };
 }
 
 export const JPEG = (marca: string) => new Uint8Array([0xff, 0xd8, 0xff, 0xe0, ...new TextEncoder().encode(marca)]);

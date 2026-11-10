@@ -282,6 +282,10 @@ verify_jwt = true
 [functions.galeria-imagens]
 verify_jwt = true
 
+# ADR-0201 (Galeria da cor por IA): preparar upload e aprovar o arquivo final composto no navegador. JWT do operador.
+[functions.galeria-aprovar]
+verify_jwt = true
+
 # ADR-0201 (Galeria da cor por IA): relógio da galeria. Só QStash (agendamento de 1 min; assinatura conferida no código).
 [functions.galeria-despachante]
 verify_jwt = false

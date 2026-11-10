@@ -70,6 +70,7 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
+    "jpeg-js": "0.4.4",
     "jsdom": "^29.1.1",
     "storybook": "^8.6.14",
     "typescript": "~5.7.2",

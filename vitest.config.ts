@@ -5,6 +5,8 @@ import viteConfig from './vite.config';
 export default mergeConfig(
   viteConfig,
   defineConfig({
+    // Edges importam `npm:jpeg-js@<versão>` (Deno); no vitest o mesmo pacote vem do devDependency.
+    resolve: { alias: [{ find: /^npm:jpeg-js@.*$/, replacement: 'jpeg-js' }] },
     test: {
       environment: 'jsdom',
       globals: true,

@@ -4,6 +4,8 @@
 export const LARGURA_FINAL = 1200
 export const ALTURA_FINAL = 1540
 export const CORTE_MAXIMO = 0.15
+/** "≤1 MB" (R9.1) em bytes decimais (conservador): o laço de qualidade do navegador e `validarArquivoFinal` usam este. */
+export const PESO_MAXIMO_FINAL = 1_000_000
 
 /** `perda` = fração da dimensão cortada. `corte`: retângulo de origem (px da cena) a escalar para 1200×1540. */
 export type PlanoCorte =

@@ -10,6 +10,7 @@
     "npm:@supabase/realtime-js@2.108.2": "2.108.2",
     "npm:@supabase/storage-js@2.108.2": "2.108.2",
     "npm:@upstash/qstash@2": "2.11.1",
+    "npm:jpeg-js@0.4.4": "0.4.4",
     "npm:openai@4": "4.104.0"
   },
   "jsr": {
@@ -230,6 +231,9 @@
     },
     "jose@5.10.0": {
       "integrity": "sha512-s+3Al/p9g32Iq+oqXxkW//7jk2Vig6FF1CFqzVXoTUXt2qz89YWbL+OwS17NFYEvxC35n0FKeGO2LGYSxeM2Gg=="
+    },
+    "jpeg-js@0.4.4": {
+      "integrity": "sha512-WZzeDOEtTOBK4Mdsar0IqEU5sMr3vSV2RqkAIzUEV2BHnUfKGyswWFPFwK5EeDo93K3FohSHbLAjj0s1Wzd+dg=="
     },
     "math-intrinsics@1.1.0": {
       "integrity": "sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g=="
