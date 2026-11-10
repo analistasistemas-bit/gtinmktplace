@@ -104,6 +104,13 @@ export async function comporImagemFinal(e: EntradaComposicao): Promise<Blob> {
   const motivos = motivosDeTexto(e.missao, e.textos, e.moda);
   if (motivos.length > 0) throw new Error(motivos.join(' · '));
   const comTexto = !e.moda && e.missao !== 1;
+  if (comTexto) {
+    await Promise.all([document.fonts.load('600 60px Inter'), document.fonts.load(`800 ${TITULO_PX}px Inter`)]);
+    // `load` não rejeita se o woff2 falhar: o texto sairia na fonte padrão e passaria na medida.
+    if (!document.fonts.check('600 60px Inter') || !document.fonts.check(`800 ${TITULO_PX}px Inter`)) {
+      throw new Error('A fonte Inter não carregou: recarregue a página e tente de novo');
+    }
+  }
   const acento = e.corProduto && /^#[0-9a-f]{6}$/i.test(e.corProduto) && razaoContraste(e.corProduto, PLACA) >= 4.5
     ? e.corProduto : TEXTO_ESCURO;
 
@@ -142,7 +149,6 @@ export async function comporImagemFinal(e: EntradaComposicao): Promise<Blob> {
   }
 
   if (comTexto) {
-    await Promise.all([document.fonts.load('600 60px Inter'), document.fonts.load(`800 ${TITULO_PX}px Inter`)]);
     ctx.textBaseline = 'top';
     for (const x of trechos(e.missao, e.textos).lista) {
       ctx.font = `${x.caixa.fontePx >= TITULO_PX ? 800 : 600} ${x.caixa.fontePx}px Inter`;

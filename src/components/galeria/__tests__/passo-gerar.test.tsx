@@ -36,7 +36,7 @@ const respRoteiro = (status = 'aprovado', versao = 3): RespostaRoteiro => ({
 });
 const imagem = (extra: Partial<ImagemGaleria> = {}): ImagemGaleria => ({
   id: 'i1', cor: 'Preto', missao: 1, geracao: 1, origem: 'gerador', status: 'gerada', alertas: [], erro: null,
-  exibida: false, url: 'https://signed/i1.png', ref_url: 'https://signed/ref.jpg', pode_gerar_de_novo: true, unit_cents: 50, ...extra,
+  exibida: false, url: 'https://signed/i1.png', ref_url: 'https://signed/ref.jpg', roteiro_id: 'R1', pode_gerar_de_novo: true, unit_cents: 50, ...extra,
 });
 const lista = (imagens: ImagemGaleria[] = [], unit = 50, roteiro: RoteiroAprovado | null = aprovado()): RespostaListar =>
   ({ roteiro, unit_cents: unit, imagens });
@@ -331,12 +331,34 @@ describe('PassoGerar — aprovar (Task 12)', () => {
     expect(api.enviarFinal).toHaveBeenCalledWith('org/galeria-ia/F1/finais/i1-n.jpg', 't', expect.any(Blob));
   });
 
-  it('recorte compõe sem cena', async () => {
-    api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 7, origem: 'recorte', url: 'https://signed/ref.jpg' })])));
+  it('missões com lupa/recorte cego (3 e 7; Moda 5 e 7): Aprovar desabilitado com "lupa em ajuste"', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([
+      imagem({ id: 'a', missao: 3 }), imagem({ id: 'b', missao: 7, origem: 'recorte', url: 'https://signed/ref.jpg' }),
+    ])));
     passo();
-    await userEvent.click(await screen.findByRole('button', { name: 'Aprovar' }));
-    await waitFor(() => expect(api.aprovarFinal).toHaveBeenCalled());
-    expect(compor.fn.mock.calls[0][0]).toMatchObject({ cenaUrl: null, refUrl: 'https://signed/ref.jpg', missao: 7 });
+    await screen.findByAltText('Preto · missão 3');
+    const botoes = screen.getAllByRole('button', { name: 'Aprovar' });
+    expect(botoes).toHaveLength(2);
+    for (const b of botoes) { expect(b).toBeDisabled(); expect(b).toHaveAttribute('title', 'lupa em ajuste'); }
+    expect(compor.fn).not.toHaveBeenCalled();
+  });
+
+  it('Moda: 5 e 7 bloqueadas, 3 (cena de costas) liberada', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([
+      imagem({ id: 'a', missao: 3 }), imagem({ id: 'b', missao: 5, origem: 'recorte' }),
+    ], 50, aprovado(undefined, { moda: true }))));
+    passo();
+    await screen.findByAltText('Preto · missão 3');
+    const [m3, m5] = screen.getAllByRole('button', { name: 'Aprovar' });
+    expect(m3).toBeEnabled();
+    expect(m5).toBeDisabled();
+  });
+
+  it('imagem de outro roteiro (não o aprovado atual): sem botão Aprovar', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ roteiro_id: 'R-antigo' })])));
+    passo();
+    await screen.findByAltText('Preto · missão 1');
+    expect(screen.queryByRole('button', { name: 'Aprovar' })).toBeNull();
   });
 
   it('texto que estoura: motivo claro no cartão e nada sobe', async () => {

@@ -16,12 +16,14 @@ const ROTULO: Record<string, string> = {
   gerada: 'Gerada', aprovada: 'Aprovada', descartada: 'Descartada', desatualizada: 'Desatualizada', falhou: 'Falhou',
 };
 
-export function CartaoImagem({ imagem, onGerarDeNovo, onAprovar, onExibida, onInvalida, onFalhaCarga }: {
+export function CartaoImagem({ imagem, onGerarDeNovo, onAprovar, bloqueioAprovar, onExibida, onInvalida, onFalhaCarga }: {
   imagem: ImagemGaleria;
   /** Sem handler o botão não aparece (roteiro aprovado de outra família: o servidor recusaria). */
   onGerarDeNovo?: (imagem: ImagemGaleria) => void;
   /** Compõe e aprova; devolve o motivo da recusa (null = aprovada). Sem handler o botão não aparece. */
   onAprovar?: (imagem: ImagemGaleria) => Promise<string | null>;
+  /** Motivo para manter Aprovar desabilitado (vai no `title`), ex.: "lupa em ajuste". */
+  bloqueioAprovar?: string;
   onExibida?: (id: string) => void;
   onInvalida?: (id: string) => void;
   /** Não carregou: o pai descarta a URL guardada para o próximo listar trazer outra. */
@@ -89,7 +91,7 @@ export function CartaoImagem({ imagem, onGerarDeNovo, onAprovar, onExibida, onIn
           <Button size="sm" variant="outline" onClick={() => onGerarDeNovo(imagem)}>Gerar de novo</Button>
         )}
         {onAprovar && aprovavel && (
-          <Button size="sm" disabled={aprovando} onClick={() => void aprovar()}>
+          <Button size="sm" disabled={aprovando || !!bloqueioAprovar} title={bloqueioAprovar} onClick={() => void aprovar()}>
             {aprovando ? <><Loader2 className="mr-1 h-3 w-3 animate-spin" />Aprovando…</> : 'Aprovar'}
           </Button>
         )}

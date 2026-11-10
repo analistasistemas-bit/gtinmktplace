@@ -8,12 +8,13 @@
 //   a referência (sha atual da cor/vista = o da imagem) e grava pela RPC `galeria_aprovar_imagem` (uma aprovada por
 //   cor, missão e roteiro, na mesma transação). Recorte nasce com `alertas = []`; gerador com `alertas` nulo =
 //   verificação por visão ainda não rodou. `verificacao_indisponivel` não bloqueia (só aparece no cartão).
+//   Missões com lupa/recorte cego da referência → `lupa_pendente` até a decisão da origem do recorte (regras.ts).
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { carregarAnuncio, resolverAnuncio } from '../_shared/galeria/anuncio.ts';
 import { carregarFotosAplicadas, prepararReferencia, sha256Hex } from '../_shared/galeria/referencias.ts';
-import { missoesDisponiveis } from '../_shared/galeria/regras.ts';
+import { lupaPendente, missoesDisponiveis } from '../_shared/galeria/regras.ts';
 import { validarArquivoFinal } from '../_shared/galeria/arquivo-final.ts';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -76,6 +77,10 @@ Deno.serve(async (req) => {
     const b = img.status === 'aprovada' ? null : bloqueio(img.status);
     if (b) return json({ error: b }, 409);
     if (img.origem === 'gerador' && img.alertas == null) return json({ error: 'verificacao_pendente' }, 409);
+    const { data: rot, error: eR } = await admin.from('galeria_roteiros').select('moda').eq('id', img.roteiro_id).eq('org_id', orgId).maybeSingle();
+    if (eR) throw new Error(eR.message);
+    const moda = rot?.moda === true;
+    if (lupaPendente(img.missao, moda)) return json({ error: 'lupa_pendente' }, 409);
     if (!img.final_upload_path) return json({ error: 'sem_upload' }, 409);
     const { data: blob } = await admin.storage.from('imagens').download(img.final_upload_path);
     if (!blob) return json({ error: 'sem_arquivo' }, 409);
@@ -84,14 +89,11 @@ Deno.serve(async (req) => {
     if (erros.length > 0) return json({ error: 'arquivo_invalido', erros }, 422);
 
     // Referência atual da cor e da vista da missão: a mesma fonte do galeria-gerar (calcularVigencia).
-    const [{ data: rot, error: eR }, { data: ref, error: eRef }] = await Promise.all([
-      admin.from('galeria_roteiros').select('moda').eq('id', img.roteiro_id).eq('org_id', orgId).maybeSingle(),
-      img.referencia_id
-        ? admin.from('galeria_referencias').select('sha256').eq('id', img.referencia_id).eq('org_id', orgId).maybeSingle()
-        : Promise.resolve({ data: null, error: null }),
-    ]);
-    if (eR || eRef) throw new Error((eR ?? eRef)!.message);
-    const vista = missoesDisponiveis(rot?.moda === true, ['frente', 'costas', 'lateral']).find((m) => m.missao === img.missao)?.vista;
+    const { data: ref, error: eRef } = img.referencia_id
+      ? await admin.from('galeria_referencias').select('sha256').eq('id', img.referencia_id).eq('org_id', orgId).maybeSingle()
+      : { data: null, error: null };
+    if (eRef) throw new Error(eRef.message);
+    const vista = missoesDisponiveis(moda, ['frente', 'costas', 'lateral']).find((m) => m.missao === img.missao)?.vista;
     const a = await carregarAnuncio(admin, orgId, r.anuncioId);
     if ('erro' in a) return json({ error: a.erro }, 409);
     const atual = vista

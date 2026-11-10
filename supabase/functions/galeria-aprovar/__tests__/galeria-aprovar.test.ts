@@ -193,11 +193,40 @@ describe('galeria-aprovar — aprovar', () => {
     expect(await aprovar(U(1))).toMatchObject({ status: 409, body: { error: 'referencia_trocada' } })
   })
 
-  it('gerador com alertas nulo → verificacao_pendente; recorte com alertas [] aprova', async () => {
-    db.galeria_imagens.push(img(1, { alertas: null }), img(2, { missao: 7, origem: 'recorte', cena_path: null, alertas: [] }))
-    await prepararESubir(1); await prepararESubir(2)
+  it('gerador com alertas nulo → verificacao_pendente', async () => {
+    db.galeria_imagens.push(img(1, { alertas: null }))
+    await prepararESubir(1)
     expect(await aprovar(U(1))).toMatchObject({ status: 409, body: { error: 'verificacao_pendente' } })
-    expect((await aprovar(U(2))).status).toBe(200)
+  })
+
+  // Fix round 1: lupa é recorte cego da referência; até a decisão do Diego, a edge recusa (a tela só esconde).
+  it.each([
+    ['missão 3 (lupa)', { missao: 3 }, false],
+    ['missão 7 (recorte)', { missao: 7, origem: 'recorte', cena_path: null }, false],
+    ['Moda 5 (recorte)', { missao: 5, origem: 'recorte', cena_path: null }, true],
+    ['Moda 7 (recorte)', { missao: 7, origem: 'recorte', cena_path: null }, true],
+  ])('%s → 409 lupa_pendente, sem RPC', async (_n, extra, moda) => {
+    db.galeria_roteiros[0].moda = moda
+    db.galeria_imagens.push(img(1, extra as Linha))
+    await prepararESubir(1)
+    expect(await aprovar(U(1))).toMatchObject({ status: 409, body: { error: 'lupa_pendente' } })
+    expect(fake.rpcs.map((x) => x.nome)).not.toContain('galeria_aprovar_imagem')
+    expect(linha(1).status).toBe('gerada')
+  })
+
+  it('Moda 3 (cena de costas, sem lupa) não é barrada', async () => {
+    db.galeria_roteiros[0].moda = true
+    db.galeria_imagens.push(img(1, { missao: 3 }))
+    await prepararESubir(1)
+    f.refAtual = { id: 'refR', path: 'x', sha256: 'shaR' }
+    expect((await aprovar(U(1))).status).toBe(200)
+  })
+
+  it('aprovação simultânea (índice único) → 409 aprovacao_concorrente', async () => {
+    db.galeria_imagens.push(img(1))
+    await prepararESubir(1)
+    fake.respostasRpc.galeria_aprovar_imagem = () => 'aprovacao_concorrente'
+    expect(await aprovar(U(1))).toMatchObject({ status: 409, body: { error: 'aprovacao_concorrente' } })
   })
 
   it('verificacao_indisponivel não bloqueia', async () => {
@@ -214,7 +243,10 @@ describe('galeria-aprovar — aprovar', () => {
     expect(db.galeria_imagens.filter((g) => g.missao === 1 && g.status === 'aprovada').map((g) => g.id)).toEqual([U(2)])
   })
 
-  it('upload pela URL antiga depois da aprovação não altera final_path nem final_sha256', async () => {
+  // Prova só a lógica do servidor: aprovar lê o caminho do preparo atual e um preparo novo é recusado depois.
+  // Que o Storage real recusa um 2º PUT na URL assinada do caminho aprovado é conferido na Task 16 (procedimento de
+  // CORS/Storage), e a Task 14 reconfere o sha dos bytes ao aplicar.
+  it('depois da aprovação: preparo novo recusado, repetição idempotente e final_path/final_sha256 inalterados', async () => {
     db.galeria_imagens.push(img(1))
     const antiga = (await preparar(U(1))).body.path as string
     const path = await prepararESubir(1)

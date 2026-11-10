@@ -128,7 +128,7 @@ Deno.serve(async (req) => {
         alertas: l.alertas ?? null, erro: l.erro, exibida: l.entregue_em !== null,
         unit_cents: l.origem === 'gerador' ? precoPedido.get(l.pedido_id) ?? null : 0,
         url: l.origem === 'recorte' ? refUrl : await assinar(l.cena_path),
-        ref_url: refUrl,
+        ref_url: refUrl, roteiro_id: l.roteiro_id,
         // Gerar novo só pelo roteiro aprovado (o galeria-gerar ainda exige família vigente).
         pode_gerar_de_novo: !!rot && l.roteiro_id === rot.id && l.origem === 'gerador'
           && bloqueioDaVaga(linhas, rot.id, l.cor, l.missao, usaGerador.get(l.missao) ?? true) === null,

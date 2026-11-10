@@ -108,7 +108,7 @@ describe('galeria-imagens — listar', () => {
     ] }
     db.galeria_imagens.push(img(1, { missao: 2 }))
     const r = await listar()
-    expect((r.body.imagens as Linha[])[0]).toMatchObject({ ref_url: 'https://signed/org/galeria-ia/famB/referencias/rosa.jpg' })
+    expect((r.body.imagens as Linha[])[0]).toMatchObject({ ref_url: 'https://signed/org/galeria-ia/famB/referencias/rosa.jpg', roteiro_id: 'rot2' })
     expect((r.body.roteiro as Linha).textos).toEqual({ 2: { headline: 'Prende firme', subheadline: 'Sem costura' } })
   })
 

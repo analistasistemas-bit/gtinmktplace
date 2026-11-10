@@ -55,6 +55,15 @@ export function missoesSugeridas(nCores: number): Missao[] {
   return nCores <= 3 ? [1, 2, 3, 4, 5, 6, 7] : [1, 2, 3, 4]
 }
 
+/**
+ * Task 12, fix 1: a lupa/recorte é um corte cego da referência (`recortesDetalhe`), que pode pegar parede ou mesa.
+ * Até o Diego decidir a origem do recorte, a aprovação dessas missões fica bloqueada — na edge `galeria-aprovar`
+ * (garantia) e na tela. Para liberar, esvazie as listas.
+ */
+export const MISSOES_LUPA_PENDENTE: { geral: readonly number[]; moda: readonly number[] } = { geral: [3, 7], moda: [5, 7] }
+export const lupaPendente = (missao: number, moda: boolean): boolean =>
+  (moda ? MISSOES_LUPA_PENDENTE.moda : MISSOES_LUPA_PENDENTE.geral).includes(missao)
+
 // Categorias de Moda — GET https://api.mercadolibre.com/categories/{id} (público, sem token),
 // consultado em 2026-11-09. Raiz: MLB1430 "Calçados, Roupas e Bolsas" (22 filhas diretas).
 // Método: listei as filhas de MLB1430 e, das que tinham subcategorias (Agasalhos, Moda Fitness,

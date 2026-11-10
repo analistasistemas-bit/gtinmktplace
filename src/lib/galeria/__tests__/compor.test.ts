@@ -9,6 +9,7 @@ let ctx: Record<string, ReturnType<typeof vi.fn>> & { font: string };
 let pesoPorQualidade: (q: number) => number;
 let qualidades: number[];
 let fontes: string[];
+let fonteOk: boolean;
 
 class FakeImage {
   crossOrigin: string | null = null;
@@ -23,7 +24,7 @@ class FakeImage {
 }
 
 beforeEach(() => {
-  cargas = []; qualidades = []; fontes = [];
+  cargas = []; qualidades = []; fontes = []; fonteOk = true;
   dims = { cena: [864, 1152], ref: [500, 500], quadrada: [1024, 1024] };
   pesoPorQualidade = () => 400_000;
   const fn = () => vi.fn();
@@ -41,7 +42,7 @@ beforeEach(() => {
     setTimeout(() => cb(new Blob([new Uint8Array(pesoPorQualidade(q!))], { type })), 0);
   };
   Object.defineProperty(document, 'fonts', {
-    configurable: true, value: { load: vi.fn(async (f: string) => { fontes.push(f); return []; }) },
+    configurable: true, value: { load: vi.fn(async (f: string) => { fontes.push(f); return []; }), check: vi.fn(() => fonteOk) },
   });
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
@@ -66,6 +67,15 @@ describe('comporImagemFinal', () => {
     expect([dx, dy, dw, dh]).toEqual([0, 0, 1200, 1540]);
     expect(sw / sh).toBeCloseTo(1200 / 1540, 2);
     expect(sx).toBe(0); expect(sy).toBeGreaterThan(0);
+  });
+
+  it('Inter não carregou (woff2 falhou): recusa com motivo, sem desenhar texto', async () => {
+    fonteOk = false;
+    await expect(compor(2)).rejects.toThrow(/fonte Inter/);
+    expect(ctx.fillText).not.toHaveBeenCalled();
+    expect(qualidades).toEqual([]);
+    // Capa não precisa de fonte.
+    await expect(compor(1)).resolves.toBeInstanceOf(Blob);
   });
 
   it('missão 1 (capa) e Moda: nenhum fillText', async () => {

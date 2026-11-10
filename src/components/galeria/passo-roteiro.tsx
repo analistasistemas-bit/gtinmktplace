@@ -1,5 +1,7 @@
 // ADR-0201 (Task 7b): passo "Roteiro". A validação é do servidor (`erros`/`erros_por_missao`); a tela mostra o erro na
 // própria missão, que segue ativa até o operador corrigir ou desativar. Contadores de palavras só avisam (limites de regras.ts).
+// Task 12 (fix 1): a largura do texto na caixa do layout (`motivosDeTexto`, a mesma regra da composição) é conferida
+// aqui, antes de aprovar — estourar só na aprovação da imagem obrigaria a gerar (e pagar) de novo.
 import { useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -11,6 +13,7 @@ import {
   aprovarRoteiro, criarRoteiro, salvarRoteiro,
   type Ficha, type MissaoRoteiro, type RespostaRoteiro, type Res, type Roteiro,
 } from '@/lib/galeria/api';
+import { motivosDeTexto } from '@/lib/galeria/compor';
 
 /** Espelho de `LIMITES` (supabase/functions/_shared/galeria/regras.ts). */
 const LIMITES = { headline: 5, subheadline: 10, beneficio: 6, etapa: 7, legenda: 5 } as const;
@@ -100,11 +103,15 @@ export function PassoRoteiro({ mlItemId, ficha, isAdmin, podeCriar, resp, aoResp
   const editar = (n: number, parte: Partial<MissaoRoteiro>) =>
     setRascunho({ ...rascunho, missoes: rascunho.missoes.map((m) => (m.missao === n ? { ...m, ...parte } : m)) });
   const faltaCiencia = pendentes.some((c) => !ciente.has(c));
+  const largura = Object.fromEntries(rascunho.missoes.filter((m) => m.ativa)
+    .map((m) => [m.missao, motivosDeTexto(m.missao, m, roteiro.moda)]).filter(([, ms]) => (ms as string[]).length > 0)) as Record<number, string[]>;
+  const primeiraLarga = Object.keys(largura)[0];
   const motivoBloqueio = !isAdmin ? 'Somente administradores podem aprovar o roteiro'
     : sujo ? 'Salve as alterações antes de aprovar'
       : erros.length > 0 ? 'Corrija os erros do roteiro antes de aprovar'
-        : faltaCiencia ? 'Marque a ciência dos fatos não conferidos'
-          : aprovado ? 'Este roteiro já foi aprovado' : undefined;
+        : primeiraLarga ? `Missão ${primeiraLarga}: ${largura[Number(primeiraLarga)][0]}`
+          : faltaCiencia ? 'Marque a ciência dos fatos não conferidos'
+            : aprovado ? 'Este roteiro já foi aprovado' : undefined;
 
   return (
     <div className="space-y-4">
@@ -136,7 +143,8 @@ export function PassoRoteiro({ mlItemId, ficha, isAdmin, podeCriar, resp, aoResp
               Ativa
             </div>
           </div>
-          {(porMissao[String(m.missao)] ?? []).map((e) => <p key={e} role="alert" className="text-sm text-red-600">{e}</p>)}
+          {[...(porMissao[String(m.missao)] ?? []), ...(largura[m.missao] ?? [])]
+            .map((e) => <p key={e} role="alert" className="text-sm text-red-600">{e}</p>)}
           <div className="block text-sm">
             <span className="mb-1 block">Cena</span>
             <Textarea aria-label={`Cena da missão ${m.missao}`} rows={2} value={m.cena} onChange={(e) => editar(m.missao, { cena: e.target.value })} />

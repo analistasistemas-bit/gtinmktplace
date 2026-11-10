@@ -255,6 +255,25 @@ describe('Passo roteiro', () => {
     expect(api.aprovarRoteiro).toHaveBeenCalledWith('MLB1', 'F1', 'R1', ['atributo:FABRIC']);
   });
 
+  it('texto que estoura a largura da caixa bloqueia a aprovação do roteiro, com o motivo na missão', async () => {
+    const longa = 'Aplicação extraordinária instantânea profissionalíssima garantida';
+    const r = resposta();
+    r.roteiro.conteudo.missoes[1] = missao(2, { headline: longa });
+    await comRoteiro(r);
+    const b = screen.getByRole('button', { name: 'Aprovar roteiro' });
+    expect(b).toBeDisabled();
+    expect(b).toHaveAttribute('title', expect.stringMatching(/Missão 2/));
+    expect(within(screen.getByRole('region', { name: 'Missão 2' })).getByRole('alert')).toHaveTextContent(/Título não cabe/);
+  });
+
+  it('missão inativa ou Moda não bloqueiam por largura', async () => {
+    const longa = 'Aplicação extraordinária instantânea profissionalíssima garantida';
+    const r = resposta({ moda: true });
+    r.roteiro.conteudo.missoes[1] = missao(2, { headline: longa });
+    await comRoteiro(r);
+    expect(screen.getByRole('button', { name: 'Aprovar roteiro' })).toBeEnabled();
+  });
+
   it('não-admin não aprova (com motivo no title)', async () => {
     api.criarRoteiro.mockResolvedValue(ok(resposta()));
     abrir('MLB1', false);

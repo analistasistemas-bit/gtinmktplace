@@ -20,6 +20,10 @@ insert into public.profiles (id, org_id, is_active) values
   ('97900000-0000-0000-0000-000000000101', '97900000-0000-0000-0000-000000000001', true)
 on conflict (id) do update set org_id = excluded.org_id, is_active = true;
 
+-- Simula a corrida do índice único (§6b): só existe nesta transação.
+create function public.t12_simula_corrida() returns trigger language plpgsql as $f$
+begin if new.status = 'aprovada' then raise unique_violation using message = 'simulada'; end if; return new; end $f$;
+
 create or replace function pg_temp.afirmar(c boolean, msg text) returns void language plpgsql as $$
 begin if not coalesce(c, false) then raise exception 'FALHA: %', msg; end if; end $$;
 
@@ -101,6 +105,13 @@ begin
   update public.galeria_imagens set status = 'gerada' where id = v_g2;
   update public.galeria_roteiros set status = 'desatualizado' where id = v_rot;
   perform pg_temp.afirmar(public.galeria_aprovar_imagem(o, v_an, v_g2, 'f/g2-a.jpg', 'sha2', u) = 'desatualizada', 'roteiro vencido');
+
+  -- 6b. Corrida: o índice único estoura (aprovação simultânea da mesma cor/missão) → código, sem exceção nem efeito.
+  update public.galeria_roteiros set status = 'aprovado' where id = v_rot;
+  execute 'create trigger t12_simula_corrida before update on public.galeria_imagens for each row execute function public.t12_simula_corrida()';
+  perform pg_temp.afirmar(public.galeria_aprovar_imagem(o, v_an, v_g2, 'f/g2-a.jpg', 'sha2', u) = 'aprovacao_concorrente', 'corrida vira código');
+  perform pg_temp.afirmar((select status from public.galeria_imagens where id = v_g2) = 'gerada', 'corrida não grava');
+  execute 'drop trigger t12_simula_corrida on public.galeria_imagens';
 
   -- 7. Privilégios.
   perform pg_temp.afirmar(not has_function_privilege('authenticated',

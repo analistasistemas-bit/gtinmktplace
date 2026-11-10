@@ -88,6 +88,8 @@ export interface ImagemGaleria {
   exibida: boolean; url: string | null;
   /** Referência da cor/vista (assinada): a lupa da composição (Task 12). */
   ref_url: string | null;
+  /** Aprovar só a do roteiro aprovado atual (o servidor recusaria as demais). */
+  roteiro_id: string;
   /** Regra da RPC calculada no servidor: false com 3 gerações válidas, geração aberta ou fora do roteiro aprovado. */
   pode_gerar_de_novo: boolean;
   /** Preço congelado no pedido desta imagem (o que a RPC cobra ao exibir); recorte = 0. */
@@ -165,6 +167,8 @@ const MENSAGENS: Record<string, string> = {
   upload_trocado: 'Outra aprovação desta imagem está em andamento. Tente de novo.',
   referencia_trocada: 'A foto de referência da cor mudou depois desta imagem. Gere de novo.',
   verificacao_pendente: 'A verificação da imagem ainda não terminou. Aguarde alguns segundos.',
+  lupa_pendente: 'Missão com lupa em ajuste: a aprovação está suspensa até definirmos a origem do recorte.',
+  aprovacao_concorrente: 'Outra geração desta missão foi aprovada ao mesmo tempo. Recarregue e confira.',
   falha_interna: 'Erro interno. Tente de novo.',
   rede: 'Sem conexão com o servidor.',
 };

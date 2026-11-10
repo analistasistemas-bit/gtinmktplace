@@ -17,7 +17,7 @@ import {
   type Ficha, type ImagemGaleria, type RespostaListar,
 } from '@/lib/galeria/api';
 import { comporImagemFinal } from '@/lib/galeria/compor';
-import { missoesDisponiveis, missoesSugeridas } from '../../../supabase/functions/_shared/galeria/regras';
+import { lupaPendente, missoesDisponiveis, missoesSugeridas } from '../../../supabase/functions/_shared/galeria/regras';
 import { CartaoImagem } from './cartao-imagem';
 
 const POLLING_MS = 5000;
@@ -272,7 +272,9 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro }: {
       {lista && lista.imagens.length > 0 && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {lista.imagens.map((i: ImagemGaleria) => (
-            <CartaoImagem key={i.id} imagem={i} onExibida={exibida} onInvalida={invalida} onFalhaCarga={falhaCarga} onAprovar={aprovar}
+            <CartaoImagem key={i.id} imagem={i} onExibida={exibida} onInvalida={invalida} onFalhaCarga={falhaCarga}
+              onAprovar={roteiro && i.roteiro_id === roteiro.id ? aprovar : undefined}
+              bloqueioAprovar={lupaPendente(i.missao, moda) ? 'lupa em ajuste' : undefined}
               onGerarDeNovo={podePedir ? (x) => abrir({ cores: [x.cor], missoes: [x.missao] }) : undefined} />
           ))}
         </div>

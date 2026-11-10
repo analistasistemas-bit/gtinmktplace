@@ -9,7 +9,9 @@
 --   - imagem `gerador` com `alertas` nulo → a verificação por visão ainda não rodou (recorte nasce com `[]`);
 --   - roteiro da imagem ainda é o aprovado.
 -- Devolve código, nunca levanta por estado:
---   ok | nao_encontrada | desatualizada | nao_aprovavel | upload_trocado | verificacao_pendente.
+--   ok | nao_encontrada | desatualizada | nao_aprovavel | upload_trocado | verificacao_pendente | aprovacao_concorrente.
+-- A anterior volta a `gerada` mesmo se citada em manifesto `preparada`/em andamento/`aplicada`: a Task 14 trata
+-- (galeria_confirmar_aplicacao já devolve `desatualizada` para manifesto com imagem que deixou de ser aprovada).
 create unique index galeria_imagens_uma_aprovada_uidx
   on public.galeria_imagens (org_id, roteiro_id, cor, missao) where status = 'aprovada';
 
@@ -34,14 +36,19 @@ begin
     return 'desatualizada';
   end if;
 
-  update public.galeria_imagens set status = 'gerada', atualizado_em = now()
-    where org_id = p_org and roteiro_id = v_i.roteiro_id and cor = v_i.cor and missao = v_i.missao
-      and status = 'aprovada' and id <> p_imagem;
+  -- Aprovação simultânea de outra geração da mesma (cor, missão) estoura o índice: código, sem efeito (subtransação).
+  begin
+    update public.galeria_imagens set status = 'gerada', atualizado_em = now()
+      where org_id = p_org and roteiro_id = v_i.roteiro_id and cor = v_i.cor and missao = v_i.missao
+        and status = 'aprovada' and id <> p_imagem;
 
-  update public.galeria_imagens
-    set status = 'aprovada', final_path = p_upload_path, final_sha256 = p_sha256,
-        aprovado_em = now(), aprovado_por = p_usuario, atualizado_em = now()
-    where id = p_imagem;
+    update public.galeria_imagens
+      set status = 'aprovada', final_path = p_upload_path, final_sha256 = p_sha256,
+          aprovado_em = now(), aprovado_por = p_usuario, atualizado_em = now()
+      where id = p_imagem;
+  exception when unique_violation then
+    return 'aprovacao_concorrente';
+  end;
   return 'ok';
 end;
 $$;
