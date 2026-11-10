@@ -125,6 +125,13 @@ export function planejarFotosItem(e: EntradaIda | EntradaVolta): ResultadoPlano 
         return falha('reversao_incompleta', `${e.atual.id}:${a.sku}`);
       }
     }
+    // O retrato tem de conter as fotos que a volta restaura (e, com variações, não pode ser vazio): senão a ordem
+    // do retrato se perde em silêncio.
+    const noRetrato = new Set(e.picturesAntes);
+    if ((e.atual.variacoes.length > 0 && e.picturesAntes.length === 0)
+      || e.variacoesAlvo.some((a) => e.fotosDaCor[a.sku].some((p) => !noRetrato.has(p)))) {
+      return falha('reversao_incompleta', `${e.atual.id}:pictures_antes_incoerente`);
+    }
     const novas: FotosPorSku = {};
     for (const a of e.variacoesAlvo) novas[a.sku] = [...e.fotosDaCor[a.sku]];
     return { ok: true, corpo: montarCorpo(e.atual, novas, e.variacoesAlvo, e.picturesAntes) };
@@ -145,8 +152,11 @@ export function planejarFotosItem(e: EntradaIda | EntradaVolta): ResultadoPlano 
   for (const a of e.variacoesAlvo) {
     const atuais = correntes[a.sku];
     // R5.2/R9.3: no substituir, a capa aprovada lidera; sem ela, a 1ª foto atual fica (cor sem foto: só o manifesto).
+    // A foto mantida é a capa do item (`pictures[0]`) quando ela é desta cor, mesmo que a ordem da variação seja
+    // outra: assim ela continua na posição 0 e as novas entram depois dela.
+    const mantida = atuais.includes(e.atual.pictures[0]) ? e.atual.pictures[0] : atuais[0];
     const lista = e.modo === 'adicionar' ? [...atuais, ...manifesto]
-      : e.capaAprovada || atuais.length === 0 ? manifesto : [atuais[0], ...manifesto];
+      : e.capaAprovada || atuais.length === 0 ? manifesto : [mantida, ...manifesto];
     if (lista.length > limite) return falha('limite', `${e.atual.id}:${a.sku}:${lista.length}>${limite}`);
     novas[a.sku] = lista;
   }

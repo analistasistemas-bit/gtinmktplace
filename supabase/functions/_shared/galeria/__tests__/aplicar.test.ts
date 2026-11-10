@@ -52,6 +52,14 @@ describe('planejarFotosItem — ida', () => {
     expect(r.ok && r.corpo.variations?.[0].picture_ids).toEqual(['CAPA', 'N2', 'N3', 'N4', 'N5', 'N6', 'N7'])
   })
 
+  it('sem capa aprovada e ordem da variação ≠ ordem de pictures → pictures[0] continua capa e as novas entram depois', () => {
+    const a = legacy({ pictures: ['R1', 'R2', 'A1'],
+      variacoes: [{ id: 11, sku: '100R', pictureIds: ['R2', 'R1'] }, { id: 12, sku: '100A', pictureIds: ['A1'] }] })
+    const r = planejarFotosItem(ida(a, { capaAprovada: false, fotosDaCor: MANIFESTO.slice(1) }))
+    expect(r.ok && r.corpo.pictures.map((p) => p.id)).toEqual(['R1', 'N2', 'N3', 'N4', 'N5', 'N6', 'N7', 'A1'])
+    expect(r.ok && r.corpo.variations?.[0].picture_ids).toEqual(['R1', 'N2', 'N3', 'N4', 'N5', 'N6', 'N7'])
+  })
+
   it('cor sem foto, sem capa aprovada → só o manifesto', () => {
     const a = legacy({ variacoes: [{ id: 11, sku: '100R', pictureIds: [] }, { id: 12, sku: '100A', pictureIds: ['A1'] }], pictures: ['A1'] })
     const r = planejarFotosItem(ida(a, { capaAprovada: false, fotosDaCor: MANIFESTO.slice(1, 3) }))
@@ -187,6 +195,13 @@ describe('planejarFotosItem — volta (compensação)', () => {
     ['picturesAntes não é lista de strings', { picturesAntes: ['CAPA', 1] }],
   ])('%s → reversao_incompleta', (_n, extra) => {
     expect(planejarFotosItem(volta(aplicado(), extra as never))).toMatchObject({ ok: false, motivo: 'reversao_incompleta' })
+  })
+
+  it.each([
+    ['picturesAntes vazio', []],
+    ['picturesAntes sem um id de fotos_antes', ['CAPA', 'R1', 'A1', 'SOLTA']],
+  ])('item com variações e %s → reversao_incompleta (nunca volta na ordem atual)', (_n, picturesAntes) => {
+    expect(planejarFotosItem(volta(aplicado(), { picturesAntes }))).toMatchObject({ ok: false, motivo: 'reversao_incompleta' })
   })
 
   it('cor sem foto: lista vazia presente nas duas pontas é legítima', () => {
