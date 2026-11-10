@@ -5,7 +5,7 @@ import { PassoGerar } from '../passo-gerar';
 import { CartaoImagem } from '../cartao-imagem';
 import { DialogGaleria } from '../dialog-galeria';
 import { imagemValida } from '@/lib/galeria/exibicao';
-import type { Ficha, ImagemGaleria, RespostaListar, RespostaRoteiro, Res } from '@/lib/galeria/api';
+import type { Ficha, ImagemGaleria, RespostaListar, RespostaRoteiro, Res, RoteiroAprovado } from '@/lib/galeria/api';
 
 const api = vi.hoisted(() => ({
   montarFicha: vi.fn(), lerRoteiro: vi.fn(), listarImagens: vi.fn(), gerarImagens: vi.fn(),
@@ -24,20 +24,26 @@ const ficha = (cores: string[]): Ficha => ({
   anuncio_externo_id: 'A1', familia_id: 'F1', codigo_pai: '0001', cores, fatos: [], fatos_hash: 'h', roteiro_desatualizado: false, referencias: {},
 });
 const missao = (n: number, ativa = true) => ({ missao: n, ativa, cena: `cena ${n}`, fatosUsados: [] });
-const aprovado = (ativas = [1, 2, 3, 4, 5, 6, 7], moda = false): RespostaRoteiro => ({
-  roteiro: { id: 'R1', familia_id: 'F1', versao: 3, status: 'aprovado', moda,
-    conteudo: { categoria: 'c', contrato: 'k', missoes: [1, 2, 3, 4, 5, 6, 7].map((n) => missao(n, ativas.includes(n))) } },
+const aprovado = (ativas = [1, 2, 3, 4, 5, 6, 7], extra: Partial<RoteiroAprovado> = {}): RoteiroAprovado =>
+  ({ id: 'R1', versao: 3, familia_id: 'F1', moda: false, missoes_ativas: ativas, ...extra });
+/** Resposta do `ler` (aba Roteiro). */
+const respRoteiro = (status = 'aprovado', versao = 3): RespostaRoteiro => ({
+  roteiro: { id: `R${versao}`, familia_id: 'F1', versao, status, moda: false,
+    conteudo: { categoria: 'c', contrato: 'k', missoes: [1, 2, 3, 4, 5, 6, 7].map((n) => missao(n)) } },
   erros: [], erros_por_missao: {}, ciencia_pendente: [], fatos: [],
 });
 const imagem = (extra: Partial<ImagemGaleria> = {}): ImagemGaleria => ({
   id: 'i1', cor: 'Preto', missao: 1, geracao: 1, origem: 'gerador', status: 'gerada', alertas: [], erro: null,
-  exibida: false, url: 'https://signed/i1.png', pode_gerar_de_novo: true, ...extra,
+  exibida: false, url: 'https://signed/i1.png', pode_gerar_de_novo: true, unit_cents: 50, ...extra,
 });
-const lista = (imagens: ImagemGaleria[] = [], unit = 50): RespostaListar => ({ roteiro_id: 'R1', unit_cents: unit, imagens });
+const lista = (imagens: ImagemGaleria[] = [], unit = 50, roteiro: RoteiroAprovado | null = aprovado()): RespostaListar =>
+  ({ roteiro, unit_cents: unit, imagens });
 
-function passo(cores = ['Preto'], resp = aprovado(), mlItemId = 'MLB1') {
+/** `rot` informado → `listar` devolve só esse roteiro, sem imagens. */
+function passo(cores = ['Preto'], rot?: RoteiroAprovado | null, mlItemId = 'MLB1') {
+  if (rot !== undefined) api.listarImagens.mockResolvedValue(ok(lista([], 50, rot)));
   const props = { aoRecarregar: vi.fn(), aoVoltarRoteiro: vi.fn() };
-  render(<PassoGerar mlItemId={mlItemId} ficha={ficha(cores)} resp={resp} {...props} />);
+  render(<PassoGerar mlItemId={mlItemId} ficha={ficha(cores)} {...props} />);
   return props;
 }
 const marcadas = () => screen.getAllByRole('checkbox', { name: /^Missão \d/ })
@@ -120,7 +126,27 @@ describe('PassoGerar — seleção e confirmação', () => {
     expect(b.pedidoId).toBe(a.pedidoId);
   });
 
-  it('ciência pendente volta ao roteiro; família não vigente oferece recarregar', async () => {
+  it('familia_nao_vigente: botão Recarregar visível e Confirmar desabilitado', async () => {
+    api.gerarImagens.mockResolvedValueOnce(falha(409, 'familia_nao_vigente', { familia_id_vigente: 'F2' }));
+    const props = passo();
+    await screen.findByText(/por imagem/);
+    await userEvent.click(screen.getByRole('button', { name: 'Gerar imagens' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Recarregar' }));
+    expect(props.aoRecarregar).toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeDisabled();
+    expect(api.gerarImagens).toHaveBeenCalledTimes(1);
+  });
+
+  it('roteiro aprovado de família anterior: imagens visíveis, pedido novo bloqueado com aviso', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([imagem()], 50, aprovado(undefined, { familia_id: 'F-antiga' }))));
+    passo();
+    expect(await screen.findByAltText('Preto · missão 1')).toBeInTheDocument();
+    expect(screen.getByText(/família anterior/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Gerar imagens' })).toBeNull();
+  });
+
+  it('ciência pendente volta ao roteiro', async () => {
     api.gerarImagens.mockResolvedValueOnce(falha(409, 'conteudo.ciencia_nao_conferido', { campos: ['Material'] }));
     const props = passo();
     await screen.findByText(/por imagem/);
@@ -139,7 +165,7 @@ describe('PassoGerar — exibição e cobrança', () => {
     const img = await screen.findByAltText('Preto · missão 1');
     fireEvent.load(img);
     await waitFor(() => expect(api.confirmarExibicao).toHaveBeenCalledWith('MLB1', ['i1']));
-    api.listarImagens.mockResolvedValue(ok(lista([imagem({ url: 'https://signed/outra.png' }), imagem({ id: 'i2', status: 'gerando', url: null })])));
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ url: 'https://signed/outra.png', exibida: true }), imagem({ id: 'i2', status: 'gerando', url: null })])));
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
     expect(api.listarImagens).toHaveBeenCalledTimes(2);
     expect(screen.getByAltText('Preto · missão 1')).toHaveAttribute('src', 'https://signed/i1.png');
@@ -178,7 +204,7 @@ describe('PassoGerar — exibição e cobrança', () => {
   it('polling para quando tudo é terminal e os alertas chegaram; para ao desmontar', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     api.listarImagens.mockResolvedValue(ok(lista([imagem({ alertas: null })])));
-    const { unmount } = render(<PassoGerar mlItemId="MLB1" ficha={ficha(['Preto'])} resp={aprovado()} aoRecarregar={vi.fn()} aoVoltarRoteiro={vi.fn()} />);
+    const { unmount } = render(<PassoGerar mlItemId="MLB1" ficha={ficha(['Preto'])} aoRecarregar={vi.fn()} aoVoltarRoteiro={vi.fn()} />);
     await screen.findByAltText('Preto · missão 1');
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
     expect(api.listarImagens).toHaveBeenCalledTimes(2);
@@ -230,13 +256,43 @@ describe('PassoGerar — exibição e cobrança', () => {
     expect(screen.getByText(/limite de 3 gerações/i)).toBeInTheDocument();
   });
 
-  it('imagem que não carrega: mensagem, sem confirmar nem reportar', async () => {
+  it('falha de carga não é terminal: aviso, sem cobrar nem reportar; o poll seguinte tenta com URL nova e cobra', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     api.listarImagens.mockResolvedValue(ok(lista([imagem()])));
     passo();
     fireEvent.error(await screen.findByAltText('Preto · missão 1'));
     expect(await screen.findByText(/Não foi possível exibir a imagem/)).toBeInTheDocument();
     expect(api.confirmarExibicao).not.toHaveBeenCalled();
     expect(api.reportarInvalida).not.toHaveBeenCalled();
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ url: 'https://signed/nova.png' })])));
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    const img = await screen.findByAltText('Preto · missão 1');
+    expect(img).toHaveAttribute('src', 'https://signed/nova.png');
+    fireEvent.load(img);
+    await waitFor(() => expect(api.confirmarExibicao).toHaveBeenCalledWith('MLB1', ['i1']));
+  });
+
+  it('confirmação com rede/5xx: o poll seguinte repete até a imagem ficar exibida', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    api.confirmarExibicao.mockResolvedValueOnce(falha(503, 'falha_interna')).mockResolvedValue(ok({ cobradas: 1 }));
+    api.listarImagens.mockResolvedValue(ok(lista([imagem()])));
+    passo();
+    fireEvent.load(await screen.findByAltText('Preto · missão 1'));
+    await waitFor(() => expect(api.confirmarExibicao).toHaveBeenCalledTimes(1));
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    await waitFor(() => expect(api.confirmarExibicao).toHaveBeenCalledTimes(2));
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ exibida: true })])));
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(api.confirmarExibicao).toHaveBeenCalledTimes(2);
+  });
+
+  it('preço: a imagem mostra o do pedido (50); a confirmação de pedido novo, o do mês (80)', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ unit_cents: 50 })], 80)));
+    passo();
+    expect(await screen.findByText(/R\$\s0,50 ao exibir/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Gerar imagens' }));
+    expect(screen.getByText(/6 imagens · R\$\s4,80/)).toBeInTheDocument();
   });
 
   it('"Gerar de novo" abre a confirmação de 1 imagem daquela cor e missão', async () => {
@@ -262,26 +318,48 @@ describe('CartaoImagem', () => {
 });
 
 describe('imagemValida', () => {
-  const comPixels = (px: number[][]) => {
-    const data = new Uint8ClampedArray(px.flatMap(([r, g, b]) => [r, g, b, 255]));
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage: vi.fn(), getImageData: () => ({ data }) } as never);
+  const W = 1200; const H = 1540;
+  /** Canvas no tamanho natural: cada `getImageData(x, y, 1, 1)` devolve o pixel da função. */
+  const comImagem = (pixel: (x: number, y: number) => [number, number, number]) => {
+    const lidos: Array<[number, number]> = [];
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      drawImage: vi.fn(),
+      getImageData: (x: number, y: number) => { lidos.push([x, y]); return { data: new Uint8ClampedArray([...pixel(x, y), 255]) }; },
+    } as never);
+    return lidos;
   };
-  const img = (w = 1200) => {
+  const img = (w = W) => {
     const i = document.createElement('img');
     Object.defineProperty(i, 'complete', { value: true });
     Object.defineProperty(i, 'naturalWidth', { value: w });
-    Object.defineProperty(i, 'naturalHeight', { value: w ? 1540 : 0 });
+    Object.defineProperty(i, 'naturalHeight', { value: w ? H : 0 });
     return i;
   };
+  const real = async () => (await vi.importActual<typeof import('@/lib/galeria/exibicao')>('@/lib/galeria/exibicao')).imagemValida;
   afterEach(() => vi.restoreAllMocks());
 
-  it('branca → false; produto sobre fundo branco → true; não decodificou → false', async () => {
-    const { imagemValida: real } = await vi.importActual<typeof import('@/lib/galeria/exibicao')>('@/lib/galeria/exibicao');
-    comPixels(Array.from({ length: 64 }, () => [255, 255, 255]));
-    expect(real(img())).toBe(false);
-    comPixels(Array.from({ length: 64 }, (_, i) => (i % 3 === 0 ? [40, 30, 90] : [255, 255, 255])));
-    expect(real(img())).toBe(true);
-    expect(real(img(0))).toBe(false);
+  it('toda branca → false, lendo 64 pixels espalhados pelo original', async () => {
+    const lidos = comImagem(() => [255, 255, 255]);
+    expect((await real())(img())).toBe(false);
+    expect(lidos).toHaveLength(64);
+    expect(Math.max(...lidos.map(([x]) => x))).toBeGreaterThan(W * 0.8);
+    expect(Math.max(...lidos.map(([, y]) => y))).toBeGreaterThan(H * 0.8);
+  });
+
+  it('produto pequeno (300×300 no centro) em fundo branco → true', async () => {
+    comImagem((x, y) => (Math.abs(x - W / 2) < 150 && Math.abs(y - H / 2) < 150 ? [40, 30, 90] : [255, 255, 255]));
+    expect((await real())(img())).toBe(true);
+  });
+
+  it('não decodificou → false; canvas indisponível ou contaminado → lança (indeterminado)', async () => {
+    const f = await real();
+    expect(f(img(0))).toBe(false);
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+    expect(() => f(img())).toThrow();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      drawImage: vi.fn(), getImageData: () => { throw new DOMException('tainted', 'SecurityError'); },
+    } as never);
+    expect(() => f(img())).toThrow();
   });
   it('é a função usada pelo cartão (mock só neste arquivo)', () => { expect(imagemValida).toBe(valida.fn); });
 });
@@ -289,10 +367,10 @@ describe('imagemValida', () => {
 describe('DialogGaleria — aba Gerar', () => {
   it('linhas split da mesma família: cada galeria lista, gera e confirma com o ml_item_id da sua linha', async () => {
     api.montarFicha.mockResolvedValue(ok(ficha(['Preto'])));
-    api.lerRoteiro.mockResolvedValue(ok({ ...aprovado(), moda: false, familia_id: 'F1' }));
-    api.listarImagens.mockResolvedValue(ok(lista([imagem()])));
+    api.lerRoteiro.mockResolvedValue(ok({ ...respRoteiro(), moda: false, familia_id: 'F1' }));
     for (const ml of ['MLB-A', 'MLB-B']) {
       vi.clearAllMocks();
+      api.listarImagens.mockResolvedValue(ok(lista([imagem()])));
       api.confirmarExibicao.mockResolvedValue(ok({ cobradas: 1 }));
       api.gerarImagens.mockResolvedValue(ok({ pedido_id: 'p', imagens: [] }));
       const r = render(<DialogGaleria mlItemId={ml} codigoPai="0001" open onOpenChange={() => undefined} isAdmin />);
@@ -300,16 +378,38 @@ describe('DialogGaleria — aba Gerar', () => {
       fireEvent.load(await screen.findByAltText('Preto · missão 1'));
       await userEvent.click(screen.getByRole('button', { name: 'Gerar imagens' }));
       await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
-      expect(api.listarImagens).toHaveBeenCalledWith(ml, 3);
+      expect(api.listarImagens).toHaveBeenCalledWith(ml);
+      expect(api.listarImagens.mock.calls.every((c) => c[0] === ml)).toBe(true);
       await waitFor(() => expect(api.confirmarExibicao).toHaveBeenCalledWith(ml, ['i1']));
       expect(api.gerarImagens.mock.calls[0][0]).toBe(ml);
       r.unmount();
     }
   });
 
-  it('sem roteiro aprovado não há aba Gerar', async () => {
+  it('rascunho v3 sobre o v2 aprovado: aba Gerar continua, com as imagens do v2', async () => {
+    api.montarFicha.mockResolvedValue(ok(ficha(['Preto'])));
+    api.lerRoteiro.mockResolvedValue(ok({ ...respRoteiro('rascunho', 3), moda: false, familia_id: 'F1' }));
+    api.listarImagens.mockResolvedValue(ok(lista([imagem()], 50, aprovado(undefined, { versao: 2 }))));
+    render(<DialogGaleria mlItemId="MLB1" codigoPai="0001" open onOpenChange={() => undefined} isAdmin />);
+    await userEvent.click(await screen.findByRole('tab', { name: /Gerar/ }));
+    fireEvent.load(await screen.findByAltText('Preto · missão 1'));
+    await waitFor(() => expect(api.confirmarExibicao).toHaveBeenCalledWith('MLB1', ['i1']));
+  });
+
+  it('sem roteiro aprovado mas com imagem pendente de exibição (família anterior): aba Gerar aparece', async () => {
     api.montarFicha.mockResolvedValue(ok(ficha(['Preto'])));
     api.lerRoteiro.mockResolvedValue(ok({ roteiro: null, moda: false, familia_id: 'F1' }));
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ pode_gerar_de_novo: false })], 50, null)));
+    render(<DialogGaleria mlItemId="MLB1" codigoPai="0001" open onOpenChange={() => undefined} isAdmin />);
+    await userEvent.click(await screen.findByRole('tab', { name: /Gerar/ }));
+    expect(await screen.findByAltText('Preto · missão 1')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Gerar imagens' })).toBeNull();
+  });
+
+  it('sem roteiro aprovado nem imagem pendente não há aba Gerar', async () => {
+    api.montarFicha.mockResolvedValue(ok(ficha(['Preto'])));
+    api.lerRoteiro.mockResolvedValue(ok({ roteiro: null, moda: false, familia_id: 'F1' }));
+    api.listarImagens.mockResolvedValue(ok(lista([], 50, null)));
     render(<DialogGaleria mlItemId="MLB1" codigoPai="0001" open onOpenChange={() => undefined} isAdmin />);
     await screen.findByRole('tab', { name: /Roteiro/ });
     expect(screen.queryByRole('tab', { name: /Gerar/ })).toBeNull();

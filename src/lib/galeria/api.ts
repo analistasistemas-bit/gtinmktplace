@@ -85,13 +85,18 @@ export interface ImagemGaleria {
   alertas: AlertaImagem[] | null; erro: string | null;
   /** Já confirmada (cobrada): a tela não confirma de novo. */
   exibida: boolean; url: string | null;
-  /** Regra da RPC calculada no servidor: false com 3 gerações válidas ou geração aberta na (cor, missão). */
+  /** Regra da RPC calculada no servidor: false com 3 gerações válidas, geração aberta ou fora do roteiro aprovado. */
   pode_gerar_de_novo: boolean;
+  /** Preço congelado no pedido desta imagem (o que a RPC cobra ao exibir); recorte = 0. */
+  unit_cents: number | null;
 }
-export interface RespostaListar { roteiro_id: string | null; unit_cents: number; imagens: ImagemGaleria[] }
+/** Roteiro aprovado do anúncio (mesmo com rascunho mais novo por cima). */
+export interface RoteiroAprovado { id: string; versao: number; familia_id: string; moda: boolean; missoes_ativas: number[] }
+/** `unit_cents` = preço do mês, só para pedido novo. Imagens: as do roteiro aprovado + toda cena não exibida do anúncio. */
+export interface RespostaListar { roteiro: RoteiroAprovado | null; unit_cents: number; imagens: ImagemGaleria[] }
 
-export const listarImagens = (mlItemId: string, roteiroVersao: number) =>
-  chamar<RespostaListar>('galeria-imagens', { acao: 'listar', ml_item_id: mlItemId, roteiro_versao: roteiroVersao });
+export const listarImagens = (mlItemId: string) =>
+  chamar<RespostaListar>('galeria-imagens', { acao: 'listar', ml_item_id: mlItemId });
 export const confirmarExibicao = (mlItemId: string, imagemIds: string[]) =>
   chamar<{ cobradas: number }>('galeria-imagens', { acao: 'confirmar_exibicao', ml_item_id: mlItemId, imagem_ids: imagemIds });
 export const reportarInvalida = (mlItemId: string, imagemId: string) =>

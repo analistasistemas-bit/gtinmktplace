@@ -8,7 +8,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import {
-  ERROS_DE_RECARGA, lerRoteiro, mensagemErro, montarFicha,
+  ERROS_DE_RECARGA, lerRoteiro, listarImagens, mensagemErro, montarFicha,
   type Ficha, type Res, type RespostaRoteiro,
 } from '@/lib/galeria/api';
 import { PassoFatos } from './passo-fatos';
@@ -31,6 +31,8 @@ export function DialogGaleria({ mlItemId, codigoPai, open, onOpenChange, isAdmin
   const abertura = useRef(0);
   // `ler` respondeu nesta abertura: só então a aba Roteiro sabe se há roteiro vigente e pode oferecer "Criar roteiro".
   const [roteiroLido, setRoteiroLido] = useState(false);
+  // Galeria com algo a mostrar: roteiro aprovado do anúncio (mesmo com rascunho por cima) ou cena não exibida.
+  const [temGaleria, setTemGaleria] = useState(false);
 
   const carregar = useCallback(async () => {
     const id = ++abertura.current;
@@ -51,12 +53,16 @@ export function DialogGaleria({ mlItemId, codigoPai, open, onOpenChange, isAdmin
       setRoteiroLido(true);
       if (l.dados.aviso) setErro(mensagemErro(l.dados.aviso));
     } else setErro(mensagemErro(l.erro));
+    // Depois do `ler`, na mesma abertura: só leitura, nunca cobra.
+    const g = await listarImagens(mlItemId);
+    if (id !== abertura.current) return;
+    setTemGaleria(g.ok && (!!g.dados.roteiro || g.dados.imagens.some((i) => i.origem === 'gerador' && !i.exibida)));
     setCarregando(false);
   }, [mlItemId]);
 
   useEffect(() => {
     if (!open) return;
-    setFicha(null); setResp(null); setModa(null); setPasso('fatos');
+    setFicha(null); setResp(null); setModa(null); setPasso('fatos'); setTemGaleria(false);
     void carregar();
     // Contador, não nó do DOM: invalidar a abertura em curso é exatamente o que a limpeza quer.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -83,8 +89,8 @@ export function DialogGaleria({ mlItemId, codigoPai, open, onOpenChange, isAdmin
     void carregar();
   }, [carregar]);
 
-  // Passo 3 só com roteiro aprovado (a edge recusa os demais com roteiro_nao_aprovado).
-  const podeGerar = resp?.roteiro.status === 'aprovado';
+  // Passo 3 com roteiro aprovado ou imagem pendente de exibição (pedido novo continua exigindo aprovado vigente).
+  const podeGerar = resp?.roteiro.status === 'aprovado' || temGaleria;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -112,7 +118,7 @@ export function DialogGaleria({ mlItemId, codigoPai, open, onOpenChange, isAdmin
             {passo === 'fatos'
               ? <PassoFatos mlItemId={mlItemId} ficha={ficha} moda={moda} aoMudar={aoMudarFicha} />
               : passo === 'gerar' && podeGerar
-                ? <PassoGerar mlItemId={mlItemId} ficha={ficha} resp={resp} aoRecarregar={() => void carregar()} aoVoltarRoteiro={() => setPasso('roteiro')} />
+                ? <PassoGerar mlItemId={mlItemId} ficha={ficha} aoRecarregar={() => void carregar()} aoVoltarRoteiro={() => setPasso('roteiro')} />
                 : <PassoRoteiro mlItemId={mlItemId} ficha={ficha} isAdmin={isAdmin} resp={resp} podeCriar={roteiroLido}
                 aoResposta={(r) => { setResp(r); setModa(r.roteiro.moda); setErro(null); }} aoFalhar={falhou} aoAprovar={roteiroAprovado} />}
           </>

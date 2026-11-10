@@ -1,15 +1,16 @@
 // ADR-0201 (Galeria da cor por IA), Task 10: imagens geradas na tela. Chamada pela tela com o JWT do operador
 // (verify_jwt = true). Ações:
-// - listar {ml_item_id, roteiro_versao}: imagens do roteiro daquela versão da família vigente, com URL assinada, preço do
-//   mês (mesma fonte do galeria-gerar) e se "Gerar de novo" ainda cabe. Nunca cobra nem grava.
+// - listar {ml_item_id}: roteiro aprovado do anúncio e as imagens que ainda importam (as dele + toda cena produzida não
+//   exibida, de qualquer família), com URL assinada, o preço congelado no pedido de cada uma, o preço do mês (só para
+//   pedido novo; mesma fonte do galeria-gerar) e se "Gerar de novo" ainda cabe. Nunca cobra nem grava.
 // - confirmar_exibicao {ml_item_id, imagem_ids}: o navegador exibiu e validou a imagem → `galeria_confirmar_exibicao`
 //   (cobrança = exibição, Task 2; idempotente). Operação histórica: só exige o mesmo anúncio.
 // - reportar_invalida {ml_item_id, imagem_id}: imagem branca/ilegível no navegador → `falhou` sem cobrança (falha
-//   técnica não gasta vaga). Só linha `gerada`, `gerador`, ainda não exibida, da família vigente deste anúncio e desta org.
+//   técnica não gasta vaga). Só linha `gerada`, `gerador`, ainda não exibida, deste anúncio (qualquer família) e desta org.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
-import { carregarAnuncio, resolverAnuncio } from '../_shared/galeria/anuncio.ts';
+import { resolverAnuncio } from '../_shared/galeria/anuncio.ts';
 import { bloqueioDaVaga, precoDoMes, type LinhaVaga } from '../_shared/galeria/pedido.ts';
 import { missoesDisponiveis } from '../_shared/galeria/regras.ts';
 
@@ -20,8 +21,11 @@ const URL_SEG = 600;
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
+// Produzidas e cobráveis ao exibir; descartada/desatualizada de roteiros antigos não voltam à tela.
+const PENDENTES_DE_EXIBICAO = new Set(['gerada', 'aprovada']);
+
 interface LinhaImagem extends LinhaVaga {
-  id: string; cena_path: string | null; referencia_id: string | null; alertas: unknown; erro: string | null; entregue_em: string | null;
+  id: string; pedido_id: string; cena_path: string | null; referencia_id: string | null; alertas: unknown; erro: string | null; entregue_em: string | null;
 }
 
 Deno.serve(async (req) => {
@@ -58,48 +62,53 @@ Deno.serve(async (req) => {
       if (!id) return json({ error: 'pedido_invalido' }, 400);
       const r = await resolverAnuncio(admin, orgId, mlItemId);
       if ('erro' in r) return json({ error: r.erro }, 409);
-      const a = await carregarAnuncio(admin, orgId, r.anuncioId);
-      if ('erro' in a) return json({ error: a.erro }, 409);
-      // Um único update condicional, só na família vigente; `entregue_em is null` impede derrubar imagem já cobrada.
+      // Um único update condicional (operação histórica: mesmo anúncio, qualquer família); `entregue_em is null`
+      // impede derrubar imagem já cobrada.
       const { data, error } = await admin.from('galeria_imagens')
         .update({ status: 'falhou', erro: 'imagem_invalida', atualizado_em: new Date().toISOString() })
-        .eq('org_id', orgId).eq('anuncio_externo_id', a.anuncioId).eq('familia_id', a.vigente.id).eq('id', id)
+        .eq('org_id', orgId).eq('anuncio_externo_id', r.anuncioId).eq('id', id)
         .eq('origem', 'gerador').eq('status', 'gerada').is('entregue_em', null)
         .select('id');
       if (error) throw new Error(error.message);
       return json({ reportada: (data ?? []).length > 0 });
     }
 
-    // listar
-    const versao = Number.isInteger(body.roteiro_versao) ? body.roteiro_versao as number : null;
-    if (versao === null) return json({ error: 'pedido_invalido' }, 400);
+    // listar (histórico: o anúncio da linha, qualquer família)
     const r = await resolverAnuncio(admin, orgId, mlItemId);
     if ('erro' in r) return json({ error: r.erro }, 409);
-    const a = await carregarAnuncio(admin, orgId, r.anuncioId);
-    if ('erro' in a) return json({ error: a.erro }, 409);
     const { unitCents } = await precoDoMes(admin, orgId);
 
-    // A versão é numerada por família: a mesma versão pode existir em famílias anteriores do anúncio.
-    const { data: rot, error: eR } = await admin.from('galeria_roteiros').select('id, moda')
-      .eq('org_id', orgId).eq('anuncio_externo_id', a.anuncioId).eq('familia_id', a.vigente.id).eq('versao', versao).maybeSingle();
+    // O aprovado do anúncio (índice único), mesmo com rascunho mais novo por cima ou família nova publicada.
+    const { data: rot, error: eR } = await admin.from('galeria_roteiros').select('id, versao, familia_id, moda, conteudo')
+      .eq('org_id', orgId).eq('anuncio_externo_id', r.anuncioId).eq('status', 'aprovado').maybeSingle();
     if (eR) throw new Error(eR.message);
-    if (!rot) return json({ roteiro_id: null, unit_cents: unitCents, imagens: [] });
 
     // Todas as linhas do anúncio: a geração aberta de qualquer roteiro bloqueia a (cor, missão), como na RPC.
     const { data: todas, error: eI } = await admin.from('galeria_imagens')
-      .select('id, roteiro_id, cor, missao, geracao, origem, status, cena_path, referencia_id, alertas, erro, entregue_em')
-      .eq('org_id', orgId).eq('anuncio_externo_id', a.anuncioId);
+      .select('id, pedido_id, roteiro_id, cor, missao, geracao, origem, status, cena_path, referencia_id, alertas, erro, entregue_em')
+      .eq('org_id', orgId).eq('anuncio_externo_id', r.anuncioId);
     if (eI) throw new Error(eI.message);
     const linhas = (todas ?? []) as LinhaImagem[];
-    const doRoteiro = linhas.filter((l) => l.roteiro_id === rot.id)
+    // Que ainda importam: todas do roteiro aprovado + toda cena produzida ainda não exibida (qualquer família/roteiro),
+    // para que exibição e cobrança aconteçam mesmo depois de trocar a família ou abrir um rascunho.
+    const mostrar = linhas.filter((l) => (rot && l.roteiro_id === rot.id)
+      || (l.origem === 'gerador' && PENDENTES_DE_EXIBICAO.has(l.status) && l.entregue_em === null))
       .sort((x, y) => x.cor.localeCompare(y.cor) || x.missao - y.missao || x.geracao - y.geracao);
 
-    const refIds = [...new Set(doRoteiro.filter((l) => l.origem === 'recorte' && l.referencia_id).map((l) => l.referencia_id!))];
+    const refIds = [...new Set(mostrar.filter((l) => l.origem === 'recorte' && l.referencia_id).map((l) => l.referencia_id!))];
     const refPath = new Map<string, string>();
     if (refIds.length > 0) {
       const { data: refs, error: eRef } = await admin.from('galeria_referencias').select('id, path').eq('org_id', orgId).in('id', refIds);
       if (eRef) throw new Error(eRef.message);
       for (const x of (refs ?? []) as Array<{ id: string; path: string }>) refPath.set(x.id, x.path);
+    }
+    // Preço da exibição = o congelado no pedido (é o que a RPC cobra), nunca o do mês.
+    const pedidoIds = [...new Set(mostrar.map((l) => l.pedido_id).filter(Boolean))];
+    const precoPedido = new Map<string, number>();
+    if (pedidoIds.length > 0) {
+      const { data: peds, error: eP } = await admin.from('galeria_pedidos').select('id, unit_cents').eq('org_id', orgId).in('id', pedidoIds);
+      if (eP) throw new Error(eP.message);
+      for (const x of (peds ?? []) as Array<{ id: string; unit_cents: number }>) precoPedido.set(x.id, Number(x.unit_cents));
     }
     const assinar = async (path: string | null | undefined) => {
       if (!path) return null;
@@ -107,14 +116,24 @@ Deno.serve(async (req) => {
       return error ? null : data?.signedUrl ?? null;
     };
 
-    const usaGerador = new Map(missoesDisponiveis(rot.moda === true, ['frente', 'costas', 'lateral']).map((m) => [m.missao as number, m.usaGerador]));
-    const imagens = await Promise.all(doRoteiro.map(async (l) => ({
+    const moda = rot?.moda === true;
+    const usaGerador = new Map(missoesDisponiveis(moda, ['frente', 'costas', 'lateral']).map((m) => [m.missao as number, m.usaGerador]));
+    const imagens = await Promise.all(mostrar.map(async (l) => ({
       id: l.id, cor: l.cor, missao: l.missao, geracao: l.geracao, origem: l.origem, status: l.status,
       alertas: l.alertas ?? null, erro: l.erro, exibida: l.entregue_em !== null,
+      unit_cents: l.origem === 'gerador' ? precoPedido.get(l.pedido_id) ?? null : 0,
       url: await assinar(l.origem === 'recorte' ? refPath.get(l.referencia_id ?? '') : l.cena_path),
-      pode_gerar_de_novo: l.origem === 'gerador' && bloqueioDaVaga(linhas, rot.id, l.cor, l.missao, usaGerador.get(l.missao) ?? true) === null,
+      // Gerar novo só pelo roteiro aprovado (o galeria-gerar ainda exige família vigente).
+      pode_gerar_de_novo: !!rot && l.roteiro_id === rot.id && l.origem === 'gerador'
+        && bloqueioDaVaga(linhas, rot.id, l.cor, l.missao, usaGerador.get(l.missao) ?? true) === null,
     })));
-    return json({ roteiro_id: rot.id, unit_cents: unitCents, imagens });
+    const missoesAtivas = rot
+      ? ((rot.conteudo as { missoes?: Array<{ missao: number; ativa: boolean }> })?.missoes ?? []).filter((m) => m.ativa).map((m) => m.missao).sort((x, y) => x - y)
+      : [];
+    return json({
+      roteiro: rot ? { id: rot.id, versao: rot.versao, familia_id: rot.familia_id, moda, missoes_ativas: missoesAtivas } : null,
+      unit_cents: unitCents, imagens,
+    });
   } catch (e) {
     console.error('[galeria-imagens]', (e as Error).message);
     return json({ error: 'falha_interna' }, 500);

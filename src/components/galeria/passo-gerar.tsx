@@ -1,7 +1,9 @@
-// ADR-0201 (Task 10): passo "Gerar" — depois do roteiro aprovado. O operador escolhe cores e missões, confirma
-// "N imagens · R$ X" com o preço vigente do servidor (recortes grátis fora do total) e acompanha as imagens.
-// Cobrança = exibição: a confirmação só sai depois que o <img> carregou e passou em `imagemValida` (no cartão).
-// Polling de 5 s só enquanto houver linha aberta ou verificação pendente; para ao sair do passo/fechar o diálogo.
+// ADR-0201 (Task 10): passo "Gerar". Mostra as imagens que ainda importam no anúncio (as do roteiro aprovado + toda
+// cena produzida e não exibida, de qualquer família) e, com roteiro aprovado da família vigente, o pedido novo:
+// cores e missões, confirmação "N imagens · R$ X" com o preço do mês (recortes grátis fora do total).
+// Cobrança = exibição: a confirmação só sai depois que o <img> carregou e passou em `imagemValida` (no cartão); cada
+// imagem mostra o preço congelado no pedido dela, que é o que a RPC cobra. Polling de 5 s enquanto houver linha
+// aberta, verificação pendente, carga falha ou confirmação pendente; para ao sair do passo/fechar o diálogo.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -10,15 +12,13 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { fmtBRL } from '@/lib/formato';
 import {
   confirmarExibicao, gerarImagens, listarImagens, mensagemErro, reportarInvalida,
-  type Ficha, type ImagemGaleria, type RespostaListar, type RespostaRoteiro,
+  type Ficha, type ImagemGaleria, type RespostaListar,
 } from '@/lib/galeria/api';
 import { missoesDisponiveis, missoesSugeridas } from '../../../supabase/functions/_shared/galeria/regras';
 import { CartaoImagem } from './cartao-imagem';
 
 const POLLING_MS = 5000;
 const ABERTOS = new Set(['pendente', 'submetendo', 'gerando']);
-const precisaPolling = (imgs: ImagemGaleria[]) =>
-  imgs.some((i) => ABERTOS.has(i.status) || (i.status === 'gerada' && i.origem === 'gerador' && i.alertas === null));
 
 interface Alvo { cores: string[]; missoes: number[] }
 interface Aviso { texto: string; detalhe?: string; acao?: 'tentar' | 'recarregar' | 'roteiro'; bloqueia: boolean }
@@ -33,23 +33,18 @@ function detalheRecusa(c: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
-export function PassoGerar({ mlItemId, ficha, resp, aoRecarregar, aoVoltarRoteiro }: {
-  mlItemId: string; ficha: Ficha;
-  /** Roteiro aprovado (o diálogo só mostra este passo com ele). */
-  resp: RespostaRoteiro;
-  aoRecarregar: () => void; aoVoltarRoteiro: () => void;
+export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro }: {
+  mlItemId: string; ficha: Ficha; aoRecarregar: () => void; aoVoltarRoteiro: () => void;
 }) {
-  const { roteiro } = resp;
-  const info = useMemo(() => new Map(missoesDisponiveis(roteiro.moda, ['frente', 'costas', 'lateral']).map((m) => [m.missao as number, m])), [roteiro.moda]);
-  const ativas = useMemo(() => roteiro.conteudo.missoes.filter((m) => m.ativa && info.has(m.missao)).map((m) => m.missao).sort((a, b) => a - b),
-    [roteiro.conteudo.missoes, info]);
+  const [lista, setLista] = useState<RespostaListar | null>(null);
+  const roteiro = lista?.roteiro ?? null;
+  const moda = roteiro?.moda === true;
+  const info = useMemo(() => new Map(missoesDisponiveis(moda, ['frente', 'costas', 'lateral']).map((m) => [m.missao as number, m])), [moda]);
+  const ativas = useMemo(() => (roteiro?.missoes_ativas ?? []).filter((m) => info.has(m)), [roteiro?.missoes_ativas, info]);
 
   const [cores, setCores] = useState<string[]>(ficha.cores);
-  const [missoes, setMissoes] = useState<number[]>(() => {
-    const sugeridas = new Set<number>(missoesSugeridas(ficha.cores.length));
-    return ativas.filter((m) => sugeridas.has(m));
-  });
-  const [lista, setLista] = useState<RespostaListar | null>(null);
+  // Pré-marcadas por `missoesSugeridas` quando o roteiro aprovado chega (null = ainda não chegou).
+  const [missoes, setMissoes] = useState<number[] | null>(null);
   const [unit, setUnit] = useState<number | null>(null);
   const [confirmando, setConfirmando] = useState<Alvo | null>(null);
   const [aviso, setAviso] = useState<Aviso | null>(null);
@@ -59,16 +54,39 @@ export function PassoGerar({ mlItemId, ficha, resp, aoRecarregar, aoVoltarRoteir
   const [rodada, setRodada] = useState(0);
   // Um pedido_id por confirmação: a repetição (ml_indisponivel) reusa; nova confirmação gera outro.
   const pedido = useRef<string | null>(null);
-  // URL assinada muda a cada listar: a primeira fica, senão o <img> recarrega e o onLoad dispara de novo.
+  // URL assinada muda a cada listar: a primeira fica (senão o <img> recarrega a cada poll); carga falha a descarta.
   const urls = useRef(new Map<string, string>());
-  // Imagens já confirmadas ou reportadas nesta abertura: no máximo uma chamada por imagem.
-  const tratadas = useRef(new Set<string>());
+  // Passaram em `imagemValida`: o poll repete a confirmação até o servidor dizer `exibida` (RPC idempotente).
+  const validadas = useRef(new Set<string>());
+  const emVoo = useRef(new Set<string>());
+  const reportadas = useRef(new Set<string>());
+
+  useEffect(() => {
+    if (!roteiro || missoes !== null) return;
+    const sugeridas = new Set<number>(missoesSugeridas(ficha.cores.length));
+    setMissoes(ativas.filter((m) => sugeridas.has(m)));
+  }, [roteiro, missoes, ativas, ficha.cores.length]);
+
+  // Nova rodada do `listar` daqui a 5 s (nunca em laço imediato: com CORS ausente toda carga falha).
+  const proxima = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(proxima.current), []);
+  const agendarRodada = useCallback(() => {
+    if (proxima.current !== undefined) return;
+    proxima.current = setTimeout(() => { proxima.current = undefined; setRodada((n) => n + 1); }, POLLING_MS);
+  }, []);
+
+  const confirmar = useCallback((id: string) => {
+    if (emVoo.current.has(id)) return;
+    emVoo.current.add(id);
+    // Rede/5xx: o listar seguinte repete (a imagem segue `validada` e não `exibida`).
+    void confirmarExibicao(mlItemId, [id]).then((r) => { if (!r.ok) agendarRodada(); }).finally(() => emVoo.current.delete(id));
+  }, [mlItemId, agendarRodada]);
 
   useEffect(() => {
     let vivo = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const rodar = async () => {
-      const r = await listarImagens(mlItemId, roteiro.versao);
+      const r = await listarImagens(mlItemId);
       if (!vivo) return;
       if (!r.ok) {
         setErroLista(mensagemErro(r.erro));
@@ -83,31 +101,36 @@ export function PassoGerar({ mlItemId, ficha, resp, aoRecarregar, aoVoltarRoteir
       });
       setLista({ ...r.dados, imagens });
       setUnit(r.dados.unit_cents);
-      if (precisaPolling(imagens)) timer = setTimeout(rodar, POLLING_MS);
+      const pendentes = imagens.filter((i) => !i.exibida && validadas.current.has(i.id));
+      pendentes.forEach((i) => confirmar(i.id));
+      const precisa = imagens.some((i) => ABERTOS.has(i.status) || (i.status === 'gerada' && i.origem === 'gerador' && i.alertas === null))
+        || pendentes.length > 0;
+      if (precisa) timer = setTimeout(rodar, POLLING_MS);
     };
     void rodar();
     return () => { vivo = false; clearTimeout(timer); };
-  }, [mlItemId, roteiro.versao, rodada]);
+  }, [mlItemId, rodada, confirmar]);
 
-  const exibida = useCallback((id: string) => {
-    if (tratadas.current.has(id)) return;
-    tratadas.current.add(id);
-    void confirmarExibicao(mlItemId, [id]).then((r) => { if (!r.ok) tratadas.current.delete(id); });
-  }, [mlItemId]);
+  const exibida = useCallback((id: string) => { validadas.current.add(id); confirmar(id); }, [confirmar]);
 
   const invalida = useCallback((id: string) => {
-    if (tratadas.current.has(id)) return;
-    tratadas.current.add(id);
+    if (reportadas.current.has(id)) return;
+    reportadas.current.add(id);
     void reportarInvalida(mlItemId, id).then(() => setRodada((n) => n + 1));
   }, [mlItemId]);
 
+  const falhaCarga = useCallback((id: string) => {
+    // O próximo listar traz URL assinada nova; cada nova falha agenda outra tentativa.
+    urls.current.delete(id);
+    agendarRodada();
+  }, [agendarRodada]);
+
   /** Nova seleção = nova confirmação: limpa recusa e pedido. */
   const abrir = (alvo: Alvo | null) => { pedido.current = null; setAviso(null); setConfirmando(alvo); };
-  const alternar = (lista: string[] | number[], v: string | number, marcar: boolean) =>
-    marcar ? [...lista, v] : (lista as Array<string | number>).filter((x) => x !== v);
+  const alternar = <T,>(xs: T[], v: T, marcar: boolean) => (marcar ? [...xs, v] : xs.filter((x) => x !== v));
 
   async function enviar() {
-    if (!confirmando || unit === null) return;
+    if (!confirmando || unit === null || !roteiro) return;
     pedido.current ??= crypto.randomUUID();
     setOcupado(true);
     const r = await gerarImagens(mlItemId, {
@@ -139,39 +162,52 @@ export function PassoGerar({ mlItemId, ficha, resp, aoRecarregar, aoVoltarRoteir
     return { geradas: alvo.cores.length * comGerador, recortes: alvo.cores.length * (alvo.missoes.length - comGerador) };
   };
   const resumo = confirmando && unit !== null ? conta(confirmando) : null;
+  // Pedido novo só pelo roteiro aprovado da família vigente (o galeria-gerar recusa os demais).
+  const podePedir = !!roteiro && roteiro.familia_id === ficha.familia_id;
+  const sel = missoes ?? [];
 
   return (
     <div className="space-y-4">
-      <div className="space-y-2 rounded border p-3 text-sm">
-        <p className="font-medium">Cores</p>
-        <div className="flex flex-wrap gap-3">
-          {ficha.cores.map((c) => (
-            <span key={c} className="flex items-center gap-2">
-              <Checkbox aria-label={`Cor ${c}`} checked={cores.includes(c)}
-                onCheckedChange={(v) => { setCores(alternar(cores, c, v === true) as string[]); abrir(null); }} />{c}
-            </span>
-          ))}
-        </div>
-        <p className="font-medium">Missões</p>
-        <div className="grid gap-1 sm:grid-cols-2">
-          {ativas.map((n) => (
-            <span key={n} className="flex items-center gap-2">
-              <Checkbox aria-label={`Missão ${n}`} checked={missoes.includes(n)}
-                onCheckedChange={(v) => { setMissoes((alternar(missoes, n, v === true) as number[]).sort((a, b) => a - b)); abrir(null); }} />
-              {n}. {info.get(n)?.nome}{info.get(n)?.usaGerador === false && <span className="text-xs text-muted-foreground">(recorte grátis)</span>}
-            </span>
-          ))}
-        </div>
-        <p className="text-xs text-muted-foreground">
-          {unit === null ? 'Carregando o preço…' : `${fmtBRL(unit / 100)} por imagem gerada, cobrada quando aparece na tela.`}
+      {lista && !roteiro && (
+        <p className="text-sm text-muted-foreground">Aprove o roteiro para gerar imagens novas.</p>
+      )}
+      {roteiro && !podePedir && (
+        <p role="alert" className="rounded border border-amber-500/40 bg-amber-500/10 p-2 text-sm">
+          O roteiro aprovado é de uma família anterior deste anúncio. Crie e aprove o roteiro da família atual para gerar imagens novas.
         </p>
-        <Button disabled={cores.length === 0 || missoes.length === 0 || unit === null}
-          onClick={() => abrir({ cores: ficha.cores.filter((c) => cores.includes(c)), missoes })}>
-          Gerar imagens
-        </Button>
-      </div>
+      )}
+      {podePedir && (
+        <div className="space-y-2 rounded border p-3 text-sm">
+          <p className="font-medium">Cores</p>
+          <div className="flex flex-wrap gap-3">
+            {ficha.cores.map((c) => (
+              <span key={c} className="flex items-center gap-2">
+                <Checkbox aria-label={`Cor ${c}`} checked={cores.includes(c)}
+                  onCheckedChange={(v) => { setCores(alternar(cores, c, v === true)); abrir(null); }} />{c}
+              </span>
+            ))}
+          </div>
+          <p className="font-medium">Missões</p>
+          <div className="grid gap-1 sm:grid-cols-2">
+            {ativas.map((n) => (
+              <span key={n} className="flex items-center gap-2">
+                <Checkbox aria-label={`Missão ${n}`} checked={sel.includes(n)}
+                  onCheckedChange={(v) => { setMissoes(alternar(sel, n, v === true).sort((a, b) => a - b)); abrir(null); }} />
+                {n}. {info.get(n)?.nome}{info.get(n)?.usaGerador === false && <span className="text-xs text-muted-foreground">(recorte grátis)</span>}
+              </span>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {unit === null ? 'Carregando o preço…' : `Pedido novo: ${fmtBRL(unit / 100)} por imagem gerada (preço do mês), cobrada quando aparece na tela.`}
+          </p>
+          <Button disabled={cores.length === 0 || sel.length === 0 || unit === null}
+            onClick={() => abrir({ cores: ficha.cores.filter((c) => cores.includes(c)), missoes: sel })}>
+            Gerar imagens
+          </Button>
+        </div>
+      )}
 
-      {confirmando && resumo && (
+      {podePedir && confirmando && resumo && (
         <div className="space-y-2 rounded border p-3 text-sm">
           <p className="font-medium">
             {resumo.geradas} {resumo.geradas === 1 ? 'imagem' : 'imagens'} · {fmtBRL((resumo.geradas * unit!) / 100)}
@@ -202,8 +238,8 @@ export function PassoGerar({ mlItemId, ficha, resp, aoRecarregar, aoVoltarRoteir
 
       {lista && lista.imagens.length > 0 && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {lista.imagens.map((i) => (
-            <CartaoImagem key={i.id} imagem={i} onExibida={exibida} onInvalida={invalida}
+          {lista.imagens.map((i: ImagemGaleria) => (
+            <CartaoImagem key={i.id} imagem={i} onExibida={exibida} onInvalida={invalida} onFalhaCarga={falhaCarga}
               onGerarDeNovo={(x) => abrir({ cores: [x.cor], missoes: [x.missao] })} />
           ))}
         </div>

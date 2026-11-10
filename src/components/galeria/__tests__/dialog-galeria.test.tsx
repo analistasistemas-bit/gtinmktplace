@@ -8,6 +8,7 @@ import type { Fato, Ficha, RespostaRoteiro, Res } from '@/lib/galeria/api';
 const api = vi.hoisted(() => ({
   montarFicha: vi.fn(), lerRoteiro: vi.fn(), confirmarFato: vi.fn(), descartarFato: vi.fn(), manterCadastro: vi.fn(),
   corrigirCadastro: vi.fn(), enviarVista: vi.fn(), criarRoteiro: vi.fn(), salvarRoteiro: vi.fn(), aprovarRoteiro: vi.fn(),
+  listarImagens: vi.fn(),
 }));
 vi.mock('@/lib/galeria/api', async (orig) => ({ ...(await orig<typeof import('@/lib/galeria/api')>()), ...api }));
 vi.mock('@/lib/storage', () => ({ signedUrl: vi.fn(async () => 'https://x.test/etiqueta.jpg') }));
@@ -42,6 +43,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   api.montarFicha.mockResolvedValue(ok(ficha([])));
   api.lerRoteiro.mockResolvedValue(ok({ roteiro: null, moda: false, familia_id: 'F1' }));
+  api.listarImagens.mockResolvedValue(ok({ roteiro: null, unit_cents: 0, imagens: [] }));
 });
 
 describe('DialogGaleria — identidade', () => {

@@ -45,15 +45,18 @@ beforeEach(() => {
     galeria_roteiros: [
       // Versão 2 existe nas duas famílias do mesmo anúncio: `listar` usa a da família vigente.
       { id: 'rotA2', org_id: 'org', anuncio_externo_id: 'an1', familia_id: 'famA', versao: 2, status: 'desatualizado' },
-      { id: 'rot2', org_id: 'org', anuncio_externo_id: 'an1', familia_id: 'famB', versao: 2, status: 'aprovado' },
+      { id: 'rot2', org_id: 'org', anuncio_externo_id: 'an1', familia_id: 'famB', versao: 2, status: 'aprovado', moda: false,
+        conteudo: { missoes: [1, 2, 3, 4, 7].map((missao) => ({ missao, ativa: missao !== 4 })) } },
     ],
     galeria_referencias: [{ id: 'refR', org_id: 'org', anuncio_externo_id: 'an1', path: 'org/galeria-ia/famB/referencias/rosa.jpg' }],
     galeria_imagens: [],
+    galeria_pedidos: [{ id: 'p1', org_id: 'org', anuncio_externo_id: 'an1', unit_cents: 50 }],
     platform_image_deliveries: [],
   }
   fake = fakeAdmin(db)
   f.fake = fake
-  fake.respostasRpc.platform_resolve_terms = () => ({ id: 'termos1', image_unit_cents: 50 })
+  // Mês a 80, pedido congelado a 50: a imagem mostra 50, a confirmação de pedido novo 80.
+  fake.respostasRpc.platform_resolve_terms = () => ({ id: 'termos1', image_unit_cents: 80 })
   // Espelho de galeria_confirmar_exibicao (migration 20261109093335) — mesmo WHERE, linha a linha.
   fake.respostasRpc.galeria_confirmar_exibicao = ({ p_org, p_anuncio, p_ids }) => {
     let n = 0
@@ -77,28 +80,58 @@ const chamar = async (body: Linha) => {
 const confirmar = (ids: string[], ml = 'MLB1') => chamar({ acao: 'confirmar_exibicao', ml_item_id: ml, imagem_ids: ids })
 
 describe('galeria-imagens — listar', () => {
-  it('devolve imagens do roteiro da família vigente com URL assinada e o preço do mês, sem gravar nada', async () => {
+  const listar = (ml = 'MLB1') => chamar({ acao: 'listar', ml_item_id: ml })
+
+  it('roteiro aprovado do anúncio + imagens com URL assinada, preço do pedido e preço do mês, sem gravar nada', async () => {
     db.galeria_imagens.push(
       img(1),
-      img(2, { roteiro_id: 'rotA2', familia_id: 'famA' }), // mesma versão, família anterior: fora da lista
       img(3, { missao: 7, origem: 'recorte', cena_path: null, custo_usd: null }),
+      img(4, { anuncio_externo_id: 'an2' }), // outra partição: fora
     )
-    const r = await chamar({ acao: 'listar', ml_item_id: 'MLB1', roteiro_versao: 2 })
+    const r = await listar()
     expect(r.status).toBe(200)
-    expect(r.body.unit_cents).toBe(50)
+    expect(r.body.unit_cents).toBe(80) // mês: só para pedido novo
+    expect(r.body.roteiro).toEqual({ id: 'rot2', versao: 2, familia_id: 'famB', moda: false, missoes_ativas: [1, 2, 3, 7] })
     const imgs = r.body.imagens as Linha[]
     expect(imgs.map((i) => i.id)).toEqual([U(1), U(3)])
-    expect(imgs[0]).toMatchObject({ url: `https://signed/org/galeria-ia/famB/cenas/1.png`, exibida: false, origem: 'gerador' })
+    expect(imgs[0]).toMatchObject({ url: 'https://signed/org/galeria-ia/famB/cenas/1.png', exibida: false, origem: 'gerador', unit_cents: 50 })
     expect(imgs[1]).toMatchObject({ url: 'https://signed/org/galeria-ia/famB/referencias/rosa.jpg', origem: 'recorte' })
     expect(fake.escritas).toEqual([])
     expect(fake.rpcs.map((x) => x.nome)).not.toContain('galeria_confirmar_exibicao')
     expect(db.galeria_imagens.every((i) => i.entregue_em === null)).toBe(true)
   })
 
-  it('sem condição comercial → preço 0 (mesma regra do galeria-gerar)', async () => {
+  it('histórico: cenas da família A (B publicada depois) não exibidas aparecem e cobram 1', async () => {
+    db.galeria_imagens.push(
+      img(1, { familia_id: 'famA', roteiro_id: 'rotA2' }),
+      img(2, { familia_id: 'famA', roteiro_id: 'rotA2', entregue_em: '2026-11-09T10:00:00Z' }), // já cobrada: fora
+      img(5, { familia_id: 'famA', roteiro_id: 'rotA2', status: 'falhou' }), // falhou: fora
+    )
+    const imgs = (await listar()).body.imagens as Linha[]
+    expect(imgs.map((i) => i.id)).toEqual([U(1)])
+    expect(imgs[0].pode_gerar_de_novo).toBe(false) // gerar novo só pelo roteiro aprovado
+    expect((await confirmar([U(1)])).body).toEqual({ cobradas: 1 })
+  })
+
+  it('v2 aprovado + rascunho v3: o roteiro é o v2 e as imagens do v2 aparecem e cobram', async () => {
+    db.galeria_roteiros.push({ id: 'rot3', org_id: 'org', anuncio_externo_id: 'an1', familia_id: 'famB', versao: 3, status: 'rascunho', moda: false, conteudo: { missoes: [] } })
+    db.galeria_imagens.push(img(1))
+    const r = await listar()
+    expect((r.body.roteiro as Linha).id).toBe('rot2')
+    expect((r.body.imagens as Linha[]).map((i) => i.id)).toEqual([U(1)])
+    expect((await confirmar([U(1)])).body).toEqual({ cobradas: 1 })
+  })
+
+  it('sem roteiro aprovado nem imagem pendente → roteiro null e lista vazia', async () => {
+    db.galeria_roteiros = db.galeria_roteiros.filter((x) => x.status !== 'aprovado')
+    fake = fakeAdmin(db); f.fake = fake
+    fake.respostasRpc.platform_resolve_terms = () => ({ id: 'termos1', image_unit_cents: 80 })
+    expect((await listar()).body).toMatchObject({ roteiro: null, imagens: [], unit_cents: 80 })
+  })
+
+  it('sem condição comercial → preço do mês 0 (mesma regra do galeria-gerar)', async () => {
     fake.respostasRpc.platform_resolve_terms = () => null
-    const r = await chamar({ acao: 'listar', ml_item_id: 'MLB1', roteiro_versao: 2 })
-    expect(r.body.unit_cents).toBe(0)
+    expect((await listar()).body.unit_cents).toBe(0)
   })
 
   it('"Gerar de novo" some com 3 gerações gerador fora de falhou (exibidas ou não) e com geração aberta', async () => {
@@ -112,14 +145,8 @@ describe('galeria-imagens — listar', () => {
       img(7, { missao: 3, geracao: 1 }),
       img(8, { missao: 3, geracao: 2, status: 'gerando', cena_path: null, custo_usd: null }), // aberta → não
     )
-    const r = await chamar({ acao: 'listar', ml_item_id: 'MLB1', roteiro_versao: 2 })
-    const pode = Object.fromEntries((r.body.imagens as Linha[]).map((i) => [i.id, i.pode_gerar_de_novo]))
+    const pode = Object.fromEntries(((await listar()).body.imagens as Linha[]).map((i) => [i.id, i.pode_gerar_de_novo]))
     expect(pode).toMatchObject({ [U(1)]: false, [U(3)]: false, [U(4)]: true, [U(6)]: true, [U(7)]: false })
-  })
-
-  it('versão sem roteiro na família vigente → lista vazia', async () => {
-    const r = await chamar({ acao: 'listar', ml_item_id: 'MLB1', roteiro_versao: 9 })
-    expect(r).toMatchObject({ status: 200, body: { imagens: [], unit_cents: 50 } })
   })
 })
 
@@ -171,16 +198,20 @@ describe('galeria-imagens — reportar_invalida', () => {
     expect(db.platform_image_deliveries).toEqual([])
   })
 
-  it('só linha gerada, gerador, não exibida, da família vigente deste anúncio e desta org', async () => {
+  it('aceita imagem histórica do mesmo anúncio (família anterior) se gerada e não cobrada', async () => {
+    db.galeria_imagens.push(img(6, { familia_id: 'famA', roteiro_id: 'rotA2' }))
+    expect((await reportar(U(6))).body).toEqual({ reportada: true })
+  })
+
+  it('só linha gerada, gerador, não exibida, deste anúncio e desta org', async () => {
     db.galeria_imagens.push(
       img(1, { status: 'aprovada' }),
       img(2, { entregue_em: '2026-11-10T10:00:00Z' }),
       img(3, { origem: 'recorte' }),
       img(4, { anuncio_externo_id: 'an2' }),
       img(5, { org_id: 'org2', anuncio_externo_id: 'an9' }),
-      img(6, { familia_id: 'famA', roteiro_id: 'rotA2' }), // família anterior do mesmo anúncio
     )
-    for (let n = 1; n <= 6; n++) expect((await reportar(U(n))).body).toEqual({ reportada: false })
+    for (let n = 1; n <= 5; n++) expect((await reportar(U(n))).body).toEqual({ reportada: false })
     expect(db.galeria_imagens.every((i) => i.status !== 'falhou')).toBe(true)
   })
 })
