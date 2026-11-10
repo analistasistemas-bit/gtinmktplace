@@ -196,6 +196,49 @@ describe('PassoGerar — exibição e cobrança', () => {
     expect(api.listarImagens).toHaveBeenCalledTimes(1);
   });
 
+  it('listar com 503 continua o polling; com 4xx para', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    api.listarImagens.mockResolvedValueOnce(falha(503, 'falha_interna')).mockResolvedValue(ok(lista([imagem()])));
+    passo();
+    expect(await screen.findByText(/Erro/)).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(await screen.findByAltText('Preto · missão 1')).toBeInTheDocument();
+    expect(api.listarImagens).toHaveBeenCalledTimes(2);
+  });
+
+  it('listar com 409 não reagenda', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    api.listarImagens.mockResolvedValue(falha(409, 'anuncio_ambiguo'));
+    passo();
+    await screen.findByText(/identificar este anúncio/);
+    await act(async () => { await vi.advanceTimersByTimeAsync(15000); });
+    expect(api.listarImagens).toHaveBeenCalledTimes(1);
+  });
+
+  it('recusa definitiva seguida de poll com falha mantém o Confirmar desabilitado', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    api.listarImagens.mockResolvedValueOnce(ok(lista([imagem({ status: 'gerando', url: null })]))).mockResolvedValue(falha(503, 'falha_interna'));
+    api.gerarImagens.mockResolvedValueOnce(falha(409, 'teto', { bloqueadas: [{ cor: 'Preto', missao: 1, motivo: 'teto' }] }));
+    passo();
+    await screen.findByText(/por imagem/);
+    await userEvent.click(screen.getByRole('button', { name: 'Gerar imagens' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
+    await screen.findByText(/limite de 3 gerações/i);
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(api.listarImagens).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeDisabled();
+    expect(screen.getByText(/limite de 3 gerações/i)).toBeInTheDocument();
+  });
+
+  it('imagem que não carrega: mensagem, sem confirmar nem reportar', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([imagem()])));
+    passo();
+    fireEvent.error(await screen.findByAltText('Preto · missão 1'));
+    expect(await screen.findByText(/Não foi possível exibir a imagem/)).toBeInTheDocument();
+    expect(api.confirmarExibicao).not.toHaveBeenCalled();
+    expect(api.reportarInvalida).not.toHaveBeenCalled();
+  });
+
   it('"Gerar de novo" abre a confirmação de 1 imagem daquela cor e missão', async () => {
     api.listarImagens.mockResolvedValue(ok(lista([imagem({ cor: 'Rosa', missao: 2 })])));
     passo(['Preto', 'Rosa']);

@@ -5,7 +5,7 @@
 // - confirmar_exibicao {ml_item_id, imagem_ids}: o navegador exibiu e validou a imagem → `galeria_confirmar_exibicao`
 //   (cobrança = exibição, Task 2; idempotente). Operação histórica: só exige o mesmo anúncio.
 // - reportar_invalida {ml_item_id, imagem_id}: imagem branca/ilegível no navegador → `falhou` sem cobrança (falha
-//   técnica não gasta vaga). Só linha `gerada`, `gerador`, ainda não exibida, deste anúncio e desta org.
+//   técnica não gasta vaga). Só linha `gerada`, `gerador`, ainda não exibida, da família vigente deste anúncio e desta org.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
@@ -58,10 +58,12 @@ Deno.serve(async (req) => {
       if (!id) return json({ error: 'pedido_invalido' }, 400);
       const r = await resolverAnuncio(admin, orgId, mlItemId);
       if ('erro' in r) return json({ error: r.erro }, 409);
-      // Um único update condicional; `entregue_em is null` impede derrubar imagem já cobrada.
+      const a = await carregarAnuncio(admin, orgId, r.anuncioId);
+      if ('erro' in a) return json({ error: a.erro }, 409);
+      // Um único update condicional, só na família vigente; `entregue_em is null` impede derrubar imagem já cobrada.
       const { data, error } = await admin.from('galeria_imagens')
         .update({ status: 'falhou', erro: 'imagem_invalida', atualizado_em: new Date().toISOString() })
-        .eq('org_id', orgId).eq('anuncio_externo_id', r.anuncioId).eq('id', id)
+        .eq('org_id', orgId).eq('anuncio_externo_id', a.anuncioId).eq('familia_id', a.vigente.id).eq('id', id)
         .eq('origem', 'gerador').eq('status', 'gerada').is('entregue_em', null)
         .select('id');
       if (error) throw new Error(error.message);

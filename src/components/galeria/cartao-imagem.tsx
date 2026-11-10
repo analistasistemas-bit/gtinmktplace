@@ -1,6 +1,7 @@
 // ADR-0201 (Task 10): cartão de uma imagem da galeria. Cobrança = exibição: só depois que o <img> carregou e
 // `imagemValida` disse sim é que `onExibida` sai; branca/vazia → `onInvalida`; exceção (canvas contaminado) → nada.
 // Alertas da verificação por visão (R8.5) só avisam; nunca escondem a imagem.
+import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -21,6 +22,8 @@ export function CartaoImagem({ imagem, onGerarDeNovo, onAprovar, onExibida, onIn
   onInvalida?: (id: string) => void;
 }) {
   const nome = `${imagem.cor} · missão ${imagem.missao}`;
+  // Não carregou (rede, URL vencida, CORS): não é prova de imagem ruim — nem confirma nem reporta.
+  const [quebrou, setQuebrou] = useState(false);
   const aberta = ABERTOS.has(imagem.status);
   const cobravel = imagem.origem === 'gerador' && !imagem.exibida;
 
@@ -44,9 +47,11 @@ export function CartaoImagem({ imagem, onGerarDeNovo, onAprovar, onExibida, onIn
         <div className="flex aspect-[1200/1540] items-center justify-center rounded bg-muted text-muted-foreground">
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />Gerando…
         </div>
-      ) : imagem.url && imagem.status !== 'falhou' ? (
+      ) : imagem.url && imagem.status !== 'falhou' && !quebrou ? (
         <img src={imagem.url} alt={nome} crossOrigin="anonymous" className="w-full rounded object-contain"
-          onLoad={(e) => carregou(e.currentTarget)} />
+          onLoad={(e) => carregou(e.currentTarget)} onError={() => setQuebrou(true)} />
+      ) : quebrou ? (
+        <p className="text-muted-foreground">Não foi possível exibir a imagem. Feche e abra a galeria de novo.</p>
       ) : (
         <p className="text-muted-foreground">{imagem.erro ? `Sem imagem (${imagem.erro})` : 'Sem imagem'}</p>
       )}

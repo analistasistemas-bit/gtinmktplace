@@ -171,15 +171,16 @@ describe('galeria-imagens — reportar_invalida', () => {
     expect(db.platform_image_deliveries).toEqual([])
   })
 
-  it('só linha gerada, gerador, não exibida, deste anúncio e desta org', async () => {
+  it('só linha gerada, gerador, não exibida, da família vigente deste anúncio e desta org', async () => {
     db.galeria_imagens.push(
       img(1, { status: 'aprovada' }),
       img(2, { entregue_em: '2026-11-10T10:00:00Z' }),
       img(3, { origem: 'recorte' }),
       img(4, { anuncio_externo_id: 'an2' }),
       img(5, { org_id: 'org2', anuncio_externo_id: 'an9' }),
+      img(6, { familia_id: 'famA', roteiro_id: 'rotA2' }), // família anterior do mesmo anúncio
     )
-    for (let n = 1; n <= 5; n++) expect((await reportar(U(n))).body).toEqual({ reportada: false })
+    for (let n = 1; n <= 6; n++) expect((await reportar(U(n))).body).toEqual({ reportada: false })
     expect(db.galeria_imagens.every((i) => i.status !== 'falhou')).toBe(true)
   })
 })

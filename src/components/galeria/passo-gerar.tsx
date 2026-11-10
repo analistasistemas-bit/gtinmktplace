@@ -53,6 +53,8 @@ export function PassoGerar({ mlItemId, ficha, resp, aoRecarregar, aoVoltarRoteir
   const [unit, setUnit] = useState<number | null>(null);
   const [confirmando, setConfirmando] = useState<Alvo | null>(null);
   const [aviso, setAviso] = useState<Aviso | null>(null);
+  // Erro do `listar` fica separado do aviso do gerar: nunca reabre um Confirmar bloqueado.
+  const [erroLista, setErroLista] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [rodada, setRodada] = useState(0);
   // Um pedido_id por confirmação: a repetição (ml_indisponivel) reusa; nova confirmação gera outro.
@@ -68,7 +70,13 @@ export function PassoGerar({ mlItemId, ficha, resp, aoRecarregar, aoVoltarRoteir
     const rodar = async () => {
       const r = await listarImagens(mlItemId, roteiro.versao);
       if (!vivo) return;
-      if (!r.ok) { setAviso({ texto: mensagemErro(r.erro), bloqueia: false }); return; }
+      if (!r.ok) {
+        setErroLista(mensagemErro(r.erro));
+        // Falha passageira (rede/5xx) reagenda; recusa (4xx) para.
+        if (r.erro === 'rede' || r.status === 0 || r.status >= 500) timer = setTimeout(rodar, POLLING_MS);
+        return;
+      }
+      setErroLista(null);
       const imagens = r.dados.imagens.map((i) => {
         if (i.url && !urls.current.has(i.id)) urls.current.set(i.id, i.url);
         return { ...i, url: urls.current.get(i.id) ?? i.url };
@@ -189,6 +197,8 @@ export function PassoGerar({ mlItemId, ficha, resp, aoRecarregar, aoVoltarRoteir
           {aviso.acao === 'roteiro' && <Button size="sm" variant="outline" onClick={aoVoltarRoteiro}>Voltar ao roteiro</Button>}
         </div>
       )}
+
+      {erroLista && <p role="alert" className="text-sm text-red-600">{erroLista}</p>}
 
       {lista && lista.imagens.length > 0 && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
