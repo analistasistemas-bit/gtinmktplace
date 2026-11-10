@@ -36,6 +36,7 @@ Conclusão provisória: **não há configuração a aplicar.** A Task 16 só con
    - o preflight `OPTIONS …/object/upload/sign/imagens/<org>/galeria-ia/<familia>/finais/<id>-<nonce>.jpg` volta 200 com `x-upsert` liberado;
    - o `PUT` volta 200;
    - `galeria-aprovar` responde `{ status: 'aprovada' }`.
+   - Premissa: a Task 2 fechou o prefixo `galeria-ia` para `authenticated`, e o `PUT` pela URL assinada emitida pela edge precisa passar mesmo assim. Se ele voltar 403 ou 400 de RLS, o problema é a política do Storage, não o CORS.
 3. Pelo terminal, repetir o par de `curl` acima com `-H "Origin: https://publiai.daludi.com.br"` e uma URL assinada **real** (gerada pelo app). A resposta 200 do objeto precisa trazer `access-control-allow-origin`.
 4. **Só se** o passo 1, 2 ou 3 mostrar o cabeçalho ausente (por exemplo, se o projeto passar a restringir origens): abrir chamado no Supabase ou ajustar a configuração de CORS do projeto pelo painel, porque o CLI não cobre isso. Registrar aqui a mudança, com data. Nada de CORS por bucket: o recurso não existe no Supabase Storage.
 5. Medir também a CPU da `galeria-aprovar` implantada. Aprovar uma imagem real (o mesmo JPEG final) e ler a CPU nos logs da função: precisa ficar em ≤800 ms. No vitest local deu 143 ms de CPU, e em Deno local entre 45 e 85 ms por arquivo.
