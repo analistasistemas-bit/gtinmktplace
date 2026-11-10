@@ -16,6 +16,8 @@ cmd = {
     'grok': ['cursor-agent', '-p', '--mode', 'ask', '--model', 'grok-4.7-xhigh', prompt],
     # reserva do Codex quando a cota acabar (memória feedback_revisor_fallback_kimi)
     'gemini': ['cursor-agent', '-p', '--mode', 'ask', '--model', 'gemini-4-argon-high', prompt],
+    # revisor das tasks desde 10/11 (pedido do Diego)
+    'fable': ['cursor-agent', '-p', '--mode', 'ask', '--model', 'claude-fable-5-2-xhigh', prompt],
 }[quem]
 with open(saida, 'w') as out:
     subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, timeout=1800)
