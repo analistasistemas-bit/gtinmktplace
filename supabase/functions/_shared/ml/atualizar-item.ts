@@ -124,6 +124,30 @@ export async function atualizarItemPlanoML(
   if (!resp.ok) throw erroML(resp.status, json);
 }
 
+/** Corpo do PUT de fotos (galeria da cor): Legacy = pictures + todas as variations; UP/plano = só pictures. */
+export interface CorpoFotosML {
+  pictures: Array<{ id: string }>;
+  variations?: Array<{ id: number; picture_ids: string[] }>;
+}
+
+// Galeria da cor: PUT só de fotos, corpo medido no ensaio da Task 1 ((b)/(d)). O corpo é remontado por lista
+// branca: um `corpo_planejado` relido do banco nunca leva `price`, `status` nem `available_quantity` ao ML.
+// Timeout explícito: a saga trata PUT sem resposta (abort, rede ou 5xx) como incerto e reconcilia por GET.
+export async function atualizarFotosItemML(
+  accessToken: string, itemId: string, corpo: CorpoFotosML, f: typeof fetch = fetch,
+): Promise<void> {
+  const body: CorpoFotosML = { pictures: corpo.pictures.map((p) => ({ id: p.id })) };
+  if (corpo.variations) body.variations = corpo.variations.map((v) => ({ id: v.id, picture_ids: [...v.picture_ids] }));
+  const resp = await f(`https://api.mercadolibre.com/items/${encodeURIComponent(itemId)}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw erroML(resp.status, json);
+}
+
 export interface ResultadoUpdate {
   variations: Array<{ id: string | number; seller_custom_field?: string | null }>;
 }

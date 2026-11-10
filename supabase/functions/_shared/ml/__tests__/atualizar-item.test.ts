@@ -1,5 +1,37 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { buscarItemML, excluirItemML } from '../atualizar-item';
+import { atualizarFotosItemML, buscarItemML, excluirItemML } from '../atualizar-item';
+
+// Galeria da cor (Task 13): PUT só de fotos, corpo medido no ensaio da Task 1.
+describe('atualizarFotosItemML', () => {
+  const capturar = (status = 200) => {
+    const chamadas: Array<{ url: string; init: RequestInit }> = [];
+    const f = vi.fn(async (url: string, init: RequestInit) => { chamadas.push({ url, init }); return new Response('{}', { status }); });
+    return { chamadas, f: f as unknown as typeof fetch };
+  };
+
+  it('Legacy: pictures + variations {id, picture_ids}; campos extras (price/status/available_quantity) nunca saem', async () => {
+    const { chamadas, f } = capturar();
+    const corpo = {
+      pictures: [{ id: 'A', price: 1 }], status: 'paused', price: 10, available_quantity: 3,
+      variations: [{ id: 11, picture_ids: ['A'], available_quantity: 5, price: 9 }],
+    };
+    await atualizarFotosItemML('tok', 'MLB1', corpo as never, f);
+    expect(chamadas[0].url).toBe('https://api.mercadolibre.com/items/MLB1');
+    expect(chamadas[0].init.method).toBe('PUT');
+    expect(JSON.parse(chamadas[0].init.body as string)).toEqual({ pictures: [{ id: 'A' }], variations: [{ id: 11, picture_ids: ['A'] }] });
+  });
+
+  it('UP plano: só { pictures }', async () => {
+    const { chamadas, f } = capturar();
+    await atualizarFotosItemML('tok', 'MLB2', { pictures: [{ id: 'A' }, { id: 'B' }] }, f);
+    expect(JSON.parse(chamadas[0].init.body as string)).toEqual({ pictures: [{ id: 'A' }, { id: 'B' }] });
+  });
+
+  it('HTTP de erro lança com status (5xx = incerto para a saga)', async () => {
+    const { f } = capturar(502);
+    await expect(atualizarFotosItemML('tok', 'MLB1', { pictures: [{ id: 'A' }] }, f)).rejects.toMatchObject({ status: 502 });
+  });
+});
 
 const globalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = globalFetch; });

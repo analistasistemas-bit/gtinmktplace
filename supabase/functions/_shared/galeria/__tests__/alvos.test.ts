@@ -79,6 +79,16 @@ describe('alvosDaCor — User Products', () => {
     expect('alvos' in r && r.alvos.map((a) => a.itemId)).toEqual(['MLB-G', 'MLB-M', 'MLB-P'])
   })
 
+  it('família de outro codigo_pai ou de outra org com o mesmo SKU (cor diferente, mais nova) é ignorada', async () => {
+    const db = UP_PMG()
+    db.familias.push(
+      fam('famX', '2026-11-09T10:00:00Z', [['100M', 'Azul']], { codigo_pai: '200' }),
+      fam('famY', '2026-11-09T10:00:00Z', [['100M', 'Azul']], { org_id: 'org2' }),
+    )
+    const r = await alvosDaCor(fakeAdmin(db).admin as never, 'org', 'up', 'Rosa', leitor({}, BF_PMG))
+    expect('alvos' in r && r.alvos.map((a) => a.itemId)).toEqual(['MLB-G', 'MLB-M', 'MLB-P'])
+  })
+
   it('buscarItemBackfill null → conjunto_incompleto', async () => {
     expect(await alvosDaCor(fakeAdmin(UP_PMG()).admin as never, 'org', 'up', 'Rosa', leitor({}, { ...BF_PMG, 'MLB-G': null })))
       .toMatchObject({ erro: 'conjunto_incompleto' })
