@@ -60,6 +60,8 @@ vi.mock('../../_shared/supabase.ts', () => ({
     from: (t: string) => builder(t),
     rpc: async (nome: string, args: { p_codigos?: string[] }) => {
       f.rpcs.push(nome);
+      // ADR-0201: trava de escrita por MLB sempre livre aqui (handler-trava.test.ts cobre o conflito).
+      if (nome === 'ml_travar_itens' || nome === 'ml_estender_trava') return { data: true, error: null };
       if (nome !== 'ncm_consultar') return { data: null, error: null }; // reajuste_ativo_produto: nenhum
       if (f.ncm === 'erro') return { data: null, error: { message: 'fora do ar' } };
       return { data: (args.p_codigos ?? []).map((codigo) => ({ codigo, vigente: f.ncm === 'vigente' })), error: null };

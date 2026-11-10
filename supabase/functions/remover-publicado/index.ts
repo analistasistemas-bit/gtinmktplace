@@ -123,6 +123,13 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
           + 'Não é possível remover no PubliAI nem encerrar no ML por este botão. Nada foi alterado.',
         tipo: 'tem_movimentacao',
       }, 409);
+    case 'item_ocupado':
+      await auditarOperacaoSuporte(admin, context, target, 'denied');
+      return json({
+        erro: 'O anúncio está recebendo outra escrita agora (fotos da galeria ou outra publicação). '
+          + 'Aguarde terminar e tente de novo — nada foi alterado.',
+        tipo: 'item_ocupado',
+      }, 409);
     case 'preservada':
       await auditarOperacaoSuporte(admin, context, target, 'succeeded');
       return json({ ok: true, familia_id: r.familiaId, lote_id: r.loteId });

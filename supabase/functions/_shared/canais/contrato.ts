@@ -195,6 +195,12 @@ export interface AtualizacaoCanonica {
    * frete correto.
    */
   pesoLiquidoGramas?: number | null;
+  /**
+   * Trava de escrita por MLB (ADR-0201): chamado imediatamente antes de CADA PUT do método (item plano e variações),
+   * depois do GET em que o PUT se baseia. O escritor estende a própria trava aqui; `false` → aquele PUT não sai e o
+   * resultado é erro 4xx definitivo (o corpo não saiu). Ausente = sem trava (`somenteEstoque` sem cor nova).
+   */
+  antesDoPut?: () => Promise<boolean>;
 }
 
 /** Resultado do UPDATE: sku → id externo da variação (casar/persistir + detectar não-vinculadas). */

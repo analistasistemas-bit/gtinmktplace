@@ -7,7 +7,12 @@
 // anúncio entre updates. O cap de 99.999 de estoque é aplicado pelo conector ML (criar/atualizar).
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { verificarAssinatura, enfileirarVinculacaoCatalogo, enfileirarSincronizacaoFiscal } from '../_shared/queue.ts';
+import {
+  verificarAssinatura, enfileirarVinculacaoCatalogo, enfileirarSincronizacaoFiscal, enfileirarJobPublicacaoML,
+} from '../_shared/queue.ts';
+import {
+  acordarEscritaAdiada, controleTrava, devolverEscritaAdiada, encerrarEscritaAdiada, reservarEscrita,
+} from '../_shared/ml/trava-item.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { ordenarVariacoesPrincipal } from '../_shared/ml/publicar.ts';
@@ -33,7 +38,8 @@ import { marcaParaUpdate } from '../_shared/categoria/marca-org.ts';
 import { agendarConfirmacao, itemConfirmarCriado, itemConfirmarLegacy, registrarConfirmacao } from '../_shared/confirmacao/registrar.ts';
 import { EMBED_MODULOS, kitLigado, skusParticipantes } from '../_shared/kit-variacao/politica.ts';
 
-interface Job { familia_id: string; lote_id: string; listing_type_id?: string; somenteEstoque?: boolean; }
+// `adiada_id`/`acordar`: ADR-0201 (escrita adiada pela trava de escrita por MLB).
+interface Job { familia_id: string; lote_id: string; listing_type_id?: string; somenteEstoque?: boolean; adiada_id?: string; acordar?: boolean }
 
 const BUCKET = 'imagens';
 const TTL_SIGNED = 60 * 60 * 2; // 2h — ML baixa a foto de forma assíncrona.
@@ -69,6 +75,19 @@ Deno.serve(async (req) => {
   catch { return new Response('Body inválido', { status: 400, headers: corsHeaders }); }
 
   const admin = adminClient();
+  const json200 = (obj: unknown) => new Response(JSON.stringify(obj), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  // ADR-0201: mensagem de acordar (fora da fila serial). Nunca escreve no ML.
+  if (job.acordar && typeof job.adiada_id === 'string') {
+    try {
+      await acordarEscritaAdiada(admin, job.adiada_id, {
+        agora: new Date(), base: Deno.env.get('SUPABASE_URL')!,
+        publicar: () => Promise.resolve([]), garantirFila: () => Promise.resolve(), enfileirar: enfileirarJobPublicacaoML,
+      });
+      return json200({ acordar: true });
+    } catch (e) {
+      return new Response((e as Error).message, { status: 500, headers: corsHeaders });
+    }
+  }
   // ADR-0200: o módulo da org vem embutido (sem consulta nova).
   const { data: familia } = await admin.from('familias').select(`*, ${EMBED_MODULOS}`).eq('id', job.familia_id).single();
   if (!familia) return new Response('familia não encontrada', { status: 404, headers: corsHeaders });
@@ -104,6 +123,9 @@ Deno.serve(async (req) => {
   // antes de qualquer PUT.
   const enviadoEm = new Date().toISOString();
   let conferenciaRegistrada = false;
+  // ADR-0201: trava de escrita dos itens já no ar e posse da linha adiada assumida (quando houver).
+  let trava: ReturnType<typeof controleTrava> | null = null;
+  let posseAdiada: string | null = null;
 
   try {
     // Spec reajuste C2: reajuste de preço em massa ativo → 400 definitivo (erro de consulta retenta).
@@ -157,6 +179,28 @@ Deno.serve(async (req) => {
       const err = new Error(`Atributos obrigatórios faltando: ${faltam.join(', ')}`) as Error & { status?: number };
       err.status = 400;
       throw err;
+    }
+
+    // ADR-0201: trava de escrita de TODAS as partições já no ar, antes de qualquer upload/GET/PUT. Dispensado só
+    // somente estoque sem cor nova (não reenvia fotos nem cria variação). Conflito → adia sem escrever (200).
+    const itensNoAr = [...new Set([
+      ...(linhas ?? []).filter((l) => l.item_externo_id).map((l) => l.item_externo_id as string),
+      ...(familia.ml_item_id ? [familia.ml_item_id as string] : []),
+    ])];
+    if (itensNoAr.length > 0 && !(job.somenteEstoque && variacoes.every((v) => v.ml_variation_id))) {
+      let reserva: Awaited<ReturnType<typeof reservarEscrita>>;
+      try {
+        reserva = await reservarEscrita(admin, {
+          orgId: familia.org_id as string, familiaId: job.familia_id, loteId: job.lote_id, endpoint: 'publicar-split-ml',
+          itens: itensNoAr, job: job as unknown as Record<string, unknown>, adiadaId: job.adiada_id,
+        });
+      } catch (e) {
+        return new Response((e as Error).message, { status: 500, headers: corsHeaders });
+      }
+      if (reserva.tipo === 'assumida') return json200({ skip: true, status: 'adiada_assumida' });
+      if (reserva.tipo === 'adiada') return json200({ adiado: true });
+      posseAdiada = reserva.posseAdiada;
+      trava = controleTrava(admin, familia.org_id as string, itensNoAr, reserva.dono);
     }
 
     const signed = async (path: string): Promise<string> => {
@@ -417,9 +461,12 @@ Deno.serve(async (req) => {
           somenteEstoque: job.somenteEstoque,
           // Mesmo conector do update normal: adicionar cor por esta tela não toca nas publicadas.
           preservarPublicadas: await ehFluxoAddVariacao(admin, job.lote_id),
+          // ADR-0201: cada partição estende a trava antes do seu PUT.
+          antesDoPut: trava?.antesDoPut,
         });
         if (!res.ok) {
           const e = res.erro!;
+          await trava?.resolver({ ok: false, status: e.status });
           // ADR-0105 §7: o conector é compartilhado e sinaliza anúncio dissolvido pelo ML, mas só o
           // `update-familia-ml` sabe re-vincular — e para partição única. Aqui o sinal viraria uma
           // mensagem prometendo verificação que não acontece; devolve a causa real, com a ressalva.
@@ -527,6 +574,8 @@ Deno.serve(async (req) => {
       await admin.from('familias').update(agregado).eq('id', job.familia_id);
     }
 
+    // Todos os PUTs responderam 2xx: solta a trava (antes disso cada partição precisa dela para o seu PUT).
+    await trava?.resolver({ ok: true });
     await admin.from('familias').update({
       status: 'publicado', publicado_em: new Date().toISOString(),
     }).eq('id', job.familia_id);
@@ -539,6 +588,7 @@ Deno.serve(async (req) => {
       catch (e) { console.error(`enfileirar push fiscal (split) falhou para familia ${job.familia_id}:`, e); }
     }
     await talvezFinalizarLote(admin, job.lote_id);
+    if (job.adiada_id && posseAdiada) await encerrarEscritaAdiada(admin, job.adiada_id, posseAdiada);
     return new Response(JSON.stringify({ ok: true, particoes: grupos.size }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
@@ -548,7 +598,10 @@ Deno.serve(async (req) => {
     const retentavelFoto = (err as { retentavel?: boolean }).retentavel === true;
     // 5xx/429 ou foto ainda propagando (item.pictures.unavailable): reusa o picture_id e retenta
     // via QStash (o retryDelay cobre a propagação de minutos, ADR-0033).
+    // ADR-0201: exceção antes de qualquer PUT solta a trava; depois de um PUT, ela vence sozinha.
+    await trava?.abandonar();
     if (decidirRetryTransitorio(err, tentativas) === 'retentar') {
+      if (job.adiada_id && posseAdiada) await devolverEscritaAdiada(admin, job.adiada_id, posseAdiada);
       return new Response(msg, { status: 500, headers: corsHeaders });
     }
     // Esgotou os retries ou erro definitivo: persiste erro e reavalia o lote.
@@ -578,6 +631,7 @@ Deno.serve(async (req) => {
       }
     }
     await talvezFinalizarLote(admin, job.lote_id);
+    if (job.adiada_id && posseAdiada) await encerrarEscritaAdiada(admin, job.adiada_id, posseAdiada);
     return new Response(JSON.stringify({ erro: msg }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });

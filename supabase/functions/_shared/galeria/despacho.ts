@@ -165,13 +165,13 @@ export function decidirAdiada(
   return travado ? 'reagendar' : 'enfileirar';
 }
 
-interface Adiada {
+export interface Adiada {
   id: string; org_id: string; familia_id: string; lote_id: string; endpoint: string; itens: string[];
   job: Record<string, unknown>; adiado_desde: string; proxima_em: string;
 }
 
 /** Faz o mesmo que a mensagem de acordar: perder a mensagem só atrasa ≤1 min. Nunca escreve no ML. */
-async function processarAdiada(admin: SupabaseClient, a: Adiada, deps: DepsDespacho): Promise<void> {
+export async function processarAdiada(admin: SupabaseClient, a: Adiada, deps: DepsDespacho): Promise<void> {
   const [{ data: fam, error: eF }, { data: travas, error: eT }] = await Promise.all([
     admin.from('familias').select('status, user_id').eq('id', a.familia_id).maybeSingle(),
     admin.from('ml_item_travas').select('dono_tipo, expira_em').eq('org_id', a.org_id).in('item_id', a.itens),

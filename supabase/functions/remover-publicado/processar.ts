@@ -13,6 +13,7 @@ import {
 } from '../_shared/user-products/remover-composicao.ts';
 import { STATUS_KIT_VIVO } from '../_shared/estoque/kit.ts';
 import { EMBED_MODULOS, kitLigado, skusParticipantes } from '../_shared/kit-variacao/politica.ts';
+import { soltarItens, travarItens } from '../_shared/ml/trava-item.ts';
 
 export interface RemoverPublicadoInput {
   familiaId: string;
@@ -61,7 +62,9 @@ export type ResultadoRemocao =
   /** ADR-0185: a cópia vigente do produto ainda está sendo processada/publicada — espera e repete. */
   | { tipo: 'em_processamento' }
   | { tipo: 'preservada'; familiaId: string; loteId: string }
-  | { tipo: 'ok'; familiasRemovidas: number; lotesRemovidos: number };
+  | { tipo: 'ok'; familiasRemovidas: number; lotesRemovidos: number }
+  /** ADR-0201: algum MLB do produto está travado (saga da galeria, quarentena ou outro escritor). Nada mudou. */
+  | { tipo: 'item_ocupado' };
 
 interface SnapshotMLRemocao {
   id: string;
@@ -154,7 +157,25 @@ async function kitsVirtuaisPublicadosBloqueando(
   return [...titulos];
 }
 
+/**
+ * ADR-0201 (adendo 6): Remover e Republicar adquirem a trava `escritor` de todos os MLB do produto antes da primeira ação
+ * destrutiva (pausar/encerrar no ML, `preparar_republicacao`, deletes) e soltam no fim. Exceção no meio mantém a trava
+ * (um PUT pode ter saído sem resposta): ela vence sozinha em 600 s.
+ */
 export async function removerPublicado(deps: RemoverPublicadoDeps, input: RemoverPublicadoInput): Promise<ResultadoRemocao> {
+  const dono = crypto.randomUUID();
+  let travou = false;
+  const r = await removerPublicadoTravado(deps, input, async (itens) => {
+    travou = await travarItens(deps.admin, input.orgId, itens, dono);
+    return travou;
+  });
+  if (travou) await soltarItens(deps.admin, input.orgId, dono);
+  return r;
+}
+
+async function removerPublicadoTravado(
+  deps: RemoverPublicadoDeps, input: RemoverPublicadoInput, travar: (itens: string[]) => Promise<boolean>,
+): Promise<ResultadoRemocao> {
   const { admin } = deps;
   const { familiaId, orgId, canal } = input;
 
@@ -299,6 +320,10 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
   if (kitsVirtuaisBloqueando.length > 0) {
     return { tipo: 'kit_virtual_publicado', kits: kitsVirtuaisBloqueando };
   }
+
+  // ADR-0201: daqui em diante tudo é destrutivo — trava todos os MLB do produto (partições, raiz e filhos UP).
+  const itensTrava = coletarIdsMLRemover(alvo.ml_item_id as string | null, filhos, idsRaizes);
+  if (itensTrava.length > 0 && !(await travar(itensTrava))) return { tipo: 'item_ocupado' };
 
   if (input.preservarFamilia) {
     // ADR-0185: a RPC prepara a cópia mais nova com vínculo; se ela ainda está em processamento a

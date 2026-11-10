@@ -1,6 +1,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { verificarAssinatura } from '../_shared/queue.ts';
+import { enfileirarJobPublicacaoML, verificarAssinatura } from '../_shared/queue.ts';
+import { acordarEscritaAdiada } from '../_shared/ml/trava-item.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import { processarAtualizacaoFamilia, type Job } from './processar.ts';
 
@@ -22,12 +23,27 @@ Deno.serve(async (req) => {
   const tentativas = Number(req.headers.get('Upstash-Retried') ?? '0');
   const json = (obj: unknown) => new Response(JSON.stringify(obj), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
+  // ADR-0201: mensagem de acordar (fora da fila serial): decide reagendar/enfileirar/encerrar. Nunca escreve no ML.
+  if (job.acordar && typeof job.adiada_id === 'string') {
+    try {
+      await acordarEscritaAdiada(admin, job.adiada_id, {
+        agora: new Date(), base: Deno.env.get('SUPABASE_URL')!,
+        publicar: () => Promise.resolve([]), garantirFila: () => Promise.resolve(), enfileirar: enfileirarJobPublicacaoML,
+      });
+      return json({ acordar: true });
+    } catch (e) {
+      return new Response((e as Error).message, { status: 500, headers: corsHeaders });
+    }
+  }
+
   const r = await processarAtualizacaoFamilia({ admin, conn }, job, { tentativas });
   switch (r.tipo) {
     case 'familia_inexistente': return new Response('familia não encontrada', { status: 404, headers: corsHeaders });
     case 'skip': return json({ skip: true, status: r.status });
     case 'ok': return json({ ml_item_id: r.itemExternoId, atualizado: true, novas: r.novas });
     case 'erro': return json({ erro: r.mensagem });
+    // ADR-0201: item travado; adiamento gravado. 200 para não segurar a fila serial.
+    case 'adiado': return json({ adiado: true });
     // Transitório: 500 (texto) para o QStash retentar, mantendo a família 'publicando'.
     case 'retry': return new Response(r.mensagem, { status: 500, headers: corsHeaders });
   }

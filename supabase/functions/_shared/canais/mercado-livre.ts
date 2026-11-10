@@ -88,6 +88,15 @@ function dissolvidoParaUP(
   };
 }
 
+// ADR-0201: a trava de escrita do item não pôde ser estendida antes do PUT (perdida ou banco fora): o PUT não sai.
+// 4xx definitivo — nada foi enviado, o escritor pode soltar o que ainda tiver.
+function travaPerdida(itemId: string): ResultadoCanal<ResultadoAtualizacao> {
+  return { ok: false, erro: {
+    codigo: 'DESCONHECIDO', retentavel: false, status: 409,
+    mensagemOperador: `Trava de escrita do anúncio ${itemId} não confirmada antes do envio. Nada foi enviado ao Mercado Livre; reenvie.`,
+  } };
+}
+
 export const mercadoLivreConnector: ChannelConnector = {
   id: 'mercado_livre',
   capabilities: {
@@ -254,6 +263,7 @@ export const mercadoLivreConnector: ChannelConnector = {
           : (a.precoFamilia ?? undefined);
         const semQuantidade = !!a.skusSemQuantidade?.includes(existente.sku);
         if (!semQuantidade || precoDesejado != null) {
+          if (a.antesDoPut && !(await a.antesDoPut())) return travaPerdida(a.itemExternoId);
           await atualizarItemPlanoML(token, a.itemExternoId, {
             ...(semQuantidade ? {} : { available_quantity: estoqueDesejado }),
             ...(precoDesejado != null ? { price: precoDesejado } : {}),
@@ -336,6 +346,7 @@ export const mercadoLivreConnector: ChannelConnector = {
       const pictures = criandoNovas
         ? [...new Set([...atual.pictures, ...novasPicIds])]
         : undefined;
+      if (a.antesDoPut && !(await a.antesDoPut())) return travaPerdida(a.itemExternoId);
       const resultado = await atualizarItemML(token, a.itemExternoId, [...existentes, ...novasPut], atributosItem, pictures);
       // O PUT nem sempre ecoa seller_custom_field nas variações criadas; o GET ecoa de forma
       // confiável — então relemos o item para casar as novas quando há cores novas.

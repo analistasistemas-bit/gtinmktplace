@@ -68,11 +68,17 @@ function fakeAdmin(filas: Record<string, unknown[]>) {
   // deletes — a varredura só é correta DEPOIS do delete das famílias (antes, o cascade
   // ainda não rodou e o conjunto órfão sai vazio).
   const rpcs: { nome: string; args: unknown; tabelasDeletadasAntes: string[] }[] = [];
+  const travas: { nome: string; args: any; deletesAntes: number }[] = [];
   const admin: any = {
     from: (tabela: string) => chain(tabela),
     storage: { from: () => ({ remove: async (paths: string[]) => { removidos.push(paths); return { error: null }; } }) },
     rpc: async (nome: string, args: unknown) => {
       // ADR-0200: participação é leitura (fila `rpc:kit_skus_participantes`), não entra em `rpcs`.
+      // ADR-0201: trava de escrita por MLB fica fora de `rpcs` (registrada em `travas` com a ordem dos deletes).
+      if (nome === 'ml_travar_itens' || nome === 'ml_soltar_itens') {
+        travas.push({ nome, args, deletesAntes: deletes.length });
+        return { data: nome === 'ml_travar_itens' ? travaLivre : 1, error: null };
+      }
       if (nome === 'kit_skus_participantes') {
         const v = proximo(`rpc:${nome}`);
         return ehErro(v) ? { data: null, error: { message: v.__erro } } : { data: v, error: null };
@@ -90,8 +96,9 @@ function fakeAdmin(filas: Record<string, unknown[]>) {
       return { data: 0, error: null };
     },
   };
-  return { admin, deletes, updates, removidos, rpcs };
+  return { admin, deletes, updates, removidos, rpcs, travas };
 }
+let travaLivre = true;
 
 const ORG = 'org-1';
 const DONO = 'user-1'; // dono dos paths de Storage (1º segmento de pasta) — membro de ORG
@@ -526,7 +533,8 @@ describe('removerPublicado — varredura de movimentos órfãos (ADR-0097)', () 
 
   it('falha da varredura NÃO derruba a exclusão já commitada', async () => {
     const { admin } = cenarioRemove();
-    admin.rpc = async () => ({ data: null, error: { message: 'boom' } });
+    const rpc0 = admin.rpc;
+    admin.rpc = async (n: string, a: unknown) => (n.startsWith('ml_') ? rpc0(n, a) : { data: null, error: { message: 'boom' } });
 
     const deps = depsRemoverML(admin, ['MLB1']);
     const r = await removerPublicado(deps, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
@@ -1361,7 +1369,7 @@ describe('removerPublicado — SKU em kit com variação (ADR-0200, Task 7)', ()
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ status: 'paused' }), { status: 200 })));
     const { admin } = cenario([]);
     const rpc0 = admin.rpc;
-    admin.rpc = async (n: string, a: unknown) => (n === 'kit_skus_participantes'
+    admin.rpc = async (n: string, a: unknown) => (['kit_skus_participantes', 'ml_travar_itens', 'ml_soltar_itens'].includes(n)
       ? rpc0(n, a) : { data: null, error: { message: 'republicar:kit_publicacao_pendente' } });
     const r = await removerPublicado(
       { admin, ctx: CTX, conexao: CONEXAO },
@@ -1376,7 +1384,7 @@ describe('removerPublicado — SKU em kit com variação (ADR-0200, Task 7)', ()
       : new Response(JSON.stringify({ status: 'paused' }), { status: 200 }))));
     const { admin } = cenario([]);
     const rpc0 = admin.rpc;
-    admin.rpc = async (n: string, a: unknown) => (n === 'kit_skus_participantes'
+    admin.rpc = async (n: string, a: unknown) => (['kit_skus_participantes', 'ml_travar_itens', 'ml_soltar_itens'].includes(n)
       ? rpc0(n, a) : { data: null, error: { message: 'republicar:kit_em_transferencia' } });
     const r = await removerPublicado(
       { admin, ctx: CTX, conexao: CONEXAO },
@@ -1401,5 +1409,45 @@ describe('removerPublicado — SKU em kit com variação (ADR-0200, Task 7)', ()
     );
     expect(r.tipo).toBe('preservada');
     expect([filas['rpc:kit_skus_participantes'], filas.kit_exclusoes]).toEqual([[['nao-lido']], [['nao-lido']]]);
+  });
+});
+
+// ADR-0201 adendo 6: Remover e Republicar travam os MLB (trava `escritor`) antes de qualquer ação destrutiva; conflito
+// com saga da galeria → recusa limpa, nada apagado nem pausado.
+describe('removerPublicado — trava de escrita por MLB (ADR-0201)', () => {
+  afterEach(() => { vi.unstubAllGlobals(); travaLivre = true; });
+  const cenario = () => fakeAdmin({
+    familias: [
+      { id: 'fam-1', lote_id: 'lote-40', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG },
+      [],
+      [],
+      [{ id: 'fam-1', lote_id: 'lote-1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
+      [],
+    ],
+    anuncios_externos: [[{ id: 'ext-1', mudando_composicao: false, item_externo_id: 'MLB1' }, { id: 'ext-2', mudando_composicao: false, item_externo_id: 'MLB2' }]],
+    anuncios_externos_itens: [[]],
+    lotes: [],
+  });
+
+  it.each([[false], [true]])('item com saga da galeria (preservarFamilia=%s) → item_ocupado, nada pausado nem apagado', async (preservarFamilia) => {
+    travaLivre = false;
+    const fetchSpy = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchSpy);
+    const { admin, deletes, rpcs, travas } = cenario();
+    const r = await removerPublicado({ admin, ctx: CTX, conexao: CONEXAO }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia });
+    expect(r).toEqual({ tipo: 'item_ocupado' });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(deletes).toEqual([]);
+    expect(rpcs).toEqual([]);
+    expect(travas[0].args).toMatchObject({ p_org: ORG, p_itens: ['MLB1', 'MLB2'], p_tipo: 'escritor', p_ttl_seg: 600 });
+  });
+
+  it('livre → trava todos os MLB antes da 1ª ação destrutiva e solta no fim', async () => {
+    const { admin, deletes, travas } = cenario();
+    const deps = depsRemoverML(admin, ['MLB1', 'MLB2']);
+    const r = await removerPublicado(deps, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    expect(r.tipo).toBe('ok');
+    expect(travas.map((t) => [t.nome, t.deletesAntes])).toEqual([['ml_travar_itens', 0], ['ml_soltar_itens', deletes.length]]);
+    expect(travas[1].args).toEqual({ p_org: ORG, p_dono: travas[0].args.p_dono });
   });
 });

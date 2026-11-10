@@ -36,17 +36,23 @@ import { marcaParaUpdate } from '../_shared/categoria/marca-org.ts';
 import {
   agendarConfirmacao, itemConfirmarLegacy, registrarConfirmacao, type ItemConfirmar,
 } from '../_shared/confirmacao/registrar.ts';
+import {
+  controleTrava, devolverEscritaAdiada, encerrarEscritaAdiada, reservarEscrita,
+} from '../_shared/ml/trava-item.ts';
 
 const CANAL = 'mercado_livre';
 
-export interface Job { familia_id: string; lote_id: string; somenteEstoque?: boolean; }
+/** `adiada_id`: job reenfileirado de `ml_escritas_adiadas` (ADR-0201). `acordar`: mensagem de acordar (index.ts). */
+export interface Job { familia_id: string; lote_id: string; somenteEstoque?: boolean; adiada_id?: string; acordar?: boolean }
 
 export type ResultadoProcessar =
   | { tipo: 'familia_inexistente' }
   | { tipo: 'skip'; status: string }
   | { tipo: 'ok'; itemExternoId: string; novas: number }
   | { tipo: 'erro'; mensagem: string }
-  | { tipo: 'retry'; mensagem: string };
+  | { tipo: 'retry'; mensagem: string }
+  /** ADR-0201: item travado por outra escrita (galeria/outro importador); adiamento gravado, família segue publicando. */
+  | { tipo: 'adiado' };
 
 export interface ProcessarDeps {
   admin: SupabaseClient;
@@ -58,6 +64,8 @@ export interface ProcessarDeps {
   /** ADR-0105: descoberta da família UP que substituiu um anúncio Legacy dissolvido. */
   descobrirUP?: (fetchLike: FetchLike, crit: CriteriosDescoberta) => Promise<ResultadoDescoberta>;
   finalizarLote?: (loteId: string) => Promise<void>;
+  /** ADR-0201: claim da linha adiada + trava escritor (adiamento em conflito). */
+  reservar?: typeof reservarEscrita;
 }
 export interface ProcessarOpts { tentativas: number }
 
@@ -91,7 +99,13 @@ async function notificarConclusaoAddVariacao(
  * sino do ADR-0129 D-11 quando elegível — cobre os dois caminhos (Legacy e mini-saga UP) sem
  * duplicar a checagem de elegibilidade em cada `return` interno. */
 export async function processarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: ProcessarOpts): Promise<ResultadoProcessar> {
-  const resultado = await executarAtualizacaoFamilia(deps, job, opts);
+  const adiada: { posse: string | null } = { posse: null };
+  const resultado = await executarAtualizacaoFamilia(deps, job, opts, adiada);
+  // ADR-0201: a linha adiada assumida só some depois do desfecho persistido; retry a devolve para a próxima entrega.
+  if (job.adiada_id && adiada.posse) {
+    if (resultado.tipo === 'retry') await devolverEscritaAdiada(deps.admin, job.adiada_id, adiada.posse);
+    else if (resultado.tipo === 'ok' || resultado.tipo === 'erro') await encerrarEscritaAdiada(deps.admin, job.adiada_id, adiada.posse);
+  }
   if (resultado.tipo === 'ok' || resultado.tipo === 'erro') {
     try {
       await notificarConclusaoAddVariacao(deps.admin, job, resultado);
@@ -102,7 +116,9 @@ export async function processarAtualizacaoFamilia(deps: ProcessarDeps, job: Job,
   return resultado;
 }
 
-async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: ProcessarOpts): Promise<ResultadoProcessar> {
+async function executarAtualizacaoFamilia(
+  deps: ProcessarDeps, job: Job, opts: ProcessarOpts, adiada: { posse: string | null },
+): Promise<ResultadoProcessar> {
   const { admin, conn } = deps;
   const atualizarUP = deps.atualizarUP ?? atualizarFamiliaUP;
   const adotar = deps.adotarUP ?? adotarFamiliaMigrada;
@@ -134,6 +150,8 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
   let capa3SubidaAgora = false;
   // ADR-0135: decide o enqueue do push fiscal pós-atualização (caminho de sucesso do UPDATE).
   let fiscalAtivo = false;
+  // ADR-0201: trava de escrita do item (null = dispensado ou ainda não adquirida).
+  let trava: ReturnType<typeof controleTrava> | null = null;
 
   try {
     // ADR-0135 D-7: mesmo gate do publish, antes de QUALQUER escrita no ML. `somenteEstoque`
@@ -307,6 +325,25 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
       fiscalAtivo = await exigirFiscalCompletoSePreciso(admin, familia);
     }
 
+    // ADR-0201: trava de escrita por MLB ANTES de qualquer upload/GET/PUT deste item. Dispensado só o que não muda
+    // fotos nem variações: somente estoque sem cor nova (ensaio da Task 1 (h)). Conflito → adia sem escrever (200).
+    if (!(job.somenteEstoque && novas.length === 0)) {
+      let reserva: Awaited<ReturnType<typeof reservarEscrita>>;
+      try {
+        reserva = await (deps.reservar ?? reservarEscrita)(admin, {
+          orgId: familia.org_id as string, familiaId: job.familia_id, loteId: job.lote_id, endpoint: 'update-familia-ml',
+          itens: [familia.ml_item_id as string], job: job as unknown as Record<string, unknown>, adiadaId: job.adiada_id,
+        });
+      } catch (e) {
+        // Adiamento não gravado: 5xx e a mensagem original repete (nunca o catch genérico, que gravaria erro).
+        return { tipo: 'retry', mensagem: (e as Error).message };
+      }
+      if (reserva.tipo === 'assumida') return { tipo: 'skip', status: 'adiada_assumida' };
+      if (reserva.tipo === 'adiada') return { tipo: 'adiado' };
+      adiada.posse = reserva.posseAdiada;
+      trava = controleTrava(admin, familia.org_id as string, [familia.ml_item_id as string], reserva.dono);
+    }
+
     const BUCKET = 'imagens';
     const TTL_SIGNED = 60 * 60 * 2;
     const signed = async (path: string): Promise<string> => {
@@ -408,7 +445,10 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
       somenteEstoque: job.somenteEstoque,
       preservarPublicadas,
       skusSemQuantidade,
+      antesDoPut: trava?.antesDoPut,
     });
+    // Solta só com resposta definitiva (ou se nenhum PUT saiu); timeout/5xx mantém a trava até vencer.
+    await trava?.resolver({ ok: res.ok, status: res.erro?.status });
     if (!res.ok) {
       const e = res.erro!;
       // ── ADR-0104: o GET ao vivo revelou que o ML migrou esta família para User Products ───────
@@ -648,6 +688,8 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
     await finalizarLote(job.lote_id);
     return { tipo: 'ok', itemExternoId: familia.ml_item_id, novas: novasComFoto.length };
   } catch (err) {
+    // ADR-0201: exceção antes de qualquer PUT solta a trava; depois de um PUT, ela vence sozinha.
+    await trava?.abandonar();
     const msg = err instanceof Error ? err.message : String(err);
     const retentavelFoto = (err as { retentavel?: boolean }).retentavel === true;
     // 5xx/429 ou foto ainda propagando (item.pictures.unavailable): reusa as fotos já subidas e

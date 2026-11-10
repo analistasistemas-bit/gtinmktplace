@@ -62,7 +62,9 @@ function fakeAdmin(over: {
   reajusteErro?: boolean;         // rpc reajuste_ativo_produto falha (timeout, função ausente)
   ncm?: 'vigente' | 'vencido' | 'inexistente' | 'erro'; // rpc ncm_consultar (ADR-0187)
   kitComponentes?: string[]; // ADR-0200: SKUs usados em kit com variação
+  estender?: boolean; // ADR-0201: ml_estender_trava (default true)
 } = {}) {
+  const rpcs: Array<{ fn: string; args: unknown }> = [];
   const writes: Array<{ table: string; payload: Record<string, unknown>; filters: Record<string, unknown> }> = [];
   const familia = over.familia === undefined ? { ...FAMILIA_BASE } : over.familia;
   const variacoes = over.variacoes ?? [{ ...VAR_CASADA }];
@@ -110,6 +112,10 @@ function fakeAdmin(over: {
   }
   const storage = { from: () => ({ createSignedUrl: async () => ({ data: { signedUrl: 'x' }, error: null }) }) };
   const rpc = async (fn: string, args?: { p_codigos?: string[] }) => {
+    rpcs.push({ fn, args });
+    // ADR-0201: trava de escrita por MLB (aquisição pelo `reservar` injetado; aqui só extensão e soltura).
+    if (fn === 'ml_estender_trava') return { data: over.estender ?? true, error: null };
+    if (fn === 'ml_soltar_itens') return { data: 1, error: null };
     // ADR-0200: participação de kit com variação (RPC agregada).
     if (fn === 'kit_skus_participantes') {
       return { data: (over.kitComponentes ?? []).filter((c) => (args?.p_codigos ?? []).includes(c)), error: null };
@@ -124,11 +130,13 @@ function fakeAdmin(over: {
       ? { data: null, error: { message: 'timeout' } }
       : { data: fn === 'reajuste_ativo_produto' ? (over.reajusteAtivo ?? null) : null, error: null };
   };
-  return { admin: { from: chain, storage, rpc } as never, writes };
+  return { admin: { from: chain, storage, rpc } as never, writes, rpcs };
 }
 
+// ADR-0201: por padrão o item está livre (a reserva real é testada em _shared/ml/__tests__/trava-item.test.ts).
+const reservaLivre = vi.fn(async () => ({ tipo: 'livre' as const, dono: 'dono-job', posseAdiada: null }));
 function baseDeps(admin: never, extra: Partial<ProcessarDeps> = {}): ProcessarDeps {
-  return { admin, conn: fakeConnector as never, finalizarLote: async () => {}, ...extra };
+  return { admin, conn: fakeConnector as never, finalizarLote: async () => {}, reservar: reservaLivre, ...extra };
 }
 
 beforeEach(() => {
@@ -1046,5 +1054,119 @@ describe('processarAtualizacaoFamilia — somente estoque Legacy com cor nova (C
     const r = await processarAtualizacaoFamilia(baseDeps(admin), { ...JOB, somenteEstoque: true }, { tentativas: 0 });
     expect(r.tipo).toBe('ok');
     expect(enfileirarFiscalSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ADR-0201 Task 14 — trava de escrita por MLB: o escritor trava ANTES do GET em que baseia o PUT, adia sem escrever em
+// conflito e só solta com resposta definitiva do ML.
+describe('UPDATE Legacy × trava de escrita da galeria (ADR-0201)', () => {
+  const VAR_NOVA = { ...VAR_CASADA, codigo: 'V2', cor: 'Rosa', ml_variation_id: null, ml_picture_id: 'PIC2' };
+  const chamadasConector = () => fakeConnector.chamadas.filter((c) => c.metodo === 'atualizarAnuncio' || c.metodo === 'subirFoto');
+
+  it('item travado → nenhum GET nem PUT, resultado adiado (HTTP 200), família continua publicando', async () => {
+    const { admin, writes } = fakeAdmin();
+    const reservar = vi.fn(async () => ({ tipo: 'adiada' as const, adiadaId: 'ad1' }));
+    const r = await processarAtualizacaoFamilia(baseDeps(admin, { reservar }), JOB, { tentativas: 0 });
+    expect(r).toEqual({ tipo: 'adiado' });
+    expect(reservar).toHaveBeenCalledWith(admin, expect.objectContaining({
+      orgId: 'org-1', familiaId: 'fam-1', loteId: 'lote-1', endpoint: 'update-familia-ml', itens: ['MLB-EXISTENTE'],
+    }));
+    expect(chamadasConector()).toHaveLength(0);
+    expect(writes.filter((w) => w.table === 'familias' && 'status' in w.payload)).toHaveLength(0);
+  });
+
+  it('falha ao gravar o adiamento → retry (5xx; a mensagem original repete), nada no ML, sem erro gravado', async () => {
+    const { admin, writes } = fakeAdmin();
+    const r = await processarAtualizacaoFamilia(baseDeps(admin, { reservar: async () => { throw new Error('gravar escrita adiada: boom'); } }), JOB, { tentativas: 9 });
+    expect(r.tipo).toBe('retry');
+    expect(chamadasConector()).toHaveLength(0);
+    expect(writes.filter((w) => w.table === 'familias' && 'status' in w.payload)).toHaveLength(0);
+  });
+
+  it('linha adiada assumida por outro job vivo → skip sem escrever', async () => {
+    const { admin } = fakeAdmin();
+    const r = await processarAtualizacaoFamilia(baseDeps(admin, { reservar: async () => ({ tipo: 'assumida' as const }) }),
+      { ...JOB, adiada_id: 'ad1' }, { tentativas: 0 });
+    expect(r).toEqual({ tipo: 'skip', status: 'adiada_assumida' });
+    expect(chamadasConector()).toHaveLength(0);
+  });
+
+  it('somenteEstoque sem cor nova → dispensado da trava (não reserva, PUT sai, sem gancho)', async () => {
+    const { admin } = fakeAdmin();
+    const reservar = vi.fn();
+    const r = await processarAtualizacaoFamilia(baseDeps(admin, { reservar }), { ...JOB, somenteEstoque: true }, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(reservar).not.toHaveBeenCalled();
+    const a = fakeConnector.chamadas.find((c) => c.metodo === 'atualizarAnuncio')!.args as { antesDoPut?: unknown };
+    expect(a.antesDoPut).toBeUndefined();
+  });
+
+  it('somenteEstoque COM cor nova (criandoNovas) em item reservado → adiado', async () => {
+    const { admin } = fakeAdmin({ variacoes: [{ ...VAR_CASADA }, VAR_NOVA] });
+    const reservar = vi.fn(async () => ({ tipo: 'adiada' as const, adiadaId: 'ad1' }));
+    const r = await processarAtualizacaoFamilia(baseDeps(admin, { reservar }), { ...JOB, somenteEstoque: true }, { tentativas: 0 });
+    expect(r).toEqual({ tipo: 'adiado' });
+    expect(chamadasConector()).toHaveLength(0);
+  });
+
+  it('família UP (rodarUP) com item travado → não é adiada (só price/quantity/attributes)', async () => {
+    const { admin } = fakeAdmin({ raizUP: { id: 'root-1', titulo: 'T', criado_em: '2026-07-22T00:00:00Z' }, itensUP: [{ id: 'it-1', item_externo_id: 'MLB-IT1' }] });
+    const reservar = vi.fn(async () => ({ tipo: 'adiada' as const, adiadaId: 'ad1' }));
+    const r = await processarAtualizacaoFamilia(baseDeps(admin, { reservar,
+      atualizarUP: async (): Promise<ResultadoAtualizarUP> => ({ estado: 'ok', adicionadas: 0 }) }), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(reservar).not.toHaveBeenCalled();
+  });
+
+  it('livre: o conector recebe antesDoPut (estende 900 s) e a trava é solta com 2xx', async () => {
+    const { admin, rpcs } = fakeAdmin();
+    const spy = vi.spyOn(fakeConnector, 'atualizarAnuncio').mockImplementation(async (_c, a) => {
+      expect(await a.antesDoPut!()).toBe(true);
+      return { ok: true, valor: { variacoesExternas: {}, precoVivo: null } };
+    });
+    const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    spy.mockRestore();
+    expect(r.tipo).toBe('ok');
+    expect(rpcs.map((x) => x.fn)).toEqual(expect.arrayContaining(['ml_estender_trava', 'ml_soltar_itens']));
+    expect(rpcs.find((x) => x.fn === 'ml_estender_trava')!.args).toMatchObject({ p_itens: ['MLB-EXISTENTE'], p_dono: 'dono-job', p_seg: 900 });
+  });
+
+  it('PUT sem resposta (timeout, sem status) → retry e a trava NÃO é solta', async () => {
+    const { admin, rpcs } = fakeAdmin();
+    const spy = vi.spyOn(fakeConnector, 'atualizarAnuncio').mockImplementation(async (_c, a) => {
+      await a.antesDoPut!();
+      return { ok: false, erro: { codigo: 'DESCONHECIDO', mensagemOperador: 'timeout', retentavel: true } };
+    });
+    const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    spy.mockRestore();
+    expect(r.tipo).toBe('retry');
+    expect(rpcs.some((x) => x.fn === 'ml_soltar_itens')).toBe(false);
+  });
+
+  it('resposta 4xx definitiva → solta a trava', async () => {
+    const { admin, rpcs } = fakeAdmin();
+    const spy = vi.spyOn(fakeConnector, 'atualizarAnuncio').mockImplementation(async (_c, a) => {
+      await a.antesDoPut!();
+      return { ok: false, erro: { codigo: 'ATRIBUTO', mensagemOperador: 'recusado', retentavel: false, status: 400 } };
+    });
+    const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    spy.mockRestore();
+    expect(r.tipo).toBe('erro');
+    expect(rpcs.some((x) => x.fn === 'ml_soltar_itens')).toBe(true);
+  });
+
+  it('extensão recusada antes do PUT → o conector não envia e a trava é solta (nenhum PUT saiu)', async () => {
+    const { admin, rpcs } = fakeAdmin({ estender: false });
+    let enviou = false;
+    const spy = vi.spyOn(fakeConnector, 'atualizarAnuncio').mockImplementation(async (_c, a) => {
+      if (!(await a.antesDoPut!())) return { ok: false, erro: { codigo: 'DESCONHECIDO', mensagemOperador: 'trava', retentavel: false, status: 409 } };
+      enviou = true;
+      return { ok: true, valor: { variacoesExternas: {}, precoVivo: null } };
+    });
+    const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    spy.mockRestore();
+    expect(enviou).toBe(false);
+    expect(r.tipo).toBe('erro');
+    expect(rpcs.some((x) => x.fn === 'ml_soltar_itens')).toBe(true);
   });
 });

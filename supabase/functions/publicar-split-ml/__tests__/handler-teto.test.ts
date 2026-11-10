@@ -42,6 +42,8 @@ vi.mock('../../_shared/supabase.ts', () => ({
     from: (t: string) => builder(t),
     rpc: async (n: string, a: { p_codigos: string[] }) => (n === 'kit_skus_participantes'
       ? { data: f.componentes.filter((c) => a.p_codigos.includes(c)), error: null }
+      // ADR-0201: trava de escrita por MLB sempre livre aqui (handler-trava.test.ts cobre o conflito).
+      : ['ml_travar_itens', 'ml_estender_trava', 'ml_soltar_itens'].includes(n) ? { data: true, error: null }
       : { data: null, error: { message: `rpc inesperada: ${n}` } }),
   }),
 }));
