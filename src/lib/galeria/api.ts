@@ -77,7 +77,49 @@ export const aprovarRoteiro = (mlItemId: string, familiaId: string, roteiroId: s
     acao: 'aprovar', ml_item_id: mlItemId, familia_id: familiaId, roteiro_id: roteiroId, ciencia_nao_conferido: cienciaNaoConferido,
   });
 
+// Task 10: geração (`galeria-gerar`) e imagens (`galeria-imagens`). O preço vem sempre do servidor.
+export interface AlertaImagem { tipo: string; nota: string }
+export interface ImagemGaleria {
+  id: string; cor: string; missao: number; geracao: number; origem: 'gerador' | 'recorte'; status: string;
+  /** null = verificação por visão ainda não respondeu. */
+  alertas: AlertaImagem[] | null; erro: string | null;
+  /** Já confirmada (cobrada): a tela não confirma de novo. */
+  exibida: boolean; url: string | null;
+  /** Regra da RPC calculada no servidor: false com 3 gerações válidas ou geração aberta na (cor, missão). */
+  pode_gerar_de_novo: boolean;
+}
+export interface RespostaListar { roteiro_id: string | null; unit_cents: number; imagens: ImagemGaleria[] }
+
+export const listarImagens = (mlItemId: string, roteiroVersao: number) =>
+  chamar<RespostaListar>('galeria-imagens', { acao: 'listar', ml_item_id: mlItemId, roteiro_versao: roteiroVersao });
+export const confirmarExibicao = (mlItemId: string, imagemIds: string[]) =>
+  chamar<{ cobradas: number }>('galeria-imagens', { acao: 'confirmar_exibicao', ml_item_id: mlItemId, imagem_ids: imagemIds });
+export const reportarInvalida = (mlItemId: string, imagemId: string) =>
+  chamar<{ reportada: boolean }>('galeria-imagens', { acao: 'reportar_invalida', ml_item_id: mlItemId, imagem_id: imagemId });
+export const gerarImagens = (mlItemId: string, p: { pedidoId: string; roteiroVersao: number; cores: string[]; missoes: number[]; unitCentsExibido: number }) =>
+  chamar<{ pedido_id: string; imagens: unknown[] }>('galeria-gerar', {
+    pedido_id: p.pedidoId, ml_item_id: mlItemId, roteiro_versao: p.roteiroVersao, cores: p.cores, missoes: p.missoes,
+    unit_cents_exibido: p.unitCentsExibido,
+  });
+
 const MENSAGENS: Record<string, string> = {
+  catalogo: 'Anúncio de catálogo: a galeria não troca fotos de catálogo.',
+  catalogo_desconhecido: 'Não foi possível confirmar no Mercado Livre se o anúncio é de catálogo.',
+  conjunto_incompleto: 'Há SKU desta cor sem variação publicada no cadastro.',
+  sem_anuncio: 'O anúncio desta linha não foi encontrado.',
+  variacao_nao_casa: 'A variação da cor não confere com o anúncio no Mercado Livre.',
+  roteiro_nao_aprovado: 'O roteiro aprovado mudou. Recarregue a galeria.',
+  'conteudo.ciencia_nao_conferido': 'Há fatos não conferidos usados no texto. Volte ao roteiro e marque a ciência.',
+  sem_vista: 'Falta a foto de referência da vista exigida pela missão.',
+  teto: 'Limite de 3 gerações por missão neste roteiro.',
+  em_andamento: 'Já há uma geração em andamento nesta missão.',
+  missao_inativa: 'Há missão desativada no roteiro aprovado.',
+  cor_invalida: 'Cor fora deste anúncio.',
+  sem_conexao_ml: 'Conecte a conta do Mercado Livre para gerar imagens.',
+  modulo_desligado: 'O módulo de imagens por IA não está ligado nesta organização.',
+  ml_indisponivel: 'Mercado Livre indisponível, tente de novo.',
+  pedido_de_outro_anuncio: 'Este pedido pertence a outro anúncio.',
+  pedido_invalido: 'Pedido inválido.',
   familia_nao_vigente: 'A família do anúncio mudou. Recarregamos a ficha; confira e tente de novo.',
   anuncio_ambiguo: 'Não foi possível identificar este anúncio de forma única.',
   categoria_mudou: 'A categoria do anúncio mudou (Moda × outras). Este roteiro não vale mais: crie um novo.',

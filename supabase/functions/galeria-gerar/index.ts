@@ -13,7 +13,7 @@ import { calcularVigencia } from '../_shared/galeria/referencias.ts';
 import { cienciaPendente, type Roteiro } from '../_shared/galeria/roteiro.ts';
 import { missoesDisponiveis, type Missao, type Vista } from '../_shared/galeria/regras.ts';
 import { resolverModeloGaleria } from '../_shared/galeria/provedores.ts';
-import { planejarGeracoes, type LinhaVaga } from '../_shared/galeria/pedido.ts';
+import { planejarGeracoes, precoDoMes, type LinhaVaga } from '../_shared/galeria/pedido.ts';
 import { alvosDaCor, lerElegibilidadeItemML, motivoElegibilidade, type ItemElegibilidade } from '../_shared/galeria/alvos.ts';
 import { publicarJobs } from '../_shared/galeria/despacho.ts';
 import { resolverConexaoEstrita } from '../_shared/canais/conexao.ts';
@@ -27,9 +27,6 @@ const COLUNAS_IMAGEM = 'id, cor, missao, geracao, status, origem, fase, tentativ
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-
-/** Competência pelo relógio de Fortaleza (UTC−3, sem horário de verão), como `platform_imagem_competencia`. */
-const mesAtual = () => `${new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 7)}-01`;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -113,10 +110,7 @@ Deno.serve(async (req) => {
     }
 
     // Preço do mês congelado no pedido; diferente do que a tela mostrou → nova confirmação.
-    const { data: termos, error: eT } = await admin.rpc('platform_resolve_terms', { p_org_id: orgId, p_on: mesAtual() });
-    if (eT) throw new Error(eT.message);
-    const termosId = (termos as { id?: string | null } | null)?.id ?? null;
-    const unitCents = termosId ? Number((termos as { image_unit_cents?: number | null }).image_unit_cents ?? 0) : 0;
+    const { unitCents, termosId } = await precoDoMes(admin, orgId);
     if (unitCents !== exibido) return json({ error: 'preco_mudou', unit_cents: unitCents }, 409);
 
     // Ciência (R1.3) e vistas por cor (R3.2). Sem `conferir`: o gerar nunca paga visão da etiqueta.

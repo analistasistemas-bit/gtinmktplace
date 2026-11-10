@@ -13,6 +13,7 @@ import {
 } from '@/lib/galeria/api';
 import { PassoFatos } from './passo-fatos';
 import { PassoRoteiro } from './passo-roteiro';
+import { PassoGerar } from './passo-gerar';
 
 type Falha = Extract<Res<unknown>, { ok: false }>;
 
@@ -22,7 +23,7 @@ export function DialogGaleria({ mlItemId, codigoPai, open, onOpenChange, isAdmin
   const [ficha, setFicha] = useState<Ficha | null>(null);
   const [resp, setResp] = useState<RespostaRoteiro | null>(null);
   const [moda, setModa] = useState<boolean | null>(null);
-  const [passo, setPasso] = useState<'fatos' | 'roteiro'>('fatos');
+  const [passo, setPasso] = useState<'fatos' | 'roteiro' | 'gerar'>('fatos');
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -82,6 +83,9 @@ export function DialogGaleria({ mlItemId, codigoPai, open, onOpenChange, isAdmin
     void carregar();
   }, [carregar]);
 
+  // Passo 3 só com roteiro aprovado (a edge recusa os demais com roteiro_nao_aprovado).
+  const podeGerar = resp?.roteiro.status === 'aprovado';
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
@@ -100,10 +104,16 @@ export function DialogGaleria({ mlItemId, codigoPai, open, onOpenChange, isAdmin
                 onClick={() => setPasso('fatos')}>1. Fatos e referências</Button>
               <Button role="tab" aria-selected={passo === 'roteiro'} size="sm" variant={passo === 'roteiro' ? 'default' : 'outline'}
                 onClick={() => setPasso('roteiro')}>2. Roteiro</Button>
+              {podeGerar && (
+                <Button role="tab" aria-selected={passo === 'gerar'} size="sm" variant={passo === 'gerar' ? 'default' : 'outline'}
+                  onClick={() => setPasso('gerar')}>3. Gerar</Button>
+              )}
             </div>
             {passo === 'fatos'
               ? <PassoFatos mlItemId={mlItemId} ficha={ficha} moda={moda} aoMudar={aoMudarFicha} />
-              : <PassoRoteiro mlItemId={mlItemId} ficha={ficha} isAdmin={isAdmin} resp={resp} podeCriar={roteiroLido}
+              : passo === 'gerar' && podeGerar
+                ? <PassoGerar mlItemId={mlItemId} ficha={ficha} resp={resp} aoRecarregar={() => void carregar()} aoVoltarRoteiro={() => setPasso('roteiro')} />
+                : <PassoRoteiro mlItemId={mlItemId} ficha={ficha} isAdmin={isAdmin} resp={resp} podeCriar={roteiroLido}
                 aoResposta={(r) => { setResp(r); setModa(r.roteiro.moda); setErro(null); }} aoFalhar={falhou} aoAprovar={roteiroAprovado} />}
           </>
         )}

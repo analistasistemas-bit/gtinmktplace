@@ -1,5 +1,5 @@
 // Pedido de geração da galeria (ADR-0201, Task 8): identidade por imagem e regra de vaga, iguais às de
-// `galeria_reservar_pedido` (migration 20261109093335). Puro: roda na edge e no vitest.
+// `galeria_reservar_pedido` (migration 20261109093335). Puro (exceto `precoDoMes`, que recebe o client): roda na edge e no vitest.
 import { createHash } from 'node:crypto';
 import { missoesDisponiveis, type Missao, type Vista } from './regras.ts';
 
@@ -22,6 +22,37 @@ const ABERTOS = new Set(['pendente', 'submetendo', 'gerando']);
 const TETO = 3;
 
 /**
+ * Regra de vaga da (cor, missão), igual à da RPC (sem a vista): geração aberta em qualquer roteiro → `em_andamento`;
+ * 3 gerações `gerador` fora de `falhou` deste roteiro, exibidas ou não → `teto`. Usada também pelo "Gerar de novo".
+ */
+export function bloqueioDaVaga(
+  linhas: LinhaVaga[], roteiroId: string, cor: string, missao: number, usaGerador: boolean,
+): 'em_andamento' | 'teto' | null {
+  const vaga = linhas.filter((l) => l.cor === cor && l.missao === missao);
+  if (vaga.some((l) => ABERTOS.has(l.status))) return 'em_andamento';
+  const validas = vaga.filter((l) => l.roteiro_id === roteiroId && l.status !== 'falhou' && l.origem === 'gerador');
+  return usaGerador && validas.length >= TETO ? 'teto' : null;
+}
+
+/** Competência pelo relógio de Fortaleza (UTC−3, sem horário de verão), como `platform_imagem_competencia`. */
+const mesAtual = () => `${new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 7)}-01`;
+
+/**
+ * Preço por imagem do mês (`platform_resolve_terms` → `image_unit_cents`); sem condição comercial → 0 e `termosId`
+ * nulo (pedido não elegível). Fonte única de `galeria-gerar` (congela no pedido) e `galeria-imagens` (mostra na tela).
+ */
+export async function precoDoMes(
+  admin: { rpc: (nome: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message: string } | null }> },
+  orgId: string,
+): Promise<{ unitCents: number; termosId: string | null }> {
+  const { data, error } = await admin.rpc('platform_resolve_terms', { p_org_id: orgId, p_on: mesAtual() });
+  if (error) throw new Error(error.message);
+  const termos = data as { id?: string | null; image_unit_cents?: number | null } | null;
+  const termosId = termos?.id ?? null;
+  return { termosId, unitCents: termosId ? Number(termos?.image_unit_cents ?? 0) : 0 };
+}
+
+/**
  * Mesma regra de vaga da RPC: geração aberta na (cor, missão) do anúncio, de qualquer roteiro → `em_andamento`;
  * teto 3 conta toda geração `gerador` fora de `falhou` deste roteiro (R8.2); nova `geracao` = maior não falha + 1.
  * A vista exigida pela missão precisa de referência da cor (R3.2) — recorte também (vem da foto real).
@@ -38,13 +69,10 @@ export function planejarGeracoes({ roteiroId, cores, missoes, moda, vistasPorCor
   for (const cor of cores) {
     for (const missao of missoes) {
       const m = info.get(missao)!;
-      const vaga = linhas.filter((l) => l.cor === cor && l.missao === missao);
-      const doRoteiro = vaga.filter((l) => l.roteiro_id === roteiroId && l.status !== 'falhou');
       const motivo: MotivoBloqueio | null = !(vistasPorCor[cor] ?? []).includes(m.vista) ? 'sem_vista'
-        : vaga.some((l) => ABERTOS.has(l.status)) ? 'em_andamento'
-        : m.usaGerador && doRoteiro.filter((l) => l.origem === 'gerador').length >= TETO ? 'teto'
-        : null;
+        : bloqueioDaVaga(linhas, roteiroId, cor, missao, m.usaGerador);
       if (motivo) { bloqueadas.push({ cor, missao, motivo }); continue; }
+      const doRoteiro = linhas.filter((l) => l.cor === cor && l.missao === missao && l.roteiro_id === roteiroId && l.status !== 'falhou');
       const geracao = Math.max(0, ...doRoteiro.map((l) => l.geracao)) + 1;
       (m.usaGerador ? novas : recortes).push({ cor, missao, geracao });
     }

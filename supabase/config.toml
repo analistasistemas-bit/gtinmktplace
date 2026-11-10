@@ -278,6 +278,10 @@ verify_jwt = true
 [functions.galeria-gerar]
 verify_jwt = true
 
+# ADR-0201 (Galeria da cor por IA): listar imagens, confirmar exibição (cobrança) e reportar imagem inválida. JWT do operador.
+[functions.galeria-imagens]
+verify_jwt = true
+
 # ADR-0201 (Galeria da cor por IA): relógio da galeria. Só QStash (agendamento de 1 min; assinatura conferida no código).
 [functions.galeria-despachante]
 verify_jwt = false
