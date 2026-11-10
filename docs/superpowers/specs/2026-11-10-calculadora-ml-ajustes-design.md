@@ -27,7 +27,7 @@ Ao selecionar um produto cadastrado, preencher:
 | Medidas/peso | variação (já funciona) |
 | Categoria ML | `familias.categoria_ml_id` — preenche o campo de categoria e o código (MLB…) sem consulta manual |
 | Comissão | vem da cotação oficial (`calcular-tarifa-ml`) assim que categoria + preço existirem |
-| Imposto (%) | `familias.origem` + alíquotas da org (`useAliquotas`: nacional/importado). Origem ausente/inválida → **não preencher** e mostrar aviso; nunca presumir (ADR-0107, regra financeira) |
+| Imposto (%) | `familias.origem` (`'nacional'`/`'importado'`, minúsculo) + alíquotas da org via `useAliquotas`; reaproveitar `aliquotaDoKit` (`src/lib/kit-variacao-simulacao.ts`), que já devolve `null` sem origem válida ou sem alíquota confirmada. `null` → **não preencher** e mostrar aviso; nunca presumir (ADR-0107, regra financeira) |
 | Preço de venda | **produto publicado:** preço vivo do anúncio no ML. **não publicado:** `variacoes.preco` (comportamento atual) |
 | Modalidade | **publicado:** `listing_type_id` do anúncio (`gold_special`=Clássico, `gold_pro`=Premium). **avulso/não publicado:** seletor na tela |
 | Margem-alvo | consequência do preço (ver frente 3): nasce como a margem real no preço praticado |
@@ -102,6 +102,29 @@ continuam ambos visíveis.
 - Usa a categoria da calculadora. Sem categoria: mostrar o pedido para informar a categoria em
   vez da tabela.
 - Bônus desejável *(decisão do agente, opcional)*: destacar a célula onde caem o produto e o kit N.
+
+## Decisões do agente após a revisão do construtor
+
+1. **Qual anúncio vale:** o item ML que vende a **variação escolhida** (SKU → item, via
+   `anuncios_externos_itens` em família User Products; senão o item da partição/anúncio da
+   família). Sem item para essa variação → tratar como "não publicado" (preço do cadastro,
+   modalidade manual), com aviso.
+2. **Leitura pontual:** preço vivo (`/sale_price` + `price`/preço "de") e `listing_type_id` lidos
+   **só para o item escolhido** — não varrer todos os anúncios a cada seleção. Edge nova ou
+   parâmetro opcional em edge existente, somente leitura, com deploy. Kit virtual fica **fora do
+   escopo** (a lista de produtos da calculadora não os traz hoje).
+3. **Margem guardada exata**, exibida com 2 casas. Ao carregar um produto publicado, o preço exibido
+   é exatamente o preço vivo (a margem é derivada, não o contrário).
+4. **Convergência preço por margem:** no máximo 5 iterações, tolerância R$ 0,01. Começar pela
+   fórmula local com a comissão/frete conhecidos, depois confirmar na API no preço resultante.
+   Sem convergência ou com margem inalcançável (denominador ≤ 0) → mostrar "não confirmado"
+   com o melhor preço e a margem real dele; nunca um preço silencioso.
+5. **Custo de API:** a margem viva e o quadro de kit usam a tarifa já obtida para estimar o preço
+   e só chamam `calcular-tarifa-ml` para confirmar o preço final de cada coluna (alvo: 1–2
+   chamadas por coluna por edição, com debounce). Cancelar respostas obsoletas (padrão de
+   sequência já usado no hook).
+6. **Trocar a modalidade** (seletor manual) mantém o preço e recalcula a margem — mesma regra dos
+   demais campos.
 
 ## Fora do escopo
 
