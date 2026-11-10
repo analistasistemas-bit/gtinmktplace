@@ -76,8 +76,10 @@ describe('FamiliaExpanded — limite de 60 caracteres do título (ML)', () => {
   });
 
   it('61 caracteres: avisa que passou do limite do ML', () => {
-    fireEvent.change(montar(), { target: { value: 'a'.repeat(61) } });
+    const input = montar();
+    fireEvent.change(input, { target: { value: 'a'.repeat(61) } });
     expect(screen.getByText('61/60')).toBeInTheDocument();
-    expect(screen.getByText(/Mercado Livre aceita no máximo 60/)).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(/Mercado Livre aceita no máximo 60/);
+    expect(input).toHaveAccessibleDescription(/Mercado Livre aceita no máximo 60/);
   });
 });

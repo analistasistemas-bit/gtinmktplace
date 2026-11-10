@@ -880,9 +880,10 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
             onChange={(e) => { tituloDirty.current = true; setTitulo(e.target.value); }}
             onBlur={salvarTitulo}
             aria-invalid={tituloExcedeLimite || undefined}
+            aria-describedby={tituloExcedeLimite ? `titulo-${familia.id}-limite` : undefined}
           />
           {tituloExcedeLimite && (
-            <p className="mt-1 text-xs text-danger">
+            <p id={`titulo-${familia.id}-limite`} role="alert" className="mt-1 text-xs text-danger">
               Título com {titulo.length} caracteres: o Mercado Livre aceita no máximo {TITULO_MAX_ML}. Encurte {titulo.length - TITULO_MAX_ML}.
             </p>
           )}
