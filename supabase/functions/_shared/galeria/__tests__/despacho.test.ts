@@ -15,7 +15,7 @@ let fake: ReturnType<typeof fakeAdmin>
 let publicados: MensagemQStash[][]
 let rejeitar: (m: MensagemQStash) => boolean
 let aoPublicar: (msgs: MensagemQStash[]) => void
-let enfileirados: Array<{ fila: string; msg: MensagemQStash }>
+let enfileirados: Array<{ userId: string; url: string; body: unknown }>
 
 const deps = () => ({
   agora,
@@ -26,12 +26,14 @@ const deps = () => ({
     return msgs.map((m) => (rejeitar(m) ? { error: 'rejeitada' } : { messageId: `m-${m.deduplicationId}` }))
   }),
   garantirFila: vi.fn(async () => {}),
-  enfileirar: vi.fn(async (fila: string, msg: MensagemQStash) => { enfileirados.push({ fila, msg }) }),
+  enfileirar: vi.fn(async (userId: string, url: string, body: unknown) => { enfileirados.push({ userId, url, body }) }),
 })
 
 // Espelho das consultas SQL (o SQL real é provado em supabase/tests/galeria_despacho.sql): só linhas acionáveis,
 // cabeça por prazo_ate (nulos por último), cada uma com a sua cota.
-const porPrazo = (a: Linha, b: Linha) => (a.prazo_ate == null ? 1 : 0) - (b.prazo_ate == null ? 1 : 0)
+// Ações de aplicação sempre antes dos itens (cota de 20 nunca as engole).
+const porPrazo = (a: Linha, b: Linha) => (a.tipo === 'aplicacao' ? 0 : 1) - (b.tipo === 'aplicacao' ? 0 : 1)
+  || (a.prazo_ate == null ? 1 : 0) - (b.prazo_ate == null ? 1 : 0)
   || String(a.prazo_ate ?? '').localeCompare(String(b.prazo_ate ?? ''))
 function instalarConsultas() {
   fake.respostasRpc.galeria_trabalho_pendente = ({ p_limite }) =>
@@ -211,6 +213,27 @@ describe('despachar', () => {
     expect(fake.rpcs.filter((r) => r.nome === 'galeria_manter_aplicacao').map((r) => r.args.p_aplicacao).sort()).toEqual(['a1', 'a2', 'a3'])
   })
 
+  it('21 itens vencidos de 7 sagas (mesmo prazo) → as 7 ações de aplicação saem mesmo com a cota cheia', async () => {
+    for (let n = 0; n < 7; n++) {
+      db.galeria_aplicacoes.push(aplicacao(`s${n}`, { prazo_ate: min(-5) }))
+      for (let k = 0; k < 3; k++) db.galeria_aplicacao_itens.push(item(`s${n}i${k}`, `s${n}`, { status: 'subindo' }))
+    }
+    // saga com todos os itens terminais (queda antes da agregação), prazo vencido também
+    db.galeria_aplicacoes.push(aplicacao('fim', { prazo_ate: min(-5), status: 'revertendo' }))
+    db.galeria_aplicacao_itens.push(item('fimI', 'fim', { status: 'compensado' }))
+    await rodar()
+    expect(fake.rpcs.filter((r) => r.nome === 'galeria_manter_aplicacao').map((r) => r.args.p_aplicacao).sort())
+      .toEqual(['fim', 's0', 's1', 's2', 's3', 's4', 's5', 's6'])
+  })
+
+  it('aplicação vencida + item pendente livre → aborta e não publica job do item no mesmo tick', async () => {
+    db.galeria_aplicacoes.push(aplicacao('a1', { prazo_ate: min(-1) }))
+    db.galeria_aplicacao_itens.push(item('i1', 'a1'))
+    await rodar()
+    expect(fake.rpcs.filter((r) => r.nome === 'galeria_manter_aplicacao').map((r) => r.args.p_aplicacao)).toEqual(['a1'])
+    expect(msgs()).toEqual([])
+  })
+
   it('200 gerada (alertas preenchido) + 1 gerando → a gerando sai na primeira execução', async () => {
     for (let n = 0; n < 200; n++) db.galeria_imagens.push(imagem(`ok${n}`, { status: 'gerada', cena_path: 'c.jpg', alertas: [] }))
     db.galeria_imagens.push(imagem('gx', { status: 'gerando', provedor: 'higgsfield' }))
@@ -293,8 +316,9 @@ describe('escritas adiadas', () => {
     db.ml_escritas_adiadas.push(adiada())
     db.ml_item_travas.push({ org_id: 'org', item_id: 'MLB1', dono_tipo: 'escritor', expira_em: min(-1) }) // vencida
     await rodar()
-    expect(enfileirados).toEqual([{ fila: 'publish-ml-u1', msg: expect.objectContaining({
-      url: 'https://x.supabase.co/functions/v1/update-familia-ml', body: { familia_id: 'fam', lote_id: 'lote1', adiada_id: 'ad1' } }) }])
+    // Fila e opções de retry do job normal de publicação (enfileirarJobPublicacaoML em queue.ts).
+    expect(enfileirados).toEqual([{ userId: 'u1', url: 'https://x.supabase.co/functions/v1/update-familia-ml',
+      body: { familia_id: 'fam', lote_id: 'lote1', adiada_id: 'ad1' } }])
     expect(db.ml_escritas_adiadas[0].proxima_em).toBe(min(5))
   })
 

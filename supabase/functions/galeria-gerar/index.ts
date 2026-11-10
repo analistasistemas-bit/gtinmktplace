@@ -97,12 +97,17 @@ Deno.serve(async (req) => {
       return lidos.get(id)!;
     };
     const leitor = { lerItem, lerBackfill: (id: string) => buscarItemBackfill(fetch, { accessToken: token }, id) };
+    // GET que falhou (5xx/rede) não é catálogo nem conjunto incompleto: recusa retentável, sem pedido nem custo.
+    // `catalogo_desconhecido` fica só para GET 200 sem o campo.
+    const falhouGet = async () => (await Promise.all(lidos.values())).some((i) => i === null);
     for (const cor of cores) {
       const alvos = await alvosDaCor(admin, orgId, a.anuncioId, cor, leitor);
+      if (await falhouGet()) return json({ error: 'ml_indisponivel' }, 503);
       if ('erro' in alvos) return json({ error: alvos.erro, cor, detalhe: alvos.detalhe }, 409);
       for (const { itemId } of alvos.alvos) {
         const item = await lerItem(itemId);
-        const motivo = item ? motivoElegibilidade(item) : 'catalogo_desconhecido';
+        if (!item) return json({ error: 'ml_indisponivel' }, 503);
+        const motivo = motivoElegibilidade(item);
         if (motivo) return json({ error: motivo, cor, item_id: itemId }, 409);
       }
     }
@@ -117,7 +122,7 @@ Deno.serve(async (req) => {
     // Ciência (R1.3) e vistas por cor (R3.2). Sem `conferir`: o gerar nunca paga visão da etiqueta.
     const v = await calcularVigencia(admin, orgId, a);
     const pendentes = cienciaPendente(conteudo, v.fatos);
-    if (pendentes.length > 0) return json({ error: 'ciencia_pendente', campos: pendentes }, 409);
+    if (pendentes.length > 0) return json({ error: 'conteudo.ciencia_nao_conferido', campos: pendentes }, 409);
     const refDe = (cor: string, vista: Vista) => {
       const x = v.referencias[cor]?.[vista];
       return x && !('erro' in x) ? x : null;

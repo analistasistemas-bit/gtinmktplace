@@ -27,7 +27,7 @@ declare
   u constant uuid := '97800000-0000-0000-0000-000000000101';
   v_lote uuid; v_fam uuid; v_an uuid; v_rot uuid; v_ped uuid := gen_random_uuid();
   v_a uuid; v_b uuid; v_c uuid; v_d uuid; v_e uuid; v_f uuid; v_g uuid;
-  v_n integer; v_txt text; r record;
+  v_n integer; r_total integer; v_txt text; r record;
 begin
   insert into public.lotes (user_id, org_id, status, origem) values (u, o, 'concluido', 'manual') returning id into v_lote;
   insert into public.familias (lote_id, user_id, org_id, codigo_pai, nome_pai, operacao, origem, chave_cadastro, status)
@@ -146,6 +146,29 @@ begin
   perform pg_temp.afirmar(public.galeria_manter_aplicacao(v_g) = 'revertida', 'revertendo com tudo compensado → revertida');
   perform pg_temp.afirmar(public.galeria_manter_aplicacao(v_b) = 'preparada', 'preparada nunca é mexida');
   perform pg_temp.afirmar((select status from public.galeria_aplicacao_itens where aplicacao_id = v_b) = 'pendente', 'item da preparada intacto');
+
+  -- 4b. Cota cheia (fix round 1): 7 sagas vencidas com 3 itens cada, mesmo prazo, + 1 saga com tudo aplicado e trava
+  -- galeria (queda antes da agregação). As ações saem antes dos itens; manter encerra a última e solta a trava.
+  update public.galeria_aplicacoes set status = 'aplicada' where org_id = o and status in ('em_andamento', 'abortando', 'revertendo');
+  for v_n in 1..7 loop
+    insert into public.galeria_aplicacoes (org_id, anuncio_externo_id, familia_id, cor, modo, manifesto, roteiro_id, fatos_hash,
+      status, prazo_ate, ciclo_ate) values (o, v_an, v_fam, 'S' || v_n, 'substituir', '[]', v_rot, 'h1', 'em_andamento',
+      now() - interval '5 minutes', now() + interval '3 hours') returning id into v_a;
+    insert into public.galeria_aplicacao_itens (org_id, anuncio_externo_id, aplicacao_id, item_id, status)
+    select o, v_an, v_a, 'S' || v_n || '-' || k, 'subindo' from generate_series(1, 3) k;
+  end loop;
+  insert into public.galeria_aplicacoes (org_id, anuncio_externo_id, familia_id, cor, modo, manifesto, roteiro_id, fatos_hash,
+    status, prazo_ate, ciclo_ate) values (o, v_an, v_fam, 'Fim', 'substituir', '[]', v_rot, 'h1', 'em_andamento',
+    now() + interval '5 minutes', now() + interval '3 hours') returning id into v_e;
+  insert into public.galeria_aplicacao_itens (org_id, anuncio_externo_id, aplicacao_id, item_id, status) values (o, v_an, v_e, 'FIM1', 'aplicado');
+  insert into public.ml_item_travas (org_id, item_id, dono_tipo, dono_id, expira_em) values (o, 'FIM1', 'galeria', v_e, null);
+  select count(*) filter (where t.tipo = 'aplicacao'), count(*) into v_n, r_total from public.galeria_trabalho_pendente_aplicacao(20) t;
+  perform pg_temp.afirmar(v_n = 8 and r_total = 20, 'cota 20: 8 ações antes dos itens; vieram ' || v_n || ' de ' || r_total);
+  perform public.galeria_manter_aplicacao(t.id) from public.galeria_trabalho_pendente_aplicacao(20) t where t.tipo = 'aplicacao';
+  perform pg_temp.afirmar((select status from public.galeria_aplicacoes where id = v_e) = 'aplicada', 'saga com tudo aplicado encerrada');
+  perform pg_temp.afirmar(not exists (select 1 from public.ml_item_travas t where t.dono_id = v_e), 'trava da saga encerrada solta');
+  perform pg_temp.afirmar((select count(*) from public.galeria_aplicacoes where org_id = o and cor like 'S%' and status = 'falhou' and abortar_em is not null) = 7,
+    'as 7 sagas vencidas abortadas (itens sem PUT → pulado → falhou)');
 
   -- 5. Escritas adiadas: vencida e livre (sim), assumida (não), futura (não).
   insert into public.ml_escritas_adiadas (org_id, familia_id, lote_id, endpoint, itens, job, proxima_em, assumida_ate) values

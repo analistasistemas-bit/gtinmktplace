@@ -125,6 +125,8 @@ $$;
 -- terminais = rede de segurança da agregação). Só aplicação em execução dentro do ciclo — nunca `preparada`. Item só
 -- sem mensagem em voo: publicado_em nulo ou de 3 min atrás (o worker zera ao concluir cada fase). user_id = dono da
 -- fila publish-ml-* (o mesmo de publicar-familias).
+-- Ações de aplicação vêm antes dos itens: são no máximo uma por aplicação e são elas que abortam, compensam e
+-- soltam a trava; itens vencidos de muitas sagas nunca podem ocupar a cota inteira e travar o encerramento.
 create function public.galeria_trabalho_pendente_aplicacao(p_limite integer)
 returns table (tipo text, id uuid, aplicacao_id uuid, aplicacao_status text, prazo_ate timestamptz, ciclo_ate timestamptz,
   user_id uuid, item_status text, fase integer, despacho_seq integer, lease_ate timestamptz, publicado_em timestamptz,
@@ -156,7 +158,7 @@ language sql stable security definer set search_path = '' as $$
         or a.abertos = 0
   ) x (tipo, id, aplicacao_id, aplicacao_status, prazo_ate, ciclo_ate, user_id, item_status, fase, despacho_seq,
        lease_ate, publicado_em, fotos_novas, itens_abertos, itens_aplicados)
-  order by x.prazo_ate nulls last, x.tipo desc
+  order by (x.tipo = 'aplicacao') desc, x.prazo_ate nulls last
   limit p_limite
 $$;
 

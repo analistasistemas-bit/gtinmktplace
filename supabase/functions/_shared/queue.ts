@@ -107,6 +107,17 @@ export function garantirFilaSerial(userId: string): Promise<void> {
 const RETRIES_PUBLICACAO_ML = 10;
 const RETRY_DELAY_PUBLICACAO_ML = '30000'; // 30s × 10 = 5 min de cobertura, granularidade fina
 
+/**
+ * Um job avulso na fila serial do vendedor, com as mesmas opções de retry da publicação (ADR-0033/0034). Usado pelo
+ * despachante da galeria (ADR-0201) para reenfileirar escrita adiada de update-familia-ml / publicar-split-ml.
+ */
+export async function enfileirarJobPublicacaoML(userId: string, url: string, body: unknown): Promise<string> {
+  await garantirFilaSerial(userId);
+  const { messageId } = await qstashClient().queue({ queueName: nomeFilaPublicacao(userId) })
+    .enqueueJSON({ url, body, retries: RETRIES_PUBLICACAO_ML, retryDelay: RETRY_DELAY_PUBLICACAO_ML });
+  return messageId;
+}
+
 /** Alvo de cada família na publicação: CREATE, UPDATE ou split (>100 cores / preço divergente). */
 export type AlvoPublicacao = 'publish' | 'update' | 'split';
 

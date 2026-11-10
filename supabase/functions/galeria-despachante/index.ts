@@ -4,7 +4,7 @@
 // Nunca escreve no ML.
 import { corsHeaders } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { garantirFilaSerial, qstashClient, verificarAssinatura } from '../_shared/queue.ts';
+import { enfileirarJobPublicacaoML, garantirFilaSerial, qstashClient, verificarAssinatura } from '../_shared/queue.ts';
 import { despachar } from '../_shared/galeria/despacho.ts';
 
 Deno.serve(async (req) => {
@@ -17,7 +17,7 @@ Deno.serve(async (req) => {
       base: Deno.env.get('SUPABASE_URL')!,
       publicar: (msgs) => qstashClient().batchJSON(msgs as never) as never,
       garantirFila: garantirFilaSerial,
-      enfileirar: (fila, msg) => qstashClient().queue({ queueName: fila }).enqueueJSON(msg as never),
+      enfileirar: enfileirarJobPublicacaoML,
     });
     return new Response(JSON.stringify({ ok: true, ...r }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (e) {

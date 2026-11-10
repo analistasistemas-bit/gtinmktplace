@@ -12,6 +12,7 @@ vi.mock('../../_shared/queue.ts', () => ({
   verificarAssinatura: vi.fn(async () => f.assinatura),
   qstashClient: () => ({ batchJSON: f.batch, queue: ({ queueName }: { queueName: string }) => { f.filas.push(queueName); return { enqueueJSON: f.enqueue } } }),
   garantirFilaSerial: vi.fn(async () => {}),
+  enfileirarJobPublicacaoML: vi.fn(async () => 'm'),
 }))
 
 let handler: (req: Request) => Promise<Response>

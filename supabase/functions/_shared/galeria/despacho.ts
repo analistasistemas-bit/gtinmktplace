@@ -39,6 +39,8 @@ export interface Trabalho {
   id: string; fase: number; tentativa: number; despacho_seq: number;
   acao: 'submeter' | 'consultar' | 'alertar' | 'passo' | 'consultar_foto' | 'abortar' | 'compensar' | 'agregar';
   userId?: string | null;
+  /** Item de aplicação: a aplicação dele (para não publicar item cuja aplicação acabou de receber uma ação). */
+  aplicacaoId?: string;
 }
 
 export interface MensagemQStash {
@@ -91,7 +93,7 @@ export function selecionarTrabalho(linhas: LinhaDespacho[], agora: Date, limites
     } else if (l.fonte === 'item' && itemAcionavel(l, agora) && cabe('aplicacao')) {
       const foto = l.item_status === 'subindo' && fotosEnviadasSemPronta(l.fotos_novas);
       t = { tipo: foto ? 'aplicacao_foto' : 'aplicacao_item', id: l.id, fase: l.fase, tentativa: 0, despacho_seq: l.despacho_seq,
-        acao: foto ? 'consultar_foto' : 'passo', userId: l.user_id };
+        acao: foto ? 'consultar_foto' : 'passo', userId: l.user_id, aplicacaoId: l.aplicacao_id };
     } else if (l.fonte === 'aplicacao') {
       const acao = acaoDaAplicacao(l, agora);
       if (acao && cabe('aplicacao')) t = { tipo: 'aplicacao', id: l.id, fase: 0, tentativa: 0, despacho_seq: 0, acao };
@@ -108,8 +110,8 @@ export interface DepsDespacho {
   /** `qstashClient().batchJSON`: um elemento por mensagem; só o que traz `messageId` foi aceito. */
   publicar(msgs: MensagemQStash[]): Promise<Array<{ messageId?: string; error?: string }>>;
   garantirFila(userId: string): Promise<void>;
-  /** `qstashClient().queue({ queueName }).enqueueJSON(msg)` */
-  enfileirar(fila: string, msg: MensagemQStash): Promise<unknown>;
+  /** `enfileirarJobPublicacaoML` (queue.ts): fila `publish-ml-${userId}` com as mesmas opções de retry do job normal. */
+  enfileirar(userId: string, url: string, body: unknown): Promise<unknown>;
 }
 
 function mensagem(t: Trabalho, base: string): MensagemQStash {
@@ -185,10 +187,7 @@ async function processarAdiada(admin: SupabaseClient, a: Adiada, deps: DepsDespa
   if (eC) throw new Error(eC.message);
   if ((claim ?? []).length !== 1 || decisao === 'reagendar') return;
   if (decisao === 'enfileirar') {
-    await deps.garantirFila(fam!.user_id);
-    await deps.enfileirar(`publish-ml-${fam!.user_id}`, {
-      url: `${deps.base}/functions/v1/${a.endpoint}`, body: { ...a.job, adiada_id: a.id }, retries: 3,
-    });
+    await deps.enfileirar(fam!.user_id, `${deps.base}/functions/v1/${a.endpoint}`, { ...a.job, adiada_id: a.id });
     return;
   }
   if (decisao === 'erro') {
@@ -223,11 +222,16 @@ export async function despachar(admin: SupabaseClient, deps: DepsDespacho) {
   const trabalho = selecionarTrabalho(linhas, deps.agora, LIMITES);
 
   // Ações de nível da aplicação: no banco, sob lock da aplicação (abortar por prazo, compensar aplicados, agregar).
+  const mantidas = new Set<string>();
   for (const t of trabalho.filter((x) => x.tipo === 'aplicacao')) {
+    mantidas.add(t.id);
     const { error } = await admin.rpc('galeria_manter_aplicacao', { p_aplicacao: t.id });
     if (error) console.error('[galeria-despacho] manter', t.id, error.message);
   }
-  const publicados = await publicarJobs(admin, trabalho.filter((x) => x.tipo !== 'aplicacao'), deps);
+  // A ação pode ter mudado os itens (ex.: aborto marca pendente → pulado): item dessa aplicação espera o próximo tick,
+  // quando a consulta já o traz (ou não) pelo estado novo.
+  const publicados = await publicarJobs(admin,
+    trabalho.filter((x) => x.tipo !== 'aplicacao' && !(x.aplicacaoId && mantidas.has(x.aplicacaoId))), deps);
 
   let adiadasOk = 0;
   for (const a of adiadas) {

@@ -78,7 +78,7 @@ beforeEach(() => {
   fetchs = []
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     fetchs.push(url)
-    if (url.startsWith('https://api.mercadolibre.com/items/MLB1')) return Response.json(itemML)
+    if (url.startsWith('https://api.mercadolibre.com/items/MLB1')) return itemML.__status ? new Response('{}', { status: itemML.__status as number }) : Response.json(itemML)
     return new Response('{}', { status: 500 })
   }))
 })
@@ -172,11 +172,18 @@ describe('galeria-gerar', () => {
     semCusto()
   })
 
-  it('fato NAO_CONFERIDO citado sem ciência do operador → ciencia_pendente', async () => {
+  it('GET do ML com 5xx → ml_indisponivel (503, retentável), nunca catalogo_desconhecido, sem pedido', async () => {
+    itemML = { __status: 500 }
+    const r = await chamar(pedido())
+    expect(r).toEqual({ status: 503, body: { error: 'ml_indisponivel' } })
+    semCusto()
+  })
+
+  it('fato NAO_CONFERIDO citado sem ciência do operador → conteudo.ciencia_nao_conferido', async () => {
     db.galeria_roteiros[0].conteudo = { categoria: 'Rendas', contrato: 'Renda', missoes: [{ missao: 1, ativa: true, cena: 'c', fatosUsados: ['marca'] }] }
     f.vigencia = { ...f.vigencia, fatos: [{ campo: 'marca', valor: 'Avil', estado: 'NAO_CONFERIDO', origem: 'planilha', evidencia: {} }] }
     const r = await chamar(pedido({ missoes: [1] }))
-    expect(r).toEqual({ status: 409, body: { error: 'ciencia_pendente', campos: ['marca'] } })
+    expect(r).toEqual({ status: 409, body: { error: 'conteudo.ciencia_nao_conferido', campos: ['marca'] } })
     semCusto()
   })
 
