@@ -36,6 +36,8 @@ export interface EntradaVolta extends Comum {
   fotosDaCor: FotosPorSku;
   /** `fotos_depois` lidos no GET de conferência da ida. */
   fotosDepois: FotosPorSku;
+  /** `pictures` do item antes da ida (retrato): a volta restaura essa ordem. */
+  picturesAntes: string[];
 }
 export type MotivoPlano =
   | 'mudou' | 'limite' | 'variacao_ausente' | 'catalogo' | 'catalogo_desconhecido' | 'migracao_pendente' | 'reversao_incompleta';
@@ -72,18 +74,34 @@ function mudou(atual: RetratoItem, retrato: RetratoItem): string | null {
   return null;
 }
 
+const listaDeIds = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.every((x) => typeof x === 'string' && x !== '');
+
 /**
  * Corpo a partir das novas fotos da cor. `pictures` = fotos do item que seguem referenciadas, mais as que não eram
- * de nenhuma variação (não é a galeria que vai apagá-las), na ordem do GET, seguidas das novas na ordem das variações.
+ * de nenhuma variação (não é a galeria que vai apagá-las), na ordem do GET; as novas entram no lugar da 1ª foto
+ * removida (a cor dona de `pictures[0]` continua dona da posição 0), ou no fim se nada saiu. Com `ordem` (volta),
+ * `pictures` é reordenado pelo retrato; o que não existe nele vai ao fim, na ordem atual.
  */
-function montarCorpo(atual: ItemElegibilidade, novas: FotosPorSku, alvos: Alvo['variacoes']): CorpoFotosML {
+function montarCorpo(atual: ItemElegibilidade, novas: FotosPorSku, alvos: Alvo['variacoes'], ordem?: string[]): CorpoFotosML {
   if (atual.variacoes.length === 0) return { pictures: novas[alvos[0].sku].map((id) => ({ id })) };
   const porVar = new Map(alvos.map((a) => [a.variationId, novas[a.sku]]));
   const variations = atual.variacoes.map((v) => ({ id: v.id, picture_ids: [...(porVar.get(v.id) ?? v.pictureIds)] }));
   const antes = new Set(atual.variacoes.flatMap((v) => v.pictureIds));
   const depois = new Set(variations.flatMap((v) => v.picture_ids));
-  const pictures = atual.pictures.filter((p) => depois.has(p) || !antes.has(p));
-  for (const v of variations) for (const p of v.picture_ids) if (!pictures.includes(p)) pictures.push(p);
+  const fica = (p: string) => depois.has(p) || !antes.has(p);
+  const entram = [...new Set(variations.flatMap((v) => v.picture_ids))].filter((p) => !atual.pictures.includes(p));
+  let pictures: string[] = [];
+  let inseriu = false;
+  for (const p of atual.pictures) {
+    if (fica(p)) pictures.push(p);
+    else if (!inseriu) { pictures.push(...entram); inseriu = true; }
+  }
+  if (!inseriu) pictures.push(...entram);
+  if (ordem) {
+    const pos = new Map(ordem.map((p, i) => [p, i]));
+    pictures = [...pictures.filter((p) => pos.has(p)).sort((x, y) => pos.get(x)! - pos.get(y)!), ...pictures.filter((p) => !pos.has(p))];
+  }
   return { pictures: pictures.map((id) => ({ id })), variations };
 }
 
@@ -98,16 +116,18 @@ export function planejarFotosItem(e: EntradaIda | EntradaVolta): ResultadoPlano 
 
   if (e.direcao === 'volta') {
     if (!correntes) return falha('reversao_incompleta', `${e.atual.id}:variacao_ausente`);
-    // fotos_antes/fotos_depois vêm de jsonb relido: chave ausente nunca vira lista vazia (apagaria as fotos da cor).
+    // fotos_antes/fotos_depois/retrato vêm de jsonb relido: chave ausente nunca vira lista vazia (apagaria as fotos
+    // da cor) e todo elemento tem de ser id não vazio.
+    if (!listaDeIds(e.picturesAntes)) return falha('reversao_incompleta', `${e.atual.id}:pictures_antes`);
     for (const a of e.variacoesAlvo) {
       const depois = e.fotosDepois[a.sku];
-      if (!Array.isArray(depois) || !Array.isArray(e.fotosDaCor[a.sku]) || !igual(correntes[a.sku], depois)) {
+      if (!listaDeIds(depois) || !listaDeIds(e.fotosDaCor[a.sku]) || !igual(correntes[a.sku], depois)) {
         return falha('reversao_incompleta', `${e.atual.id}:${a.sku}`);
       }
     }
     const novas: FotosPorSku = {};
     for (const a of e.variacoesAlvo) novas[a.sku] = [...e.fotosDaCor[a.sku]];
-    return { ok: true, corpo: montarCorpo(e.atual, novas, e.variacoesAlvo) };
+    return { ok: true, corpo: montarCorpo(e.atual, novas, e.variacoesAlvo, e.picturesAntes) };
   }
 
   // Contrato do chamador (manifesto congelado da preparação): violado → lança, nunca planeja PUT.

@@ -56,6 +56,7 @@ describe('subirFotoMLArquivo', () => {
     const { url, init } = chamadas[0];
     expect(url).toBe('https://api.mercadolibre.com/pictures/items/upload');
     expect(init.method).toBe('POST');
+    expect(init.signal).toBeInstanceOf(AbortSignal);
     const h = new Headers(init.headers);
     expect(h.get('authorization')).toBe('Bearer tok');
     expect(h.get('user-agent')).toBe('Mozilla/5.0');
@@ -77,5 +78,12 @@ describe('subirFotoMLArquivo', () => {
     await expect(subirFotoMLArquivo('tok', new Uint8Array([1]), 'image/jpeg', comoFetch(f))).rejects.toMatchObject({ status: 503 });
     const g = vi.fn(async () => new Response('{"status":"ACTIVE"}', { status: 201 }));
     await expect(subirFotoMLArquivo('tok', new Uint8Array([1]), 'image/jpeg', comoFetch(g))).rejects.toThrow(/id/);
+  });
+
+  it('fetch que rejeita (timeout/rede) → erro sem .status (upload incerto: nunca re-subir às cegas)', async () => {
+    const f = vi.fn(async () => { throw new DOMException('timeout', 'TimeoutError'); });
+    const erro = await subirFotoMLArquivo('tok', new Uint8Array([1]), 'image/jpeg', comoFetch(f)).catch((e) => e);
+    expect(erro).toBeInstanceOf(DOMException);
+    expect((erro as { status?: number }).status).toBeUndefined();
   });
 });

@@ -18,6 +18,7 @@ describe('atualizarFotosItemML', () => {
     await atualizarFotosItemML('tok', 'MLB1', corpo as never, f);
     expect(chamadas[0].url).toBe('https://api.mercadolibre.com/items/MLB1');
     expect(chamadas[0].init.method).toBe('PUT');
+    expect(chamadas[0].init.signal).toBeInstanceOf(AbortSignal);
     expect(JSON.parse(chamadas[0].init.body as string)).toEqual({ pictures: [{ id: 'A' }], variations: [{ id: 11, picture_ids: ['A'] }] });
   });
 
@@ -30,6 +31,13 @@ describe('atualizarFotosItemML', () => {
   it('HTTP de erro lança com status (5xx = incerto para a saga)', async () => {
     const { f } = capturar(502);
     await expect(atualizarFotosItemML('tok', 'MLB1', { pictures: [{ id: 'A' }] }, f)).rejects.toMatchObject({ status: 502 });
+  });
+
+  it('fetch que rejeita (timeout/rede) → erro sem .status (incerto para a saga)', async () => {
+    const f = vi.fn(async () => { throw new DOMException('timeout', 'TimeoutError'); }) as unknown as typeof fetch;
+    const erro = await atualizarFotosItemML('tok', 'MLB1', { pictures: [{ id: 'A' }] }, f).catch((e) => e);
+    expect(erro).toBeInstanceOf(DOMException);
+    expect((erro as { status?: number }).status).toBeUndefined();
   });
 });
 

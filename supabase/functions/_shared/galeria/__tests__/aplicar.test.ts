@@ -27,10 +27,10 @@ const SEM_ESCRITA_PROIBIDA = (corpo: Record<string, unknown>) => {
 }
 
 describe('planejarFotosItem — ida', () => {
-  it('Rosa+Azul, substituir Rosa → Azul com os ids atuais, pictures = união (órfã do item preservada, foto só da Rosa sai)', () => {
+  it('Rosa+Azul, substituir Rosa → Azul com os ids atuais; novas no lugar da 1ª foto removida, órfã preservada', () => {
     const r = planejarFotosItem(ida(legacy()))
     expect(r).toEqual({ ok: true, corpo: {
-      pictures: ['CAPA', 'A1', 'SOLTA', 'N1', 'N2', 'N3', 'N4', 'N5', 'N6', 'N7'].map((id) => ({ id })),
+      pictures: ['CAPA', 'N1', 'N2', 'N3', 'N4', 'N5', 'N6', 'N7', 'A1', 'SOLTA'].map((id) => ({ id })),
       variations: [
         { id: 11, picture_ids: ['N1', 'N2', 'N3', 'N4', 'N5', 'N6', 'N7'] },
         { id: 12, picture_ids: ['CAPA', 'A1'] },
@@ -73,10 +73,16 @@ describe('planejarFotosItem — ida', () => {
     expect(planejarFotosItem(ida(seis, { modo: 'adicionar' }))).toMatchObject({ ok: false, motivo: 'limite' })
   })
 
-  it('estoque mudou e fotos iguais → não é mudou', () => {
-    const e = ida(legacy())
-    const atual = { ...legacy(), available_quantity: 3, price: 99 } as ItemElegibilidade
-    expect(planejarFotosItem({ ...e, atual }).ok).toBe(true)
+  it('ordem de tags mudou com fotos iguais (efeito de PUT de estoque, ensaio (g)) → não é mudou', () => {
+    const e = ida(legacy({ tags: ['a', 'b'] }))
+    expect(planejarFotosItem({ ...e, atual: legacy({ tags: ['b', 'a'] }) }).ok).toBe(true)
+  })
+
+  it('cor-alvo dona de pictures[0] → capa nova em pictures[0]', () => {
+    const a = legacy({ pictures: ['R1', 'R2', 'A1', 'A2'],
+      variacoes: [{ id: 11, sku: '100R', pictureIds: ['R1', 'R2'] }, { id: 12, sku: '100A', pictureIds: ['A1', 'A2'] }] })
+    const r = planejarFotosItem(ida(a, { fotosDaCor: MANIFESTO.slice(0, 2) }))
+    expect(r.ok && r.corpo.pictures.map((p) => p.id)).toEqual(['N1', 'N2', 'A1', 'A2'])
   })
 
   it('foto da Azul mudou → mudou', () => {
@@ -125,13 +131,14 @@ describe('planejarFotosItem — volta (compensação)', () => {
     variacoes: [{ id: 11, sku: '100R', pictureIds: ['N1', 'N2', 'N3'] }, { id: 12, sku: '100A', pictureIds: azul }],
   })
   const volta = (atual: ItemElegibilidade, extra: Partial<EntradaVolta> = {}): EntradaVolta => ({
-    direcao: 'volta', atual, variacoesAlvo: [{ sku: '100R', variationId: 11 }], fotosDaCor: ANTES, fotosDepois: DEPOIS, ...extra,
+    direcao: 'volta', atual, variacoesAlvo: [{ sku: '100R', variationId: 11 }], fotosDaCor: ANTES, fotosDepois: DEPOIS,
+    picturesAntes: ['CAPA', 'R1', 'R2', 'A1', 'SOLTA'], ...extra,
   })
 
-  it('atual = fotosDepois → ok; Rosa volta para fotos_antes, Azul com os ids atuais (nunca mudou)', () => {
+  it('atual = fotosDepois → ok; Rosa volta para fotos_antes, Azul com os ids atuais, pictures na ordem do retrato', () => {
     const r = planejarFotosItem(volta(aplicado()))
     expect(r).toEqual({ ok: true, corpo: {
-      pictures: ['CAPA', 'A1', 'SOLTA', 'R1', 'R2'].map((id) => ({ id })),
+      pictures: ['CAPA', 'R1', 'R2', 'A1', 'SOLTA'].map((id) => ({ id })),
       variations: [{ id: 11, picture_ids: ['CAPA', 'R1', 'R2'] }, { id: 12, picture_ids: ['CAPA', 'A1'] }],
     } })
     if (r.ok) SEM_ESCRITA_PROIBIDA(r.corpo)
@@ -157,6 +164,31 @@ describe('planejarFotosItem — volta (compensação)', () => {
     expect(planejarFotosItem(volta(semFoto, { fotosDepois: {} }))).toMatchObject({ ok: false, motivo: 'reversao_incompleta' })
   })
 
+  it('ida + volta com a cor-alvo dona de pictures[0] → restaura exatamente a ordem do retrato', () => {
+    const antes = legacy({ pictures: ['R1', 'R2', 'A1', 'A2'],
+      variacoes: [{ id: 11, sku: '100R', pictureIds: ['R1', 'R2'] }, { id: 12, sku: '100A', pictureIds: ['A1', 'A2'] }] })
+    const ida1 = planejarFotosItem(ida(antes, { fotosDaCor: MANIFESTO.slice(0, 2) }))
+    if (!ida1.ok) throw new Error('ida')
+    const depois = legacy({ pictures: ida1.corpo.pictures.map((p) => p.id),
+      variacoes: ida1.corpo.variations!.map((v) => ({ id: v.id, sku: v.id === 11 ? '100R' : '100A', pictureIds: v.picture_ids })) })
+    const r = planejarFotosItem(volta(depois, { fotosDaCor: { '100R': ['R1', 'R2'] }, fotosDepois: { '100R': ['N1', 'N2'] }, picturesAntes: antes.pictures }))
+    expect(r.ok && r.corpo.pictures.map((p) => p.id)).toEqual(['R1', 'R2', 'A1', 'A2'])
+  })
+
+  it('foto que não existe no retrato vai ao fim, na ordem atual', () => {
+    const r = planejarFotosItem(volta(aplicado(['A7', 'A8'])))
+    expect(r.ok && r.corpo.pictures.map((p) => p.id)).toEqual(['CAPA', 'R1', 'R2', 'A1', 'SOLTA', 'A7', 'A8'])
+  })
+
+  it.each([
+    ['fotos_antes com elemento vazio', { fotosDaCor: { '100R': ['CAPA', ''] } }],
+    ['fotos_antes com elemento não string', { fotosDaCor: { '100R': ['CAPA', 7] } }],
+    ['fotos_depois com elemento não string', { fotosDepois: { '100R': ['N1', null] } }],
+    ['picturesAntes não é lista de strings', { picturesAntes: ['CAPA', 1] }],
+  ])('%s → reversao_incompleta', (_n, extra) => {
+    expect(planejarFotosItem(volta(aplicado(), extra as never))).toMatchObject({ ok: false, motivo: 'reversao_incompleta' })
+  })
+
   it('cor sem foto: lista vazia presente nas duas pontas é legítima', () => {
     const semFoto = aplicado()
     semFoto.variacoes[0].pictureIds = []
@@ -172,7 +204,7 @@ describe('planejarFotosItem — volta (compensação)', () => {
 
   it('UP plano com pictures = fotosDepois → corpo { pictures: fotos_antes }', () => {
     const r = planejarFotosItem({ direcao: 'volta', atual: plano(['N1', 'N2']), variacoesAlvo: [{ sku: '100P', variationId: null }],
-      fotosDaCor: { '100P': ['F1', 'F2'] }, fotosDepois: { '100P': ['N1', 'N2'] } })
+      fotosDaCor: { '100P': ['F1', 'F2'] }, fotosDepois: { '100P': ['N1', 'N2'] }, picturesAntes: ['F1', 'F2'] })
     expect(r).toEqual({ ok: true, corpo: { pictures: [{ id: 'F1' }, { id: 'F2' }] } })
     if (r.ok) SEM_ESCRITA_PROIBIDA(r.corpo)
   })

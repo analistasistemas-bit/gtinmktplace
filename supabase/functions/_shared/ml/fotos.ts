@@ -27,6 +27,8 @@ export async function subirFotoMLArquivo(
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'User-Agent': 'Mozilla/5.0' },
     body: form,
+    // Timeout = upload incerto (erro sem `.status`): o ML pode ter criado a foto; quem chama não re-sobe às cegas.
+    signal: AbortSignal.timeout(30_000),
   });
   if (!resp.ok) {
     const e = new Error(`Falha ao subir foto (${resp.status}): ${await resp.text()}`);
