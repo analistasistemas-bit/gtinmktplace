@@ -30,7 +30,7 @@ export const MODELOS_IMAGEM: OpcaoModeloIA[] = [
 export const MODELOS_GALERIA_UI: (OpcaoModeloIA & { indisponivel?: string })[] = [
   { slug: 'google/gemini-nano-banana-2.1', label: 'Nano Banana 2.1 (padrão)', precoLabel: '~US$ 0,039 por imagem' },
   { slug: 'alibaba/qwen-image-3/edit', label: 'Qwen Image 3 Edit', precoLabel: '~US$ 0,04 por imagem' },
-  { slug: 'xai/grok-imagine-image-2.0', label: 'Grok Imagine 2', precoLabel: '~US$ 0,06 por imagem', indisponivel: 'referência a confirmar' },
+  { slug: 'xai/grok-imagine-image-2.0', label: 'Grok Imagine 2', precoLabel: '~US$ 0,06 por imagem' },
 ];
 
 // Valor do seletor da galeria: slug desconhecido ou indisponível cai no padrão (como o back-end faz).

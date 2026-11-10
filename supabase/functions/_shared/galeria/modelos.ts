@@ -18,10 +18,9 @@ export interface ModeloGaleria {
   rotulo: string
 }
 
-// ponytail: a medição de 08/11 (~/Desktop/IA/medicao-galeria-2026-11-08/resultados.json) guarda só prompts, preços e
-// request_id, não o corpo das chamadas. Só `image_urls` (≤3) e `prompt_extend` do Qwen são fato medido. O campo de
-// proporção de ambos e o campo de referência do Grok ficam null (não enviados) até a Task 9 Step 5 (teste real de 1
-// imagem) confirmar os nomes. Até lá o Grok não pode receber referência (corpoHF lança).
+// Campos medidos: `image_urls` (≤3) e `prompt_extend` do Qwen em 08/11; na Task 9 Step 5 (10/11) o validador da
+// Higgsfield citou `aspect_ratio` (enum com '3:4') no Qwen e no Grok e `image_urls` (array de string, máx. 10) no
+// Grok, e a geração real do Grok com image_urls reproduziu o produto da referência em 864×1152.
 
 // Custos: medição de 08/11/2026 (o plano não fixa valor).
 // Nano Banana: 0,039 = custo real medido (tabela 0,042).
@@ -40,9 +39,9 @@ export const MODELOS_GALERIA: Record<string, ModeloGaleria> = {
     slug: 'xai/grok-imagine-image-2.0',
     provedor: 'higgsfield',
     endpoint: 'xai/grok-imagine-image-2.0',
-    maxReferencias: 0, // campo de referência não medido: sem referência até a Task 9 Step 5
-    campoReferencia: null,
-    campoProporcao: null,
+    maxReferencias: 3, // a API aceita até 10; a galeria manda 1 (mesmo teto dos outros modelos)
+    campoReferencia: 'image_urls',
+    campoProporcao: 'aspect_ratio',
     extra: {},
     custoUsd: 0.06, // preco_tabela_usd da medição de 08/11
     rotulo: 'Grok Imagine 2',
@@ -53,7 +52,7 @@ export const MODELOS_GALERIA: Record<string, ModeloGaleria> = {
     endpoint: 'alibaba/qwen-image-3/edit',
     maxReferencias: 3, // a API recusa mais de 3 image_urls
     campoReferencia: 'image_urls',
-    campoProporcao: null,
+    campoProporcao: 'aspect_ratio',
     extra: { prompt_extend: true }, // prompt_extend:false é recusado (400)
     custoUsd: 0.04,
     rotulo: 'Qwen Image 3 Edit',

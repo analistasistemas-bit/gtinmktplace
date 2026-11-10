@@ -281,3 +281,8 @@ verify_jwt = true
 # ADR-0201 (Galeria da cor por IA): relógio da galeria. Só QStash (agendamento de 1 min; assinatura conferida no código).
 [functions.galeria-despachante]
 verify_jwt = false
+
+# ADR-0201 (Galeria da cor por IA): worker de geração (uma fase por mensagem). Só QStash (despachante e galeria-gerar;
+# assinatura conferida no código).
+[functions.galeria-worker]
+verify_jwt = false

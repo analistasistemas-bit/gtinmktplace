@@ -64,17 +64,17 @@ describe('corpoHF', () => {
   it('qwen: referências em image_urls (literal), corta em 3 e mantém prompt_extend', () => {
     const q = modeloGaleria('alibaba/qwen-image-3/edit')
     const corpo = corpoHF(q, 'x', ['a', 'b', 'c', 'd'])
-    expect(corpo).toEqual({ prompt: 'x', image_urls: ['a', 'b', 'c'], prompt_extend: true })
+    expect(corpo).toEqual({ prompt: 'x', image_urls: ['a', 'b', 'c'], prompt_extend: true, aspect_ratio: '3:4' })
   })
-  it('grok: sem campo de referência medido, recusa referência e sem referência só envia prompt', () => {
+  // Medido na Task 9 Step 5 (10/11): o validador da Higgsfield cita `image_urls` (array de string, máx. 10) e
+  // `aspect_ratio` (enum com '3:4') no Grok; a geração real com image_urls reproduziu o produto da referência.
+  it('grok: referências em image_urls (corta em 3) e aspect_ratio 3:4', () => {
     const g = modeloGaleria('xai/grok-imagine-image-2.0')
-    expect(g.maxReferencias).toBe(0)
-    expect(() => corpoHF(g, 'x', ['a'])).toThrow()
-    expect(corpoHF(g, 'x', [])).toEqual({ prompt: 'x' })
+    expect(corpoHF(g, 'x', ['a', 'b', 'c', 'd'])).toEqual({ prompt: 'x', image_urls: ['a', 'b', 'c'], aspect_ratio: '3:4' })
   })
-  it('proporção não medida: nenhum campo de proporção é enviado', () => {
+  it('proporção medida: aspect_ratio 3:4 em todo modelo Higgsfield', () => {
     for (const m of Object.values(MODELOS_GALERIA).filter((x) => x.provedor === 'higgsfield')) {
-      expect(Object.keys(corpoHF(m, 'x', [])).some((k) => /aspect|ratio|proporc/i.test(k))).toBe(false)
+      expect(corpoHF(m, 'x', []).aspect_ratio).toBe('3:4')
     }
   })
 })
@@ -84,8 +84,8 @@ describe('resolverModeloGaleria', () => {
     const m = await resolverModeloGaleria(fakeAdmin('alibaba/qwen-image-3/edit'), 'org')
     expect(m.slug).toBe('alibaba/qwen-image-3/edit')
   })
-  it('modelo sem campo de referência confirmado (Grok) cai no padrão', async () => {
-    expect(await resolverModeloGaleria(fakeAdmin('xai/grok-imagine-image-2.0'), 'o')).toBe(MODELO_GALERIA_PADRAO)
+  it('Grok (referência medida na Task 9) é usado quando configurado', async () => {
+    expect((await resolverModeloGaleria(fakeAdmin('xai/grok-imagine-image-2.0'), 'o')).slug).toBe('xai/grok-imagine-image-2.0')
   })
   it('null, desconhecido ou erro caem no padrão', async () => {
     expect(await resolverModeloGaleria(fakeAdmin(null), 'o')).toBe(MODELO_GALERIA_PADRAO)

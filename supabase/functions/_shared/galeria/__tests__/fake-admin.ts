@@ -68,6 +68,18 @@ export function fakeAdmin(db: Record<string, Linha[]>, arquivos: Map<string, Uin
       neq: (c: string, v: unknown) => { preds.push((l) => l[c] !== v); return q; },
       in: (c: string, vs: unknown[]) => { preds.push((l) => vs.includes(l[c])); return q; },
       is: (c: string, v: unknown) => { preds.push((l) => (l[c] ?? null) === v); return q; },
+      lt: (c: string, v: unknown) => { preds.push((l) => l[c] != null && String(l[c]) < String(v)); return q; },
+      // Só o formato usado pelos claims: `col.is.null,col.lt.<valor>` (qualquer termo casa).
+      or: (expr: string) => {
+        const termos = expr.split(',').map((t) => {
+          const [c, o, ...resto] = t.split('.');
+          const v = resto.join('.');
+          if (o === 'is' && v === 'null') return (l: Linha) => (l[c] ?? null) === null;
+          if (o === 'lt') return (l: Linha) => l[c] != null && String(l[c]) < v;
+          throw new Error(`or ${t} não suportado`);
+        });
+        preds.push((l) => termos.some((p) => p(l))); return q;
+      },
       not: (c: string, o: string, v: unknown) => {
         if (o !== 'is') throw new Error(`not.${o} não suportado`);
         preds.push((l) => (l[c] ?? null) !== v); return q;
@@ -99,8 +111,7 @@ export function fakeAdmin(db: Record<string, Linha[]>, arquivos: Map<string, Uin
         arquivos.set(p, new Uint8Array(await corpo.arrayBuffer()));
         return { data: { path: p }, error: null };
       },
-      createSignedUrl: async (p: string) => ({ data: { signedUrl: `https://signed/${p}` }, error: null }),
-    }),
+      createSignedUrl: async (p: string) => ({ data: { signedUrl: `https://signed/${p}` }, error: null }),    }),
   };
 
   const rpc = async (nome: string, args: Record<string, unknown>) => {

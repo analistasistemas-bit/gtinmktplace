@@ -5,7 +5,7 @@ import { MODELO_GALERIA_PADRAO, modeloGaleria, type ModeloGaleria } from './mode
 export { MODELOS_GALERIA, MODELO_GALERIA_PADRAO, modeloGaleria, type ModeloGaleria } from './modelos.ts';
 
 /** configuracoes.ai_model_galeria (coluna criada na Task 5); nulo, desconhecido, erro ou modelo Higgsfield sem campo
- * de referência confirmado (Grok, até a Task 9 Step 5) → padrão. */
+ * de referência confirmado → padrão. */
 export async function resolverModeloGaleria(admin: SupabaseClient, orgId: string): Promise<ModeloGaleria> {
   try {
     const { data } = await admin
