@@ -1,0 +1,59 @@
+import { describe, expect, it } from 'vitest'
+import { idDerivado, planejarGeracoes, type LinhaVaga } from '../pedido'
+
+const ROT = 'rot-1'
+const linha = (cor: string, missao: number, geracao: number, status: string, extra: Partial<LinhaVaga> = {}): LinhaVaga =>
+  ({ roteiro_id: ROT, cor, missao, geracao, status, origem: 'gerador', ...extra })
+const base = { roteiroId: ROT, moda: false, vistasPorCor: { Rosa: ['frente'], Azul: ['frente'] } as Record<string, Array<'frente' | 'costas' | 'lateral'>>, linhas: [] as LinhaVaga[] }
+
+describe('idDerivado', () => {
+  // Valores calculados por uuid.uuid5 (Python) = extensions.uuid_generate_v5 da RPC (conferido no teste SQL).
+  it('UUID v5 igual ao da RPC (cor com acento)', () => {
+    expect(idDerivado('6f1c2a3e-8b4d-4c5e-9f60-718293a4b5c6', 'Rosa Bebê', 1, 1)).toBe('c4c5cdaa-477b-5040-addd-25d301820034')
+    expect(idDerivado('6f1c2a3e-8b4d-4c5e-9f60-718293a4b5c6', 'Preto', 7, 2)).toBe('a52a863a-eb2d-5c88-b0ed-20aec77a86db')
+  })
+})
+
+describe('planejarGeracoes', () => {
+  it('2 cores × 3 missões → 6 novas, geração 1', () => {
+    const r = planejarGeracoes({ ...base, cores: ['Rosa', 'Azul'], missoes: [1, 2, 3] })
+    expect(r.novas).toHaveLength(6)
+    expect(r.novas.every((n) => n.geracao === 1)).toBe(true)
+    expect(r.recortes).toEqual([])
+    expect(r.bloqueadas).toEqual([])
+  })
+
+  it('missão 7 e Moda 5 vão para recortes', () => {
+    expect(planejarGeracoes({ ...base, cores: ['Rosa'], missoes: [1, 7] }).recortes).toEqual([{ cor: 'Rosa', missao: 7, geracao: 1 }])
+    const moda = planejarGeracoes({ ...base, moda: true, cores: ['Rosa'], missoes: [5] })
+    expect(moda.recortes).toEqual([{ cor: 'Rosa', missao: 5, geracao: 1 }])
+    expect(moda.novas).toEqual([])
+  })
+
+  it('3 entregues (inclusive desatualizada) → teto; falhou não conta; roteiro anterior não conta', () => {
+    const linhas = [linha('Rosa', 2, 1, 'gerada'), linha('Rosa', 2, 2, 'aprovada'), linha('Rosa', 2, 3, 'descartada')]
+    expect(planejarGeracoes({ ...base, linhas, cores: ['Rosa'], missoes: [2] }).bloqueadas)
+      .toEqual([{ cor: 'Rosa', missao: 2, motivo: 'teto' }])
+    const comFalha = [linha('Rosa', 2, 1, 'gerada'), linha('Rosa', 2, 2, 'falhou'), linha('Rosa', 2, 2, 'gerada'),
+      linha('Rosa', 2, 1, 'gerada', { roteiro_id: 'rot-velho' }), linha('Rosa', 2, 2, 'gerada', { roteiro_id: 'rot-velho' })]
+    expect(planejarGeracoes({ ...base, linhas: comFalha, cores: ['Rosa'], missoes: [2] }).novas)
+      .toEqual([{ cor: 'Rosa', missao: 2, geracao: 3 }])
+  })
+
+  it('geração aberta (de qualquer roteiro) → em_andamento', () => {
+    const linhas = [linha('Rosa', 1, 1, 'gerando', { roteiro_id: 'rot-velho' })]
+    expect(planejarGeracoes({ ...base, linhas, cores: ['Rosa'], missoes: [1] }).bloqueadas)
+      .toEqual([{ cor: 'Rosa', missao: 1, motivo: 'em_andamento' }])
+  })
+
+  it('Moda "De costas" sem referência de costas → sem_vista só na cor que não tem', () => {
+    const r = planejarGeracoes({ ...base, moda: true, vistasPorCor: { Rosa: ['frente', 'costas'], Azul: ['frente'] }, cores: ['Rosa', 'Azul'], missoes: [3] })
+    expect(r.novas).toEqual([{ cor: 'Rosa', missao: 3, geracao: 1 }])
+    expect(r.bloqueadas).toEqual([{ cor: 'Azul', missao: 3, motivo: 'sem_vista' }])
+  })
+
+  it('cor sem foto real (nenhuma referência) → sem_vista, inclusive recorte', () => {
+    const r = planejarGeracoes({ ...base, vistasPorCor: {}, cores: ['Rosa'], missoes: [1, 7] })
+    expect(r.bloqueadas.map((b) => b.motivo)).toEqual(['sem_vista', 'sem_vista'])
+  })
+})

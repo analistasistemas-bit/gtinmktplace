@@ -1,6 +1,6 @@
 // Banco em memória para os testes da galeria (sem rede). Cobre só o que fatos/referências/galeria-fatos usam:
-// filtros eq/neq/in/is/not-is, order, limit, select/insert/update/upsert, o bucket `imagens` e `rpc`
-// (gravada em `rpcs`; resposta por `respostasRpc[nome]`, senão `{ data: null }`).
+// filtros eq/neq/in/is/not-is, order, limit, select/insert/update/upsert/delete, o bucket `imagens` e `rpc`
+// (gravada em `rpcs`; resposta por `respostasRpc[nome]`, senão `{ data: null }`; handler que lança vira `error`).
 type Linha = Record<string, unknown>;
 type Pred = (l: Linha) => boolean;
 
@@ -16,7 +16,7 @@ export function fakeAdmin(db: Record<string, Linha[]>, arquivos: Map<string, Uin
   function from(tabela: string) {
     db[tabela] ??= [];
     const preds: Pred[] = [];
-    let op: 'select' | 'insert' | 'update' | 'upsert' = 'select';
+    let op: 'select' | 'insert' | 'update' | 'upsert' | 'delete' = 'select';
     let payload: Linha | Linha[] = {};
     let opcoes: { onConflict?: string; ignoreDuplicates?: boolean } = {};
     let ordem: { c: string; asc: boolean } | null = null;
@@ -31,6 +31,12 @@ export function fakeAdmin(db: Record<string, Linha[]>, arquivos: Map<string, Uin
           r = [...r].sort((a, b) => (String(a[c] ?? '') < String(b[c] ?? '') ? -1 : String(a[c] ?? '') > String(b[c] ?? '') ? 1 : 0) * (asc ? 1 : -1));
         }
         return { data: r.slice(0, lim).map((l) => ({ ...l })), error: null };
+      }
+      if (op === 'delete') {
+        const alvo = linhas.filter((l) => preds.every((p) => p(l)));
+        db[tabela] = linhas.filter((l) => !alvo.includes(l));
+        escritas.push({ tabela, op, payload: null, afetadas: alvo.length });
+        return { data: alvo.map((l) => ({ ...l })), error: null };
       }
       if (op === 'update') {
         const alvo = linhas.filter((l) => preds.every((p) => p(l)));
@@ -70,6 +76,7 @@ export function fakeAdmin(db: Record<string, Linha[]>, arquivos: Map<string, Uin
       limit: (n: number) => { lim = n; return q; },
       insert: (p: Linha | Linha[]) => { op = 'insert'; payload = p; return q; },
       update: (p: Linha) => { op = 'update'; payload = p; return q; },
+      delete: () => { op = 'delete'; return q; },
       upsert: (p: Linha | Linha[], o: typeof opcoes = {}) => { op = 'upsert'; payload = p; opcoes = o; return q; },
       maybeSingle: async () => { const r = executar(); return { data: r.data?.[0] ?? null, error: r.error }; },
       single: async () => { const r = executar(); return r.data?.length ? { data: r.data[0], error: null } : { data: null, error: r.error ?? { message: 'nenhuma linha' } }; },
@@ -98,7 +105,8 @@ export function fakeAdmin(db: Record<string, Linha[]>, arquivos: Map<string, Uin
 
   const rpc = async (nome: string, args: Record<string, unknown>) => {
     rpcs.push({ nome, args });
-    return { data: respostasRpc[nome]?.(args) ?? null, error: null };
+    try { return { data: respostasRpc[nome]?.(args) ?? null, error: null }; }
+    catch (e) { return { data: null, error: e as { message: string; code?: string } }; }
   };
 
   return { admin: { from, storage, rpc }, escritas, uploads, arquivos, rpcs, respostasRpc };
