@@ -294,3 +294,12 @@ verify_jwt = false
 # assinatura conferida no código).
 [functions.galeria-worker]
 verify_jwt = false
+
+# ADR-0201 (Galeria da cor por IA): preparar, confirmar e reverter a aplicação no ML. JWT do operador (só admin).
+[functions.galeria-aplicar]
+verify_jwt = true
+
+# ADR-0201 (Galeria da cor por IA): worker da saga de aplicar/reverter. Só QStash, fila publish-ml-${familias.user_id}
+# (assinatura conferida no código).
+[functions.galeria-aplicar-worker]
+verify_jwt = false

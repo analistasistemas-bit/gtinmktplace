@@ -63,3 +63,19 @@ export async function buscarSecureUrlFotoML(accessToken: string, pictureId: stri
   }
   return secureUrl;
 }
+
+// Galeria da cor (ADR-0201, Task 14): a foto subida já está pronta? (`status` ACTIVE com `secure_url`, R9.2). Nunca
+// re-sobe: quem chama só consulta até ficar pronta. Qualquer falha de leitura = null (consulta de novo no próximo tick).
+export async function lerFotoProntaML(accessToken: string, pictureId: string, f: typeof fetch = fetch): Promise<boolean | null> {
+  try {
+    const resp = await f(`https://api.mercadolibre.com/pictures/${encodeURIComponent(pictureId)}`, {
+      headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000),
+    });
+    if (!resp.ok) return null;
+    const json = await resp.json().catch(() => ({})) as { status?: unknown; variations?: Array<{ secure_url?: unknown }> };
+    return String(json.status ?? '').toUpperCase() === 'ACTIVE'
+      && (json.variations ?? []).some((v) => typeof v?.secure_url === 'string' && v.secure_url !== '');
+  } catch {
+    return null;
+  }
+}

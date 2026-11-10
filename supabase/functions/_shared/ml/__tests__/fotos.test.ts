@@ -4,7 +4,7 @@
 // `secure_url` no topo (chaves reais: id, max_size, dominant_color, hash, crop, variations,
 // status, origin) — só em `variations[].secure_url`.
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { buscarSecureUrlFotoML, subirFotoMLArquivo } from '../fotos';
+import { buscarSecureUrlFotoML, lerFotoProntaML, subirFotoMLArquivo } from '../fotos';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -85,5 +85,16 @@ describe('subirFotoMLArquivo', () => {
     const erro = await subirFotoMLArquivo('tok', new Uint8Array([1]), 'image/jpeg', comoFetch(f)).catch((e) => e);
     expect(erro).toBeInstanceOf(DOMException);
     expect((erro as { status?: number }).status).toBeUndefined();
+  });
+});
+
+describe('lerFotoProntaML (galeria, ADR-0201 Task 14)', () => {
+  it('ACTIVE com secure_url → true; sem URL ou outro status → false; HTTP de erro ou rede → null (consulta de novo)', async () => {
+    const f = (json: unknown, status = 200) => vi.fn(async () => new Response(JSON.stringify(json), { status })) as unknown as typeof fetch;
+    expect(await lerFotoProntaML('t', 'P1', f({ status: 'active', variations: [{ secure_url: 'https://x' }] }))).toBe(true);
+    expect(await lerFotoProntaML('t', 'P1', f({ status: 'ACTIVE', variations: [] }))).toBe(false);
+    expect(await lerFotoProntaML('t', 'P1', f({ status: 'processing', variations: [{ secure_url: 'https://x' }] }))).toBe(false);
+    expect(await lerFotoProntaML('t', 'P1', f({}, 503))).toBeNull();
+    expect(await lerFotoProntaML('t', 'P1', (async () => { throw new TypeError('rede'); }) as unknown as typeof fetch)).toBeNull();
   });
 });
