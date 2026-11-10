@@ -141,7 +141,8 @@ function iniciarReversao() {
   compensarAplicados(a.id as string)
 }
 
-const deps = () => ({ agora: () => new Date(agora), token: async () => 'tok', ml })
+let vigente = 'fam'
+const deps = () => ({ agora: () => new Date(agora), token: async () => 'tok', ml, familiaVigente: async () => vigente })
 /** Um tick do despachante: ação da aplicação + uma mensagem por item acionável (na ordem dos itens). */
 async function tick(min = 1) {
   avancar(min)
@@ -159,6 +160,7 @@ async function ticks(n: number, min = 1) { for (let k = 0; k < n; k++) await tic
 const ALVO = (mlb: string) => [{ sku: `R-${mlb}`, variationId: 1 }]
 function montar(mlbs: string[], n = 1, opts: { plano?: boolean; status?: string } = {}) {
   agora = T0
+  vigente = 'fam'
   ml = new MLFake()
   const arquivos = new Map<string, Uint8Array>()
   const imagens: Linha[] = []
@@ -218,6 +220,8 @@ describe('saga — caminho feliz', () => {
     }
     // Um registro por imagem e por item, com o id lido no GET (P/M/G com ids distintos).
     expect(db.galeria_imagem_itens).toHaveLength(6)
+    // A próxima referência exclui os três: carregarFotosAplicadas filtra por org + anúncio + picture_id.
+    expect(db.galeria_imagem_itens.every((r) => r.org_id === 'org' && r.anuncio_externo_id === 'an1' && r.picture_id)).toBe(true)
     const img1 = db.galeria_imagem_itens.filter((r) => r.imagem_id === 'img1')
     expect(new Set(img1.map((r) => r.picture_id)).size).toBe(3)
     for (const r of db.galeria_imagem_itens) expect(Object.values(itemDe(r.item_id as string).fotos_depois as Linha).flat()).toContain(r.picture_id)
@@ -377,6 +381,21 @@ describe('saga — falhas na ida, aborto e compensação', () => {
     await tick()
     expect(itemDe('P').status).toBe('compensado')
     expect(aplicacao().status).toBe('revertida')
+  })
+
+  it('família vigente do anúncio troca entre o upload e o PUT do 2º item (UPDATE dispensado da trava) → 2º pulado sem PUT, 1º compensado', async () => {
+    montar(['P', 'M'])
+    await tick()
+    itemDe('M').lease_ate = em(2)
+    await tick()
+    expect(itemDe('P').status).toBe('aplicado')
+    vigente = 'famB'
+    await tick(2)
+    expect(itemDe('M')).toMatchObject({ status: 'pulado', erro: 'familia_nao_vigente' })
+    expect(putsDe('M')).toEqual([])
+    expect(aplicacao().status).toBe('abortando')
+    await tick()
+    expect(itemDe('P').status).toBe('compensado')
   })
 
   it('prazo_ate vencido → aborta e compensa (sem PUT de ida novo)', async () => {

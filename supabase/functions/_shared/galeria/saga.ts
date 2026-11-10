@@ -15,6 +15,7 @@ import type { CorpoFotosML } from '../ml/atualizar-item.ts';
 import { atualizarFotosItemML } from '../ml/atualizar-item.ts';
 import { lerFotoProntaML, subirFotoMLArquivo } from '../ml/fotos.ts';
 import { lerElegibilidadeItemML, type Alvo, type ItemElegibilidade } from './alvos.ts';
+import { carregarAnuncio } from './anuncio.ts';
 import { fotosDaCorNoItem, planejarFotosItem, type FotosPorSku, type RetratoItem } from './aplicar.ts';
 import { createHash } from 'node:crypto';
 
@@ -39,20 +40,22 @@ export interface ItemSaga {
   base_esperada: FotosPorSku | null; destino: FotosPorSku | null;
 }
 export interface AplicacaoSaga {
-  id: string; org_id: string; status: string; modo: 'substituir' | 'adicionar'; roteiro_id: string; fatos_hash: string;
+  id: string; org_id: string; anuncio_externo_id?: string | null; familia_id?: string; status: string;
+  modo: 'substituir' | 'adicionar'; roteiro_id: string; fatos_hash: string;
   prazo_ate: string | null; abortar_em: string | null; retrato: Record<string, RetratoItem> | null;
 }
 
 export type Passo = 'subir' | 'put' | 'conferir' | 'concluir' | 'pular' | 'compensar' | 'marcar_incompleta' | 'abortar' | 'ignorar' | 'ocupado';
-export interface CtxPasso { agora: Date; vigente: boolean; trava: boolean }
+/** `motivo`: por que deixou de ser vigente (roteiro/fatos trocados ou família vigente do anúncio trocada). */
+export interface CtxPasso { agora: Date; vigente: boolean; motivo?: string; trava: boolean }
 
 const ms = (iso: string | null) => (iso == null ? null : Date.parse(iso));
 
 /** Portão de avanço (só a ida): aplicação fora de em_andamento, abortar_em, prazo vencido ou roteiro/fatos trocados. */
-export function portaoFechado(a: AplicacaoSaga, ctx: Pick<CtxPasso, 'agora' | 'vigente'>): string | null {
+export function portaoFechado(a: AplicacaoSaga, ctx: Pick<CtxPasso, 'agora' | 'vigente' | 'motivo'>): string | null {
   if (a.status !== 'em_andamento' || a.abortar_em != null) return 'abortada';
   if (a.prazo_ate != null && ms(a.prazo_ate)! < ctx.agora.getTime()) return 'prazo_vencido';
-  return ctx.vigente ? null : 'roteiro_trocado';
+  return ctx.vigente ? null : (ctx.motivo ?? 'roteiro_trocado');
 }
 
 /** Puro. Decide a fase pela linha. `concluir` não sai daqui (é desfecho de `conferir`/`put`). */
@@ -126,7 +129,15 @@ export const PORTAS_ML: PortasML = {
   lerFotoPronta: (t, id) => lerFotoProntaML(t, id),
   putFotos: (t, id, c) => atualizarFotosItemML(t, id, c),
 };
-export interface DepsSaga { agora: () => Date; token: (orgId: string) => Promise<string>; ml?: PortasML }
+export interface DepsSaga {
+  agora: () => Date; token: (orgId: string) => Promise<string>; ml?: PortasML;
+  /** Família vigente do anúncio agora (null = sem vigente). Padrão: `carregarAnuncio`. */
+  familiaVigente?: (admin: SupabaseClient, orgId: string, anuncioId: string) => Promise<string | null>;
+}
+const familiaVigentePadrao = async (admin: SupabaseClient, orgId: string, anuncioId: string) => {
+  const a = await carregarAnuncio(admin, orgId, anuncioId);
+  return 'erro' in a ? null : a.vigente.id;
+};
 
 export type ResultadoSaga =
   | 'ignorar' | 'ocupado' | 'perdeu_posse' | 'esperar' | 'subiu' | 'pronta' | 'aguardando_pronta' | 'aplicando'
@@ -162,7 +173,7 @@ export async function executarItem(admin: SupabaseClient, msg: { id: string; fas
   };
 
   const [{ data: apl, error: eP }, { data: trava, error: eT }] = await Promise.all([
-    admin.from('galeria_aplicacoes').select('id, org_id, status, modo, roteiro_id, fatos_hash, prazo_ate, abortar_em, retrato')
+    admin.from('galeria_aplicacoes').select('id, org_id, anuncio_externo_id, familia_id, status, modo, roteiro_id, fatos_hash, prazo_ate, abortar_em, retrato')
       .eq('id', item.aplicacao_id).maybeSingle(),
     admin.from('ml_item_travas').select('dono_tipo, dono_id').eq('org_id', item.org_id).eq('item_id', item.item_id).maybeSingle(),
   ]);
@@ -175,13 +186,20 @@ export async function executarItem(admin: SupabaseClient, msg: { id: string; fas
   // (galeria-fatos e galeria-roteiro desatualizam o aprovado quando fatos/referências mudam ou outro é aprovado).
   const { data: rot, error: eR } = await admin.from('galeria_roteiros').select('status, fatos_hash').eq('id', aplicacao.roteiro_id).maybeSingle();
   if (eR) throw new Error(eR.message);
-  const vigente = rot?.status === 'aprovado' && rot.fatos_hash === aplicacao.fatos_hash;
+  let vigente = rot?.status === 'aprovado' && rot.fatos_hash === aplicacao.fatos_hash;
+  let motivo: string | undefined;
+  // Só a ida precisa: um UPDATE dispensado da trava (somente estoque, rodarUP) pode publicar família nova no meio da
+  // saga; trabalho novo exige a vigente, então o avanço fecha (conservador: também por import só de estoque).
+  if (vigente && item.status !== 'compensando' && aplicacao.anuncio_externo_id) {
+    const atual = await (deps.familiaVigente ?? familiaVigentePadrao)(admin, item.org_id, aplicacao.anuncio_externo_id);
+    if (atual !== aplicacao.familia_id) { vigente = false; motivo = 'familia_nao_vigente'; }
+  }
   // O lease agora é meu (claim acima): a decisão olha a linha como estava antes dele.
-  const passo = passoSaga({ ...item, lease_ate: null }, aplicacao, { agora, vigente, trava: minhaTrava(trava) });
+  const passo = passoSaga({ ...item, lease_ate: null }, aplicacao, { agora, vigente, motivo, trava: minhaTrava(trava) });
 
   if (passo === 'ignorar' || passo === 'ocupado') return soltar(passo);
   if (passo === 'pular') {
-    return concluir('pulado', { erro: portaoFechado(aplicacao, { agora, vigente }), abortar: true });
+    return concluir('pulado', { erro: portaoFechado(aplicacao, { agora, vigente, motivo }), abortar: true });
   }
   if (passo === 'abortar') return concluir('falhou', { erro: 'upload_incerto' });
   if (passo === 'marcar_incompleta') return concluir('reversao_incompleta', { erro: 'compensar_ate_vencido' });
@@ -279,7 +297,7 @@ export async function executarItem(admin: SupabaseClient, msg: { id: string; fas
 
   // ── Ida: PUT (ou reconciliação de PUT incerto) ────────────────────────────────────────────────────────────────
   const retrato = aplicacao.retrato?.[item.item_id];
-  const fechado = portaoFechado(aplicacao, { agora, vigente });
+  const fechado = portaoFechado(aplicacao, { agora, vigente, motivo });
   if (passo === 'conferir') {
     const lido = await ml.lerItem(token, item.item_id);
     const atual = lido ? fotosDaCorNoItem(lido, alvos) : null;
