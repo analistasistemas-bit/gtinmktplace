@@ -721,6 +721,25 @@ describe('Publicados', () => {
       expect(fetchBaseCanonicaIdMock).toHaveBeenCalledWith('01829149');
     });
 
+    it('resposta atrasada de um clique anterior não troca a base nem reabre o diálogo', async () => {
+      useModulosHabilitadosMock.mockReturnValue({ data: ['kit_variacao'] });
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ familiaId: 'f-antiga', qtdVariacoesFamilia: 4, userProducts: true })], isLoading: false, error: null,
+      });
+      let liberarLento: (id: string) => void = () => {};
+      fetchBaseCanonicaIdMock
+        .mockImplementationOnce(() => new Promise((ok) => { liberarLento = ok; }))
+        .mockImplementationOnce(async () => 'f-rapido');
+      render(<MemoryRouter><Publicados /></MemoryRouter>);
+      const botao = screen.getByRole('button', { name: 'Criar kit com variação' });
+      fireEvent.click(botao);
+      fireEvent.click(botao);
+      expect(await screen.findByRole('dialog', { name: 'Criar kit com variação' })).toHaveTextContent('base f-rapido');
+      liberarLento('f-lento');
+      await new Promise((r) => setTimeout(r, 0));
+      expect(screen.getByRole('dialog', { name: 'Criar kit com variação' })).toHaveTextContent('base f-rapido');
+    });
+
     it('sem o módulo não aparece', () => {
       useModulosHabilitadosMock.mockReturnValue({ data: ['estoque'] });
       usePublicadosMock.mockReturnValue({

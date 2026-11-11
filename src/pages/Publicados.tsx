@@ -1218,9 +1218,16 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
   const [criarKitVariacaoDe, setCriarKitVariacaoDe] = useState<string | null>(null);
   // A linha guarda a família mais antiga do anúncio (dedupe): cores incluídas depois só existem na canônica, que é
   // também a única que a edge aceita como base (`base_desatualizada`).
+  // Só a resposta do último clique vale (fechar também invalida): uma leitura atrasada não troca a base nem reabre.
+  const pedidoKitVariacao = useRef(0);
   async function abrirKitVariacao(codigoPai: string) {
-    try { setCriarKitVariacaoDe(await fetchBaseCanonicaId(codigoPai)); }
-    catch (e) { toast.error('Não foi possível abrir o kit', { description: (e as Error).message }); }
+    const pedido = ++pedidoKitVariacao.current;
+    try {
+      const id = await fetchBaseCanonicaId(codigoPai);
+      if (pedido === pedidoKitVariacao.current) setCriarKitVariacaoDe(id);
+    } catch (e) {
+      if (pedido === pedidoKitVariacao.current) toast.error('Não foi possível abrir o kit', { description: (e as Error).message });
+    }
   }
   const [kitGerenciado, setKitGerenciado] = useState<KitVariacaoResumo | null>(null);
   // id da família aberta no DialogFiscalProduto (T13) — null = fechado. Fila vazia: edição
@@ -2078,7 +2085,7 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
         <DialogCriarKitVariacao
           familiaBaseId={criarKitVariacaoDe}
           open
-          onOpenChange={(v) => { if (!v) setCriarKitVariacaoDe(null); }}
+          onOpenChange={(v) => { if (!v) { pedidoKitVariacao.current++; setCriarKitVariacaoDe(null); } }}
           isAdmin={isAdmin}
         />
       )}
