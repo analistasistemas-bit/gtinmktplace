@@ -8,8 +8,6 @@ const f = vi.hoisted(() => ({
   serve: vi.fn(), fake: null as unknown as { admin: unknown }, org: 'org',
   refAtual: { id: 'refR', path: 'p', sha256: 'shaR' } as { id: string; path: string; sha256: string } | { erro: string },
   preparar: vi.fn(),
-  /** null = a trava real (MISSOES_LUPA_PENDENTE); {geral:[],moda:[]} = ramo liberado depois do portão (Task 16). */
-  travas: null as null | { geral: number[]; moda: number[] },
 }))
 
 vi.mock('../../_shared/cors.ts', () => ({ corsHeaders: {}, handleOptions: () => new Response() }))
@@ -28,11 +26,6 @@ vi.mock('../../_shared/galeria/referencias.ts', async () => {
 })
 
 vi.mock('../../_shared/ai/client.ts', () => ({ openrouterClient: () => { throw new Error('nunca chama IA') } }))
-vi.mock('../../_shared/galeria/regras.ts', async (orig) => {
-  const r = await orig<typeof import('../../_shared/galeria/regras.ts')>()
-  return { ...r, lupaPendente: (m: number, moda: boolean) => r.lupaPendente(m, moda, f.travas ?? r.MISSOES_LUPA_PENDENTE) }
-})
-const { VERSAO_LEITURA } = await import('../../_shared/galeria/detalhes.ts')
 
 type Linha = Record<string, unknown>
 let db: Record<string, Linha[]>
@@ -61,14 +54,15 @@ const branco = () => {
   return new Uint8Array(jpeg.encode({ width: 1200, height: 1540, data }, 90).data)
 }
 
-const lupaOk = (extra: Linha = {}) => ({
-  estado: 'ok', versao: VERSAO_LEITURA, tentado_em: '2026-11-11T10:00:00Z', produto: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 },
-  detalhes: [{ x: 0.15, y: 0.15, w: 0.1, h: 0.1 }, { x: 0.7, y: 0.7, w: 0.1, h: 0.1 }], ref_w: 1200, ref_h: 1500, hash: 'hashR', ...extra,
+// Roteiro formato 2 (ADR-0203).
+const plano = () => ({
+  formato: 2, dados_hash: 'h', conflitos: [],
+  paleta: { cor1: { nome: 'Azul', hex: '#0000FF' }, cor2: { nome: 'Rosa', hex: '#FF00FF' } },
+  imagens: [1, 2, 3, 4, 5, 6, 7].map((posicao) => ({ posicao, funcao: 'f', textos: [], prompt: 'p' })),
 })
 
 beforeEach(() => {
   f.org = 'org'
-  f.travas = null
   f.refAtual = { id: 'refR', path: 'org/galeria-ia/famB/referencias/rosa-frente-shaR.jpg', sha256: 'shaR' }
   f.preparar.mockReset()
   f.preparar.mockImplementation(async () => f.refAtual)
@@ -85,7 +79,7 @@ beforeEach(() => {
       { id: 'famB', org_id: 'org', codigo_pai: '100', publicado_em: '2026-11-05T10:00:00Z', variacoes: [{ codigo: '100R', cor: 'Rosa' }, { codigo: '100A', cor: 'Azul' }] },
       { id: 'famZ', org_id: 'org2', codigo_pai: '100', publicado_em: '2026-11-05T10:00:00Z', variacoes: [{ codigo: '100R', cor: 'Rosa' }] },
     ],
-    galeria_roteiros: [{ id: 'rot2', org_id: 'org', anuncio_externo_id: 'an1', familia_id: 'famB', versao: 2, status: 'aprovado', moda: false }],
+    galeria_roteiros: [{ id: 'rot2', org_id: 'org', anuncio_externo_id: 'an1', familia_id: 'famB', versao: 2, status: 'aprovado', moda: false, conteudo: plano() }],
     galeria_referencias: [{ id: 'refR', org_id: 'org', anuncio_externo_id: 'an1', cor: 'Rosa', vista: 'frente', sha256: 'shaR', path: 'x' }],
     galeria_imagens: [],
   }
@@ -235,72 +229,24 @@ describe('galeria-aprovar — aprovar', () => {
     expect(linha(1)).toMatchObject({ status: 'gerada', final_upload_path: null })
   })
 
-  // Fix round 1: lupa é recorte cego da referência; até a decisão do Diego, a edge recusa (a tela só esconde).
-  it.each([
-    ['missão 3 (lupa)', { missao: 3 }, false],
-    ['missão 7 (recorte)', { missao: 7, origem: 'recorte', cena_path: null }, false],
-    ['Moda 5 (recorte)', { missao: 5, origem: 'recorte', cena_path: null }, true],
-    ['Moda 7 (recorte)', { missao: 7, origem: 'recorte', cena_path: null }, true],
-  ])('%s → 409 lupa_pendente, sem RPC', async (_n, extra, moda) => {
-    db.galeria_roteiros[0].moda = moda
-    db.galeria_imagens.push(img(1, extra as Linha))
+  // ADR-0203: sem lupa nem recorte; a posição 7 aprova como as outras, sem lupa_hash.
+  it('posição 7 de não-Moda aprova sem lupa_hash', async () => {
+    db.galeria_imagens.push(img(1, { missao: 7 }))
     await prepararESubir(1)
-    expect(await aprovar(U(1))).toMatchObject({ status: 409, body: { error: 'lupa_pendente' } })
-    expect(fake.rpcs.map((x) => x.nome)).not.toContain('galeria_aprovar_imagem')
-    expect(linha(1).status).toBe('gerada')
+    expect(await aprovar(U(1))).toEqual({ status: 200, body: { status: 'aprovada' } })
+    expect(linha(1).status).toBe('aprovada')
   })
 
-  describe('ramo liberado (MISSOES_LUPA_PENDENTE esvaziada no teste): lupa pela caixa do produto', () => {
-    const casos = [
-      ['missão 3 (lupa)', { missao: 3 }, false],
-      ['missão 7 (recorte)', { missao: 7, origem: 'recorte', cena_path: null }, false],
-      ['Moda 5 (recorte)', { missao: 5, origem: 'recorte', cena_path: null }, true],
-      ['Moda 7 (recorte)', { missao: 7, origem: 'recorte', cena_path: null }, true],
-    ] as const
-    const preparo = async (extra: Linha, moda: boolean, detalhes: unknown) => {
-      f.travas = { geral: [], moda: [] }
-      db.galeria_roteiros[0].moda = moda
-      db.galeria_referencias[0].detalhes = detalhes
-      db.galeria_imagens.push(img(1, extra))
-      await prepararESubir(1)
-    }
-    const semRpc = () => {
-      expect(fake.rpcs.map((x) => x.nome)).not.toContain('galeria_aprovar_imagem')
-      expect(linha(1).status).toBe('gerada')
-    }
-
-    it.each(casos)('%s: sem lupa_hash (bundle antigo) → 409 lupa_desatualizada', async (_n, extra, moda) => {
-      await preparo(extra as Linha, moda, lupaOk())
-      expect(await aprovar(U(1))).toMatchObject({ status: 409, body: { error: 'lupa_desatualizada' } })
-      semRpc()
-    })
-
-    it.each(casos)('%s: lupa_hash divergente → 409 lupa_desatualizada', async (_n, extra, moda) => {
-      await preparo(extra as Linha, moda, lupaOk())
-      expect(await aprovar(U(1), 'MLB1', { lupa_hash: 'outro' })).toMatchObject({ status: 409, body: { error: 'lupa_desatualizada' } })
-      semRpc()
-    })
-
-    it.each([
-      ['detalhes nulo', null], ['falhou', { estado: 'falhou', versao: VERSAO_LEITURA, tentado_em: 't' }],
-      ['sem_detalhe', { estado: 'sem_detalhe', versao: VERSAO_LEITURA, tentado_em: 't' }],
-      ['não cabe (um só detalhe na missão 7)', lupaOk({ detalhes: [{ x: 0.15, y: 0.15, w: 0.1, h: 0.1 }] })],
-    ])('%s → 409 lupa_indisponivel', async (_n, d) => {
-      await preparo({ missao: 7, origem: 'recorte', cena_path: null }, false, d)
-      expect(await aprovar(U(1), 'MLB1', { lupa_hash: 'hashR' })).toMatchObject({ status: 409, body: { error: 'lupa_indisponivel' } })
-      semRpc()
-    })
-
-    it.each(casos)('%s: hash certo + lupa_ok → aprova', async (_n, extra, moda) => {
-      await preparo(extra as Linha, moda, lupaOk())
-      expect(await aprovar(U(1), 'MLB1', { lupa_hash: 'hashR' })).toEqual({ status: 200, body: { status: 'aprovada' } })
-      expect(linha(1).status).toBe('aprovada')
-    })
-
-    it('missão sem lupa não exige lupa_hash', async () => {
-      await preparo({ missao: 2 }, false, null)
-      expect((await aprovar(U(1))).status).toBe(200)
-    })
+  it.each([
+    ['formato antigo (missoes)', { missoes: [{ missao: 1, ativa: true }] }],
+    ['sem conteúdo', null],
+  ])('imagem de roteiro %s → 409 nao_aprovavel, sem RPC', async (_n, conteudo) => {
+    db.galeria_roteiros[0].conteudo = conteudo
+    db.galeria_imagens.push(img(1))
+    await prepararESubir(1)
+    expect(await aprovar(U(1))).toMatchObject({ status: 409, body: { error: 'nao_aprovavel' } })
+    expect(fake.rpcs.map((x) => x.nome)).not.toContain('galeria_aprovar_imagem')
+    expect(linha(1).status).toBe('gerada')
   })
 
   it('Moda 3 (cena de costas, sem lupa) não é barrada', async () => {

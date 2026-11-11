@@ -9,7 +9,7 @@ vi.mock('../../_shared/auth.ts', () => ({
 }))
 vi.mock('../../_shared/supabase.ts', () => ({ adminClient: () => f.fake.admin }))
 vi.mock('../../_shared/ai/client.ts', () => ({ openrouterClient: () => { throw new Error('nunca chama IA') } }))
-const { VERSAO_LEITURA } = await import('../../_shared/galeria/detalhes.ts')
+const { missoesDisponiveis } = await import('../../_shared/galeria/regras.ts')
 
 type Linha = Record<string, unknown>
 let db: Record<string, Linha[]>
@@ -29,6 +29,14 @@ const img = (n: number, extra: Linha = {}): Linha => ({
   custo_usd: 0.04, alertas: [], erro: null, entregue_em: null, referencia_id: 'refR', ...extra,
 })
 
+// Roteiro formato 2 (ADR-0203); `indisp` marca posições sem dados.
+const plano = (indisp: Record<number, string> = {}) => ({
+  formato: 2, dados_hash: 'h', conflitos: [],
+  paleta: { cor1: { nome: 'Azul', hex: '#0000FF' }, cor2: { nome: 'Rosa', hex: '#FF00FF' } },
+  imagens: [1, 2, 3, 4, 5, 6, 7].map((posicao) => ({ posicao, funcao: 'f', textos: [], prompt: 'p', ...(indisp[posicao] ? { indisponivel: indisp[posicao] } : {}) })),
+})
+const posicoesNaoModa = missoesDisponiveis(false, ['frente']).map((m) => ({ posicao: m.missao, nome: m.nome }))
+
 beforeEach(() => {
   f.org = 'org'
   db = {
@@ -42,13 +50,12 @@ beforeEach(() => {
     anuncios_externos_itens: [],
     familias: [
       { id: 'famA', org_id: 'org', codigo_pai: '100', publicado_em: '2026-11-01T10:00:00Z', variacoes: [{ codigo: '100R', cor: 'Rosa' }, { codigo: '100A', cor: 'Azul' }] },
-      { id: 'famB', org_id: 'org', codigo_pai: '100', publicado_em: '2026-11-05T10:00:00Z', variacoes: [{ codigo: '100R', cor: 'Rosa' }, { codigo: '100A', cor: 'Azul' }] },
+      { id: 'famB', org_id: 'org', codigo_pai: '100', nome_pai: 'Fita Dupla Face', publicado_em: '2026-11-05T10:00:00Z', variacoes: [{ codigo: '100R', cor: 'Rosa' }, { codigo: '100A', cor: 'Azul' }] },
     ],
     galeria_roteiros: [
       // Versão 2 existe nas duas famílias do mesmo anúncio: `listar` usa a da família vigente.
       { id: 'rotA2', org_id: 'org', anuncio_externo_id: 'an1', familia_id: 'famA', versao: 2, status: 'desatualizado' },
-      { id: 'rot2', org_id: 'org', anuncio_externo_id: 'an1', familia_id: 'famB', versao: 2, status: 'aprovado', moda: false,
-        conteudo: { missoes: [1, 2, 3, 4, 7].map((missao) => ({ missao, ativa: missao !== 4 })) } },
+      { id: 'rot2', org_id: 'org', anuncio_externo_id: 'an1', familia_id: 'famB', versao: 2, status: 'aprovado', moda: false, conteudo: plano() },
     ],
     galeria_referencias: [{ id: 'refR', org_id: 'org', anuncio_externo_id: 'an1', path: 'org/galeria-ia/famB/referencias/rosa.jpg' }],
     galeria_imagens: [],
@@ -84,52 +91,69 @@ const confirmar = (ids: string[], ml = 'MLB1') => chamar({ acao: 'confirmar_exib
 describe('galeria-imagens — listar', () => {
   const listar = (ml = 'MLB1') => chamar({ acao: 'listar', ml_item_id: ml })
 
-  it('roteiro aprovado do anúncio + imagens com URL assinada, preço do pedido e preço do mês, sem gravar nada', async () => {
+  it('plano aprovado + imagens com URL assinada, preço do pedido e do mês, sem gravar nada', async () => {
     db.galeria_imagens.push(
       img(1),
-      img(3, { missao: 7, origem: 'recorte', cena_path: null, custo_usd: null }),
       img(4, { anuncio_externo_id: 'an2' }), // outra partição: fora
     )
     const r = await listar()
     expect(r.status).toBe(200)
+    expect(r.body).toMatchObject({ titulo: 'Fita Dupla Face', cores: ['Rosa'], moda: false, plano_id: 'rot2', posicoes: posicoesNaoModa })
     expect(r.body.unit_cents).toBe(80) // mês: só para pedido novo
-    expect(r.body.roteiro).toMatchObject({ id: 'rot2', versao: 2, familia_id: 'famB', moda: false, missoes_ativas: [1, 2, 3, 7] })
     const imgs = r.body.imagens as Linha[]
-    expect(imgs.map((i) => i.id)).toEqual([U(1), U(3)])
-    expect(imgs[0]).toMatchObject({ url: 'https://signed/org/galeria-ia/famB/cenas/1.png', exibida: false, origem: 'gerador', unit_cents: 50 })
-    expect(imgs[1]).toMatchObject({ url: 'https://signed/org/galeria-ia/famB/referencias/rosa.jpg', origem: 'recorte' })
+    expect(imgs.map((i) => i.id)).toEqual([U(1)])
+    expect(imgs[0]).toMatchObject({ url: 'https://signed/org/galeria-ia/famB/cenas/1.png', exibida: false, unit_cents: 50, roteiro_id: 'rot2', pode_gerar_de_novo: true })
     expect(fake.escritas).toEqual([])
     expect(fake.rpcs.map((x) => x.nome)).not.toContain('galeria_confirmar_exibicao')
     expect(db.galeria_imagens.every((i) => i.entregue_em === null)).toBe(true)
   })
 
-  it('Task 12: cada imagem traz a URL da referência (lupa) e o roteiro traz os textos das missões', async () => {
-    db.galeria_roteiros[1].conteudo = { missoes: [
-      { missao: 2, ativa: true, headline: 'Prende firme', subheadline: 'Sem costura', cena: 'x', fatosUsados: [] },
-      { missao: 4, ativa: false, headline: 'Inativa', beneficios: ['a'], cena: 'x', fatosUsados: [] },
-    ] }
-    db.galeria_imagens.push(img(1, { missao: 2 }))
+  it('a resposta não tem mais roteiro, lupa, ref_url nem origem', async () => {
+    db.galeria_imagens.push(img(1, { missao: 3 }))
     const r = await listar()
-    expect((r.body.imagens as Linha[])[0]).toMatchObject({ ref_url: 'https://signed/org/galeria-ia/famB/referencias/rosa.jpg', roteiro_id: 'rot2' })
-    expect((r.body.roteiro as Linha).textos).toEqual({ 2: { headline: 'Prende firme', subheadline: 'Sem costura' } })
+    expect(r.body).not.toHaveProperty('roteiro')
+    expect(Object.keys((r.body.imagens as Linha[])[0]).sort()).toEqual([
+      'alertas', 'cor', 'erro', 'exibida', 'geracao', 'id', 'missao', 'pode_gerar_de_novo', 'roteiro_id', 'status', 'unit_cents', 'url',
+    ])
   })
 
-  it('lupa pela caixa do produto: missão com lupa traz caixas, dimensões, hash e situação; sem lupa → null; nunca chama visão', async () => {
-    const d = {
-      estado: 'ok', versao: VERSAO_LEITURA, tentado_em: 't', produto: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 },
-      detalhes: [{ x: 0.15, y: 0.15, w: 0.1, h: 0.1 }], ref_w: 1200, ref_h: 1500, hash: 'hashR',
-    }
-    db.galeria_referencias[0].detalhes = d
-    db.galeria_imagens.push(img(1, { missao: 3 }), img(2, { missao: 7, origem: 'recorte', cena_path: null }), img(3, { missao: 2 }))
-    const imgs = (await listar()).body.imagens as Linha[]
-    expect(imgs.find((i) => i.id === U(1))!.lupa).toEqual({
-      situacao: 'ok', produto: d.produto, detalhes: d.detalhes, ref_w: 1200, ref_h: 1500, hash: 'hashR',
-    })
-    // Missão 7 com um só detalhe: não cabe → indisponível (a tela não compõe).
-    expect(imgs.find((i) => i.id === U(2))!.lupa).toMatchObject({ situacao: 'indisponivel' })
-    expect(imgs.find((i) => i.id === U(3))!.lupa).toBeNull()
-    db.galeria_referencias[0].detalhes = null
-    expect(((await listar()).body.imagens as Linha[]).find((i) => i.id === U(1))!.lupa).toEqual({ situacao: 'lendo' })
+  it('posição marcada no plano traz o motivo em indisponivel', async () => {
+    db.galeria_roteiros[1].conteudo = plano({ 5: 'Faltam dados do produto' })
+    const pos = (await listar()).body.posicoes as Linha[]
+    expect(pos).toHaveLength(7)
+    expect(pos.find((p) => p.posicao === 5)).toMatchObject({ indisponivel: 'Faltam dados do produto' })
+    expect(pos.filter((p) => 'indisponivel' in p).map((p) => p.posicao)).toEqual([5])
+  })
+
+  it('sem roteiro aprovado: plano_id e moda null, 7 posições de não-Moda, cores do anúncio', async () => {
+    db.galeria_roteiros = db.galeria_roteiros.filter((x) => x.status !== 'aprovado')
+    fake = fakeAdmin(db); f.fake = fake
+    fake.respostasRpc.platform_resolve_terms = () => ({ id: 'termos1', image_unit_cents: 80 })
+    const r = await listar()
+    expect(r.body).toMatchObject({ plano_id: null, moda: null, posicoes: posicoesNaoModa, cores: ['Rosa'], imagens: [], unit_cents: 80 })
+  })
+
+  // Review Focus 4: roteiro antigo (formato 1) aprovado não quebra a tela e as imagens dele continuam listadas.
+  it('roteiro aprovado em formato antigo: plano_id null, sem lançar, imagens dele na lista e sem "gerar de novo"', async () => {
+    db.galeria_roteiros[1].conteudo = { missoes: [1, 2, 3].map((missao) => ({ missao, ativa: true })) }
+    db.galeria_imagens.push(img(1), img(2, { missao: 2 }))
+    const r = await listar()
+    expect(r.status).toBe(200)
+    expect(r.body).toMatchObject({ plano_id: null, moda: false, posicoes: posicoesNaoModa })
+    const imgs = r.body.imagens as Linha[]
+    expect(imgs.map((i) => i.id)).toEqual([U(1), U(2)])
+    expect(imgs.every((i) => i.roteiro_id === 'rot2' && i.pode_gerar_de_novo === false)).toBe(true)
+  })
+
+  it('Moda: posições são as nomeadas de Moda', async () => {
+    db.galeria_roteiros[1].moda = true
+    const esperado = missoesDisponiveis(true, ['frente']).map((m) => ({ posicao: m.missao, nome: m.nome }))
+    expect((await listar()).body).toMatchObject({ moda: true, posicoes: esperado })
+  })
+
+  it('anúncio sem família vigente → 409 com o código', async () => {
+    db.familias = []
+    expect(await listar()).toMatchObject({ status: 409, body: { error: 'sem_familia_vigente' } })
   })
 
   it('histórico: cenas da família A (B publicada depois) não exibidas aparecem e cobram 1', async () => {
@@ -148,16 +172,9 @@ describe('galeria-imagens — listar', () => {
     db.galeria_roteiros.push({ id: 'rot3', org_id: 'org', anuncio_externo_id: 'an1', familia_id: 'famB', versao: 3, status: 'rascunho', moda: false, conteudo: { missoes: [] } })
     db.galeria_imagens.push(img(1))
     const r = await listar()
-    expect((r.body.roteiro as Linha).id).toBe('rot2')
+    expect(r.body.plano_id).toBe('rot2')
     expect((r.body.imagens as Linha[]).map((i) => i.id)).toEqual([U(1)])
     expect((await confirmar([U(1)])).body).toEqual({ cobradas: 1 })
-  })
-
-  it('sem roteiro aprovado nem imagem pendente → roteiro null e lista vazia', async () => {
-    db.galeria_roteiros = db.galeria_roteiros.filter((x) => x.status !== 'aprovado')
-    fake = fakeAdmin(db); f.fake = fake
-    fake.respostasRpc.platform_resolve_terms = () => ({ id: 'termos1', image_unit_cents: 80 })
-    expect((await listar()).body).toMatchObject({ roteiro: null, imagens: [], unit_cents: 80 })
   })
 
   it('sem condição comercial → preço do mês 0 (mesma regra do galeria-gerar)', async () => {

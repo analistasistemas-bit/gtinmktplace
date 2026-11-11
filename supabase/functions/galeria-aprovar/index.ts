@@ -10,19 +10,16 @@
 //   verificação por visão ainda não rodou. `verificacao_indisponivel` não bloqueia (só aparece no cartão).
 //   Gerador sem `entregue_em` (exibição ainda não confirmada = não cobrada) → `exibicao_pendente` (revisão geral).
 //   Exige o módulo `imagem_ia`.
-//   Missões com lupa/recorte → `lupa_pendente` enquanto travadas (portão da Task 16, regras.ts). Liberadas, exigem a
-//   leitura `ok` da referência vigente com o recorte cabendo (`lupa_indisponivel`) e `lupa_hash` no corpo = o hash das
-//   caixas gravadas (`lupa_desatualizada`): bundle antigo, sem hash, nunca aprova recorte às cegas.
+//   ADR-0203: só aprova imagem de plano formato 2; imagem de roteiro antigo → `nao_aprovavel`. Sem lupa nem recorte.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { carregarAnuncio, resolverAnuncio } from '../_shared/galeria/anuncio.ts';
 import { carregarFotosAplicadas, prepararReferencia, sha256Hex } from '../_shared/galeria/referencias.ts';
-import { lupaPendente, missoesDisponiveis } from '../_shared/galeria/regras.ts';
+import { ehPlano } from '../_shared/galeria/plano.ts';
+import { missoesDisponiveis } from '../_shared/galeria/regras.ts';
 import { validarArquivoFinal } from '../_shared/galeria/arquivo-final.ts';
-import { comLupa, situacaoLupa, type DetalhesLupa } from '../_shared/galeria/lupa.ts';
-import { VERSAO_LEITURA } from '../_shared/galeria/detalhes.ts';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -88,10 +85,10 @@ Deno.serve(async (req) => {
     if (img.origem === 'gerador' && img.alertas == null) return json({ error: 'verificacao_pendente' }, 409);
     // Gerador só aprova já cobrada (R8.3): a tela repete `confirmar_exibicao` e tenta de novo. A RPC confere de novo.
     if (img.origem === 'gerador' && img.status !== 'aprovada' && !img.entregue_em) return json({ error: 'exibicao_pendente' }, 409);
-    const { data: rot, error: eR } = await admin.from('galeria_roteiros').select('moda').eq('id', img.roteiro_id).eq('org_id', orgId).maybeSingle();
+    const { data: rot, error: eR } = await admin.from('galeria_roteiros').select('moda, conteudo').eq('id', img.roteiro_id).eq('org_id', orgId).maybeSingle();
     if (eR) throw new Error(eR.message);
     const moda = rot?.moda === true;
-    if (lupaPendente(img.missao, moda)) return json({ error: 'lupa_pendente' }, 409);
+    if (!ehPlano(rot?.conteudo)) return json({ error: 'nao_aprovavel' }, 409);
     if (!img.final_upload_path) return json({ error: 'sem_upload' }, 409);
     const { data: blob } = await admin.storage.from('imagens').download(img.final_upload_path);
     if (!blob) return json({ error: 'sem_arquivo' }, 409);
@@ -111,13 +108,6 @@ Deno.serve(async (req) => {
       ? await prepararReferencia(admin, orgId, r.anuncioId, img.cor, vista, await carregarFotosAplicadas(admin, orgId, r.anuncioId), a)
       : null;
     if (!ref || !atual || 'erro' in atual || atual.sha256 !== ref.sha256) return json({ error: 'referencia_trocada' }, 409);
-    if (comLupa(img.missao, moda)) {
-      const { data: lida, error: eD } = await admin.from('galeria_referencias').select('detalhes').eq('id', atual.id).eq('org_id', orgId).maybeSingle();
-      if (eD) throw new Error(eD.message);
-      const d = (lida?.detalhes ?? null) as DetalhesLupa | null;
-      if (situacaoLupa(d, img.missao, moda, VERSAO_LEITURA) !== 'ok' || d?.estado !== 'ok') return json({ error: 'lupa_indisponivel' }, 409);
-      if (typeof body.lupa_hash !== 'string' || body.lupa_hash !== d.hash) return json({ error: 'lupa_desatualizada' }, 409);
-    }
 
     const { data: res, error: eA } = await admin.rpc('galeria_aprovar_imagem', {
       p_org: orgId, p_anuncio: r.anuncioId, p_imagem: img.id, p_upload_path: img.final_upload_path,
