@@ -29,6 +29,7 @@ const ERRO_ARQUIVO: Record<string, string> = {
 const ABERTOS = new Set(['pendente', 'submetendo', 'gerando']);
 
 interface Alvo { cores: string[]; missoes: number[] }
+const mesmoAlvo = (a: Alvo | null, b: Alvo) => !!a && a.cores.join() === b.cores.join() && a.missoes.join() === b.missoes.join();
 interface Aviso { texto: string; detalhe?: string; acao?: 'tentar' | 'recarregar' | 'roteiro'; bloqueia: boolean }
 
 /** Detalhe da recusa do galeria-gerar (cor/MLB, campos, (cor, missão) bloqueadas). */
@@ -251,7 +252,12 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoL
               <p className="text-lg font-semibold tabular-nums" aria-live="polite">{unit === null ? 'Carregando o preço…' : rotuloTotal}</p>
             </div>
             <Button className="h-11 px-4" disabled={ocupado || !cor || sel.length === 0 || unit === null || (!total?.geradas && !total?.recortes) || !!aviso?.bloqueia}
-              onClick={() => { abrir(null); void enviar(principal); }}>
+              onClick={() => {
+                // Revisão B+C (achado 5): depois de rede/ml_indisponivel, repetir o mesmo alvo reusa o pedido_id.
+                if (aviso?.acao === 'tentar' && mesmoAlvo(ultimo.current, principal)) { setAviso(null); setConfirmando(null); }
+                else abrir(null);
+                void enviar(principal);
+              }}>
               {ocupado && !confirmando ? <><Loader2 className="animate-spin" aria-hidden />Gerando…</> : `Gerar ${rotuloTotal}`}
             </Button>
           </div>

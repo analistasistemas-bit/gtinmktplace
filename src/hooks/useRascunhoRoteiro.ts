@@ -53,9 +53,13 @@ export function useRascunhoRoteiro({ mlItemId, familiaId, resp, podeEditar, aoRe
   const emRascunho = () => respRef.current?.roteiro.status === 'rascunho';
 
   // Resposta nova vinda de fora (abertura, recarga, "Editar"): reinicia o rascunho; o eco do próprio salvar, não.
+  // Mesmo `roteiro` (o pai só trocou erros/pendências, ex.: aprovar recusado com roteiro_invalido/ciencia_pendente)
+  // também não: a edição em curso, o timer e a geração continuam (revisão B+C, achado 1).
   useEffect(() => {
+    const anterior = respRef.current;
     respRef.current = resp;
     if (resp && resp === propriaRef.current) return;
+    if (resp && anterior && resp.roteiro === anterior.roteiro) return;
     geracaoRef.current += 1;
     clearTimeout(timerRef.current);
     const c = resp?.roteiro.conteudo ?? null;

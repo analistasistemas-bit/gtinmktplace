@@ -165,6 +165,19 @@ describe('PassoGerar — seleção e confirmação', () => {
     expect(b.cores).toEqual(a.cores);
   });
 
+  // Revisão B+C (Grok, achado 5): depois de rede/ml_indisponivel, o próprio botão Gerar repete o MESMO pedido
+  // (a RPC é idempotente pelo id); só trocar a cor ou a seleção abre outro.
+  it.each([['rede', 0], ['ml_indisponivel', 503]])('%s: o botão Gerar reusa o mesmo pedido_id', async (erro, status) => {
+    api.gerarImagens.mockResolvedValueOnce(falha(status as number, erro as string));
+    passo();
+    await screen.findByText(/por imagem/);
+    await gerar();
+    await screen.findByText(/Mercado Livre indisponível, tente de novo/);
+    await gerar();
+    const [a, b] = api.gerarImagens.mock.calls.map((c) => c[1]);
+    expect(b.pedidoId).toBe(a.pedidoId);
+  });
+
   it('familia_nao_vigente: botão Recarregar visível e Gerar desabilitado', async () => {
     api.gerarImagens.mockResolvedValueOnce(falha(409, 'familia_nao_vigente', { familia_id_vigente: 'F2' }));
     const props = passo();

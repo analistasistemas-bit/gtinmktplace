@@ -48,6 +48,9 @@ export default function GaleriaIA() {
   const isAdmin = usePodeExecutarOperacao();
   const modulos = useModulosHabilitados({ retryOnMount: false });
   const semModulo = !!modulos.data && !modulos.data.includes('imagem_ia');
+  // Revisão B+C (achado 6): só abre com a lista de módulos em mãos (a edge recusaria antes da visão de qualquer jeito).
+  // Falha ao ler a lista não prende a tela: a edge é fail-closed e responde modulo_desligado.
+  const modulosProntos = !!modulos.data || !!modulos.isError;
   const { data: publicados } = usePublicados();
   const anuncio = publicados?.find((p) => p.mlItemId === mlItemId);
 
@@ -108,13 +111,13 @@ export default function GaleriaIA() {
   }, [mlItemId]);
 
   useEffect(() => {
-    if (semModulo || !mlItemId) return;
+    if (semModulo || !mlItemId || !modulosProntos) return;
     setFicha(null); setResp(null); setModa(null); setPasso(1); setAlcancado(1); setTemGaleria(false); setLista(null); setCab({});
     setErro(null); setParada(null);
     void carregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
     return () => { abertura.current++; };
-  }, [mlItemId, semModulo, carregar]);
+  }, [mlItemId, semModulo, modulosProntos, carregar]);
 
   /** Falha de qualquer ação: mensagem clara; erros que invalidam o chão recarregam e descartam o roteiro em tela. */
   const falhou = useCallback((f: Falha) => {
@@ -144,9 +147,13 @@ export default function GaleriaIA() {
     document.querySelector('main')?.scrollTo({ top: 0 });
   }
 
+  // Revisão B+C (achado 2): mesmo critério da troca de passo; com o salvar falhando, avisa e fica.
   async function voltar(e: React.MouseEvent) {
     e.preventDefault();
-    if (descarga.current) await descarga.current();
+    if (descarga.current && !(await descarga.current())) {
+      toast.error('Não foi possível salvar os textos. Tente de novo antes de sair da galeria.');
+      return;
+    }
     navigate(caminhoDeVolta());
   }
 

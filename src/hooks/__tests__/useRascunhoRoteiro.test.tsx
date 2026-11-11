@@ -125,6 +125,22 @@ describe('useRascunhoRoteiro — salvamento automático', () => {
     expect(api.salvarRoteiro).toHaveBeenCalledTimes(1);
     expect(api.salvarRoteiro.mock.calls[0][3].missoes[1].headline).toBe('Saindo');
   });
+
+  // Revisão B+C (Grok, achado 1): o aprovar que volta com roteiro_invalido/ciencia_pendente só troca erros e
+  // pendências (mesmo roteiro). Isso não é recarga: a edição feita durante o aprovar fica e sai no salvar seguinte.
+  it.each([['roteiro_invalido', { erros: ['título longo'] }], ['ciencia_pendente', { ciencia_pendente: ['atributo:WIDTH'] }]])(
+    'resposta de %s do aprovar não zera rascunho, timer nem "Salvo"', async (_erro, campos) => {
+      api.salvarRoteiro.mockImplementation(async (_m, _f, _id, c: Roteiro) => ok(resp(c)));
+      const { result } = montar(resp(conteudo()));
+      act(() => result.current.editar(mudarTitulo('Fita macia mais uma')));
+      act(() => result.current.setResp((r) => (r ? { ...r, ...campos } : r)));
+      expect(titulo(result.current)).toBe('Fita macia mais uma');
+      expect(result.current.estado).toBe('pendente');
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      expect(api.salvarRoteiro).toHaveBeenCalledTimes(1);
+      expect(api.salvarRoteiro.mock.calls[0][3].missoes[1].headline).toBe('Fita macia mais uma');
+      expect(result.current.estado).toBe('salvo');
+    });
 });
 
 describe('useRascunhoRoteiro — roteiro aprovado e permissão', () => {

@@ -100,6 +100,15 @@ describe('GaleriaIA — guarda própria (link direto)', () => {
     expect(await screen.findByText('Publicados')).toBeInTheDocument();
   });
 
+  // Revisão B+C (Grok, achado 6): com a lista de módulos ainda carregando, a página espera; não chama o montar.
+  it('lista de módulos carregando: não chama montar e mostra o carregamento', async () => {
+    ctx.modulos = undefined;
+    abrir();
+    expect(await screen.findByText('Abrindo a galeria…')).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(api.montarFicha).not.toHaveBeenCalled();
+  });
+
   it('MLB inexistente ou de outra org (anuncio_ambiguo): mensagem e volta; não lê o roteiro', async () => {
     api.montarFicha.mockResolvedValue(falha(409, 'anuncio_ambiguo'));
     abrir('MLB999');
@@ -392,6 +401,36 @@ describe('Passo 2 — Escolher imagens', () => {
     expect(continuar()).toBeEnabled();
   });
 
+  // Revisão B+C (Grok, achado 1): a recusa do aprovar só traz erros/pendências; a edição feita enquanto ele respondia
+  // fica na tela e sai no salvar seguinte.
+  it.each([
+    ['roteiro_invalido', { erros: ['título longo'], erros_por_missao: {} }],
+    ['ciencia_pendente', { campos: ['atributo:MATERIAL'] }],
+  ])('edição durante o aprovar que volta com %s é preservada e salva depois', async (codigo, corpo) => {
+    let responder!: (r: Res<never>) => void;
+    api.aprovarRoteiro.mockReturnValue(new Promise((r) => { responder = r; }));
+    await noPasso2(resposta({ missoes: [missao(1), missao(2, { headline: 'Prende firme' })] }));
+    await userEvent.click(continuar());
+    await waitFor(() => expect(api.aprovarRoteiro).toHaveBeenCalled());
+    await userEvent.type(screen.getByLabelText(/^Título/), ' sempre');
+    responder(falha(409, codigo as string, corpo));
+    await waitFor(() => expect(api.salvarRoteiro).toHaveBeenCalled(), { timeout: 3000 });
+    expect(screen.getByLabelText(/^Título/)).toHaveValue('Prende firme sempre');
+    expect(api.salvarRoteiro.mock.calls.at(-1)![3].missoes[1].headline).toBe('Prende firme sempre');
+  });
+
+  // Revisão B+C (Grok, achado 2): voltar a Publicados com o salvar falhando avisa e fica, como a troca de passo.
+  it('voltar a Publicados com o salvar falhando: toast de erro e permanece na galeria', async () => {
+    const { toast } = await import('sonner');
+    api.salvarRoteiro.mockResolvedValue(falha(500, 'falha_interna'));
+    await noPasso2(resposta({ missoes: [missao(1), missao(2, { headline: 'Prende firme' })] }));
+    await userEvent.type(screen.getByLabelText(/^Título/), ' sempre');
+    await userEvent.click(screen.getByRole('link', { name: /Publicados/ }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/Não foi possível salvar/)));
+    expect(screen.getByText('Escolher imagens', { selector: 'h1' })).toBeInTheDocument();
+    expect(screen.queryByText(/^Publicados/, { selector: 'p' })).not.toBeInTheDocument();
+  });
+
   it('roteiro aprovado: só leitura com "Editar"; Continuar segue sem aprovar de novo', async () => {
     api.listarImagens.mockResolvedValue(ok({ roteiro: { id: 'R1', versao: 1, familia_id: 'F1', moda: false, missoes_ativas: [1, 2], textos: {} }, unit_cents: 50, imagens: [] }));
     await noPasso2(resposta({ status: 'aprovado', missoes: [missao(1), missao(2, { headline: 'Prende firme' })] }));
@@ -460,6 +499,17 @@ describe('Passo 2 — lupa (migrado do passo Roteiro)', () => {
     await comLupa(ficha([], { cores: ['Preto', 'Rosa'], lupa: { Preto: lupa('ok'), Rosa: lupa('indisponivel', 'ok') } }), [1]);
     expect(screen.getByText('Sem detalhe do produto na foto: Rosa')).toBeInTheDocument();
     expect(chave('Detalhe com lupa')).toBeEnabled();
+  });
+
+  // Revisão B+C (Grok, achado 3): caso que existia no passo antigo e voltou para o passo 2.
+  it('ramo liberado com a lupa sendo lida em UMA cor: motivo com a cor e o interruptor continua ligado', async () => {
+    trava.travas = { geral: [], moda: [] };
+    await comLupa(ficha([], { cores: ['Preto', 'Rosa'], lupa: { Preto: lupa('ok'), Rosa: lupa('lendo') } }), [1, 3]);
+    // Ligada (3): continua ligada e pode desligar. Desligada (7): motivo com a cor e pode ligar.
+    expect(chave('Detalhe com lupa')).toBeChecked();
+    expect(chave('Detalhe com lupa')).toBeEnabled();
+    expect(within(chave('Detalhes').closest('li')!).getByText(/lendo a foto de referência: Rosa/i)).toBeInTheDocument();
+    expect(chave('Detalhes')).toBeEnabled();
   });
 
   it('ramo liberado com a lupa indisponível em todas as cores: ligar fica barrado', async () => {
