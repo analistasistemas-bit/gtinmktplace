@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -221,7 +221,7 @@ describe('Calculadora ML', () => {
 
     expect(screen.getByRole('heading', { name: /^clássico$/i })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /^premium$/i })).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /ver premium/i }))
+    await user.click(screen.getByRole('tab', { name: /premium/i }))
     expect(screen.getByText('R$ 22,00')).toBeInTheDocument()
   })
 
@@ -231,7 +231,7 @@ describe('Calculadora ML', () => {
 
     expect(screen.getByText(/se o preço de venda cair 5%/i)).toBeInTheDocument()
     expect(screen.getByText(/3,93/)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /ver premium/i }))
+    await user.click(screen.getByRole('tab', { name: /premium/i }))
     expect(screen.getByText(/3,68/)).toBeInTheDocument()
   })
 
@@ -329,6 +329,40 @@ describe('Calculadora ML', () => {
 
     expect(view.container.querySelector('main')).toBeNull()
     expect(view.container.querySelectorAll('[aria-live="polite"]')).toHaveLength(2)
+  })
+
+  it('barra-resumo mostra lucro, margem e veredito da modalidade de decisão, não da visão', async () => {
+    const user = userEvent.setup()
+    estado = { ...estadoBase, modalidadeAtiva: 'premium' }
+    render(<CalculadoraML />)
+
+    const barra = screen.getByTestId('barra-resumo-ml')
+    expect(barra).toHaveAttribute('aria-hidden', 'true')
+    expect(within(barra).getByText('R$ 18,00')).toBeInTheDocument()
+    expect(within(barra).getByText('18%')).toBeInTheDocument()
+    expect(within(barra).getByText('Comprar')).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: /clássico/i }))
+    expect(within(barra).getByText('R$ 18,00')).toBeInTheDocument()
+  })
+
+  it('status da cotação some com taxas oficiais e aparece nos demais', () => {
+    estado = { ...estadoBase, statusCotacao: 'official' }
+    const { unmount } = render(<CalculadoraML />)
+    expect(screen.queryByRole('region', { name: 'Status da cotação' })).toBeNull()
+    unmount()
+
+    estado = { ...estadoBase, statusCotacao: 'estimated' }
+    render(<CalculadoraML />)
+    expect(screen.getByRole('region', { name: 'Status da cotação' })).toBeInTheDocument()
+  })
+
+  it('cards não têm botão "Ver …"; a troca no mobile é pelas abas', async () => {
+    const user = userEvent.setup()
+    render(<CalculadoraML />)
+
+    expect(screen.queryByRole('button', { name: /^ver (clássico|premium)$/i })).toBeNull()
+    await user.click(screen.getByRole('tab', { name: /premium/i }))
+    expect(screen.getByRole('tab', { name: /premium/i })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('requires an explicit confirmation before accepting manual zero freight', () => {
@@ -462,7 +496,7 @@ describe('Calculadora ML', () => {
     it('a alternância de visão no mobile não altera a modalidade ativa', async () => {
       const user = userEvent.setup()
       render(<CalculadoraML />)
-      await user.click(screen.getByRole('button', { name: /ver premium/i }))
+      await user.click(screen.getByRole('tab', { name: /premium/i }))
       await user.click(screen.getByRole('tab', { name: /premium/i }))
 
       expect(screen.getByRole('button', { name: /^clássico$/i })).toHaveAttribute('aria-pressed', 'true')

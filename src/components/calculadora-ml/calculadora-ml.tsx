@@ -1,4 +1,4 @@
-import { AlertTriangle, Calculator, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, Calculator } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useCalculadoraML } from '@/hooks/useCalculadoraML'
 import { FormularioCalculadoraML } from './formulario-calculadora-ml'
@@ -25,7 +25,7 @@ export function CalculadoraML() {
     : undefined
 
   return (
-    <div className="min-h-full bg-muted/20 px-4 py-6 sm:px-6 lg:px-8">
+    <div className="min-h-full bg-muted/20 px-4 pt-6 pb-24 sm:px-6 lg:px-8 lg:pb-6">
       <div className="mx-auto max-w-7xl space-y-6">
         <header className="max-w-3xl">
           <div className="flex items-center gap-2 text-sm font-medium text-primary"><Calculator className="size-4" aria-hidden="true" /> Viabilidade</div>
@@ -65,7 +65,6 @@ export function CalculadoraML() {
             />
           </section>
           <aside className="lg:sticky lg:top-4">
-            <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground"><ShieldCheck className="size-4 text-primary" aria-hidden="true" /> Resultado transparente e acionável</div>
             {calculadora.carregandoProduto
               ? <p className="rounded-xl border border-border/70 bg-card p-5 text-sm text-muted-foreground" role="status">Carregando produto…</p>
               : <ResultadoCalculadoraML
