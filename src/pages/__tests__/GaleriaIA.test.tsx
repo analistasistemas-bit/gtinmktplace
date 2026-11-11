@@ -90,7 +90,7 @@ beforeEach(() => {
   api.salvarRoteiro.mockImplementation(async (_m: string, _f: string, _id: string, c) => ok({ ...resposta(), roteiro: { ...resposta().roteiro, conteudo: c } }));
 });
 
-describe('GaleriaIA — guarda própria (link direto)', () => {
+describe('GaleriaIA: guarda própria (link direto)', () => {
   it('sem o módulo imagem_ia: mensagem e volta, sem chamar a edge', async () => {
     ctx.modulos = ['estoque'];
     abrir();
@@ -132,7 +132,7 @@ describe('GaleriaIA — guarda própria (link direto)', () => {
   });
 });
 
-describe('GaleriaIA — abertura sequencial e identidade', () => {
+describe('GaleriaIA: abertura sequencial e identidade', () => {
   it('chama montar e só depois ler; o aviso reflete o estado pós-montar (desatualizado)', async () => {
     const ordem: string[] = [];
     let liberar: (v: unknown) => void = () => undefined;
@@ -195,7 +195,7 @@ describe('GaleriaIA — abertura sequencial e identidade', () => {
   });
 });
 
-describe('Passo 1 — Conferir dados', () => {
+describe('Passo 1: Conferir dados', () => {
   const divergente = (foto: { origem: 'referencia' | 'ml'; ref: string; url?: string }) => ficha([fato('atributo:WIDTH', 'DIVERGENTE', '16 mm', {
     etiqueta: { legivel: true, valor: '15 mm', foto, caixa: { x: 0.1, y: 0.2, w: 0.5, h: 0.3 } },
   })]);
@@ -293,7 +293,7 @@ describe('Passo 1 — Conferir dados', () => {
   });
 });
 
-describe('Passo 2 — Escolher imagens', () => {
+describe('Passo 2: Escolher imagens', () => {
   async function noPasso2(r: RespostaRoteiro, f: Ficha = ficha([fato('nome', 'CONFIRMADO')])) {
     api.montarFicha.mockResolvedValue(ok(f));
     api.lerRoteiro.mockResolvedValue(comLer(r));
@@ -334,7 +334,11 @@ describe('Passo 2 — Escolher imagens', () => {
 
   it('texto que estoura a largura da caixa bloqueia o Continuar, com o motivo ao lado do campo', async () => {
     await noPasso2(resposta({ missoes: [missao(1), missao(2, { headline: 'Aplicação extraordinária instantânea profissionalíssima garantida' })] }));
-    expect(screen.getByRole('alert')).toHaveTextContent('Texto largo demais para a imagem');
+    expect(screen.getByRole('alert')).toHaveTextContent(/Passou \d+ caracteres; encurte para caber/);
+    // O contador do campo fica em alerta junto do erro (não mostra "10 de 10" neutro ao lado dele).
+    const contador = document.getElementById('f-headline-n')!;
+    expect(contador).toHaveAttribute('data-excedeu', 'true');
+    expect(contador).toHaveClass('text-destructive');
     expect(continuar()).toBeDisabled();
   });
 
@@ -380,7 +384,7 @@ describe('Passo 2 — Escolher imagens', () => {
 
   it.each([
     ['categoria_mudou', /categoria do anúncio mudou/],
-    ['conteudo_mudou', /alterado em outra aba/],
+    ['conteudo_mudou', /alterados em outra aba/],
   ])('409 %s no aprovar: mensagem clara e recarrega', async (codigo, msg) => {
     await noPasso2(resposta({ missoes: [missao(1), missao(2, { headline: 'Prende firme' })] }));
     api.aprovarRoteiro.mockResolvedValue(falha(409, codigo as string));
@@ -442,6 +446,16 @@ describe('Passo 2 — Escolher imagens', () => {
     expect(await screen.findByText('Gerar e aprovar', { selector: 'h1' })).toBeInTheDocument();
   });
 
+  it('escolher um cartão rola até o editor e leva o foco ao título dele', async () => {
+    const rolar = vi.fn();
+    Element.prototype.scrollIntoView = rolar;
+    await noPasso2(resposta({ missoes: [missao(1), missao(2, { headline: 'Prende firme' }), missao(5, { headline: 'Dados do produto', specs: [] })] }));
+    await userEvent.click(screen.getByRole('button', { name: 'Ficha técnica: ver textos' }));
+    const titulo = screen.getByRole('heading', { name: 'Ficha técnica', level: 2 });
+    expect(titulo).toHaveFocus();
+    expect(rolar).toHaveBeenCalledWith(expect.objectContaining({ block: 'start' }));
+  });
+
   it('ficha técnica: remover a 2ª spec com o mesmo campo repetido tira só ela e salva sozinho', async () => {
     await noPasso2(resposta({ missoes: [missao(1), missao(5, { headline: 'Dados do produto', specs: [
       { campo: 'descricao_ml', rotulo: 'Composição', valor: '100% poliéster' },
@@ -474,7 +488,7 @@ describe('Passo 2 — Escolher imagens', () => {
   });
 });
 
-describe('Passo 2 — lupa (migrado do passo Roteiro)', () => {
+describe('Passo 2: lupa (migrado do passo Roteiro)', () => {
   const lupa = (r3: 'ok' | 'lendo' | 'indisponivel', r7 = r3) => ({ geral: { 3: r3, 7: r7 }, moda: { 5: 'ok' as const, 7: 'ok' as const } });
   async function comLupa(f: Ficha, ativas: number[]) {
     api.montarFicha.mockResolvedValue(ok(f));
@@ -508,7 +522,7 @@ describe('Passo 2 — lupa (migrado do passo Roteiro)', () => {
     // Ligada (3): continua ligada e pode desligar. Desligada (7): motivo com a cor e pode ligar.
     expect(chave('Detalhe com lupa')).toBeChecked();
     expect(chave('Detalhe com lupa')).toBeEnabled();
-    expect(within(chave('Detalhes').closest('li')!).getByText(/lendo a foto de referência: Rosa/i)).toBeInTheDocument();
+    expect(within(chave('Detalhes').closest('li')!).getByText(/preparando esta imagem, aguarde: Rosa/i)).toBeInTheDocument();
     expect(chave('Detalhes')).toBeEnabled();
   });
 
@@ -562,12 +576,13 @@ describe('Passos 3 e 4 na página', () => {
     await irPasso(/Aplicar no anúncio/);
     await userEvent.click(await screen.findByRole('button', { name: 'Ver prévia' }));
     await waitFor(() => expect(api.montarFicha).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText(/F2/)).toBeInTheDocument();
+    expect(await screen.findByText(/cadastro do anúncio mudou/)).toBeInTheDocument();
+    expect(screen.getAllByText(/cadastro do anúncio mudou/)).toHaveLength(1);
   });
 });
 
 // Fase C2: miniatura do cabeçalho = capa atual do anúncio (vem do `montar`); sem ela ou com erro de carga, o ícone.
-describe('Cabeçalho — miniatura da capa', () => {
+describe('Cabeçalho: miniatura da capa', () => {
   it('mostra a capa do anúncio vinda do montar', async () => {
     api.montarFicha.mockResolvedValue(ok(ficha([fato('nome', 'CONFIRMADO', 'Fita')], { capa_url: 'https://http2.mlstatic.com/C1.jpg' })));
     abrir();

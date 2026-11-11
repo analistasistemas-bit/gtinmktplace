@@ -13,14 +13,14 @@ export function BotaoGaleria({ temImagemIA, mlItemId }: { temImagemIA: boolean; 
     <Button
       variant="ghost"
       size="sm"
-      className="h-7 gap-1 px-2 text-xs"
+      className="relative h-7 gap-1 px-2 text-xs after:absolute after:inset-x-0 after:-inset-y-2 after:content-['']"
       onClick={(e) => {
         e.stopPropagation();
         guardarRetorno(search);
         navigate(`/publicados/${encodeURIComponent(mlItemId)}/galeria`);
       }}
     >
-      <Images className="h-3 w-3" />Galeria IA
+      <Images aria-hidden className="h-3 w-3" />Galeria IA
     </Button>
   );
 }

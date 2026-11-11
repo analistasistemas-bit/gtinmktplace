@@ -2,6 +2,7 @@
 // (`validarRoteiro`) e da largura (`motivosDeTexto`) são internas ("headline", "R5.3", "Ficha Verdade"): aqui viram
 // a frase da tela e o campo onde ela aparece. Campo null = linha no topo do cartão da imagem.
 import { LIMITES } from '../../../supabase/functions/_shared/galeria/regras';
+import { linhasNecessarias, trechos } from '../../../supabase/functions/_shared/galeria/layouts';
 import { motivosDeTexto } from './compor';
 import type { MissaoRoteiro } from './api';
 
@@ -40,15 +41,25 @@ export function traduzirErro(msg: string, m?: MissaoRoteiro): ErroTela {
   if (/Lupa em ajuste/.test(t)) return { campo: null, texto: 'Em breve.' };
   if (/não escreveu esta missão/.test(t)) return { campo: null, texto: 'A IA não escreveu esta imagem. Ligue e preencha os textos.' };
   if (/sem texto/.test(t)) return { campo: null, texto: 'Esta imagem não leva texto. Apague os textos dela.' };
-  if (/repetida/.test(t)) return { campo: null, texto: 'Imagem repetida no roteiro.' };
+  if (/repetida/.test(t)) return { campo: null, texto: 'Esta imagem aparece repetida.' };
   if ((r = /^(.+?) não aparece no layout/.exec(t))) return { campo: null, texto: `${r[1]} não aparece nesta imagem. Apague esse texto.` };
   if (/mais textos do que o layout/.test(t)) return { campo: null, texto: 'Há mais textos do que cabem nesta imagem. Apague os que sobram.' };
   if ((r = /^(Título|Subtítulo|Benefício|Etapa|Legenda|Rótulo|Valor) ?(\d*) não cabe em (\d+) linhas?/.exec(t))) {
     const base = CAMPO_LARGURA[r[1]];
     const campo = r[1] === 'Rótulo' || r[1] === 'Valor' ? 'specs' : r[2] && base !== 'headline' && base !== 'subheadline' ? `${base}.${Number(r[2]) - 1}` : base;
-    return { campo, texto: 'Texto largo demais para a imagem. Encurte.' };
+    return { campo, texto: 'Texto largo demais para a imagem. Encurte para caber.' };
   }
-  return { campo: null, texto: t.charAt(0).toUpperCase() + t.slice(1) };
+  // Frase do servidor que a tela não conhece: nunca vai crua (jargão); o original só no console.
+  console.warn('[galeria] erro de textos sem tradução:', t);
+  return { campo: null, texto: 'Confira os textos desta imagem.' };
+}
+
+/** "Passou N caracteres": quanto tirar do fim do texto para caber na caixa da imagem (mesma conta da composição). */
+function passouQuanto(t: { texto: string; caixa: { fontePx: number; w: number; linhasMax: number } }): string {
+  let n = 0;
+  let x = t.texto;
+  while (x.length > 0 && linhasNecessarias(x, t.caixa.fontePx, t.caixa.w) > t.caixa.linhasMax) { x = x.slice(0, -1); n += 1; }
+  return `Passou ${n} ${n === 1 ? 'caractere' : 'caracteres'}; encurte para caber.`;
 }
 
 /** Motivo de missão desligada, em uma frase da tela (null = sem motivo gravado). */
@@ -75,8 +86,13 @@ export function errosDaMissao(m: MissaoRoteiro, moda: boolean, doServidor: strin
   conta('headline', m.headline, LIMITES.headline);
   conta('subheadline', m.subheadline, LIMITES.subheadline);
   for (const k of ['beneficios', 'etapas', 'legendas'] as const) (m[k] ?? []).forEach((x, i) => conta(`${k}.${i}`, x, LIMITE_DO_CAMPO[k]));
-  const largura = motivosDeTexto(m.missao, { ...m, beneficios: m.beneficios?.filter((x) => x.trim()), etapas: m.etapas?.filter((x) => x.trim()), legendas: m.legendas?.filter((x) => x.trim()) }, moda)
-    .map((x) => traduzirErro(x, m));
+  const textos = { ...m, beneficios: m.beneficios?.filter((x) => x.trim()), etapas: m.etapas?.filter((x) => x.trim()), legendas: m.legendas?.filter((x) => x.trim()) };
+  const lista = moda || m.missao === 1 ? [] : trechos(m.missao, textos).lista;
+  const largura = motivosDeTexto(m.missao, textos, moda).map((x) => {
+    const e = traduzirErro(x, m);
+    const t = lista.find((y) => x.startsWith(`${y.rotulo} não cabe em`));
+    return t ? { ...e, texto: passouQuanto(t) } : e;
+  });
   // Contagem de palavras do servidor é a mesma daqui, mas do último texto salvo: a daqui reflete a tela.
   const servidor = doServidor.filter((x) => !/palavras \(máx\./.test(x)).map((x) => traduzirErro(x, m));
   const todos = [...locais, ...largura, ...servidor];

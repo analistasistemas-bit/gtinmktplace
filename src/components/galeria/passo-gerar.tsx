@@ -7,9 +7,10 @@
 // Aprovar (Task 12): compõe o arquivo final no navegador com URLs frescas e os textos do roteiro aprovado, sobe pela URL
 // assinada do `preparar_upload` e aprova; tudo com o `ml_item_id` desta linha.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, ScanSearch } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { fmtBRL } from '@/lib/formato';
 import {
@@ -19,13 +20,14 @@ import {
 import { comporImagemFinal } from '@/lib/galeria/compor';
 import { lupaPendente, missoesDisponiveis } from '../../../supabase/functions/_shared/galeria/regras';
 import { comLupa } from '../../../supabase/functions/_shared/galeria/lupa';
-import { nomeImagem } from '@/lib/galeria/rotulos';
+import { nomeImagem, rotuloFato } from '@/lib/galeria/rotulos';
 import { CartaoImagem } from './cartao-imagem';
 
 const POLLING_MS = 5000;
 const ERRO_ARQUIVO: Record<string, string> = {
-  formato: 'não é JPEG', dimensoes: 'fora de 1200×1540', peso: 'acima de 1 MB', branca: 'imagem branca',
+  formato: 'não é JPEG', dimensoes: 'tamanho fora do padrão', peso: 'arquivo pesado demais', branca: 'imagem em branco',
 };
+const FALHA_FINAL = 'Não foi possível preparar a imagem final. Tente aprovar de novo.';
 const ABERTOS = new Set(['pendente', 'submetendo', 'gerando']);
 
 interface Alvo { cores: string[]; missoes: number[] }
@@ -33,20 +35,29 @@ const mesmoAlvo = (a: Alvo | null, b: Alvo) => !!a && a.cores.join() === b.cores
 interface Aviso { texto: string; detalhe?: string; acao?: 'tentar' | 'recarregar' | 'roteiro'; bloqueia: boolean }
 
 /** Detalhe da recusa do galeria-gerar (cor/MLB, campos, (cor, missão) bloqueadas). */
-function detalheRecusa(c: Record<string, unknown>): string | undefined {
-  if (Array.isArray(c.bloqueadas)) return (c.bloqueadas as Array<{ cor: string; missao: number }>).map((b) => `${b.cor} · missão ${b.missao}`).join(', ');
-  if (Array.isArray(c.campos)) return (c.campos as string[]).join(', ');
+function detalheRecusa(c: Record<string, unknown>, moda: boolean): string | undefined {
+  if (Array.isArray(c.bloqueadas)) return (c.bloqueadas as Array<{ cor: string; missao: number }>).map((b) => `${nomeImagem(b.missao, moda)} · ${b.cor}`).join(', ');
+  if (Array.isArray(c.campos)) return (c.campos as string[]).map((x) => rotuloFato({ campo: x })).join(', ');
   if (Array.isArray(c.cores)) return (c.cores as string[]).join(', ');
-  if (Array.isArray(c.missoes)) return `Missões ${(c.missoes as number[]).join(', ')}`;
-  if (typeof c.cor === 'string') return [c.cor, c.item_id].filter(Boolean).join(' · ');
+  if (Array.isArray(c.missoes)) return (c.missoes as number[]).map((m) => nomeImagem(m, moda)).join(', ');
+  if (typeof c.cor === 'string') return c.cor;
   return undefined;
+}
+
+/** Erro da composição no navegador: só o "não cabe" é do operador (e tem ação); o resto vira frase única. */
+function motivoComposicao(e: unknown): string {
+  const m = e instanceof Error ? e.message : '';
+  const r = /^(.+?) não cabe em \d+ linha/.exec(m);
+  if (r) return `${r[1]} não cabe na imagem. Encurte o texto no passo 2.`;
+  console.warn('[galeria] composição falhou:', m);
+  return FALHA_FINAL;
 }
 
 /** Motivo para segurar o Aprovar de uma imagem de missão com lupa (null = pode). */
 function bloqueioLupa(i: ImagemGaleria, moda: boolean): string | null {
-  if (lupaPendente(i.missao, moda)) return 'lupa em ajuste';
+  if (lupaPendente(i.missao, moda)) return 'Em breve';
   if (!comLupa(i.missao, moda) || i.lupa?.situacao === 'ok') return null;
-  return i.lupa?.situacao === 'indisponivel' ? 'sem detalhe do produto na foto' : 'lendo a foto de referência';
+  return i.lupa?.situacao === 'indisponivel' ? 'Sem detalhe do produto na foto' : 'Preparando esta imagem, aguarde';
 }
 
 export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoLista }: {
@@ -159,14 +170,14 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoL
         cenaUrl: i.origem === 'gerador' ? i.url : null, refUrl: i.ref_url, missao: i.missao,
         textos: l.dados.roteiro.textos?.[i.missao] ?? {}, corProduto: null, moda: l.dados.roteiro.moda, lupa: caixas,
       });
-    } catch (e) { return (e as Error).message; }
+    } catch (e) { return motivoComposicao(e); }
     const p = await prepararUploadFinal(mlItemId, i.id);
     if (!p.ok) return mensagemErro(p.erro);
     const falhaEnvio = await enviarFinal(p.dados.path, p.dados.token, arquivo);
-    if (falhaEnvio) return `Falha ao enviar o arquivo final: ${falhaEnvio}`;
+    if (falhaEnvio) { console.warn('[galeria] envio do arquivo final:', falhaEnvio); return FALHA_FINAL; }
     const hash = comCaixas ? i.lupa?.hash : undefined;
     let a = await aprovarFinal(mlItemId, i.id, hash);
-    // Gerador só aprova já cobrada (revisão geral): confirma a exibição (idempotente) e repete UMA vez o aprovar — o
+    // Gerador só aprova já cobrada (revisão geral): confirma a exibição (idempotente) e repete UMA vez o aprovar: o
     // arquivo final já está no `final_upload_path`, sem recompor nem subir de novo.
     if (!a.ok && a.erro === 'exibicao_pendente') {
       const c = await confirmarExibicao(mlItemId, [i.id]);
@@ -174,7 +185,7 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoL
     }
     if (!a.ok) {
       return a.erro === 'arquivo_invalido'
-        ? `Arquivo final recusado: ${((a.corpo.erros as string[] | undefined) ?? []).map((x) => ERRO_ARQUIVO[x] ?? x).join(', ')}`
+        ? `A imagem final foi recusada (${((a.corpo.erros as string[] | undefined) ?? []).map((x) => ERRO_ARQUIVO[x] ?? 'arquivo inválido').join(', ')}). Gere de novo.`
         : mensagemErro(a.erro);
     }
     setRodada((n) => n + 1);
@@ -208,7 +219,7 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoL
       return;
     }
     setAviso({
-      texto: mensagemErro(r.erro), detalhe: detalheRecusa(r.corpo), bloqueia: true,
+      texto: mensagemErro(r.erro), detalhe: detalheRecusa(r.corpo, moda), bloqueia: true,
       acao: r.erro === 'familia_nao_vigente' ? 'recarregar' : r.erro === 'conteudo.ciencia_nao_conferido' ? 'roteiro' : undefined,
     });
   }
@@ -227,6 +238,34 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoL
   const total = unit !== null ? conta(principal) : null;
   const rotuloTotal = total ? `${total.geradas} ${total.geradas === 1 ? 'imagem' : 'imagens'} · ${fmtBRL((total.geradas * unit!) / 100)}` : '';
 
+  const visiveis = (lista?.imagens ?? []).filter((i) => i.cor === cor || !ficha.cores.includes(i.cor));
+
+  /** Confirmação de "Gerar outra" junto ao cartão clicado (1 imagem; o pedido principal confirma no botão). */
+  const painelConfirmar = (
+    <div className="space-y-3 rounded-lg bg-muted/40 p-3 ring-1 ring-primary/40">
+      {resumo && (
+        <p className="font-semibold tabular-nums">
+          {resumo.geradas} {resumo.geradas === 1 ? 'imagem' : 'imagens'} · {fmtBRL((resumo.geradas * unit!) / 100)}
+        </p>
+      )}
+      {aviso && (
+        <div role="alert" className="space-y-2 rounded-lg bg-destructive/10 p-2.5 text-xs ring-1 ring-destructive/25">
+          <p>{aviso.texto}</p>
+          {aviso.detalhe && <p>{aviso.detalhe}</p>}
+          {aviso.acao === 'tentar' && <Button variant="outline" className="h-11 px-4" disabled={ocupado} onClick={() => void enviar(ultimo.current)}>Tentar de novo</Button>}
+          {aviso.acao === 'recarregar' && <Button variant="outline" className="h-11 px-4" onClick={aoRecarregar}>Recarregar</Button>}
+          {aviso.acao === 'roteiro' && <Button variant="outline" className="h-11 px-4" onClick={aoVoltarRoteiro}>Voltar aos textos</Button>}
+        </div>
+      )}
+      <div className="flex gap-2">
+        <Button className="h-11 px-4" disabled={ocupado || !!aviso?.bloqueia} onClick={() => void enviar(confirmando)}>
+          {ocupado && <Loader2 aria-hidden className="mr-2 size-4 motion-safe:animate-spin" />}Confirmar
+        </Button>
+        <Button variant="outline" className="h-11 px-4" disabled={ocupado} onClick={() => abrir(null)}>Cancelar</Button>
+      </div>
+    </div>
+  );
+
   return (
     <div className="space-y-4">
       {lista && !roteiro && (
@@ -234,31 +273,28 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoL
       )}
       {roteiro && !podePedir && (
         <p role="alert" className="rounded-lg bg-warning/10 p-3 text-sm ring-1 ring-warning/25">
-          Os textos aprovados são de um cadastro anterior (família anterior) deste anúncio. Crie e aprove os textos do cadastro atual no passo 2 para gerar imagens novas.
+          Os textos aprovados são de um cadastro antigo deste anúncio. Aprove os textos de novo no passo 2 para gerar imagens novas.
         </p>
       )}
       {podePedir && (
         <section aria-label="Gerar imagens" className="flex flex-col gap-4 rounded-xl bg-card p-4 text-sm text-card-foreground shadow-sm ring-1 ring-foreground/5">
-          <div className="flex flex-wrap items-end gap-x-5 gap-y-3">
+          <div className="flex flex-wrap items-end justify-between gap-x-5 gap-y-3">
             <div className="flex flex-col gap-1">
-              <span className="text-xs text-muted-foreground">Cor</span>
+              <span id="gerar-cor" className="text-xs text-muted-foreground">Cor</span>
               <Select value={cor} disabled={ocupado} onValueChange={(v) => { setCor(v); abrir(null); }}>
-                <SelectTrigger aria-label="Cor" className="h-11 w-48"><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-labelledby="gerar-cor" className="h-11 w-48"><SelectValue /></SelectTrigger>
                 <SelectContent>{ficha.cores.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
               </Select>
             </div>
-            <div className="flex min-w-40 flex-1 flex-col gap-1">
-              <span className="text-xs text-muted-foreground">Resumo</span>
-              <p className="text-lg font-semibold tabular-nums" aria-live="polite">{unit === null ? 'Carregando o preço…' : rotuloTotal}</p>
-            </div>
-            <Button className="h-11 px-4" disabled={ocupado || !cor || sel.length === 0 || unit === null || (!total?.geradas && !total?.recortes) || !!aviso?.bloqueia}
+            <Button className="h-11 px-4 max-sm:w-full" disabled={ocupado || !cor || sel.length === 0 || unit === null || (!total?.geradas && !total?.recortes) || !!aviso?.bloqueia}
               onClick={() => {
                 // Revisão B+C (achado 5): depois de rede/ml_indisponivel, repetir o mesmo alvo reusa o pedido_id.
                 if (aviso?.acao === 'tentar' && mesmoAlvo(ultimo.current, principal)) { setAviso(null); setConfirmando(null); }
                 else abrir(null);
                 void enviar(principal);
               }}>
-              {ocupado && !confirmando ? <><Loader2 className="animate-spin" aria-hidden />Gerando…</> : `Gerar ${rotuloTotal}`}
+              {ocupado && !confirmando ? <><Loader2 aria-hidden className="motion-safe:animate-spin" />Gerando…</>
+                : unit === null ? 'Carregando o preço…' : `Gerar ${rotuloTotal}`}
             </Button>
           </div>
           <ul aria-label="Imagens deste pedido" className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -271,29 +307,12 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoL
             ))}
           </ul>
           <p className="text-xs text-muted-foreground">
-            {unit === null ? '' : `${fmtBRL(unit / 100)} por imagem gerada (preço do mês), cobrada quando aparece na tela. Cerca de 30 s cada.`}
+            {unit === null ? '' : 'Cerca de 30 s por imagem. Cobrada quando aparece na tela.'}
           </p>
         </section>
       )}
 
-      {podePedir && confirmando && resumo && (
-        <div className="space-y-3 rounded-xl bg-card text-card-foreground shadow-sm ring-1 ring-primary/40 p-4 text-sm">
-          <p className="text-lg font-semibold tabular-nums">
-            {resumo.geradas} {resumo.geradas === 1 ? 'imagem' : 'imagens'} · {fmtBRL((resumo.geradas * unit!) / 100)}
-          </p>
-          {resumo.recortes > 0 && (
-            <p className="text-xs text-muted-foreground">+ {resumo.recortes} {resumo.recortes === 1 ? 'recorte grátis' : 'recortes grátis'}</p>
-          )}
-          <div className="flex gap-2">
-            <Button className="h-11 px-4" disabled={ocupado || !!aviso?.bloqueia} onClick={() => void enviar(confirmando)}>
-              {ocupado && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Confirmar
-            </Button>
-            <Button variant="outline" className="h-11 px-4" disabled={ocupado} onClick={() => abrir(null)}>Cancelar</Button>
-          </div>
-        </div>
-      )}
-
-      {aviso && (
+      {aviso && !confirmando && (
         <div role="alert" className="space-y-2 rounded-lg bg-destructive/10 p-3 text-sm ring-1 ring-destructive/25">
           <p>{aviso.texto}</p>
           {aviso.detalhe && <p className="text-xs">{aviso.detalhe}</p>}
@@ -305,15 +324,20 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoL
 
       {erroLista && <p role="alert" className="text-sm text-destructive">{erroLista}</p>}
 
-      {lista && lista.imagens.length > 0 && (
+      {lista && visiveis.length > 0 && (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {lista.imagens.map((i: ImagemGaleria) => (
+          {visiveis.map((i: ImagemGaleria) => (
             <CartaoImagem key={i.id} imagem={i} titulo={`${nomeImagem(i.missao, moda)} · ${i.cor}`} onExibida={exibida} onInvalida={invalida} onFalhaCarga={falhaCarga}
               onAprovar={roteiro && i.roteiro_id === roteiro.id ? aprovar : undefined}
               bloqueioAprovar={bloqueioLupa(i, moda) ?? undefined}
+              confirmacao={podePedir && confirmando && resumo && confirmando.cores[0] === i.cor && confirmando.missoes[0] === i.missao && confirmando.missoes.length === 1 ? painelConfirmar : undefined}
               onGerarDeNovo={podePedir && !motivoLupa(ficha, [i.cor], i.missao, moda) ? (x) => abrir({ cores: [x.cor], missoes: [x.missao] }) : undefined} />
           ))}
         </div>
+      )}
+      {lista && podePedir && visiveis.length === 0 && (
+        <EmptyState icon={ScanSearch} title={`Nenhuma imagem da cor ${cor} ainda.`}
+          description="Clique em Gerar acima. Cada imagem leva cerca de 30 s." />
       )}
     </div>
   );

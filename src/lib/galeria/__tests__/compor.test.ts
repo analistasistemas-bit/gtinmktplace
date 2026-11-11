@@ -33,7 +33,7 @@ beforeEach(() => {
     font: '10px x',
     fillRect: fn(), fillText: fn(), drawImage: fn(), save: fn(), restore: fn(), beginPath: fn(), arc: fn(),
     clip: fn(), stroke: fn(), fill: fn(), roundRect: fn(), rect: fn(),
-    // Largura simulada: 0,55 em por caractere (Inter real fica em ~0,52–0,58).
+    // Largura simulada: 0,55 em por caractere (Inter real fica em ~0,52-0,58).
     measureText: vi.fn((t: string) => ({ width: t.length * Number(/(\d+)px/.exec(ctx.font)![1]) * 0.55 })),
   } as never;
   vi.stubGlobal('Image', FakeImage);
@@ -211,7 +211,7 @@ describe('estouro de texto (adendo T11): recusa com motivo, nunca corta', () => 
     expect(motivosDeTexto(4, doLayout(4, { ...T, beneficios: ['a', 'b', 'c', 'd'] }), false)).toEqual([expect.stringMatching(/comporta/)]);
   });
 
-  // Revisão geral (item 5): texto aprovado no roteiro que o layout da missão não mostra nunca some em silêncio — a
+  // Revisão geral (item 5): texto aprovado no roteiro que o layout da missão não mostra nunca some em silêncio: a
   // composição recusa com motivo e o passo Roteiro barra a aprovação pela mesma função.
   it('missão 2 com benefícios, etapas, specs ou legendas → motivo por campo e composição recusada', async () => {
     const t = { headline: 'Prende firme', beneficios: ['Não desfia'], etapas: ['Corte'], specs: [{ rotulo: 'Largura', valor: '25 mm' }], legendas: ['Borda'] };

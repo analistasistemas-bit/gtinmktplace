@@ -4,7 +4,7 @@
 // confirmação → Confirmar (a saga roda no servidor). A tela só acompanha: lê o estado a cada 5 s enquanto houver
 // aplicação andando e para ao sair do passo. Toda ação leva o `ml_item_id` da linha. Cor e modo ficam travados com
 // Preparar em voo; trocar qualquer um descarta a prévia (ela vale só para o clique que a pediu).
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, ArrowRight, Check, ImageOff, Images, Loader2, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -42,7 +42,7 @@ const SELO: Record<string, { rotulo: string; tom: StatusTone; gira?: boolean }> 
 const PROBLEMA = new Set(['reversao_incompleta', 'pulado', 'falhou']);
 // Mensagens próprias deste passo (as de `api.ts` falam da aprovação de imagem).
 const MENSAGENS: Record<string, string> = {
-  desatualizada: 'O roteiro ou os fatos mudaram desde a prévia. Veja a prévia de novo.',
+  desatualizada: 'Os textos ou os dados mudaram desde a prévia. Veja a prévia de novo.',
   mudou: 'As fotos do anúncio mudaram no Mercado Livre desde a prévia. Veja a prévia de novo.',
   nao_encontrada: 'Aplicação não encontrada neste anúncio.',
   sem_conexao_ml: 'Conecte a conta do Mercado Livre antes de aplicar as fotos.',
@@ -88,6 +88,8 @@ function Mini({ url, rotulo, sai = false, nova = false }: { url: string | null; 
 /** "Hoje no anúncio" × "Depois" de um MLB. */
 function Comparacao({ p, moda }: { p: PreviaItem; moda: boolean }) {
   return (
+    <div className="space-y-3">
+    {(p.variacoes ?? 0) > 1 && <p className="text-xs text-muted-foreground">A prévia mostra uma variação. Vale para as <span className="tabular-nums">{p.variacoes}</span> variações desta cor.</p>}
     <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-start">
       <div className="min-w-0 space-y-2">
         <p className="text-xs text-muted-foreground">Hoje no anúncio · <span className="tabular-nums">{plural(p.antes.length, 'foto', 'fotos')}</span></p>
@@ -106,6 +108,7 @@ function Comparacao({ p, moda }: { p: PreviaItem; moda: boolean }) {
           ))}
         </div>
       </div>
+    </div>
     </div>
   );
 }
@@ -185,14 +188,15 @@ export function PassoAplicar({ mlItemId, ficha, isAdmin, moda = false, formato =
 
   const falhou = useCallback((f: Falha) => {
     const base = MENSAGENS[f.erro] ?? mensagemErro(f.erro);
-    const onde = [f.corpo.item_id, f.corpo.detalhe].filter((x): x is string => typeof x === 'string').join(' · ');
-    setErro(onde ? `${base} (${onde})` : base);
+    // Só o MLB do anúncio ajuda o operador; o detalhe da edge é técnico (fica fora da tela).
+    const onde = typeof f.corpo.item_id === 'string' && /^ML[A-Z][0-9A-Z]+$/.test(f.corpo.item_id) ? f.corpo.item_id : '';
+    // Família vigente mudou: a página mostra a mensagem (uma só); aqui não repete.
+    if (f.erro !== 'familia_nao_vigente') setErro(onde ? `${base} (${onde})` : base);
     if (NOVA_PREPARACAO.has(f.erro)) setAtual(null);
     if (f.erro === 'limite') setModo('substituir');
     if (f.erro === 'familia_nao_vigente') {
       setAtual(null);
-      const vigente = typeof f.corpo.familia_id_vigente === 'string' ? ` (família vigente: ${f.corpo.familia_id_vigente})` : '';
-      aoFamiliaMudou(`A família do anúncio mudou${vigente}. Recarregamos a ficha; confira e tente de novo.`);
+      aoFamiliaMudou(mensagemErro('familia_nao_vigente'));
     }
   }, [aoFamiliaMudou]);
 
@@ -225,12 +229,19 @@ export function PassoAplicar({ mlItemId, ficha, isAdmin, moda = false, formato =
   // Terminou sem ficar aplicada (falhou, desfeita, desfazer incompleto): pode ver a prévia de novo e tentar outra vez.
   const encerrada = !!estadoAtual && !andando && estadoAtual.status !== 'aplicada';
   const semAprovadas = cores.length === 0;
+  // Em tela pequena o motivo da falha fica abaixo da dobra: rola até a primeira linha com problema.
+  const listaMLB = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    if (encerrada) listaMLB.current?.querySelector('[data-problema="true"]')?.scrollIntoView?.({ block: 'center' });
+  }, [encerrada]);
+  // Confirmar altera todas as variações da cor, não só a que a prévia mostra.
+  const nVariacoes = Math.max(0, ...(atual?.previa ?? []).map((p) => p.variacoes ?? 0));
 
   const rodape = semAprovadas ? { texto: 'Aprove ao menos 1 imagem no passo 3', ok: false }
     : !isAdmin ? { texto: 'Somente administradores aplicam as fotos no anúncio.', ok: false }
     : andando ? { texto: estadoAtual?.status === 'revertendo' ? 'Desfazendo no Mercado Livre…' : 'Aplicando no Mercado Livre…', ok: false }
     : estadoAtual?.status === 'revertida' ? { texto: `Aplicação desfeita. As fotos anteriores da cor ${atual!.cor} voltaram.`, ok: false }
-    : encerrada ? { texto: 'Não foi aplicado em todos os anúncios. Confira o motivo e tente de novo.', ok: false }
+    : encerrada ? { texto: 'Não foi aplicado em todos os anúncios. Veja o motivo abaixo e clique em Refazer prévia.', ok: false }
     : estadoAtual?.status === 'aplicada' ? { texto: `Fotos aplicadas na cor ${atual!.cor}. Você pode desfazer a qualquer momento.`, ok: true, concluido: true }
     : atual && !atual.confirmada ? { texto: `${atual.modo === 'substituir' ? 'Substitui as' : 'Adiciona às'} fotos da cor ${atual.cor} em ${plural(atual.itens.length, 'anúncio', 'anúncios')}`, ok: true }
     : { texto: 'Veja a prévia antes de aplicar', ok: false };
@@ -275,7 +286,7 @@ export function PassoAplicar({ mlItemId, ficha, isAdmin, moda = false, formato =
                 {(!atual?.confirmada || encerrada) && (
                   <Button variant={atual ? 'outline' : 'default'} className="h-11 px-4" disabled={!isAdmin || ocupado || !cor}
                     title={bloqueio ?? 'Ver o que muda, sem alterar o anúncio'} onClick={() => void preparar()}>
-                    {ocupado && <Loader2 aria-hidden className="animate-spin" />}{encerrada ? 'Tentar de novo' : atual ? 'Ver de novo' : 'Ver prévia'}
+                    {ocupado && <Loader2 aria-hidden className="animate-spin" />}{encerrada ? 'Refazer prévia' : atual ? 'Ver prévia de novo' : 'Ver prévia'}
                   </Button>
                 )}
               </div>
@@ -288,11 +299,11 @@ export function PassoAplicar({ mlItemId, ficha, isAdmin, moda = false, formato =
 
               {atual && (
                 <>
-                  <ul aria-label="Anúncios afetados" className="divide-y border-t">
+                  <ul ref={listaMLB} aria-label="Anúncios afetados" className="divide-y border-t">
                     {atual.itens.map((id) => {
                       const p = atual.previa?.find((x) => x.item_id === id);
                       return (
-                        <li key={id} className="space-y-3 px-4 py-3">
+                        <li key={id} data-problema={PROBLEMA.has(estadoAtual?.itens.find((i) => i.item_id === id)?.status ?? '')} className="space-y-3 px-4 py-3">
                           {p && <Comparacao p={p} moda={moda} />}
                           <LinhaMLB itemId={id} cor={atual.cor} formato={formato}
                             item={atual.confirmada ? estadoAtual?.itens.find((i) => i.item_id === id) ?? { item_id: id, status: 'pendente', erro: null } : undefined} />
@@ -361,8 +372,11 @@ export function PassoAplicar({ mlItemId, ficha, isAdmin, moda = false, formato =
             <AlertDialogTitle>Aplicar {plural(nNovas, 'imagem', 'imagens')} na cor {atual?.cor}?</AlertDialogTitle>
             <AlertDialogDescription>
               {atual?.modo === 'substituir'
-                ? `Vai trocar ${nSaem === undefined ? 'as fotos' : plural(nSaem, 'foto', 'fotos')} da cor ${atual?.cor} ${anuncios} pelas ${plural(nNovas, 'imagem aprovada', 'imagens aprovadas')}.`
+                ? nSaem === 0
+                  ? `Vai adicionar ${plural(nNovas, 'imagem aprovada', 'imagens aprovadas')} às fotos da cor ${atual?.cor} ${anuncios} e manter as fotos atuais.`
+                  : `Vai trocar ${nSaem === undefined ? 'as fotos' : plural(nSaem, 'foto', 'fotos')} da cor ${atual?.cor} ${anuncios} pelas ${plural(nNovas, 'imagem aprovada', 'imagens aprovadas')}.`
                 : `Vai adicionar ${plural(nNovas, 'imagem aprovada', 'imagens aprovadas')} às fotos da cor ${atual?.cor} ${anuncios}.`}
+              {nVariacoes > 1 && ` Vale para as ${nVariacoes} variações desta cor.`}
               {' '}Isso é visível para compradores imediatamente. Você pode desfazer depois.
             </AlertDialogDescription>
           </AlertDialogHeader>

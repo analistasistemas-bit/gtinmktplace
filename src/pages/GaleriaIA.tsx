@@ -121,7 +121,8 @@ export default function GaleriaIA() {
 
   /** Falha de qualquer ação: mensagem clara; erros que invalidam o chão recarregam e descartam o roteiro em tela. */
   const falhou = useCallback((f: Falha) => {
-    setErro(mensagemErro(f.erro));
+    // Erro que o passo já mostra no lugar certo (campos, rodapé) não empilha banner geral (I6).
+    if (f.erro !== 'roteiro_invalido' && f.erro !== 'ciencia_pendente') setErro(mensagemErro(f.erro));
     if (f.erro === 'roteiro_invalido') {
       setResp((r) => (r ? { ...r, erros: (f.corpo.erros as string[]) ?? r.erros, erros_por_missao: (f.corpo.erros_por_missao as Record<string, string[]>) ?? r.erros_por_missao } : r));
     } else if (f.erro === 'ciencia_pendente') {
@@ -171,13 +172,15 @@ export default function GaleriaIA() {
   const preco = cab.preco_anuncio ?? anuncio?.precoPublicacao ?? null;
   const aprovadasLista = (lista?.imagens ?? []).filter((i) => i.status === 'aprovada' && i.roteiro_id === lista?.roteiro?.id);
   const aprovadas = aprovadasLista.length;
+  const gerandoImagens = (lista?.imagens ?? []).some((i) => ['pendente', 'submetendo', 'gerando'].includes(i.status)
+    || (i.status === 'gerada' && i.origem === 'gerador' && i.alertas === null));
   const aprovadasPorCor = lista ? aprovadasLista.reduce<Record<string, number>>((m, i) => ({ ...m, [i.cor]: (m[i.cor] ?? 0) + 1 }), {}) : null;
 
   return (
     <div className="flex min-h-full flex-col">
       <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85">
         <div className="mx-auto w-full max-w-[1240px] px-4 sm:px-6">
-          <div className="flex items-center gap-3 py-2.5">
+          <div className="flex items-center gap-3 py-1.5 sm:py-2.5">
             <Link to={caminhoDeVolta()} onClick={(e) => void voltar(e)}
               className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md px-2 font-medium text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
               <ArrowLeft aria-hidden className="size-4" /><span className="max-sm:sr-only">Publicados</span>
@@ -201,13 +204,13 @@ export default function GaleriaIA() {
             </div>
           </div>
           <nav aria-label="Passos da galeria">
-            <ol className="flex gap-1 pb-2.5">
+            <ol className="flex gap-1 pb-1.5 sm:pb-2.5">
               {([1, 2, 3, 4] as Passo[]).map((n) => {
                 const atual = n === passo;
                 const feito = n < passo || (n < alcancado && !atual);
                 const bloqueado = n > alcancado || ((n === 3 || n === 4) && !podeGerar) || !ficha;
                 return (
-                  <li key={n} className={cn('min-w-0 flex-1', atual && 'max-md:flex-[3]')}>
+                  <li key={n} className={cn('min-w-0 flex-1', atual && 'max-md:flex-[4]')}>
                     <button type="button" disabled={bloqueado} aria-current={atual ? 'step' : undefined} onClick={() => void irPara(n)}
                       className={cn(
                         'relative flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left font-medium outline-none',
@@ -260,8 +263,8 @@ export default function GaleriaIA() {
           <MioloPasso titulo="Gerar e aprovar" frase="Gere as imagens de uma cor e aprove as que vão para o anúncio.">
             <PassoGerar mlItemId={mlItemId} ficha={ficha} aoRecarregar={() => void carregar()} aoVoltarRoteiro={() => void irPara(2)} aoLista={setLista} />
           </MioloPasso>
-          <Rodape ok={aprovadas > 0} rotulo="Continuar" aoClicar={() => void irPara(4)}
-            texto={aprovadas > 0 ? `${aprovadas} ${aprovadas === 1 ? 'imagem aprovada' : 'imagens aprovadas'}` : 'Aprove ao menos 1 imagem para continuar'} />
+          <Rodape ok={aprovadas > 0 && !gerandoImagens} rotulo="Continuar" aoClicar={() => void irPara(4)}
+            texto={gerandoImagens ? 'Aguarde as imagens ficarem prontas' : aprovadas > 0 ? `${aprovadas} ${aprovadas === 1 ? 'imagem aprovada' : 'imagens aprovadas'}` : 'Aprove ao menos 1 imagem para continuar'} />
         </>
       ) : (
         <PassoAplicar mlItemId={mlItemId} ficha={ficha} isAdmin={isAdmin} moda={moda ?? false} aprovadasPorCor={aprovadasPorCor}

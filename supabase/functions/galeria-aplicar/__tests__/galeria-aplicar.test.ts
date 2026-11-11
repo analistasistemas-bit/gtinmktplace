@@ -194,6 +194,7 @@ describe('galeria-aplicar — preparar', () => {
       expect(r.status).toBe(200)
       expect(r.body.previa).toEqual([{
         item_id: 'MLB1',
+        variacoes: 1,
         antes: [{ id: 'R0', url: 'https://ml/R0.jpg', sai: true }],
         depois: [{ id: 'novo-1', url: 'https://signed/final/g1.jpg', nova: true, missao: 1 }, { id: 'novo-3', url: 'https://signed/final/g3.jpg', nova: true, missao: 3 }],
       }])
@@ -201,6 +202,18 @@ describe('galeria-aplicar — preparar', () => {
       expect(JSON.stringify(db.galeria_aplicacoes[0]) + JSON.stringify(db.galeria_aplicacao_itens)).not.toContain('https://')
       expect(metodos.every((m) => m === 'GET')).toBe(true)
       expect(f.batch).not.toHaveBeenCalled()
+    })
+
+    it('cor com 2 variações no MLB: a prévia diz quantas serão alteradas (prévia pela 1ª, confirmar vale para todas)', async () => {
+      db.anuncios_externos[0].variacoes_externas = { '100R': {}, '100R2': {}, '100A': {} }
+      const famB = db.familias.find((x) => x.id === 'famB')!
+      famB.variacoes = [...(famB.variacoes as Linha[]), { codigo: '100R2', cor: 'Rosa' }]
+      itensML.MLB1 = comUrls({ ...legacyML('MLB1'), variations: [{ id: 11, seller_custom_field: '100R', picture_ids: ['R0'] },
+        { id: 13, seller_custom_field: '100R2', picture_ids: ['R0'] }, { id: 12, seller_custom_field: '100A', picture_ids: ['A0'] }] })
+      const r = await preparar()
+      expect(r.status).toBe(200)
+      expect((r.body.previa as Linha[])[0].variacoes).toBe(2)
+      expect(metodos.every((m) => m === 'GET')).toBe(true)
     })
 
     it('Substituir sem a capa aprovada: a 1ª foto atual fica e não sai riscada', async () => {

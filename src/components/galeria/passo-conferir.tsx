@@ -2,7 +2,7 @@
 // devolve a ficha remontada; a tela só troca o estado. Nada aqui escreve no Mercado Livre.
 // Blocos: divergências com a etiqueta → "Confirme para usar nas imagens" (só o que pode virar texto de imagem) →
 // já confirmados → "Ver todos os dados do cadastro" (descrições, título do ML, embalagem; recolhido, com confirmação
-// própria das descrições — Decisão do Diego, 11/11). Confirmar é de mão única: o servidor só descarta sugestão.
+// própria das descrições: Decisão do Diego, 11/11). Confirmar é de mão única: o servidor só descarta sugestão.
 import { useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Check, ChevronRight, Loader2, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';

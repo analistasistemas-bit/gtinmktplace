@@ -18,13 +18,14 @@ const GERAL: Record<number, ReactElement[]> = {
   6: [R(10, 10, 44, 8, forte), ...[10, 38, 66].flatMap((x) => [R(x, 40, 24, 24, fraco, 3), R(x, 70, 24, 4, fraco)])],
   7: [R(10, 10, 38, 38, fraco, 4), R(52, 10, 38, 38, fraco, 4), R(10, 52, 38, 38, fraco, 4), R(52, 52, 38, 38, produto, 4)],
 };
-// Moda não leva texto: produto inteiro (1–4, 6) ou recorte de detalhe (5, 7).
+// Moda não leva texto: produto inteiro (1-4, 6) ou recorte de detalhe (5, 7).
 const MODA: Record<number, ReactElement[]> = { 5: GERAL[7], 7: GERAL[3] };
 
-export function EsbocoMissao({ missao, moda, apagado }: { missao: number; moda: boolean; apagado?: boolean }) {
+/** `compacto` = imagem indisponível (Em breve): miniatura pequena, para não ocupar uma linha inteira. */
+export function EsbocoMissao({ missao, moda, apagado, compacto }: { missao: number; moda: boolean; apagado?: boolean; compacto?: boolean }) {
   const formas = (moda ? MODA[missao] : undefined) ?? (moda ? GERAL[1] : GERAL[missao]) ?? GERAL[1];
   return (
-    <svg viewBox="0 0 100 100" aria-hidden className={`block aspect-square w-full rounded-lg bg-muted ${apagado ? 'opacity-45' : ''}`}>
+    <svg viewBox="0 0 100 100" aria-hidden className={`block aspect-square rounded-lg bg-muted ${compacto ? 'mx-auto size-14' : 'w-full'} ${apagado ? 'opacity-45' : ''}`}>
       {formas}
     </svg>
   );

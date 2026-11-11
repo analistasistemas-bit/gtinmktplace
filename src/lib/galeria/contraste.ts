@@ -8,7 +8,7 @@ function luminancia(hex: string): number {
   return 0.2126 * canal(r) + 0.7152 * canal(g) + 0.0722 * canal(b);
 }
 
-/** Razão de contraste (1–21) entre duas cores `#rrggbb`. */
+/** Razão de contraste (1-21) entre duas cores `#rrggbb`. */
 export function razaoContraste(a: string, b: string): number {
   const [x, y] = [luminancia(a), luminancia(b)].sort((p, q) => q - p);
   return (x + 0.05) / (y + 0.05);

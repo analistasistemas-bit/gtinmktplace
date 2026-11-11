@@ -44,14 +44,14 @@ export interface LupaImagem {
  * referência ainda sendo lida, ou sem detalhe do produto na foto. Missão sem lupa → null.
  */
 export function motivoLupa(ficha: Ficha, cores: string[], missao: number, moda: boolean): string | null {
-  if (lupaPendente(missao, moda)) return 'lupa em ajuste';
+  if (lupaPendente(missao, moda)) return 'Em breve';
   // Sem `lupa` na ficha (resposta sem a leitura): não há o que mostrar; o galeria-gerar recusa com 409 se faltar.
   if (!comLupa(missao, moda) || !ficha.lupa) return null;
   const de = (s: SituacaoLupa) => cores.filter((c) => (ficha.lupa?.[c]?.[moda ? 'moda' : 'geral']?.[missao] ?? 'lendo') === s);
   const sem = de('indisponivel');
   if (sem.length > 0) return `sem detalhe do produto na foto: ${sem.join(', ')}`;
   const lendo = de('lendo');
-  return lendo.length > 0 ? `lendo a foto de referência: ${lendo.join(', ')}` : null;
+  return lendo.length > 0 ? `preparando esta imagem, aguarde: ${lendo.join(', ')}` : null;
 }
 
 export interface MissaoRoteiro {
@@ -167,6 +167,8 @@ export interface ManifestoItem { imagem_id: string; missao: number; final_sha256
 /** Prévia de um MLB (Fase C2): fotos da cor hoje (`sai` = riscada) e depois (`nova` = aprovada que entra). */
 export interface PreviaItem {
   item_id: string;
+  /** Variações da cor neste MLB que o Confirmar altera (a prévia mostra só a 1ª). Ausente = edge anterior. */
+  variacoes?: number;
   antes: Array<{ id: string; url: string | null; sai: boolean }>;
   depois: Array<{ id: string; url: string | null; nova: boolean; missao?: number }>;
 }
@@ -193,36 +195,36 @@ export const estadoAplicacoes = (mlItemId: string) =>
 const MENSAGENS: Record<string, string> = {
   catalogo: 'Anúncio de catálogo: a galeria não troca fotos de catálogo.',
   catalogo_desconhecido: 'Não foi possível confirmar no Mercado Livre se o anúncio é de catálogo.',
-  conjunto_incompleto: 'Há SKU desta cor sem variação publicada no cadastro.',
+  conjunto_incompleto: 'Há tamanho desta cor ainda não publicado no anúncio.',
   sem_anuncio: 'O anúncio desta linha não foi encontrado.',
   variacao_nao_casa: 'A variação da cor não confere com o anúncio no Mercado Livre.',
-  roteiro_nao_aprovado: 'O roteiro aprovado mudou. Recarregue a galeria.',
-  'conteudo.ciencia_nao_conferido': 'Há fatos não conferidos usados no texto. Volte ao roteiro e marque a ciência.',
-  sem_vista: 'Falta a foto de referência da vista exigida pela missão.',
-  teto: 'Limite de 3 gerações por missão neste roteiro.',
-  em_andamento: 'Já há uma geração em andamento nesta missão.',
-  missao_inativa: 'Há missão desativada no roteiro aprovado.',
+  roteiro_nao_aprovado: 'Os textos aprovados mudaram. Recarregue a galeria.',
+  'conteudo.ciencia_nao_conferido': 'Há dados sem etiqueta usados nos textos. Volte ao passo 2 e marque "usar mesmo assim".',
+  sem_vista: 'Falta a foto de referência (costas ou lateral) que esta imagem exige.',
+  teto: 'Você já gerou esta imagem 3 vezes.',
+  em_andamento: 'Esta imagem já está sendo gerada.',
+  missao_inativa: 'Há imagem desligada nos textos aprovados. Aprove os textos de novo no passo 2.',
   cor_invalida: 'Cor fora deste anúncio.',
   sem_conexao_ml: 'Conecte a conta do Mercado Livre para gerar imagens.',
   modulo_desligado: 'O módulo de imagens por IA não está ligado nesta organização.',
   ml_indisponivel: 'Mercado Livre indisponível, tente de novo.',
   pedido_de_outro_anuncio: 'Este pedido pertence a outro anúncio.',
-  pedido_invalido: 'Pedido inválido.',
-  familia_nao_vigente: 'A família do anúncio mudou. Recarregamos a ficha; confira e tente de novo.',
+  pedido_invalido: 'Pedido inválido. Tente de novo.',
+  familia_nao_vigente: 'O cadastro do anúncio mudou. Recarregamos os dados; confira e tente de novo.',
   anuncio_ambiguo: 'Não foi possível identificar este anúncio de forma única.',
-  categoria_mudou: 'A categoria do anúncio mudou (Moda × outras). Este roteiro não vale mais: crie um novo.',
-  conteudo_mudou: 'O roteiro foi alterado em outra aba depois que você o abriu. Recarregamos; confira e aprove de novo.',
+  categoria_mudou: 'A categoria do anúncio mudou. Os textos não valem mais: crie novos no passo 2.',
+  conteudo_mudou: 'Os textos foram alterados em outra aba depois que você abriu. Recarregamos; confira e aprove de novo.',
   categoria_indisponivel: 'Não foi possível ler a categoria no Mercado Livre agora. Tente de novo em instantes.',
-  fato_divergente: 'Há fatos divergentes da etiqueta. Resolva-os na ficha antes de criar o roteiro.',
-  ciencia_pendente: 'Marque a ciência dos fatos não conferidos usados no texto.',
-  roteiro_invalido: 'O roteiro tem erros. Corrija nas missões indicadas.',
-  roteiro_ia_falhou: 'A IA não conseguiu montar o roteiro. Tente de novo.',
+  fato_divergente: 'Há dados diferentes da etiqueta. Resolva no passo 1 antes de criar os textos.',
+  ciencia_pendente: 'Marque "usar mesmo assim" para os dados sem etiqueta usados nos textos.',
+  roteiro_invalido: 'Os textos têm erros. Corrija nas imagens indicadas.',
+  roteiro_ia_falhou: 'A IA não conseguiu escrever os textos. Tente de novo.',
   foto_nao_jpeg: 'Envie a foto em JPEG.',
   foto_invalida: 'Foto inválida ou grande demais (máx. 8 MB).',
   valor_invalido: 'O valor da etiqueta não é aceito para este atributo.',
-  nao_rascunho: 'Este roteiro já foi aprovado. Edite para gerar uma nova versão.',
+  nao_rascunho: 'Estes textos já foram aprovados. Edite para criar uma nova versão.',
   ja_aprovada: 'Esta imagem já está aprovada.',
-  desatualizada: 'O roteiro ou os fatos mudaram depois da aprovação do roteiro: revise e aprove o roteiro de novo.',
+  desatualizada: 'Os dados mudaram depois que os textos foram aprovados. Revise e aprove os textos no passo 2.',
   nao_aprovavel: 'Esta imagem não pode ser aprovada no estado atual.',
   nao_encontrada: 'Imagem não encontrada neste anúncio.',
   sem_upload: 'O arquivo final não foi preparado. Tente aprovar de novo.',
@@ -231,13 +233,13 @@ const MENSAGENS: Record<string, string> = {
   referencia_trocada: 'A foto de referência da cor mudou depois desta imagem. Gere de novo.',
   verificacao_pendente: 'A verificação da imagem ainda não terminou. Aguarde alguns segundos.',
   exibicao_pendente: 'A exibição desta imagem ainda não foi registrada (cobrança). Aguarde alguns segundos e aprove de novo.',
-  lupa_pendente: 'Missão com lupa em ajuste: geração e aprovação suspensas até a validação do recorte.',
-  lupa_lendo: 'A foto de referência ainda está sendo lida para a lupa. Recarregue a ficha em instantes e tente de novo.',
-  lupa_indisponivel: 'Sem detalhe do produto na foto de referência desta cor: a missão com lupa fica indisponível.',
-  lupa_desatualizada: 'A lupa mudou desde a composição (ou a página está desatualizada). Recarregue e aprove de novo.',
-  aprovacao_concorrente: 'Outra geração desta missão foi aprovada ao mesmo tempo. Recarregue e confira.',
+  lupa_pendente: 'Esta imagem ainda não está disponível.',
+  lupa_lendo: 'A foto de referência ainda está sendo preparada. Tente de novo em instantes.',
+  lupa_indisponivel: 'Sem detalhe do produto na foto de referência desta cor: esta imagem fica indisponível.',
+  lupa_desatualizada: 'O recorte mudou desde a composição (ou a página está desatualizada). Recarregue e aprove de novo.',
+  aprovacao_concorrente: 'Outra versão desta imagem foi aprovada ao mesmo tempo. Recarregue e confira.',
   somente_admin: 'Somente administradores podem aplicar ou reverter fotos no Mercado Livre.',
-  sem_aprovadas: 'Esta cor não tem imagem aprovada no roteiro atual.',
+  sem_aprovadas: 'Esta cor não tem imagem aprovada.',
   sem_final: 'Há imagem aprovada sem o arquivo final. Aprove de novo.',
   migracao_pendente: 'O anúncio está em migração de variações no Mercado Livre. Tente depois.',
   formato_bloqueado: 'O formato deste anúncio exigiria alterar a quantidade; a galeria não faz isso.',
@@ -250,6 +252,13 @@ const MENSAGENS: Record<string, string> = {
   falha_interna: 'Erro interno. Tente de novo.',
   rede: 'Sem conexão com o servidor.',
 };
-export const mensagemErro = (e: string) => MENSAGENS[e] ?? `Erro: ${e}`;
+/** Código desconhecido nunca vai para a tela: texto genérico com ação; o código só no console. */
+export const MENSAGEM_GENERICA = 'Não deu certo. Tente de novo; se repetir, avise o suporte.';
+export function mensagemErro(e: string): string {
+  const m = MENSAGENS[e];
+  if (m) return m;
+  console.warn('[galeria] erro sem mensagem:', e);
+  return MENSAGEM_GENERICA;
+}
 /** Erros que mudam o chão do operador: recarregar a ficha e descartar o roteiro em tela. */
 export const ERROS_DE_RECARGA = new Set(['familia_nao_vigente', 'categoria_mudou', 'conteudo_mudou']);

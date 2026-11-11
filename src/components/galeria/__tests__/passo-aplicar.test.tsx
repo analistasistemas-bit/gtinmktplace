@@ -46,7 +46,7 @@ beforeEach(() => {
 });
 afterEach(() => { vi.useRealTimers(); });
 
-describe('PassoAplicar — admin (ADR-0060)', () => {
+describe('PassoAplicar: admin (ADR-0060)', () => {
   it('não admin: Ver prévia e Desfazer desabilitados com title, Aplicar desabilitado e nenhuma chamada de escrita', async () => {
     api.estadoAplicacoes.mockResolvedValue(ok({ aplicacoes: [aplicacao()] }));
     montar(false);
@@ -61,7 +61,7 @@ describe('PassoAplicar — admin (ADR-0060)', () => {
   });
 });
 
-describe('PassoAplicar — preparar e confirmar', () => {
+describe('PassoAplicar: preparar e confirmar', () => {
   it('Substituir já vem selecionado; preparar manda o ml_item_id da linha, a cor e o modo', async () => {
     montar(true, 'MLB3M');
     expect(await screen.findByRole('combobox', { name: 'Como aplicar' })).toHaveTextContent('Substituir');
@@ -114,7 +114,7 @@ describe('PassoAplicar — preparar e confirmar', () => {
     api.prepararAplicacao.mockResolvedValue(falha(409, 'familia_nao_vigente', { familia_id_vigente: 'F2' }));
     const { aoFamiliaMudou } = montar();
     await preparar();
-    await waitFor(() => expect(aoFamiliaMudou).toHaveBeenCalledWith(expect.stringMatching(/família.*mudou.*F2/i)));
+    await waitFor(() => expect(aoFamiliaMudou).toHaveBeenCalledWith(expect.stringMatching(/cadastro.*mudou/i)));
   });
 
   it('recusa com detalhe mostra o MLB', async () => {
@@ -125,7 +125,7 @@ describe('PassoAplicar — preparar e confirmar', () => {
   });
 });
 
-describe('PassoAplicar — fix round 1', () => {
+describe('PassoAplicar: fix round 1', () => {
   it('Cor/Modo travados com Preparar em voo; confirmação mostra a cor e o modo do clique', async () => {
     let resolver!: (r: Res<typeof preparada>) => void;
     api.prepararAplicacao.mockReturnValueOnce(new Promise((r) => { resolver = r; }));
@@ -192,7 +192,7 @@ describe('PassoAplicar — fix round 1', () => {
   });
 });
 
-describe('PassoAplicar — acompanhamento e reversão', () => {
+describe('PassoAplicar: acompanhamento e reversão', () => {
   it('reversao_incompleta e pulado aparecem em vermelho com os MLB', async () => {
     api.estadoAplicacoes.mockResolvedValue(ok({ aplicacoes: [aplicacao({ status: 'reversao_incompleta', itens: [
       { item_id: 'MLB3P', status: 'reversao_incompleta', erro: 'fotos divergentes' }, { item_id: 'MLB3G', status: 'pulado', erro: null },
@@ -254,7 +254,7 @@ describe('PassoAplicar — acompanhamento e reversão', () => {
 });
 
 // Fase C2: prévia "Hoje no anúncio" × "Depois", acompanhamento por MLB e estado vazio, como no protótipo aprovado.
-describe('PassoAplicar — prévia e acompanhamento (Fase C2)', () => {
+describe('PassoAplicar: prévia e acompanhamento (Fase C2)', () => {
   const comPrevia = {
     ...preparada, itens: ['MLB1'], manifesto: manifesto.slice(0, 2),
     previa: [{ item_id: 'MLB1',
@@ -284,6 +284,44 @@ describe('PassoAplicar — prévia e acompanhamento (Fase C2)', () => {
     const dlg = await screen.findByRole('alertdialog');
     expect(dlg).toHaveTextContent('Aplicar 2 imagens na cor Rosa?');
     expect(dlg).toHaveTextContent('Vai trocar 2 fotos da cor Rosa no anúncio MLB1 pelas 2 imagens aprovadas. Isso é visível para compradores imediatamente.');
+  });
+
+  it('Substituir sem foto que saia: o diálogo não diz "trocar 0 fotos" e promete manter as atuais', async () => {
+    const semSaida = { ...comPrevia, previa: [{ ...comPrevia.previa[0], antes: [{ id: 'R0', url: null, sai: false }] }] };
+    api.prepararAplicacao.mockResolvedValue(ok(semSaida));
+    montar(true, 'MLB1');
+    await preparar();
+    await userEvent.click(await screen.findByRole('button', { name: /^Aplicar na cor Rosa/ }));
+    const dlg = await screen.findByRole('alertdialog');
+    expect(dlg).not.toHaveTextContent(/trocar 0/);
+    expect(dlg).toHaveTextContent('Vai adicionar 2 imagens aprovadas às fotos da cor Rosa no anúncio MLB1 e manter as fotos atuais.');
+  });
+
+  it('cor com várias variações no MLB: a prévia e o diálogo dizem "Vale para as N variações desta cor"', async () => {
+    api.prepararAplicacao.mockResolvedValue(ok({ ...comPrevia, previa: [{ ...comPrevia.previa[0], variacoes: 3 }] }));
+    montar(true, 'MLB1');
+    await preparar();
+    const painel = await screen.findByRole('region', { name: 'Prévia' });
+    expect(within(painel).getByText(/Vale para as/)).toHaveTextContent('Vale para as 3 variações desta cor');
+    await userEvent.click(screen.getByRole('button', { name: /^Aplicar na cor Rosa/ }));
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('Vale para as 3 variações desta cor.');
+  });
+
+  it('com 1 variação não aparece o aviso de variações', async () => {
+    api.prepararAplicacao.mockResolvedValue(ok({ ...comPrevia, previa: [{ ...comPrevia.previa[0], variacoes: 1 }] }));
+    montar(true, 'MLB1');
+    await preparar();
+    await screen.findByRole('region', { name: 'Prévia' });
+    expect(screen.queryByText(/Vale para as/)).toBeNull();
+  });
+
+  it('erro da edge nunca mostra id interno nem detalhe técnico', async () => {
+    api.prepararAplicacao.mockResolvedValue(falha(409, 'limite', { item_id: 'MLB1', detalhe: 'pictures:13 > 12 (uuid-9f3)' }));
+    montar(true, 'MLB1');
+    await preparar();
+    const alerta = await screen.findByRole('alert');
+    expect(alerta).toHaveTextContent('(MLB1)');
+    expect(alerta).not.toHaveTextContent(/uuid|pictures/);
   });
 
   it('depois de confirmar a prévia fica; selos por MLB: Aplicando → Aplicado com "Desfazer aplicação"', async () => {
@@ -337,7 +375,7 @@ describe('PassoAplicar — prévia e acompanhamento (Fase C2)', () => {
     expect(api.prepararAplicacao).toHaveBeenCalledWith('MLB3M', 'Azul', 'substituir');
   });
 
-  it('Não aplicado depois de confirmar: motivo no MLB, rodapé explica e "Tentar de novo" prepara outra vez', async () => {
+  it('Não aplicado depois de confirmar: motivo no MLB, rodapé explica e "Refazer prévia" prepara outra vez', async () => {
     api.prepararAplicacao.mockResolvedValue(ok(comPrevia));
     api.confirmarAplicacao.mockResolvedValue(ok({ status: 'em_andamento' }));
     api.estadoAplicacoes.mockResolvedValueOnce(ok({ aplicacoes: [] }))
@@ -348,8 +386,8 @@ describe('PassoAplicar — prévia e acompanhamento (Fase C2)', () => {
     const painel = screen.getByRole('region', { name: 'Prévia' });
     expect(await within(painel).findByText('Não aplicado')).toBeInTheDocument();
     expect(painel).toHaveTextContent('O Mercado Livre não confirmou a troca. As fotos da cor não mudaram.');
-    expect(screen.getAllByRole('status').at(-1)).toHaveTextContent('Confira o motivo e tente de novo');
-    await userEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+    expect(screen.getAllByRole('status').at(-1)).toHaveTextContent('Veja o motivo abaixo e clique em Refazer prévia');
+    await userEvent.click(screen.getByRole('button', { name: 'Refazer prévia' }));
     expect(api.prepararAplicacao).toHaveBeenCalledTimes(2);
   });
 

@@ -43,15 +43,17 @@ function CampoTexto({ id, rotulo, valor, limite, erro, desabilitado, aoMudar }: 
   id: string; rotulo: string; valor: string; limite: number; erro?: string; desabilitado: boolean; aoMudar: (v: string) => void;
 }) {
   const n = palavras(valor);
+  // Contador e erro dizem a mesma coisa: com erro no campo, o contador também fica em alerta.
+  const alerta = n > limite || !!erro;
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={id} className="flex items-baseline justify-between gap-2 text-sm font-medium">
         {rotulo}
-        <span className={cn('text-xs tabular-nums', n > limite ? 'font-medium text-destructive' : 'font-normal text-muted-foreground')}
-          data-excedeu={n > limite}>{n} de {limite} palavras</span>
+        <span id={`${id}-n`} className={cn('text-xs tabular-nums', alerta ? 'font-medium text-destructive' : 'font-normal text-muted-foreground')}
+          data-excedeu={alerta}>{n} de {limite} palavras{alerta && <span className="sr-only">: precisa de ajuste</span>}</span>
       </label>
       <Input id={id} className="h-11" value={valor} disabled={desabilitado} aria-invalid={!!erro || undefined}
-        aria-describedby={erro ? `${id}-erro` : undefined} onChange={(e) => aoMudar(e.target.value)} />
+        aria-describedby={erro ? `${id}-erro ${id}-n` : `${id}-n`} onChange={(e) => aoMudar(e.target.value)} />
       {erro && <LinhaErro id={`${id}-erro`} texto={erro} />}
     </div>
   );
@@ -87,6 +89,17 @@ export function PassoEscolher({ mlItemId, ficha, isAdmin, podeCriar, resp, aoRes
     aoFalhar: (f) => { if (ERROS_DE_RECARGA.has(f.erro)) aoFalhar(f); },
   });
   const [aberta, setAberta] = useState(2);
+  // Escolher um cartão leva o foco (e, abaixo de xl, a rolagem) ao editor que ele abre.
+  const [irAoEditor, setIrAoEditor] = useState(0);
+  useEffect(() => {
+    if (irAoEditor === 0) return;
+    const t = document.getElementById('ed-t');
+    if (!t) return;
+    const largo = typeof window.matchMedia === 'function' && window.matchMedia('(min-width: 1280px)').matches;
+    const reduz = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!largo) t.scrollIntoView?.({ behavior: reduz ? 'auto' : 'smooth', block: 'start' });
+    t.focus({ preventScroll: true });
+  }, [irAoEditor]);
   const [ocupado, setOcupado] = useState(false);
   const [avancadoManual, setAvancadoManual] = useState(false);
 
@@ -190,11 +203,11 @@ export function PassoEscolher({ mlItemId, ficha, isAdmin, podeCriar, resp, aoRes
                 const erro = m.ativa && errosDe(m).length > 0;
                 return (
                   <li key={m.missao} data-missao={m.missao}
-                    className={cn(cartao, 'flex flex-col transition-shadow hover:shadow-md', aberta === m.missao && 'ring-2 ring-primary')}>
+                    className={cn(cartao, 'flex flex-col transition-shadow hover:shadow-md motion-reduce:transition-none', aberta === m.missao && 'ring-2 ring-primary')}>
                     <button type="button" aria-label={`${nome}: ver textos`} aria-current={aberta === m.missao || undefined}
                       className="flex flex-col gap-2 rounded-xl p-2.5 pb-1 text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-                      onClick={() => setAberta(m.missao)}>
-                      <EsbocoMissao missao={m.missao} moda={moda} apagado={!m.ativa} />
+                      onClick={() => { setAberta(m.missao); setIrAoEditor((n) => n + 1); }}>
+                      <EsbocoMissao missao={m.missao} moda={moda} apagado={!m.ativa} compacto={na} />
                       <span className={cn('flex items-center gap-1.5 font-semibold', na && 'text-muted-foreground')}>
                         {nome}
                         {erro && <><span aria-hidden className="size-2 rounded-full bg-destructive" /><span className="sr-only">precisa de ajuste</span></>}
@@ -216,7 +229,7 @@ export function PassoEscolher({ mlItemId, ficha, isAdmin, podeCriar, resp, aoRes
             {resp.ciencia_pendente.length > 0 && !aprovado && (
               <div className={cn(cartao, 'flex min-h-11 items-start gap-3 px-4 py-3')}>
                 <Checkbox id="ciencia" className="mt-0.5" checked={!h.faltaCiencia} disabled={!isAdmin}
-                  aria-label="Usar mesmo assim os dados sem etiqueta" onCheckedChange={(v) => h.marcarCiencia(v === true)} />
+                  onCheckedChange={(v) => h.marcarCiencia(v === true)} />
                 <label htmlFor="ciencia" className="cursor-pointer text-sm">
                   <span className="font-medium">Alguns dados não aparecem na etiqueta: {nomesCiencia.join(' e ')}.</span>
                   <br /><span className="text-muted-foreground">Usar mesmo assim nas imagens.</span>
@@ -272,7 +285,7 @@ function Editor({ m, moda, h, isAdmin, status, erros, motivo, erroContrato, eleg
     <section aria-labelledby="ed-t" className={cn(cartao, 'xl:sticky xl:top-40')}>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3.5">
         <div>
-          <h2 id="ed-t" className="text-base font-semibold">{nome}</h2>
+          <h2 id="ed-t" tabIndex={-1} className="scroll-mt-40 text-base font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring/50">{nome}</h2>
           <p className="text-xs text-muted-foreground">{m.ativa ? 'Só os campos que aparecem nesta imagem' : 'Desligada: os textos ficam guardados'}</p>
         </div>
         {h.editavel && <span aria-live="polite"><IndicadorSalvo estado={h.estado} /></span>}
@@ -325,7 +338,7 @@ function Editor({ m, moda, h, isAdmin, status, erros, motivo, erroContrato, eleg
         <details open={avancado} className="rounded-lg ring-1 ring-border"
           onToggle={(e) => { const aberto = (e.currentTarget as HTMLDetailsElement).open; if (aberto !== avancado) aoAlternarAvancado(aberto); }}>
           <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-lg px-3 text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
-            <ChevronRight aria-hidden className={cn('size-4 text-muted-foreground transition-transform', avancado && 'rotate-90')} />Ajustes avançados
+            <ChevronRight aria-hidden className={cn('size-4 text-muted-foreground transition-transform motion-reduce:transition-none', avancado && 'rotate-90')} />Ajustes avançados
           </summary>
           <div className="flex flex-col gap-4 p-3 pt-1">
             {cena && (

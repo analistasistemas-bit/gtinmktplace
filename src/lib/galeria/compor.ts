@@ -1,12 +1,12 @@
-// ADR-0201 (Task 12): composição do arquivo final no navegador (R6.3–R6.5, R9.1). Cena cortada ao centro para
+// ADR-0201 (Task 12): composição do arquivo final no navegador (R6.3-R6.5, R9.1). Cena cortada ao centro para
 // 1200×1540 (nunca esticar; capa com preenchimento branco), texto do roteiro aprovado em Inter sobre placa branca
 // opaca (estilo A) e lupas recortadas da referência real (R3.3). Moda e capa sem texto. Recortes (missão 7, Moda 5 e 7)
-// usam só `refUrl`. Texto que não cabe na caixa, ou campo que o layout da missão não mostra, recusa com motivo — nunca
+// usam só `refUrl`. Texto que não cabe na caixa, ou campo que o layout da missão não mostra, recusa com motivo: nunca
 // é cortado, sai da área ou some em silêncio.
 // Lupa pela caixa do produto: o recorte sai de `recortesLupa` (o mesmo módulo da edge) sobre as caixas gravadas na
 // referência; sem caixas, caixas que não cabem ou referência com outras dimensões → lança (nunca recorta às cegas).
 // As imagens vêm do Storage (outra origem): `crossOrigin = 'anonymous'` antes do `src`, senão o canvas fica sujo e
-// `toBlob` lança SecurityError (o bucket precisa de CORS para a origem do app — procedimento da Task 16).
+// `toBlob` lança SecurityError (o bucket precisa de CORS para a origem do app: procedimento da Task 16).
 import { ALTURA_FINAL, LARGURA_FINAL, PESO_MAXIMO_FINAL, planejarCorte } from '../../../supabase/functions/_shared/galeria/corte';
 import { missoesDisponiveis } from '../../../supabase/functions/_shared/galeria/regras';
 import { comLupa, recortesLupa, type CaixaNorm, type Quadrado } from '../../../supabase/functions/_shared/galeria/lupa';
@@ -141,7 +141,7 @@ export async function comporImagemFinal(e: EntradaComposicao): Promise<Blob> {
       const linhas = quebrar(ctx, x);
       const passo = x.caixa.h / x.caixa.linhasMax;
       const largura = Math.max(...linhas.map((l) => ctx.measureText(l).width));
-      // Marcador (número da etapa, ponto do benefício) na coluna x 72–144, dentro da mesma placa.
+      // Marcador (número da etapa, ponto do benefício) na coluna x 72-144, dentro da mesma placa.
       const x0 = x.marcador ? 72 : x.caixa.x;
       ctx.fillStyle = PLACA;
       ctx.fillRect(x0 - FOLGA, x.caixa.y - FOLGA, x.caixa.x - x0 + largura + 2 * FOLGA, linhas.length * passo + 2 * FOLGA);

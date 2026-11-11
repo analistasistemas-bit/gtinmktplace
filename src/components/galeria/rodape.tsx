@@ -1,4 +1,4 @@
-// Galeria IA: rodapé fixo de cada passo — uma linha dizendo o que falta (ou o que vai acontecer) e um botão principal.
+// Galeria IA: rodapé fixo de cada passo: uma linha dizendo o que falta (ou o que vai acontecer) e um botão principal.
 import type { ReactNode } from 'react';
 import { AlertTriangle, ArrowRight, Check, Info, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -20,14 +20,14 @@ export function Rodape({ texto, ok, rotulo, aoClicar, ocupado = false, concluido
   const Icone = concluido ? Check : ok ? Info : AlertTriangle;
   return (
     <div className="sticky bottom-0 z-20 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85">
-      <div className="mx-auto flex w-full max-w-[1240px] flex-col items-stretch gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-        <p role="status" className={cn('flex min-w-0 items-center gap-2 text-sm', ok || concluido ? 'text-muted-foreground' : 'text-foreground')}>
-          <Icone aria-hidden className={cn('size-4 shrink-0', !ok && !concluido && 'text-warning')} />
-          <span>{texto}</span>
+      <div className="mx-auto flex w-full max-w-[1240px] items-center justify-between gap-3 px-4 py-2 sm:px-6 sm:py-3">
+        <p role="status" className={cn('flex min-w-0 items-center gap-2 text-xs sm:text-sm', ok || concluido ? 'text-muted-foreground' : 'text-foreground')}>
+          <Icone aria-hidden className={cn('size-4 shrink-0 max-sm:hidden', !ok && !concluido && 'text-warning')} />
+          <span className="line-clamp-2">{texto}</span>
         </p>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="flex shrink-0 items-center gap-2">
           {extra}
-          <Button variant={variante} className="h-11 px-4 text-sm sm:min-w-36" disabled={!ok || ocupado} onClick={aoClicar}>
+          <Button variant={variante} className="h-11 px-3 text-sm sm:min-w-36 sm:px-4" disabled={!ok || ocupado} onClick={aoClicar}>
             {ocupado && <Loader2 aria-hidden className="animate-spin" />}
             {rotulo}
             {seta && !ocupado && <ArrowRight aria-hidden />}

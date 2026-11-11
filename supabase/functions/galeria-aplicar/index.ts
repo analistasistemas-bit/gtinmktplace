@@ -171,7 +171,7 @@ Deno.serve(async (req) => {
       return [`novo-${i.missao}`, error ? null : data?.signedUrl ?? null] as const;
     })));
     type Foto = { id: string; url: string | null };
-    const previa: Array<{ item_id: string; antes: Array<Foto & { sai: boolean }>; depois: Array<Foto & { nova: boolean; missao?: number }> }> = [];
+    const previa: Array<{ item_id: string; variacoes: number; antes: Array<Foto & { sai: boolean }>; depois: Array<Foto & { nova: boolean; missao?: number }> }> = [];
     const retrato: Record<string, { pictures: string[]; variacoes: ItemElegibilidade['variacoes'] }> = {};
     const itens: Array<Record<string, unknown>> = [];
     const placeholders = manifesto.map((m) => ({ missao: m.missao, id: `novo-${m.missao}` }));
@@ -195,6 +195,8 @@ Deno.serve(async (req) => {
         : seco.corpo.variations?.find((x) => x.id === v0.variationId)?.picture_ids ?? [];
       previa.push({
         item_id: alvo.itemId,
+        // Confirmar altera todas as variações da cor neste MLB; a prévia mostra só a primeira.
+        variacoes: alvo.variacoes.length,
         antes: antes[v0.sku].map((id) => ({ id, url: item.urls?.[id] ?? null, sai: !depoisIds.includes(id) })),
         depois: depoisIds.map((id) => {
           const missao = /^novo-(\d+)$/.exec(id)?.[1];
