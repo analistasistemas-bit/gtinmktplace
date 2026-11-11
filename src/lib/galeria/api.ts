@@ -40,7 +40,8 @@ export interface LupaImagem {
  */
 export function motivoLupa(ficha: Ficha, cores: string[], missao: number, moda: boolean): string | null {
   if (lupaPendente(missao, moda)) return 'lupa em ajuste';
-  if (!comLupa(missao, moda)) return null;
+  // Sem `lupa` na ficha (resposta sem a leitura): não há o que mostrar; o galeria-gerar recusa com 409 se faltar.
+  if (!comLupa(missao, moda) || !ficha.lupa) return null;
   const de = (s: SituacaoLupa) => cores.filter((c) => (ficha.lupa?.[c]?.[moda ? 'moda' : 'geral']?.[missao] ?? 'lendo') === s);
   const sem = de('indisponivel');
   if (sem.length > 0) return `sem detalhe do produto na foto: ${sem.join(', ')}`;

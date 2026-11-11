@@ -14,10 +14,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { fmtBRL } from '@/lib/formato';
 import {
   aprovarFinal, confirmarExibicao, enviarFinal, gerarImagens, listarImagens, mensagemErro, prepararUploadFinal, reportarInvalida,
-  type Ficha, type ImagemGaleria, type RespostaListar,
+  motivoLupa, type Ficha, type ImagemGaleria, type RespostaListar,
 } from '@/lib/galeria/api';
 import { comporImagemFinal } from '@/lib/galeria/compor';
 import { lupaPendente, missoesDisponiveis, missoesSugeridas } from '../../../supabase/functions/_shared/galeria/regras';
+import { comLupa } from '../../../supabase/functions/_shared/galeria/lupa';
 import { CartaoImagem } from './cartao-imagem';
 
 const POLLING_MS = 5000;
@@ -37,6 +38,13 @@ function detalheRecusa(c: Record<string, unknown>): string | undefined {
   if (Array.isArray(c.missoes)) return `Missões ${(c.missoes as number[]).join(', ')}`;
   if (typeof c.cor === 'string') return [c.cor, c.item_id].filter(Boolean).join(' · ');
   return undefined;
+}
+
+/** Motivo para segurar o Aprovar de uma imagem de missão com lupa (null = pode). */
+function bloqueioLupa(i: ImagemGaleria, moda: boolean): string | null {
+  if (lupaPendente(i.missao, moda)) return 'lupa em ajuste';
+  if (!comLupa(i.missao, moda) || i.lupa?.situacao === 'ok') return null;
+  return i.lupa?.situacao === 'indisponivel' ? 'sem detalhe do produto na foto' : 'lendo a foto de referência';
 }
 
 export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro }: {
@@ -70,8 +78,9 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro }: {
   useEffect(() => {
     if (!roteiro || missoes !== null) return;
     const sugeridas = new Set<number>(missoesSugeridas(ficha.cores.length));
-    setMissoes(ativas.filter((m) => sugeridas.has(m)));
-  }, [roteiro, missoes, ativas, ficha.cores.length]);
+    // Missão bloqueada (lupa travada, lendo ou sem detalhe) nunca vem pré-marcada.
+    setMissoes(ativas.filter((m) => sugeridas.has(m) && motivoLupa(ficha, ficha.cores, m, moda) === null));
+  }, [roteiro, missoes, ativas, ficha, moda]);
 
   // Nova rodada do `listar` daqui a 5 s (nunca em laço imediato: com CORS ausente toda carga falha).
   const proxima = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -137,18 +146,24 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro }: {
     if (!l.ok) return mensagemErro(l.erro);
     const i = l.dados.imagens.find((x) => x.id === img.id);
     if (!i || !l.dados.roteiro) return mensagemErro('nao_aprovavel');
+    const bloqueio = bloqueioLupa(i, l.dados.roteiro.moda);
+    if (bloqueio) return bloqueio;
+    const comCaixas = comLupa(i.missao, l.dados.roteiro.moda);
+    const lu = i.lupa;
+    const caixas = comCaixas && lu?.situacao === 'ok' && lu.produto && lu.detalhes && lu.ref_w && lu.ref_h
+      ? { produto: lu.produto, detalhes: lu.detalhes, ref_w: lu.ref_w, ref_h: lu.ref_h } : null;
     let arquivo: Blob;
     try {
       arquivo = await comporImagemFinal({
         cenaUrl: i.origem === 'gerador' ? i.url : null, refUrl: i.ref_url, missao: i.missao,
-        textos: l.dados.roteiro.textos?.[i.missao] ?? {}, corProduto: null, moda: l.dados.roteiro.moda,
+        textos: l.dados.roteiro.textos?.[i.missao] ?? {}, corProduto: null, moda: l.dados.roteiro.moda, lupa: caixas,
       });
     } catch (e) { return (e as Error).message; }
     const p = await prepararUploadFinal(mlItemId, i.id);
     if (!p.ok) return mensagemErro(p.erro);
     const falhaEnvio = await enviarFinal(p.dados.path, p.dados.token, arquivo);
     if (falhaEnvio) return `Falha ao enviar o arquivo final: ${falhaEnvio}`;
-    const a = await aprovarFinal(mlItemId, i.id);
+    const a = await aprovarFinal(mlItemId, i.id, comCaixas ? i.lupa?.hash : undefined);
     if (!a.ok) {
       return a.erro === 'arquivo_invalido'
         ? `Arquivo final recusado: ${((a.corpo.erros as string[] | undefined) ?? []).map((x) => ERRO_ARQUIVO[x] ?? x).join(', ')}`
@@ -197,7 +212,9 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro }: {
   const resumo = confirmando && unit !== null ? conta(confirmando) : null;
   // Pedido novo só pelo roteiro aprovado da família vigente (o galeria-gerar recusa os demais).
   const podePedir = !!roteiro && roteiro.familia_id === ficha.familia_id;
-  const sel = missoes ?? [];
+  // Missão bloqueada para alguma cor marcada sai da seleção efetiva (e do pedido).
+  const motivos = new Map(ativas.map((m) => [m, motivoLupa(ficha, cores, m, moda)]));
+  const sel = (missoes ?? []).filter((m) => !motivos.get(m));
 
   return (
     <div className="space-y-4">
@@ -224,9 +241,10 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro }: {
           <div className="grid gap-1 sm:grid-cols-2">
             {ativas.map((n) => (
               <span key={n} className="flex items-center gap-2">
-                <Checkbox aria-label={`Missão ${n}`} checked={sel.includes(n)}
+                <Checkbox aria-label={`Missão ${n}`} checked={sel.includes(n)} disabled={!!motivos.get(n)}
                   onCheckedChange={(v) => { setMissoes(alternar(sel, n, v === true).sort((a, b) => a - b)); abrir(null); }} />
-                {n}. {info.get(n)?.nome}{info.get(n)?.usaGerador === false && <span className="text-xs text-muted-foreground">(recorte grátis)</span>}
+                {n}. {info.get(n)?.nome}{info.get(n)?.usaGerador === false && !motivos.get(n) && <span className="text-xs text-muted-foreground">(recorte grátis)</span>}
+                {motivos.get(n) && <span className="text-xs text-amber-700">{motivos.get(n)}</span>}
               </span>
             ))}
           </div>
@@ -274,7 +292,7 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro }: {
           {lista.imagens.map((i: ImagemGaleria) => (
             <CartaoImagem key={i.id} imagem={i} onExibida={exibida} onInvalida={invalida} onFalhaCarga={falhaCarga}
               onAprovar={roteiro && i.roteiro_id === roteiro.id ? aprovar : undefined}
-              bloqueioAprovar={lupaPendente(i.missao, moda) ? 'lupa em ajuste' : undefined}
+              bloqueioAprovar={bloqueioLupa(i, moda) ?? undefined}
               onGerarDeNovo={podePedir ? (x) => abrir({ cores: [x.cor], missoes: [x.missao] }) : undefined} />
           ))}
         </div>

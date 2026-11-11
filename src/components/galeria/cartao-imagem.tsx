@@ -22,7 +22,7 @@ export function CartaoImagem({ imagem, onGerarDeNovo, onAprovar, bloqueioAprovar
   onGerarDeNovo?: (imagem: ImagemGaleria) => void;
   /** Compõe e aprova; devolve o motivo da recusa (null = aprovada). Sem handler o botão não aparece. */
   onAprovar?: (imagem: ImagemGaleria) => Promise<string | null>;
-  /** Motivo para manter Aprovar desabilitado (vai no `title`), ex.: "lupa em ajuste". */
+  /** Motivo para manter Aprovar desabilitado (vai no `title` e em texto visível), ex.: "lupa em ajuste". */
   bloqueioAprovar?: string;
   onExibida?: (id: string) => void;
   onInvalida?: (id: string) => void;
@@ -96,6 +96,7 @@ export function CartaoImagem({ imagem, onGerarDeNovo, onAprovar, bloqueioAprovar
           </Button>
         )}
       </div>
+      {onAprovar && aprovavel && bloqueioAprovar && <p className="text-xs text-amber-700">{bloqueioAprovar}</p>}
       {motivo && <p role="alert" className="text-xs text-red-600">{motivo}</p>}
     </div>
   );

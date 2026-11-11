@@ -328,7 +328,7 @@ describe('PassoGerar — exibição e cobrança', () => {
     passo();
     expect(await screen.findByText(/R\$\s0,50 ao exibir/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Gerar imagens' }));
-    expect(screen.getByText(/6 imagens · R\$\s4,80/)).toBeInTheDocument();
+    expect(screen.getByText(/5 imagens · R\$\s4,00/)).toBeInTheDocument();
   });
 
   it('"Gerar de novo" não aparece quando o roteiro aprovado é de família anterior', async () => {
@@ -525,7 +525,7 @@ describe('DialogGaleria — aba Gerar', () => {
       api.aprovarFinal.mockResolvedValue(ok({ status: 'aprovada' }));
       compor.fn.mockResolvedValue(new Blob(['x']));
       await userEvent.click(screen.getByRole('button', { name: 'Aprovar' }));
-      await waitFor(() => expect(api.aprovarFinal).toHaveBeenCalledWith(ml, 'i1'));
+      await waitFor(() => expect(api.aprovarFinal).toHaveBeenCalledWith(ml, 'i1', undefined));
       expect(api.prepararUploadFinal).toHaveBeenCalledWith(ml, 'i1');
       r.unmount();
     }

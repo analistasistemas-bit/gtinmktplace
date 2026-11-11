@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { StatusPill } from '@/components/ui/status-pill';
 import {
-  aprovarRoteiro, criarRoteiro, salvarRoteiro,
+  aprovarRoteiro, criarRoteiro, motivoLupa, salvarRoteiro,
   type Ficha, type MissaoRoteiro, type RespostaRoteiro, type Res, type Roteiro,
 } from '@/lib/galeria/api';
 import { motivosDeTexto } from '@/lib/galeria/compor';
@@ -102,6 +102,9 @@ export function PassoRoteiro({ mlItemId, ficha, isAdmin, podeCriar, resp, aoResp
   const aprovado = roteiro.status !== 'rascunho';
   const editar = (n: number, parte: Partial<MissaoRoteiro>) =>
     setRascunho({ ...rascunho, missoes: rascunho.missoes.map((m) => (m.missao === n ? { ...m, ...parte } : m)) });
+  // Missão com lupa: o motivo vale para as cores bloqueadas; só ativar fica barrado quando TODAS estão (desativar nunca).
+  const motivoDe = (n: number) => motivoLupa(ficha, ficha.cores, n, roteiro.moda);
+  const bloqueadaParaTodas = (n: number) => ficha.cores.length > 0 && ficha.cores.every((c) => motivoLupa(ficha, [c], n, roteiro.moda) !== null);
   const faltaCiencia = pendentes.some((c) => !ciente.has(c));
   const largura = Object.fromEntries(rascunho.missoes.filter((m) => m.ativa)
     .map((m) => [m.missao, motivosDeTexto(m.missao, m, roteiro.moda)]).filter(([, ms]) => (ms as string[]).length > 0)) as Record<number, string[]>;
@@ -138,11 +141,12 @@ export function PassoRoteiro({ mlItemId, ficha, isAdmin, podeCriar, resp, aoResp
           <div className="flex items-center justify-between">
             <h4 className="text-sm font-semibold">{m.missao}. {nomes[m.missao - 1] ?? 'Missão'}</h4>
             <div className="flex items-center gap-2 text-sm">
-              <Checkbox checked={m.ativa} aria-label={`Missão ${m.missao} ativa`}
+              <Checkbox checked={m.ativa} aria-label={`Missão ${m.missao} ativa`} disabled={!m.ativa && bloqueadaParaTodas(m.missao)}
                 onCheckedChange={(v) => editar(m.missao, { ativa: v === true })} />
               Ativa
             </div>
           </div>
+          {motivoDe(m.missao) && <p className="text-xs text-amber-700">{motivoDe(m.missao)}</p>}
           {[...(porMissao[String(m.missao)] ?? []), ...(largura[m.missao] ?? [])]
             .map((e) => <p key={e} role="alert" className="text-sm text-red-600">{e}</p>)}
           <div className="block text-sm">
