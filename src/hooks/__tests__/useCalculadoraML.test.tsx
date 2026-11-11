@@ -976,6 +976,22 @@ describe('useCalculadoraML', () => {
       expect(result.current.statusCotacao).toBe('official')
     })
 
+    it('cotarEm tem identidade estável; muda só com categoria ou taxas', () => {
+      const { result, rerender } = renderHook(() => useCalculadoraML(base), { wrapper })
+      const primeiro = result.current.cotarEm
+
+      rerender()
+      act(() => result.current.atualizarEntrada({ custoProduto: 55 }))
+      expect(result.current.cotarEm).toBe(primeiro)
+
+      act(() => result.current.atualizarTaxasManuais({ taxaFixa: 1 }))
+      const comTaxas = result.current.cotarEm
+      expect(comTaxas).not.toBe(primeiro)
+
+      act(() => result.current.atualizarEntrada({ categoriaId: 'MLB2' }))
+      expect(result.current.cotarEm).not.toBe(comTaxas)
+    })
+
     it('margem inválida (≥ 100 ou não finita) é ignorada', () => {
       const { result } = renderHook(() => useCalculadoraML(base), { wrapper })
       act(() => result.current.editarMargem(100))
