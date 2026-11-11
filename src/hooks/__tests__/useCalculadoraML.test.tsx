@@ -20,13 +20,19 @@ vi.mock('@/lib/produtos-saldo', () => ({
   fetchVariacoesProduto: fetchVariacoesMock,
 }))
 
-const { useCalculadoraML } = await import('../useCalculadoraML')
+const { useCalculadoraML, cotacaoCalculadora } = await import('../useCalculadoraML')
 
 const tarifaOficial = (comissao = 16): Tarifa => ({
   classico: { percentual: comissao - 5, fixa: 6, comissao: 17, imposto: 0, recebe: 83 },
   premium: { percentual: comissao, fixa: 6, comissao: 22, imposto: 0, recebe: 78 },
   frete: 12,
+  proveniencia: 'official',
 })
+
+const tarifaNaoOficial = (
+  proveniencia: 'partial' | 'estimated',
+  motivo_proveniencia: string,
+): Tarifa => ({ ...tarifaOficial(), frete: 0, proveniencia, motivo_proveniencia })
 
 function wrapper({ children }: { children: ReactNode }) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -267,7 +273,9 @@ describe('useCalculadoraML', () => {
   })
 
   it('combina comissão oficial e frete manual confirmado como cotação parcial sem dimensões', async () => {
-    calcularTarifaMock.mockResolvedValue(tarifaOficial())
+    calcularTarifaMock.mockResolvedValue(
+      tarifaNaoOficial('partial', 'o frete foi calculado com um pacote padrão'),
+    )
     const { result } = renderHook(
       () => useCalculadoraML({
         precoVenda: 100,
@@ -375,5 +383,102 @@ describe('useCalculadoraML', () => {
     expect(tarifa).toBeNull()
     expect(result.current.cotacaoMeta).toBeNull()
     expect(result.current.erroMeta).toMatch(/não confirmou a margem-alvo/i)
+  })
+
+  describe('frete desconhecido (B1)', () => {
+    it('tarifa official usa o frete da tarifa com selo oficial', async () => {
+      calcularTarifaMock.mockResolvedValue(tarifaOficial())
+      const { result } = renderHook(
+        () => useCalculadoraML({ precoVenda: 100, categoriaId: 'MLB1', dimensoes }),
+        { wrapper },
+      )
+
+      await avancarCotacao()
+
+      expect(result.current.cotacao.classico).toMatchObject({ frete: 12, proveniencia: 'official' })
+      expect(result.current.statusCotacao).toBe('official')
+      expect(result.current.aviso).toBeNull()
+    })
+
+    it.each([
+      ['partial', 'medida abaixo do piso de 0,2 cm'],
+      ['estimated', 'o Mercado Livre recusou o cálculo de frete (HTTP 500)'],
+    ] as const)('tarifa %s sem frete manual deixa o frete desconhecido', async (proveniencia, motivo) => {
+      calcularTarifaMock.mockResolvedValue(tarifaNaoOficial(proveniencia, motivo))
+      const { result } = renderHook(
+        () => useCalculadoraML({ precoVenda: 100, categoriaId: 'MLB1', dimensoes, taxasManuais: { frete: 0 } }),
+        { wrapper },
+      )
+
+      await avancarCotacao()
+
+      expect(result.current.cotacao.classico.frete).toBeNull()
+      expect('premium' in result.current.cotacao && result.current.cotacao.premium.frete).toBeNull()
+      expect(result.current.cotacao.classico.proveniencia).toBe(proveniencia)
+      expect(result.current.resultado.proveniencia).not.toBe('official')
+      expect(result.current.statusCotacao).not.toBe('official')
+      expect(result.current.aviso).toContain(motivo)
+    })
+
+    it('tarifa partial com frete manual confirmado usa o frete manual como parcial', async () => {
+      calcularTarifaMock.mockResolvedValue(tarifaNaoOficial('partial', 'medida abaixo do piso'))
+      const { result } = renderHook(
+        () => useCalculadoraML({ precoVenda: 100, categoriaId: 'MLB1', dimensoes, taxasManuais: { frete: 9 } }),
+        { wrapper },
+      )
+
+      await avancarCotacao()
+
+      expect(result.current.cotacao.classico).toMatchObject({ frete: 9, proveniencia: 'partial' })
+      expect(result.current.statusCotacao).toBe('partial')
+    })
+
+    it.each([
+      ['falha de frete', 'o Mercado Livre não respondeu o frete (timeout)'],
+      ['comissão ausente', 'o Mercado Livre respondeu sem `sale_fee_amount` para o Clássico — a comissão não veio'],
+    ])('tarifa estimated (%s) com frete manual confirmado nunca é promovida', async (_caso, motivo) => {
+      calcularTarifaMock.mockResolvedValue({ ...tarifaNaoOficial('estimated', motivo), frete: 12 })
+      const { result } = renderHook(
+        () => useCalculadoraML({ precoVenda: 100, categoriaId: 'MLB1', dimensoes, taxasManuais: { frete: 9 } }),
+        { wrapper },
+      )
+
+      await avancarCotacao()
+
+      expect(result.current.cotacao.classico).toMatchObject({ frete: 9, proveniencia: 'estimated' })
+      expect('premium' in result.current.cotacao && result.current.cotacao.premium.proveniencia).toBe('estimated')
+      expect(result.current.resultado.proveniencia).toBe('estimated')
+      expect(result.current.statusCotacao).toBe('estimated')
+    })
+
+    it('tarifa sem proveniência (resposta antiga) falha fechado como estimated', async () => {
+      const { proveniencia: _p, ...semCampo } = tarifaOficial()
+      calcularTarifaMock.mockResolvedValue(semCampo)
+      const { result } = renderHook(
+        () => useCalculadoraML({ precoVenda: 100, categoriaId: 'MLB1', dimensoes }),
+        { wrapper },
+      )
+
+      await avancarCotacao()
+
+      expect(result.current.cotacao.classico).toMatchObject({ frete: null, proveniencia: 'estimated' })
+      expect(result.current.statusCotacao).toBe('estimated')
+    })
+  })
+
+  describe('cotacaoCalculadora', () => {
+    const taxas = { percentualComissaoPct: 12, taxaFixa: 0, frete: 9, freteRealmenteZero: false }
+
+    it('official preserva comissão e frete da tarifa', () => {
+      const c = cotacaoCalculadora(tarifaOficial(), taxas)
+      expect(c.origem).toBe('official')
+      expect(c.premium).toMatchObject({ comissaoTotal: 22, frete: 12, proveniencia: 'official' })
+    })
+
+    it('frete manual zero só conta quando confirmado', () => {
+      const tarifa = tarifaNaoOficial('partial', 'x')
+      expect(cotacaoCalculadora(tarifa, { ...taxas, frete: 0 }).classico.frete).toBeNull()
+      expect(cotacaoCalculadora(tarifa, { ...taxas, frete: 0, freteRealmenteZero: true }).classico.frete).toBe(0)
+    })
   })
 })

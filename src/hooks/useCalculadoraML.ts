@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   calcularSimulacaoML,
   type CotacaoManualPorModalidade,
+  type CotacoesOficiaisPorModalidade,
   type CotacoesPorModalidade,
   type DimensoesProduto,
   type EntradaCalculadoraML,
@@ -15,7 +16,12 @@ import {
   type VariacaoComSaldo,
 } from '@/lib/produtos-saldo'
 import { QK } from '@/lib/queries'
-import { calcularTarifaML, cotacoesOficiaisDaTarifa, type Tarifa } from '@/lib/tarifa'
+import {
+  calcularTarifaML,
+  cotacoesOficiaisDaTarifa,
+  provenienciaDaTarifa,
+  type Tarifa,
+} from '@/lib/tarifa'
 
 const DEBOUNCE_COTACAO_MS = 300
 
@@ -82,20 +88,38 @@ function freteManualConfirmado(taxas: TaxasManuaisML): number | null {
   return taxas.frete > 0 || taxas.freteRealmenteZero ? taxas.frete : null
 }
 
-function cotacaoOficialComFreteConfirmado(
+/**
+ * Cotação da calculadora (B1): só a tarifa `official` (falhando fechado via
+ * `provenienciaDaTarifa`) traz o frete do ML. `partial`/`estimated` mantêm a comissão da tarifa,
+ * usam o frete manual confirmado (ou `null` = desconhecido) e preservam a proveniência — nunca
+ * promovem. A Revisão segue com `cotacoesOficiaisDaTarifa` sem mudança.
+ */
+export function cotacaoCalculadora(
   tarifa: Tarifa,
-  entrada: EntradaCalculadoraML,
   taxas: TaxasManuaisML,
-): CotacoesPorModalidade {
+): CotacoesOficiaisPorModalidade {
   const cotacao = cotacoesOficiaisDaTarifa(tarifa)
-  if (entrada.dimensoes) return cotacao
+  const { proveniencia } = provenienciaDaTarifa(tarifa)
+  if (proveniencia === 'official') return cotacao
 
   const frete = freteManualConfirmado(taxas)
   return {
     origem: 'official',
-    classico: { ...cotacao.classico, frete, proveniencia: 'partial' },
-    premium: { ...cotacao.premium, frete, proveniencia: 'partial' },
+    classico: { ...cotacao.classico, frete, proveniencia },
+    premium: { ...cotacao.premium, frete, proveniencia },
   }
+}
+
+function avisoDaTarifa(tarifa: Tarifa, taxas: TaxasManuaisML): string | null {
+  const { proveniencia, motivo } = provenienciaDaTarifa(tarifa)
+  if (proveniencia === 'official') return null
+  const detalhe = motivo ? ` (${motivo})` : ''
+  const prefixo = proveniencia === 'partial'
+    ? `Comissão oficial aplicada; frete não oficial${detalhe}`
+    : `Cotação estimada${detalhe}`
+  return freteManualConfirmado(taxas) === null
+    ? `${prefixo}. Confirme o frete manual para decidir.`
+    : `${prefixo}. Usando o frete manual confirmado.`
 }
 
 function dimensoesDaTarifa(
@@ -241,7 +265,7 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
     ],
   )
   const cotacao: CotacoesPorModalidade = tarifaOficial
-    ? cotacaoOficialComFreteConfirmado(tarifaOficial, entrada, taxasManuais)
+    ? cotacaoCalculadora(tarifaOficial, taxasManuais)
     : cotacaoManual
   const resultado = useMemo(
     () => calcularSimulacaoML(entrada, cotacao),
@@ -332,17 +356,8 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
             return
           }
           setTarifaOficial(tarifa)
-          if (entrada.dimensoes) {
-            setStatusCotacao('official')
-            setAvisoApi(null)
-          } else {
-            setStatusCotacao('partial')
-            setAvisoApi(
-              freteManualConfirmado(taxasManuaisRef.current) === null
-                ? 'Comissão oficial aplicada; confirme o frete manual para decidir.'
-                : 'Comissão oficial aplicada com frete manual confirmado.',
-            )
-          }
+          setStatusCotacao(provenienciaDaTarifa(tarifa).proveniencia)
+          setAvisoApi(avisoDaTarifa(tarifa, taxasManuaisRef.current))
         })
         .catch(() => {
           if (sequenciaCotacao.current !== id) return
@@ -386,7 +401,7 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
       }
       const resultadoValidado = calcularSimulacaoML(
         { ...entrada, precoVenda: precoProjetado },
-        cotacaoOficialComFreteConfirmado(tarifa, entrada, taxasManuais),
+        cotacaoCalculadora(tarifa, taxasManuais),
       )
       const resultadoModalidade = resultadoValidado.modalidades[modalidade]
       if (

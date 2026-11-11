@@ -8,8 +8,7 @@ import { montarTarifaComProveniencia } from '../_shared/ml/tarifa.ts';
 import { buscarListingPrice } from '../_shared/ml/listing-prices.ts';
 import { buscarFreteVendedorComProveniencia } from '../_shared/ml/frete.ts';
 import type { DimensoesPacote } from '../_shared/ml/pacote.ts';
-
-const CACHE_TTL_S = 6 * 60 * 60; // 6h — comissões mudam raramente
+import { ttlTarifa } from './ttl.ts';
 
 function lerDimensoes(raw: unknown): DimensoesPacote {
   const d = (raw ?? {}) as Record<string, unknown>;
@@ -71,7 +70,7 @@ Deno.serve(async (req) => {
       ...(comProveniencia.motivo ? { motivo_proveniencia: comProveniencia.motivo } : {}),
     };
 
-    await redisSet(cacheKey, JSON.stringify(tarifa), CACHE_TTL_S);
+    await redisSet(cacheKey, JSON.stringify(tarifa), ttlTarifa(tarifa.proveniencia));
     return json(tarifa);
   } catch (err) {
     // Resiliente: não quebra a Revisão; o card mostra "indisponível".
