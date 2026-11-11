@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { useCalculadoraML } from '@/hooks/useCalculadoraML'
 import type { Tarifa } from '@/lib/tarifa'
@@ -84,10 +85,23 @@ const estadoBase = {
   cotacaoMeta: null,
   validacaoMeta: null,
   erroMeta: null,
+  modalidadeAtiva: 'classico' as const,
+  modalidadeDoAnuncio: null,
+  setModalidadeAtiva: vi.fn(),
+  avisosProduto: [],
+  categoriaNome: null,
+  variacaoUsada: null,
+  anuncio: null,
 }
 
 let estado: EstadoCalculadoraMock = estadoBase
-vi.mock('@/hooks/useCalculadoraML', () => ({ useCalculadoraML: () => estado }))
+// A modalidade ativa vive no hook (Task 4): o mock guarda estado para a troca re-renderizar.
+vi.mock('@/hooks/useCalculadoraML', () => ({
+  useCalculadoraML: () => {
+    const [modalidadeAtiva, setModalidadeAtiva] = useState(estado.modalidadeAtiva)
+    return { ...estado, modalidadeAtiva, setModalidadeAtiva }
+  },
+}))
 vi.mock('@/hooks/useCategoriasML', () => ({ useCategoriasML: () => categoriasState }))
 
 import { CalculadoraML } from '../calculadora-ml'

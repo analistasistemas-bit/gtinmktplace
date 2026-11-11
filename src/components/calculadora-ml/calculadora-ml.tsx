@@ -1,13 +1,10 @@
 import { AlertTriangle, Calculator, ShieldCheck } from 'lucide-react'
-import { useState } from 'react'
 import { useCalculadoraML } from '@/hooks/useCalculadoraML'
-import type { ModalidadeML } from '@/lib/calculadora-ml'
 import { FormularioCalculadoraML } from './formulario-calculadora-ml'
 import { ResultadoCalculadoraML } from './resultado-calculadora-ml'
 
 export function CalculadoraML() {
   const calculadora = useCalculadoraML()
-  const [modalidade, setModalidade] = useState<ModalidadeML>('classico')
   const produtos = calculadora.produtos.data?.produtos ?? []
   const categoriaAusente = !calculadora.entrada.categoriaId?.trim()
 
@@ -45,8 +42,8 @@ export function CalculadoraML() {
               statusCotacao={calculadora.statusCotacao}
               aviso={calculadora.aviso}
               taxas={calculadora.taxasManuais}
-              modalidadeSelecionada={modalidade}
-              onModalidade={(proxima) => { setModalidade(proxima); calculadora.atualizarEntrada({ modalidadeParaDecisao: proxima }) }}
+              modalidadeSelecionada={calculadora.modalidadeAtiva}
+              onModalidade={calculadora.setModalidadeAtiva}
               onValidar={() => { void calculadora.validarNaApi() }}
               erroMeta={calculadora.erroMeta}
               cotacaoMeta={calculadora.cotacaoMeta}

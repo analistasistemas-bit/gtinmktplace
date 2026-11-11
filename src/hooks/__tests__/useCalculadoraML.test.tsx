@@ -5,10 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tarifa } from '@/lib/tarifa'
 import type { ProdutoEstoqueResumo, VariacaoComSaldo } from '@/lib/produtos-saldo'
 
-const { calcularTarifaMock, fetchProdutosMock, fetchVariacoesMock } = vi.hoisted(() => ({
+const { calcularTarifaMock, fetchProdutosMock, fetchVariacoesMock, fetchAnuncioMock, aliquotasState } = vi.hoisted(() => ({
   calcularTarifaMock: vi.fn(),
   fetchProdutosMock: vi.fn(),
   fetchVariacoesMock: vi.fn(),
+  fetchAnuncioMock: vi.fn(),
+  aliquotasState: { data: undefined as { nacional: number; importado: number; confirmada: boolean } | undefined },
 }))
 
 vi.mock('@/lib/tarifa', async (importOriginal) => ({
@@ -19,8 +21,12 @@ vi.mock('@/lib/produtos-saldo', () => ({
   fetchProdutosEstoqueResumo: fetchProdutosMock,
   fetchVariacoesProduto: fetchVariacoesMock,
 }))
+vi.mock('@/lib/anuncio-calculadora', () => ({ fetchAnuncioCalculadora: fetchAnuncioMock }))
+vi.mock('@/hooks/useConfiguracoes', () => ({ useAliquotas: () => aliquotasState }))
 
-const { useCalculadoraML, cotacaoCalculadora } = await import('../useCalculadoraML')
+const { useCalculadoraML, cotacaoCalculadora, reducerCalculadora, estadoInicialCalculadora } =
+  await import('../useCalculadoraML')
+type AnuncioCalculadora = import('@/lib/anuncio-calculadora').AnuncioCalculadora
 
 const tarifaOficial = (comissao = 16): Tarifa => ({
   classico: { percentual: comissao - 5, fixa: 6, comissao: 17, imposto: 0, recebe: 83 },
@@ -88,13 +94,34 @@ const variacao = (codigo: string, valores: Partial<VariacaoComSaldo> = {}): Vari
   ...valores,
 })
 
+const naoPublicado = (v: Partial<AnuncioCalculadora> = {}): AnuncioCalculadora => ({
+  publicado: false, itemId: null, preco: null, precoOriginal: null, fontePreco: null,
+  salePriceFalhou: false, modalidade: null, categoriaId: 'MLB1000', categoriaNome: 'Cadastro',
+  categoriaFonte: 'cadastro', statusAnuncio: null, ...v,
+})
+const publicado = (v: Partial<AnuncioCalculadora> = {}): AnuncioCalculadora => ({
+  publicado: true, itemId: 'MLB123', preco: 20, precoOriginal: null, fontePreco: 'sale_price',
+  salePriceFalhou: false, modalidade: 'classico', categoriaId: 'MLB200339', categoriaNome: 'Água micelar',
+  categoriaFonte: 'item', statusAnuncio: 'active', ...v,
+})
+
+function adiado<T>() {
+  let resolve!: (v: T) => void
+  let reject!: (e: unknown) => void
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej })
+  return { promise, resolve, reject }
+}
+
 describe('useCalculadoraML', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     calcularTarifaMock.mockReset()
     fetchProdutosMock.mockReset()
     fetchVariacoesMock.mockReset()
+    fetchAnuncioMock.mockReset()
     fetchProdutosMock.mockResolvedValue({ kpis: {}, produtos: [] })
+    fetchAnuncioMock.mockResolvedValue(naoPublicado())
+    aliquotasState.data = { nacional: 8, importado: 16, confirmada: true }
   })
 
   afterEach(() => vi.useRealTimers())
@@ -498,6 +525,304 @@ describe('useCalculadoraML', () => {
       const tarifa = tarifaNaoOficial('partial', 'x')
       expect(cotacaoCalculadora(tarifa, { ...taxas, frete: 0 }).classico.frete).toBeNull()
       expect(cotacaoCalculadora(tarifa, { ...taxas, frete: 0, freteRealmenteZero: true }).classico.frete).toBe(0)
+    })
+  })
+
+  describe('produto cadastrado → prefill atômico (B2)', () => {
+    const dimA = { pesoGramas: 500, alturaCm: 5, larguraCm: 6, comprimentoCm: 7 }
+    const produtoA: ProdutoEstoqueResumo = { ...produtoResumo, codigoPai: 'PAI-A', origem: 'nacional', skuUnico: 'A-1' }
+    const produtoB: ProdutoEstoqueResumo = { ...produtoResumo, codigoPai: 'PAI-B', origem: '', skuUnico: 'B-1' }
+    const variacoesA = [variacao('A-1', { custo: 10, preco: 30, mlItemId: 'MLB123', cor: 'Azul', ...dimA })]
+    const variacoesB = [variacao('B-1', { custo: null, preco: 15 })]
+
+    function render() {
+      return renderHook(() => useCalculadoraML(), { wrapper })
+    }
+    async function selecionar(result: ReturnType<typeof render>['result'], produto: ProdutoEstoqueResumo | null) {
+      await act(async () => { await result.current.selecionarProduto(produto) })
+    }
+
+    it('produto publicado: preço vivo, categoria e modalidade do anúncio, imposto pela origem', async () => {
+      fetchVariacoesMock.mockResolvedValue(variacoesA)
+      fetchAnuncioMock.mockResolvedValue(publicado())
+      const { result } = render()
+
+      await selecionar(result, produtoA)
+
+      expect(result.current.entrada).toMatchObject({
+        precoVenda: 20, categoriaId: 'MLB200339', custoProduto: 10, aliquotaImpostoPct: 8,
+        dimensoes: { alturaCm: 5, larguraCm: 6, comprimentoCm: 7, pesoKg: 0.5 },
+      })
+      expect(result.current.modalidadeAtiva).toBe('classico')
+      expect(result.current.modalidadeDoAnuncio).toBe('classico')
+      expect(result.current.categoriaNome).toBe('Água micelar')
+      expect(result.current.variacaoUsada).toEqual({ codigo: 'A-1', cor: 'Azul' })
+      expect(result.current.anuncio?.preco).toBe(20)
+    })
+
+    it('anúncio premium define a modalidade ativa e a decisão do motor', async () => {
+      fetchVariacoesMock.mockResolvedValue(variacoesA)
+      fetchAnuncioMock.mockResolvedValue(publicado({ modalidade: 'premium' }))
+      const { result } = render()
+
+      await selecionar(result, produtoA)
+
+      expect(result.current.modalidadeAtiva).toBe('premium')
+      expect(result.current.entrada.modalidadeParaDecisao).toBe('premium')
+      act(() => result.current.setModalidadeAtiva('classico'))
+      expect(result.current.modalidadeAtiva).toBe('classico')
+      expect(result.current.modalidadeDoAnuncio).toBe('premium')
+      expect(result.current.entrada.modalidadeParaDecisao).toBe('classico')
+    })
+
+    it('lê o anúncio só depois de escolher a variação, pelo item dela', async () => {
+      const variacoes = adiado<VariacaoComSaldo[]>()
+      fetchVariacoesMock.mockReturnValue(variacoes.promise)
+      fetchAnuncioMock.mockResolvedValue(publicado())
+      const { result } = render()
+
+      act(() => { void result.current.selecionarProduto(produtoA) })
+      await act(async () => { await Promise.resolve() })
+      expect(fetchAnuncioMock).not.toHaveBeenCalled()
+      await act(async () => { variacoes.resolve(variacoesA) })
+
+      expect(fetchAnuncioMock).toHaveBeenCalledWith('PAI-A', 'MLB123')
+    })
+
+    it('troca A → B limpa o que B não tem: medidas, custo e imposto (com aviso de origem)', async () => {
+      fetchVariacoesMock.mockResolvedValueOnce(variacoesA).mockResolvedValueOnce(variacoesB)
+      fetchAnuncioMock.mockResolvedValueOnce(publicado()).mockResolvedValueOnce(naoPublicado())
+      const { result } = render()
+
+      await selecionar(result, produtoA)
+      await selecionar(result, produtoB)
+
+      expect(result.current.entrada.dimensoes).toBeUndefined()
+      expect(result.current.entrada.aliquotaImpostoPct).toBeNull()
+      expect(result.current.entrada.custoProduto).toBe(0)
+      expect(result.current.entrada.precoVenda).toBe(15)
+      expect(result.current.entrada.categoriaId).toBe('MLB1000')
+      expect(result.current.modalidadeDoAnuncio).toBeNull()
+      expect(result.current.avisosProduto.join(' ')).toMatch(/origem/i)
+      expect(result.current.avisosProduto.join(' ')).not.toMatch(/preço no ar/i)
+    })
+
+    it('alíquotas carregando → null; chegam e preenchem; editado à mão não é sobrescrito', async () => {
+      aliquotasState.data = undefined
+      fetchVariacoesMock.mockResolvedValue(variacoesA)
+      fetchAnuncioMock.mockResolvedValue(publicado())
+      const { result, rerender } = render()
+
+      await selecionar(result, produtoA)
+      expect(result.current.entrada.aliquotaImpostoPct).toBeNull()
+
+      aliquotasState.data = { nacional: 8, importado: 16, confirmada: true }
+      rerender()
+      expect(result.current.entrada.aliquotaImpostoPct).toBe(8)
+
+      act(() => result.current.atualizarEntrada({ aliquotaImpostoPct: 5 }))
+      aliquotasState.data = { nacional: 9, importado: 16, confirmada: true }
+      rerender()
+      expect(result.current.entrada.aliquotaImpostoPct).toBe(5)
+    })
+
+    it('alíquotas sem confirmação deixam o imposto desconhecido com aviso', async () => {
+      aliquotasState.data = { nacional: 8, importado: 16, confirmada: false }
+      fetchVariacoesMock.mockResolvedValue(variacoesA)
+      fetchAnuncioMock.mockResolvedValue(publicado())
+      const { result } = render()
+
+      await selecionar(result, produtoA)
+
+      expect(result.current.entrada.aliquotaImpostoPct).toBeNull()
+      expect(result.current.avisosProduto.join(' ')).toMatch(/confirm/i)
+    })
+
+    it.each([
+      ['a leitura rejeita (HTTP)', () => fetchAnuncioMock.mockRejectedValue(new Error('HTTP 500'))],
+      ['o preço volta null', () => fetchAnuncioMock.mockResolvedValue(publicado({ preco: null, categoriaFonte: 'cadastro', motivo: 'sem_conexao' }))],
+    ])('quando %s, usa o preço do cadastro com aviso', async (_caso, preparar) => {
+      fetchVariacoesMock.mockResolvedValue(variacoesA)
+      preparar()
+      const { result } = render()
+
+      await selecionar(result, produtoA)
+
+      expect(result.current.entrada.precoVenda).toBe(30)
+      expect(result.current.avisosProduto.join(' ')).toMatch(/não foi possível ler o preço no ar/i)
+    })
+
+    it('sale_price falhou → aviso de promoção', async () => {
+      fetchVariacoesMock.mockResolvedValue(variacoesA)
+      fetchAnuncioMock.mockResolvedValue(publicado({ salePriceFalhou: true, fontePreco: 'items' }))
+      const { result } = render()
+
+      await selecionar(result, produtoA)
+
+      expect(result.current.entrada.precoVenda).toBe(20)
+      expect(result.current.avisosProduto.join(' ')).toMatch(/promoção/i)
+    })
+
+    it('categoria do cadastro em produto publicado gera aviso', async () => {
+      fetchVariacoesMock.mockResolvedValue(variacoesA)
+      fetchAnuncioMock.mockResolvedValue(publicado({ categoriaFonte: 'cadastro', categoriaId: 'MLB1000' }))
+      const { result } = render()
+
+      await selecionar(result, produtoA)
+
+      expect(result.current.entrada.categoriaId).toBe('MLB1000')
+      expect(result.current.avisosProduto.join(' ')).toMatch(/categoria do cadastro — o anúncio não informou/i)
+    })
+
+    it('anúncio pausado no ML gera aviso', async () => {
+      fetchVariacoesMock.mockResolvedValue(variacoesA)
+      fetchAnuncioMock.mockResolvedValue(publicado({ statusAnuncio: 'paused' }))
+      const { result } = render()
+
+      await selecionar(result, produtoA)
+
+      expect(result.current.avisosProduto.join(' ')).toMatch(/anúncio pausado no ML/i)
+    })
+
+    it('lista de variações vazia limpa os campos do produto e avisa', async () => {
+      fetchVariacoesMock.mockResolvedValueOnce(variacoesA).mockResolvedValueOnce([])
+      fetchAnuncioMock.mockResolvedValue(publicado())
+      const { result } = render()
+
+      await selecionar(result, produtoA)
+      await selecionar(result, produtoB)
+
+      expect(fetchAnuncioMock).toHaveBeenCalledTimes(1)
+      expect(result.current.entrada).toMatchObject({ custoProduto: 0, precoVenda: 0, aliquotaImpostoPct: null })
+      expect(result.current.entrada.categoriaId).toBeUndefined()
+      expect(result.current.entrada.dimensoes).toBeUndefined()
+      expect(result.current.avisosProduto.join(' ')).toMatch(/variaç/i)
+    })
+
+    it('resposta de A chegando depois de selecionar B é ignorada', async () => {
+      const variacoesAtrasadas = adiado<VariacaoComSaldo[]>()
+      fetchVariacoesMock.mockReturnValueOnce(variacoesAtrasadas.promise).mockResolvedValueOnce(variacoesB)
+      fetchAnuncioMock.mockResolvedValue(naoPublicado())
+      const { result } = render()
+
+      act(() => { void result.current.selecionarProduto(produtoA) })
+      await selecionar(result, produtoB)
+      await act(async () => { variacoesAtrasadas.resolve(variacoesA) })
+
+      expect(result.current.produtoSelecionado?.codigoPai).toBe('PAI-B')
+      expect(result.current.entrada.precoVenda).toBe(15)
+      expect(fetchAnuncioMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('alíquotas chegando durante o prefill não descartam o prefill', async () => {
+      aliquotasState.data = undefined
+      const anuncio = adiado<AnuncioCalculadora>()
+      fetchVariacoesMock.mockResolvedValue(variacoesA)
+      fetchAnuncioMock.mockReturnValue(anuncio.promise)
+      const { result, rerender } = render()
+
+      act(() => { void result.current.selecionarProduto(produtoA) })
+      await act(async () => { await Promise.resolve() })
+      aliquotasState.data = { nacional: 8, importado: 16, confirmada: true }
+      rerender()
+      await act(async () => { anuncio.resolve(publicado()) })
+
+      expect(result.current.entrada).toMatchObject({ precoVenda: 20, categoriaId: 'MLB200339', aliquotaImpostoPct: 8 })
+    })
+
+    it('custo digitado entre a RPC e a edge é mantido; o resto do prefill conclui', async () => {
+      const anuncio = adiado<AnuncioCalculadora>()
+      fetchVariacoesMock.mockResolvedValue(variacoesA)
+      fetchAnuncioMock.mockReturnValue(anuncio.promise)
+      const { result } = render()
+
+      act(() => { void result.current.selecionarProduto(produtoA) })
+      await act(async () => { await Promise.resolve() })
+      expect(fetchAnuncioMock).toHaveBeenCalled()
+      act(() => result.current.atualizarEntrada({ custoProduto: 99 }))
+      await act(async () => { anuncio.resolve(publicado()) })
+
+      expect(result.current.entrada).toMatchObject({ custoProduto: 99, precoVenda: 20, categoriaId: 'MLB200339' })
+    })
+
+    it('"Produto avulso" limpa os campos do produto e a modalidade do anúncio', async () => {
+      fetchVariacoesMock.mockResolvedValue(variacoesA)
+      fetchAnuncioMock.mockResolvedValue(publicado({ modalidade: 'premium' }))
+      const { result } = render()
+
+      await selecionar(result, produtoA)
+      await selecionar(result, null)
+
+      expect(result.current.entrada).toMatchObject({ custoProduto: 0, precoVenda: 0, aliquotaImpostoPct: null })
+      expect(result.current.entrada.categoriaId).toBeUndefined()
+      expect(result.current.entrada.dimensoes).toBeUndefined()
+      expect(result.current.modalidadeDoAnuncio).toBeNull()
+      expect(result.current.anuncio).toBeNull()
+      expect(result.current.avisosProduto).toEqual([])
+    })
+  })
+
+  describe('validade da cotação pela chave', () => {
+    it('editar custo, imposto ou rebate com a cotação em voo ainda publica a resposta', async () => {
+      const tarifa = adiado<Tarifa | null>()
+      calcularTarifaMock.mockReturnValue(tarifa.promise)
+      const { result } = renderHook(
+        () => useCalculadoraML({ precoVenda: 100, categoriaId: 'MLB1', dimensoes }),
+        { wrapper },
+      )
+
+      await avancarCotacao()
+      expect(result.current.statusCotacao).toBe('loading')
+      act(() => result.current.atualizarEntrada({ custoProduto: 40 }))
+      act(() => result.current.atualizarEntrada({ aliquotaImpostoPct: 10 }))
+      act(() => result.current.atualizarEntrada({ rebate: 2 }))
+      await act(async () => { tarifa.resolve(tarifaOficial()) })
+      await avancarCotacao()
+
+      expect(calcularTarifaMock).toHaveBeenCalledTimes(1)
+      expect(result.current.statusCotacao).toBe('official')
+      expect(result.current.cotacao.origem).toBe('official')
+    })
+
+    it('cotação antiga chegando depois de editar o preço é ignorada', async () => {
+      const antiga = adiado<Tarifa | null>()
+      const nova = adiado<Tarifa | null>()
+      calcularTarifaMock.mockReturnValueOnce(antiga.promise).mockReturnValueOnce(nova.promise)
+      const { result } = renderHook(() => useCalculadoraML({ precoVenda: 100, categoriaId: 'MLB1' }), { wrapper })
+
+      await avancarCotacao()
+      act(() => result.current.atualizarEntrada({ precoVenda: 120 }))
+      await act(async () => { antiga.resolve(tarifaOficial()) })
+
+      expect(result.current.statusCotacao).toBe('loading')
+      expect(result.current.cotacao.origem).toBe('manual')
+    })
+  })
+
+  describe('reducerCalculadora', () => {
+    const carga = {
+      entrada: { custoProduto: 0, precoVenda: 0, dimensoes: undefined, categoriaId: undefined },
+      origem: null, modalidadeDoAnuncio: null, avisos: [], categoriaNome: null, variacaoUsada: null, anuncio: null,
+    }
+
+    it('PRODUTO_CARREGADO zera metaSolicitada, metaStatus e ultimoEditado', () => {
+      const estado = { ...estadoInicialCalculadora(), metaSolicitada: 30, metaStatus: 'confirmado', ultimoEditado: 'margem' as const }
+      const proximo = reducerCalculadora(estado, { type: 'PRODUTO_CARREGADO', selecao: estado.selecaoProduto, carga, aliquotas: undefined })
+
+      expect(proximo).toMatchObject({ metaSolicitada: null, metaStatus: null, ultimoEditado: 'preco' })
+    })
+
+    it('só ações do operador incrementam a revisão', () => {
+      const inicial = estadoInicialCalculadora()
+      const editado = reducerCalculadora(inicial, { type: 'EDITAR_ENTRADA', parcial: { custoProduto: 5 } })
+      const modalidade = reducerCalculadora(editado, { type: 'MODALIDADE', modalidade: 'premium' })
+      const taxas = reducerCalculadora(modalidade, { type: 'EDITAR_TAXAS', parcial: { taxaFixa: 1 } })
+      expect(taxas.revisao).toBe(inicial.revisao + 3)
+
+      const carregado = reducerCalculadora(taxas, { type: 'PRODUTO_CARREGADO', selecao: taxas.selecaoProduto, carga, aliquotas: undefined })
+      const aliquota = reducerCalculadora(carregado, { type: 'ALIQUOTAS', aliquotas: { nacional: 8, importado: 16, confirmada: true } })
+      const cotado = reducerCalculadora(aliquota, { type: 'COTACAO_RECEBIDA', chave: 'x', tarifa: null })
+      expect(cotado.revisao).toBe(taxas.revisao)
     })
   })
 })
