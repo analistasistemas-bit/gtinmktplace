@@ -34,6 +34,7 @@ export function useMensagensAguardando(): { count: number; isError: boolean } {
     queryKey: ['mensagensAguardando'],
     queryFn: contarConversasAguardando,
     staleTime: 60_000,
+    refetchInterval: 60_000, // layout não remonta e refetchOnWindowFocus é false: sem isto o badge congela
     retry: 1,
   });
   return { count: q.data ?? 0, isError: q.isError };

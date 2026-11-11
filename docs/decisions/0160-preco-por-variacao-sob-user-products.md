@@ -189,6 +189,8 @@ um retry esgotado deixar o banco refletindo exatamente os PUTs que subiram. Em `
 - **Categoria nunca publicada + preços divergentes = bloqueio.** O formato só se revela quando um
   POST Legacy falha com a assinatura UP, e sondar exigiria criar um anúncio real (o ML não tem
   sandbox). A mensagem do guard ensina a saída: publicar uniforme uma vez semeia o cache.
+  **Atualizado em 2026-11-09:** no CREATE, a descoberta acontece no split, sem ação do operador, quando
+  há faixa de preço com 2 ou mais cores (ver "Emenda 2026-11-09").
 - **Família já dividida em N partições que migre para UP continua beco sem saída** (ADR-0105 §7).
   Não piora com esta entrega; não é resolvido por ela.
 - **`precoAtual` em Publicados é o preço de um filho.** Vem do ML por `familias.ml_item_id`, que sob
@@ -219,10 +221,9 @@ um retry esgotado deixar o banco refletindo exatamente os PUTs que subiram. Em `
    User Products (`DESCONTO_INCOMPATIVEL`), mas a Revisão permite ligar `familias.exibir_com_desconto`
    depois, e o UPDATE UP não lê esse campo — não monta `original_price`. O preço de venda continua
    certo; o que não acontece é o selo "% OFF". Pré-existente, não introduzido aqui.
-9. **CREATE não consulta o cache de formato** para decidir split: `ehUP` é estrutural (itens já
-   existem), e família **nova** não tem itens. Uma família nova com preços divergentes em categoria
-   já conhecida como User Products vai para o split e falha com `FORMATO_INCOMPATIVEL`. Mesmo
-   comportamento de antes desta entrega; não regride, mas I2 vale só para famílias já publicadas.
+9. ~~**CREATE não consulta o cache de formato** para decidir split.~~ **Resolvida em 2026-11-09**
+   (ver "Emenda 2026-11-09" abaixo). Antes: família nova não tem itens, então `ehUP` estrutural era
+   falso e preços divergentes em categoria User Products iam ao split e morriam com `FORMATO_INCOMPATIVEL`.
 
 ## Alternativas consideradas
 
@@ -252,3 +253,36 @@ nenhum. No "Adicionar variação" (I10) a irmã com faixas vivas fica como está
 tentativa que falhou, recebe as faixas sobre o preço vivo. A recusa de configuração por cor (I7) continua. O CREATE UP
 (`publicar-familia-up.ts`) e o retry de `publish-familia-ml` seguem a mesma regra por item
 (`user-products/atacado-por-item.ts`). A dívida 2 fica paga só nessa parte: a configuração segue família-level.
+
+## Emenda 2026-11-09 — CREATE consulta o cache; split descobre UP
+
+Fecha a dívida nº 9. Família NOVA com cores a preços diferentes em categoria User Products (ex.:
+MLB277368) caía no split e falhava com `FORMATO_INCOMPATIVEL` (o conector só emite esse erro com mais de
+uma variação na faixa, e o worker o tratava como retentável: 10 retries até `status='erro'`).
+
+Regras:
+
+- **`publicar-familias` (CREATE):** consulta `ml_formato_publicacao`. Categoria já `user_products` no
+  cache conta como `ehUP` em `decidirSplit` e a família vai ao alvo `publish`, que roteia para a saga UP
+  (um item por cor, cada uma com seu preço). `decidirSplit` não muda. O ramo UPDATE segue sem ler o cache
+  e família já publicada não muda de rota.
+- **`publicar-split-ml` (CREATE sem nada no ar):** pré-check do cache antes de qualquer efeito colateral;
+  se `user_products`, reenfileira o job inteiro no `publish`. Sem cache, cria primeiro uma faixa com 2 ou
+  mais cores (só ela pode revelar `FORMATO_INCOMPATIVEL`; faixa de 1 cor cria item plano e não prova nada).
+  `FORMATO_INCOMPATIVEL` nela semeia o cache como `user_products` e reenfileira o mesmo job no `publish`,
+  sem retry. "Nada no ar" = `familias.ml_item_id` nulo e nenhuma linha de `anuncios_externos` (org +
+  `codigo_pai`, canal ML) com `item_externo_id` não nulo; a raiz da saga, com `item_externo_id` nulo,
+  não conta.
+- Reenfileirar só com `qtdCores <= MAX_VARIACOES_ML`; reenfileira o objeto do body inteiro
+  (`versoes_kit`, `listing_type_id`); status continua `publicando`. Falha do enqueue grava `status='erro'`
+  com mensagem orientando publicar de novo (o cache semeado cai na regra acima) e o ramo chama
+  `talvezFinalizarLote`, como todo ramo que grava `erro` e responde 200.
+
+Limites declarados:
+
+- (a) Todas as faixas com 1 cor: comportamento atual (N itens planos, um por faixa); nada é descoberto.
+- (b) Estado misto (algo já no ar, inclusive item de 1 cor criado pelo worker antigo antes deste fix):
+  erro explícito, sem reenfileirar.
+- (b2) Mais de 100 cores em categoria UP: erro explícito (segue no split, ADR-0048).
+- (c) Kit com preço divergente em categoria fora do cache continua barrado no gate do kit
+  (`publicar-split-ml/index.ts:137-149`), antes de descobrir o formato.

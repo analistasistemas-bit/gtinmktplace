@@ -278,3 +278,77 @@ describe('calcularSimulacaoML', () => {
     })
   })
 })
+
+describe('calcularSimulacaoML — margem exata e imposto desconhecido', () => {
+  it('não presume imposto: alíquota null → modalidade null e dados insuficientes', () => {
+    const resultado = calcularSimulacaoML({ ...entradaBase, aliquotaImpostoPct: null }, cotacoesBase)
+
+    expect(resultado.modalidades.classico).toBeNull()
+    expect(resultado.veredito.tipo).toBe('Dados insuficientes')
+    expect(resultado.veredito.fatores.join(' ')).toContain('imposto')
+  })
+
+  it('aceita margem-alvo negativa e recusa 100%', () => {
+    expect(() => calcularSimulacaoML({ ...entradaBase, margemAlvoPct: -10 }, cotacoesBase)).not.toThrow()
+    expect(() => calcularSimulacaoML({ ...entradaBase, margemAlvoPct: 100 }, cotacoesBase)).toThrow(RangeError)
+  })
+
+  it('guarda a margem exata e exibe a arredondada', () => {
+    const entrada: EntradaCalculadoraML = {
+      precoVenda: 30,
+      custoProduto: 20,
+      aliquotaImpostoPct: 0,
+      custosFixos: 0,
+      custosVariaveis: 0,
+      rebate: 0,
+      margemAlvoPct: 0,
+    }
+    const zero = { percentualComissaoPct: 0, taxaFixa: 0, comissaoTotal: 0, frete: 0, proveniencia: 'official' as const }
+    const classico = calcularSimulacaoML(entrada, { classico: zero, premium: zero }).modalidades.classico
+
+    expect(classico?.lucro).toBe(10)
+    expect(classico?.margemPctExata).toBeCloseTo(100 / 3, 6)
+    expect(classico?.margemPct).toBe(33.33)
+  })
+
+  it('sem meta: veredito neutro com margem e lucro atuais, sem citar meta nem decidir Comprar', () => {
+    const lucro = calcularSimulacaoML({ ...entradaBase, margemAlvoPct: 0 }, cotacoesBase, { semMeta: true })
+    expect(lucro.veredito.tipo).toBe('Margem atual')
+    expect(JSON.stringify(lucro.veredito)).not.toMatch(/meta/i)
+    expect(lucro.veredito.fatores.join(' ')).toMatch(/Margem de .*%/)
+    expect(lucro.veredito.fatores.join(' ')).toMatch(/Lucro/)
+
+    const prejuizo = calcularSimulacaoML({ ...entradaBase, precoVenda: 50, margemAlvoPct: 0 }, cotacoesBase, { semMeta: true })
+    expect(prejuizo.veredito.tipo).toBe('Margem atual')
+    expect(prejuizo.veredito.fatores.join(' ')).toMatch(/Prejuízo/)
+
+    // dados faltando continuam dominando
+    expect(calcularSimulacaoML({ ...entradaBase, aliquotaImpostoPct: null }, cotacoesBase, { semMeta: true }).veredito.tipo)
+      .toBe('Dados insuficientes')
+  })
+
+  it('margem exata negativa no prejuízo, sem exceção', () => {
+    const classico = calcularSimulacaoML({ ...entradaBase, precoVenda: 50 }, cotacoesBase).modalidades.classico
+
+    expect(classico?.lucro).toBeLessThan(0)
+    expect(classico?.margemPctExata).toBeLessThan(0)
+  })
+})
+
+describe('calcularSimulacaoML — proveniência com frete desconhecido', () => {
+  const semFrete = (proveniencia: 'partial' | 'estimated'): CotacoesPorModalidade => ({
+    classico: { ...cotacoesBase.classico, frete: null, proveniencia },
+    premium: { ...(cotacoesBase as { premium: typeof cotacoesBase.classico }).premium, frete: null, proveniencia },
+  })
+
+  it('cotação estimated sem frete continua estimated (modalidades null não a rebaixam a partial)', () => {
+    const resultado = calcularSimulacaoML({ ...entradaBase, categoriaId: 'MLB1' }, semFrete('estimated'))
+    expect(resultado.modalidades.classico).toBeNull()
+    expect(resultado.proveniencia).toBe('estimated')
+  })
+
+  it('cotação partial sem frete continua partial', () => {
+    const resultado = calcularSimulacaoML({ ...entradaBase, categoriaId: 'MLB1' }, semFrete('partial'))
+    expect(resultado.proveniencia).toBe('partial')
+  })
+})

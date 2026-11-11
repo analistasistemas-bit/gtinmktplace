@@ -8,6 +8,8 @@ export interface LinhaCentral {
   ml_item_id: string; status: string; titulo: string | null;
   preco_original: number | null; preco_min: number | null; preco_max: number | null; preco_sugerido: number | null; preco_promo: number | null;
   preco_avaliado: number | null; projecao: ProjecaoCor[];
+  /** Relâmpago: participa num horário e tem convite aberto para outro (emenda 2026-11-08 (2)) → aderível. */
+  convite_aberto?: boolean;
 }
 export interface ItemPedido { ml_item_id: string; preco?: number | null; confirmado_risco?: boolean }
 export interface PedidoValidado {
@@ -113,7 +115,7 @@ export async function validarPedido(
       continue;
     }
 
-    if (l.status !== 'candidate') { recusar('O anúncio não está como Convidado nesta promoção'); continue; }
+    if (l.status !== 'candidate' && !(tipo === 'LIGHTNING' && l.convite_aberto)) { recusar('O anúncio não está como Convidado nesta promoção'); continue; }
     let preco: number | null;
     if (tipo === 'DEAL' || tipo === 'LIGHTNING') {
       const p = it.preco;

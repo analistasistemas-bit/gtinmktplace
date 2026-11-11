@@ -289,6 +289,26 @@ export async function preencherAtributosClosedSet(
   return [...baseComObvios, ...preenchidos];
 }
 
+// ADR-0202: atributos de roupa que só a peça mostra (o texto da planilha não traz). Lista fechada:
+// material, composição, temporada etc. ficam fora — a foto não prova. Chamada: ai/atributos-visao.ts.
+export const ATRIBUTOS_VISUAIS = new Set(['SLEEVE_TYPE', 'WEDGE_SHAPE', 'T_SHIRT_COLLAR_TYPE', 'SHIRT_COLLAR', 'WITH_HOOD']);
+
+export function alvosVisuais(alvos: AtributoAlvo[]): AtributoAlvo[] {
+  return alvos.filter((a) => a.tipo === 'closed' && ATRIBUTOS_VISUAIS.has(a.id));
+}
+
+export function montarPromptVisao(alvos: AtributoAlvo[]): string {
+  const blocos = alvos.map((a) => `- ${a.id} (${a.nome}): ${a.valores.map((v) => `${v.id} = ${v.nome}`).join('; ')}`);
+  return [
+    'Você vê a foto de uma peça de roupa à venda. Para cada atributo abaixo, escolha o valor que a PEÇA',
+    'mostra claramente, usando SÓ os ids listados. Se não der para ver ou houver dúvida, omita o atributo.',
+    '',
+    ...blocos,
+    '',
+    'Responda um JSON { "ATRIBUTO_ID": "value_id" } só com os que tiver certeza.',
+  ].join('\n');
+}
+
 /** Prompt: para cada atributo, a lista de valores (closed-set) ou o formato numérico esperado. */
 export function montarPromptAtributos(input: InputAtributos, alvos: AtributoAlvo[]): string {
   const blocos = alvos.map((a) => {

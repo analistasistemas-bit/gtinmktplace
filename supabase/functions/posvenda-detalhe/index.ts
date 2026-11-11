@@ -1,11 +1,13 @@
 // Detalhe de uma reclamação/devolução do ML, relido na hora (ADR-0192). Chamada pelo frontend (JWT).
-// Só lê: nenhuma escrita no ML. A reclamação precisa pertencer à org da sessão (ml_devolucoes.org_id).
+// Nenhuma escrita no ML; só regrava a cópia local ml_devolucoes com o que acabou de ler (a lista não fica velha).
+// A reclamação precisa pertencer à org da sessão (ml_devolucoes.org_id).
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { mapearConexao } from '../_shared/canais/conexao.ts';
 import { lerDetalheReclamacao } from '../_shared/faturamento/posvenda-io.ts';
+import { upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -26,7 +28,7 @@ Deno.serve(async (req) => {
 
   const admin = adminClient();
   // Pertencimento antes de qualquer chamada ao ML.
-  const { data: dev } = await admin.from('ml_devolucoes').select('claim_id')
+  const { data: dev } = await admin.from('ml_devolucoes').select('claim_id, user_id')
     .eq('org_id', orgId).eq('claim_id', claimId).maybeSingle();
   if (!dev) return erro('Reclamação não encontrada.', 404);
 
@@ -41,7 +43,13 @@ Deno.serve(async (req) => {
   catch { return erro('Conta ML não conectada.', 400); }
 
   try {
-    const detalhe = await lerDetalheReclamacao(token, claimId, conexao.contaExternaId);
+    const detalhe = await lerDetalheReclamacao(
+      token, claimId, conexao.contaExternaId,
+      async ({ claim, ret, extras, lidoEm }) => {
+        // RPC tem guarda de versão por lido_em: leitura mais antiga não sobrescreve a mais nova.
+        await upsertDevolucao(admin, dev.user_id, orgId, claim, ret, conexao.contaExternaId, extras, lidoEm);
+      },
+    );
     return json({ ok: true, detalhe });
   } catch (e) {
     return erro((e as Error).message, 502);

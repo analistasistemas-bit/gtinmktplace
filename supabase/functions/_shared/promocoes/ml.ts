@@ -131,8 +131,10 @@ export interface OfertaRelampago { preco_min: number | null; preco_max: number |
 
 /** Visão por item (lista das promoções do anúncio): só ela traz max e sugerido da Relâmpago. */
 export async function lerOfertaRelampago(get: GetJson, promocaoId: string, itemId: string): Promise<OfertaRelampago | null> {
-  const x = lista(await get(`/seller-promotions/items/${encodeURIComponent(itemId)}?app_version=v2`))
-    .find((p) => p.id === promocaoId && p.type === 'LIGHTNING');
+  const da = lista(await get(`/seller-promotions/items/${encodeURIComponent(itemId)}?app_version=v2`))
+    .filter((p) => p.id === promocaoId && p.type === 'LIGHTNING');
+  // Uma oferta por horário: com um horário participando e outro convidado, a faixa é a do convite.
+  const x = da.find((p) => p.status === 'candidate') ?? da[0];
   if (!x) return null;
   return { preco_min: num(x.min_discounted_price), preco_max: num(x.max_discounted_price), preco_sugerido: num(x.suggested_discounted_price) };
 }

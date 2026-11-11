@@ -12,7 +12,8 @@ import { posProcessarDescricao, tamanhosDaGradeCopy } from '../_shared/ai/copywr
 import { ehCorIndefinida } from '../_shared/cor/indefinida.ts';
 import { categoriaAceitaCor, corSemAtributo, removerCorDosSlots, removerCorDaDescricao } from '../_shared/cor/sem-atributo.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
-import { sugerirPrecoVenda, grossUp, freteEstavelGrossUp, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
+import { sugerirPrecoVenda, grossUp, precoProprioEstavel, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
+import { criarTarifaEm } from '../_shared/promocoes/deps.ts';
 import { arredondar5Proximo } from '../_shared/preco/arredondar.ts';
 import { calcularPrecoLiderMaisVendas } from '../_shared/preco/piso-lider.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
@@ -23,7 +24,8 @@ import { decidirRetryPorErro } from '../_shared/publicacao/retry.ts';
 import { buscarListingPrice, buscarComissaoParaPreco, comissaoDe } from '../_shared/ml/listing-prices.ts';
 import { buscarFreteVendedor } from '../_shared/ml/frete.ts';
 import { montarAtributosML, preencherUnitsPerPack, preencherNomeObrigatorio, faltanteKitSemContagem, categoriaParaTipo, type AtributoML } from '../_shared/categoria/atributos.ts';
-import { resolverAtributosGenericos } from '../_shared/categoria/resolver-atributos-genericos.ts';
+import { resolverAtributosGenericos, type AtributoPorFoto } from '../_shared/categoria/resolver-atributos-genericos.ts';
+import { atributosPorVisaoLLM } from '../_shared/ai/atributos-visao.ts';
 import { resolverCategoria, type InputCategoria } from '../_shared/categoria/resolver.ts';
 import { inputCategoriaDaFamilia, categoriaPorCatalogo, categoriaPorBuscaCatalogo } from './categoria-familia.ts';
 import { buscarProdutoCatalogoPorGtin, buscarCategoriaFicha, buscarFichasCatalogoPorTexto } from '../_shared/ml/catalogo.ts';
@@ -331,7 +333,10 @@ Deno.serve(async (req) => {
 
     let atributosMl: AtributoML[] = [];
     let faltantes: string[] = [];
+    // ADR-0202: undefined = preserva a coluna (edição do operador); null = limpa; lista = pela foto.
+    let atributosPorFoto: AtributoPorFoto[] | null | undefined = null;
     if (claimed.atributos_editados_pelo_operador && categoriaMlId === claimed.categoria_ml_id) {
+      atributosPorFoto = undefined;
       // Camada 2B (ADR-0052): o operador completou atributos manualmente na Revisão. Preserva a
       // edição contra o reprocessamento (espelha título/descrição) — SÓ se a categoria não mudou;
       // se o preditor recalcular outra categoria, a edição é de outro schema → deixa recalcular.
@@ -371,11 +376,20 @@ Deno.serve(async (req) => {
             return lerSchemaAtributos(token, id);
           },
           llm: (input, alvos) => desempatarAtributosLLM(input, alvos, modeloTexto, acumularDesempate),
+          // ADR-0202: atributo visual (ex.: Tipo de manga) pela foto da 1ª variação com imagem.
+          visao: async (alvos) => {
+            const comFoto = resolvidas.find((v) => v.imagem_path && !v.excluida_da_publicacao);
+            if (!comFoto?.imagem_path) return {};
+            const { data: signed } = await admin.storage.from('imagens').createSignedUrl(comFoto.imagem_path, 3600);
+            if (!signed?.signedUrl) return {};
+            return atributosPorVisaoLLM(signed.signedUrl, alvos, acumularDesempate);
+          },
         },
         marcaPadrao,
       );
       atributosMl = r.atributosMl;
       faltantes = r.faltantes;
+      atributosPorFoto = r.porFoto.length ? r.porFoto : null;
     }
     // ADR-0188: a marca do produto vale também para o ramo de atributos editados pelo operador.
     atributosMl = forcarMarcaDoProduto(atributosMl, claimed.marca as string | null);
@@ -486,16 +500,20 @@ Deno.serve(async (req) => {
     const maiorCustoFamilia = resolvidas.length ? Math.max(...resolvidas.map((v) => Number(v.custo))) : 0;
     const reancora = { ativa: reancoraAtiva, precoAncoraLider, custo: maiorCustoFamilia, comissao };
 
-    // ADR-0076: no ramo próprio, o frete entra no gross-up POR VARIAÇÃO e é iterado até o preço
-    // estabilizar — o frete grátis do vendedor salta ao cruzar faixas do ML (~R$79), e o frete
-    // família (avaliado no preço da cor mais barata) subestimava cores de piso alto (foi o que
-    // deixou a Laranja 🟡 sem concorrência). Memoiza por (piso, dimensões): cores de mesmo
-    // piso/embalagem (ex.: split ADR-0048) iteram uma vez só. Competitivo/fallback: frete família.
-    const freteMemo = new Map<string, Promise<number>>();
-    const freteDaVariacao = (v: typeof resolvidas[number]): Promise<number> => {
-      if (competitivo || !comissao || !token || !conexao?.contaExternaId || !categoriaMlId) {
-        return Promise.resolve(frete);
-      }
+    // ADR-0076 + emenda 2026-11-09: no ramo próprio, comissão E frete são lidos no preço candidato,
+    // POR VARIAÇÃO, até o preço estabilizar. O frete grátis salta ao cruzar faixas do ML (~R$79)
+    // (Laranja 🟡) e a comissão % muda com o preço em algumas categorias (MLB277368: 12% a R$20,
+    // 11% acima de ~R$100 → franja Avil saía R$231,60 em vez de R$228,45). `criarTarifaEm` traz
+    // cache Redis por preço, disjuntor no 429 e recusa tarifa estimada (frete 0 de erro ≠ frete
+    // real). Uma instância por família: o disjuntor vale para todas as cores. Memoiza por (piso,
+    // dimensões): cores de mesmo piso/embalagem (ex.: split ADR-0048) iteram uma vez só.
+    // Competitivo / sem conta ML: comissão@R$20 + frete família, como antes.
+    const tarifaEm = token && conexao?.contaExternaId
+      ? criarTarifaEm({ orgId, mlUserId: conexao.contaExternaId, token })
+      : null;
+    const precoMemo = new Map<string, Promise<number | null>>();
+    const precoProprioDaVariacao = (v: typeof resolvidas[number]): Promise<number | null> | null => {
+      if (competitivo || !comissao || !tarifaEm || !categoriaMlId) return null;
       const dimV = {
         altura_cm: v.altura_cm != null ? Number(v.altura_cm) : null,
         largura_cm: v.largura_cm != null ? Number(v.largura_cm) : null,
@@ -503,29 +521,47 @@ Deno.serve(async (req) => {
         peso_gramas: v.peso_gramas != null ? Number(v.peso_gramas) : null,
       };
       const key = `${Number(v.preco)}:${dimV.altura_cm}x${dimV.largura_cm}x${dimV.comprimento_cm}x${dimV.peso_gramas}`;
-      let p = freteMemo.get(key);
+      let p = precoMemo.get(key);
       if (!p) {
-        const conta = conexao.contaExternaId;
         const com = comissao;
-        // Resiliente: qualquer falha de ML na iteração → frete família já buscado (ADR-0050).
-        p = freteEstavelGrossUp(
-          Number(v.preco), com.percentual, com.fixa, aliquotaPct,
-          (preco) => buscarFreteVendedor(token, conta, preco, categoriaMlId, dimV),
-        ).catch(() => frete);
-        freteMemo.set(key, p);
+        const categoria = categoriaMlId;
+        p = precoProprioEstavel(
+          Number(v.preco), aliquotaPct, com,
+          (preco) => tarifaEm({ preco, categoria, listingType: 'gold_special', dim: dimV }),
+        ).catch((e) => {
+          // ML indisponível sem nenhum preço verificado: cálculo antigo (ADR-0050), não trava o lote.
+          console.error('tarifa no preço candidato falhou; comissão@R$20 + frete família:', e);
+          return grossUp(Number(v.preco), com.percentual, com.fixa, frete, aliquotaPct);
+        });
+        precoMemo.set(key, p);
       }
       return p;
     };
 
+    const semPrecoVerificado: string[] = [];
     await Promise.all(
       resolvidas
         .filter((v) => !v.preco_editado_pelo_operador)
         .map(async (v) => {
-          const freteV = await freteDaVariacao(v);
-          const { preco } = sugerirPrecoVenda(Number(v.preco), conc, comissao, freteV, aliquotaPct, descontoConcorrenciaPct, reancora);
-          await admin.from('variacoes').update({ preco_publicacao: preco }).eq('id', v.id);
+          const proprio = precoProprioDaVariacao(v);
+          const preco = proprio
+            ? await proprio
+            : sugerirPrecoVenda(Number(v.preco), conc, comissao, frete, aliquotaPct, descontoConcorrenciaPct, reancora).preco;
+          if (preco == null) semPrecoVerificado.push(v.codigo);
+          const { error: precoErr } = await admin.from('variacoes').update({ preco_publicacao: preco }).eq('id', v.id);
+          if (precoErr) throw new Error(`gravar preco_publicacao: ${precoErr.message}`);
         }),
     );
+    if (semPrecoVerificado.length) {
+      // Nenhum preço conferido na tarifa dele cobre o piso (tarifa não estabilizou): sem preço o
+      // gate "sem preço de publicação" trava — nunca publica abaixo do mínimo (emenda ADR-0020).
+      const err = new Error(
+        `Preço não estabilizou na tarifa do Mercado Livre (${semPrecoVerificado.join(', ')}) — o preço não foi calculado para não vender abaixo do seu mínimo. Reprocesse a família.`,
+      ) as Error & { status?: number; retentavel?: boolean };
+      err.status = 422;
+      err.retentavel = false;
+      throw err;
+    }
 
     const estrategiaFamilia = sugerirPrecoVenda(precoMinFamilia, conc, comissao, frete, aliquotaPct, descontoConcorrenciaPct, reancora);
 
@@ -641,6 +677,7 @@ Deno.serve(async (req) => {
       categoria_nome: categoriaNome,
       atributos_ml: atributosMl,
       atributos_faltantes: faltantes,
+      ...(atributosPorFoto !== undefined ? { atributos_por_foto: atributosPorFoto } : {}),
       analise_mercado: analiseMercado,
       status: 'pronto',
     }).eq('id', job.familia_id);

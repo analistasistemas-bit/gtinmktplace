@@ -307,14 +307,20 @@ export type FamiliaResumo = {
 
 type FamiliaResumoRow = Pick<FamiliaRow, 'id' | 'codigo_pai' | 'titulo_ml' | 'nome_pai' | 'status' | 'erro_mensagem' | 'ml_permalink'>;
 
-export function familiaResumoFromRow(r: FamiliaResumoRow, anuncios: AnuncioExternoLite[]): FamiliaResumo {
+export function familiaResumoFromRow(
+  r: FamiliaResumoRow,
+  anuncios: AnuncioExternoLite[],
+  itensUp?: { sku: string; userProductId: string | null }[],
+  estoquePorSku: Map<string, number> = new Map(),
+): FamiliaResumo {
   return {
     id: r.id,
     codigoPai: r.codigo_pai,
     titulo: r.titulo_ml ?? r.nome_pai,
     status: r.status as FamiliaStatus,
     erroMensagem: r.erro_mensagem,
-    mlPermalink: r.ml_permalink,
+    // Família UP: página /up/ (todas as cores/tamanhos), igual a Publicados; Legacy segue o permalink.
+    mlPermalink: linkPaginaUP(itensUp, estoquePorSku) ?? r.ml_permalink,
     anuncios: [...anuncios].sort((a, b) => a.particao - b.particao)
       .map((a) => ({ particao: a.particao, permalink: a.permalink, titulo: a.titulo })),
   };
@@ -328,8 +334,28 @@ export async function fetchFamiliasResumo(loteId: string): Promise<FamiliaResumo
     .order('codigo_pai');
   if (error) throw error;
   const rows = (data ?? []) as FamiliaResumoRow[];
-  const porCodigo = await fetchAnunciosPorCodigoPai([...new Set(rows.map((r) => r.codigo_pai))]);
-  return rows.map((r) => familiaResumoFromRow(r, porCodigo.get(r.codigo_pai) ?? []));
+  const publicadas = rows.filter((r) => r.status === 'publicado');
+  // Itens UP + estoque só das publicadas (é o que tem link); tela faz poll de 2,5s.
+  const codigosPublicados = [...new Set(publicadas.map((r) => r.codigo_pai))];
+  const [porCodigo, itensUp, familiasEstoque] = await Promise.all([
+    fetchAnunciosPorCodigoPai([...new Set(rows.map((r) => r.codigo_pai))]),
+    fetchItensAtivosUP(codigosPublicados),
+    // Estoque vigente = família mais recente do produto (criado_em desc), como em Publicados:
+    // o saldo deste lote fica defasado depois de outro lote/venda (revisão Grok).
+    codigosPublicados.length === 0 ? [] : buscarTodasPaginas<{
+      codigo_pai: string; variacoes: { codigo: string; estoque: number | null }[] | null;
+    }>((de, ate) => supabase.from('familias').select('codigo_pai, variacoes(codigo, estoque)')
+      .in('codigo_pai', codigosPublicados).order('criado_em', { ascending: false }).order('id').range(de, ate)),
+  ]);
+  const estoqueVigente = new Map<string, Map<string, number>>();
+  for (const f of familiasEstoque) {
+    const porSku = estoqueVigente.get(f.codigo_pai) ?? new Map<string, number>();
+    for (const v of f.variacoes ?? []) if (!porSku.has(v.codigo)) porSku.set(v.codigo, v.estoque ?? 0);
+    estoqueVigente.set(f.codigo_pai, porSku);
+  }
+  return rows.map((r) => familiaResumoFromRow(
+    r, porCodigo.get(r.codigo_pai) ?? [], itensUp.get(r.codigo_pai), estoqueVigente.get(r.codigo_pai),
+  ));
 }
 
 /** Custo mais recente de cada SKU (`recentes` da linha mais nova para a mais antiga). Só o custo muda: a família
@@ -669,6 +695,7 @@ export function familiaFromRow(
     origem: r.origem,
     atributosFaltantes: (r.atributos_faltantes as string[] | null) ?? null,
     atributosMl: (r.atributos_ml as AtributoMl[] | null) ?? [],
+    atributosPorFoto: (r.atributos_por_foto as Familia['atributosPorFoto'] | null) ?? undefined,
     precoMin,
     precoMax,
     precoAbaixo20pc,

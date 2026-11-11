@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-11-08
+atualizado: 2026-11-09
 ---
 
 # Changelog
@@ -8,6 +8,11 @@ atualizado: 2026-11-08
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-11-09
+
+- **CREATE com preços divergentes em categoria User Products vai pela saga** (emenda [[0160-preco-por-variacao-sob-user-products|ADR-0160]], dívida nº 9 resolvida): família nova com cores a preços diferentes em categoria UP caía no split e parava em "exige item plano (User Products)". Agora `publicar-familias` lê o cache `ml_formato_publicacao` no CREATE, e `publicar-split-ml` tenta primeiro a faixa com ≥2 cores; `FORMATO_INCOMPATIVEL` semeia o cache e reenfileira no `publish`, sem retry. Estado misto e >100 cores viram erro explícito. Validado em produção: família de 8 cores em 3 preços publicada como 8 itens UP. Em produção desde 2026-11-09 (main `6ef99950`; `publicar-familias` v65, `publicar-split-ml` v140).
+- **Adesão com 400 SIBLING não vira erro** (emenda [[0174-operacoes-em-massa-promocoes-v2|ADR-0174]]): na Black Friday da AVIL, 30 de 32 adesões deram "Erro", mas 28 já estavam na campanha — o ML propagou a oferta do pai legado às cópias de catálogo. O executor relê o ML: "Já estava" ou "Bloqueado"; falha na releitura segue "Erro". Em produção desde 2026-11-09 (main `d904c872`; `operacoes-massa` v51).
 
 ## 2026-11-08
 

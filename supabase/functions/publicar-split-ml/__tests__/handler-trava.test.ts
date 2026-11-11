@@ -13,6 +13,7 @@ const f = vi.hoisted(() => ({
   reserva: { tipo: 'livre', dono: 'dono-split', posseAdiada: null } as Record<string, unknown>,
   reservar: vi.fn(),
   acordar: vi.fn(async () => {}),
+  criarFormatoUp: false,
 }));
 
 function builder(tabela: string) {
@@ -50,6 +51,12 @@ vi.mock('../../_shared/queue.ts', () => ({
   enfileirarSincronizacaoFiscal: vi.fn(async () => {}),
   enfileirarConfirmacao: vi.fn(async () => {}),
   enfileirarJobPublicacaoML: vi.fn(async () => 'm'),
+  enfileirarPublicacoes: vi.fn(async () => ['m']),
+}));
+vi.mock('../../_shared/ml/formato-publicacao.ts', () => ({
+  formatoRepoSupabase: () => ({}),
+  lerFormatoPublicacao: async () => 'desconhecido',
+  confirmarFormatoPublicacao: async () => {},
 }));
 vi.mock('../../_shared/ml/trava-item.ts', async (original) => {
   const real = await original<typeof import('../../_shared/ml/trava-item')>();
@@ -71,7 +78,13 @@ vi.mock('../../_shared/canais/registry.ts', () => ({
     garantirDescricao: async () => {},
     subirFoto: async () => { f.eventos.push('subirFoto'); return 'FOTO'; },
     lerStatus: async () => { f.eventos.push('lerStatus'); return {}; },
-    criarAnuncio: async () => { f.eventos.push('criar'); return { ok: true, valor: { itemExternoId: 'MLBN', variacoesExternas: {} } }; },
+    criarAnuncio: async () => {
+      f.eventos.push('criar');
+      if (f.criarFormatoUp) {
+        return { ok: false, erro: { codigo: 'FORMATO_INCOMPATIVEL', mensagemOperador: 'item plano', retentavel: false } };
+      }
+      return { ok: true, valor: { itemExternoId: 'MLBN', variacoesExternas: {} } };
+    },
     atualizarAnuncio: async (_c: unknown, a: { itemExternoId: string; antesDoPut?: () => Promise<boolean> }) => {
       f.eventos.push(`GET:${a.itemExternoId}`);
       if (a.antesDoPut && !(await a.antesDoPut())) return { ok: false, erro: { codigo: 'DESCONHECIDO', mensagemOperador: 'x', retentavel: false, status: 409 } };
@@ -80,6 +93,8 @@ vi.mock('../../_shared/canais/registry.ts', () => ({
     },
   }),
 }));
+
+import { enfileirarPublicacoes } from '../../_shared/queue.ts';
 
 let handler: (req: Request) => Promise<Response>;
 beforeAll(async () => {
@@ -107,6 +122,8 @@ beforeEach(() => {
   f.reservar.mockImplementation(async () => f.reserva);
   f.reserva = { tipo: 'livre', dono: 'dono-split', posseAdiada: null };
   f.acordar.mockClear();
+  f.criarFormatoUp = false;
+  vi.mocked(enfileirarPublicacoes).mockClear();
 });
 
 const rodar = async (job: Linha = {}) => handler(new Request('http://localhost', {
@@ -151,5 +168,35 @@ describe('publicar-split-ml — trava de escrita (ADR-0201)', () => {
     expect(f.acordar).toHaveBeenCalledWith(expect.anything(), 'ad1', expect.objectContaining({ base: 'http://localhost' }));
     expect(f.reservar).not.toHaveBeenCalled();
     expect(f.eventos).toEqual([]);
+  });
+
+  // ADR-0160 × ADR-0201 (merge 11/11): o catch solta a trava antes de qualquer saída, inclusive o reroteamento UP.
+  it('FORMATO_INCOMPATIVEL com trava adquirida e antes de qualquer PUT → solta a trava; não reroteia (parte no ar)', async () => {
+    f.familia = { ...f.familia, ml_item_id: null };
+    // Partição 0 ancorada mas ainda sem item (CREATE) vem antes da 1, já no ar: o POST falha antes de qualquer PUT.
+    f.linhas = [
+      { particao: 0, item_externo_id: null, variacoes_externas: { A: {}, A2: {} }, titulo: 'T' },
+      { particao: 1, item_externo_id: 'MLB1', variacoes_externas: { B: {} }, titulo: 'T2' },
+    ];
+    f.variacoes = [cor('A', 'Azul', 10, { ml_variation_id: null }), cor('A2', 'Bege', 10, { ml_variation_id: null }), cor('B', 'Rosa', 20)];
+    f.criarFormatoUp = true;
+    const r = await rodar();
+    expect(r.status).toBe(200);
+    expect(f.reservar).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ itens: ['MLB1'] }));
+    expect(f.eventos).toEqual(['criar', 'soltar']);
+    expect(enfileirarPublicacoes).not.toHaveBeenCalled();
+    expect(f.updatesFamilia.find((u) => u.status === 'erro')?.erro_mensagem).toMatch(/anúncio antigo/);
+  });
+
+  it('FORMATO_INCOMPATIVEL sem nada no ar → reroteia ao publish sem reservar trava (nada a travar)', async () => {
+    f.familia = { ...f.familia, ml_item_id: null };
+    f.linhas = [];
+    f.variacoes = [cor('A', 'Azul', 10, { ml_variation_id: null }), cor('A2', 'Bege', 10, { ml_variation_id: null })];
+    f.criarFormatoUp = true;
+    const r = await rodar();
+    expect(await r.json()).toEqual({ ok: true, reroteado: 'publish' });
+    expect(f.reservar).not.toHaveBeenCalled();
+    expect(f.eventos).toEqual(['criar']);
+    expect(enfileirarPublicacoes).toHaveBeenCalledWith([expect.objectContaining({ alvo: 'publish' })], 'user-1');
   });
 });

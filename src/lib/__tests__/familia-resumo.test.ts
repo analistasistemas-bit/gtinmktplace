@@ -53,4 +53,20 @@ describe('familiaResumoFromRow', () => {
     const r = familiaResumoFromRow(baseRow, []);
     expect(r.anuncios).toEqual([]);
   });
+
+  // Família User Products: o link abre a página /up/ (todas as cores/tamanhos), não o permalink de 1 SKU.
+  it('UP: mlPermalink vira a página /up/ do 1º SKU com estoque', () => {
+    const itens = [
+      { sku: '00000227', itemId: 'MLB2', userProductId: 'MLBU2' },
+      { sku: '00000226', itemId: 'MLB1', userProductId: 'MLBU1' },
+    ];
+    expect(familiaResumoFromRow(baseRow, [], itens, new Map([['00000226', 2]])).mlPermalink)
+      .toBe('https://www.mercadolivre.com.br/up/MLBU1');
+    expect(familiaResumoFromRow(baseRow, [], itens, new Map([['00000226', 0], ['00000227', 3]])).mlPermalink)
+      .toBe('https://www.mercadolivre.com.br/up/MLBU2');
+  });
+
+  it('Legacy (sem itens UP): mantém ml_permalink', () => {
+    expect(familiaResumoFromRow(baseRow, [], [], new Map()).mlPermalink).toBe('https://ml/anuncio');
+  });
 });

@@ -106,7 +106,9 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
     setConfirmadoRisco(false);
     // Achado Codex P2 (alterar preço): preço inicial sem cálculo válido (Reverter, simulação parcial) já abre
     // calculando no servidor — nunca mostra o lucro de outro preço.
-    if (podeEditarPreco) void calcularExato(novas.filter((l) => l.marcado));
+    // Convite de outro horário (Relâmpago): a projeção gravada é do preço participando → calcula no servidor também.
+    const convites = new Set(itens.filter((i) => i.convite_aberto).map((i) => i.ml_item_id));
+    if (podeEditarPreco) void calcularExato(novas.filter((l) => l.marcado || convites.has(l.ml_item_id)));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- recomeça só quando o preview muda (podeEditarPreco deriva de acao/tipo)
   }, [aberto, acao, tipo, itens, naoRevertiveis, simulados]);
 
@@ -129,6 +131,11 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
   const precoInvalido = (l: LinhaEditavel) => abaixoDoPiso(l) || semPrecoOfertaFixa(l) || podeEditarPreco && (l.preco == null || l.preco <= 0 || semFaixa(l) || acimaDoOriginal(l) || (l.min != null && l.max != null && (l.preco < l.min || l.preco > l.max)));
   const podeEnviar = marcadas.length > 0 && !marcadas.some(precoInvalido) && (!temRisco || confirmadoRisco);
 
+  const selecionaveis = linhas.filter((l) => !l.motivoBloqueio);
+  const todosMarcados = selecionaveis.length > 0 && selecionaveis.every((l) => l.marcado);
+  function marcarTodos(marcado: boolean) {
+    setLinhas((prev) => prev.map((l) => (l.motivoBloqueio ? l : { ...l, marcado })));
+  }
   function alternarMarcado(id: string) {
     setLinhas((prev) => prev.map((l) => (l.ml_item_id === id ? { ...l, marcado: !l.marcado } : l)));
   }
@@ -281,6 +288,12 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
                 </span>
               </div>
             )}
+          </div>
+        )}
+        {selecionaveis.length > 1 && (
+          <div className="flex items-center gap-3 border-b px-4 py-2 text-sm">
+            <Checkbox id="selecionar-todos" aria-label="Selecionar todos" checked={todosMarcados} onCheckedChange={(v) => marcarTodos(!!v)} />
+            <label htmlFor="selecionar-todos">Selecionar todos</label>
           </div>
         )}
         <ul className="flex flex-1 flex-col divide-y divide-border overflow-y-auto px-4">

@@ -51,6 +51,14 @@ export function semaforoNoPreco(projecao: CorProjetada[], preco: number | null):
   }));
 }
 
+/** Avaliado no piso: `preco_avaliado`, salvo no convite de outro horário da Relâmpago, em que ele é o preço
+ *  participando — aí o piso sai da faixa do convite (R$ 19 ou o mínimo, se couber). */
+function pisoAvaliado(it: ItemPromocao): number | null {
+  if (!it.convite_aberto) return it.preco_avaliado;
+  const p = Math.max(PRECO_MIN_PROMOCAO, it.preco_min ?? 0);
+  return it.preco_max != null && p <= it.preco_max ? p : it.preco_sugerido;
+}
+
 /** Preview do pedido: aderir usa o preço sugerido (DEAL) ou o preço da oferta (SMART) e só marca o verde;
  *  sair usa o preço no ar e marca tudo — o cálculo do front é só orientação, o backend revalida.
  *  `simulados` (emenda 2026-11-03): preço escolhido na simulação — os itens chegam com a projeção do servidor
@@ -64,7 +72,7 @@ export function montarPreview(acao: AcaoPromocao, tipo: TipoPromocaoOperavel, it
       : acao === 'alterar_preco' ? it.preco_promo ?? it.preco_avaliado
       : tipo === 'DEAL' || tipo === 'LIGHTNING'
         // Sugerido abaixo do piso: o servidor já avaliou no menor preço permitido (R$ 19 ou o mínimo da faixa).
-        ? ((it.preco_sugerido ?? it.preco_promo ?? PRECO_MIN_PROMOCAO) < PRECO_MIN_PROMOCAO ? it.preco_avaliado : it.preco_sugerido)
+        ? ((it.preco_sugerido ?? it.preco_promo ?? PRECO_MIN_PROMOCAO) < PRECO_MIN_PROMOCAO ? pisoAvaliado(it) : it.preco_sugerido)
         : it.preco_promo;
     const preco = comSimulacao ? simulados.get(it.ml_item_id) ?? padrao : padrao;
     const semaforo = semaforoNoPreco(it.projecao, preco);

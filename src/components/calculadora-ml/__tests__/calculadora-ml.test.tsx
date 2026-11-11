@@ -1,19 +1,21 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { useCalculadoraML } from '@/hooks/useCalculadoraML'
-import type { Tarifa } from '@/lib/tarifa'
+
+vi.mock('@/components/tabela-frete-viabilidade', () => ({ TabelaFreteViabilidade: (p: { categoriaMlId: string; contexto?: string }) => <div data-testid="tabela-frete" data-contexto={p.contexto} data-categoria={p.categoriaMlId} /> }))
 
 const atualizarEntrada = vi.fn()
 const atualizarTaxasManuais = vi.fn()
 const selecionarProduto = vi.fn()
-const validarNaApi = vi.fn()
+const editarMargem = vi.fn()
+const editarPreco = vi.fn()
 const refetchCategorias = vi.fn()
 
 type HookState = ReturnType<typeof useCalculadoraML>
-type EstadoCalculadoraMock = Omit<HookState, 'produtos' | 'cotacaoMeta'> & {
+type EstadoCalculadoraMock = Omit<HookState, 'produtos'> & {
   produtos: Pick<HookState['produtos'], 'data' | 'isLoading' | 'isError' | 'refetch'>
-  cotacaoMeta: Tarifa | null
 }
 
 const produtosData: NonNullable<HookState['produtos']['data']> = {
@@ -38,6 +40,7 @@ const estadoBase = {
   taxasManuais: { percentualComissaoPct: 12, taxaFixa: 5, frete: 10, freteRealmenteZero: false },
   atualizarTaxasManuais,
   produtoSelecionado: null,
+  carregandoProduto: false,
   selecionarProduto,
   produtos: { data: produtosData, isLoading: false, isError: false, refetch: vi.fn() },
   cotacao: { origem: 'manual' as const, classico: { percentualComissaoPct: 12, taxaFixa: 5, comissaoTotal: 17, frete: 10, proveniencia: 'estimated' as const } },
@@ -52,6 +55,7 @@ const estadoBase = {
         custos: { custoProduto: 50, comissao: 17, frete: 10, imposto: 0, custosFixos: 0, custosVariaveis: 0, rebate: 0, total: 77 },
         lucro: 23,
         margemPct: 23,
+        margemPctExata: 23,
         precoEquilibrio: { valor: 87.5, proveniencia: 'estimated' as const, ehProjecao: true as const },
         precoAlvo: { valor: 100, proveniencia: 'estimated' as const, ehProjecao: true as const },
         custoMaximoCompra: 61,
@@ -66,6 +70,7 @@ const estadoBase = {
         custos: { custoProduto: 50, comissao: 22, frete: 10, imposto: 0, custosFixos: 0, custosVariaveis: 0, rebate: 0, total: 82 },
         lucro: 18,
         margemPct: 18,
+        margemPctExata: 18,
         precoEquilibrio: { valor: 87.5, proveniencia: 'estimated' as const, ehProjecao: true as const },
         precoAlvo: { valor: 100, proveniencia: 'estimated' as const, ehProjecao: true as const },
         custoMaximoCompra: 56,
@@ -78,25 +83,128 @@ const estadoBase = {
     },
     veredito: { tipo: 'Comprar' as const, fatores: ['Margem atual de 23% atinge a meta de 12%.', 'Lucro estimado de R$ 23,00 por unidade.'] },
   },
-  validarNaApi,
-  cotacaoMeta: null,
-  validacaoMeta: null,
-  erroMeta: null,
+  editarPreco,
+  editarMargem,
+  cotarEm: vi.fn(),
+  metaSolicitada: 12 as number | null,
+  metaStatus: null,
+  ultimoEditado: 'preco' as const,
+  margemEfetiva: 23,
+  margemExibida: 23,
+  modalidadeAtiva: 'classico' as const,
+  modalidadeDoAnuncio: null,
+  setModalidadeAtiva: vi.fn(),
+  avisosProduto: [],
+  categoriaNome: null,
+  variacaoUsada: null,
+  anuncio: null,
 }
 
 let estado: EstadoCalculadoraMock = estadoBase
-vi.mock('@/hooks/useCalculadoraML', () => ({ useCalculadoraML: () => estado }))
+// A modalidade ativa vive no hook (Task 4): o mock guarda estado para a troca re-renderizar.
+vi.mock('@/hooks/useCalculadoraML', () => ({
+  useCalculadoraML: () => {
+    const [modalidadeAtiva, setModalidadeAtiva] = useState(estado.modalidadeAtiva)
+    return { ...estado, modalidadeAtiva, setModalidadeAtiva }
+  },
+}))
 vi.mock('@/hooks/useCategoriasML', () => ({ useCategoriasML: () => categoriasState }))
+const { useKitsMock } = vi.hoisted(() => ({ useKitsMock: vi.fn(() => []) }))
+vi.mock('@/hooks/useKitsCalculadora', () => ({ useKitsCalculadora: useKitsMock }))
 
 import { CalculadoraML } from '../calculadora-ml'
 import { BuscaCategoriaML } from '../busca-categoria-ml'
-import { FormularioCalculadoraML } from '../formulario-calculadora-ml'
+import { FormularioCalculadoraML, parseNumeroBR } from '../formulario-calculadora-ml'
+
+const propsForm = () => ({
+  entrada: estadoBase.entrada as HookState['entrada'],
+  taxas: estadoBase.taxasManuais,
+  produtos: [],
+  produtoSelecionado: null,
+  produtosCarregando: false,
+  onEntrada: vi.fn(),
+  onTaxas: vi.fn(),
+  onProduto: vi.fn(),
+  onPreco: vi.fn(),
+  onMargem: vi.fn(),
+  margemExibida: 23 as number | null,
+  metaStatus: null as HookState['metaStatus'],
+  metaSolicitada: null as number | null,
+  modalidade: 'classico' as const,
+  onModalidade: vi.fn(),
+})
+
+describe('parseNumeroBR', () => {
+  it.each([
+    ['12,5', 12.5], ['1.234,56', 1234.56], ['R$ 3,04', 3.04], ['-5', -5], ['12.5', 12.5],
+    ['0.130', 0.13], ['1.234', 1.234], ['1.234.567', 1234567], ['', null], ['abc', null], ['-', null], ['1,2,3', null],
+  ])('%j → %j', (texto, esperado) => {
+    expect(parseNumeroBR(texto)).toBe(esperado)
+  })
+})
 
 describe('Calculadora ML', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     estado = estadoBase
     categoriasState = { data: [], isLoading: false, isError: false, refetch: refetchCategorias }
+  })
+
+  it('quadro de kits usa a margem efetiva (nunca a meta não confirmada) e aguarda cotação/solver', () => {
+    estado = { ...estadoBase, metaSolicitada: 50, metaStatus: 'nao_confirmada', margemEfetiva: 23, statusCotacao: 'loading' }
+    render(<CalculadoraML />)
+    expect(screen.getByRole('heading', { name: /kits com a mesma margem/i })).toBeInTheDocument()
+    expect(useKitsMock).toHaveBeenLastCalledWith(expect.objectContaining({
+      margemPct: 23,
+      modalidade: 'classico',
+      aguardando: true,
+      cotarEm: estadoBase.cotarEm,
+      resultadoUnidade: estadoBase.resultado.modalidades.classico,
+    }))
+  })
+
+  it('sem categoria: frase no lugar da tabela de frete', () => {
+    render(<CalculadoraML />)
+
+    expect(screen.getByText('Informe a categoria para ver a tabela de frete do Mercado Livre.')).toBeInTheDocument()
+    expect(screen.queryByTestId('tabela-frete')).toBeNull()
+  })
+
+  it('com categoria: tabela de frete no contexto da calculadora', () => {
+    estado = { ...estadoBase, entrada: { ...estadoBase.entrada, categoriaId: 'MLB1' } }
+    render(<CalculadoraML />)
+
+    const tabela = screen.getByTestId('tabela-frete')
+    expect(tabela).toHaveAttribute('data-contexto', 'calculadora')
+    expect(tabela).toHaveAttribute('data-categoria', 'MLB1')
+    expect(screen.queryByText(/Informe a categoria para ver a tabela/)).toBeNull()
+  })
+
+  it('tabela de frete só busca depois da cotação principal (evita rajada que faz o ML devolver 429)', () => {
+    estado = { ...estadoBase, statusCotacao: 'loading', entrada: { ...estadoBase.entrada, categoriaId: 'MLB1' } }
+    const { rerender } = render(<CalculadoraML />)
+    expect(screen.queryByTestId('tabela-frete')).toBeNull()
+    expect(screen.getByText('A tabela de frete carrega depois da cotação.')).toBeInTheDocument()
+
+    estado = { ...estado, statusCotacao: 'official' }
+    rerender(<CalculadoraML />)
+    expect(screen.getByTestId('tabela-frete')).toBeInTheDocument()
+
+    // Nova cotação (ex.: editou o preço) não desmonta a tabela já liberada para a categoria.
+    estado = { ...estado, statusCotacao: 'loading' }
+    rerender(<CalculadoraML />)
+    expect(screen.getByTestId('tabela-frete')).toBeInTheDocument()
+  })
+
+  it('categoria sem preço (idle): tabela fica no aviso até haver cotação', () => {
+    estado = { ...estadoBase, statusCotacao: 'idle', entrada: { ...estadoBase.entrada, precoVenda: 0, categoriaId: 'MLB1' } }
+    const { rerender } = render(<CalculadoraML />)
+    expect(screen.queryByTestId('tabela-frete')).toBeNull()
+    expect(screen.getByText('A tabela de frete carrega depois da cotação.')).toBeInTheDocument()
+
+    estado = { ...estado, statusCotacao: 'estimated' }
+    rerender(<CalculadoraML />)
+    expect(screen.getByTestId('tabela-frete')).toBeInTheDocument()
   })
 
   it('mantém aviso acionável quando a categoria está vazia', () => {
@@ -121,21 +229,19 @@ describe('Calculadora ML', () => {
     const user = userEvent.setup()
     render(<CalculadoraML />)
 
-    expect(screen.getByText(/preço de venda -5%/i)).toBeInTheDocument()
+    expect(screen.getByText(/se o preço de venda cair 5%/i)).toBeInTheDocument()
     expect(screen.getByText(/3,93/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /ver premium/i }))
     expect(screen.getByText(/3,68/)).toBeInTheDocument()
   })
 
-  it('expõe proveniência, veredito explicado e validação do preço projetado', async () => {
-    const user = userEvent.setup()
+  it('expõe proveniência e veredito explicado, sem botão de validar preço projetado', () => {
     render(<CalculadoraML />)
 
     expect(screen.getByText(/taxas manuais estimadas/i)).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /comprar/i })).toBeInTheDocument()
     expect(screen.getByText(/margem atual de 23%/i)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /validar preço projetado/i }))
-    expect(validarNaApi).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('button', { name: /validar preço projetado/i })).toBeNull()
   })
 
   it('renderiza estados de carregamento e erro da busca de categoria', () => {
@@ -145,23 +251,12 @@ describe('Calculadora ML', () => {
   })
 
   it('mantém dimensões parciais como rascunho sem enviar zeros ao motor', () => {
-    const onEntrada = vi.fn()
-    const entrada = { ...estadoBase.entrada }
-    const props = {
-      entrada,
-      taxas: estadoBase.taxasManuais,
-      produtos: [],
-      produtoSelecionado: null,
-      produtosCarregando: false,
-      onEntrada,
-      onTaxas: vi.fn(),
-      onProduto: vi.fn(),
-    }
+    const props = propsForm()
     render(<FormularioCalculadoraML {...props} />)
 
     fireEvent.change(screen.getByLabelText('Altura (cm)'), { target: { value: '10' } })
-    expect(onEntrada).not.toHaveBeenCalledWith(expect.objectContaining({ dimensoes: expect.anything() }))
-    expect(screen.getByLabelText('Altura (cm)')).toHaveValue(10)
+    expect(props.onEntrada).not.toHaveBeenCalledWith(expect.objectContaining({ dimensoes: expect.anything() }))
+    expect(screen.getByLabelText('Altura (cm)')).toHaveValue('10')
   })
 
   it('oferece retry real quando a busca de categoria falha', async () => {
@@ -174,36 +269,59 @@ describe('Calculadora ML', () => {
     expect(refetchCategorias).toHaveBeenCalledOnce()
   })
 
-  it('limita entradas negativas e percentuais acima de 100 com orientação', () => {
-    const onEntrada = vi.fn()
-    const onTaxas = vi.fn()
-    render(<FormularioCalculadoraML entrada={estadoBase.entrada} taxas={estadoBase.taxasManuais} produtos={[]} produtoSelecionado={null} produtosCarregando={false} onEntrada={onEntrada} onTaxas={onTaxas} onProduto={vi.fn()} />)
+  it('mostra erro em vez de clamp silencioso: negativo, margem >= 100, comissão > 95', () => {
+    const props = propsForm()
+    render(<FormularioCalculadoraML {...props} />)
 
     fireEvent.change(screen.getByLabelText('Custo de compra (R$)'), { target: { value: '-5' } })
-    fireEvent.change(screen.getByLabelText('Margem-alvo (%)'), { target: { value: '120' } })
+    fireEvent.change(screen.getByLabelText('Margem (%)'), { target: { value: '100' } })
     fireEvent.change(screen.getByLabelText('Comissão (%)'), { target: { value: '140' } })
 
-    expect(onEntrada).toHaveBeenCalledWith({ custoProduto: 0 })
-    expect(onEntrada).toHaveBeenCalledWith({ margemAlvoPct: 100 })
-    expect(onTaxas).toHaveBeenCalledWith({ percentualComissaoPct: 95 })
-    expect(screen.getAllByText(/entre 0 e 100|não pode ser negativo/i).length).toBeGreaterThanOrEqual(2)
+    expect(props.onEntrada).not.toHaveBeenCalled()
+    expect(props.onMargem).not.toHaveBeenCalled()
+    expect(props.onTaxas).not.toHaveBeenCalled()
+    expect(screen.getAllByRole('alert')).toHaveLength(3)
   })
 
-  it('confirma na tela quando o preço projetado foi validado na API', () => {
-    const tarifaValidada: Tarifa = {
-      classico: { comissao: 17, percentual: 12, fixa: 5, imposto: 0, recebe: 68 },
-      premium: { comissao: 22, percentual: 17, fixa: 5, imposto: 0, recebe: 63 },
-      frete: 10,
-    }
-    estado = {
-      ...estadoBase,
-      cotacaoMeta: tarifaValidada,
-      validacaoMeta: { modalidade: 'classico', margemPct: 12, proveniencia: 'official' },
-    }
-    render(<CalculadoraML />)
+  it('imposto acima de 100% mostra erro e não grava o valor', () => {
+    const props = propsForm()
+    render(<FormularioCalculadoraML {...props} />)
 
-    expect(screen.getByText(/preço projetado validado na api/i)).toBeInTheDocument()
-    expect(screen.getByText(/oficial.*api ml/i)).toBeInTheDocument()
+    expect(() => fireEvent.change(screen.getByLabelText('Impostos (%)'), { target: { value: '160' } })).not.toThrow()
+    expect(props.onEntrada).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert')).toHaveTextContent(/no máximo 100/i)
+
+    fireEvent.change(screen.getByLabelText('Impostos (%)'), { target: { value: '100' } })
+    expect(props.onEntrada).toHaveBeenLastCalledWith({ aliquotaImpostoPct: 100 })
+  })
+
+  it('margem aceita negativo e < 100; imposto vazio vira null; demais vazios viram 0', () => {
+    const props = propsForm()
+    render(<FormularioCalculadoraML {...props} />)
+
+    fireEvent.change(screen.getByLabelText('Margem (%)'), { target: { value: '-12,5' } })
+    expect(props.onMargem).toHaveBeenLastCalledWith(-12.5)
+    fireEvent.change(screen.getByLabelText('Margem (%)'), { target: { value: '' } })
+    expect(props.onMargem).toHaveBeenCalledTimes(1)
+
+    fireEvent.change(screen.getByLabelText('Impostos (%)'), { target: { value: '' } })
+    expect(props.onEntrada).toHaveBeenLastCalledWith({ aliquotaImpostoPct: null })
+    fireEvent.change(screen.getByLabelText('Custos variáveis (R$)'), { target: { value: '' } })
+    expect(props.onEntrada).toHaveBeenLastCalledWith({ custosVariaveis: 0 })
+    fireEvent.change(screen.getByLabelText('Preço de venda (R$)'), { target: { value: '1.234,56' } })
+    expect(props.onPreco).toHaveBeenLastCalledWith(1234.56)
+  })
+
+  it('sem meta, oculta custo máximo de compra e preço para margem-alvo', () => {
+    const { unmount } = render(<CalculadoraML />)
+    expect(screen.getAllByText(/custo máximo de compra/i).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/preço para margem-alvo/i).length).toBeGreaterThan(0)
+    unmount()
+
+    estado = { ...estadoBase, metaSolicitada: null }
+    render(<CalculadoraML />)
+    expect(screen.queryByText(/custo máximo de compra/i)).toBeNull()
+    expect(screen.queryByText(/preço para margem-alvo/i)).toBeNull()
   })
 
   it('announces only decision and status changes without nesting a main landmark', () => {
@@ -216,16 +334,7 @@ describe('Calculadora ML', () => {
   it('requires an explicit confirmation before accepting manual zero freight', () => {
     const onTaxas = vi.fn()
     render(
-      <FormularioCalculadoraML
-        entrada={estadoBase.entrada}
-        taxas={{ ...estadoBase.taxasManuais, frete: 0 }}
-        produtos={[]}
-        produtoSelecionado={null}
-        produtosCarregando={false}
-        onEntrada={vi.fn()}
-        onTaxas={onTaxas}
-        onProduto={vi.fn()}
-      />,
+      <FormularioCalculadoraML {...propsForm()} taxas={{ ...estadoBase.taxasManuais, frete: 0 }} onTaxas={onTaxas} />,
     )
 
     fireEvent.click(screen.getByRole('checkbox', { name: /frete realmente zero/i }))
@@ -234,28 +343,190 @@ describe('Calculadora ML', () => {
   })
 
   it('sincroniza dimensões de produto atualizado e preserva edição parcial subsequente', () => {
-    const onEntrada = vi.fn()
+    const { onEntrada, ...resto } = propsForm()
     const dimensoesProdutoA = { alturaCm: 10, larguraCm: 20, comprimentoCm: 30, pesoKg: 1 }
     const dimensoesProdutoB = { alturaCm: 40, larguraCm: 50, comprimentoCm: 60, pesoKg: 2 }
-    const props = {
-      entrada: { ...estadoBase.entrada, dimensoes: dimensoesProdutoA },
-      taxas: estadoBase.taxasManuais,
-      produtos: [],
-      produtoSelecionado: null,
-      produtosCarregando: false,
-      onEntrada,
-      onTaxas: vi.fn(),
-      onProduto: vi.fn(),
-    }
+    const props = { ...resto, onEntrada, entrada: { ...estadoBase.entrada, dimensoes: dimensoesProdutoA } }
     const view = render(<FormularioCalculadoraML {...props} />)
 
     view.rerender(<FormularioCalculadoraML {...props} entrada={{ ...props.entrada, dimensoes: dimensoesProdutoB }} />)
-    expect(screen.getByLabelText('Altura (cm)')).toHaveValue(40)
-    expect(screen.getByLabelText('Largura (cm)')).toHaveValue(50)
+    expect(screen.getByLabelText('Altura (cm)')).toHaveValue('40')
+    expect(screen.getByLabelText('Largura (cm)')).toHaveValue('50')
 
     fireEvent.change(screen.getByLabelText('Altura (cm)'), { target: { value: '0' } })
     view.rerender(<FormularioCalculadoraML {...props} entrada={{ ...props.entrada, dimensoes: undefined }} />)
-    expect(screen.getByLabelText('Altura (cm)')).toHaveValue(0)
-    expect(screen.getByLabelText('Largura (cm)')).toHaveValue(50)
+    expect(screen.getByLabelText('Altura (cm)')).toHaveValue('0')
+    expect(screen.getByLabelText('Largura (cm)')).toHaveValue('50')
+  })
+
+  describe('Task 6 — campos, modalidade, margem viva, central de decisão', () => {
+    it('nenhum input é type=number e o foco seleciona o texto inteiro', () => {
+      const { container } = render(<CalculadoraML />)
+      expect(container.querySelectorAll('input[type=number]')).toHaveLength(0)
+
+      const preco = screen.getByLabelText('Preço de venda (R$)') as HTMLInputElement
+      act(() => preco.focus())
+      expect(preco.selectionStart).toBe(0)
+      expect(preco.selectionEnd).toBe(preco.value.length)
+      expect(preco.value.length).toBeGreaterThan(0)
+    })
+
+    it('foco + blur sem digitar não chama editarMargem nem editarPreco', async () => {
+      const user = userEvent.setup()
+      render(<CalculadoraML />)
+
+      await user.click(screen.getByLabelText('Margem (%)'))
+      await user.tab()
+      await user.click(screen.getByLabelText('Preço de venda (R$)'))
+      await user.tab()
+
+      expect(editarMargem).not.toHaveBeenCalled()
+      expect(editarPreco).not.toHaveBeenCalled()
+    })
+
+    it('digitar na margem chama editarMargem; no preço, editarPreco', () => {
+      render(<CalculadoraML />)
+      fireEvent.change(screen.getByLabelText('Margem (%)'), { target: { value: '38' } })
+      fireEvent.change(screen.getByLabelText('Preço de venda (R$)'), { target: { value: '120,5' } })
+
+      expect(editarMargem).toHaveBeenCalledWith(38)
+      expect(editarPreco).toHaveBeenCalledWith(120.5)
+      expect(atualizarEntrada).not.toHaveBeenCalledWith(expect.objectContaining({ margemAlvoPct: expect.anything() }))
+    })
+
+    it('"Margem (%)" mostra margemExibida com 2 casas; imposto null aparece vazio', () => {
+      estado = { ...estadoBase, margemExibida: 23, entrada: { ...estadoBase.entrada, aliquotaImpostoPct: null } }
+      render(<CalculadoraML />)
+      expect(screen.getByLabelText('Margem (%)')).toHaveValue('23,00')
+      expect(screen.getByLabelText('Impostos (%)')).toHaveValue('')
+    })
+
+    it('meta não confirmada vira aviso com a meta pedida', () => {
+      estado = { ...estadoBase, metaStatus: 'nao_confirmada', metaSolicitada: 38, margemExibida: 37.5 }
+      render(<CalculadoraML />)
+      expect(screen.getByText(/meta de 38,00% não confirmada/i)).toBeInTheDocument()
+    })
+
+    it('produto A → produto B: busca de categoria e rascunhos de medidas são limpos', async () => {
+      const user = userEvent.setup()
+      const dims = { alturaCm: 10, larguraCm: 20, comprimentoCm: 30, pesoKg: 1 }
+      estado = { ...estadoBase, entrada: { ...estadoBase.entrada, categoriaId: 'MLB1', dimensoes: dims } }
+      const view = render(<CalculadoraML />)
+      await user.type(screen.getByRole('textbox', { name: /buscar categoria mercado livre/i }), 'camisa')
+      expect(screen.getByRole('textbox', { name: /buscar categoria mercado livre/i })).toHaveValue('camisa')
+      expect(screen.getByLabelText('Altura (cm)')).toHaveValue('10')
+
+      estado = { ...estadoBase, entrada: { ...estadoBase.entrada, categoriaId: undefined, dimensoes: undefined } }
+      view.rerender(<CalculadoraML />)
+
+      expect(screen.getByRole('textbox', { name: /buscar categoria mercado livre/i })).toHaveValue('')
+      expect(screen.getByLabelText('Altura (cm)')).toHaveValue('0')
+    })
+
+    it('mostra a variação usada, o preço "de" riscado só com promoção e a categoria com nome + ID', () => {
+      const anuncio = { publicado: true, itemId: 'MLB9', preco: 100, precoOriginal: 130, categoriaId: 'MLB1', categoriaNome: 'Camisetas' } as HookState['anuncio']
+      estado = {
+        ...estadoBase, anuncio, categoriaNome: 'Camisetas', variacaoUsada: { codigo: 'V-01', cor: 'Azul' },
+        entrada: { ...estadoBase.entrada, categoriaId: 'MLB1' },
+      }
+      const { container, unmount } = render(<CalculadoraML />)
+      expect(screen.getByText(/preço\/medidas da variação V-01 \(Azul\)/i)).toBeInTheDocument()
+      expect(container.querySelector('s')).toHaveTextContent('R$ 130,00')
+      expect(screen.getByText(/Camisetas · MLB1/)).toBeInTheDocument()
+      unmount()
+
+      estado = { ...estado, anuncio: { ...anuncio!, precoOriginal: 100 } }
+      const igual = render(<CalculadoraML />)
+      expect(igual.container.querySelector('s')).toBeNull()
+    })
+
+    it('avisos do produto saem com role=status', () => {
+      estado = { ...estadoBase, avisosProduto: ['Imposto desconhecido: origem do produto não definida.'] }
+      render(<CalculadoraML />)
+      expect(screen.getByRole('status', { name: /avisos do produto/i })).toHaveTextContent(/imposto desconhecido/i)
+    })
+
+    it('modalidade: toggle sempre editável; publicado mostra "Clássico · do anúncio"', async () => {
+      const user = userEvent.setup()
+      estado = { ...estadoBase, modalidadeDoAnuncio: 'classico' }
+      render(<CalculadoraML />)
+      const classico = screen.getByRole('button', { name: /clássico · do anúncio/i })
+      const premium = screen.getByRole('button', { name: /^premium$/i })
+      expect(classico).toHaveAttribute('aria-pressed', 'true')
+
+      await user.click(premium)
+      expect(premium).toHaveAttribute('aria-pressed', 'true')
+      expect(classico).toHaveAttribute('aria-pressed', 'false')
+    })
+
+    it('a alternância de visão no mobile não altera a modalidade ativa', async () => {
+      const user = userEvent.setup()
+      render(<CalculadoraML />)
+      await user.click(screen.getByRole('button', { name: /ver premium/i }))
+      await user.click(screen.getByRole('tab', { name: /premium/i }))
+
+      expect(screen.getByRole('button', { name: /^clássico$/i })).toHaveAttribute('aria-pressed', 'true')
+    })
+
+    it('trocar a modalidade no form chama onModalidade', async () => {
+      const user = userEvent.setup()
+      const props = propsForm()
+      render(<FormularioCalculadoraML {...props} />)
+      await user.click(screen.getByRole('button', { name: /^premium$/i }))
+      expect(props.onModalidade).toHaveBeenCalledWith('premium')
+    })
+
+    it('carregando produto: campos desabilitados, central de decisão e kits ocultos', () => {
+      estado = { ...estadoBase, carregandoProduto: true }
+      render(<CalculadoraML />)
+
+      expect(screen.getAllByText('Carregando produto…').length).toBeGreaterThan(0)
+      for (const rotulo of ['Custo de compra (R$)', 'Preço de venda (R$)', 'Margem (%)', 'Impostos (%)', 'Altura (cm)', 'Frete (R$)']) {
+        expect(screen.getByLabelText(rotulo)).toBeDisabled()
+      }
+      expect(screen.getByRole('button', { name: /^premium$/i })).toBeDisabled()
+      expect(screen.queryByText(/central de decisão/i)).toBeNull()
+      expect(screen.queryByRole('heading', { name: /kits com a mesma margem/i })).toBeNull()
+    })
+
+    it('fora da carga, campos habilitados e central de decisão visível', () => {
+      render(<CalculadoraML />)
+      expect(screen.getByLabelText('Preço de venda (R$)')).toBeEnabled()
+      expect(screen.getByText(/central de decisão/i)).toBeInTheDocument()
+    })
+
+    it('parcial com frete desconhecido: selo e título não falam em frete manual', () => {
+      const cotacaoParcial = (frete: number | null) => ({
+        origem: 'official' as const,
+        classico: { percentualComissaoPct: 12, taxaFixa: 5, comissaoTotal: 17, frete, proveniencia: 'partial' as const },
+        premium: { percentualComissaoPct: 17, taxaFixa: 5, comissaoTotal: 22, frete, proveniencia: 'partial' as const },
+      })
+      estado = {
+        ...estadoBase, statusCotacao: 'partial', cotacao: cotacaoParcial(null),
+        resultado: { ...estadoBase.resultado, proveniencia: 'partial', modalidades: { classico: null, premium: null } },
+      }
+      const { unmount } = render(<CalculadoraML />)
+      expect(screen.getByText('Parcial · frete desconhecido')).toBeInTheDocument()
+      expect(screen.getByText('Comissão oficial · frete não calculado')).toBeInTheDocument()
+      expect(screen.queryByText('Parcial · frete manual')).toBeNull()
+      expect(screen.queryByText('Comissão oficial e frete manual')).toBeNull()
+      unmount()
+
+      estado = { ...estado, cotacao: cotacaoParcial(10), resultado: { ...estadoBase.resultado, proveniencia: 'partial' } }
+      render(<CalculadoraML />)
+      expect(screen.getAllByText('Parcial · frete manual').length).toBeGreaterThan(0)
+      expect(screen.getByText('Comissão oficial e frete manual')).toBeInTheDocument()
+    })
+
+    it('custos fixos valem por venda (unidade ou kit)', () => {
+      render(<CalculadoraML />)
+      expect(screen.getByLabelText('Custos fixos por venda (R$)')).toBeInTheDocument()
+      expect(screen.queryByText(/custos fixos por unidade/i)).toBeNull()
+    })
+
+    it('nenhum texto manda validar na API nem cita meta de 0%', () => {
+      const { container } = render(<CalculadoraML />)
+      expect(container.textContent).not.toMatch(/valide na api|validar na api|meta reversa|atinge a meta de 0\s?%/i)
+    })
   })
 })

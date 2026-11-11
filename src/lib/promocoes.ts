@@ -42,6 +42,9 @@ export interface ItemPromocao {
   anuncio_normal_id?: string | null;
   /** Tipo do anúncio no ML: gold_special (Clássico) ou gold_pro (Premium). */
   listing_type_id?: string | null;
+  /** Relâmpago: participa num horário e tem convite aberto para outro (ADR-0174, emenda 2026-11-08 (2)). Aparece
+   *  nas duas abas; preco_min/max/sugerido são os do convite. */
+  convite_aberto?: boolean;
 }
 /** Item participando, com a campanha (aba "Em promoção"). */
 export type Participacao = ItemPromocao & { promocao_id: string };
@@ -172,14 +175,15 @@ export const PRECO_MIN_PROMOCAO = 19;
 export const convidadoAbaixoDoPiso = (i: Pick<ItemPromocao, 'status' | 'preco_avaliado'>) =>
   i.status === 'candidate' && i.preco_avaliado != null && i.preco_avaliado < PRECO_MIN_PROMOCAO;
 
-/** Convidado = `candidate`; participando = `started` ou `pending` (inscrito em campanha futura); outro status não aparece. */
+/** Convidado = `candidate` (ou participando com convite de outro horário); participando = `started` ou `pending`
+ *  (inscrito em campanha futura); outro status não aparece. */
 export function filtrarItens(itens: ItemPromocao[], f: { semaforo: SemaforoPromo | null; participando: boolean }): ItemPromocao[] {
-  return itens.filter((i) => (f.participando ? i.status === 'started' || i.status === 'pending' : i.status === 'candidate')
+  return itens.filter((i) => (f.participando ? i.status === 'started' || i.status === 'pending' : i.status === 'candidate' || i.convite_aberto)
     && (f.semaforo == null || i.pior_semaforo === f.semaforo));
 }
 
 const COLS_PROMO = 'promocao_id, tipo, nome, status, inicio, fim, prazo_adesao, beneficios, contagem, erro, itens_sincronizados_em, rodada_em_curso';
-const COLS_ITEM = 'ml_item_id, status, preco_original, preco_promo, preco_min, preco_max, preco_sugerido, preco_avaliado, ml_pct, estoque_min, titulo, thumbnail, permalink, projecao, pior_semaforo, anuncio_normal_id, listing_type_id';
+const COLS_ITEM = 'ml_item_id, status, preco_original, preco_promo, preco_min, preco_max, preco_sugerido, preco_avaliado, ml_pct, estoque_min, titulo, thumbnail, permalink, projecao, pior_semaforo, anuncio_normal_id, listing_type_id, convite_aberto';
 
 export async function fetchPromocoes(): Promise<Promocao[]> {
   const { data, error } = await supabase.from('ml_promocoes').select(COLS_PROMO)

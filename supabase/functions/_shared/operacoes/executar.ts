@@ -20,8 +20,9 @@ export interface DepsExecutar extends DepsLaco {
   /** Semáforo no preço pedido com a projeção atual da Central; null = item sumiu da Central. */
   semaforoAtual(promocaoId: string, mlItemId: string, preco: number | null): Promise<Semaforo | null>;
   espelharStatusCentral(promocaoId: string, tipo: TipoPromocao, mlItemId: string, espelho: Espelho): Promise<void>;
-  /** Preço aplicado na Central (preco_promo; líquido reprojetado nesse preço quando der). Best-effort. */
-  espelharPreco(promocaoId: string, mlItemId: string, preco: number): Promise<void>;
+  /** Preço aplicado na Central (preco_promo; líquido reprojetado nesse preço quando der). Best-effort.
+   *  `estados`: status da linha que aceitam o espelho (padrão: participando). */
+  espelharPreco(promocaoId: string, mlItemId: string, preco: number, estados?: string[]): Promise<void>;
   /** Recalcula ml_promocoes.contagem a partir das linhas da Central (mesma regra do sync). Best-effort. */
   recontarCentral(promocaoId: string): Promise<void>;
   /** Ofertas fixas: outra operação aderiu a este item há pouco (`candidate` ainda não prova nada). */
@@ -213,16 +214,25 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar, p
   const fresco = await ml.lerNaCampanha(op.promocao_id, op.promocao_tipo, id)
     .catch((e) => { throw retomada && !(e instanceof SemEscritaPromocoes) ? new FalhaPosEscrita(e) : e; });
   if (op.acao === 'alterar_preco') return alterarPreco(op, it, deps, fresco);
+  // Relâmpago com um horário participando e outro convidado (emenda 2026-11-08 (2)): adere pelo convite. Na retomada,
+  // CANDIDATE gravado diferente do aberto é outro horário que o operador não viu → segue o participando (Já estava).
+  const extra = op.acao === 'aderir' && op.promocao_tipo === 'LIGHTNING' ? fresco?.convite : undefined;
+  const alvo = extra && !(it.offer_id?.startsWith('CANDIDATE-') && it.offer_id !== extra.offer_id) ? extra : fresco;
   // Relações só importam quando o item ainda é convidado (é aí que decidir bloqueia o par UP/catálogo).
-  const convidado = op.acao === 'aderir' && fresco?.status === 'candidate';
+  const convidado = op.acao === 'aderir' && alvo?.status === 'candidate';
   const relacoes = convidado ? await ml.lerRelacoes(id) : null;
   // Relâmpago: máximo, sugerido e stock.min só na visão por item; falha aqui lança → erro sem escrita.
   const oferta = convidado && op.promocao_tipo === 'LIGHTNING' ? await ml.lerOfertaNoItem(op.promocao_id, id) : null;
-  const d = decidir(op.acao, op.promocao_tipo, op.promocao_id, { ml_item_id: id, preco: it.preco }, fresco, relacoes, oferta);
+  const d = decidir(op.acao, op.promocao_tipo, op.promocao_id, { ml_item_id: id, preco: it.preco }, alvo, relacoes, oferta);
 
   if (d.tipo === 'fim') {
     if (d.status !== 'ja_estava') {
-      await encerrar({ status: d.status, mensagem: d.mensagem });
+      if (!(await encerrar({ status: d.status, mensagem: d.mensagem }))) return;
+      // Oferta fixa com preço novo no ML: a Central (fonte do preview) recebe o preço vivo, senão toda nova
+      // tentativa sai com o preço velho e cai em `mudou` de novo até o sync do dia seguinte.
+      if (op.acao === 'aderir' && fixa && d.status === 'mudou' && fresco?.status === 'candidate' && fresco.preco != null) {
+        await deps.espelharPreco(op.promocao_id, id, fresco.preco, ['candidate']).catch(() => {});
+      }
       return;
     }
     // Retry depois de crash pós-escrita cai aqui: grava o offer_id do SMART e acerta o espelho.
@@ -258,10 +268,15 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar, p
     if (await deps.adesaoRecente(op.promocao_id, id)) { await encerrar({ status: 'mudou', mensagem: ADESAO_RECENTE }); return; }
     if (!(await adquirir({ etapa: 'escrita_pedida' }))) return;
   }
+  // Relâmpago: o convite usado fica gravado antes do POST; a retomada só posta de novo pelo mesmo convite.
+  if (op.promocao_tipo === 'LIGHTNING' && alvo?.offer_id?.startsWith('CANDIDATE-')) {
+    await deps.gravarItem(op.id, id, { offer_id: alvo.offer_id });
+  }
   let resposta: Awaited<ReturnType<ClienteML['post']>>;
   try {
     resposta = await ml.post(id, d.body);
   } catch (e) {
+    if (mensagemDe(e).includes('OFFER_SIBLING_CREATION_IN_PROCESS')) return inscritoPeloPrincipal(op, id, deps);
     if (fixa) {
       if (escritaIncerta(id, e)) return;
       // Recusa clara: nada foi escrito; sem isto adesaoRecente seguraria a nova tentativa como se a adesão propagasse.
@@ -276,7 +291,7 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar, p
   }));
   if (op.promocao_tipo === 'LIGHTNING') {
     // Best-effort: o item já está aplicado; a janela é informativa.
-    const o = await ml.lerOfertaNoItem(op.promocao_id, id).catch(() => null);
+    const o = await ml.lerOfertaNoItem(op.promocao_id, id, offer_id).catch(() => null);
     const mensagem = o && mensagemJanela(o.inicio, o.fim);
     if (mensagem) await deps.gravarItem(op.id, id, { mensagem }).catch(() => {});
   }
@@ -286,6 +301,26 @@ async function processarItem(op: OperacaoRow, it: ItemRow, deps: DepsExecutar, p
   // no SMART o POST manda só o offer_id e o preço é o do ML (achado Codex P1). O retry `ja_estava` (acima) não
   // espelha preço de propósito: a leitura do ML não traz o preço da oferta, e o item pode já participar com outro.
   if (it.preco != null && op.promocao_tipo !== 'SMART') await deps.espelharPreco(op.promocao_id, id, it.preco).catch(() => {});
+}
+
+/** 400 OFFER_SIBLING_CREATION_IN_PROCESS (AVIL 09/11): o ML já cria esta oferta propagando a de um anúncio irmão
+ *  (pai legado → cópias de catálogo). Não é erro: relê uma vez; ainda convidado → `bloqueado`, fora do "Tentar novamente". */
+async function inscritoPeloPrincipal(op: OperacaoRow, id: string, deps: DepsExecutar): Promise<void> {
+  // Falha na releitura sobe (achado Grok): vira `erro` retentável, e SemEscritaPromocoes para a conta como nas outras leituras.
+  const f = await deps.ml.lerNaCampanha(op.promocao_id, op.promocao_tipo, id);
+  // Relâmpago participando com convite de outro horário ainda aberto: o horário pedido não entrou (achado Codex).
+  if (f && ehParticipando(f.status) && !f.convite) {
+    // Oferta fixa: etapa limpa na mesma escrita — a retomada não confunde a propagação com adesão nossa (achado Codex).
+    // Em `bloqueado` a etapa fica: é ela que segura outra adesão em adesaoRecente enquanto o ML propaga (achado Grok).
+    await gravarPos(deps.gravarItem(op.id, id, {
+      status: 'ja_estava', mensagem: 'Inscrito pelo ML junto com o anúncio principal',
+      ...(ofertaFixaNova(op.promocao_tipo) ? { etapa: null } : {}),
+    }));
+    return espelhar(deps, op, id, espelhoAderido(op, f));
+  }
+  await gravarPos(deps.gravarItem(op.id, id, {
+    status: 'bloqueado', mensagem: 'O ML está inscrevendo este anúncio pelo anúncio principal — atualize a Central em alguns minutos',
+  }));
 }
 
 /** Oferta fixa: exceção antes de adquirir a escrita também só encerra com a posse (o laço gravaria `erro` por cima). */

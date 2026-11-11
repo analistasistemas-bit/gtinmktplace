@@ -183,6 +183,8 @@ export interface Familia {
   origem: 'nacional' | 'importado';
   atributosFaltantes: string[] | null;
   atributosMl: AtributoMl[];
+  /** ADR-0202: atributos que a IA tirou da foto — Revisão mostra "confira" com os valores possíveis. */
+  atributosPorFoto?: { id: string; nome: string; valores: { id: string; nome: string }[] }[];
   precoMin: number;
   precoMax: number;
   precoAbaixo20pc: boolean;

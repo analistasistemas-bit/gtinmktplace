@@ -5,11 +5,11 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { redisGet, redisSet } from '../_shared/redis/client.ts';
 import { montarTarifaComProveniencia } from '../_shared/ml/tarifa.ts';
-import { buscarListingPrice } from '../_shared/ml/listing-prices.ts';
+import { buscarListingPriceComRetentativa } from '../_shared/ml/listing-prices.ts';
 import { buscarFreteVendedorComProveniencia } from '../_shared/ml/frete.ts';
 import type { DimensoesPacote } from '../_shared/ml/pacote.ts';
-
-const CACHE_TTL_S = 6 * 60 * 60; // 6h — comissões mudam raramente
+import { ttlTarifa } from './ttl.ts';
+import { freteComRetentativa } from './retentativa.ts';
 
 function lerDimensoes(raw: unknown): DimensoesPacote {
   const d = (raw ?? {}) as Record<string, unknown>;
@@ -58,11 +58,13 @@ Deno.serve(async (req) => {
     const mlUserId = conexao.contaExternaId || 'me';
 
     const [classicoML, premiumML, frete] = await Promise.all([
-      buscarListingPrice(token, preco, categoria_ml_id, 'gold_special'),
-      buscarListingPrice(token, preco, categoria_ml_id, 'gold_pro'),
+      // Retentativa em 429/5xx: o ML devolve `local_rate_limited` sob rajada (2026-11-11, calculadora
+      // abrindo tarifa + tabela de frete juntas derrubava a cotação oficial).
+      buscarListingPriceComRetentativa(token, preco, categoria_ml_id, 'gold_special'),
+      buscarListingPriceComRetentativa(token, preco, categoria_ml_id, 'gold_pro'),
       // Variante com proveniência (ADR-0148 D-2): a Revisão segue lendo só os números, mas a DRE
       // precisa saber se o frete veio do ML com as dimensões reais ou de um pacote padrão.
-      buscarFreteVendedorComProveniencia(token, mlUserId, preco, categoria_ml_id, dim),
+      freteComRetentativa(() => buscarFreteVendedorComProveniencia(token, mlUserId, preco, categoria_ml_id, dim)),
     ]);
     const comProveniencia = montarTarifaComProveniencia(preco, classicoML, premiumML, frete);
     const tarifa = {
@@ -71,7 +73,7 @@ Deno.serve(async (req) => {
       ...(comProveniencia.motivo ? { motivo_proveniencia: comProveniencia.motivo } : {}),
     };
 
-    await redisSet(cacheKey, JSON.stringify(tarifa), CACHE_TTL_S);
+    await redisSet(cacheKey, JSON.stringify(tarifa), ttlTarifa(tarifa.proveniencia));
     return json(tarifa);
   } catch (err) {
     // Resiliente: não quebra a Revisão; o card mostra "indisponível".

@@ -30,8 +30,15 @@ const exigir = (l: Lido, nome: string): unknown => {
  *  null/vazio e entram em `incompleto`. */
 export async function lerDetalheReclamacao(
   token: string, claimId: string, contaExternaId: string,
+  /** Recebe a leitura recém-feita (ex.: regravar a cópia local). Falha aqui nunca quebra o detalhe. */
+  aoLer?: (s: Awaited<ReturnType<typeof lerClaimCompleto>>) => Promise<void>,
 ): Promise<DetalheReclamacao> {
-  const { claim, ret, extras } = await lerClaimCompleto(token, claimId);
+  const lido = await lerClaimCompleto(token, claimId);
+  const { claim, ret, extras } = lido;
+  if (aoLer) {
+    try { await aoLer(lido); }
+    catch (e) { console.warn(`lerDetalheReclamacao: aoLer do claim ${claimId} falhou: ${(e as Error).message}`); }
+  }
   const player = playerDaConta(claim, contaExternaId);
   const acoesPend = acoesDaConta(claim, contaExternaId);
   const acoes = acoesPend.map((a) => a.action);

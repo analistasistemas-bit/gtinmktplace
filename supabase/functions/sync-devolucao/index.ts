@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
       : { data: null, error: null };
     if (erroVenda) console.error('sync-devolucao: pack_id da venda indisponível', erroVenda.message);
     await notificarCategoria(admin, orgId, 'pos_venda', montarMensagemNovaDevolucao({
-      claim_id: row.claim_id, order_id: row.order_id, pack_id: venda?.pack_id ?? null, tipo: row.type ?? 'claim',
+      claim_id: row.claim_id, order_id: row.order_id, pack_id: venda?.pack_id ?? null, tipo: row.type ?? 'claim', reason_id: row.reason_id,
       motivo: row.reason_texto, valor: row.valor_em_jogo, moeda: 'BRL',
     }));
   }

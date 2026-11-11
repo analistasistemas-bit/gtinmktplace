@@ -31,7 +31,7 @@ Ver [[Backend]], [[Segurança]].
 | **Pulse** (módulo inteligência) | pulse-coletar (`verify_jwt=false`), pulse-adicionar, pulse-sonar-vendas, pulse-sonar-visitas, pulse-analise-secoes237. Ver [[Pulse]] |
 | **Fiscal** (Faturador ML) | sincronizar-fiscal-ml, atualizar-fiscal-familia, sugerir-ncm |
 | **Monitoramento / alertas** | monitorar-moderados, notificar-liberacao |
-| **Status / métricas / viabilidade** | status-publicados, atualizar-status-publicado, metricas-vendas, analisar-viabilidade, calcular-tarifa-ml, tabela-frete-ml, buscar-categorias-ml |
+| **Status / métricas / viabilidade** | status-publicados, atualizar-status-publicado, metricas-vendas, analisar-viabilidade, calcular-tarifa-ml, tabela-frete-ml, ler-anuncio-calculadora, buscar-categorias-ml |
 | **Central / Billing / Usuários** | platform-admin, materializar-metricas (`verify_jwt=false`), usuarios, suporte. Ver [[Billing]] |
 | **Utilitário** | hello |
 

@@ -22,6 +22,11 @@ export interface ItemPromocaoML {
   preco_min: number | null; preco_max: number | null; preco_sugerido: number | null;
   ml_pct: number | null; vendedor_pct: number | null;
   estoque_min: number | null; estoque_max: number | null;
+  /** Relâmpago: participa num horário e tem convite aberto para outro (emenda 2026-11-08 (2)); a linha segue
+   *  participando e preco_min/max/sugerido/estoque_min passam a ser os do convite. */
+  convite_aberto?: boolean;
+  /** Só durante o sync: a entrada `candidate` do outro horário, antes de virar faixa (não é gravada). */
+  convite?: ItemPromocaoML;
 }
 export interface VariacaoML {
   variation_id: number; cor: string | null; sku: string | null; gtin: string | null;

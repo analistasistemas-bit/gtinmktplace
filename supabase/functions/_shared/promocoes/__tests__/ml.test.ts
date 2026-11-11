@@ -175,4 +175,12 @@ describe('lerOfertaRelampago', () => {
     expect(await lerOfertaRelampago(get, 'LGH-OUTRA', 'MLB5244990621')).toBeNull();
     expect(await lerOfertaRelampago(vi.fn(async () => ({ erro: 1 })), 'LGH-MLB1000', 'MLB1')).toBeNull();
   });
+
+  it('anúncio participando em um horário e convidado em outro: lê o convite (emenda 2026-11-08 (2))', async () => {
+    const get = vi.fn(async () => [
+      { id: 'LGH-MLB1000', type: 'LIGHTNING', status: 'pending', price: 24.45 },
+      { id: 'LGH-MLB1000', type: 'LIGHTNING', status: 'candidate', min_discounted_price: 5.7, max_discounted_price: 25.65, suggested_discounted_price: 24.23 },
+    ]);
+    expect(await lerOfertaRelampago(get, 'LGH-MLB1000', 'MLB5322348511')).toEqual({ preco_min: 5.7, preco_max: 25.65, preco_sugerido: 24.23 });
+  });
 });

@@ -1,5 +1,5 @@
 import { Loader2, Search, Tag } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useCategoriasML } from '@/hooks/useCategoriasML'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -7,12 +7,22 @@ import { StatusPill } from '@/components/ui/status-pill'
 
 interface BuscaCategoriaMLProps {
   value?: string
+  /** Nome da categoria em `value` (quando conhecido). */
+  nome?: string
   onSelect: (categoria: { id: string; nome: string }) => void
   disabled?: boolean
 }
 
-export function BuscaCategoriaML({ value, onSelect, disabled = false }: BuscaCategoriaMLProps) {
+export function BuscaCategoriaML({ value, nome, onSelect, disabled = false }: BuscaCategoriaMLProps) {
   const [query, setQuery] = useState('')
+  const [escolhida, setEscolhida] = useState<{ id: string; nome: string } | null>(null)
+  const escolhidaAquiRef = useRef(value)
+  // Categoria trocada por fora (outro produto): a busca do produto anterior não vale mais.
+  useEffect(() => {
+    if (value !== escolhidaAquiRef.current) setQuery('')
+    escolhidaAquiRef.current = value
+  }, [value])
+  const nomeExibido = nome ?? (escolhida && escolhida.id === value ? escolhida.nome : undefined)
   const { data: categorias = [], isLoading, isError, refetch } = useCategoriasML(query)
 
   return (
@@ -22,7 +32,7 @@ export function BuscaCategoriaML({ value, onSelect, disabled = false }: BuscaCat
           <Tag className="size-4 text-muted-foreground" aria-hidden="true" />
           Categoria Mercado Livre <span className="font-normal text-muted-foreground">(opcional)</span>
         </label>
-        {value && <StatusPill tone="info">{value}</StatusPill>}
+        {value && <StatusPill tone="info">{nomeExibido ? `${nomeExibido} · ${value}` : value}</StatusPill>}
       </div>
       <p id="categoria-ajuda" className="text-xs text-muted-foreground">
         Escolha uma categoria para consultar taxas oficiais. Sem ela, a conta permanece estimada.
@@ -49,7 +59,7 @@ export function BuscaCategoriaML({ value, onSelect, disabled = false }: BuscaCat
               <button
                 type="button"
                 className="w-full rounded-md px-2.5 py-2 text-left text-sm transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={() => { onSelect(categoria); setQuery(categoria.nome) }}
+                onClick={() => { escolhidaAquiRef.current = categoria.id; setEscolhida(categoria); onSelect(categoria); setQuery(categoria.nome) }}
                 disabled={disabled}
               >
                 <span className="font-medium">{categoria.nome}</span>

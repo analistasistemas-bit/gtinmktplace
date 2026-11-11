@@ -723,6 +723,7 @@ export type Database = {
           atributos_editados_pelo_operador: boolean
           atributos_faltantes: Json | null
           atributos_ml: Json
+          atributos_por_foto: Json | null
           atualizado_em: string
           can_invoice: boolean | null
           can_invoice_causa: string | null
@@ -813,6 +814,7 @@ export type Database = {
           atributos_editados_pelo_operador?: boolean
           atributos_faltantes?: Json | null
           atributos_ml?: Json
+          atributos_por_foto?: Json | null
           atualizado_em?: string
           can_invoice?: boolean | null
           can_invoice_causa?: string | null
@@ -903,6 +905,7 @@ export type Database = {
           atributos_editados_pelo_operador?: boolean
           atributos_faltantes?: Json | null
           atributos_ml?: Json
+          atributos_por_foto?: Json | null
           atualizado_em?: string
           can_invoice?: boolean | null
           can_invoice_causa?: string | null
@@ -2624,6 +2627,7 @@ export type Database = {
           ml_item_id: string
           ml_pct: number | null
           org_id: string
+          convite_aberto: boolean
           permalink: string | null
           pior_semaforo: string
           preco_avaliado: number | null
@@ -2649,6 +2653,7 @@ export type Database = {
           ml_item_id: string
           ml_pct?: number | null
           org_id: string
+          convite_aberto?: boolean
           permalink?: string | null
           pior_semaforo: string
           preco_avaliado?: number | null
@@ -2674,6 +2679,7 @@ export type Database = {
           ml_item_id?: string
           ml_pct?: number | null
           org_id?: string
+          convite_aberto?: boolean
           permalink?: string | null
           pior_semaforo?: string
           preco_avaliado?: number | null

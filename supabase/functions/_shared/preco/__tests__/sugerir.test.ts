@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { sugerirPrecoVenda, grossUp, freteEstavelGrossUp } from '../sugerir';
+import { sugerirPrecoVenda, grossUp, freteEstavelGrossUp, precoProprioEstavel, type TarifaNoPreco } from '../sugerir';
 
 describe('grossUp (preço cujo líquido ≥ piso)', () => {
   it('piso 20, 13% + R$ 0 fixa → (20/0,87)=22,99 → arredonda cima 23,00', () => {
@@ -267,5 +267,57 @@ describe('freteEstavelGrossUp (ADR-0076)', () => {
     const frete = await freteEstavelGrossUp(20, 12, 0, 8, fake, 3);
     expect(fake).toHaveBeenCalledTimes(3);
     expect(Number.isFinite(frete)).toBe(true);
+  });
+});
+
+describe('precoProprioEstavel (comissão + frete lidos no preço candidato)', () => {
+  const tarifa = (f: (p: number) => TarifaNoPreco) => async (p: number) => f(p);
+  const com = (percentual: number, fixa = 0) => ({ percentual, fixa });
+
+  it('caso Avil 02994445: comissão 12% até R$100 e 11% acima → R$ 228,45, não R$ 231,60', async () => {
+    const t = tarifa((p) => ({ comissao: com(p <= 100 ? 12 : 11), frete: 23.25 }));
+    expect(await precoProprioEstavel(143.5, 16, com(12), t)).toBe(228.45);
+  });
+
+  it('comissão que SOBE com o preço: sobe até o ponto fixo e não devolve o 1º palpite (que ficaria abaixo do piso)', async () => {
+    // 11% → 106,75 (≥ 100 cobra 13%: líquido 92,87 < 95); 13% → 109,20 (líquido 95,00).
+    const t = tarifa((p) => ({ comissao: com(p < 100 ? 11 : 13), frete: 0 }));
+    expect(await precoProprioEstavel(95, 0, com(11), t)).toBe(109.2);
+  });
+
+  it('tarifa constante = grossUp com o frete', async () => {
+    const t = tarifa(() => ({ comissao: com(13), frete: 10 }));
+    expect(await precoProprioEstavel(80, 8, com(13), t)).toBe(grossUp(80, 13, 0, 10, 8));
+  });
+
+  it('frete salta em R$79 (ADR-0076) e o preço sobe até estabilizar → R$ 95,20', async () => {
+    const t = tarifa((p) => ({ comissao: com(12), frete: p < 79 ? 6.75 : 16.15 }));
+    expect(await precoProprioEstavel(60, 8, com(12), t)).toBe(95.2);
+  });
+
+  it('oscilação na fronteira de faixa: devolve o menor preço visitado que cobre o piso na tarifa dele', async () => {
+    // 11% → 112,40 (< 113, cobra 12%); 12% → 113,65 (≥ 113, cobra 11%): não há ponto fixo.
+    const t = tarifa((p) => ({ comissao: com(p < 113 ? 12 : 11), frete: 0 }));
+    expect(await precoProprioEstavel(100, 0, com(12), t)).toBe(113.65);
+  });
+
+  it('sem preço verificado após maxIter → null (nunca devolve preço não conferido)', async () => {
+    const t = tarifa((p) => ({ comissao: com(0), frete: p * 0.3 }));
+    expect(await precoProprioEstavel(100, 0, com(0), t, 2)).toBeNull();
+  });
+
+  it('ML falha depois de um preço verificado → devolve o verificado', async () => {
+    let n = 0;
+    const t = async (): Promise<TarifaNoPreco> => {
+      if (n++ === 0) return { comissao: com(11), frete: 0 };
+      throw new Error('listing_prices 429');
+    };
+    // 1º palpite 12% → 199,35; lido 11% ali: líquido ≈ 145,53 ≥ 143,50 (verificado); 2ª leitura falha.
+    expect(await precoProprioEstavel(143.5, 16, com(12), t)).toBe(199.35);
+  });
+
+  it('ML falha sem nenhum preço verificado → relança', async () => {
+    const t = async (): Promise<TarifaNoPreco> => { throw new Error('listing_prices 429'); };
+    await expect(precoProprioEstavel(143.5, 16, com(12), t)).rejects.toThrow('429');
   });
 });

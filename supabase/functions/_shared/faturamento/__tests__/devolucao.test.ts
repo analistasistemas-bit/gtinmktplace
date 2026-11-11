@@ -9,6 +9,12 @@ describe('traduzirReason', () => {
     expect(traduzirReason('PNR001')).toBe('Produto não recebido');
     expect(traduzirReason('PDD123')).toBe('Produto com defeito ou diferente');
   });
+  it('códigos PDD conhecidos têm texto próprio (o ML descreve cada um)', () => {
+    expect(traduzirReason('PDD9939')).toBe('Arrependimento da compra');
+    expect(traduzirReason('PDD9941')).toBe('Cor, tamanho ou modelo diferente do escolhido');
+    expect(traduzirReason('PDD9942')).toBe('Recebeu outro tipo de produto');
+    expect(traduzirReason('PDD9944')).toBe('Produto diferente do anúncio');
+  });
   it('reason desconhecido volta cru; null → null', () => {
     expect(traduzirReason('XYZ9')).toBe('XYZ9');
     expect(traduzirReason(null)).toBeNull();

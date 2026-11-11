@@ -12,6 +12,32 @@
 - [ ] Medições: saída do Qwen com referência sem marca; CPU da `galeria-aprovar` (<= 800 ms); PUT duplo e CORS; missão 6 com cena real.
 - [ ] Task 16 Step 3 (Diego): validação real em Legacy e UP (gerar, aprovar, aplicar, conferir, reverter).
 
+## Calculadora ML: ajustes (preço vivo, margem, kits, frete) — 2026-11-10
+
+- [x] `ler-anuncio-calculadora` (nova, somente leitura): preço vivo, modalidade, categoria e status do anúncio da variação; prefill da calculadora.
+- [x] `tabela-frete-ml`: célula sem cotação `null`, cache v2, TTL 300 s se incompleta. `calcular-tarifa-ml`: TTL 300 s para tarifa `estimated`.
+- [x] Calculadora: campos sem setas, modalidade e margem viva, preço por margem (centavos, tarifa relida), quadro de kits com frete e margem por quantidade, tabela de frete.
+- [ ] Validação visual, push, CI verde e deploy (`ler-anuncio-calculadora`, `tabela-frete-ml`, `calcular-tarifa-ml`) antes do merge; smoke 200 (org) / 404 (outra org).
+
+## CREATE divergente em categoria User Products (emenda ADR-0160) — 2026-11-09
+
+- [x] `publicar-familias`: CREATE consulta `ml_formato_publicacao`; categoria `user_products` vai para `publish` (saga UP) mesmo com preços divergentes. UPDATE inalterado.
+- [x] `publicar-split-ml`: pré-check do cache reenfileira no `publish`; sem cache, tenta primeiro faixa com ≥2 cores; `FORMATO_INCOMPATIVEL` semeia o cache e reenfileira (sem retry); estado misto, >100 cores e falha de enqueue viram erro explícito; falha ao ler `anuncios_externos` → 500 (retry).
+- [x] ADR-0160 emendado (dívida nº 9 resolvida); testes em `publicar-split-ml/__tests__/handler-formato-up.test.ts` e `publicar-familias/__tests__/handler-teto.test.ts`.
+- [ ] Deploy (só com OK do Diego): `publicar-familias` e `publicar-split-ml`; conferir versões ativas.
+
+## Adesão: 400 OFFER_SIBLING_CREATION_IN_PROCESS (emenda ADR-0174) — 2026-11-09
+
+- [x] AVIL, Black Friday 2026: o pai legado multivariação aderiu e o ML propagou a oferta às cópias de catálogo; o POST de cada cópia voltou 400 SIBLING (28 de 30 "erros" já estavam `pending`).
+- [x] `executar.ts`: SIBLING relê a campanha — participando → `ja_estava`; ainda convidado → `bloqueado` (fora do "Tentar novamente", oferta fixa mantém a etapa); releitura que falha → `erro`. Main `d904c872`, `operacoes-massa` v51.
+
+## Atributos visuais de roupa pela foto (ADR-0202) — 2026-11-08
+
+- [x] `process-familia` (ramo genérico): visão na foto da 1ª variação preenche `SLEEVE_TYPE`, `WEDGE_SHAPE`, gola e capuz que o texto deixou vazios; valor só dentro da lista da categoria; falha preserva o texto.
+- [x] `familias.atributos_por_foto` + bloco "Pela foto (IA) — confira" no card de categoria da Revisão (corrige pelo `atributos-familia`); troca de categoria limpa a coluna.
+- [x] Teste real no `gpt-4o`: 4 de 4 corretos (3 blusas sem manga, 1 jaqueta de manga longa).
+- [ ] Conferir no próximo lote de blusa que o Tipo de manga já chega preenchido.
+
 ## Preços por unidade a partir de agora (emenda ADR-0155) — 2026-11-08
 
 - [x] RPC `platform_save_unit_prices` (versão nova do termo na competência aberta; só Sonar/Imagem IA) + lock da org na entrega do Sonar.

@@ -10,6 +10,7 @@ import { buscarCategoriaML } from '@/lib/queries';
 import { useCaminhoCategoria } from '@/hooks/useCaminhoCategoria';
 import { CATEGORIAS_MANUAIS } from '@/lib/categoria';
 import { EditorAtributosFaltantes } from '@/components/editor-atributos-faltantes';
+import { AtributosPorFoto } from '@/components/atributos-por-foto';
 import type { Familia, TipoAviamento, CategoriaCandidata } from '@/lib/tipos-dominio';
 
 function nomeCategoriaAmigavel(tipo: TipoAviamento | null): string {
@@ -233,6 +234,8 @@ export function CardCategoria({ familia }: { familia: Familia }) {
               <EditorAtributosFaltantes familiaId={familia.id} loteId={familia.loteId} />
             </>
           )}
+          <AtributosPorFoto familia={familia} />
+
           {buscaAberta ? (
             <div className="mt-1.5 border-t pt-1.5">
               <BuscaCategoria familia={familia} />

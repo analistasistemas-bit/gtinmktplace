@@ -118,6 +118,7 @@
 | ads-metricas | true | HTTP (frontend, JWT do usuário) | sim (só leitura; cache Redis 300 s por chave de leitura) |
 | **Operações em massa (ADR-0174) — código pronto, deploy pendente** ||||
 | operacoes-massa | false | HTTP (JWT do usuário, criação) **ou** QStash (`executar`/`conferir`) | sim (claim por item + `deduplicationId`) |
+| *(emenda ADR-0174, 2026-11-09)* `operacoes-massa`: 400 `OFFER_SIBLING_CREATION_IN_PROCESS` na adesão (ML propagando a oferta de um anúncio irmão, ex.: pai legado → cópias de catálogo) relê a campanha — participando → `ja_estava`; convidado → `bloqueado` (oferta fixa mantém a etapa); releitura com falha → `erro`. v51 ||||
 | *(emenda ADR-0174, em produção desde 2026-11-07)* `operacoes-massa` recusa aderir e `alterar_preco` abaixo de R$ 19 em qualquer tipo (`PRECO_MIN_PROMOCAO`, `_shared/promocoes/projecao.ts`); `precoAvaliado` sobe para R$ 19 quando a faixa alcança; `contar` deixa convidado abaixo do piso fora da contagem. Versões: `operacoes-massa` v44, `sincronizar-promocoes` v38, `ads-campanhas` v21, `ads-metricas` v9, `coletar-ads-ml` v26, `coletar-trafego-ml` v25, `publicar-familias` v59, `reconciliar-convergencia-up` v87 ||||
 | *(ADR-0194, 2026-11-04)* `operacoes-massa` ganha `etapa: 'dispensar_sugestao'`/`'reativar_sugestao'` (admin ou suporte full, módulo `promocoes`) e aceita `sugestao` na adesão, gravada em `operacoes_massa.sugestao`; `sincronizar-promocoes` grava `date_created` do ML em `ml_promocao_itens.anuncio_criado_em` ||||
 | *(emenda ADR-0174, 2026-11-03)* `operacoes-massa` ganha a ação `alterar_preco` (PUT do deal_price de item DEAL participando; Reverter validado contra a origem) ||||
@@ -135,9 +136,10 @@
 | atualizar-status-publicado | true | HTTP (frontend, admin) | sim (PUT idempotente) |
 | metricas-vendas | true | HTTP (frontend) | sim (leitura) |
 | analisar-viabilidade | true | HTTP (frontend) | não |
-| tabela-frete-ml | true | HTTP (frontend) | sim (cache 24h) |
+| tabela-frete-ml | true | HTTP (frontend) | sim (cache 24h; 300 s se incompleta) |
+| ler-anuncio-calculadora | true | HTTP (frontend) | sim (somente leitura, sem cache) |
 | buscar-categorias-ml | true | HTTP (frontend) | sim (leitura) |
-| calcular-tarifa-ml | false | HTTP (JWT manual) | sim (cache 6h) |
+| calcular-tarifa-ml | false | HTTP (JWT manual) | sim (cache 6h; 300 s se estimated) |
 | **Acesso / usuários** ||||
 | platform-admin | true | HTTP (frontend, super-admin ativo) | leituras; fechamento idempotente por org/competência |
 | materializar-metricas | false | QStash schedule | sim (upsert por org/mês) |
@@ -598,6 +600,10 @@ mesmo por engano.
   Products (tem linha em `anuncios_externos_itens`, sinalizada por `ehUP`) publica preços diferentes
   direto, sem dividir — lá cada cor já é um item ML próprio. Os outros dois gatilhos valem nos dois
   modelos.
+  **Emenda ADR-0160 (2026-11-09):** no CREATE a família não tem itens, então `ehUP` estrutural é
+  falso; passa a consultar o cache `ml_formato_publicacao` — categoria `user_products` conta como
+  `ehUP` e o alvo vira `publish` (saga UP, preço por cor) mesmo com preços divergentes. `decidirSplit`
+  não muda; o UPDATE segue sem ler o cache.
   **Trava da oferta (ADR-0196, emenda 2026-11-07 — em produção desde 2026-11-07):** antes das reservas, UPDATE com
   `ml_item_id` e sem "somente estoque" é conferido por `recusasDoLote` (`_shared/publicacao/trava-oferta.ts`), só onde
   o preço novo fica abaixo do vivo. Reprovado volta em `recusadas` e não é reservado; os demais seguem. CREATE e
@@ -796,6 +802,13 @@ mesmo por engano.
   base do preço do grupo; `anuncios_externos.atacado_status`/`atacado_erro` guardam o resultado por
   partição, agregados em `familias.atacado_status` no fim (`agregarAtacadoStatus`: algum erro → erro,
   senão algum aplicado → aplicado).
+  **CREATE em categoria User Products (ADR-0160, emenda 2026-11-09):** com nada no ar (`familias.ml_item_id`
+  nulo e nenhuma linha de `anuncios_externos` ML com `item_externo_id`) e ≤100 cores, um pré-check do cache
+  `ml_formato_publicacao` reenfileira o job inteiro no `publish` quando a categoria é `user_products`. Sem
+  cache, cria primeiro a faixa com ≥2 cores (só ela revela `FORMATO_INCOMPATIVEL`); o erro semeia o cache e
+  reenfileira no `publish`, sem retry. Estado misto, >100 cores em categoria UP e falha do enqueue viram erro
+  explícito (`status='erro'`, lote finalizado). Falha ao ler `anuncios_externos` devolve 500 (QStash retenta)
+  em vez de virar "nada no ar".
   **Controle de preço no UPDATE (ADR-0078, Fase 1):** mesmo comportamento do `update-familia-ml` no
   ramo UPDATE — em "somente estoque" nenhum push de preço/atacado; cor nova adota o preço vivo do
   anúncio (falha LOUD sem preço vivo válido); `preco_publicado_ml` gravado por SKU no sucesso
@@ -2314,14 +2327,15 @@ Lógica em `supabase/functions/_shared/galeria/`. Nenhuma edge desta família es
   ficha de catálogo** — medido no spike: os atributos do produto são de especificação
   (`BRAND`, `SALE_FORMAT`, `UNITS_PER_PACK`…), e peso/medidas são `SELLER_PACKAGE_*`, atributo
   do anúncio de cada vendedor.
-- **calcular-tarifa-ml** — comissões (classic + premium) por preço/categoria + frete que o vendedor absorve (frete grátis ao comprador, via `GET /users/{id}/shipping_options/free`); `recebe = preço − comissão − frete − imposto` (imposto por origem somado ao cálculo client, ADR-0055). Body aceita `dimensoes` (peso/medidas da variação representativa); cache Redis 6h (chave inclui dimensões + vendedor). **Desde a ADR-0148:** a resposta carrega `proveniencia` (`official` / `partial` / `estimated`) e `motivo_proveniencia`; o cache foi para `tarifa:v3:` porque a forma mudou. `partial` significa que o frete usou o pacote padrão por falta de dimensões — a DRE recusa calcular fora de `official`, a Revisão segue lendo só os números.
+- **calcular-tarifa-ml** — comissões (classic + premium) por preço/categoria + frete que o vendedor absorve (frete grátis ao comprador, via `GET /users/{id}/shipping_options/free`); `recebe = preço − comissão − frete − imposto` (imposto por origem somado ao cálculo client, ADR-0055). Body aceita `dimensoes` (peso/medidas da variação representativa); cache Redis 6h (chave inclui dimensões + vendedor). Tarifa `estimated` usa TTL de 300 s (não fixa estimativa por 6h). **Desde a ADR-0148:** a resposta carrega `proveniencia` (`official` / `partial` / `estimated`) e `motivo_proveniencia`; o cache foi para `tarifa:v3:` porque a forma mudou. `partial` significa que o frete usou o pacote padrão por falta de dimensões — a DRE recusa calcular fora de `official`, a Revisão segue lendo só os números.
 - **buscar-categorias-ml** — sugestões opcionais para a Calculadora ML (ADR-0126). Recebe
   `{ query }` com 3–120 caracteres e devolve até 8 itens `{ id, nome, caminho? }` do preditor
   oficial do Mercado Livre. Exige JWT e resolve a conexão pela `org_id` da sessão. É
   deliberadamente **read-only**: usa somente o access token ainda válido já persistido e não faz
   refresh; sem conexão ou com token vencido devolve lista vazia para manter a digitação manual.
   Falha do preditor devolve 503 sanitizado, sem expor query, token ou payload externo nos logs.
-- **tabela-frete-ml** — grade compacta 7×4 (faixas de peso × preço) do frete que o vendedor absorve, para a Viabilidade. Body `{ categoria_ml_id }`; varre ~28 combinações via `shipping_options/free` (batch 5); cache Redis 24h `tabela-frete:v1:{org}:{categoria}`. Sem ME2 → `{ indisponivel: true, motivo: 'sem_me2' }`.
+- **tabela-frete-ml** — grade compacta 7×4 (faixas de peso × preço) do frete que o vendedor absorve, para a Viabilidade. Body `{ categoria_ml_id }`; varre ~28 combinações via `shipping_options/free` (batch 5); cache Redis `tabela-frete:v2:{org}:{categoria}` (24h; 300 s se alguma célula falhou). Célula sem cotação vem `null` (faixa indisponível, distinto de frete zero; a calculadora exibe "—"). Sem ME2 → `{ indisponivel: true, motivo: 'sem_me2' }`.
+- **ler-anuncio-calculadora** — somente leitura (só `GET` ao ML, nenhuma escrita), sem cache, `verify_jwt=true`, escopo por `org_id`. Body `{ codigo_pai, item_id | null }`; devolve para o prefill da calculadora o anúncio publicado: preço vivo (`sale_price`, senão `items`), modalidade (clássico/premium), categoria (id/nome, fonte item ou cadastro) e status. `item_id` fora da org/família → 404; body inválido → 400; sem conexão ML ou falha de leitura → 200 sem preço com `motivo` (`sem_conexao`, `falha_leitura_item`), a calculadora segue manual.
 
 ### Acesso / usuários
 

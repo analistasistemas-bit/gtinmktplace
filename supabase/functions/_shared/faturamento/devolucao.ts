@@ -112,8 +112,20 @@ const REASON_PREFIXO: Array<[RegExp, string]> = [
 /** O ML fecha `cancel_purchase` sozinho em ~3 min: quem avisa é `tratarPedidoCancelado` (emenda ADR-0121). */
 export const avisaNovaDevolucao = (tipo: string | null | undefined): boolean => tipo !== 'cancel_purchase';
 
+/** Códigos exatos, conferidos contra o `detalhe.problem` que o ML devolve (08/11/2026). Vencem o prefixo:
+ * PDD9939 é arrependimento ("chegou em boas condições, mas não quer mais"), não defeito. */
+export const REASON_ARREPENDIMENTO = 'PDD9939';
+const REASON_EXATO: Record<string, string> = {
+  [REASON_ARREPENDIMENTO]: 'Arrependimento da compra',
+  PDD9941: 'Cor, tamanho ou modelo diferente do escolhido',
+  PDD9942: 'Recebeu outro tipo de produto',
+  PDD9944: 'Produto diferente do anúncio',
+};
+
 export function traduzirReason(reasonId: string | null | undefined): string | null {
   if (!reasonId) return null;
+  const exato = REASON_EXATO[reasonId.toUpperCase()];
+  if (exato) return exato;
   for (const [re, label] of REASON_PREFIXO) if (re.test(reasonId)) return label;
   return reasonId;
 }

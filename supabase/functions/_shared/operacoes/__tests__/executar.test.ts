@@ -85,6 +85,7 @@ const DEAL_ADERIR: OperacaoRow = {
 const SAIR: OperacaoRow = { ...DEAL_ADERIR, acao: 'sair' };
 const SAIR_SMART: OperacaoRow = { ...SAIR, promocao_tipo: 'SMART' };
 const OPTS = { limiteMs: 60_000, lote: 10 };
+const SIBLING = 'ML 400: Errors: OFFER_SIBLING_CREATION_IN_PROCESS - Creation of sibling offer in process';
 
 describe('proximoIntervalo', () => {
   it('5, 10, 20, 40 min e depois 60 min', () => {
@@ -234,6 +235,35 @@ describe('executar — aderir', () => {
     expect(itens[1].status).toBe('aplicado');
   });
 
+  // AVIL 09/11 (Black Friday): o pai legado aderiu e o ML propagou às cópias de catálogo; o POST de cada cópia voltou
+  // 400 SIBLING enquanto propagava, e 28 de 30 "erros" já estavam pending.
+  it('400 SIBLING e o ML já mostra participando → ja_estava e espelha', async () => {
+    const itens = [item('MLB1')];
+    const { deps, ml } = montar(itens, { campanha: (_id, n) => (n === 1 ? conv() : conv({ status: 'pending' })) });
+    vi.mocked(ml.post).mockRejectedValueOnce(new Error(SIBLING));
+    await executar(DEAL_ADERIR, deps, OPTS);
+    expect(itens[0]).toMatchObject({ status: 'ja_estava', mensagem: 'Inscrito pelo ML junto com o anúncio principal' });
+    expect(deps.espelharStatusCentral).toHaveBeenCalledWith('P-1', 'DEAL', 'MLB1', 'pending');
+  });
+
+  it('400 SIBLING ainda candidate → bloqueado (fora do "Tentar novamente"), não erro', async () => {
+    const itens = [item('MLB1')];
+    const { deps, ml } = montar(itens);
+    vi.mocked(ml.post).mockRejectedValueOnce(new Error(SIBLING));
+    await executar(DEAL_ADERIR, deps, OPTS);
+    expect(itens[0].status).toBe('bloqueado');
+    expect(itens[0].mensagem).toMatch(/anúncio principal/);
+    expect(deps.espelharStatusCentral).not.toHaveBeenCalled();
+  });
+
+  it('400 SIBLING e a releitura falha → erro retentável, não bloqueado', async () => {
+    const itens = [item('MLB1')];
+    const { deps, ml } = montar(itens, { campanha: (_id, n) => { if (n > 1) throw new Error('ML 500: Oops!'); return conv(); } });
+    vi.mocked(ml.post).mockRejectedValueOnce(new Error(SIBLING));
+    await executar(DEAL_ADERIR, deps, OPTS);
+    expect(itens[0]).toMatchObject({ status: 'erro', mensagem: 'ML 500: Oops!' });
+  });
+
   it('falha ao gravar depois do 201 → relança e o item fica enviando', async () => {
     const itens = [item('MLB1')];
     const { deps } = montar(itens);
@@ -276,6 +306,54 @@ describe('executar — LIGHTNING', () => {
     expect(ml.post).toHaveBeenCalledWith('MLB1', { promotion_id: 'LGH-1', promotion_type: 'LIGHTNING', deal_price: 24.65, stock: 5 });
     expect(itens[0]).toMatchObject({ status: 'aplicado', offer_id: 'OFFER-X-1', mensagem: 'Agendada: 06/11 00:00–11:59' });
     expect(deps.espelharStatusCentral).toHaveBeenCalledWith('LGH-1', 'LIGHTNING', 'MLB1', 'pending');
+  });
+
+  // Emenda 2026-11-08 (2): um horário participando e outro convidado.
+  const participandoComConvite = conv({ status: 'pending', offer_id: 'OFFER-X-1', convite });
+  it('400 SIBLING participando com convite aberto → bloqueado, não ja_estava (o horário pedido não entrou)', async () => {
+    const itens = [item('MLB1', { preco: 24.65 })];
+    const { deps, ml } = montar(itens, { campanha: () => participandoComConvite, oferta: () => ofertaConvite });
+    vi.mocked(ml.post).mockRejectedValueOnce(new Error(SIBLING));
+    await executar(LGH, deps, OPTS);
+    expect(ml.post).toHaveBeenCalledTimes(1);
+    expect(itens[0].status).toBe('bloqueado');
+    expect(deps.espelharStatusCentral).not.toHaveBeenCalled();
+  });
+
+  it('participando em um horário com convite aberto: grava o CANDIDATE antes e posta pelo convite', async () => {
+    const itens = [item('MLB1', { preco: 24.65 })];
+    const { deps, ml } = montar(itens, {
+      campanha: (_id, n) => (n === 1 ? participandoComConvite : conv({ status: 'pending', offer_id: 'OFFER-X-2' })),
+      oferta: () => ofertaConvite, post: () => ({ offer_id: 'OFFER-X-2' }),
+    });
+    await executar(LGH, deps, OPTS);
+    const gravouCandidato = deps.gravarItem.mock.invocationCallOrder[deps.gravarItem.mock.calls.findIndex((c) => c[2].offer_id === 'CANDIDATE-MLB1-5')];
+    expect(gravouCandidato).toBeLessThan(vi.mocked(ml.post).mock.invocationCallOrder[0]);
+    expect(ml.post).toHaveBeenCalledWith('MLB1', { promotion_id: 'LGH-1', promotion_type: 'LIGHTNING', deal_price: 24.65, stock: 5 });
+    expect(itens[0]).toMatchObject({ status: 'aplicado', offer_id: 'OFFER-X-2' });
+  });
+
+  it('retomada com outro convite aberto (CANDIDATE diferente do gravado) → Já estava, sem POST', async () => {
+    const itens = [item('MLB1', { preco: 24.65, offer_id: 'CANDIDATE-MLB1-ANTIGO' })];
+    const { deps, ml } = montar(itens, { campanha: () => participandoComConvite, oferta: () => ofertaConvite });
+    await executar(LGH, deps, OPTS);
+    expect(ml.post).not.toHaveBeenCalled();
+    expect(itens[0]).toMatchObject({ status: 'ja_estava' });
+  });
+
+  it('retomada com o mesmo convite gravado → posta', async () => {
+    const itens = [item('MLB1', { preco: 24.65, offer_id: 'CANDIDATE-MLB1-5' })];
+    const { deps, ml } = montar(itens, { campanha: () => participandoComConvite, oferta: () => ofertaConvite, post: () => ({ offer_id: 'OFFER-X-2' }) });
+    await executar(LGH, deps, OPTS);
+    expect(ml.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('participando sem convite → Já estava', async () => {
+    const itens = [item('MLB1', { preco: 24.65 })];
+    const { deps, ml } = montar(itens, { campanha: () => conv({ status: 'pending', offer_id: 'OFFER-X-1' }) });
+    await executar(LGH, deps, OPTS);
+    expect(ml.post).not.toHaveBeenCalled();
+    expect(itens[0]).toMatchObject({ status: 'ja_estava' });
   });
 
   it('janela com fuso explícito → horário de Brasília', async () => {
@@ -672,6 +750,22 @@ describe('ofertas de preço fixo', () => {
       expect(deps.espelharPreco).toHaveBeenCalledWith('P-MLB18099366', 'MLB1', 69.98);
     });
 
+    it('400 SIBLING → ja_estava com a etapa limpa (retomada não vira aplicado)', async () => {
+      const itens = [item('MLB1', { preco: 69.98 })];
+      const { deps, ml } = montar(itens, { campanha: (_id, n) => (n === 1 ? convPM() : part('started')) });
+      vi.mocked(ml.post).mockRejectedValueOnce(new Error(SIBLING));
+      await executar(PM, deps, OPTS);
+      expect(itens[0]).toMatchObject({ status: 'ja_estava', etapa: null });
+    });
+
+    it('400 SIBLING ainda candidate → bloqueado mantendo a etapa (trava de adesaoRecente)', async () => {
+      const itens = [item('MLB1', { preco: 69.98 })];
+      const { deps, ml } = montar(itens, { campanha: () => convPM() });
+      vi.mocked(ml.post).mockRejectedValueOnce(new Error(SIBLING));
+      await executar(PM, deps, OPTS);
+      expect(itens[0]).toMatchObject({ status: 'bloqueado', etapa: 'escrita_pedida' });
+    });
+
     it('releitura já participando vale mais que o padrão do tipo', async () => {
       const { deps } = montar([item('MLB1', { preco: 64 })], { campanha: (_id, n) => (n === 1 ? convSL() : part('started', 64)) });
       await executar(SL, deps, OPTS);
@@ -685,6 +779,8 @@ describe('ofertas de preço fixo', () => {
       expect(itens[0]).toMatchObject({ status: 'mudou', mensagem: 'O preço da oferta mudou: agora 59,90' });
       expect(itens[0].etapa).toBeUndefined();
       expect(ml.post).not.toHaveBeenCalled();
+      // Sem isto o preview seguia com o preço velho até o sync do dia seguinte e toda nova tentativa dava "mudou".
+      expect(deps.espelharPreco).toHaveBeenCalledWith('P-MLB18099366', 'MLB1', 59.9, ['candidate']);
     });
 
     it('Review Focus 2: preço fresco < 19 com risco confirmado → bloqueado, sem POST', async () => {
@@ -1042,6 +1138,7 @@ describe('ofertas de preço fixo', () => {
       expect(itens[0]).toMatchObject({ status: 'mudou', mensagem: 'O ML ainda mostra este anúncio como convidado. Se aderiu agora há pouco, aguarde 2 minutos e tente de novo.' });
       expect(ml.del).not.toHaveBeenCalled();
       expect(deps.espelharStatusCentral).not.toHaveBeenCalled();
+      expect(deps.espelharPreco).not.toHaveBeenCalled();
     });
 
     it('4xx claro → erro com a mensagem do ML', async () => {

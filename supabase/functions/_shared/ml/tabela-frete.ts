@@ -1,4 +1,5 @@
-import { buscarFreteVendedor } from './frete.ts';
+import { buscarFreteVendedorComProveniencia } from './frete.ts';
+import type { ValorComProveniencia } from './proveniencia.ts';
 import type { DimensoesPacote } from './pacote.ts';
 
 export interface FaixaPreco {
@@ -15,8 +16,8 @@ export interface FaixaPeso {
 export interface TabelaFrete {
   faixasPreco: FaixaPreco[];
   faixasPeso: FaixaPeso[];
-  /** [pesoIdx][precoIdx] — frete que o vendedor absorve (R$). */
-  celulas: number[][];
+  /** [pesoIdx][precoIdx] — frete que o vendedor absorve (R$); null = o ML não respondeu a faixa. */
+  celulas: (number | null)[][];
 }
 
 export const FAIXAS_PRECO: FaixaPreco[] = [
@@ -42,7 +43,7 @@ type FetchFrete = (
   preco: number,
   categoria: string,
   dim?: DimensoesPacote | null,
-) => Promise<number>;
+) => Promise<ValorComProveniencia<number>>;
 
 const LOTE = 5;
 
@@ -57,15 +58,15 @@ async function emLotes<T>(tarefas: (() => Promise<T>)[]): Promise<T[]> {
 
 /**
  * Monta grade 7×4 (peso × preço) consultando shipping_options/free por célula.
- * Valores = frete que o vendedor absorve (0 = comprador paga).
+ * Valores = frete que o vendedor absorve (0 = comprador paga; null = ML não respondeu).
  */
 export async function montarTabelaFrete(
   token: string,
   mlUserId: string,
   categoriaId: string,
-  fetchFrete: FetchFrete = buscarFreteVendedor,
+  fetchFrete: FetchFrete = buscarFreteVendedorComProveniencia,
 ): Promise<TabelaFrete> {
-  const tarefas: (() => Promise<number>)[] = [];
+  const tarefas: (() => Promise<ValorComProveniencia<number>>)[] = [];
   for (const peso of FAIXAS_PESO) {
     for (const preco of FAIXAS_PRECO) {
       tarefas.push(() => fetchFrete(token, mlUserId, preco.itemPrice, categoriaId, peso.dimensoes));
@@ -73,12 +74,13 @@ export async function montarTabelaFrete(
   }
   const valores = await emLotes(tarefas);
 
-  const celulas: number[][] = [];
+  const celulas: (number | null)[][] = [];
   let idx = 0;
   for (let p = 0; p < FAIXAS_PESO.length; p++) {
-    const linha: number[] = [];
+    const linha: (number | null)[] = [];
     for (let c = 0; c < FAIXAS_PRECO.length; c++) {
-      linha.push(valores[idx++]);
+      const v = valores[idx++];
+      linha.push(v.proveniencia === 'official' ? v.valor : null);
     }
     celulas.push(linha);
   }

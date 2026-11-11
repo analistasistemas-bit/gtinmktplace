@@ -202,6 +202,19 @@ function renderPreview(props: Partial<Parameters<typeof PreviewOperacao>[0]> = {
 }
 
 describe('PreviewOperacao', () => {
+  it('Selecionar todos marca e desmarca os anúncios não bloqueados (pedido do Diego, 08/11)', async () => {
+    const user = userEvent.setup();
+    const am = (id: string) => item({ ml_item_id: id, preco_sugerido: 85, preco_avaliado: 85, preco_min: 70, preco_max: 90, pior_semaforo: 'amarelo', projecao: [cor({ semaforo: 'amarelo' })] });
+    renderPreview({ tipo: 'DEAL', itens: [am('A'), am('B'), am('C')] });
+    const marcados = () => ['A', 'B', 'C'].filter((id) => screen.getByRole('checkbox', { name: `Selecionar ${id}` }).getAttribute('data-state') === 'checked').length;
+    await user.click(screen.getByRole('checkbox', { name: 'Selecionar A' }));
+    expect(marcados()).toBe(2);
+    await user.click(screen.getByRole('checkbox', { name: 'Selecionar todos' }));
+    expect(marcados()).toBe(3);
+    await user.click(screen.getByRole('checkbox', { name: 'Selecionar todos' }));
+    expect(marcados()).toBe(0);
+  });
+
   it('DEAL aderir marca só o verde por padrão', () => {
     const verde = item({ ml_item_id: 'V', preco_sugerido: 85, preco_min: 70, preco_max: 90, projecao: [cor({ custo: 5, piso: 10 })] });
     const vermelho = item({ ml_item_id: 'R', preco_sugerido: 5, preco_min: 70, preco_max: 90, projecao: [cor({ custo: 5, piso: 10 })] });

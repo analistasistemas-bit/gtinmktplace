@@ -1,3 +1,5 @@
+import { REASON_ARREPENDIMENTO } from '../faturamento/devolucao.ts';
+
 type Linha = string | null | false | undefined;
 /** Layout para celular (mesmo padrão das mensagens gerenciais): título, linha em branco, uma
  * informação por linha; blocos separados por linha em branco e bloco vazio some. */
@@ -194,6 +196,7 @@ export interface NovaDevolucaoAlerta {
   order_id: number | null;
   pack_id?: number | null;
   tipo: string;
+  reason_id?: string | null;
   motivo: string | null;
   valor: number | null;
   moeda: string;
@@ -217,8 +220,11 @@ function urlDevolucaoML(tipo: string, claimId: number): string {
 
 export function montarMensagemNovaDevolucao(d: NovaDevolucaoAlerta): string {
   const numero = d.pack_id ?? d.order_id;
+  // Arrependimento: o ML lista em Devoluções, não em Reclamações — o título segue o ML.
+  const titulo = d.reason_id?.toUpperCase() === REASON_ARREPENDIMENTO ? 'devolução (arrependimento)'
+    : d.tipo === 'return' ? 'devolução' : 'reclamação';
   return blocos(
-    [`↩️ Nova ${d.tipo === 'return' ? 'devolução' : 'reclamação'}`],
+    [`↩️ Nova ${titulo}`],
     [
       numero ? `Pedido: ${numero}` : null,
       d.valor != null && `Valor: ${fmtBRL(d.valor, d.moeda)}`,

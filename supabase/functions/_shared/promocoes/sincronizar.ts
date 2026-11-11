@@ -104,7 +104,7 @@ async function projetarCor(
   }
   const liquido = liquidoNoPreco(preco!, t, aliquotaPct);
   let ate: { valor: number | null; motivo: 'qualquer' | 'nenhum' | null } = { valor: null, motivo: null };
-  if (it.status === 'candidate' && it.preco_min != null && it.preco_max != null) {
+  if ((it.status === 'candidate' || it.convite_aberto) && it.preco_min != null && it.preco_max != null) {
     try {
       ate = await ateQuantoDescer({ piso, custo, aliquotaPct, min: it.preco_min, max: it.preco_max }, tarifaNo);
       // Calcula na faixa real (subir o mínimo viraria um falso "qualquer preço") e só então para no piso de R$ 19.
@@ -191,7 +191,7 @@ export function mesmaRodada(a: string | null, b: string): boolean {
  * horário), e o upsert por (org, promoção, item) recusa o lote inteiro. Fica a oferta em que já participa;
  * entre iguais, a de menor preço avaliado (pior caso de margem). O estoque vem da irmã quando faltar.
  */
-export function umaOfertaPorAnuncio(itens: ItemPromocaoML[]): ItemPromocaoML[] {
+export function umaOfertaPorAnuncio(itens: ItemPromocaoML[], relampago = false): ItemPromocaoML[] {
   const m = new Map<string, ItemPromocaoML>();
   const melhor = (a: ItemPromocaoML, b: ItemPromocaoML) => {
     if (ehParticipando(a.status) !== ehParticipando(b.status)) return ehParticipando(a.status) ? a : b;
@@ -202,9 +202,27 @@ export function umaOfertaPorAnuncio(itens: ItemPromocaoML[]): ItemPromocaoML[] {
     const ant = m.get(it.ml_item_id);
     if (!ant) { m.set(it.ml_item_id, it); continue; }
     const v = melhor(ant, it), o = v === ant ? it : ant;
-    m.set(it.ml_item_id, { ...v, estoque_min: v.estoque_min ?? o.estoque_min, estoque_max: v.estoque_max ?? o.estoque_max });
+    // Relâmpago (emenda 2026-11-08 (2)): uma oferta por horário. Participando + convite → a linha segue participando
+    // e leva o convite junto (vira faixa no sync).
+    const convite = relampago && ehParticipando(v.status)
+      ? v.convite ?? o.convite ?? (o.status === 'candidate' ? o : undefined) : undefined;
+    m.set(it.ml_item_id, {
+      ...v, ...(convite ? { convite } : {}),
+      estoque_min: v.estoque_min ?? o.estoque_min, estoque_max: v.estoque_max ?? o.estoque_max,
+    });
   }
   return [...m.values()];
+}
+
+/** Participando com convite de outro horário: faixa, teto, sugerido e estoque mínimo do convite na linha participando. */
+export function comConviteRelampago(it: ItemPromocaoML, o: OfertaRelampago | null): ItemPromocaoML {
+  if (!it.convite) return it;
+  const { convite, ...linha } = it;
+  const c = comOfertaRelampago(convite, o);
+  return {
+    ...linha, convite_aberto: true, preco_min: c.preco_min, preco_max: c.preco_max, preco_sugerido: c.preco_sugerido,
+    estoque_min: c.estoque_min, estoque_max: c.estoque_max,
+  };
 }
 
 /**
@@ -238,7 +256,7 @@ export async function sincronizarPromocao(
       return { resultado: 'erro', processados: 0 };
     }
     // Cursor = último ml_item_id processado; a comparação é a mesma da ordenação (code units).
-    const todos = umaOfertaPorAnuncio(await deps.listarItens()).sort(porId);
+    const todos = umaOfertaPorAnuncio(await deps.listarItens(), msg.tipo === 'LIGHTNING').sort(porId);
     const campanha = new Map(todos.map((x) => [x.ml_item_id, x]));
     const pendentes = todos.filter((x) => msg.cursor == null || x.ml_item_id > msg.cursor);
     const cadastro = await deps.carregarCadastro();
@@ -265,13 +283,13 @@ export async function sincronizarPromocao(
         let it = bruto;
         if (msg.tipo === 'LIGHTNING') {
           // Falha degrada só a linha (sem faixa → ⚪); nunca derruba a rodada.
-          const o = it.status === 'candidate'
+          const o = it.status === 'candidate' || it.convite
             ? await deps.ofertaRelampago(it.ml_item_id).catch((e) => {
               console.warn('[promocoes] visão por item da Relâmpago indisponível', { ml_item_id: it.ml_item_id, erro: mensagem(e) });
               return null;
             })
             : null;
-          it = comOfertaRelampago(it, o);
+          it = it.convite ? comConviteRelampago(it, o) : comOfertaRelampago(it, o);
         }
         const l = await projetarItem(it, ml.get(it.ml_item_id) ?? null, cadastro, aliq, (q) => deps.tarifaEm(q));
         if (par.papel !== 'catalogo') return l;

@@ -1,15 +1,28 @@
 import { AlertTriangle, Calculator, ShieldCheck } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useCalculadoraML } from '@/hooks/useCalculadoraML'
-import type { ModalidadeML } from '@/lib/calculadora-ml'
 import { FormularioCalculadoraML } from './formulario-calculadora-ml'
 import { ResultadoCalculadoraML } from './resultado-calculadora-ml'
+import { QuadroKits } from './quadro-kits'
+import { TabelaFreteViabilidade } from '@/components/tabela-frete-viabilidade'
 
 export function CalculadoraML() {
   const calculadora = useCalculadoraML()
-  const [modalidade, setModalidade] = useState<ModalidadeML>('classico')
   const produtos = calculadora.produtos.data?.produtos ?? []
   const categoriaAusente = !calculadora.entrada.categoriaId?.trim()
+  const categoria = calculadora.entrada.categoriaId?.trim() ?? ''
+  // A tabela dispara ~28 cotações no ML; junto com a tarifa, o ML devolve 429 (local_rate_limited)
+  // e a cotação oficial cai. Libera a tabela da categoria só depois da primeira cotação terminar
+  // (`idle` = ainda sem preço: a cotação nem começou, então a tabela espera).
+  const [tabelaLiberada, setTabelaLiberada] = useState<string | null>(null)
+  const cotacaoTerminou = ['official', 'partial', 'estimated'].includes(calculadora.statusCotacao)
+  useEffect(() => {
+    if (categoria && cotacaoTerminou) setTabelaLiberada(categoria)
+  }, [categoria, cotacaoTerminou])
+  // O nome vem do anúncio: só vale enquanto a categoria da tela ainda é a dele.
+  const nomeCategoria = calculadora.anuncio?.categoriaId === calculadora.entrada.categoriaId
+    ? calculadora.categoriaNome ?? undefined
+    : undefined
 
   return (
     <div className="min-h-full bg-muted/20 px-4 py-6 sm:px-6 lg:px-8">
@@ -33,6 +46,19 @@ export function CalculadoraML() {
               produtos={produtos}
               produtoSelecionado={calculadora.produtoSelecionado}
               produtosCarregando={calculadora.produtos.isLoading}
+              carregando={calculadora.carregandoProduto}
+              onPreco={calculadora.editarPreco}
+              onMargem={calculadora.editarMargem}
+              margemExibida={calculadora.margemExibida}
+              metaStatus={calculadora.metaStatus}
+              metaSolicitada={calculadora.metaSolicitada}
+              modalidade={calculadora.modalidadeAtiva}
+              modalidadeDoAnuncio={calculadora.modalidadeDoAnuncio}
+              onModalidade={calculadora.setModalidadeAtiva}
+              avisosProduto={calculadora.avisosProduto}
+              categoriaNome={nomeCategoria}
+              variacaoUsada={calculadora.variacaoUsada}
+              anuncio={calculadora.anuncio}
               onEntrada={calculadora.atualizarEntrada}
               onTaxas={calculadora.atualizarTaxasManuais}
               onProduto={calculadora.selecionarProduto}
@@ -40,20 +66,34 @@ export function CalculadoraML() {
           </section>
           <aside className="lg:sticky lg:top-4">
             <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground"><ShieldCheck className="size-4 text-primary" aria-hidden="true" /> Resultado transparente e acionável</div>
-            <ResultadoCalculadoraML
+            {calculadora.carregandoProduto
+              ? <p className="rounded-xl border border-border/70 bg-card p-5 text-sm text-muted-foreground" role="status">Carregando produto…</p>
+              : <ResultadoCalculadoraML
               resultado={calculadora.resultado}
               statusCotacao={calculadora.statusCotacao}
               aviso={calculadora.aviso}
               taxas={calculadora.taxasManuais}
-              modalidadeSelecionada={modalidade}
-              onModalidade={(proxima) => { setModalidade(proxima); calculadora.atualizarEntrada({ modalidadeParaDecisao: proxima }) }}
-              onValidar={() => { void calculadora.validarNaApi() }}
-              erroMeta={calculadora.erroMeta}
-              cotacaoMeta={calculadora.cotacaoMeta}
-              validacaoMeta={calculadora.validacaoMeta}
-            />
+              modalidadeSelecionada={calculadora.modalidadeAtiva}
+              temMeta={calculadora.metaSolicitada !== null}
+              freteDesconhecido={calculadora.cotacao.classico.frete === null}
+            />}
           </aside>
         </div>
+
+        {!calculadora.carregandoProduto && <QuadroKits
+          entrada={calculadora.entrada}
+          modalidade={calculadora.modalidadeAtiva}
+          margemPct={calculadora.margemEfetiva}
+          resultadoUnidade={calculadora.resultado.modalidades[calculadora.modalidadeAtiva]}
+          cotarEm={calculadora.cotarEm}
+          aguardando={calculadora.statusCotacao === 'loading' || calculadora.metaStatus === 'calculando'}
+        />}
+
+        {categoriaAusente
+          ? <p className="text-sm text-muted-foreground">Informe a categoria para ver a tabela de frete do Mercado Livre.</p>
+          : tabelaLiberada === categoria
+            ? <TabelaFreteViabilidade categoriaMlId={categoria} analiseConcluida contexto="calculadora" />
+            : <p className="text-sm text-muted-foreground">A tabela de frete carrega depois da cotação.</p>}
       </div>
     </div>
   )

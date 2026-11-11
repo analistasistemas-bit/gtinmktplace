@@ -14,6 +14,27 @@ const naCampanha = {
 };
 
 describe('lerNaCampanha', () => {
+  it('Relâmpago com um horário participando e outro convidado: participando + convite (emenda 2026-11-08 (2))', async () => {
+    const corpo = { results: [
+      { id: 'MLB1', ref_id: 'CANDIDATE-MLB1-77', status: 'candidate', price: 27.64, min_discounted_price: 8.55, stock: { min: 5, max: 100 } },
+      { id: 'MLB1', ref_id: 'OFFER-MLB1-14', status: 'pending', price: 24.45, stock: { remaining_stock: 5 } },
+    ] };
+    const ml = criarClienteML('tok', vi.fn().mockResolvedValue(resp(200, corpo)), semEspera());
+    expect(await ml.lerNaCampanha('LGH-MLB1000', 'LIGHTNING', 'MLB1')).toEqual({
+      status: 'pending', preco_min: null, preco_max: null, offer_id: 'OFFER-MLB1-14', estoque_min: null, preco: 24.45,
+      convite: { status: 'candidate', preco_min: 8.55, preco_max: null, offer_id: 'CANDIDATE-MLB1-77', estoque_min: 5, preco: 27.64 },
+    });
+  });
+
+  it('lerOfertaNoItem com participando e convite lê o convite', async () => {
+    const corpo = [
+      { id: 'LGH-1', type: 'LIGHTNING', status: 'pending', start_date: '2026-11-12T00:00:00', finish_date: '2026-11-12T11:59:59' },
+      { id: 'LGH-1', type: 'LIGHTNING', status: 'candidate', min_discounted_price: 5.7, max_discounted_price: 25.65, suggested_discounted_price: 24.23, stock: { min: 5 } },
+    ];
+    const ml = criarClienteML('tok', vi.fn().mockResolvedValue(resp(200, corpo)), semEspera());
+    expect(await ml.lerOfertaNoItem('LGH-1', 'MLB1')).toMatchObject({ preco_max: 25.65, preco_sugerido: 24.23, estoque_min: 5, inicio: null });
+  });
+
   it('results[0] → ItemNaCampanha; URL da visão da campanha e Bearer', async () => {
     const f = vi.fn().mockResolvedValue(resp(200, naCampanha));
     const ml = criarClienteML('tok', f, semEspera());
@@ -138,6 +159,7 @@ describe('lerNaCampanha LIGHTNING', () => {
     ] }));
     expect(await criarClienteML('tok', f, semEspera()).lerNaCampanha('LGH-1', 'LIGHTNING', 'MLB1')).toEqual({
       status: 'pending', preco_min: null, preco_max: null, offer_id: 'OFFER-X-1', estoque_min: null, preco: null,
+      convite: { status: 'candidate', preco_min: null, preco_max: null, offer_id: 'CANDIDATE-MLB1-5', estoque_min: 5, preco: null },
     });
   });
 });
@@ -149,6 +171,18 @@ describe('lerOfertaNoItem', () => {
     { id: 'LGH-1', type: 'LIGHTNING', status: 'candidate', ref_id: 'CANDIDATE-MLB1-5', min_discounted_price: 5.8,
       max_discounted_price: 26.1, suggested_discounted_price: 24.65, stock: { min: 5, max: 180 } },
   ];
+
+  it('com o offer_id criado, lê a janela daquela oferta (não a de outro horário)', async () => {
+    const corpo = [
+      { id: 'LGH-1', type: 'LIGHTNING', status: 'pending', ref_id: 'OFFER-MLB1-1', start_date: '2026-11-10T12:00:00', finish_date: '2026-11-10T23:59:59' },
+      { id: 'LGH-1', type: 'LIGHTNING', status: 'candidate', ref_id: 'CANDIDATE-MLB1-9', max_discounted_price: 25 },
+      { id: 'LGH-1', type: 'LIGHTNING', status: 'pending', ref_id: 'OFFER-MLB1-2', start_date: '2026-11-12T00:00:00', finish_date: '2026-11-12T11:59:59' },
+    ];
+    const ml = criarClienteML('tok', vi.fn(async () => resp(200, corpo)), semEspera());
+    expect(await ml.lerOfertaNoItem('LGH-1', 'MLB1', 'OFFER-MLB1-2')).toMatchObject({ inicio: '2026-11-12T00:00:00', fim: '2026-11-12T11:59:59' });
+    // Oferta criada ainda não visível: sem janela, nunca a de outro horário (revisão Grok).
+    expect(await ml.lerOfertaNoItem('LGH-1', 'MLB1', 'OFFER-MLB1-3')).toBeNull();
+  });
 
   it('filtra a Relâmpago pelo id e tipo; URL da visão por item', async () => {
     const f = vi.fn().mockResolvedValue(resp(200, visaoItem));

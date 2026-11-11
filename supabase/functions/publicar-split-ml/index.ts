@@ -8,7 +8,8 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import {
-  verificarAssinatura, enfileirarVinculacaoCatalogo, enfileirarSincronizacaoFiscal, enfileirarJobPublicacaoML,
+  verificarAssinatura, enfileirarVinculacaoCatalogo, enfileirarSincronizacaoFiscal, enfileirarPublicacoes,
+  enfileirarJobPublicacaoML,
 } from '../_shared/queue.ts';
 import {
   acordarEscritaAdiada, controleTrava, devolverEscritaAdiada, encerrarEscritaAdiada, reservarEscrita,
@@ -22,7 +23,8 @@ import { getConnector } from '../_shared/canais/registry.ts';
 import type { AnuncioCanonico, ContextoCanal } from '../_shared/canais/contrato.ts';
 import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
 import { montarAncoragem } from '../_shared/split/ancoragem.ts';
-import { particionarPorPreco } from '../_shared/split/particionar.ts';
+import { particionarPorPreco, MAX_VARIACOES_ML } from '../_shared/split/particionar.ts';
+import { lerFormatoPublicacao, confirmarFormatoPublicacao, formatoRepoSupabase } from '../_shared/ml/formato-publicacao.ts';
 import { gerarTituloParticao } from '../_shared/split/titulo-particao.ts';
 import { decidirRetryTransitorio, mensagemErroFotoRecuperavel } from '../_shared/publicacao/retry.ts';
 import { exigirSemReajusteAtivo } from '../_shared/publicacao/guard-reajuste.ts';
@@ -38,8 +40,13 @@ import { marcaParaUpdate } from '../_shared/categoria/marca-org.ts';
 import { agendarConfirmacao, itemConfirmarCriado, itemConfirmarLegacy, registrarConfirmacao } from '../_shared/confirmacao/registrar.ts';
 import { EMBED_MODULOS, kitLigado, skusParticipantes } from '../_shared/kit-variacao/politica.ts';
 
+// `versoes_kit` só atravessa: o reenfileiramento no `publish` (ADR-0160) repassa o body inteiro.
 // `adiada_id`/`acordar`: ADR-0201 (escrita adiada pela trava de escrita por MLB).
-interface Job { familia_id: string; lote_id: string; listing_type_id?: string; somenteEstoque?: boolean; adiada_id?: string; acordar?: boolean }
+interface Job {
+  familia_id: string; lote_id: string; listing_type_id?: string; somenteEstoque?: boolean;
+  versoes_kit?: Record<string, number>;
+  adiada_id?: string; acordar?: boolean;
+}
 
 const BUCKET = 'imagens';
 const TTL_SIGNED = 60 * 60 * 2; // 2h — ML baixa a foto de forma assíncrona.
@@ -53,9 +60,12 @@ async function criarAnuncioParticao(conn: Conn, ctx: ContextoCanal, anuncio: Anu
   const res = await conn.criarAnuncio(ctx, anuncio);
   if (!res.ok) {
     const e = res.erro!;
-    const err = new Error(e.mensagemOperador) as Error & { status?: number; retentavel?: boolean };
+    const err = new Error(e.mensagemOperador) as Error & { status?: number; retentavel?: boolean; codigo?: string };
     err.status = e.status;
     err.retentavel = e.retentavel;
+    err.codigo = e.codigo;
+    // ADR-0160: categoria User Products. O conector não manda status; sem ele o catch retentaria 10x.
+    if (e.codigo === 'FORMATO_INCOMPATIVEL') err.status = 400;
     throw err;
   }
   return res.valor!;
@@ -126,6 +136,26 @@ Deno.serve(async (req) => {
   // ADR-0201: trava de escrita dos itens já no ar e posse da linha adiada assumida (quando houver).
   let trava: ReturnType<typeof controleTrava> | null = null;
   let posseAdiada: string | null = null;
+  // ADR-0160 (emenda 2026-11-09): família sem nada no ar em categoria User Products volta para o
+  // `publish` (saga UP). Preenchidos no try, lidos também no catch (reativo).
+  let nadaNoAr = false;
+  let qtdCores = 0;
+  // Reenfileira o body parseado inteiro (inclui `versoes_kit` e `listing_type_id`) na mesma fila
+  // serial do dono. Sem trava nova: o 2º `publish` é barrado pelos guards dele (ja_publicado,
+  // reuso/adoção por SKU na saga). Falha → false; o caller grava erro com instrução.
+  const reenfileirarNoPublish = async (): Promise<boolean> => {
+    try {
+      await enfileirarPublicacoes([{ job, alvo: 'publish' }], familia.user_id as string);
+      return true;
+    } catch (e) {
+      console.error(`reenfileirar no publish falhou para familia ${job.familia_id}:`, e);
+      return false;
+    }
+  };
+  const msgPubliqueDeNovo = `Categoria ${familia.categoria_ml_id} identificada como User Products. Selecione a família e publique de novo.`;
+  const reroteado = () => new Response(JSON.stringify({ ok: true, reroteado: 'publish' }), {
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
 
   try {
     // Spec reajuste C2: reajuste de preço em massa ativo → 400 definitivo (erro de consulta retenta).
@@ -135,10 +165,32 @@ Deno.serve(async (req) => {
     const { data: variacoes } = await admin.from('variacoes')
       .select('*').eq('familia_id', job.familia_id).eq('excluida_da_publicacao', false);
     // Partições já no ar (fonte da ancoragem) — lidas aqui, antes das fotos, para o gate fiscal.
-    const { data: linhas } = await admin.from('anuncios_externos')
+    const { data: linhas, error: erroLinhas } = await admin.from('anuncios_externos')
       .select('particao, item_externo_id, permalink, titulo, variacoes_externas, atacado_status')
       .eq('org_id', familia.org_id).eq('canal', 'mercado_livre').eq('codigo_pai', familia.codigo_pai);
+    // Falha de leitura não pode virar "nenhuma partição no ar": reroteia família já publicada ou
+    // recria partição. 500 → o QStash retenta, sem enqueue nem escrita no ML.
+    if (erroLinhas) {
+      const err = new Error(`Leitura de anuncios_externos falhou: ${erroLinhas.message}`) as Error & { status?: number };
+      err.status = 500;
+      throw err;
+    }
     const ancoragem = montarAncoragem(linhas ?? []);
+
+    // "Nada no ar": sem ml_item_id e nenhuma linha com item_externo_id. A raiz da saga UP
+    // (item_externo_id nulo) não conta — redelivery depois da saga começar cai nos guards dela.
+    nadaNoAr = !familia.ml_item_id && !(linhas ?? []).some((l) => l.item_externo_id);
+    qtdCores = (variacoes ?? []).length;
+    // Pré-check (antes de qualquer efeito colateral: foto, título, POST): categoria já conhecida
+    // como User Products → a família é da saga. >100 cores segue no split (ADR-0048). Cobre o
+    // redelivery do QStash depois de um reenfileiramento (o 200 pode se perder).
+    if (nadaNoAr && conexao && familia.categoria_ml_id && qtdCores > 0 && qtdCores <= MAX_VARIACOES_ML
+      && await lerFormatoPublicacao(formatoRepoSupabase(admin), conexao.id, familia.categoria_ml_id) === 'user_products') {
+      if (await reenfileirarNoPublish()) return reroteado();
+      const err = new Error(msgPubliqueDeNovo) as Error & { status?: number };
+      err.status = 400;
+      throw err;
+    }
 
     // ADR-0135 D-7 + ADR-0187: mesmo gate fiscal do publish/update, antes de QUALQUER escrita no
     // ML (esta rota não tinha gate). 400 = definitivo; erro de leitura (sem status) = retenta.
@@ -308,7 +360,11 @@ Deno.serve(async (req) => {
       peso_gramas: rep.peso_gramas != null ? Number(rep.peso_gramas) : null,
     } : null;
 
-    for (const p of [...grupos.keys()].sort((a, b) => a - b)) {
+    // ADR-0160: sem nada no ar, as faixas com ≥2 cores vão primeiro — só elas revelam
+    // FORMATO_INCOMPATIVEL (1 cor vira item plano). Assim a família volta para a saga sem ter
+    // criado um item solto. Muda só a ordem; o índice `p` (título, espelho, ml_item_id) é o mesmo.
+    const prioridade = (p: number) => (nadaNoAr && grupos.get(p)!.length < 2 ? 1 : 0);
+    for (const p of [...grupos.keys()].sort((a, b) => prioridade(a) - prioridade(b) || a - b)) {
       const coresP = grupos.get(p)!;
       const linhaP = linhaPorParticao.get(p);
       const precoGrupoCent = particionamento.precoPorParticao.get(p) ?? null;
@@ -593,14 +649,40 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    let msg = err instanceof Error ? err.message : String(err);
     const tentativas = Number(req.headers.get('Upstash-Retried') ?? '0');
     const retentavelFoto = (err as { retentavel?: boolean }).retentavel === true;
-    // 5xx/429 ou foto ainda propagando (item.pictures.unavailable): reusa o picture_id e retenta
-    // via QStash (o retryDelay cobre a propagação de minutos, ADR-0033).
-    // ADR-0201: exceção antes de qualquer PUT solta a trava; depois de um PUT, ela vence sozinha.
+    // ADR-0201: exceção antes de qualquer PUT solta a trava; depois de um PUT, ela vence sozinha. Fica antes de
+    // TODA saída do catch — retry, erro e o reroteamento UP (que enfileira um job novo no `publish`).
     await trava?.abandonar();
-    if (decidirRetryTransitorio(err, tentativas) === 'retentar') {
+    if ((err as { codigo?: string }).codigo === 'FORMATO_INCOMPATIVEL') {
+      // ADR-0160: a categoria é User Products. Nunca retenta. Semeia o cache e, se nada desta
+      // família está no ar, devolve ao `publish` (saga UP). Senão vira erro pelo caminho comum
+      // abaixo (conferência, push fiscal da partição criada e talvezFinalizarLote).
+      const cat = familia.categoria_ml_id;
+      let cacheOk = false;
+      if (conexao && cat) {
+        try {
+          await confirmarFormatoPublicacao(formatoRepoSupabase(admin), conexao.id, cat, 'user_products');
+          cacheOk = true;
+        } catch (e) { console.error(`semear formato UP falhou para ${cat}:`, e); }
+      }
+      if (!particaoNoAr && nadaNoAr && qtdCores <= MAX_VARIACOES_ML) {
+        // Sem o cache o `publish` cairia na trava de preço uniforme; publicar de novo refaz a descoberta.
+        if (cacheOk && await reenfileirarNoPublish()) {
+          // Job entregue ao `publish`: desfecho da linha adiada (senão o despachante reexecutaria o split).
+          if (job.adiada_id && posseAdiada) await encerrarEscritaAdiada(admin, job.adiada_id, posseAdiada);
+          return reroteado();
+        }
+        msg = msgPubliqueDeNovo;
+      } else if (qtdCores > MAX_VARIACOES_ML) {
+        msg = `Categoria ${cat} é User Products e a família tem mais de 100 cores — o ML não aceita mais de 100 itens por família; divida a família na planilha.`;
+      } else {
+        msg = `Categoria ${cat} é User Products, mas parte desta família já está no ar como anúncio antigo — não dá para misturar os dois modelos automaticamente (ADR-0160).`;
+      }
+    } else if (decidirRetryTransitorio(err, tentativas) === 'retentar') {
+      // 5xx/429 ou foto ainda propagando (item.pictures.unavailable): reusa o picture_id e retenta
+      // via QStash (o retryDelay cobre a propagação de minutos, ADR-0033).
       if (job.adiada_id && posseAdiada) await devolverEscritaAdiada(admin, job.adiada_id, posseAdiada);
       return new Response(msg, { status: 500, headers: corsHeaders });
     }

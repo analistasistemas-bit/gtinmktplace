@@ -137,6 +137,7 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
       tipo_origem: 'manual',
       atributos_ml: atributosMl,
       atributos_faltantes: atributosFaltantes,
+      atributos_por_foto: null, // ADR-0202: categoria nova = schema novo; o que veio da foto não vale mais.
     })
     .eq('id', body.familia_id);
 

@@ -350,6 +350,34 @@ existe; DEAL ativo não conta) — 51,31 e 32,88 nos dois recusados.
 - Se o spike mostrar que a escrita exige re-autorização, toda org que quiser aderir pelo app precisa reconectar
   a conta ML — vira passo de onboarding do módulo.
 
+## Emenda 2026-11-08 (2) — Relâmpago: convite de outro horário em anúncio que já participa
+
+A Relâmpago aceita mais de uma oferta por anúncio, uma por horário. Lido em 08/11 na LGH-MLB1000: o MLB5322348511
+volta, na visão da campanha (com e sem `item_id=`) e na visão por item, como `OFFER-…` `pending` (12/11 00:00–11:59)
+**e** `CANDIDATE-…` aberto; o MLB5322353319 tem dois `pending` (10/11 e 12/11) e nenhum convite. O sync ficava com a
+oferta participando e o convite sumia da aba Convidados; a execução, lendo o participando, respondia "Já estava".
+
+1. **A linha segue participando** (`started`/`pending`, preço da oferta em `preco_promo`). Trava de oferta no UPDATE e
+   no reajuste, contagem, alertas de prejuízo, Resumo, aviso da Revisão, Sugestões e Reverter continuam vendo a
+   participação. Revisão do plano (Gemini, Codex sem cota): a primeira versão, que virava a linha em `candidate`,
+   tirava o anúncio de todos esses consumidores.
+2. **Sync (só LIGHTNING):** participando + convite → `convite_aberto = true`, e `preco_min/max/sugerido` e
+   `estoque_min` passam a ser os do convite (com o teto crível da emenda anterior) e entram no "Até quanto descer".
+3. **Tela:** a linha aparece nas duas abas. Em Convidados, "Já participa em outro horário" e a seleção conta como
+   aderir; em Participando, "Convite aberto para outro horário" e a seleção conta como sair. O mesmo clique nunca
+   oferece os dois. O semáforo da linha é o do preço participando; o painel de aderir recalcula no preço escolhido.
+4. **Validação:** aderir aceita linha participando com `convite_aberto` (só LIGHTNING).
+5. **Execução (aderir LIGHTNING):** a leitura fresca traz o convite junto da oferta participando (`convite`). Com
+   convite, a decisão segue o caminho de convidado (faixa, teto, piso, estoque); sem convite, "Já estava". A visão
+   por item prefere a entrada `candidate`; depois do POST, a janela é a da oferta criada (`ref_id`). Sair não muda.
+6. **Idempotência:** antes do POST o item grava o `CANDIDATE-…` que vai usar. Numa retomada, só posta de novo pelo
+   mesmo convite; convite diferente (outro horário aberto depois) encerra como "Já estava" — nunca adere a um horário
+   que o operador não viu.
+7. **Espelho:** aderir ou sair limpa `convite_aberto`; o próximo sync refaz a marca se o ML abrir outro horário.
+8. **Fora do escopo** (já existiam): falha de rede no POST da Relâmpago vira erro sem retomada; sair de um de dois
+   horários participando não é confirmado pela conferência.
+9. Migration aditiva: `ml_promocao_itens.convite_aberto boolean not null default false`.
+
 ## Alternativas descartadas
 
 - **V2 unitária antes, I5 depois:** retrabalho e inútil para 504 convidados.

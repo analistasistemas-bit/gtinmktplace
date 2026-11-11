@@ -11,7 +11,7 @@ import { garantirAnuncioExterno, claimAnuncioExterno } from '../_shared/anuncios
 import { separarCanais } from '../_shared/canais/selecao.ts';
 import { resolverSomenteEstoque } from './somente-estoque.ts';
 import { decidirSplit } from './decidir-split.ts';
-import { familiasFormatoLegacy } from './formato-legacy.ts';
+import { formatoPorFamilia } from './formato-legacy.ts';
 import { LIMITE_ESTOQUE_ML } from '../_shared/split/capar-estoque.ts';
 import { precoCentavos } from '../_shared/preco/grupos.ts';
 import { reservarFamilias, mensagemTudoRecusado, type FamiliaRecusada } from './reservar.ts';
@@ -164,19 +164,22 @@ try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write'
       }
       for (const r of itensUP ?? []) paisUP.add(r.codigo_pai as string);
     }
+    // ADR-0160 (emenda 2026-11-09): o cache de formato é lido só no CREATE (`novos`). Categoria
+    // `user_products` conhecida → `ehUP`: preço divergente vai à saga (`publish`), não ao split.
     // ADR-0195: CREATE acima do teto só divide com formato `legacy` confirmado. Sem isso segue o
     // `publish`: o split não tem a saga UP, e o publish avisa se sair cortado.
-    const acimaDoTeto = (novos ?? []).map((f) => f.id as string)
-      .filter((id) => (somaEstoquePorFamilia.get(id) ?? 0) > LIMITE_ESTOQUE_ML);
-    const formatoLegacy = await familiasFormatoLegacy(admin, orgId, acimaDoTeto);
-    const ehSplit = (familiaId: string, somenteEstoque = false, somaEstoqueCreate?: number) => {
+    const idsNovos = (novos ?? []).map((f) => f.id as string);
+    const formatos = await formatoPorFamilia(admin, orgId, idsNovos);
+    const acimaDoTeto = idsNovos.filter((id) => (somaEstoquePorFamilia.get(id) ?? 0) > LIMITE_ESTOQUE_ML);
+    const formatoLegacy = new Set(acimaDoTeto.filter((id) => formatos.get(id) === 'legacy'));
+    const ehSplit = (familiaId: string, somenteEstoque = false, somaEstoqueCreate?: number, categoriaUP = false) => {
       const precos = precosPorFamilia.get(familiaId) ?? [];
       const pai = paiPorFamilia.get(familiaId) ?? '';
       return decidirSplit({
         qtdCores: precos.length,
         precosCentavos: precos,
         qtdParticoes: particoesPorPai.get(pai) ?? 0,
-        ehUP: paisUP.has(pai),
+        ehUP: paisUP.has(pai) || categoriaUP,
         temTamanho: temTamanhoPorFamilia.has(familiaId),
         somenteEstoque,
         somaEstoqueCreate,
@@ -189,7 +192,8 @@ try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write'
     const aEnfileirar = [
       ...(novos ?? []).map((f) => ({
         f,
-        alvo: (ehSplit(f.id, false, formatoLegacy.has(f.id) ? somaEstoquePorFamilia.get(f.id) : undefined)
+        alvo: (ehSplit(f.id, false, formatoLegacy.has(f.id) ? somaEstoquePorFamilia.get(f.id) : undefined,
+          formatos.get(f.id as string) === 'user_products')
           ? 'split' : 'publish') as AlvoPublicacao,
         job: { familia_id: f.id as string, lote_id: f.lote_id as string, listing_type_id: listingType, ...versoesDaFamilia(f.id as string) },
       })),

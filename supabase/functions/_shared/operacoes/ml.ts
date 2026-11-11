@@ -8,7 +8,8 @@ type Obj = Record<string, unknown>;
 export class SemEscritaPromocoes extends Error {}
 export interface ClienteML {
   lerNaCampanha(promocaoId: string, tipo: TipoPromocao, itemId: string): Promise<ItemNaCampanha | null>;
-  lerOfertaNoItem(promocaoId: string, itemId: string): Promise<OfertaNoItem | null>;
+  /** `offerId`: depois do POST, a oferta criada (a janela é a dela, não a de outro horário). */
+  lerOfertaNoItem(promocaoId: string, itemId: string, offerId?: string | null): Promise<OfertaNoItem | null>;
   lerRelacoes(itemId: string): Promise<Relacoes>;
   /** inicio/fim: start_date/end_date da resposta (janela da SMART_LIGHTNING, sem fuso = horário de Brasília). */
   post(itemId: string, body: Record<string, unknown>): Promise<{ offer_id: string | null; inicio: string | null; fim: string | null }>;
@@ -72,24 +73,32 @@ export function criarClienteML(token: string, f: typeof fetch = fetch, esperar: 
     async lerNaCampanha(promocaoId, tipo, itemId) {
       const path = `/seller-promotions/promotions/${encodeURIComponent(promocaoId)}/items?promotion_type=${tipo}&item_id=${encodeURIComponent(itemId)}&app_version=v2`;
       const rs = lista(await lerComRetry(path, '/seller-promotions/promotions', (j) => (j as Obj | null)?.results));
-      // Mesmo MLB em 2 linhas (CANDIDATE + OFFER): vale a participando — defensivo, com item_id= o ML devolve 1.
+      // Mesmo MLB em 2 linhas (CANDIDATE + OFFER): vale a participando. Na Relâmpago (uma oferta por horário, emenda
+      // 2026-11-08 (2)) o convite aberto vem junto em `convite`.
       const x = rs.find((r) => ehParticipando(String(r.status))) ?? rs[0];
       if (!x) return null;
-      const status = str(x.status);
-      // Sem status não dá para decidir (em 'sair' viraria ja_estava sem DELETE) → falha em vez de inventar.
-      if (!status) throw new Error(`ML sem status do item ${itemId} na campanha ${promocaoId}`);
       // LIGHTNING: o id da oferta vem em ref_id e o estoque exigido em stock.min; SMART_LIGHTNING só lê o stock.min;
       // os demais não leem nenhum dos dois.
       const lgh = tipo === 'LIGHTNING';
-      return { status, preco_min: num(x.min_discounted_price), preco_max: num(x.max_discounted_price),
-        offer_id: str(x.offer_id) ?? (lgh ? oferta(x.ref_id) : null),
-        estoque_min: lgh || tipo === 'SMART_LIGHTNING' ? num(obj(x.stock).min) : null, preco: num(x.price) };
+      const ler = (y: Obj) => {
+        const status = str(y.status);
+        // Sem status não dá para decidir (em 'sair' viraria ja_estava sem DELETE) → falha em vez de inventar.
+        if (!status) throw new Error(`ML sem status do item ${itemId} na campanha ${promocaoId}`);
+        return { status, preco_min: num(y.min_discounted_price), preco_max: num(y.max_discounted_price),
+          offer_id: str(y.offer_id) ?? (lgh ? oferta(y.ref_id) : null),
+          estoque_min: lgh || tipo === 'SMART_LIGHTNING' ? num(obj(y.stock).min) : null, preco: num(y.price) };
+      };
+      const conv = lgh && ehParticipando(String(x.status)) ? rs.find((r) => r.status === 'candidate') : undefined;
+      return conv ? { ...ler(x), convite: ler(conv) } : ler(x);
     },
 
-    async lerOfertaNoItem(promocaoId, itemId) {
+    async lerOfertaNoItem(promocaoId, itemId, offerId) {
       const path = `/seller-promotions/items/${encodeURIComponent(itemId)}?app_version=v2`;
-      const x = lista(await lerComRetry(path, '/seller-promotions/items', (j) => j))
-        .find((p) => p.id === promocaoId && p.type === 'LIGHTNING');
+      const da = lista(await lerComRetry(path, '/seller-promotions/items', (j) => j))
+        .filter((p) => p.id === promocaoId && p.type === 'LIGHTNING');
+      // Um horário participando e outro convidado: faixa e stock.min são os do convite.
+      // Depois do POST, só a oferta criada: ainda não visível → sem janela, nunca a de outro horário (revisão Grok).
+      const x = offerId ? da.find((p) => p.ref_id === offerId) : da.find((p) => p.status === 'candidate') ?? da[0];
       if (!x) return null;
       return { preco_min: num(x.min_discounted_price), preco_max: num(x.max_discounted_price),
         preco_sugerido: num(x.suggested_discounted_price), estoque_min: num(obj(x.stock).min),

@@ -117,6 +117,9 @@ export default function PromocaoDetalhe() {
   const [participando, setParticipando] = useState(false);
   const [aberto, setAberto] = useState<ItemPromocao | null>(null);
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
+  // Convite de outro horário (Relâmpago) está nas duas abas: vale a aba em que foi marcado (revisão Gemini) — marcado
+  // em Convidados é Aderir, em Participando é Sair; trocar de aba nunca troca a ação.
+  const [convitesMarcados, setConvitesMarcados] = useState<Set<string>>(new Set());
   const [preview, setPreview] = useState<{ acao: AcaoPromocao; itens: ItemPromocao[] } | null>(null);
   const [busca, setBusca] = useState('');
   const [pai, setPai] = useState<string | null>(null);
@@ -153,8 +156,10 @@ export default function PromocaoDetalhe() {
   const linhasMobile = useMemo(() => [...linhas].sort((a, b) => PESO[a.pior_semaforo] - PESO[b.pior_semaforo]), [linhas]);
 
   const selecionadosItens = useMemo(() => itensVisao.filter((i) => selecionados.has(i.ml_item_id)), [itensVisao, selecionados]);
-  const convidadosSelecionados = selecionadosItens.filter((i) => i.status === 'candidate');
-  const participandoSelecionados = selecionadosItens.filter((i) => i.status === 'started' || i.status === 'pending');
+  // Convite de outro horário (Relâmpago) está nas duas abas: conta como convidado em Convidados e como participante
+  // em Participando, nunca nos dois (o mesmo clique não oferece Aderir e Sair).
+  const convidadosSelecionados = selecionadosItens.filter((i) => i.status === 'candidate' || convitesMarcados.has(i.ml_item_id));
+  const participandoSelecionados = selecionadosItens.filter((i) => (i.status === 'started' || i.status === 'pending') && !convitesMarcados.has(i.ml_item_id));
   const todosMarcadosNoFiltro = linhas.length > 0 && linhas.every((r) => selecionados.has(r.ml_item_id));
   // A simulação age sobre o grupo da aba: convidados (aderir) ou participantes (alterar preço).
   const alvoSimulacao = participando ? participandoSelecionados : convidadosSelecionados;
@@ -187,7 +192,17 @@ export default function PromocaoDetalhe() {
     }
   }
 
+  function marcarConvites(ids: string[], marcar: boolean) {
+    const convites = ids.filter((id) => itensVisao.some((i) => i.ml_item_id === id && i.convite_aberto));
+    if (!convites.length) return;
+    setConvitesMarcados((prev) => {
+      const novo = new Set(prev);
+      for (const id of convites) { if (marcar && !participando) novo.add(id); else novo.delete(id); }
+      return novo;
+    });
+  }
   function alternarItem(id: string) {
+    marcarConvites([id], !selecionados.has(id));
     setSelecionados((prev) => {
       const novo = new Set(prev);
       if (novo.has(id)) novo.delete(id); else novo.add(id);
@@ -195,6 +210,8 @@ export default function PromocaoDetalhe() {
     });
   }
   function alternarTodos(marcar: boolean) {
+    // Só quem muda de estado: o convite já marcado na outra aba mantém a ação dela (revisão Grok).
+    marcarConvites(linhas.filter((r) => marcar !== selecionados.has(r.ml_item_id)).map((r) => r.ml_item_id), marcar);
     setSelecionados((prev) => {
       const novo = new Set(prev);
       for (const r of linhas) { if (marcar) novo.add(r.ml_item_id); else novo.delete(r.ml_item_id); }
@@ -245,6 +262,7 @@ export default function PromocaoDetalhe() {
           <div className="min-w-0 max-w-[14rem] 2xl:max-w-[24rem]">
             <p className="truncate" title={formatarNomeProduto(r.titulo) || r.ml_item_id}>{formatarNomeProduto(r.titulo) || r.ml_item_id}</p>
             <p className="text-xs text-muted-foreground">{rotuloMlb(r)}{r.estoque_min != null ? ` · Estoque mín. ${r.estoque_min}` : ''}</p>
+            {r.convite_aberto && <p className="text-xs text-info">{participando ? 'Convite aberto para outro horário' : 'Já participa em outro horário'}</p>}
           </div>
         </div>
       ),
@@ -423,6 +441,7 @@ export default function PromocaoDetalhe() {
           <ListaMobile
             linhas={linhasMobile} onAbrir={setAberto} simInfo={simInfo}
             podeSelecionar={podeSelecionar} selecionados={selecionados} onToggle={alternarItem}
+            participando={participando}
           />
         </div>
         </>)}
@@ -455,7 +474,8 @@ export default function PromocaoDetalhe() {
 }
 
 /** Cartões abaixo de `md` — a DataTable estoura a largura e some preço/líquido/markup no scroll horizontal. */
-function ListaMobile({ linhas, onAbrir, podeSelecionar, selecionados, onToggle, simInfo }: {
+function ListaMobile({ linhas, onAbrir, podeSelecionar, selecionados, onToggle, simInfo, participando }: {
+  participando: boolean;
   linhas: ItemPromocao[]; onAbrir: (r: ItemPromocao) => void;
   simInfo: (r: ItemPromocao) => { aviso: string | null } | undefined;
   podeSelecionar: boolean; selecionados: Set<string>; onToggle: (id: string) => void;
@@ -490,6 +510,7 @@ function ListaMobile({ linhas, onAbrir, podeSelecionar, selecionados, onToggle, 
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium">{formatarNomeProduto(r.titulo) || r.ml_item_id}</p>
                   <p className="text-xs text-muted-foreground">{rotuloMlb(r)}{r.estoque_min != null ? ` · Estoque mín. ${r.estoque_min}` : ''}</p>
+            {r.convite_aberto && <p className="text-xs text-info">{participando ? 'Convite aberto para outro horário' : 'Já participa em outro horário'}</p>}
                 </div>
               </div>
               <dl className="mt-3 grid grid-cols-3 gap-2">

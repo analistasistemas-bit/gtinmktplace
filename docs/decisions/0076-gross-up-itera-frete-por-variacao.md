@@ -77,3 +77,27 @@ o gross-up cobre). 🟢. Cores abaixo dos R$79 (frete flat 6,75) **não mudam**.
 Restaurar o frete família-level único em `process-familia` (buscar uma vez no
 1º-passe de `precoMinFamilia`, passar a todas as variações) e remover
 `freteEstavelGrossUp`. Sem migration.
+
+## Emenda 2026-11-09 — a comissão também é lida no preço candidato
+
+**Problema.** A comissão do gross-up era lida uma vez a `PRECO_REF_COMISSAO = R$ 20`
+(ADR-0023) e só o frete era iterado. Em algumas categorias a comissão percentual do
+Clássico **muda com o preço**. Em MLB277368 (Franjas), por exemplo, `listing_prices` dá
+12% até ~R$ 100 e 11% a partir de R$ 150. A franja 02994445 da Avil (piso R$ 143,50,
+frete R$ 23,25, imposto 16%) saiu a **R$ 231,60** (gross-up com 12%), quando o preço
+que cobre o piso com a comissão real é **R$ 228,45**. O sobrepreço era sempre para cima,
+nunca abaixo do mínimo, mas tirava competitividade.
+
+**Decisão.** `precoProprioEstavel` (`_shared/preco/sugerir.ts`) substitui
+`freteEstavelGrossUp` no worker:
+- Itera **comissão + frete** lidos no preço candidato (`criarTarifaEm`: cache Redis
+  `promo:lp`/`promo:frete`, disjuntor no 429, tarifa `estimated` recusada).
+- Para no ponto fixo. Se houver oscilação na fronteira de faixa, devolve o **menor preço
+  visitado cujo líquido, na tarifa daquele preço, cobre o piso**.
+- Nunca devolve preço não conferido: sem nenhum verificado, a família vai para erro
+  sem `preco_publicacao` (emenda ADR-0020).
+- Se o ML ficar indisponível antes de qualquer preço verificado, usa o cálculo anterior
+  (comissão@R$ 20 + frete família, resiliência do ADR-0050).
+
+A comissão a R$ 20 continua sendo o 1º palpite e a fonte do ramo competitivo/re-âncora.
+Revisão do plano: Grok 4.7 xhigh.

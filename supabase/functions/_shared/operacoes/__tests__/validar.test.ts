@@ -51,6 +51,13 @@ describe('validarPedido', () => {
     const rl = (o: Partial<LinhaCentral> = {}) =>
       linha({ preco_min: 8.7, preco_max: 26.1, preco_sugerido: 24.65, preco_avaliado: 24.65, ...o });
     const exatoVerde = async (): Promise<Semaforo> => 'verde';
+    it('participando com convite de outro horário (emenda 2026-11-08 (2)) é aderível; participando sem convite não', async () => {
+      const exatoAm = async (): Promise<Semaforo> => 'verde';
+      const ok = await validarPedido('aderir', 'LIGHTNING', [{ ml_item_id: 'MLB1', preco: 24 }], central(rl({ status: 'pending', convite_aberto: true })), exatoAm);
+      expect(ok.ok).toBe(true);
+      const nao = await validarPedido('aderir', 'LIGHTNING', [{ ml_item_id: 'MLB1', preco: 24 }], central(rl({ status: 'pending' })), exatoAm);
+      expect(nao.ok === false && nao.itens).toEqual([{ ml_item_id: 'MLB1', motivo: 'O anúncio não está como Convidado nesta promoção' }]);
+    });
     it('preço fora da faixa → motivo', async () => {
       const r = await validarPedido('aderir', 'LIGHTNING', [{ ml_item_id: 'MLB1', preco: 27 }], central(rl()), semExato);
       expect(r.ok === false && r.itens).toEqual([{ ml_item_id: 'MLB1', motivo: 'Preço fora da faixa do ML (8,70 a 26,10)' }]);

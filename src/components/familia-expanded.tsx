@@ -47,7 +47,7 @@ import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { useKitsVariacao } from '@/hooks/useKitsVariacao';
 import { useKitsDoProduto } from '@/hooks/useKitsDoProduto';
 import { DialogCriarKit } from '@/components/kit/dialog-criar-kit';
-import type { BaseParaKit } from '@/lib/kit';
+import { TITULO_MAX_KIT as TITULO_MAX_ML, type BaseParaKit } from '@/lib/kit';
 import { QK } from '@/lib/queries';
 import type { Familia } from '@/lib/tipos-dominio';
 
@@ -202,6 +202,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
   const exigeCor = familiaExigeCor(familia);
   // Só produto simples: em família de cores o nome do pai traz código e "CORES", e o aviso viraria ruído.
   const foraDoTitulo = familiaProdutoSimples(familia) ? palavrasForaDoTitulo(familia.nomePai, titulo) : [];
+  const tituloExcedeLimite = titulo.length > TITULO_MAX_ML;
   const exigeFoto = familiaExigeFotoPorVariacao(familia);
   // Imposto por origem (ADR-0055): mesma alíquota do card "Análise para publicação"
   // (painel-analise.tsx), para o semáforo por variação não divergir do badge do topo.
@@ -865,15 +866,27 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
         <div>
           <div className="mb-1 flex items-center justify-between">
             <label htmlFor={`titulo-${familia.id}`} className="block text-xs font-semibold text-muted-foreground">TÍTULO</label>
-            {/* role="status": anuncia salvando/salvo/erro a leitores de tela (contrato §12). */}
-            <span role="status"><StatusInline status={tituloStatus} /></span>
+            <div className="flex items-center gap-2">
+              {/* role="status": anuncia salvando/salvo/erro a leitores de tela (contrato §12). */}
+              <span role="status"><StatusInline status={tituloStatus} /></span>
+              <span className={cn('text-xs tabular-nums', tituloExcedeLimite ? 'font-semibold text-danger' : 'text-muted-foreground')}>
+                {titulo.length}/{TITULO_MAX_ML}
+              </span>
+            </div>
           </div>
           <Input
             id={`titulo-${familia.id}`}
             value={titulo}
             onChange={(e) => { tituloDirty.current = true; setTitulo(e.target.value); }}
             onBlur={salvarTitulo}
+            aria-invalid={tituloExcedeLimite || undefined}
+            aria-describedby={tituloExcedeLimite ? `titulo-${familia.id}-limite` : undefined}
           />
+          {tituloExcedeLimite && (
+            <p id={`titulo-${familia.id}-limite`} role="alert" className="mt-1 text-xs text-danger">
+              Título com {titulo.length} caracteres: o Mercado Livre aceita no máximo {TITULO_MAX_ML}. Encurte {titulo.length - TITULO_MAX_ML}.
+            </p>
+          )}
           {foraDoTitulo.length > 0 && (
             <p className="mt-1 text-xs text-warning">Fora do título: {foraDoTitulo.join(', ')}</p>
           )}

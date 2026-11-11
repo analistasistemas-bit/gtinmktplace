@@ -40,7 +40,7 @@ export function simular(
     if (!l || (l.status !== 'candidate' && !participando)) return ignorar('O anúncio não está como Convidado nem Participando nesta promoção');
     // Convidado sem faixa: o executor recusa a adesão (validar.ts). Participante nunca tem faixa (alterar preço:
     // o ML valida o preço) — simula mesmo assim.
-    if (!participando && (l.preco_min == null || l.preco_max == null)) return ignorar('O ML não informou a faixa de preço deste anúncio');
+    if ((!participando || l.convite_aberto) && (l.preco_min == null || l.preco_max == null)) return ignorar('O ML não informou a faixa de preço deste anúncio');
     try {
       const r = await projetar(l, preco);
       if (!r) return ignorar(MSG_ALIQUOTA);

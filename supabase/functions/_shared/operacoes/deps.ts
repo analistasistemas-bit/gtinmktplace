@@ -23,7 +23,7 @@ import { notificarCategoria } from '../notificacoes/config.ts';
 
 const ITENS = 'operacoes_massa_itens';
 const COLS_ITEM = 'ml_item_id, preco, status, conferencias, semaforo, confirmado_risco, proxima_conferencia, saida_pedida_em, etapa, preco_anterior, estado_anterior, offer_id';
-export const COLS_CENTRAL = 'ml_item_id, status, titulo, preco_original, preco_min, preco_max, preco_sugerido, preco_promo, preco_avaliado, projecao';
+export const COLS_CENTRAL = 'ml_item_id, status, titulo, preco_original, preco_min, preco_max, preco_sugerido, preco_promo, preco_avaliado, projecao, convite_aberto';
 const ENVIANDO_PARADO_MS = 2 * 60_000; // mesmo limite da RPC operacoes_massa_reivindicar
 // ponytail: teto por tempo. Passados 30 min, `candidate` é aceito como verdade (o ML reflete em ~2 min) e nova adesão posta.
 // Sem expiração não dá: o ML devolve o mesmo CANDIDATE após a saída, e quem sai pelo Seller Center ficaria travado para
@@ -43,7 +43,7 @@ export function linhaCentral(r: Record<string, unknown>): LinhaCentral {
     ml_item_id: String(r.ml_item_id), status: String(r.status), titulo: (r.titulo as string | null) ?? null,
     preco_original: numOuNull(r.preco_original), preco_min: numOuNull(r.preco_min), preco_max: numOuNull(r.preco_max), preco_sugerido: numOuNull(r.preco_sugerido),
     preco_promo: numOuNull(r.preco_promo), preco_avaliado: numOuNull(r.preco_avaliado),
-    projecao: (r.projecao as ProjecaoCor[] | null) ?? [],
+    projecao: (r.projecao as ProjecaoCor[] | null) ?? [], convite_aberto: r.convite_aberto === true,
   };
 }
 
@@ -167,12 +167,13 @@ export function depsExecutar(admin: SupabaseClient, cx: Cx, op: OperacaoRow, cha
       // DEAL: saiu volta a convidado; SMART: o item some da campanha (o sync também o apagaria).
       const q = espelho === 'saiu' && tipo === 'SMART'
         ? tab.delete()
-        : tab.update({ status: espelho === 'saiu' ? 'candidate' : espelho });
+        // A marca de convite de outro horário vale só até a próxima mudança; o sync a refaz se o ML abrir outro.
+        : tab.update({ status: espelho === 'saiu' ? 'candidate' : espelho, convite_aberto: false });
       const { error } = await q.eq('org_id', op.org_id).eq('promocao_id', promocaoId).eq('ml_item_id', mlItemId);
       falhou('espelharStatusCentral', error);
     },
 
-    async espelharPreco(promocaoId, mlItemId, preco) {
+    async espelharPreco(promocaoId, mlItemId, preco, estados = ['pending', 'started']) {
       // Achado Codex P2: com sync em curso ele mesmo grava o estado real do ML — não disputar a linha.
       if (await syncEmCurso(promocaoId)) return;
       const linha = () => admin.from('ml_promocao_itens');
@@ -191,9 +192,10 @@ export function depsExecutar(admin: SupabaseClient, cx: Cx, op: OperacaoRow, cha
       const patch = r
         ? { preco_promo: preco, preco_avaliado: preco, projecao: r.projecao, pior_semaforo: r.pior_semaforo }
         : { preco_promo: preco, preco_avaliado: preco, projecao: semCalculo, pior_semaforo: 'indisponivel' };
-      // Só se a linha ainda é participando: um lote do sync que voltou a gravar `candidate` não fica com preço aplicado.
+      // Padrão só participando: um lote do sync que voltou a gravar `candidate` não fica com preço aplicado.
+      // `candidate` só no `mudou` de oferta fixa (preço novo do convite lido agora do ML).
       const upd = await linha().update(patch).eq('org_id', op.org_id).eq('promocao_id', promocaoId).eq('ml_item_id', mlItemId)
-        .in('status', ['pending', 'started']);
+        .in('status', estados);
       falhou('espelharPreco', upd.error);
     },
 
