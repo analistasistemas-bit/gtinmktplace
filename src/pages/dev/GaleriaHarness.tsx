@@ -1,7 +1,9 @@
 // SÓ DESENVOLVIMENTO (rota registrada em App.tsx apenas com `import.meta.env.DEV`; fora do bundle de produção).
 // Harness de visualização da Galeria IA para prints sem login: a página real, com as edges trocadas por respostas
 // falsas montadas com os dados da Fita Veludo (validação real de 11/11; sem ids). Nada sai do navegador.
-// `?cen=div` mostra a divergência da etiqueta; `?cen=falha` faz o salvar falhar.
+// `?cen=div` mostra a divergência da etiqueta; `?cen=falha` faz o salvar falhar. Passo 4 (Fase C2): `?cen=p4` abre com
+// o roteiro aprovado e 2 imagens aprovadas na cor Branco; `?cen=p4falha` igual, mas a aplicação não passa no MLB;
+// `?cen=p4vazio` aprovado sem nenhuma imagem aprovada. `?cen=semcapa` abre sem a miniatura do anúncio.
 import { supabase } from '@/lib/supabase';
 import { queryClient } from '@/lib/query-client';
 import { QK } from '@/lib/queries';
@@ -51,10 +53,12 @@ const roteiroFita = (): Roteiro => ({
   ],
 });
 
-const estado = { fatos: fatosIniciais(), roteiro: roteiroFita(), status: 'rascunho', versao: 1, geradas: [] as ImagemGaleria[] };
+const p4 = cen?.startsWith('p4') ?? false;
+const estado = { fatos: fatosIniciais(), roteiro: roteiroFita(), status: p4 ? 'aprovado' : 'rascunho', versao: 1, geradas: [] as ImagemGaleria[] };
 const ficha = (): Ficha => ({
   anuncio_externo_id: 'A1', familia_id: 'F1', codigo_pai: '02864', cores: ['Branco', 'Preto'], fatos: estado.fatos,
   fatos_hash: 'h', roteiro_desatualizado: false, referencias: {},
+  capa_url: cen === 'semcapa' ? null : svg('#f4f4f6', '#fbfbf7'),
 });
 const resp = () => ({
   roteiro: { id: `R${estado.versao}`, familia_id: 'F1', versao: estado.versao, status: estado.status, moda: false, conteudo: estado.roteiro },
@@ -65,6 +69,32 @@ const imagem = (id: string, missao: number, extra: Partial<ImagemGaleria> = {}):
   url: svg('#e9e9f0', '#fbfbf7', missao !== 1), ref_url: null, roteiro_id: `R${estado.versao}`, pode_gerar_de_novo: true, unit_cents: 50, ...extra,
 });
 const atraso = (ms: number) => new Promise((r) => setTimeout(r, ms));
+if (p4 && cen !== 'p4vazio') estado.geradas = [imagem('a1', 1, { status: 'aprovada' }), imagem('a2', 2, { status: 'aprovada' })];
+
+// Passo 4: fotos de hoje da cor (3, como na validação da Fita) e a aplicação simulada (andando ~2 s, depois o fim).
+const MLB = 'MLB7168683146';
+const aplic = { modo: 'substituir', cor: 'Branco', confirmadaEm: 0, desfeita: false };
+function preparar(b: Record<string, unknown>) {
+  aplic.modo = String(b.modo); aplic.cor = String(b.cor); aplic.confirmadaEm = 0; aplic.desfeita = false;
+  const aprovadas = estado.geradas.filter((g) => g.status === 'aprovada' && g.cor === aplic.cor).sort((x, y) => x.missao - y.missao);
+  const subst = aplic.modo === 'substituir';
+  const hoje = [0, 1, 2].map((i) => ({ id: `H${i}`, url: svg(['#ededf1', '#e6e6ec', '#f1efe9'][i], '#fbfbf7'), sai: subst }));
+  const novas = aprovadas.map((g) => ({ id: `novo-${g.missao}`, url: g.url, nova: true, missao: g.missao }));
+  return {
+    aplicacao_id: 'AP1', status: 'preparada', itens: [MLB],
+    manifesto: aprovadas.map((g) => ({ imagem_id: g.id, missao: g.missao, final_sha256: 'x' })),
+    previa: [{ item_id: MLB, antes: hoje, depois: subst ? novas : [...hoje.map(({ id, url }) => ({ id, url, nova: false })), ...novas] }],
+  };
+}
+function estadoAplic() {
+  if (!aplic.confirmadaEm) return { aplicacoes: [] };
+  const andando = Date.now() - aplic.confirmadaEm < 2500;
+  const falhou = cen === 'p4falha';
+  const status = aplic.desfeita ? 'revertida' : andando ? 'em_andamento' : falhou ? 'falhou' : 'aplicada';
+  const item = aplic.desfeita ? 'compensado' : andando ? 'subindo' : falhou ? 'pulado' : 'aplicado';
+  return { aplicacoes: [{ id: 'AP1', cor: aplic.cor, modo: aplic.modo, status, manifesto: [],
+    itens: [{ item_id: MLB, status: item, erro: falhou && !andando ? 'put_incerto_sem_efeito' : null }] }] };
+}
 
 async function responder(edge: string, b: Record<string, unknown>): Promise<unknown> {
   await atraso(250);
@@ -97,7 +127,12 @@ async function responder(edge: string, b: Record<string, unknown>): Promise<unkn
     estado.geradas = missoes.flatMap((m, i) => (b.cores as string[]).map((c) => imagem(`i${m}${c}`, m, { cor: c, alertas: i === 1 ? [{ tipo: 'texto', nota: 'O texto do rótulo pode ter mudado. Confira antes de aprovar.' }] : [] })));
     return { pedido_id: b.pedido_id, imagens: [] };
   }
-  if (edge === 'galeria-aplicar') return acao === 'estado' ? { aplicacoes: [] } : { aplicacao_id: 'AP1', status: 'preparada', itens: ['MLB7168683146'], manifesto: [] };
+  if (edge === 'galeria-aplicar') {
+    if (acao === 'preparar') return preparar(b);
+    if (acao === 'confirmar') { aplic.confirmadaEm = Date.now(); return { status: 'em_andamento' }; }
+    if (acao === 'reverter') { aplic.desfeita = true; return { status: 'revertendo' }; }
+    return estadoAplic();
+  }
   return {};
 }
 

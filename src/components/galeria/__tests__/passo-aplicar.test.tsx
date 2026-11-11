@@ -22,13 +22,21 @@ const aplicacao = (extra: Partial<EstadoAplicacao> = {}): EstadoAplicacao => ({
   itens: [{ item_id: 'MLB3P', status: 'aplicado', erro: null }], ...extra,
 });
 
-function montar(isAdmin = true, mlItemId = 'MLB3M') {
+function montar(isAdmin = true, mlItemId = 'MLB3M', aprovadasPorCor: Record<string, number> | null = { Rosa: 3, Azul: 1 }) {
   const aoFamiliaMudou = vi.fn();
-  const r = render(<PassoAplicar mlItemId={mlItemId} ficha={ficha} isAdmin={isAdmin} aoFamiliaMudou={aoFamiliaMudou} />);
-  return { ...r, aoFamiliaMudou };
+  const aoIrParaGerar = vi.fn();
+  const r = render(<PassoAplicar mlItemId={mlItemId} ficha={ficha} isAdmin={isAdmin} aprovadasPorCor={aprovadasPorCor} formato="Legacy"
+    aoFamiliaMudou={aoFamiliaMudou} aoIrParaGerar={aoIrParaGerar} aoVoltar={vi.fn()} />);
+  return { ...r, aoFamiliaMudou, aoIrParaGerar };
 }
 const preparar = async () => {
-  await userEvent.click(await screen.findByRole('button', { name: /Aplicar na cor/ }));
+  await userEvent.click(await screen.findByRole('button', { name: /Ver prévia|Ver de novo/ }));
+};
+/** Rodapé "Aplicar na cor X" → confirmação → "Aplicar na cor X" do diálogo. */
+const aplicar = async () => {
+  await userEvent.click(await screen.findByRole('button', { name: /^Aplicar na cor/ }));
+  const dlg = await screen.findByRole('alertdialog');
+  await userEvent.click(within(dlg).getByRole('button', { name: /^Aplicar na cor/ }));
 };
 
 beforeEach(() => {
@@ -39,10 +47,11 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); });
 
 describe('PassoAplicar — admin (ADR-0060)', () => {
-  it('não admin: Preparar e Reverter desabilitados com title e nenhuma chamada de escrita', async () => {
+  it('não admin: Ver prévia e Desfazer desabilitados com title, Aplicar desabilitado e nenhuma chamada de escrita', async () => {
     api.estadoAplicacoes.mockResolvedValue(ok({ aplicacoes: [aplicacao()] }));
     montar(false);
-    const prep = await screen.findByRole('button', { name: /Aplicar na cor/ });
+    expect(await screen.findByRole('button', { name: /^Aplicar na cor/ })).toBeDisabled();
+    const prep = await screen.findByRole('button', { name: 'Ver prévia' });
     const rev = await screen.findByRole('button', { name: 'Desfazer aplicação' });
     for (const b of [prep, rev]) {
       expect(b).toBeDisabled();
@@ -55,22 +64,27 @@ describe('PassoAplicar — admin (ADR-0060)', () => {
 describe('PassoAplicar — preparar e confirmar', () => {
   it('Substituir já vem selecionado; preparar manda o ml_item_id da linha, a cor e o modo', async () => {
     montar(true, 'MLB3M');
-    expect(await screen.findByRole('combobox', { name: 'Modo' })).toHaveTextContent('Substituir');
+    expect(await screen.findByRole('combobox', { name: 'Como aplicar' })).toHaveTextContent('Substituir');
     await preparar();
     expect(api.prepararAplicacao).toHaveBeenCalledWith('MLB3M', 'Rosa', 'substituir');
   });
 
-  it('a confirmação lista os MLB e as imagens do manifesto na ordem, avisa que troca as fotos e só então confirma', async () => {
+  it('sem a prévia o Aplicar fica desabilitado; a prévia lista os MLB e as imagens na ordem; o diálogo confirma', async () => {
     api.confirmarAplicacao.mockResolvedValue(ok({ status: 'em_andamento' }));
     montar(true, 'MLB3M');
+    expect(await screen.findByRole('button', { name: /^Aplicar na cor Rosa/ })).toBeDisabled();
     await preparar();
     const itens = within(await screen.findByRole('list', { name: 'Anúncios afetados' })).getAllByRole('listitem');
-    expect(itens.map((i) => i.textContent)).toEqual(['MLB3P', 'MLB3M']);
+    expect(itens.map((i) => i.textContent)).toEqual([expect.stringContaining('MLB3P'), expect.stringContaining('MLB3M')]);
     const imgs = within(screen.getByRole('list', { name: 'Imagens na ordem' })).getAllByRole('listitem');
-    expect(imgs.map((i) => i.textContent)).toEqual([expect.stringContaining('Missão 1'), expect.stringContaining('Missão 2'), expect.stringContaining('Missão 3')]);
-    expect(screen.getByText(/troca as fotos/i)).toBeInTheDocument();
+    expect(imgs.map((i) => i.textContent)).toEqual([expect.stringContaining('Capa'), expect.stringContaining('Onde usar'), expect.stringContaining('lupa')]);
     expect(api.confirmarAplicacao).not.toHaveBeenCalled();
-    await userEvent.click(screen.getByRole('button', { name: /Confirmar e trocar/ }));
+    await userEvent.click(screen.getByRole('button', { name: /^Aplicar na cor Rosa/ }));
+    const dlg = await screen.findByRole('alertdialog');
+    expect(dlg).toHaveTextContent('Aplicar 3 imagens na cor Rosa?');
+    expect(dlg).toHaveTextContent(/Vai trocar as fotos da cor Rosa nos anúncios MLB3P e MLB3M/);
+    expect(dlg).toHaveTextContent('Isso é visível para compradores imediatamente');
+    await userEvent.click(within(dlg).getByRole('button', { name: 'Aplicar na cor Rosa' }));
     expect(api.confirmarAplicacao).toHaveBeenCalledWith('MLB3M', 'APL1');
     await waitFor(() => expect(api.estadoAplicacoes.mock.calls.length).toBeGreaterThan(1));
   });
@@ -78,22 +92,22 @@ describe('PassoAplicar — preparar e confirmar', () => {
   it('limite no modo Adicionar: volta para Substituir e explica', async () => {
     api.prepararAplicacao.mockResolvedValueOnce(falha(409, 'limite', { detalhe: 'MLB3M:100R:15>12' }));
     montar();
-    await screen.findByRole('combobox', { name: 'Modo' });
-    await escolherNoSelect(userEvent.setup(), 'Modo', 'Adicionar às fotos da cor');
-    expect(screen.getByRole('combobox', { name: 'Modo' })).toHaveTextContent('Adicionar');
+    await screen.findByRole('combobox', { name: 'Como aplicar' });
+    await escolherNoSelect(userEvent.setup(), 'Como aplicar', 'Adicionar às fotos da cor');
+    expect(screen.getByRole('combobox', { name: 'Como aplicar' })).toHaveTextContent('Adicionar');
     await preparar();
     expect(await screen.findByRole('alert')).toHaveTextContent(/limite.*Substituir/i);
-    expect(screen.getByRole('combobox', { name: 'Modo' })).toHaveTextContent('Substituir');
+    expect(screen.getByRole('combobox', { name: 'Como aplicar' })).toHaveTextContent('Substituir');
   });
 
-  it.each([['mudou', /Prepare de novo/i], ['desatualizada', /Prepare de novo/i]])('%s: pede nova preparação e descarta a confirmação', async (erro, texto) => {
+  it.each([['mudou', /prévia de novo/i], ['desatualizada', /prévia de novo/i]])('%s: pede nova prévia e descarta a confirmação', async (erro, texto) => {
     api.confirmarAplicacao.mockResolvedValue(falha(409, erro));
     montar();
     await preparar();
-    await userEvent.click(await screen.findByRole('button', { name: /Confirmar e trocar/ }));
+    await aplicar();
     expect(await screen.findByRole('alert')).toHaveTextContent(texto);
     expect(screen.queryByRole('list', { name: 'Anúncios afetados' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Aplicar na cor/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Ver prévia' })).toBeEnabled();
   });
 
   it('familia_nao_vigente recarrega a galeria', async () => {
@@ -116,17 +130,18 @@ describe('PassoAplicar — fix round 1', () => {
     let resolver!: (r: Res<typeof preparada>) => void;
     api.prepararAplicacao.mockReturnValueOnce(new Promise((r) => { resolver = r; }));
     montar();
-    await screen.findByRole('combobox', { name: 'Modo' });
-    await escolherNoSelect(userEvent.setup(), 'Modo', 'Adicionar às fotos da cor');
+    await screen.findByRole('combobox', { name: 'Como aplicar' });
+    await escolherNoSelect(userEvent.setup(), 'Como aplicar', 'Adicionar às fotos da cor');
     await preparar();
     expect(api.prepararAplicacao).toHaveBeenCalledWith('MLB3M', 'Rosa', 'adicionar');
     expect(screen.getByRole('combobox', { name: 'Cor' })).toBeDisabled();
-    expect(screen.getByRole('combobox', { name: 'Modo' })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Como aplicar' })).toBeDisabled();
     resolver(ok(preparada));
-    const painel = (await screen.findByRole('list', { name: 'Anúncios afetados' })).parentElement!;
-    expect(painel).toHaveTextContent('Rosa');
-    expect(painel).toHaveTextContent(/Adicionar/);
-    expect(painel).not.toHaveTextContent(/substituem/);
+    const painel = screen.getByRole('region', { name: 'Prévia' });
+    await within(painel).findByRole('list', { name: 'Anúncios afetados' });
+    expect(painel).toHaveTextContent('cor Rosa');
+    expect(painel).toHaveTextContent(/Entram depois das fotos da cor/);
+    expect(screen.getByRole('status')).toHaveTextContent('Adiciona às fotos da cor Rosa em 2 anúncios');
     expect(screen.getByRole('combobox', { name: 'Cor' })).toBeEnabled();
   });
 
@@ -197,9 +212,9 @@ describe('PassoAplicar — acompanhamento e reversão', () => {
     montar(true, 'MLB3M');
     await userEvent.click(await screen.findByRole('button', { name: 'Desfazer aplicação' }));
     expect(api.reverterAplicacao).not.toHaveBeenCalled();
-    expect(within(screen.getByRole('list', { name: 'Anúncios afetados' })).getAllByRole('listitem').map((i) => i.textContent)).toEqual(['MLB3P']);
-    expect(screen.getByText(/volta as fotos anteriores/i)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: /Confirmar e desfazer/ }));
+    const dlg = await screen.findByRole('alertdialog');
+    expect(dlg).toHaveTextContent(/volta as fotos anteriores da cor Rosa no anúncio MLB3P/i);
+    await userEvent.click(within(dlg).getByRole('button', { name: /Confirmar e desfazer/ }));
     expect(api.reverterAplicacao).toHaveBeenCalledWith('MLB3M', 'APL1');
   });
 
@@ -208,7 +223,7 @@ describe('PassoAplicar — acompanhamento e reversão', () => {
     api.reverterAplicacao.mockResolvedValue(falha(409, 'item_ocupado'));
     montar();
     await userEvent.click(await screen.findByRole('button', { name: 'Desfazer aplicação' }));
-    await userEvent.click(await screen.findByRole('button', { name: /Confirmar e desfazer/ }));
+    await userEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: /Confirmar e desfazer/ }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/Outra operação/);
   });
 
@@ -231,9 +246,117 @@ describe('PassoAplicar — acompanhamento e reversão', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     api.estadoAplicacoes.mockResolvedValue(ok({ aplicacoes: [aplicacao({ status: 'revertendo' })] }));
     const { unmount } = montar();
-    await screen.findByText(/Revertendo/);
+    await screen.findByText(/Desfazendo/);
     unmount();
     await vi.advanceTimersByTimeAsync(20000);
     expect(api.estadoAplicacoes).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Fase C2: prévia "Hoje no anúncio" × "Depois", acompanhamento por MLB e estado vazio, como no protótipo aprovado.
+describe('PassoAplicar — prévia e acompanhamento (Fase C2)', () => {
+  const comPrevia = {
+    ...preparada, itens: ['MLB1'], manifesto: manifesto.slice(0, 2),
+    previa: [{ item_id: 'MLB1',
+      antes: [{ id: 'R0', url: 'https://ml/R0.jpg', sai: false }, { id: 'R1', url: 'https://ml/R1.jpg', sai: true }, { id: 'R2', url: null, sai: true }],
+      depois: [{ id: 'R0', url: 'https://ml/R0.jpg', nova: false }, { id: 'novo-1', url: 'https://signed/g1.jpg', nova: true, missao: 1 }, { id: 'novo-2', url: null, nova: true, missao: 2 }] }],
+  };
+
+  it('mostra hoje × depois: as que saem riscadas, as novas com selo "Nova", contagens e nenhuma escrita antes do diálogo', async () => {
+    api.prepararAplicacao.mockResolvedValue(ok(comPrevia));
+    montar(true, 'MLB1');
+    await preparar();
+    const painel = await screen.findByRole('region', { name: 'Prévia' });
+    expect(await within(painel).findByText(/Hoje no anúncio/)).toHaveTextContent('3 fotos');
+    expect(within(painel).getByText(/^Depois/)).toHaveTextContent('3 fotos');
+    const riscadas = within(painel).getAllByRole('img', { name: /será removida/ });
+    expect(riscadas).toHaveLength(2);
+    riscadas.forEach((r) => expect(r).toHaveAttribute('data-sai', 'true'));
+    expect(within(painel).getByRole('img', { name: 'Foto atual 1' })).not.toHaveAttribute('data-sai');
+    const novas = within(painel).getAllByRole('img', { name: /^Nova:/ });
+    expect(novas.map((n) => n.getAttribute('aria-label'))).toEqual(['Nova: Capa', 'Nova: Onde usar']);
+    novas.forEach((n) => expect(n).toHaveTextContent('Nova'));
+    expect(novas[0].querySelector('img')).toHaveAttribute('src', 'https://signed/g1.jpg');
+    expect(within(painel).getByText('Aguardando')).toBeInTheDocument();
+    expect(api.confirmarAplicacao).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole('button', { name: /^Aplicar na cor Rosa/ }));
+    const dlg = await screen.findByRole('alertdialog');
+    expect(dlg).toHaveTextContent('Aplicar 2 imagens na cor Rosa?');
+    expect(dlg).toHaveTextContent('Vai trocar 2 fotos da cor Rosa no anúncio MLB1 pelas 2 imagens aprovadas. Isso é visível para compradores imediatamente.');
+  });
+
+  it('depois de confirmar a prévia fica; selos por MLB: Aplicando → Aplicado com "Desfazer aplicação"', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    api.prepararAplicacao.mockResolvedValue(ok(comPrevia));
+    api.confirmarAplicacao.mockResolvedValue(ok({ status: 'em_andamento' }));
+    const andando = aplicacao({ status: 'em_andamento', itens: [{ item_id: 'MLB1', status: 'subindo', erro: null }] });
+    api.estadoAplicacoes.mockResolvedValueOnce(ok({ aplicacoes: [] })).mockResolvedValueOnce(ok({ aplicacoes: [andando] }))
+      .mockResolvedValue(ok({ aplicacoes: [aplicacao({ itens: [{ item_id: 'MLB1', status: 'aplicado', erro: null }] })] }));
+    montar(true, 'MLB1');
+    await preparar();
+    await aplicar();
+    const painel = screen.getByRole('region', { name: 'Prévia' });
+    expect(await within(painel).findByText('Aplicando')).toBeInTheDocument();
+    expect(within(painel).getAllByRole('img', { name: /será removida/ })).toHaveLength(2);
+    expect(screen.getAllByRole('status').at(-1)).toHaveTextContent('Aplicando no Mercado Livre');
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(await within(painel).findByText('Aplicado')).toBeInTheDocument();
+    expect(within(painel).getByRole('button', { name: 'Desfazer aplicação' })).toBeEnabled();
+    expect(screen.getAllByRole('status').at(-1)).toHaveTextContent('Fotos aplicadas na cor Rosa. Você pode desfazer a qualquer momento.');
+    expect(screen.getByRole('button', { name: 'Voltar a Publicados' })).toBeEnabled();
+    // A aplicação mostrada na prévia não se repete na lista.
+    expect(screen.queryByRole('list', { name: 'Aplicações' })).not.toBeInTheDocument();
+  });
+
+  it('Não aplicado mostra o motivo em português (código só no title)', async () => {
+    api.estadoAplicacoes.mockResolvedValue(ok({ aplicacoes: [aplicacao({ status: 'falhou', itens: [
+      { item_id: 'MLB3P', status: 'falhou', erro: 'upload_incerto' }, { item_id: 'MLB3G', status: 'pulado', erro: 'prazo_vencido' }] })] }));
+    montar();
+    const p = (await screen.findByText('MLB3P')).closest('li')!;
+    expect(p).toHaveTextContent('Não aplicado');
+    expect(p).toHaveTextContent('O envio da foto ficou sem resposta. As fotos da cor não mudaram.');
+    expect(within(p).getByTitle('upload_incerto')).toBeInTheDocument();
+    expect(screen.getByText('MLB3G').closest('li')).toHaveTextContent('A aplicação parou antes deste anúncio');
+  });
+
+  it('sem imagem aprovada: estado vazio que leva ao passo 3, sem chamar Preparar', async () => {
+    const { aoIrParaGerar } = montar(true, 'MLB3M', {});
+    expect(await screen.findByText('Aprove ao menos 1 imagem no passo 3', { selector: 'p.font-medium' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ver prévia' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Aplicar' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Ir para Gerar e aprovar' }));
+    expect(aoIrParaGerar).toHaveBeenCalled();
+    expect(api.prepararAplicacao).not.toHaveBeenCalled();
+  });
+
+  it('só as cores com aprovada aparecem na escolha da cor', async () => {
+    montar(true, 'MLB3M', { Azul: 2 });
+    expect(await screen.findByRole('combobox', { name: 'Cor' })).toHaveTextContent('Azul');
+    await preparar();
+    expect(api.prepararAplicacao).toHaveBeenCalledWith('MLB3M', 'Azul', 'substituir');
+  });
+
+  it('Não aplicado depois de confirmar: motivo no MLB, rodapé explica e "Tentar de novo" prepara outra vez', async () => {
+    api.prepararAplicacao.mockResolvedValue(ok(comPrevia));
+    api.confirmarAplicacao.mockResolvedValue(ok({ status: 'em_andamento' }));
+    api.estadoAplicacoes.mockResolvedValueOnce(ok({ aplicacoes: [] }))
+      .mockResolvedValue(ok({ aplicacoes: [aplicacao({ status: 'falhou', itens: [{ item_id: 'MLB1', status: 'pulado', erro: 'put_incerto_sem_efeito' }] })] }));
+    montar(true, 'MLB1');
+    await preparar();
+    await aplicar();
+    const painel = screen.getByRole('region', { name: 'Prévia' });
+    expect(await within(painel).findByText('Não aplicado')).toBeInTheDocument();
+    expect(painel).toHaveTextContent('O Mercado Livre não confirmou a troca. As fotos da cor não mudaram.');
+    expect(screen.getAllByRole('status').at(-1)).toHaveTextContent('Confira o motivo e tente de novo');
+    await userEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+    expect(api.prepararAplicacao).toHaveBeenCalledTimes(2);
+  });
+
+  it('edge sem prévia (anterior à C2): mostra só os MLB e as imagens', async () => {
+    montar();
+    await preparar();
+    expect(await screen.findByRole('list', { name: 'Anúncios afetados' })).toBeInTheDocument();
+    expect(screen.queryByText(/Hoje no anúncio/)).not.toBeInTheDocument();
   });
 });

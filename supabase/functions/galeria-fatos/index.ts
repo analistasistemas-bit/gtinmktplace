@@ -2,7 +2,7 @@
 // A tela manda o MLB da linha de Publicados; a edge resolve o anúncio/partição e a família vigente.
 // Ações: montar | confirmar | descartar | manter_cadastro | corrigir_cadastro | enviar_vista. Toda ação, depois da
 // sua gravação, remonta a ficha e as referências e aplica a vigência (hash ≠ roteiro aprovado → desatualiza).
-// Nunca escreve no Mercado Livre: "corrigir cadastro" grava só na família.
+// Nunca escreve no Mercado Livre: "corrigir cadastro" grava só na família. `montar` devolve também o cabeçalho (Fase C2).
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
@@ -101,6 +101,37 @@ function comUrlDoRecorte(admin: Admin, orgId: string, fatos: Fato[]): Promise<Fa
   }));
 }
 
+interface Cabecalho { capa_url: string | null; titulo_anuncio: string | null; preco_anuncio: number | null; formato: 'legacy' | 'user_products' }
+
+/**
+ * Cabeçalho da página (Fase C2): capa atual (`pictures[0].secure_url`), título e preço do item da linha, num GET só;
+ * formato pela linha local (`item_externo_id` nulo = User Products). Só na ação `montar` (abertura). Assim o link
+ * direto não depende do cache de Publicados. Falha do ML → campos null (a tela usa Publicados ou o ícone); nunca
+ * derruba o `montar`.
+ */
+async function cabecalhoDoAnuncio(admin: Admin, orgId: string, anuncioId: string, mlItemId: string): Promise<Cabecalho> {
+  const { data: an } = await admin.from('anuncios_externos').select('item_externo_id').eq('id', anuncioId).eq('org_id', orgId).maybeSingle();
+  const c: Cabecalho = { capa_url: null, titulo_anuncio: null, preco_anuncio: null, formato: an && !an.item_externo_id ? 'user_products' : 'legacy' };
+  try {
+    const cx = await resolverConexaoEstrita(admin, orgId, 'mercado_livre');
+    if (!cx) return c;
+    const r = await fetch(`https://api.mercadolibre.com/items/${encodeURIComponent(mlItemId)}?attributes=pictures,title,price`, {
+      headers: { Authorization: `Bearer ${await getValidAccessTokenConexao(cx)}` }, signal: AbortSignal.timeout(5_000),
+    });
+    if (!r.ok) return c;
+    const j = await r.json() as { pictures?: Array<{ secure_url?: unknown }>; title?: unknown; price?: unknown };
+    const url = j.pictures?.[0]?.secure_url;
+    return {
+      ...c, capa_url: typeof url === 'string' && url.startsWith('https://') ? url : null,
+      titulo_anuncio: typeof j.title === 'string' && j.title !== '' ? j.title : null,
+      preco_anuncio: typeof j.price === 'number' && Number.isFinite(j.price) ? j.price : null,
+    };
+  } catch (e) {
+    console.error('[galeria-fatos] cabeçalho', (e as Error).message);
+    return c;
+  }
+}
+
 async function montar(admin: Admin, orgId: string, a: AnuncioGaleria) {
   // Uma visão da etiqueta só quando fotos/campos/família mudaram (cache na sentinela); nunca mais que uma por montar.
   const v = await calcularVigencia(admin, orgId, a, (ctx) => conferirEtiqueta(admin, orgId, a, ctx));
@@ -162,7 +193,10 @@ Deno.serve(async (req) => {
     if ('erro' in r) return json({ error: r.erro }, 409);
     const a = await carregarAnuncio(admin, orgId, r.anuncioId);
     if ('erro' in a) return json({ error: a.erro }, 409);
-    if (acao === 'montar') return json(await montar(admin, orgId, a));
+    if (acao === 'montar') {
+      const [ficha, cabecalho] = await Promise.all([montar(admin, orgId, a), cabecalhoDoAnuncio(admin, orgId, a.anuncioId, mlItemId)]);
+      return json({ ...ficha, ...cabecalho });
+    }
 
     // Trabalho novo só na família vigente (a tela manda a que mostrou).
     if (body.familia_id !== a.vigente.id) return json({ error: 'familia_nao_vigente', familia_id_vigente: a.vigente.id }, 409);

@@ -182,6 +182,54 @@ describe('galeria-aplicar — preparar', () => {
     expect((await preparar({ modo: 'adicionar' })).body).toMatchObject({ error: 'limite' })
   })
 
+  // Fase C2: prévia "Hoje no anúncio" × "Depois" na resposta; nada dela é gravado e o ML só recebe GET.
+  describe('prévia', () => {
+    const comUrls = (i: Linha) => ({ ...i, pictures: (i.pictures as Linha[]).map((p) => ({ ...p, secure_url: `https://ml/${p.id}.jpg` })) })
+    const comFinal = () => db.galeria_imagens.forEach((i) => { i.final_path = `final/${i.id}.jpg` })
+
+    it('Substituir com capa aprovada: hoje riscada, depois só as novas na ordem, com URL assinada; manifesto gravado igual', async () => {
+      itensML.MLB1 = comUrls(legacyML('MLB1'))
+      comFinal()
+      const r = await preparar()
+      expect(r.status).toBe(200)
+      expect(r.body.previa).toEqual([{
+        item_id: 'MLB1',
+        antes: [{ id: 'R0', url: 'https://ml/R0.jpg', sai: true }],
+        depois: [{ id: 'novo-1', url: 'https://signed/final/g1.jpg', nova: true, missao: 1 }, { id: 'novo-3', url: 'https://signed/final/g3.jpg', nova: true, missao: 3 }],
+      }])
+      expect(db.galeria_aplicacoes[0].manifesto).toEqual([{ imagem_id: 'g1', missao: 1, final_sha256: 'sha-g1' }, { imagem_id: 'g3', missao: 3, final_sha256: 'sha-g3' }])
+      expect(JSON.stringify(db.galeria_aplicacoes[0]) + JSON.stringify(db.galeria_aplicacao_itens)).not.toContain('https://')
+      expect(metodos.every((m) => m === 'GET')).toBe(true)
+      expect(f.batch).not.toHaveBeenCalled()
+    })
+
+    it('Substituir sem a capa aprovada: a 1ª foto atual fica e não sai riscada', async () => {
+      db.galeria_imagens = db.galeria_imagens.filter((i) => i.id !== 'g1')
+      itensML.MLB1 = comUrls({ ...legacyML('MLB1'), pictures: [{ id: 'R0' }, { id: 'R1' }, { id: 'A0' }],
+        variations: [{ id: 11, seller_custom_field: '100R', picture_ids: ['R0', 'R1'] }, { id: 12, seller_custom_field: '100A', picture_ids: ['A0'] }] })
+      const p = ((await preparar()).body.previa as Linha[])[0]
+      expect(p.antes).toEqual([{ id: 'R0', url: 'https://ml/R0.jpg', sai: false }, { id: 'R1', url: 'https://ml/R1.jpg', sai: true }])
+      expect((p.depois as Linha[]).map((d) => [d.id, d.nova])).toEqual([['R0', false], ['novo-3', true]])
+    })
+
+    it('Adicionar: nada riscado, as atuais seguem e as novas entram depois', async () => {
+      itensML.MLB1 = comUrls(legacyML('MLB1'))
+      const p = ((await preparar({ modo: 'adicionar' })).body.previa as Linha[])[0]
+      expect((p.antes as Linha[]).map((x) => x.sai)).toEqual([false])
+      expect((p.depois as Linha[]).map((d) => d.id)).toEqual(['R0', 'novo-1', 'novo-3'])
+    })
+
+    it('UP P/M/G → uma prévia por MLB; sem secure_url nem final_path a URL é null (sem GET extra por foto)', async () => {
+      const r = await preparar({ ml_item_id: 'MLB3M' })
+      const previa = r.body.previa as Linha[]
+      expect(previa.map((x) => x.item_id).sort()).toEqual(['MLB3G', 'MLB3M', 'MLB3P'])
+      expect(previa[0].antes).toEqual([{ id: `F-${(previa[0].item_id as string).replace('MLB3', '300')}`, url: null, sai: true }])
+      expect(previa[0].depois).toEqual([{ id: 'novo-1', url: null, nova: true, missao: 1 }])
+      expect(metodos.filter((m) => m === 'GET').length).toBeLessThanOrEqual(6)
+      expect(metodos.every((m) => m === 'GET')).toBe(true)
+    })
+  })
+
   it('sem aprovadas da cor → 409 sem_aprovadas', async () => {
     expect((await preparar({ cor: 'Verde' })).body).toEqual({ error: 'sem_aprovadas' })
   })

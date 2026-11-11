@@ -27,6 +27,11 @@ export interface Ficha {
   referencias: Record<string, Partial<Record<Vista, { path?: string; erro?: string }>>>;
   /** Lupa pela caixa do produto, por cor: situação de cada missão com lupa (geral 3/7, Moda 5/7). */
   lupa?: Record<string, Record<'geral' | 'moda', Record<number, SituacaoLupa>>>;
+  /** Só na ação `montar` (cabeçalho, Fase C2): capa atual no ML (null/ausente = ícone), título e preço no ML e formato. */
+  capa_url?: string | null;
+  titulo_anuncio?: string | null;
+  preco_anuncio?: number | null;
+  formato?: 'legacy' | 'user_products';
 }
 export type SituacaoLupa = 'ok' | 'lendo' | 'indisponivel';
 /** Caixas gravadas na referência (só com `situacao: 'ok'`); `hash` volta no aprovar. */
@@ -159,7 +164,14 @@ export async function enviarFinal(path: string, token: string, arquivo: Blob): P
 // Task 15: aplicar e reverter no ML (`galeria-aplicar`, só admin). Toda ação leva o `ml_item_id` da própria linha.
 export type ModoAplicar = 'substituir' | 'adicionar';
 export interface ManifestoItem { imagem_id: string; missao: number; final_sha256: string | null }
-export interface AplicacaoPreparada { aplicacao_id: string; status: 'preparada'; itens: string[]; manifesto: ManifestoItem[] }
+/** Prévia de um MLB (Fase C2): fotos da cor hoje (`sai` = riscada) e depois (`nova` = aprovada que entra). */
+export interface PreviaItem {
+  item_id: string;
+  antes: Array<{ id: string; url: string | null; sai: boolean }>;
+  depois: Array<{ id: string; url: string | null; nova: boolean; missao?: number }>;
+}
+/** `previa` ausente = edge anterior à Fase C2 (a tela mostra só a lista de MLB e de imagens). */
+export interface AplicacaoPreparada { aplicacao_id: string; status: 'preparada'; itens: string[]; manifesto: ManifestoItem[]; previa?: PreviaItem[] }
 export interface ItemAplicacao { item_id: string; status: string; erro: string | null }
 export interface EstadoAplicacao {
   id: string; cor: string; modo: ModoAplicar; status: string; manifesto: ManifestoItem[]; itens: ItemAplicacao[];

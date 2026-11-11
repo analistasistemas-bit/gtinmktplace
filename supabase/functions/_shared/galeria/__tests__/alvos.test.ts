@@ -188,11 +188,11 @@ describe('lerElegibilidadeItemML e motivoElegibilidade', () => {
   it('GET próprio com os campos da galeria; catalog_listing true → catalogo, ausente → catalogo_desconhecido', async () => {
     const urls: string[] = []
     let corpo: Linha = { id: 'MLB1', catalog_listing: true, tags: ['x'], seller_custom_field: 'S',
-      pictures: [{ id: 'P1' }], variations: [{ id: 7, seller_custom_field: '100R', picture_ids: ['P1'] }] }
+      pictures: [{ id: 'P1', secure_url: 'https://ml/P1.jpg' }, { id: 'P2' }], variations: [{ id: 7, seller_custom_field: '100R', picture_ids: ['P1'] }] }
     vi.stubGlobal('fetch', vi.fn(async (url: string) => { urls.push(url); return Response.json(corpo) }))
     const item = await lerElegibilidadeItemML('tok', 'MLB1')
     expect(urls[0]).toBe('https://api.mercadolibre.com/items/MLB1?attributes=id,catalog_listing,tags,variations,pictures,seller_custom_field')
-    expect(item).toEqual({ id: 'MLB1', catalogListing: true, tags: ['x'], sku: 'S', pictures: ['P1'], variacoes: [{ id: 7, sku: '100R', pictureIds: ['P1'] }] })
+    expect(item).toEqual({ id: 'MLB1', catalogListing: true, tags: ['x'], sku: 'S', pictures: ['P1', 'P2'], variacoes: [{ id: 7, sku: '100R', pictureIds: ['P1'] }], urls: { P1: 'https://ml/P1.jpg' } })
     expect(motivoElegibilidade(item!)).toBe('catalogo')
 
     corpo = { id: 'MLB1', variations: [] }

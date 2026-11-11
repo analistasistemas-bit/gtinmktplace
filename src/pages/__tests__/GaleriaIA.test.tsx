@@ -471,7 +471,9 @@ describe('Passo 2 — lupa (migrado do passo Roteiro)', () => {
 });
 
 describe('Passos 3 e 4 na página', () => {
-  const aprovadoListar = { roteiro: { id: 'R1', versao: 1, familia_id: 'F1', moda: false, missoes_ativas: [1, 2], textos: {} }, unit_cents: 50, imagens: [] };
+  const aprovadaPreto = { id: 'g1', cor: 'Preto', missao: 1, geracao: 1, origem: 'gerador', status: 'aprovada', alertas: [], erro: null,
+    exibida: true, url: null, ref_url: null, roteiro_id: 'R1', pode_gerar_de_novo: false, unit_cents: 50 };
+  const aprovadoListar = { roteiro: { id: 'R1', versao: 1, familia_id: 'F1', moda: false, missoes_ativas: [1, 2], textos: {} }, unit_cents: 50, imagens: [aprovadaPreto] };
 
   it('sem roteiro aprovado nem imagem pendente, os passos 3 e 4 ficam fechados', async () => {
     abrir();
@@ -488,6 +490,18 @@ describe('Passos 3 e 4 na página', () => {
     await irPasso(/Aplicar no anúncio/);
     await waitFor(() => expect(api.estadoAplicacoes).toHaveBeenCalledWith('MLB-B'));
     expect(screen.getByRole('button', { name: /Aplicar na cor Preto/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ver prévia' })).toBeDisabled();
+  });
+
+  it('roteiro aprovado sem imagem aprovada: o passo 4 mostra o estado vazio e leva ao passo 3', async () => {
+    api.lerRoteiro.mockResolvedValue(comLer(resposta({ status: 'aprovado' })));
+    api.listarImagens.mockResolvedValue(ok({ ...aprovadoListar, imagens: [] }));
+    abrir('MLB-B');
+    await irPasso(/Aplicar no anúncio/);
+    expect(await screen.findByText('Aprove ao menos 1 imagem no passo 3', { selector: 'p.font-medium' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Ir para Gerar e aprovar' }));
+    expect(await screen.findByText('Gerar e aprovar', { selector: 'h1' })).toBeInTheDocument();
+    expect(api.prepararAplicacao).not.toHaveBeenCalled();
   });
 
   it('familia_nao_vigente no aplicar sobrevive à recarga, com o id vigente', async () => {
@@ -496,9 +510,50 @@ describe('Passos 3 e 4 na página', () => {
     api.prepararAplicacao.mockResolvedValue(falha(409, 'familia_nao_vigente', { familia_id_vigente: 'F2' }));
     abrir('MLB-B');
     await irPasso(/Aplicar no anúncio/);
-    await userEvent.click(await screen.findByRole('button', { name: /Aplicar na cor Preto/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Ver prévia' }));
     await waitFor(() => expect(api.montarFicha).toHaveBeenCalledTimes(2));
     expect(await screen.findByText(/F2/)).toBeInTheDocument();
+  });
+});
+
+// Fase C2: miniatura do cabeçalho = capa atual do anúncio (vem do `montar`); sem ela ou com erro de carga, o ícone.
+describe('Cabeçalho — miniatura da capa', () => {
+  it('mostra a capa do anúncio vinda do montar', async () => {
+    api.montarFicha.mockResolvedValue(ok(ficha([fato('nome', 'CONFIRMADO', 'Fita')], { capa_url: 'https://http2.mlstatic.com/C1.jpg' })));
+    abrir();
+    expect(await screen.findByTestId('capa-anuncio')).toHaveAttribute('src', 'https://http2.mlstatic.com/C1.jpg');
+    expect(screen.queryByTestId('capa-icone')).not.toBeInTheDocument();
+  });
+
+  it('sem capa (edge antiga ou null) → ícone; imagem que não carrega → ícone', async () => {
+    abrir();
+    expect(await screen.findByTestId('capa-icone')).toBeInTheDocument();
+    api.montarFicha.mockResolvedValue(ok(ficha([fato('nome', 'CONFIRMADO', 'Fita')], { capa_url: 'https://quebrada/x.jpg' })));
+    await userEvent.click(screen.getByRole('button', { name: 'ir-/publicados/MLB-B/galeria' }));
+    fireEvent.error(await screen.findByTestId('capa-anuncio'));
+    expect(await screen.findByTestId('capa-icone')).toBeInTheDocument();
+  });
+
+  it('link direto sem cache de Publicados: título, formato e preço vêm do montar', async () => {
+    api.montarFicha.mockResolvedValue(ok(ficha([fato('nome', 'CONFIRMADO', 'Fita')], {
+      capa_url: 'https://http2.mlstatic.com/C1.jpg', titulo_anuncio: 'FITA DO ML', preco_anuncio: 31.5, formato: 'user_products' })));
+    abrir('MLB-SEM-CACHE');
+    const cab = (await screen.findByTestId('capa-anuncio')).closest('header')!;
+    await waitFor(() => expect(cab).toHaveTextContent('FITA DO ML'));
+    expect(cab).toHaveTextContent('User Products');
+    expect(cab).toHaveTextContent('R$ 31,50');
+    expect(cab).toHaveTextContent('MLB-SEM-CACHE');
+  });
+
+  it('ações da ficha que não trazem a capa não apagam a miniatura', async () => {
+    api.montarFicha.mockResolvedValue(ok(ficha([fato('atributo:COLOR', 'SUGERIDO', 'Preto')], { capa_url: 'https://http2.mlstatic.com/C1.jpg' })));
+    api.confirmarFato.mockResolvedValue(ok(ficha([fato('atributo:COLOR', 'CONFIRMADO', 'Preto')])));
+    abrir();
+    await screen.findByTestId('capa-anuncio');
+    const sw = await screen.findAllByRole('switch');
+    await userEvent.click(sw[0]);
+    await waitFor(() => expect(api.confirmarFato).toHaveBeenCalled());
+    expect(screen.getByTestId('capa-anuncio')).toBeInTheDocument();
   });
 });
 

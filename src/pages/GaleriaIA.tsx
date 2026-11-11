@@ -64,6 +64,10 @@ export default function GaleriaIA() {
   // Algo para gerar/aplicar: roteiro aprovado do anúncio (mesmo com rascunho por cima) ou cena não exibida.
   const [temGaleria, setTemGaleria] = useState(false);
   const [lista, setLista] = useState<RespostaListar | null>(null);
+  // Cabeçalho do anúncio no ML: só vem na abertura (`montar`); as outras ações da ficha não o trazem.
+  const [cab, setCab] = useState<Pick<Ficha, 'capa_url' | 'titulo_anuncio' | 'preco_anuncio' | 'formato'>>({});
+  const capa = cab.capa_url ?? null;
+  const [capaQuebrou, setCapaQuebrou] = useState(false);
   const abertura = useRef(0);
   // Envio pendente do passo 2 (Fase B): sai antes de trocar de passo ou voltar a Publicados.
   const descarga = useRef<(() => Promise<boolean>) | null>(null);
@@ -80,6 +84,8 @@ export default function GaleriaIA() {
       setCarregando(false);
       return;
     }
+    setCab({ capa_url: r.dados.capa_url, titulo_anuncio: r.dados.titulo_anuncio, preco_anuncio: r.dados.preco_anuncio, formato: r.dados.formato });
+    setCapaQuebrou(false);
     const l = await lerRoteiro(mlItemId);
     if (id !== abertura.current) return;
     setFicha(r.dados);
@@ -103,7 +109,7 @@ export default function GaleriaIA() {
 
   useEffect(() => {
     if (semModulo || !mlItemId) return;
-    setFicha(null); setResp(null); setModa(null); setPasso(1); setAlcancado(1); setTemGaleria(false); setLista(null);
+    setFicha(null); setResp(null); setModa(null); setPasso(1); setAlcancado(1); setTemGaleria(false); setLista(null); setCab({});
     setErro(null); setParada(null);
     void carregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -151,8 +157,14 @@ export default function GaleriaIA() {
   }
 
   const podeGerar = resp?.roteiro.status === 'aprovado' || temGaleria;
-  const titulo = anuncio?.titulo ?? (ficha ? `Produto ${ficha.codigo_pai}` : 'Galeria IA');
-  const aprovadas = (lista?.imagens ?? []).filter((i) => i.status === 'aprovada' && i.roteiro_id === lista?.roteiro?.id).length;
+  // Link direto: o cabeçalho vem do `montar`; Publicados (cache) só completa o que o ML não respondeu.
+  const titulo = cab.titulo_anuncio ?? anuncio?.titulo ?? (ficha ? `Produto ${ficha.codigo_pai}` : 'Galeria IA');
+  const formato = cab.formato ? (cab.formato === 'user_products' ? 'User Products' : 'Legacy')
+    : anuncio ? (anuncio.userProducts ? 'User Products' : 'Legacy') : null;
+  const preco = cab.preco_anuncio ?? anuncio?.precoPublicacao ?? null;
+  const aprovadasLista = (lista?.imagens ?? []).filter((i) => i.status === 'aprovada' && i.roteiro_id === lista?.roteiro?.id);
+  const aprovadas = aprovadasLista.length;
+  const aprovadasPorCor = lista ? aprovadasLista.reduce<Record<string, number>>((m, i) => ({ ...m, [i.cor]: (m[i.cor] ?? 0) + 1 }), {}) : null;
 
   return (
     <div className="flex min-h-full flex-col">
@@ -163,15 +175,20 @@ export default function GaleriaIA() {
               className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md px-2 font-medium text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
               <ArrowLeft aria-hidden className="size-4" /><span className="max-sm:sr-only">Publicados</span>
             </Link>
-            <div aria-hidden className="grid size-11 shrink-0 place-items-center rounded-md border bg-muted text-muted-foreground">
-              <Images className="size-5" />
-            </div>
+            {capa && !capaQuebrou ? (
+              <img src={capa} alt="" data-testid="capa-anuncio" onError={() => setCapaQuebrou(true)}
+                className="size-11 shrink-0 rounded-md border bg-muted object-cover" />
+            ) : (
+              <div aria-hidden data-testid="capa-icone" className="grid size-11 shrink-0 place-items-center rounded-md border bg-muted text-muted-foreground">
+                <Images className="size-5" />
+              </div>
+            )}
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold sm:text-base" title={titulo}>{titulo}</p>
               <p className="flex flex-wrap gap-x-2.5 gap-y-0.5 text-xs text-muted-foreground">
                 <span className="tabular-nums">{mlItemId}</span>
-                {anuncio && <span>{anuncio.userProducts ? 'User Products' : 'Legacy'}</span>}
-                {anuncio && <span className="tabular-nums">{fmtBRL(anuncio.precoPublicacao)}</span>}
+                {formato && <span>{formato}</span>}
+                {preco !== null && <span className="tabular-nums">{fmtBRL(preco)}</span>}
                 {ficha && ficha.cores.length > 0 && <span className="max-sm:hidden">Cores: {ficha.cores.join(' · ')}</span>}
               </p>
             </div>
@@ -240,14 +257,10 @@ export default function GaleriaIA() {
             texto={aprovadas > 0 ? `${aprovadas} ${aprovadas === 1 ? 'imagem aprovada' : 'imagens aprovadas'}` : 'Aprove ao menos 1 imagem para continuar'} />
         </>
       ) : (
-        <>
-          <MioloPasso titulo="Aplicar no anúncio" frase="Escolha a cor e como as imagens aprovadas entram nas fotos dela.">
-            <PassoAplicar mlItemId={mlItemId} ficha={ficha} isAdmin={isAdmin}
-              aoFamiliaMudou={(m) => { setErro(m); setResp(null); void carregar(); }} />
-          </MioloPasso>
-          <Rodape ok concluido seta={false} variante="outline" rotulo="Voltar a Publicados" aoClicar={() => navigate(caminhoDeVolta())}
-            texto={isAdmin ? 'Aplique uma cor por vez. Você pode desfazer depois.' : 'Somente administradores aplicam as fotos no anúncio.'} />
-        </>
+        <PassoAplicar mlItemId={mlItemId} ficha={ficha} isAdmin={isAdmin} moda={moda ?? false} aprovadasPorCor={aprovadasPorCor}
+          formato={formato ?? 'Anúncio'}
+          aoFamiliaMudou={(m) => { setErro(m); setResp(null); void carregar(); }}
+          aoIrParaGerar={() => void irPara(3)} aoVoltar={() => navigate(caminhoDeVolta())} />
       )}
     </div>
   );

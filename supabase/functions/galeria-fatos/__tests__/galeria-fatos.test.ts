@@ -236,6 +236,27 @@ describe('galeria-fatos', () => {
     expect((fatoDe(falhou.body, 'atributo:MAIN_MATERIAL') as { etiqueta: { foto: Linha } }).etiqueta.foto.url).toBeUndefined()
   })
 
+  // Fase C2: miniatura do cabeçalho = capa atual do anúncio no ML; falha nunca derruba o montar.
+  it('montar devolve o cabeçalho (capa = pictures[0].secure_url, título, preço, formato); falha → null; outras ações não', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      fetchs.push(`${init?.method ?? 'GET'} ${url}`)
+      return url === 'https://api.mercadolibre.com/items/MLB1?attributes=pictures,title,price'
+        ? Response.json({ title: 'FITA VELUDO', price: 28.4, pictures: [{ id: 'C1', secure_url: 'https://http2.mlstatic.com/C1.jpg' }, { id: 'C2', secure_url: 'https://http2.mlstatic.com/C2.jpg' }] })
+        : new Response('{}', { status: 500 })
+    }))
+    const ok = await chamar({ acao: 'montar', ml_item_id: 'MLB1' })
+    expect(ok.body).toMatchObject({ capa_url: 'https://http2.mlstatic.com/C1.jpg', titulo_anuncio: 'FITA VELUDO', preco_anuncio: 28.4, formato: 'legacy' })
+    expect(fetchs.every((x) => x.startsWith('GET '))).toBe(true)
+
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 500 })))
+    const falhou = await chamar({ acao: 'montar', ml_item_id: 'MLB1' })
+    expect(falhou.status).toBe(200)
+    expect(falhou.body).toMatchObject({ capa_url: null, titulo_anuncio: null, preco_anuncio: null, formato: 'legacy' })
+
+    const outra = await chamar({ acao: 'confirmar', ml_item_id: 'MLB1', familia_id: 'famB', campo: 'atributo:PATTERN' })
+    expect(outra.body).not.toHaveProperty('capa_url')
+  })
+
   it('varredura em todo montar: submetendo que conclui gerada depois da troca do roteiro vira desatualizada', async () => {
     db.galeria_roteiros.push({ id: 'r1', org_id: 'org', anuncio_externo_id: 'an1', familia_id: 'famB', status: 'aprovado', fatos_hash: 'velho' })
     db.galeria_imagens.push({ id: 'i2', org_id: 'org', anuncio_externo_id: 'an1', roteiro_id: 'r1', status: 'submetendo' })

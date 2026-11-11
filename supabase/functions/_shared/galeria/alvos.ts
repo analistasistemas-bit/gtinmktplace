@@ -16,6 +16,8 @@ export interface ItemElegibilidade {
   sku: string | null;
   pictures: string[];
   variacoes: VariacaoML[];
+  /** picture id → `secure_url` do mesmo GET (prévia do aplicar); opcional: fixtures e retratos não trazem. */
+  urls?: Record<string, string>;
 }
 export interface Alvo { itemId: string; variacoes: Array<{ sku: string; variationId: number | null }> }
 export type ErroAlvos = { erro: 'conjunto_incompleto' | 'sem_anuncio' | 'variacao_nao_casa'; detalhe: string };
@@ -51,6 +53,10 @@ export async function lerElegibilidadeItemML(token: string, itemId: string): Pro
         id: Number(v.id),
         sku: texto(v.seller_custom_field),
         pictureIds: (Array.isArray(v.picture_ids) ? v.picture_ids : []).filter((p): p is string => typeof p === 'string'),
+      })),
+      urls: Object.fromEntries(lista(j.pictures).flatMap((p) => {
+        const id = texto(p.id), url = texto(p.secure_url);
+        return id && url ? [[id, url]] : [];
       })),
     };
   } catch {

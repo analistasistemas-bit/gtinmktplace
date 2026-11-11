@@ -4,7 +4,8 @@
 // - preparar {ml_item_id, cor, modo}: trabalho novo — exige o roteiro aprovado da família vigente com o fatos_hash atual;
 //   manifesto = aprovadas da cor nesse roteiro (com final_sha256); alvos + GET de cada item (catálogo, migração, formato,
 //   plano de ida em seco: `limite`/`mudou`); grava a aplicação `preparada` com o retrato e os itens `pendente`. Nunca
-//   escreve no ML.
+//   escreve no ML. Devolve também a `previa` por MLB (fotos da cor hoje × depois, com a `secure_url` do mesmo GET e a
+//   URL assinada do final aprovado); a prévia é só resposta, nada dela é gravado.
 // - confirmar {ml_item_id, aplicacao_id}: `galeria_confirmar_aplicacao` (vigência, manifesto, escrita pendente, trava,
 //   em_andamento — tudo ou nada numa transação), depois publica um job por item na fila do dono (otimização).
 // - reverter {ml_item_id, aplicacao_id}: operação histórica (qualquer família do mesmo anúncio):
@@ -142,12 +143,12 @@ Deno.serve(async (req) => {
     if (v.fatos_hash !== rot.fatos_hash) return json({ error: 'desatualizada' }, 409);
 
     // Manifesto congelado: aprovadas da cor no roteiro vigente, na ordem das missões, com o sha do final.
-    const { data: aprovadas, error: eI } = await admin.from('galeria_imagens').select('id, missao, final_sha256')
+    const { data: aprovadas, error: eI } = await admin.from('galeria_imagens').select('id, missao, final_sha256, final_path')
       .eq('org_id', orgId).eq('anuncio_externo_id', a.anuncioId).eq('roteiro_id', rot.id).eq('cor', cor!).eq('status', 'aprovada');
     if (eI) throw new Error(eI.message);
-    const manifesto = ((aprovadas ?? []) as Array<{ id: string; missao: number; final_sha256: string | null }>)
-      .sort((x, y) => x.missao - y.missao)
-      .map((i) => ({ imagem_id: i.id, missao: i.missao, final_sha256: i.final_sha256 }));
+    const ordenadas = ((aprovadas ?? []) as Array<{ id: string; missao: number; final_sha256: string | null; final_path: string | null }>)
+      .sort((x, y) => x.missao - y.missao);
+    const manifesto = ordenadas.map((i) => ({ imagem_id: i.id, missao: i.missao, final_sha256: i.final_sha256 }));
     if (manifesto.length === 0) return json({ error: 'sem_aprovadas' }, 409);
     if (manifesto.some((m) => !m.final_sha256)) return json({ error: 'sem_final' }, 409);
 
@@ -163,6 +164,14 @@ Deno.serve(async (req) => {
     if ((await Promise.all(lidos.values())).some((i) => i === null)) return json({ error: 'ml_indisponivel' }, 503);
     if ('erro' in alvos) return json({ error: alvos.erro, detalhe: alvos.detalhe }, 409);
 
+    // Prévia: uma URL assinada por imagem aprovada (fora do loop de itens); falha → null e a tela mostra o espaço vazio.
+    const urlNova = new Map<string, string | null>(await Promise.all(ordenadas.map(async (i) => {
+      if (!i.final_path) return [`novo-${i.missao}`, null] as const;
+      const { data, error } = await admin.storage.from('imagens').createSignedUrl(i.final_path, 600);
+      return [`novo-${i.missao}`, error ? null : data?.signedUrl ?? null] as const;
+    })));
+    type Foto = { id: string; url: string | null };
+    const previa: Array<{ item_id: string; antes: Array<Foto & { sai: boolean }>; depois: Array<Foto & { nova: boolean; missao?: number }> }> = [];
     const retrato: Record<string, { pictures: string[]; variacoes: ItemElegibilidade['variacoes'] }> = {};
     const itens: Array<Record<string, unknown>> = [];
     const placeholders = manifesto.map((m) => ({ missao: m.missao, id: `novo-${m.missao}` }));
@@ -180,6 +189,18 @@ Deno.serve(async (req) => {
       const seco = planejarFotosItem({ direcao: 'ida', atual: item, retrato: item, variacoesAlvo: alvo.variacoes,
         fotosDaCor: placeholders, capaAprovada: manifesto.some((m) => m.missao === 1), modo: modo!, limiteVar: LIMITE_VAR, limiteItem: LIMITE_ITEM });
       if (!seco.ok) return json({ error: seco.motivo, item_id: alvo.itemId, detalhe: seco.detalhe }, 409);
+      // ponytail: prévia pela 1ª variação-alvo do item; as demais SKUs da cor costumam ter as mesmas fotos.
+      const v0 = alvo.variacoes[0];
+      const depoisIds = v0.variationId === null ? seco.corpo.pictures.map((p) => p.id)
+        : seco.corpo.variations?.find((x) => x.id === v0.variationId)?.picture_ids ?? [];
+      previa.push({
+        item_id: alvo.itemId,
+        antes: antes[v0.sku].map((id) => ({ id, url: item.urls?.[id] ?? null, sai: !depoisIds.includes(id) })),
+        depois: depoisIds.map((id) => {
+          const missao = /^novo-(\d+)$/.exec(id)?.[1];
+          return missao ? { id, url: urlNova.get(id) ?? null, nova: true, missao: Number(missao) } : { id, url: item.urls?.[id] ?? null, nova: false };
+        }),
+      });
       retrato[alvo.itemId] = { pictures: item.pictures, variacoes: item.variacoes };
       itens.push({
         org_id: orgId, anuncio_externo_id: a.anuncioId, item_id: alvo.itemId, variacoes_alvo: alvo.variacoes, fotos_antes: antes,
@@ -198,7 +219,7 @@ Deno.serve(async (req) => {
       await admin.from('galeria_aplicacoes').delete().eq('id', apl.id).eq('status', 'preparada');
       throw new Error(eIt.message);
     }
-    return json({ aplicacao_id: apl.id, status: 'preparada', itens: itens.map((i) => i.item_id), manifesto });
+    return json({ aplicacao_id: apl.id, status: 'preparada', itens: itens.map((i) => i.item_id), manifesto, previa });
   } catch (e) {
     console.error('[galeria-aplicar]', acao, (e as Error).message);
     return json({ error: 'falha_interna' }, 500);
