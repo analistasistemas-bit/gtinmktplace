@@ -1,5 +1,11 @@
 # PubliAI — Tasks
 
+## Envio mais caro que a venda (etiqueta cancelada) — 2026-11-11
+
+- [x] `freteEfetivo` (`_shared/faturamento/venda.ts`): envio com substatus `cost_exceeded` → `frete_vendedor = 0` (o ML cancela a etiqueta; `/shipments/{id}/costs` ainda devolve a cotação, o vendedor não paga). Aplicado em `upsertVenda` (sync, reconciliação, backfill, devolução).
+- [x] `sync-venda`: alerta Telegram (categoria `financeiro`, dedup `envio_caro` por pedido) "Envio mais caro que a venda".
+- [ ] Deploy das edges que importam `faturamento/io.ts` e `sync-venda`; reprocessar pedidos `cost_exceeded` já gravados (ex.: 2000019473934850, pack 2000015984643249).
+
 ## Calculadora ML: ajustes (preço vivo, margem, kits, frete) — 2026-11-10
 
 - [x] `ler-anuncio-calculadora` (nova, somente leitura): preço vivo, modalidade, categoria e status do anúncio da variação; prefill da calculadora.

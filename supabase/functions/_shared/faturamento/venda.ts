@@ -84,6 +84,16 @@ export function ehVendaDaConta(
 
 /** Líquido estimado: total − comissão ML − frete do vendedor (frete null = 0) − cupom bancado pelo
  *  vendedor (ADR-0180). 2 casas. */
+/** Substatus do envio em que o ML cancela a etiqueta porque o frete passa do valor da venda
+ *  ("O envio é mais caro que a venda"). `/shipments/{id}/costs` segue devolvendo o custo da
+ *  cotação cancelada, mas o vendedor não paga nada (medido em 2026-11-11, pedido 2000019473934850). */
+export const SUBSTATUS_ENVIO_CARO = 'cost_exceeded';
+
+/** Frete que o vendedor realmente paga: 0 quando a etiqueta foi cancelada por custo excedido. */
+export function freteEfetivo(frete: number | null, substatusEnvio: string | null | undefined): number | null {
+  return substatusEnvio === SUBSTATUS_ENVIO_CARO ? 0 : frete;
+}
+
 export function calcularLiquido(total: number, saleFee: number, frete: number | null, cupom: number | null = 0): number {
   return round2(total - saleFee - (frete ?? 0) - (cupom ?? 0));
 }

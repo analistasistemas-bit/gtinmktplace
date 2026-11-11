@@ -5,6 +5,7 @@ import {
   extrairPackIdDeMensagem,
   mapearPedidoParaVenda,
   calcularLiquido,
+  freteEfetivo,
   extrairGeo,
   extrairReceiverNome,
   escolherCompradorNome,
@@ -604,5 +605,20 @@ describe('mapearPedidoParaVenda — SKU que vem no próprio pedido', () => {
       codigoResolver: () => null,
     });
     expect(itens[0].codigo).toBeNull();
+  });
+});
+
+describe('freteEfetivo', () => {
+  it('envio cost_exceeded (etiqueta cancelada pelo ML): o vendedor não paga frete → 0', () => {
+    expect(freteEfetivo(57, 'cost_exceeded')).toBe(0);
+  });
+  it('outros substatus e sem shipment: mantém o frete lido', () => {
+    expect(freteEfetivo(7.15, 'shipment_paid')).toBe(7.15);
+    expect(freteEfetivo(7.15, null)).toBe(7.15);
+    expect(freteEfetivo(7.15, undefined)).toBe(7.15);
+  });
+  it('frete null segue null (não lido), mesmo com cost_exceeded fica 0 só se havia leitura', () => {
+    expect(freteEfetivo(null, 'shipment_paid')).toBeNull();
+    expect(freteEfetivo(null, 'cost_exceeded')).toBe(0);
   });
 });

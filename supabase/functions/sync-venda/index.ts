@@ -15,14 +15,14 @@ import { resolverConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts
 import {
   buscarPedido, buscarFreteVendedor, buscarShipment, carregarCatalogo, upsertVenda, resolverOrgPorUserId,
 } from '../_shared/faturamento/io.ts';
-import { ehVendaDaConta, totalNovaVenda } from '../_shared/faturamento/venda.ts';
+import { ehVendaDaConta, totalNovaVenda, SUBSTATUS_ENVIO_CARO } from '../_shared/faturamento/venda.ts';
 import { reservarNotificacao } from '../_shared/faturamento/notificacoes-dedupe.ts';
 import { verificarAltaFrete } from '../_shared/faturamento/monitor-frete.ts';
 import { depsMonitorFrete } from '../_shared/faturamento/monitor-frete-deps.ts';
 import { carregarLiquidoMPDoPedido, carregarGtinsDaVenda } from '../_shared/faturamento/enriquecimento.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { registrarCarrinho } from '../_shared/notificacoes/gerencial/carrinho-io.ts';
-import { montarMensagemNovaVenda, montarMensagemConexaoBloqueada } from '../_shared/notificacoes/telegram.ts';
+import { montarMensagemNovaVenda, montarMensagemConexaoBloqueada, montarMensagemEnvioCaro } from '../_shared/notificacoes/telegram.ts';
 import { linhaVendaAcimaSaldo, linhaDesyncMl } from '../_shared/notificacoes/estoque-kit.ts';
 import { classificarErroML, MLApiError } from '../_shared/ml/erro-ml.ts';
 import { registrarFalhaAuth, registrarSyncOk } from '../_shared/ml/liveness.ts';
@@ -286,6 +286,21 @@ Deno.serve(async (req) => {
       temEnvio: pedido.shipping?.id != null,
       kitLigado, catalogoIncompleto: leituraIncerta,
     });
+  }
+
+  // Envio mais caro que a venda: o ML cancela a etiqueta (substatus cost_exceeded) e o frete é
+  // zerado em upsertVenda. Avisa 1× por pedido; best-effort, nunca derruba o sync.
+  if (orgId && pedido.status === 'paid' && shipment?.substatus === SUBSTATUS_ENVIO_CARO) {
+    try {
+      if (await reservarNotificacao(admin, orgId, userId, 'envio_caro', String(pedido.id))) {
+        await notificarCategoria(admin, orgId, 'financeiro', montarMensagemEnvioCaro({
+          orderId: Number(pedido.id), packId: pedido.pack_id != null ? Number(pedido.pack_id) : null,
+          titulo: itens[0]?.titulo ?? null, total: Number(pedido.total_amount ?? 0), frete: frete ?? 0,
+        }));
+      }
+    } catch (e) {
+      console.error(`alerta envio caro (order ${pedido.id}): ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   // ADR-0169 — monitor de frete. SÓ aqui (não em backfill/reconciliação), para histórico nunca

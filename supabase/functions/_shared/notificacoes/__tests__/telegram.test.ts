@@ -5,6 +5,7 @@ import {
   montarMensagemNovaVenda,
   montarMensagemNovaPergunta,
   montarMensagemNovaDevolucao,
+  montarMensagemEnvioCaro,
 } from '../telegram';
 
 describe('montarMensagemModerados', () => {
@@ -92,5 +93,19 @@ describe('montarMensagemNovaDevolucao (link ML)', () => {
     const msg = montarMensagemNovaDevolucao({ claim_id: 789, order_id: 1, tipo: 'returns', motivo: null, valor: null, moeda: 'BRL' });
     expect(msg).toContain('post-purchase/post-sales?main.filter=returns');
     expect(msg).not.toContain('reclamacoes/vendedor/789');
+  });
+});
+
+describe('montarMensagemEnvioCaro', () => {
+  it('avisa que o ML cancelou a etiqueta, com frete cheio, venda e link do pedido', () => {
+    const msg = montarMensagemEnvioCaro({
+      orderId: 2000019473934850, packId: 2000015984643249, titulo: 'Nivea Sabonete 200ml', total: 40.99, frete: 57,
+    });
+    expect(msg).toContain('Envio mais caro que a venda');
+    expect(msg).toContain('Nivea Sabonete 200ml');
+    expect(msg).toContain('R$ 40,99');
+    expect(msg).toContain('R$ 57,00');
+    expect(msg).toContain('Etiqueta cancelada');
+    expect(msg).toContain('https://www.mercadolivre.com.br/vendas/2000015984643249/detalhe');
   });
 });
