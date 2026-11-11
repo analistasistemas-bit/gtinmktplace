@@ -126,6 +126,45 @@ continuam ambos visíveis.
 6. **Trocar a modalidade** (seletor manual) mantém o preço e recalcula a margem — mesma regra dos
    demais campos.
 
+## Contratos após revisão do Codex (gpt-6.1-sol high, 2026-11-10)
+
+**B1 — frete desconhecido nunca vira zero oficial (só na calculadora).** A calculadora preserva a
+`proveniencia` devolvida por `calcular-tarifa-ml` (frete `estimated`/`partial` após falha da API ou
+medida abaixo do piso). Frete indisponível = desconhecido: a margem/preço daquela coluna fica
+"não confirmado". `cotacoesOficiaisDaTarifa` e a tela de Revisão **não mudam** (decisão do Diego
+de 2026-08-29 continua valendo lá); a calculadora usa adaptação própria ou um parâmetro.
+
+**B2 — trocar de produto substitui tudo de uma vez.** `preencherProduto` passa a substituir
+atomicamente custo, preço, medidas, categoria, imposto e modalidade. Dado ausente **limpa** o
+campo (não herda do produto anterior). Imposto desconhecido é um estado distinto de 0% (ex.:
+`aliquotaImpostoPct: null`) e impede resultado confirmado até o operador informar.
+
+**I1 — margem pode ser negativa.** O motor aceita margem < 0 (prejuízo) sem lançar exceção;
+guardar o valor calculado sem arredondar e arredondar só na exibição. Preço 0 → margem
+indefinida (campo vazio, sem exceção). Teto de 100% continua.
+
+**I2 — confirmar a margem, não o preço.** O preço por margem é cotado em centavos e aceito só se
+o lucro/preço no preço final (com tarifa relida nesse preço) for ≥ meta. Em ciclo entre faixas,
+escolher o **menor preço verificado que cumpre a meta**, no padrão de `precoProprioEstavel`
+(`supabase/functions/_shared/preco/sugerir.ts`). Denominador ≤ 0 numa faixa não prova
+inviabilidade nas outras. Substitui a "tolerância R$ 0,01" da decisão 4.
+
+**I3 — intenção separada da margem efetiva.** O estado guarda: `metaSolicitada` (o que o operador
+digitou), `margemEfetiva` (calculada) e qual campo foi editado por último. Cada operação é
+versionada (sequência); preço + margem + cotação são publicados juntos quando a resposta chega.
+O fallback manual temporário durante o carregamento não pode sobrescrever a meta digitada. Uma
+única fonte para a modalidade ativa.
+
+**I4 — preço vivo com fonte explícita.** A leitura do item devolve `preco`, `precoOriginal`, a
+fonte (`sale_price` | `items`) e se a leitura promocional falhou; falha parcial vira aviso na tela.
+Para produto publicado, a categoria vem do `category_id` do mesmo item; `familias.categoria_ml_id`
+é fallback com aviso.
+
+**I5 — tabela de frete distingue indisponível de zero.** `montarTabelaFrete` passa a marcar célula
+indisponível (`null`) em vez de 0; a UI mostra "—" e não "comprador paga". Falha não é cacheada
+por 24h (cachear só tabela completa, ou TTL curto se houver células indisponíveis). Edge
+`tabela-frete-ml` redeployada. O destaque da célula do produto/kit fica **fora** desta entrega.
+
 ## Fora do escopo
 
 - Salvar simulações (ADR-0126 mantém tudo em memória).
