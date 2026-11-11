@@ -10,6 +10,9 @@ push na `main` não faz deploy de Edge Functions; deploy só depois do push; nun
 ## 0. Antes de tudo
 
 - [ ] Revisão geral da branch concluída e `pnpm preflight` verde no HEAD que vai à `main`.
+- [ ] Rodar à mão, no HEAD final e antes do `db push`, todos os testes SQL da galeria com `python3 scripts/teste-sql-desfeito.py <teste.sql> <migrations…>`
+      (`scripts/sql/teste-galeria-*.sql` e `supabase/tests/galeria_*.sql`; sucesso = `P0001 TESTE_OK`). Eles estão fora do CI e duas
+      migrations (`20261110171517`, `20261110214652`) foram editadas no lugar depois da primeira validação.
 - [ ] `git fetch` e conferir que nenhuma migration nova da `main` tem timestamp **anterior** às da galeria (se tiver,
       `supabase db push --include-all` e validar com `npm run db:check`).
 - [ ] Decisões do Diego ainda abertas, fora deste checklist: regra dos 30 dias da retenção (ver seção 8) e o portão da lupa (seção 7).
@@ -97,7 +100,9 @@ Com as edges implantadas e a galeria ainda desligada, provar que o caminho comum
 **Plano de volta** (se qualquer item da seção 10 ou deste bloco falhar):
 
 1. Remover os dois agendamentos do QStash (`galeria-despachante` e `galeria-retencao`).
-2. Desligar o módulo `imagem_ia` da org (a edge `galeria-gerar` passa a responder `modulo_desligado`).
+2. Desligar o módulo `imagem_ia` da org: `galeria-fatos`, `galeria-roteiro`, `galeria-gerar`, `galeria-imagens`, `galeria-aprovar` e o
+   preparar/confirmar de `galeria-aplicar` passam a responder `modulo_desligado` (imagem gerada e ainda não exibida deixa de ser cobrada).
+   `reverter` e `estado` continuam funcionando: reverter as aplicações ativas que precisarem voltar.
 3. Redeployar a versão anterior dos escritores (`update-familia-ml`, `publicar-split-ml`, `remover-publicado`) a partir da `main` anterior.
 4. As tabelas e o `pg_cron` `galeria-relogio` podem ficar: sem aplicação em andamento o relógio não faz nada.
 
@@ -191,6 +196,9 @@ Para cada um:
 - [ ] **Casos negativos (R11):** usuário não admin tentando aplicar (403); pedido repetido (mesmo `pedido_id`, sem nova cobrança);
       quarta geração da mesma cor/missão (teto); foto trocada no painel do ML entre preparar e confirmar; etiqueta divergente;
       anúncio de catálogo (recusado).
+- [ ] **Casos negativos das correções da revisão geral:** aprovar sem exibição confirmada → `exibicao_pendente` e a tela se recupera
+      sozinha (confirma e aprova); 3 reportes de imagem inválida → 4ª geração recusada com `teto`; fato editado depois de aprovar o
+      roteiro → gerar recusa `desatualizada`, sem pedido; módulo desligado → `modulo_desligado` nas 6 edges, com `reverter` ainda funcionando.
 - [ ] **UP com dois tamanhos da mesma cor:** caso sem prova real (não existe na AVIL). Registrar como risco aceito até aparecer um
       anúncio assim; não declarar validado.
 
