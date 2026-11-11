@@ -98,6 +98,8 @@ export type TipoVereditoML =
   | 'Ajustar preço'
   | 'Evitar'
   | 'Dados insuficientes'
+  /** Sem meta do operador: só margem e lucro atuais, sem recomendação. */
+  | 'Margem atual'
 
 export interface VereditoML {
   tipo: TipoVereditoML
@@ -133,6 +135,8 @@ export function calcularPesoUtilizado(
 export function calcularSimulacaoML(
   entrada: EntradaCalculadoraML,
   cotacoes?: CotacoesPorModalidade,
+  /** `semMeta`: `margemAlvoPct` 0 é "não informada", não meta de 0% → veredito neutro. */
+  opcoes: { semMeta?: boolean } = {},
 ): ResultadoCalculadoraML {
   validarEntrada(entrada)
 
@@ -155,6 +159,7 @@ export function calcularSimulacaoML(
       cotacoes?.origem === 'manual' &&
         (cotacoes.classico.percentualComissaoPct === 0 ||
           cotacoes.classico.frete === null),
+      opcoes.semMeta,
     ),
   }
 }
@@ -299,6 +304,7 @@ function calcularVeredito(
   resultado: ResultadoModalidadeML | null,
   impostoDesconhecido: boolean,
   cotacaoManualIncompleta = false,
+  semMeta = false,
 ): VereditoML {
   if (impostoDesconhecido) {
     return {
@@ -311,6 +317,18 @@ function calcularVeredito(
       tipo: 'Dados insuficientes',
       fatores: [
         'Informe preço, custo e uma cotação com frete calculado para decidir.',
+      ],
+    }
+  }
+
+  if (semMeta) {
+    return {
+      tipo: 'Margem atual',
+      fatores: [
+        `Margem de ${formatarPct(resultado.margemPct)} no preço atual.`,
+        resultado.lucro >= 0
+          ? `Lucro estimado de ${formatarMoeda(resultado.lucro)} por unidade.`
+          : `Prejuízo de ${formatarMoeda(-resultado.lucro)} por unidade.`,
       ],
     }
   }

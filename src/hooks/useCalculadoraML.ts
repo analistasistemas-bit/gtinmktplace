@@ -1,17 +1,18 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useAliquotas } from '@/hooks/useConfiguracoes'
 import { fetchAnuncioCalculadora, type AnuncioCalculadora } from '@/lib/anuncio-calculadora'
 import {
   calcularSimulacaoML,
+  normalizarCotacoes,
   type CotacaoManualPorModalidade,
   type CotacoesOficiaisPorModalidade,
   type CotacoesPorModalidade,
   type DimensoesProduto,
   type EntradaCalculadoraML,
   type ModalidadeML,
-  type Proveniencia,
 } from '@/lib/calculadora-ml'
+import { precoPorMargem, type CotarEm } from '@/lib/calculadora-ml-preco'
 import { aliquotaDoKit } from '@/lib/kit-variacao-simulacao'
 import {
   fetchProdutosEstoqueResumo,
@@ -28,6 +29,7 @@ import {
 } from '@/lib/tarifa'
 
 const DEBOUNCE_COTACAO_MS = 300
+const DEBOUNCE_MARGEM_MS = 400
 
 export interface TaxasManuaisML {
   percentualComissaoPct: number
@@ -37,12 +39,6 @@ export interface TaxasManuaisML {
 }
 
 export type ProdutoCalculadoraML = ProdutoEstoqueResumo
-
-export interface ValidacaoMetaML {
-  modalidade: 'classico' | 'premium'
-  margemPct: number
-  proveniencia: Proveniencia
-}
 
 export interface UseCalculadoraMLOptions extends Partial<EntradaCalculadoraML> {
   taxasManuais?: Partial<TaxasManuaisML>
@@ -190,6 +186,7 @@ function escolherVariacao(
 }
 
 type StatusCotacao = 'idle' | 'loading' | 'official' | 'partial' | 'estimated'
+export type MetaStatus = 'ok' | 'calculando' | 'nao_confirmada'
 type Aliquotas = { nacional: number; importado: number; confirmada: boolean }
 type CampoTocavel = 'custoProduto' | 'precoVenda' | 'dimensoes' | 'categoriaId' | 'modalidadeParaDecisao'
 
@@ -230,9 +227,10 @@ export interface EstadoCalculadoraML {
   categoriaNome: string | null
   variacaoUsada: { codigo: string; cor: string | null } | null
   anuncio: AnuncioCalculadora | null
-  // Task 5 dá o comportamento; aqui só existem e zeram ao carregar produto.
+  /** Margem digitada pelo operador (I3). Nasce em EDITAR_MARGEM; zera ao editar o preço ou trocar
+   *  de produto; persiste (como rótulo) nas demais edições. É a meta do motor (`?? 0`). */
   metaSolicitada: number | null
-  metaStatus: string | null
+  metaStatus: MetaStatus | null
   ultimoEditado: 'preco' | 'margem'
 }
 
@@ -244,6 +242,9 @@ export type AcaoCalculadoraML =
   | { type: 'PRODUTO_CARREGADO'; selecao: number; carga: CargaProduto; aliquotas: Aliquotas | undefined }
   | { type: 'ALIQUOTAS'; aliquotas: Aliquotas }
   | { type: 'COTACAO_RECEBIDA'; chave: string; tarifa: Tarifa | null }
+  | { type: 'EDITAR_MARGEM'; meta: number }
+  /** Token = revisão + entrada (identidade) do início do solver. `preco` null = falhou. */
+  | { type: 'SOLVER_RESOLVIDO'; revisao: number; entrada: EntradaCalculadoraML; preco: number | null; tarifa: Tarifa | null; confirmado: boolean }
 
 const AVISO_INDISPONIVEL = 'Cotação oficial indisponível; a simulação usa taxas manuais estimadas.'
 const AVISO_PRECO_NO_AR = 'Preço do cadastro — não foi possível ler o preço no ar.'
@@ -273,6 +274,15 @@ function comChave(estado: EstadoCalculadoraML): EstadoCalculadoraML {
   }
 }
 
+/** Edição do operador fora da margem: o preço manda. Meta fica como rótulo, salvo se o preço mudou. */
+function precoManda(estado: EstadoCalculadoraML, zeraMeta: boolean) {
+  return {
+    ultimoEditado: 'preco' as const,
+    metaStatus: null,
+    metaSolicitada: zeraMeta ? null : estado.metaSolicitada,
+  }
+}
+
 function tocar(campos: CampoTocavel[], parcial: object): CampoTocavel[] {
   const novos = (['custoProduto', 'precoVenda', 'dimensoes', 'categoriaId', 'modalidadeParaDecisao'] as const)
     .filter((c) => Object.prototype.hasOwnProperty.call(parcial, c) && !campos.includes(c))
@@ -282,10 +292,13 @@ function tocar(campos: CampoTocavel[], parcial: object): CampoTocavel[] {
 export function reducerCalculadora(estado: EstadoCalculadoraML, acao: AcaoCalculadoraML): EstadoCalculadoraML {
   switch (acao.type) {
     case 'EDITAR_ENTRADA': {
-      const { parcial } = acao
+      // A margem só entra por EDITAR_MARGEM; a meta do motor é derivada de `metaSolicitada`.
+      const parcial = { ...acao.parcial }
+      delete parcial.margemAlvoPct
       const modalidade = parcial.modalidadeParaDecisao ?? estado.modalidade
       return comChave({
         ...estado,
+        ...precoManda(estado, 'precoVenda' in parcial),
         revisao: estado.revisao + 1,
         entrada: { ...estado.entrada, ...parcial, modalidadeParaDecisao: modalidade },
         modalidade,
@@ -296,6 +309,7 @@ export function reducerCalculadora(estado: EstadoCalculadoraML, acao: AcaoCalcul
     case 'EDITAR_TAXAS':
       return {
         ...estado,
+        ...precoManda(estado, false),
         revisao: estado.revisao + 1,
         taxasManuais: { ...estado.taxasManuais, ...acao.parcial },
         ...(estado.tarifa ? {} : {
@@ -306,6 +320,7 @@ export function reducerCalculadora(estado: EstadoCalculadoraML, acao: AcaoCalcul
     case 'MODALIDADE':
       return {
         ...estado,
+        ...precoManda(estado, false),
         revisao: estado.revisao + 1,
         modalidade: acao.modalidade,
         entrada: { ...estado.entrada, modalidadeParaDecisao: acao.modalidade },
@@ -368,6 +383,37 @@ export function reducerCalculadora(estado: EstadoCalculadoraML, acao: AcaoCalcul
         statusCotacao: provenienciaDaTarifa(acao.tarifa).proveniencia,
         avisoApi: null,
       }
+    case 'EDITAR_MARGEM':
+      if (!Number.isFinite(acao.meta) || acao.meta >= 100) return estado
+      return {
+        ...estado,
+        revisao: estado.revisao + 1,
+        metaSolicitada: acao.meta,
+        metaStatus: 'calculando',
+        ultimoEditado: 'margem',
+      }
+    case 'SOLVER_RESOLVIDO': {
+      // Qualquer edição (revisão) ou mudança da entrada pelo sistema (prefill, alíquotas) invalida.
+      if (
+        acao.revisao !== estado.revisao ||
+        acao.entrada !== estado.entrada ||
+        estado.metaStatus !== 'calculando'
+      ) return estado
+      if (acao.preco === null) return { ...estado, metaStatus: 'nao_confirmada' }
+      const entrada = { ...estado.entrada, precoVenda: acao.preco }
+      const metaStatus = acao.confirmado ? 'ok' as const : 'nao_confirmada' as const
+      if (!acao.tarifa) return comChave({ ...estado, entrada, metaStatus })
+      // Preço + cotação desse preço numa ação só: a chave já nasce cotada (o effect não recota).
+      return {
+        ...estado,
+        entrada,
+        metaStatus,
+        chaveCotada: chaveCotacao(entrada),
+        tarifa: acao.tarifa,
+        statusCotacao: provenienciaDaTarifa(acao.tarifa).proveniencia,
+        avisoApi: null,
+      }
+    }
   }
 }
 
@@ -393,10 +439,27 @@ export function estadoInicialCalculadora(opcoes: UseCalculadoraMLOptions = {}): 
     categoriaNome: null,
     variacaoUsada: null,
     anuncio: null,
-    metaSolicitada: null,
+    metaSolicitada: entradaInicial.margemAlvoPct ?? null,
     metaStatus: null,
     ultimoEditado: 'preco',
   })
+}
+
+/** Cotação num preço qualquer: com categoria, a tarifa do ML (null lança); sem, a manual. */
+function criarCotarEm(
+  categoriaId: string | undefined,
+  taxas: TaxasManuaisML,
+  aoCotar?: (preco: number, tarifa: Tarifa) => void,
+): CotarEm {
+  if (!categoriaId) return async (preco) => criarCotacaoManual(preco, taxas)
+  return async (preco, e) => {
+    const tarifa = await calcularTarifaML(preco, categoriaId, dimensoesDaTarifa(
+      e.dimensoes?.alturaCm, e.dimensoes?.larguraCm, e.dimensoes?.comprimentoCm, e.dimensoes?.pesoKg,
+    ), 0)
+    if (!tarifa) throw new Error(`Tarifa indisponível em ${preco}.`)
+    aoCotar?.(preco, tarifa)
+    return cotacaoCalculadora(tarifa, taxas)
+  }
 }
 
 const CARGA_VAZIA: CargaProduto = {
@@ -474,10 +537,6 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
   const aliquotasRef = useRef(aliquotas)
   aliquotasRef.current = aliquotas
   const selecaoRef = useRef(0)
-  const [cotacaoMeta, setCotacaoMeta] = useState<Tarifa | null>(null)
-  const [validacaoMeta, setValidacaoMeta] = useState<ValidacaoMetaML | null>(null)
-  const [erroMeta, setErroMeta] = useState<string | null>(null)
-  const sequenciaMeta = useRef(0)
 
   const produtos = useQuery({
     queryKey: QK.produtosEstoqueResumo,
@@ -489,57 +548,51 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
     () => criarCotacaoManual(entrada.precoVenda, taxasManuais),
     [entrada.precoVenda, taxasManuais],
   )
-  const dimensoesCotacao = useMemo(
-    () => dimensoesDaTarifa(
-      entrada.dimensoes?.alturaCm,
-      entrada.dimensoes?.larguraCm,
-      entrada.dimensoes?.comprimentoCm,
-      entrada.dimensoes?.pesoKg,
-    ),
-    [
-      entrada.dimensoes?.alturaCm,
-      entrada.dimensoes?.larguraCm,
-      entrada.dimensoes?.comprimentoCm,
-      entrada.dimensoes?.pesoKg,
-    ],
-  )
   const cotacao: CotacoesPorModalidade = useMemo(
     () => tarifa ? cotacaoCalculadora(tarifa, taxasManuais) : cotacaoManual,
     [tarifa, taxasManuais, cotacaoManual],
   )
-  const resultado = useMemo(
-    () => calcularSimulacaoML(entrada, cotacao),
-    [entrada, cotacao],
+  // A meta do motor é sempre a solicitada (ou 0) — nunca a margem efetiva, que pode passar de 100%.
+  const entradaMotor = useMemo(
+    () => ({ ...entrada, margemAlvoPct: estado.metaSolicitada ?? 0 }),
+    [entrada, estado.metaSolicitada],
   )
-
-  const invalidarMeta = useCallback(() => {
-    sequenciaMeta.current += 1
-    setCotacaoMeta(null)
-    setValidacaoMeta(null)
-    setErroMeta(null)
-  }, [])
+  const resultado = useMemo(
+    () => calcularSimulacaoML(entradaMotor, cotacao, { semMeta: estado.metaSolicitada === null }),
+    [entradaMotor, cotacao, estado.metaSolicitada],
+  )
+  const categoriaCotacao = entrada.categoriaId?.trim() || undefined
+  const cotarEm = useMemo(
+    () => criarCotarEm(categoriaCotacao, taxasManuais),
+    [categoriaCotacao, taxasManuais],
+  )
+  const margemEfetiva = resultado.modalidades[estado.modalidade]?.margemPctExata ?? null
+  const margemExibida = estado.metaStatus === 'calculando' ? estado.metaSolicitada : margemEfetiva
 
   const atualizarEntrada = useCallback((parcial: Partial<EntradaCalculadoraML>) => {
-    invalidarMeta()
     dispatch({ type: 'EDITAR_ENTRADA', parcial })
-  }, [invalidarMeta])
+  }, [])
+
+  const editarPreco = useCallback((precoVenda: number) => {
+    dispatch({ type: 'EDITAR_ENTRADA', parcial: { precoVenda } })
+  }, [])
+
+  const editarMargem = useCallback((meta: number) => {
+    dispatch({ type: 'EDITAR_MARGEM', meta })
+  }, [])
 
   const atualizarTaxasManuais = useCallback((parcial: Partial<TaxasManuaisML>) => {
-    invalidarMeta()
     dispatch({ type: 'EDITAR_TAXAS', parcial })
-  }, [invalidarMeta])
+  }, [])
 
   const setModalidadeAtiva = useCallback((modalidade: ModalidadeML) => {
-    invalidarMeta()
     dispatch({ type: 'MODALIDADE', modalidade })
-  }, [invalidarMeta])
+  }, [])
 
   const selecionarProduto = useCallback(async (produto: ProdutoCalculadoraML | null) => {
     const selecao = ++selecaoRef.current
-    invalidarMeta()
     dispatch({ type: 'SELECIONAR', selecao, produto })
     const carregar = (carga: CargaProduto) => {
-      invalidarMeta()
       dispatch({ type: 'PRODUTO_CARREGADO', selecao, carga, aliquotas: aliquotasRef.current })
     }
     if (!produto) return carregar(CARGA_VAZIA)
@@ -570,7 +623,7 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
     }
     if (selecaoRef.current !== selecao) return
     carregar(montarCarga(produto, variacao, anuncio))
-  }, [invalidarMeta])
+  }, [])
 
   // Alíquota tardia (ação do sistema): preenche só se o operador não editou o imposto.
   useEffect(() => {
@@ -581,7 +634,8 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
   useEffect(() => {
     const chave = estado.chaveCotada
     const atual = estadoRef.current.entrada
-    if (chave === null || motivoSemCotacao(atual)) return
+    // Tarifa já presente na chave = o solver publicou preço + cotação juntos: não recotar.
+    if (chave === null || estadoRef.current.tarifa || motivoSemCotacao(atual)) return
     const categoriaId = atual.categoriaId!.trim()
     const timer = window.setTimeout(() => {
       // Imposto fora da chave: só altera `recebe`, que o motor não usa. Desconhecido vai como 0
@@ -595,60 +649,42 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
     return () => window.clearTimeout(timer)
   }, [estado.chaveCotada])
 
-  const validarNaApi = useCallback(async (): Promise<Tarifa | null> => {
-    const id = ++sequenciaMeta.current
-    const modalidade = entrada.modalidadeParaDecisao ?? 'classico'
-    const precoProjetado = resultado.modalidades[modalidade]?.precoAlvo.valor
-    const categoriaId = entrada.categoriaId?.trim()
-    if (!categoriaId || !precoProjetado || precoProjetado <= 0) {
-      setErroMeta('Informe categoria e dados suficientes para validar o preço projetado na API.')
-      return null
-    }
-    setErroMeta(null)
-    setCotacaoMeta(null)
-    setValidacaoMeta(null)
-    try {
-      const tarifa = await calcularTarifaML(
-        precoProjetado,
-        categoriaId,
-        dimensoesCotacao,
-        entrada.aliquotaImpostoPct ?? undefined,
+  // Solver (I3): debounce por revisão; entrada mudada pelo sistema (alíquotas) reinicia o cálculo.
+  const calculando = estado.metaStatus === 'calculando'
+  const revisaoSolver = calculando ? estado.revisao : null
+  const entradaSolver = calculando ? estado.entrada : null
+  useEffect(() => {
+    if (revisaoSolver === null || entradaSolver === null) return
+    const timer = window.setTimeout(() => {
+      const atual = estadoRef.current
+      const meta = atual.metaSolicitada ?? 0
+      const modalidade = atual.modalidade
+      const noSolver = { ...entradaSolver, margemAlvoPct: meta }
+      const vigente = atual.tarifa
+        ? cotacaoCalculadora(atual.tarifa, atual.taxasManuais)
+        : criarCotacaoManual(entradaSolver.precoVenda, atual.taxasManuais)
+      const inicial = normalizarCotacoes(noSolver, vigente)[modalidade]
+      const tarifas = new Map<number, Tarifa>()
+      const cotar = criarCotarEm(
+        entradaSolver.categoriaId?.trim() || undefined,
+        atual.taxasManuais,
+        (preco, t) => tarifas.set(preco, t),
       )
-      if (sequenciaMeta.current !== id) return null
-      if (!tarifa) {
-        setErroMeta('A API não retornou uma cotação para o preço projetado.')
-        return null
-      }
-      const resultadoValidado = calcularSimulacaoML(
-        { ...entrada, precoVenda: precoProjetado },
-        cotacaoCalculadora(tarifa, taxasManuais),
-      )
-      const resultadoModalidade = resultadoValidado.modalidades[modalidade]
-      if (
-        !resultadoModalidade ||
-        resultadoModalidade.margemPct < entrada.margemAlvoPct - 0.01
-      ) {
-        const margem = resultadoModalidade?.margemPct
-        setErroMeta(
-          margem === undefined
-            ? 'A cotação oficial não confirmou a margem-alvo: faltam dados de frete.'
-            : `A cotação oficial não confirmou a margem-alvo de ${entrada.margemAlvoPct.toLocaleString('pt-BR')}% (margem recalculada: ${margem.toLocaleString('pt-BR')}%).`,
-        )
-        return null
-      }
-      setCotacaoMeta(tarifa)
-      setValidacaoMeta({
-        modalidade,
-        margemPct: resultadoModalidade.margemPct,
-        proveniencia: resultadoModalidade.proveniencia,
+      const publicar = (preco: number | null, confirmado: boolean) => dispatch({
+        type: 'SOLVER_RESOLVIDO',
+        revisao: revisaoSolver,
+        entrada: entradaSolver,
+        preco,
+        tarifa: preco === null ? null : tarifas.get(preco) ?? null,
+        confirmado,
       })
-      return tarifa
-    } catch {
-      if (sequenciaMeta.current !== id) return null
-      setErroMeta('Não foi possível validar o preço projetado na API.')
-      return null
-    }
-  }, [entrada, dimensoesCotacao, resultado, taxasManuais])
+      if (!inicial) return publicar(null, false)
+      precoPorMargem(noSolver, modalidade, meta, inicial, cotar)
+        .then((r) => publicar(r?.preco ?? null, r?.confirmado ?? false))
+        .catch(() => publicar(null, false))
+    }, DEBOUNCE_MARGEM_MS)
+    return () => window.clearTimeout(timer)
+  }, [revisaoSolver, entradaSolver])
 
   const avisoDoImposto = avisoImposto(estado, aliquotas)
   const avisosProduto = useMemo(
@@ -657,8 +693,16 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
   )
 
   return {
-    entrada,
+    entrada: entradaMotor,
     atualizarEntrada,
+    editarPreco,
+    editarMargem,
+    cotarEm,
+    metaSolicitada: estado.metaSolicitada,
+    metaStatus: estado.metaStatus,
+    ultimoEditado: estado.ultimoEditado,
+    margemEfetiva,
+    margemExibida,
     taxasManuais,
     atualizarTaxasManuais,
     produtoSelecionado: estado.produtoSelecionado,
@@ -669,10 +713,6 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
     // Com tarifa aplicada, o aviso segue o frete manual atual; o state cobre idle/loading/falha.
     aviso: tarifa ? avisoDaTarifa(tarifa, taxasManuais) : estado.avisoApi,
     resultado,
-    validarNaApi,
-    cotacaoMeta,
-    validacaoMeta,
-    erroMeta,
     modalidadeAtiva: estado.modalidade,
     modalidadeDoAnuncio: estado.modalidadeDoAnuncio,
     setModalidadeAtiva,

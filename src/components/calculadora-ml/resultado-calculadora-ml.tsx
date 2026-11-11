@@ -1,7 +1,6 @@
 import { CheckCircle2, CircleAlert, Info, RefreshCw, Target, TrendingDown, TrendingUp } from 'lucide-react'
 import type { ModalidadeML, ResultadoCalculadoraML, ResultadoModalidadeML } from '@/lib/calculadora-ml'
-import type { Tarifa } from '@/lib/tarifa'
-import type { TaxasManuaisML, ValidacaoMetaML } from '@/hooks/useCalculadoraML'
+import type { TaxasManuaisML } from '@/hooks/useCalculadoraML'
 import { Button } from '@/components/ui/button'
 import { StatusPill } from '@/components/ui/status-pill'
 
@@ -12,10 +11,8 @@ interface ResultadoCalculadoraMLProps {
   taxas: TaxasManuaisML
   modalidadeSelecionada: ModalidadeML
   onModalidade: (modalidade: ModalidadeML) => void
-  onValidar: () => void
-  erroMeta: string | null
-  cotacaoMeta: Tarifa | null
-  validacaoMeta: ValidacaoMetaML | null
+  /** Sem meta do operador, custo máximo e preço para margem-alvo não fazem sentido (meta 0). */
+  temMeta: boolean
 }
 
 const moeda = (valor: number | null | undefined) => valor == null ? 'Não calculado' : valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -30,7 +27,7 @@ function SeloProveniencia({ proveniencia }: { proveniencia: ResultadoCalculadora
   return <StatusPill tone={config.tone}>{config.label}</StatusPill>
 }
 
-function Modalidade({ nome, resultado, ativa, mobile, onSelecionar }: { nome: string; resultado: ResultadoModalidadeML | null; ativa: boolean; mobile: boolean; onSelecionar: () => void }) {
+function Modalidade({ nome, resultado, ativa, mobile, temMeta, onSelecionar }: { nome: string; resultado: ResultadoModalidadeML | null; ativa: boolean; mobile: boolean; temMeta: boolean; onSelecionar: () => void }) {
   if (!resultado) return <section className={mobile ? 'hidden sm:block' : undefined} aria-labelledby={`${nome}-heading`}><h3 id={`${nome}-heading`} className="font-heading text-base font-semibold">{nome}</h3><p className="mt-3 text-sm text-muted-foreground">Frete não calculado. Complete dimensões ou informe um valor manual.</p></section>
   const custos = [
     ['Produto', resultado.custos.custoProduto], ['Comissão', resultado.custos.comissao], ['Frete', resultado.custos.frete], ['Impostos', resultado.custos.imposto], ['Custos fixos', resultado.custos.custosFixos], ['Custos variáveis', resultado.custos.custosVariaveis], ['Rebate', -resultado.custos.rebate],
@@ -52,10 +49,10 @@ function Modalidade({ nome, resultado, ativa, mobile, onSelecionar }: { nome: st
           <div className="flex justify-between gap-3 border-t border-border/60 pt-1.5 font-semibold"><dt>Total</dt><dd>{moeda(resultado.custos.total)}</dd></div>
         </dl>
       </div>
-      <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
+      {temMeta && <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
         <div className="rounded-lg bg-muted/50 p-2.5"><p className="text-xs text-muted-foreground">Custo máximo de compra</p><p className="font-semibold">{moeda(resultado.custoMaximoCompra)}</p></div>
         <div className="rounded-lg bg-muted/50 p-2.5"><p className="text-xs text-muted-foreground">Preço para margem-alvo</p><p className="font-semibold">{moeda(resultado.precoAlvo.valor)} <span className="text-xs font-normal text-muted-foreground">(projeção)</span></p></div>
-      </div>
+      </div>}
       {mobile && <Button type="button" variant="outline" size="sm" className="mt-3 sm:hidden" onClick={onSelecionar}>Ver {nome}</Button>}
     </section>
   )
@@ -65,9 +62,9 @@ function variacaoMoeda(valor: number): string {
   return `${valor < 0 ? '−' : '+'}${moeda(Math.abs(valor))}`
 }
 
-export function ResultadoCalculadoraML({ resultado, statusCotacao, aviso, modalidadeSelecionada, onModalidade, onValidar, erroMeta, cotacaoMeta, validacaoMeta }: ResultadoCalculadoraMLProps) {
+export function ResultadoCalculadoraML({ resultado, statusCotacao, aviso, modalidadeSelecionada, onModalidade, temMeta }: ResultadoCalculadoraMLProps) {
   const tipo = resultado.veredito.tipo
-  const icon = tipo === 'Comprar' ? CheckCircle2 : tipo === 'Dados insuficientes' ? Info : CircleAlert
+  const icon = tipo === 'Comprar' ? CheckCircle2 : tipo === 'Dados insuficientes' || tipo === 'Margem atual' ? Info : CircleAlert
   const Icon = icon
   const sensibilidade = resultado.modalidades[modalidadeSelecionada]?.sensibilidade
   const cenariosSensibilidade = sensibilidade ? [
@@ -83,21 +80,18 @@ export function ResultadoCalculadoraML({ resultado, statusCotacao, aviso, modali
           <SeloProveniencia proveniencia={resultado.proveniencia} />
         </div>
         <ul className="mt-4 space-y-2 text-sm text-muted-foreground">{resultado.veredito.fatores.map((fator) => <li key={fator} className="flex gap-2"><span aria-hidden="true">•</span><span>{fator}</span></li>)}</ul>
-        {tipo !== 'Dados insuficientes' && <Button type="button" variant="outline" size="sm" className="mt-4" onClick={onValidar}><RefreshCw className="size-3.5" aria-hidden="true" /> Validar preço projetado na API</Button>}
-        {erroMeta && <p className="mt-2 text-sm text-destructive" role="alert">{erroMeta}</p>}
       </section>
 
       <section className="rounded-xl border border-border/70 bg-muted/30 p-4" aria-label="Status da cotação" aria-live="polite" aria-atomic="true">
         <div className="flex items-start gap-2"><Info className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" /><div className="text-sm"><p className="font-medium">{statusCotacao === 'loading' ? 'Consultando taxas oficiais…' : statusCotacao === 'official' ? 'Taxas oficiais aplicadas' : statusCotacao === 'partial' ? 'Comissão oficial e frete manual' : 'Taxas manuais estimadas'}</p><p className="mt-1 text-muted-foreground">{aviso ?? (statusCotacao === 'official' ? 'Comissão e frete vieram da API para esta categoria e preço.' : statusCotacao === 'partial' ? 'A comissão veio da API; o frete manual precisa ser confirmado.' : 'Categoria, comissão e frete podem variar. Valide na API antes de decidir.')}</p></div></div>
-        {cotacaoMeta && validacaoMeta && <div className="mt-3 flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 p-2.5 text-sm text-success" role="status"><CheckCircle2 className="size-4 shrink-0" aria-hidden="true" /><span><strong>Preço projetado validado na API.</strong> {validacaoMeta.proveniencia === 'official' ? 'A cotação é oficial para os parâmetros consultados.' : 'A comissão veio da API e o frete manual foi confirmado.'}</span><SeloProveniencia proveniencia={validacaoMeta.proveniencia} /></div>}
       </section>
 
       <div className="flex gap-1 rounded-lg border border-border/70 bg-muted/40 p-1 sm:hidden" role="tablist" aria-label="Modalidade de anúncio">
         {(['classico', 'premium'] as const).map((modalidade) => <button key={modalidade} type="button" role="tab" aria-selected={modalidadeSelecionada === modalidade} className={`flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors ${modalidadeSelecionada === modalidade ? 'bg-background shadow-sm' : 'text-muted-foreground'}`} onClick={() => onModalidade(modalidade)}>{modalidade === 'classico' ? 'Clássico' : 'Premium'}</button>)}
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Modalidade nome="Clássico" resultado={resultado.modalidades.classico} ativa={modalidadeSelecionada === 'classico'} mobile onSelecionar={() => onModalidade('classico')} />
-        <Modalidade nome="Premium" resultado={resultado.modalidades.premium} ativa={modalidadeSelecionada === 'premium'} mobile onSelecionar={() => onModalidade('premium')} />
+        <Modalidade nome="Clássico" resultado={resultado.modalidades.classico} ativa={modalidadeSelecionada === 'classico'} mobile temMeta={temMeta} onSelecionar={() => onModalidade('classico')} />
+        <Modalidade nome="Premium" resultado={resultado.modalidades.premium} ativa={modalidadeSelecionada === 'premium'} mobile temMeta={temMeta} onSelecionar={() => onModalidade('premium')} />
       </div>
       {sensibilidade && <section className="rounded-xl border border-border/70 bg-card p-4" aria-labelledby="sensibilidade-heading">
         <h3 id="sensibilidade-heading" className="font-heading text-base font-semibold">Sensibilidade · {modalidadeSelecionada === 'classico' ? 'Clássico' : 'Premium'}</h3>

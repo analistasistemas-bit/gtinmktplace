@@ -174,77 +174,6 @@ describe('useCalculadoraML', () => {
     expect(result.current.statusCotacao).toBe('official')
   })
 
-  it('valida o preço projetado na API e publica a cotação da meta', async () => {
-    calcularTarifaMock.mockResolvedValue(tarifaOficial(21))
-    const { result } = renderHook(
-      () => useCalculadoraML({ precoVenda: 100, custoProduto: 50, margemAlvoPct: 20, categoriaId: 'MLB1', dimensoes }),
-      { wrapper },
-    )
-
-    await avancarCotacao()
-    const tarifa = await act(async () => result.current.validarNaApi())
-
-    expect(tarifa?.premium.percentual).toBe(21)
-    expect(result.current.cotacaoMeta?.premium.percentual).toBe(21)
-    expect(result.current.validacaoMeta).toMatchObject({
-      modalidade: 'classico',
-      proveniencia: 'official',
-    })
-    const [precoValidado, categoriaValidada, dimensoesValidadas, aliquotaValidada] =
-      calcularTarifaMock.mock.lastCall ?? []
-    expect(precoValidado).toBeCloseTo(106.25)
-    expect(categoriaValidada).toBe('MLB1')
-    expect(dimensoesValidadas).toEqual({
-      alturaCm: 10, larguraCm: 20, comprimentoCm: 30, pesoGramas: 1000,
-    })
-    expect(aliquotaValidada).toBe(0)
-  })
-
-  it('descarta validação de meta antiga após uma edição e nova validação', async () => {
-    let resolverAntigo: ((tarifa: Tarifa | null) => void) | undefined
-    calcularTarifaMock
-      .mockResolvedValueOnce(tarifaOficial())
-      .mockImplementationOnce(() => new Promise<Tarifa | null>((resolve) => { resolverAntigo = resolve }))
-      .mockResolvedValueOnce(tarifaOficial(21))
-    const { result } = renderHook(
-      () => useCalculadoraML({ precoVenda: 100, custoProduto: 50, margemAlvoPct: 20, categoriaId: 'MLB1', dimensoes }),
-      { wrapper },
-    )
-
-    await avancarCotacao()
-    let primeira: Promise<Tarifa | null>
-    act(() => { primeira = result.current.validarNaApi() })
-    act(() => result.current.atualizarEntrada({ custoProduto: 60 }))
-    const segunda = await act(async () => result.current.validarNaApi())
-    expect(segunda?.premium.percentual).toBe(21)
-    expect(result.current.cotacaoMeta?.premium.percentual).toBe(21)
-
-    await act(async () => { resolverAntigo?.(tarifaOficial(16)) })
-
-    expect(await primeira!).toBeNull()
-    expect(result.current.cotacaoMeta?.premium.percentual).toBe(21)
-  })
-
-  it('descarta validação de meta pendente quando o produto é limpo', async () => {
-    let resolverAntigo: ((tarifa: Tarifa | null) => void) | undefined
-    calcularTarifaMock
-      .mockResolvedValueOnce(tarifaOficial())
-      .mockImplementationOnce(
-        () => new Promise<Tarifa | null>((resolve) => { resolverAntigo = resolve }),
-      )
-    const { result } = renderHook(
-      () => useCalculadoraML({ precoVenda: 100, custoProduto: 50, margemAlvoPct: 20, categoriaId: 'MLB1', dimensoes }),
-      { wrapper },
-    )
-
-    await avancarCotacao()
-    act(() => { void result.current.validarNaApi() })
-    act(() => { void result.current.selecionarProduto(null) })
-    await act(async () => { resolverAntigo?.(tarifaOficial(16)) })
-
-    expect(result.current.cotacaoMeta).toBeNull()
-  })
-
   it('recota ao alterar preço, categoria ou dimensões', async () => {
     calcularTarifaMock.mockResolvedValue(tarifaOficial())
     const { result } = renderHook(() => useCalculadoraML({ precoVenda: 100, categoriaId: 'MLB1' }), { wrapper })
@@ -330,7 +259,7 @@ describe('useCalculadoraML', () => {
 
     expect(result.current.resultado.veredito.tipo).toBe('Dados insuficientes')
     act(() => result.current.atualizarTaxasManuais({ freteRealmenteZero: true }))
-    expect(result.current.resultado.veredito.tipo).toBe('Comprar')
+    expect(result.current.resultado.veredito.tipo).toBe('Margem atual')
   })
 
   it('prefills from the unique SKU variation instead of invented summary fields', async () => {
@@ -383,33 +312,6 @@ describe('useCalculadoraML', () => {
       precoVenda: 21,
       dimensoes: { alturaCm: 5, larguraCm: 6, comprimentoCm: 7, pesoKg: 0.5 },
     })
-  })
-
-  it('only confirms projected-price validation when the returned tariff reaches the selected target margin', async () => {
-    calcularTarifaMock
-      .mockResolvedValueOnce(tarifaOficial())
-      .mockResolvedValueOnce({
-        ...tarifaOficial(),
-        premium: { percentual: 16, fixa: 6, comissao: 80, imposto: 0, recebe: 26.25 },
-      })
-    const { result } = renderHook(
-      () => useCalculadoraML({
-        precoVenda: 100,
-        custoProduto: 50,
-        margemAlvoPct: 20,
-        categoriaId: 'MLB1',
-        dimensoes,
-        modalidadeParaDecisao: 'premium',
-      }),
-      { wrapper },
-    )
-
-    await avancarCotacao()
-    const tarifa = await act(async () => result.current.validarNaApi())
-
-    expect(tarifa).toBeNull()
-    expect(result.current.cotacaoMeta).toBeNull()
-    expect(result.current.erroMeta).toMatch(/não confirmou a margem-alvo/i)
   })
 
   describe('frete desconhecido (B1)', () => {
@@ -799,6 +701,290 @@ describe('useCalculadoraML', () => {
     })
   })
 
+  describe('preço ⇄ margem (I3)', () => {
+    // Tarifa que acompanha o preço: comissão percentual (sem fixa) e frete 10.
+    const tarifaNoPreco = (p: number, pct = 11, proveniencia: Tarifa['proveniencia'] = 'official'): Tarifa => ({
+      classico: { percentual: pct, fixa: 0, comissao: Math.round(p * pct) / 100, imposto: 0, recebe: 0 },
+      premium: { percentual: pct + 5, fixa: 0, comissao: Math.round(p * (pct + 5)) / 100, imposto: 0, recebe: 0 },
+      frete: 10,
+      proveniencia,
+    })
+    const base = { precoVenda: 100, custoProduto: 50, aliquotaImpostoPct: 0, categoriaId: 'MLB1', dimensoes }
+    const avancarSolver = async () => {
+      await act(async () => { await vi.advanceTimersByTimeAsync(400) })
+    }
+
+    it('editarPreco: margem exibida é a efetiva no novo preço', async () => {
+      calcularTarifaMock.mockImplementation(async (p: number) => tarifaNoPreco(p))
+      const { result } = renderHook(() => useCalculadoraML(base), { wrapper })
+      await avancarCotacao()
+
+      act(() => result.current.editarPreco(25))
+      await avancarCotacao()
+
+      expect(result.current.entrada.precoVenda).toBe(25)
+      expect(result.current.margemEfetiva).toBe(result.current.resultado.modalidades.classico!.margemPctExata)
+      expect(result.current.margemExibida).toBe(result.current.margemEfetiva)
+      expect(result.current.ultimoEditado).toBe('preco')
+    })
+
+    it('editarMargem: debounce, meta exibida enquanto calcula, publica preço + cotação e não recota', async () => {
+      calcularTarifaMock.mockImplementation(async (p: number) => tarifaNoPreco(p))
+      const { result } = renderHook(() => useCalculadoraML(base), { wrapper })
+      await avancarCotacao()
+      expect(calcularTarifaMock).toHaveBeenCalledTimes(1)
+
+      act(() => result.current.editarMargem(38))
+      expect(result.current.metaStatus).toBe('calculando')
+      expect(result.current.margemExibida).toBe(38)
+      expect(result.current.ultimoEditado).toBe('margem')
+      await act(async () => { await vi.advanceTimersByTimeAsync(399) })
+      expect(calcularTarifaMock).toHaveBeenCalledTimes(1)
+      await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+
+      // 60 / (1 − 0,11 − 0,38) = 117,647… → 117,65 (centavos pra cima), margem 38,0025%
+      expect(result.current.entrada.precoVenda).toBe(117.65)
+      expect(result.current.statusCotacao).toBe('official')
+      expect(result.current.cotacao.classico.comissaoTotal).toBe(12.94)
+      expect(result.current.metaStatus).toBe('ok')
+      expect(result.current.metaSolicitada).toBe(38)
+      expect(result.current.margemEfetiva).toBeGreaterThanOrEqual(38)
+      expect(result.current.margemExibida).toBe(result.current.margemEfetiva)
+      const chamadas = calcularTarifaMock.mock.calls.length
+      await avancarCotacao()
+      await avancarCotacao()
+      expect(calcularTarifaMock).toHaveBeenCalledTimes(chamadas)
+    })
+
+    it('duas metas: a 1ª resolvendo por último é descartada; vale a de 40', async () => {
+      const primeira = adiado<Tarifa | null>()
+      calcularTarifaMock
+        .mockResolvedValueOnce(tarifaNoPreco(100))
+        .mockImplementationOnce(() => primeira.promise)
+        .mockImplementation(async (p: number) => tarifaNoPreco(p))
+      const { result } = renderHook(() => useCalculadoraML(base), { wrapper })
+      await avancarCotacao()
+
+      act(() => result.current.editarMargem(30))
+      await avancarSolver()
+      const precoDa30 = calcularTarifaMock.mock.calls[1][0] as number
+      act(() => result.current.editarMargem(40))
+      await avancarSolver()
+      const preco40 = result.current.entrada.precoVenda
+      expect(result.current.metaStatus).toBe('ok')
+      expect(result.current.margemEfetiva).toBeGreaterThanOrEqual(40 - 1e-9)
+
+      await act(async () => { primeira.resolve(tarifaNoPreco(precoDa30)) })
+
+      expect(result.current.entrada.precoVenda).toBe(preco40)
+      expect(result.current.metaSolicitada).toBe(40)
+      expect(result.current.metaStatus).toBe('ok')
+    })
+
+    it('editarPreco antes da resposta descarta o solver', async () => {
+      const solver = adiado<Tarifa | null>()
+      calcularTarifaMock
+        .mockResolvedValueOnce(tarifaNoPreco(100))
+        .mockImplementationOnce(() => solver.promise)
+        .mockImplementation(async (p: number) => tarifaNoPreco(p))
+      const { result } = renderHook(() => useCalculadoraML(base), { wrapper })
+      await avancarCotacao()
+
+      act(() => result.current.editarMargem(38))
+      await avancarSolver()
+      act(() => result.current.editarPreco(90))
+      await act(async () => { solver.resolve(tarifaNoPreco(117.65)) })
+      await avancarCotacao()
+
+      expect(result.current.entrada.precoVenda).toBe(90)
+      expect(result.current.metaSolicitada).toBeNull()
+      expect(result.current.metaStatus).toBeNull()
+      expect(result.current.ultimoEditado).toBe('preco')
+    })
+
+    it('trocar de produto com o solver em voo descarta o solver', async () => {
+      const solver = adiado<Tarifa | null>()
+      calcularTarifaMock
+        .mockResolvedValueOnce(tarifaNoPreco(100))
+        .mockImplementationOnce(() => solver.promise)
+        .mockImplementation(async (p: number) => tarifaNoPreco(p))
+      fetchVariacoesMock.mockResolvedValue([variacao('SKU-2', { custo: 31, preco: 51 })])
+      const { result } = renderHook(() => useCalculadoraML(base), { wrapper })
+      await avancarCotacao()
+
+      act(() => result.current.editarMargem(38))
+      await avancarSolver()
+      await act(async () => { await result.current.selecionarProduto(produtoResumo) })
+      await act(async () => { solver.resolve(tarifaNoPreco(117.65)) })
+
+      expect(result.current.entrada.precoVenda).toBe(51)
+      expect(result.current.metaSolicitada).toBeNull()
+      expect(result.current.metaStatus).toBeNull()
+    })
+
+    it('solver não confirmado: melhor candidato, margem exibida é a efetiva, meta fica para o rótulo', async () => {
+      calcularTarifaMock.mockImplementation(async (p: number) => tarifaNoPreco(p, 11, 'estimated'))
+      const { result } = renderHook(
+        () => useCalculadoraML({ ...base, taxasManuais: { frete: 10 } }),
+        { wrapper },
+      )
+      await avancarCotacao()
+
+      act(() => result.current.editarMargem(38))
+      await avancarSolver()
+
+      expect(result.current.entrada.precoVenda).toBe(117.65)
+      expect(result.current.metaStatus).toBe('nao_confirmada')
+      expect(result.current.metaSolicitada).toBe(38)
+      expect(result.current.margemExibida).toBe(result.current.margemEfetiva)
+      expect(result.current.margemExibida).not.toBe(38)
+    })
+
+    it('solver sem resposta (null) mantém o preço e marca não confirmada', async () => {
+      calcularTarifaMock.mockResolvedValueOnce(tarifaNoPreco(100)).mockResolvedValue(null)
+      const { result } = renderHook(() => useCalculadoraML(base), { wrapper })
+      await avancarCotacao()
+
+      act(() => result.current.editarMargem(38))
+      await avancarSolver()
+
+      expect(result.current.entrada.precoVenda).toBe(100)
+      expect(result.current.metaStatus).toBe('nao_confirmada')
+    })
+
+    it('solver com exceção mantém o preço e marca não confirmada', async () => {
+      calcularTarifaMock.mockResolvedValueOnce(tarifaNoPreco(100)).mockRejectedValue(new Error('rede'))
+      const { result } = renderHook(() => useCalculadoraML(base), { wrapper })
+      await avancarCotacao()
+
+      act(() => result.current.editarMargem(38))
+      await avancarSolver()
+
+      expect(result.current.entrada.precoVenda).toBe(100)
+      expect(result.current.metaStatus).toBe('nao_confirmada')
+    })
+
+    it('custo, imposto, medidas e modalidade depois da meta mantêm o preço', async () => {
+      calcularTarifaMock.mockImplementation(async (p: number) => tarifaNoPreco(p))
+      const { result } = renderHook(() => useCalculadoraML(base), { wrapper })
+      await avancarCotacao()
+      act(() => result.current.editarMargem(38))
+      await avancarSolver()
+      expect(result.current.entrada.precoVenda).toBe(117.65)
+
+      act(() => result.current.atualizarEntrada({ custoProduto: 55 }))
+      expect(result.current.ultimoEditado).toBe('preco')
+      act(() => result.current.editarMargem(38))
+      act(() => result.current.atualizarEntrada({ aliquotaImpostoPct: 8 }))
+      expect(result.current.metaStatus).toBeNull()
+      act(() => result.current.atualizarEntrada({ dimensoes: { ...dimensoes, pesoKg: 2 } }))
+      act(() => result.current.setModalidadeAtiva('premium'))
+      await avancarSolver()
+      await avancarCotacao()
+
+      expect(result.current.entrada.precoVenda).toBe(117.65)
+      expect(result.current.ultimoEditado).toBe('preco')
+      expect(result.current.metaSolicitada).toBe(38)
+      expect(result.current.margemExibida).toBe(result.current.margemEfetiva)
+      expect(result.current.margemEfetiva).toBe(result.current.resultado.modalidades.premium!.margemPctExata)
+    })
+
+    it('sem categoria: solver com cotação manual, sempre não confirmada', async () => {
+      const { result } = renderHook(
+        () => useCalculadoraML({ precoVenda: 100, custoProduto: 50, aliquotaImpostoPct: 0, taxasManuais: { percentualComissaoPct: 11, frete: 10 } }),
+        { wrapper },
+      )
+
+      act(() => result.current.editarMargem(38))
+      await avancarSolver()
+
+      expect(calcularTarifaMock).not.toHaveBeenCalled()
+      expect(result.current.entrada.precoVenda).toBe(117.65)
+      expect(result.current.metaStatus).toBe('nao_confirmada')
+    })
+
+    it('Premium sem categoria: parte do premium derivado da cotação manual', async () => {
+      const { result } = renderHook(
+        () => useCalculadoraML({
+          precoVenda: 100, custoProduto: 50, aliquotaImpostoPct: 0, modalidadeParaDecisao: 'premium',
+          taxasManuais: { percentualComissaoPct: 11, frete: 10 },
+        }),
+        { wrapper },
+      )
+
+      act(() => result.current.editarMargem(38))
+      await avancarSolver()
+
+      // 60 / (1 − 0,16 − 0,38) = 130,434… → 130,44
+      expect(result.current.entrada.precoVenda).toBe(130.44)
+      expect(result.current.metaStatus).toBe('nao_confirmada')
+    })
+
+    it('rebate maior que os custos: margem efetiva 110% sem lançar; meta do motor segue 0', () => {
+      const { result } = renderHook(
+        () => useCalculadoraML({ precoVenda: 10, custoProduto: 1, rebate: 2, aliquotaImpostoPct: 0, taxasManuais: { freteRealmenteZero: true } }),
+        { wrapper },
+      )
+
+      expect(result.current.margemEfetiva).toBeCloseTo(110, 9)
+      expect(result.current.entrada.margemAlvoPct).toBe(0)
+    })
+
+    it('editarPreco zera a meta; sem meta o veredito é neutro e não cita meta', async () => {
+      calcularTarifaMock.mockImplementation(async (p: number) => tarifaNoPreco(p))
+      const { result } = renderHook(() => useCalculadoraML(base), { wrapper })
+      await avancarCotacao()
+      act(() => result.current.editarMargem(38))
+      await avancarSolver()
+      expect(result.current.entrada.margemAlvoPct).toBe(38)
+      expect(JSON.stringify(result.current.resultado.veredito)).toMatch(/meta/i)
+
+      act(() => result.current.editarPreco(150))
+      await avancarCotacao()
+
+      expect(result.current.metaSolicitada).toBeNull()
+      expect(result.current.entrada.margemAlvoPct).toBe(0)
+      expect(result.current.resultado.veredito.tipo).not.toBe('Comprar')
+      expect(JSON.stringify(result.current.resultado.veredito)).not.toMatch(/meta/i)
+      expect(result.current.resultado.veredito.fatores.join(' ')).toMatch(/margem/i)
+      expect(result.current.resultado.veredito.fatores.join(' ')).toMatch(/lucro/i)
+    })
+
+    it('cotação comum que falhou não trava o solver: editarMargem cota por conta própria', async () => {
+      calcularTarifaMock.mockResolvedValueOnce(null).mockImplementation(async (p: number) => tarifaNoPreco(p))
+      const { result } = renderHook(() => useCalculadoraML(base), { wrapper })
+      await avancarCotacao()
+      expect(result.current.statusCotacao).toBe('estimated')
+
+      act(() => result.current.editarMargem(38))
+      await avancarSolver()
+
+      expect(result.current.entrada.precoVenda).toBe(117.65)
+      expect(result.current.metaStatus).toBe('ok')
+      expect(result.current.statusCotacao).toBe('official')
+    })
+
+    it('cotação comum que falhou: editar o preço recota', async () => {
+      calcularTarifaMock.mockResolvedValueOnce(null).mockImplementation(async (p: number) => tarifaNoPreco(p))
+      const { result } = renderHook(() => useCalculadoraML(base), { wrapper })
+      await avancarCotacao()
+
+      act(() => result.current.editarPreco(120))
+      await avancarCotacao()
+
+      expect(calcularTarifaMock).toHaveBeenCalledTimes(2)
+      expect(result.current.statusCotacao).toBe('official')
+    })
+
+    it('margem inválida (≥ 100 ou não finita) é ignorada', () => {
+      const { result } = renderHook(() => useCalculadoraML(base), { wrapper })
+      act(() => result.current.editarMargem(100))
+      act(() => result.current.editarMargem(Number.NaN))
+      expect(result.current.metaSolicitada).toBeNull()
+      expect(result.current.metaStatus).toBeNull()
+    })
+  })
+
   describe('reducerCalculadora', () => {
     const carga = {
       entrada: { custoProduto: 0, precoVenda: 0, dimensoes: undefined, categoriaId: undefined },
@@ -806,10 +992,55 @@ describe('useCalculadoraML', () => {
     }
 
     it('PRODUTO_CARREGADO zera metaSolicitada, metaStatus e ultimoEditado', () => {
-      const estado = { ...estadoInicialCalculadora(), metaSolicitada: 30, metaStatus: 'confirmado', ultimoEditado: 'margem' as const }
+      const estado = { ...estadoInicialCalculadora(), metaSolicitada: 30, metaStatus: 'ok' as const, ultimoEditado: 'margem' as const }
       const proximo = reducerCalculadora(estado, { type: 'PRODUTO_CARREGADO', selecao: estado.selecaoProduto, carga, aliquotas: undefined })
 
       expect(proximo).toMatchObject({ metaSolicitada: null, metaStatus: null, ultimoEditado: 'preco' })
+    })
+
+    it('SOLVER_RESOLVIDO publica preço, tarifa e status juntos; descarta se a revisão mudou', () => {
+      const comCategoria = estadoInicialCalculadora({ precoVenda: 100, categoriaId: 'MLB1' })
+      const calculando = reducerCalculadora(comCategoria, { type: 'EDITAR_MARGEM', meta: 38 })
+      const token = { revisao: calculando.revisao, entrada: calculando.entrada }
+      const resolvido = reducerCalculadora(calculando, {
+        type: 'SOLVER_RESOLVIDO', ...token, preco: 117.65, tarifa: tarifaOficial(), confirmado: true,
+      })
+      expect(resolvido).toMatchObject({ metaStatus: 'ok', tarifa: tarifaOficial(), statusCotacao: 'official' })
+      expect(resolvido.entrada.precoVenda).toBe(117.65)
+      expect(resolvido.chaveCotada?.startsWith('117.65|MLB1')).toBe(true)
+
+      const editado = reducerCalculadora(calculando, { type: 'EDITAR_ENTRADA', parcial: { custoProduto: 1 } })
+      const antigo = reducerCalculadora(editado, {
+        type: 'SOLVER_RESOLVIDO', ...token, preco: 117.65, tarifa: tarifaOficial(), confirmado: true,
+      })
+      expect(antigo).toBe(editado)
+    })
+
+    it('SOLVER_RESOLVIDO de uma meta anterior é descartado mesmo ainda calculando', () => {
+      const calculando = reducerCalculadora(
+        estadoInicialCalculadora({ precoVenda: 100, categoriaId: 'MLB1' }), { type: 'EDITAR_MARGEM', meta: 30 },
+      )
+      const token = { revisao: calculando.revisao, entrada: calculando.entrada }
+      const segunda = reducerCalculadora(calculando, { type: 'EDITAR_MARGEM', meta: 40 })
+      expect(segunda.entrada).toBe(calculando.entrada)
+
+      const antigo = reducerCalculadora(segunda, {
+        type: 'SOLVER_RESOLVIDO', ...token, preco: 101.7, tarifa: tarifaOficial(), confirmado: true,
+      })
+      expect(antigo).toBe(segunda)
+    })
+
+    it('SOLVER_RESOLVIDO é descartado se o sistema mudou a entrada (alíquotas chegaram)', () => {
+      const comOrigem = { ...estadoInicialCalculadora({ precoVenda: 100, categoriaId: 'MLB1', aliquotaImpostoPct: null }), origemProduto: 'nacional' }
+      const calculando = reducerCalculadora(comOrigem, { type: 'EDITAR_MARGEM', meta: 30 })
+      const token = { revisao: calculando.revisao, entrada: calculando.entrada }
+      const comAliquota = reducerCalculadora(calculando, { type: 'ALIQUOTAS', aliquotas: { nacional: 8, importado: 16, confirmada: true } })
+      expect(comAliquota.revisao).toBe(calculando.revisao)
+
+      const antigo = reducerCalculadora(comAliquota, {
+        type: 'SOLVER_RESOLVIDO', ...token, preco: 101.7, tarifa: tarifaOficial(), confirmado: true,
+      })
+      expect(antigo).toBe(comAliquota)
     })
 
     it('só ações do operador incrementam a revisão', () => {

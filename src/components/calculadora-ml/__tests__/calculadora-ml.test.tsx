@@ -3,18 +3,16 @@ import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { useCalculadoraML } from '@/hooks/useCalculadoraML'
-import type { Tarifa } from '@/lib/tarifa'
 
 const atualizarEntrada = vi.fn()
 const atualizarTaxasManuais = vi.fn()
 const selecionarProduto = vi.fn()
-const validarNaApi = vi.fn()
+const editarMargem = vi.fn()
 const refetchCategorias = vi.fn()
 
 type HookState = ReturnType<typeof useCalculadoraML>
-type EstadoCalculadoraMock = Omit<HookState, 'produtos' | 'cotacaoMeta'> & {
+type EstadoCalculadoraMock = Omit<HookState, 'produtos'> & {
   produtos: Pick<HookState['produtos'], 'data' | 'isLoading' | 'isError' | 'refetch'>
-  cotacaoMeta: Tarifa | null
 }
 
 const produtosData: NonNullable<HookState['produtos']['data']> = {
@@ -81,10 +79,14 @@ const estadoBase = {
     },
     veredito: { tipo: 'Comprar' as const, fatores: ['Margem atual de 23% atinge a meta de 12%.', 'Lucro estimado de R$ 23,00 por unidade.'] },
   },
-  validarNaApi,
-  cotacaoMeta: null,
-  validacaoMeta: null,
-  erroMeta: null,
+  editarPreco: vi.fn(),
+  editarMargem,
+  cotarEm: vi.fn(),
+  metaSolicitada: 12 as number | null,
+  metaStatus: null,
+  ultimoEditado: 'preco' as const,
+  margemEfetiva: 23,
+  margemExibida: 23,
   modalidadeAtiva: 'classico' as const,
   modalidadeDoAnuncio: null,
   setModalidadeAtiva: vi.fn(),
@@ -143,15 +145,22 @@ describe('Calculadora ML', () => {
     expect(screen.getByText(/3,68/)).toBeInTheDocument()
   })
 
-  it('expõe proveniência, veredito explicado e validação do preço projetado', async () => {
-    const user = userEvent.setup()
+  it('expõe proveniência e veredito explicado, sem botão de validar preço projetado', () => {
     render(<CalculadoraML />)
 
     expect(screen.getByText(/taxas manuais estimadas/i)).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /comprar/i })).toBeInTheDocument()
     expect(screen.getByText(/margem atual de 23%/i)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /validar preço projetado/i }))
-    expect(validarNaApi).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('button', { name: /validar preço projetado/i })).toBeNull()
+  })
+
+  it('o campo de margem vai para editarMargem (solver), não para atualizarEntrada', () => {
+    render(<CalculadoraML />)
+
+    fireEvent.change(screen.getByLabelText('Margem-alvo (%)'), { target: { value: '38' } })
+
+    expect(editarMargem).toHaveBeenCalledWith(38)
+    expect(atualizarEntrada).not.toHaveBeenCalledWith(expect.objectContaining({ margemAlvoPct: expect.anything() }))
   })
 
   it('renderiza estados de carregamento e erro da busca de categoria', () => {
@@ -205,21 +214,16 @@ describe('Calculadora ML', () => {
     expect(screen.getAllByText(/entre 0 e 100|não pode ser negativo/i).length).toBeGreaterThanOrEqual(2)
   })
 
-  it('confirma na tela quando o preço projetado foi validado na API', () => {
-    const tarifaValidada: Tarifa = {
-      classico: { comissao: 17, percentual: 12, fixa: 5, imposto: 0, recebe: 68 },
-      premium: { comissao: 22, percentual: 17, fixa: 5, imposto: 0, recebe: 63 },
-      frete: 10,
-    }
-    estado = {
-      ...estadoBase,
-      cotacaoMeta: tarifaValidada,
-      validacaoMeta: { modalidade: 'classico', margemPct: 12, proveniencia: 'official' },
-    }
-    render(<CalculadoraML />)
+  it('sem meta, oculta custo máximo de compra e preço para margem-alvo', () => {
+    const { unmount } = render(<CalculadoraML />)
+    expect(screen.getAllByText(/custo máximo de compra/i).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/preço para margem-alvo/i).length).toBeGreaterThan(0)
+    unmount()
 
-    expect(screen.getByText(/preço projetado validado na api/i)).toBeInTheDocument()
-    expect(screen.getByText(/oficial.*api ml/i)).toBeInTheDocument()
+    estado = { ...estadoBase, metaSolicitada: null }
+    render(<CalculadoraML />)
+    expect(screen.queryByText(/custo máximo de compra/i)).toBeNull()
+    expect(screen.queryByText(/preço para margem-alvo/i)).toBeNull()
   })
 
   it('announces only decision and status changes without nesting a main landmark', () => {

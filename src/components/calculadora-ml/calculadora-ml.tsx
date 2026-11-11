@@ -30,7 +30,10 @@ export function CalculadoraML() {
               produtos={produtos}
               produtoSelecionado={calculadora.produtoSelecionado}
               produtosCarregando={calculadora.produtos.isLoading}
-              onEntrada={calculadora.atualizarEntrada}
+              // Ponte até a Task 6: o campo de margem já fala com o solver (preço ⇄ margem).
+              onEntrada={(parcial) => parcial.margemAlvoPct === undefined
+                ? calculadora.atualizarEntrada(parcial)
+                : calculadora.editarMargem(parcial.margemAlvoPct)}
               onTaxas={calculadora.atualizarTaxasManuais}
               onProduto={calculadora.selecionarProduto}
             />
@@ -44,10 +47,7 @@ export function CalculadoraML() {
               taxas={calculadora.taxasManuais}
               modalidadeSelecionada={calculadora.modalidadeAtiva}
               onModalidade={calculadora.setModalidadeAtiva}
-              onValidar={() => { void calculadora.validarNaApi() }}
-              erroMeta={calculadora.erroMeta}
-              cotacaoMeta={calculadora.cotacaoMeta}
-              validacaoMeta={calculadora.validacaoMeta}
+              temMeta={calculadora.metaSolicitada !== null}
             />
           </aside>
         </div>

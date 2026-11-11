@@ -311,6 +311,22 @@ describe('calcularSimulacaoML — margem exata e imposto desconhecido', () => {
     expect(classico?.margemPct).toBe(33.33)
   })
 
+  it('sem meta: veredito neutro com margem e lucro atuais, sem citar meta nem decidir Comprar', () => {
+    const lucro = calcularSimulacaoML({ ...entradaBase, margemAlvoPct: 0 }, cotacoesBase, { semMeta: true })
+    expect(lucro.veredito.tipo).toBe('Margem atual')
+    expect(JSON.stringify(lucro.veredito)).not.toMatch(/meta/i)
+    expect(lucro.veredito.fatores.join(' ')).toMatch(/Margem de .*%/)
+    expect(lucro.veredito.fatores.join(' ')).toMatch(/Lucro/)
+
+    const prejuizo = calcularSimulacaoML({ ...entradaBase, precoVenda: 50, margemAlvoPct: 0 }, cotacoesBase, { semMeta: true })
+    expect(prejuizo.veredito.tipo).toBe('Margem atual')
+    expect(prejuizo.veredito.fatores.join(' ')).toMatch(/Prejuízo/)
+
+    // dados faltando continuam dominando
+    expect(calcularSimulacaoML({ ...entradaBase, aliquotaImpostoPct: null }, cotacoesBase, { semMeta: true }).veredito.tipo)
+      .toBe('Dados insuficientes')
+  })
+
   it('margem exata negativa no prejuízo, sem exceção', () => {
     const classico = calcularSimulacaoML({ ...entradaBase, precoVenda: 50 }, cotacoesBase).modalidades.classico
 
