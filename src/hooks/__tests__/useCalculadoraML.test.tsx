@@ -819,9 +819,20 @@ describe('useCalculadoraML', () => {
       const taxas = reducerCalculadora(modalidade, { type: 'EDITAR_TAXAS', parcial: { taxaFixa: 1 } })
       expect(taxas.revisao).toBe(inicial.revisao + 3)
 
-      const carregado = reducerCalculadora(taxas, { type: 'PRODUTO_CARREGADO', selecao: taxas.selecaoProduto, carga, aliquotas: undefined })
+      // Cada ação do sistema precisa de fato mudar o estado — senão o teste passaria por early-return.
+      const cargaNacional = { ...carga, origem: 'nacional', entrada: { ...carga.entrada, precoVenda: 50, categoriaId: 'MLB1' } }
+      const carregado = reducerCalculadora(taxas, { type: 'PRODUTO_CARREGADO', selecao: taxas.selecaoProduto, carga: cargaNacional, aliquotas: undefined })
+      expect(carregado.entrada).toMatchObject({ precoVenda: 50, categoriaId: 'MLB1', aliquotaImpostoPct: null })
+      expect(carregado.statusCotacao).toBe('loading')
+      expect(carregado.revisao).toBe(taxas.revisao)
+
       const aliquota = reducerCalculadora(carregado, { type: 'ALIQUOTAS', aliquotas: { nacional: 8, importado: 16, confirmada: true } })
-      const cotado = reducerCalculadora(aliquota, { type: 'COTACAO_RECEBIDA', chave: 'x', tarifa: null })
+      expect(aliquota.entrada.aliquotaImpostoPct).toBe(8)
+      expect(aliquota.revisao).toBe(taxas.revisao)
+
+      const cotado = reducerCalculadora(aliquota, { type: 'COTACAO_RECEBIDA', chave: aliquota.chaveCotada!, tarifa: tarifaOficial() })
+      expect(cotado.tarifa).not.toBeNull()
+      expect(cotado.statusCotacao).toBe('official')
       expect(cotado.revisao).toBe(taxas.revisao)
     })
   })
