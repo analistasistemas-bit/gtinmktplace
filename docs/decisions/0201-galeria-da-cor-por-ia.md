@@ -56,6 +56,10 @@ descrição do anúncio. O cliente que pedir paga por imagem.
 13. **Retenção:** arquivos (Storage, bucket `imagens`, nunca no banco) de imagens aprovadas ou aplicadas ficam
     para sempre (reaplicar, reverter, auditar cobrança); não aprovadas são apagadas após 30 dias. A linha no banco,
     com custo e histórico, é preservada.
+    **Anotação (2026-11-11): a regra dos 30 dias está ADIADA.** A retenção implementada (`galeria-retencao`) apaga só
+    órfãos que nenhuma linha cita (cena órfã de posse perdida e final não citado, com mais de 1 dia). Apagar cena citada
+    quebraria a exibição (`galeria_confirmar_exibicao` exige `cena_path`). Implementar exige status "expirada" na linha e
+    decisão sobre `cena_path`. Decisão do Diego pendente.
 
 ## Alternativas descartadas
 

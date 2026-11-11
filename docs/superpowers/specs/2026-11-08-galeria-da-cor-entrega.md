@@ -84,6 +84,34 @@ Decisão: as 49 extras só carregam diferenças pequenas de `queue.ts` (11 linha
       (`supabase functions download <f>` e comparar com o fonte), como nos deploys anteriores.
 - [ ] Front: merge na `main` e deploy do app só **depois** das edges (a UI chama `galeria-*`).
 
+### 3d. Escritores comuns e plano de volta (antes de ligar a galeria)
+
+A trava `ml_travar_itens` entrou em `update-familia-ml`, `publicar-split-ml` e `remover-publicado` para **todas as orgs**.
+Com as edges implantadas e a galeria ainda desligada, provar que o caminho comum continua funcionando:
+
+- [ ] Um UPDATE Legacy, um split (`publicar-split-ml`), um UP e um Republicar, cada um pelo app, em anúncio de teste da AVIL.
+      Cada um conclui sem `item_ocupado`, e `ml_item_travas` fica sem linha `escritor` ao fim (a quarentena de 15 min só
+      nasce de PUT da galeria).
+- [ ] Só depois disso ligar o módulo `imagem_ia` (seção 3e) e seguir para as seções 4 em diante.
+
+**Plano de volta** (se qualquer item da seção 10 ou deste bloco falhar):
+
+1. Remover os dois agendamentos do QStash (`galeria-despachante` e `galeria-retencao`).
+2. Desligar o módulo `imagem_ia` da org (a edge `galeria-gerar` passa a responder `modulo_desligado`).
+3. Redeployar a versão anterior dos escritores (`update-familia-ml`, `publicar-split-ml`, `remover-publicado`) a partir da `main` anterior.
+4. As tabelas e o `pg_cron` `galeria-relogio` podem ficar: sem aplicação em andamento o relógio não faz nada.
+
+### 3e. Pré-condição comercial da AVIL e cobrança do kit
+
+- [ ] AVIL com o módulo `imagem_ia` ligado e **condição comercial vigente** com `image_unit_cents` preenchido
+      (`platform_resolve_terms` para o mês atual). Sem condição, o pedido nasce com `elegivel = false` e a galeria gera de graça
+      (`galeria-gerar/index.ts`, `termosId` nulo).
+- [ ] Depois de gerar e exibir uma imagem: conferir em `platform_image_deliveries` `units = 1` e `unit_cents` igual ao da condição,
+      e o demonstrativo do mês da org.
+- [ ] **Kit:** a migration 1 reescreve o gatilho `platform_image_delivery_on_generated` (passa a usar o helper
+      `platform_imagem_competencia`). Depois de aplicar a migration, gerar uma foto de kit e conferir que a entrega foi cobrada
+      como antes (`units = 1`, mesmo preço).
+
 ## 4. Agendamentos do QStash
 
 Só depois do deploy de `galeria-despachante` e `galeria-retencao` (antes, o QStash chamaria função inexistente).
@@ -152,10 +180,19 @@ Para cada um:
 - [ ] Registrar antes: preço, estoque, fotos de cada cor e a ordem das fotos (o app guarda o retrato, mas anote).
 - [ ] Gerar (pedido pequeno) → exibir → aprovar → aplicar. **Cobrança: 1 por imagem exibida, nenhuma por recorte** (conferir `platform_image_deliveries`).
 - [ ] Conferir no ML e na API: fotos novas na cor certa, **preço e estoque iguais ao antes**, **demais cores intactas**, **ordem** das fotos como no manifesto.
-- [ ] Conferir `galeria_imagem_itens`, `galeria_aplicacao_itens` e que as travas (`ml_item_travas`) foram soltas ao fim (sem linha `galeria` nem `quarentena` sobrando).
+- [ ] Conferir `galeria_imagem_itens`, `galeria_aplicacao_itens` e que as travas (`ml_item_travas`) foram soltas ao fim (15 min depois do fim: nenhuma trava `galeria` e nenhuma quarentena com `expira_em` no futuro; a quarentena vencida pode continuar na tabela, pois nenhuma função da migration 1 a apaga).
 - [ ] Reverter pelo app → conferir que fotos, preço, estoque e ordem voltaram ao retrato.
+- [ ] **Identidade do id nas 7 fotos:** depois de aplicar e depois de reverter, comparar os `picture_id` do ML com os do manifesto. Se o ML
+      re-hospedar com id novo, a saga marca `reversao_incompleta` com as fotos novas no ar; nesse caso parar e registrar.
+- [ ] **Reverter dias depois:** repetir a reversão em uma aplicação com alguns dias. As fotos antigas ficam só como `picture_id` no ML e o
+      ensaio restaurou em minutos; se o ML descartar foto sem uso, a reversão termina em `reversao_incompleta`.
 - [ ] Uma alteração de preço/estoque durante uma aplicação deve ser adiada e depois executada (`ml_escritas_adiadas` esvazia).
 - [ ] Remover/republicar com aplicação em curso é recusado com `item_ocupado` (nada apagado).
+- [ ] **Casos negativos (R11):** usuário não admin tentando aplicar (403); pedido repetido (mesmo `pedido_id`, sem nova cobrança);
+      quarta geração da mesma cor/missão (teto); foto trocada no painel do ML entre preparar e confirmar; etiqueta divergente;
+      anúncio de catálogo (recusado).
+- [ ] **UP com dois tamanhos da mesma cor:** caso sem prova real (não existe na AVIL). Registrar como risco aceito até aparecer um
+      anúncio assim; não declarar validado.
 
 Se qualquer item falhar: não ligar o módulo para outras orgs, registrar o desvio e abrir tarefa.
 
