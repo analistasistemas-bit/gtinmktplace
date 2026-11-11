@@ -1059,6 +1059,36 @@ describe('useCalculadoraML', () => {
       expect(antigo).toBe(comAliquota)
     })
 
+    it('SELECIONAR limpa avisos, anúncio, variação e categoria do produto anterior', () => {
+      const anuncio = { publicado: true } as AnuncioCalculadora
+      const estado = {
+        ...estadoInicialCalculadora(), avisosProduto: ['aviso de A'], anuncio,
+        variacaoUsada: { codigo: 'A1', cor: 'Azul' }, categoriaNome: 'Camisetas',
+      }
+      const proximo = reducerCalculadora(estado, { type: 'SELECIONAR', selecao: 1, produto: produtoResumo })
+
+      expect(proximo).toMatchObject({ avisosProduto: [], anuncio: null, variacaoUsada: null, categoriaNome: null })
+    })
+
+    it('ALIQUOTAS zera o selo de meta (ok / nao_confirmada) mas mantém calculando', () => {
+      const base = { ...estadoInicialCalculadora({ precoVenda: 100, aliquotaImpostoPct: null }), origemProduto: 'nacional', metaSolicitada: 30 }
+      const aliquotas = { nacional: 8, importado: 16, confirmada: true }
+      for (const metaStatus of ['ok', 'nao_confirmada'] as const) {
+        expect(reducerCalculadora({ ...base, metaStatus }, { type: 'ALIQUOTAS', aliquotas })).toMatchObject({ metaStatus: null })
+      }
+      expect(reducerCalculadora({ ...base, metaStatus: 'calculando' }, { type: 'ALIQUOTAS', aliquotas }).metaStatus).toBe('calculando')
+    })
+
+    it('metaSolicitada inicial é null mesmo com margemAlvoPct nas opções', () => {
+      expect(estadoInicialCalculadora({ margemAlvoPct: 20 }).metaSolicitada).toBeNull()
+    })
+
+    it('EDITAR_ENTRADA com parcial vazio (só margemAlvoPct) não muda o estado nem a revisão', () => {
+      const inicial = estadoInicialCalculadora()
+      expect(reducerCalculadora(inicial, { type: 'EDITAR_ENTRADA', parcial: {} })).toBe(inicial)
+      expect(reducerCalculadora(inicial, { type: 'EDITAR_ENTRADA', parcial: { margemAlvoPct: 10 } })).toBe(inicial)
+    })
+
     it('só ações do operador incrementam a revisão', () => {
       const inicial = estadoInicialCalculadora()
       const editado = reducerCalculadora(inicial, { type: 'EDITAR_ENTRADA', parcial: { custoProduto: 5 } })

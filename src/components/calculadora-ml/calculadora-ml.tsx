@@ -7,6 +7,10 @@ export function CalculadoraML() {
   const calculadora = useCalculadoraML()
   const produtos = calculadora.produtos.data?.produtos ?? []
   const categoriaAusente = !calculadora.entrada.categoriaId?.trim()
+  // O nome vem do anúncio: só vale enquanto a categoria da tela ainda é a dele.
+  const nomeCategoria = calculadora.anuncio?.categoriaId === calculadora.entrada.categoriaId
+    ? calculadora.categoriaNome ?? undefined
+    : undefined
 
   return (
     <div className="min-h-full bg-muted/20 px-4 py-6 sm:px-6 lg:px-8">
@@ -30,10 +34,19 @@ export function CalculadoraML() {
               produtos={produtos}
               produtoSelecionado={calculadora.produtoSelecionado}
               produtosCarregando={calculadora.produtos.isLoading}
-              // Ponte até a Task 6: o campo de margem já fala com o solver (preço ⇄ margem).
-              onEntrada={(parcial) => parcial.margemAlvoPct === undefined
-                ? calculadora.atualizarEntrada(parcial)
-                : calculadora.editarMargem(parcial.margemAlvoPct)}
+              onPreco={calculadora.editarPreco}
+              onMargem={calculadora.editarMargem}
+              margemExibida={calculadora.margemExibida}
+              metaStatus={calculadora.metaStatus}
+              metaSolicitada={calculadora.metaSolicitada}
+              modalidade={calculadora.modalidadeAtiva}
+              modalidadeDoAnuncio={calculadora.modalidadeDoAnuncio}
+              onModalidade={calculadora.setModalidadeAtiva}
+              avisosProduto={calculadora.avisosProduto}
+              categoriaNome={nomeCategoria}
+              variacaoUsada={calculadora.variacaoUsada}
+              anuncio={calculadora.anuncio}
+              onEntrada={calculadora.atualizarEntrada}
               onTaxas={calculadora.atualizarTaxasManuais}
               onProduto={calculadora.selecionarProduto}
             />
@@ -46,7 +59,6 @@ export function CalculadoraML() {
               aviso={calculadora.aviso}
               taxas={calculadora.taxasManuais}
               modalidadeSelecionada={calculadora.modalidadeAtiva}
-              onModalidade={calculadora.setModalidadeAtiva}
               temMeta={calculadora.metaSolicitada !== null}
             />
           </aside>

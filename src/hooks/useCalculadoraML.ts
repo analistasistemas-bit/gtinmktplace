@@ -295,6 +295,7 @@ export function reducerCalculadora(estado: EstadoCalculadoraML, acao: AcaoCalcul
       // A margem só entra por EDITAR_MARGEM; a meta do motor é derivada de `metaSolicitada`.
       const parcial = { ...acao.parcial }
       delete parcial.margemAlvoPct
+      if (Object.keys(parcial).length === 0) return estado
       const modalidade = parcial.modalidadeParaDecisao ?? estado.modalidade
       return comChave({
         ...estado,
@@ -314,7 +315,7 @@ export function reducerCalculadora(estado: EstadoCalculadoraML, acao: AcaoCalcul
         taxasManuais: { ...estado.taxasManuais, ...acao.parcial },
         ...(estado.tarifa ? {} : {
           statusCotacao: 'estimated' as const,
-          avisoApi: 'Taxas manuais estimadas estão ativas; valide na API antes de decidir.',
+          avisoApi: 'Taxas manuais estimadas estão ativas; confirme o frete manual para decidir.',
         }),
       }
     case 'MODALIDADE':
@@ -331,6 +332,11 @@ export function reducerCalculadora(estado: EstadoCalculadoraML, acao: AcaoCalcul
         ...estado,
         selecaoProduto: acao.selecao,
         produtoSelecionado: acao.produto,
+        // Nada do produto anterior aparece sob o nome do novo até o prefill terminar.
+        avisosProduto: [],
+        anuncio: null,
+        variacaoUsada: null,
+        categoriaNome: null,
         camposTocados: [],
         impostoManual: false,
       }
@@ -372,7 +378,13 @@ export function reducerCalculadora(estado: EstadoCalculadoraML, acao: AcaoCalcul
       if (estado.origemProduto === null || estado.impostoManual) return estado
       const aliquota = aliquotaDoKit(estado.origemProduto, acao.aliquotas)
       if (aliquota === estado.entrada.aliquotaImpostoPct) return estado
-      return { ...estado, entrada: { ...estado.entrada, aliquotaImpostoPct: aliquota } }
+      // Selo 'ok'/'nao_confirmada' era do imposto antigo: some. 'calculando' segue (o solver reinicia).
+      const seloVelho = estado.metaStatus === 'ok' || estado.metaStatus === 'nao_confirmada'
+      return {
+        ...estado,
+        entrada: { ...estado.entrada, aliquotaImpostoPct: aliquota },
+        ...(seloVelho ? { metaStatus: null } : {}),
+      }
     }
     case 'COTACAO_RECEBIDA':
       if (acao.chave !== estado.chaveCotada) return estado
@@ -439,7 +451,7 @@ export function estadoInicialCalculadora(opcoes: UseCalculadoraMLOptions = {}): 
     categoriaNome: null,
     variacaoUsada: null,
     anuncio: null,
-    metaSolicitada: entradaInicial.margemAlvoPct ?? null,
+    metaSolicitada: null,
     metaStatus: null,
     ultimoEditado: 'preco',
   })

@@ -354,7 +354,7 @@ function calcularVeredito(
         `Negocie o custo de ${formatarMoeda(entrada.custoProduto)} para até ${formatarMoeda(resultado.custoMaximoCompra)}.`,
         resultado.precoAlvo.valor === null
           ? 'A margem desejada não admite preço projetado com a estrutura atual.'
-          : `Preço projetado de ${formatarMoeda(resultado.precoAlvo.valor)} deve ser validado na API.`,
+          : `Preço para a meta: ${formatarMoeda(resultado.precoAlvo.valor)}.`,
       ],
     }
   }
@@ -364,7 +364,7 @@ function calcularVeredito(
       tipo: 'Ajustar preço',
       fatores: [
         `Margem atual de ${formatarPct(resultado.margemPct)} fica abaixo da meta de ${formatarPct(entrada.margemAlvoPct)}.`,
-        `Projete ${formatarMoeda(resultado.precoAlvo.valor)} para buscar a meta; valide na API.`,
+        `Ajuste o preço para ${formatarMoeda(resultado.precoAlvo.valor)} para buscar a meta.`,
       ],
     }
   }
