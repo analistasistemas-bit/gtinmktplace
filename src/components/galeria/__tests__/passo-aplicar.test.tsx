@@ -61,6 +61,17 @@ describe('PassoAplicar: admin (ADR-0060)', () => {
   });
 });
 
+describe('PassoAplicar: cor fixa', () => {
+  it('com corFixa não há seletor Cor e a prévia usa a cor da prop', async () => {
+    render(<PassoAplicar mlItemId="MLB3M" cores={['Rosa', 'Azul']} corFixa="Azul" isAdmin aprovadasPorCor={{ Rosa: 3, Azul: 1 }}
+      aoFamiliaMudou={vi.fn()} aoIrParaGerar={vi.fn()} aoVoltar={vi.fn()} />);
+    expect(await screen.findByRole('combobox', { name: 'Como aplicar' })).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Cor' })).toBeNull();
+    await preparar();
+    expect(api.prepararAplicacao).toHaveBeenCalledWith('MLB3M', 'Azul', 'substituir');
+  });
+});
+
 describe('PassoAplicar: preparar e confirmar', () => {
   it('Substituir já vem selecionado; preparar manda o ml_item_id da linha, a cor e o modo', async () => {
     montar(true, 'MLB3M');

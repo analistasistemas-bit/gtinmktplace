@@ -236,9 +236,23 @@ describe('PainelImagens: estados do cartão', () => {
     expect(await screen.findByAltText('Capa · Preto')).toBeInTheDocument();
   });
 
+  it('falhou no limite de 3 gerações: mensagem e nenhum "Tentar de novo"', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([
+      imagem({ id: 'f', missao: 2, geracao: 3, status: 'falhou', url: null, erro: 'teto', pode_gerar_de_novo: false }),
+      imagem({ id: 'g', missao: 3, geracao: 3, status: 'falhou', url: null, erro: 'timeout', pode_gerar_de_novo: false }),
+    ])));
+    painel();
+    for (const nome of ['Em uso', 'Tira-dúvida']) {
+      await esperaCartao(nome);
+      const c = cartao(nome);
+      expect(within(c).getByText('Você já gerou esta imagem 3 vezes.')).toBeInTheDocument();
+      expect(within(c).queryByRole('button', { name: 'Tentar de novo' })).toBeNull();
+    }
+  });
+
   it('aprovada: selo "Aprovada" e "Gerar outra"; falhou: motivo e "Tentar de novo"', async () => {
     api.listarImagens.mockResolvedValue(ok(lista([
-      imagem({ id: 'a', missao: 1, status: 'aprovada', exibida: true }), imagem({ id: 'f', missao: 2, status: 'falhou', url: null, erro: 'teto' }),
+      imagem({ id: 'a', missao: 1, status: 'aprovada', exibida: true }), imagem({ id: 'f', missao: 2, status: 'falhou', url: null, erro: 'timeout' }),
     ])));
     painel();
     const a = await esperaCartao('Capa');
@@ -246,7 +260,7 @@ describe('PainelImagens: estados do cartão', () => {
     expect(within(a).getByRole('button', { name: 'Gerar outra' })).toBeInTheDocument();
     expect(within(a).queryByRole('button', { name: 'Aprovar' })).toBeNull();
     const f = cartao('Em uso');
-    expect(within(f).getByText('Você já gerou esta imagem 3 vezes.')).toBeInTheDocument();
+    expect(within(f).getByRole('button', { name: 'Tentar de novo' })).toBeInTheDocument();
     await userEvent.click(within(f).getByRole('button', { name: 'Tentar de novo' }));
     await confirmarGeracao();
     await waitFor(() => expect(api.gerarImagens.mock.calls[0][1]).toMatchObject({ cores: ['Preto'], missoes: [2] }));
@@ -353,6 +367,23 @@ describe('PainelImagens: exibição e cobrança', () => {
     expect(screen.getByAltText('Capa · Preto')).toHaveAttribute('src', 'https://signed/i1.png');
     fireEvent.load(screen.getByAltText('Capa · Preto'));
     expect(api.confirmarExibicao).toHaveBeenCalledTimes(1);
+  });
+
+  it('ampliar abre o diálogo com a imagem e os alertas, sem nova confirmação nem reporte', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ alertas: [{ tipo: 'texto_extra', nota: '"Oferta"' }] })])));
+    painel();
+    fireEvent.load(await screen.findByAltText('Capa · Preto'));
+    await waitFor(() => expect(api.confirmarExibicao).toHaveBeenCalledTimes(1));
+    await userEvent.click(screen.getByRole('button', { name: 'Ampliar Capa' }));
+    const d = dialogo();
+    expect(within(d).getByText('Capa · Preto')).toBeInTheDocument();
+    const grande = within(d).getByRole('img');
+    expect(grande).toHaveAttribute('src', 'https://signed/i1.png');
+    expect(within(d).getByText('Texto a mais na imagem: "Oferta"')).toBeInTheDocument();
+    fireEvent.load(grande);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(api.confirmarExibicao).toHaveBeenCalledTimes(1);
+    expect(api.reportarInvalida).not.toHaveBeenCalled();
   });
 
   it('imagem branca → reportar_invalida e nenhuma confirmação', async () => {

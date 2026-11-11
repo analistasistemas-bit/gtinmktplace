@@ -6,6 +6,7 @@
 import { useState } from 'react';
 import { Check, ImageOff, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { StatusPill } from '@/components/ui/status-pill';
 import { emAndamento, imagemValida } from '@/lib/galeria/exibicao';
 import { mensagemErro, type AlertaImagem, type ImagemGaleria } from '@/lib/galeria/api';
@@ -24,6 +25,18 @@ function textoAlerta(a: AlertaImagem): string {
   if (a.tipo === 'texto_faltando') return `Faltou ou saiu errado o texto: ${a.nota}`;
   if (a.tipo === 'verificacao_indisponivel') return 'Não foi possível conferir o texto. Confira antes de aprovar.';
   return a.nota;
+}
+
+/** Limite de gerações atingido: nenhum pedido novo para esta (cor, imagem) vale. */
+const semVaga = (i?: ImagemGaleria) => !!i && (i.erro === 'teto' || (i.pode_gerar_de_novo === false && i.geracao >= 3));
+
+function Alertas({ alertas }: { alertas: AlertaImagem[] }) {
+  if (alertas.length === 0) return null;
+  return (
+    <ul className="space-y-1 rounded-lg bg-warning/10 p-2 text-xs ring-1 ring-warning/25">
+      {alertas.map((a, k) => <li key={k}>{textoAlerta(a)}</li>)}
+    </ul>
+  );
 }
 
 const MOLDURA = 'aspect-[1200/1540] w-full rounded-lg bg-muted';
@@ -57,6 +70,7 @@ export function CartaoImagem({ nome, cor, preco, imagem, indisponivel, antiga = 
   const [urlQuebrada, setUrlQuebrada] = useState<string | null>(null);
   const [aprovando, setAprovando] = useState(false);
   const [motivo, setMotivo] = useState<string | null>(null);
+  const [ampliada, setAmpliada] = useState(false);
   const estado = estadoDoCartao(imagem, indisponivel);
   const quebrou = !!imagem?.url && urlQuebrada === imagem.url;
   const alertas = estado === 'pronta' || estado === 'aprovada' ? imagem?.alertas ?? [] : [];
@@ -74,7 +88,9 @@ export function CartaoImagem({ nome, cor, preco, imagem, indisponivel, antiga = 
   }
 
   // Imagem de plano anterior sempre pode ser refeita (é o único jeito de ela valer de novo).
-  const gerarOutra = !!onGerar && (antiga || !!imagem?.pode_gerar_de_novo);
+  const teto = semVaga(imagem);
+  const podeRefazer = !!onGerar && !teto && (antiga || !!imagem?.pode_gerar_de_novo);
+  const gerarOutra = podeRefazer;
   return (
     <div data-estado={estado} data-posicao={imagem?.missao}
       className="flex min-w-0 flex-col gap-2 overflow-hidden rounded-xl bg-card p-2.5 text-sm text-card-foreground shadow-sm ring-1 ring-foreground/5">
@@ -89,8 +105,10 @@ export function CartaoImagem({ nome, cor, preco, imagem, indisponivel, antiga = 
           <span>Gerando…</span>
         </div>
       ) : (estado === 'pronta' || estado === 'aprovada') && imagem?.url && !quebrou ? (
-        <img src={imagem.url} alt={`${nome} · ${cor}`} crossOrigin="anonymous" className={`${MOLDURA} object-cover`}
-          onLoad={(e) => carregou(e.currentTarget)} onError={() => { setUrlQuebrada(imagem.url); onFalhaCarga?.(imagem.id); }} />
+        <button type="button" aria-label={`Ampliar ${nome}`} className="block w-full cursor-zoom-in rounded-lg" onClick={() => setAmpliada(true)}>
+          <img src={imagem.url} alt={`${nome} · ${cor}`} crossOrigin="anonymous" className={`${MOLDURA} object-cover`}
+            onLoad={(e) => carregou(e.currentTarget)} onError={() => { setUrlQuebrada(imagem.url); onFalhaCarga?.(imagem.id); }} />
+        </button>
       ) : estado === 'pronta' || estado === 'aprovada' ? (
         <div className={`${MOLDURA} flex flex-col items-center justify-center gap-1.5 p-2 text-center text-xs text-muted-foreground`}>
           <ImageOff aria-hidden className="size-4" />
@@ -99,24 +117,20 @@ export function CartaoImagem({ nome, cor, preco, imagem, indisponivel, antiga = 
       ) : (
         <div className={`${MOLDURA} flex items-center justify-center border border-dashed p-2 text-center text-xs text-muted-foreground`}>
           {estado === 'indisponivel' ? indisponivel
-            : estado === 'falhou' ? (imagem?.erro ? mensagemErro(imagem.erro) : 'Não foi possível gerar esta imagem.')
+            : estado === 'falhou' ? (teto ? mensagemErro('teto') : imagem?.erro ? mensagemErro(imagem.erro) : 'Não foi possível gerar esta imagem.')
               : 'Ainda não gerada'}
         </div>
       )}
 
       {antiga && estado === 'pronta' && <p className="text-xs text-warning">Imagem de uma versão anterior. Gere de novo.</p>}
       {temAprovada && estado !== 'aprovada' && <p className="text-xs text-muted-foreground">Existe uma versão aprovada desta imagem.</p>}
-      {alertas.length > 0 && (
-        <ul className="space-y-1 rounded-lg bg-warning/10 p-2 text-xs ring-1 ring-warning/25">
-          {alertas.map((a, k) => <li key={k}>{textoAlerta(a)}</li>)}
-        </ul>
-      )}
+      <Alertas alertas={alertas} />
 
       <div className="mt-auto flex flex-col gap-2">
         {estado === 'vazio' && onGerar && (
           <Button className="h-10 w-full px-3" disabled={travado} onClick={onGerar}>Gerar · {preco}</Button>
         )}
-        {estado === 'falhou' && onGerar && (
+        {estado === 'falhou' && podeRefazer && (
           <Button variant="outline" className="h-10 w-full px-3" disabled={travado} onClick={onGerar}>
             <RefreshCw aria-hidden />Tentar de novo
           </Button>
@@ -133,6 +147,18 @@ export function CartaoImagem({ nome, cor, preco, imagem, indisponivel, antiga = 
         )}
       </div>
       {motivo && <p role="alert" className="text-xs text-destructive">{motivo}</p>}
+
+      {/* Cópia só para ver: sem onLoad, para a exibição e a cobrança seguirem só no <img> do cartão. */}
+      <Dialog open={ampliada} onOpenChange={setAmpliada}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{nome} · {cor}</DialogTitle>
+            <DialogDescription className="sr-only">Imagem ampliada</DialogDescription>
+          </DialogHeader>
+          {imagem?.url && <img src={imagem.url} alt={`${nome} · ${cor} (ampliada)`} className="mx-auto max-h-[90vh] w-auto max-w-full object-contain" />}
+          <Alertas alertas={alertas} />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

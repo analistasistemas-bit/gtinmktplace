@@ -35,7 +35,7 @@ const imgs: ImagemGaleria[] = [
     { tipo: 'texto_extra', nota: '"Super oferta"' }, { tipo: 'texto_faltando', nota: 'Prende firme' }, { tipo: 'verificacao_indisponivel', nota: '' },
   ] }),
   imagem('b4', 'Branco', 4, { status: 'gerando', url: null, exibida: false }),
-  imagem('b6', 'Branco', 6, { status: 'falhou', url: null, erro: 'teto' }),
+  imagem('b6', 'Branco', 6, { status: 'falhou', url: null, erro: 'teto', geracao: 3, pode_gerar_de_novo: false }),
   // Preto: esperando a conferência do texto, roteiro antigo, conferência fora do ar.
   imagem('p1', 'Preto', 1, { alertas: null }),
   imagem('p2', 'Preto', 2, { roteiro_id: 'P0' }),

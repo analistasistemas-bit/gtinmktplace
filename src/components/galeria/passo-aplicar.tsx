@@ -137,12 +137,14 @@ function LinhaMLB({ itemId, cor, formato, item }: { itemId: string; cor: string;
   );
 }
 
-export function PassoAplicar({ mlItemId, cores: coresDoAnuncio, isAdmin, moda = false, formato = 'Anúncio', aprovadasPorCor, aoFamiliaMudou, aoIrParaGerar, aoVoltar }: {
+export function PassoAplicar({ mlItemId, cores: coresDoAnuncio, isAdmin, moda = false, formato = 'Anúncio', aprovadasPorCor, corFixa, aoFamiliaMudou, aoIrParaGerar, aoVoltar }: {
   mlItemId: string; /** Cores do anúncio (a tela única as lê do `listar`). */ cores: string[]; isAdmin: boolean; moda?: boolean;
   /** "Legacy" ou "User Products" (linha de Publicados). */
   formato?: string;
   /** Aprovadas do roteiro aprovado, por cor; null = lista indisponível (a edge decide). */
   aprovadasPorCor: Record<string, number> | null;
+  /** Cor já escolhida na página: vale no lugar do seletor próprio (e trocar a cor descarta a prévia). */
+  corFixa?: string;
   /** Família vigente mudou: a página mostra a mensagem, sobrevive à recarga e recarrega a ficha. */
   aoFamiliaMudou: (mensagem: string) => void;
   aoIrParaGerar: () => void;
@@ -151,7 +153,7 @@ export function PassoAplicar({ mlItemId, cores: coresDoAnuncio, isAdmin, moda = 
   const cores = aprovadasPorCor ? coresDoAnuncio.filter((c) => (aprovadasPorCor[c] ?? 0) > 0) : coresDoAnuncio;
   const [corEscolhida, setCor] = useState(cores[0] ?? '');
   // A lista de aprovadas pode chegar depois: a cor escolhida só vale se ainda tiver aprovada.
-  const cor = cores.includes(corEscolhida) ? corEscolhida : cores[0] ?? '';
+  const cor = corFixa ?? (cores.includes(corEscolhida) ? corEscolhida : cores[0] ?? '');
   const [modo, setModo] = useState<ModoAplicar>('substituir');
   const [atual, setAtual] = useState<Preparada | null>(null);
   const [aplicacoes, setAplicacoes] = useState<EstadoAplicacao[]>([]);
@@ -218,6 +220,7 @@ export function PassoAplicar({ mlItemId, cores: coresDoAnuncio, isAdmin, moda = 
     toast.success('Desfazer iniciado'); setReverterEm(null); setRodada((n) => n + 1);
   });
   const trocar = (f: () => void) => { f(); setAtual(null); setErro(null); };
+  useEffect(() => { if (corFixa !== undefined) { setAtual(null); setErro(null); } }, [corFixa]);
 
   const bloqueio = isAdmin ? undefined : SO_ADMIN;
   const estadoAtual = atual?.confirmada ? aplicacoes.find((a) => a.id === atual.aplicacao_id) : undefined;
@@ -267,15 +270,17 @@ export function PassoAplicar({ mlItemId, cores: coresDoAnuncio, isAdmin, moda = 
           ) : (
             <section aria-label="Prévia" className="overflow-hidden rounded-xl bg-card text-card-foreground shadow-sm ring-1 ring-foreground/5 text-sm">
               <div className="flex flex-wrap items-end gap-3 p-4">
-                <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">Cor</p>
-                  <Select value={cor} disabled={ocupado || andando} onValueChange={(v) => trocar(() => setCor(v))}>
-                    <SelectTrigger aria-label="Cor" className="h-11 w-44"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {cores.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
+                {corFixa === undefined && (
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">Cor</p>
+                    <Select value={cor} disabled={ocupado || andando} onValueChange={(v) => trocar(() => setCor(v))}>
+                      <SelectTrigger aria-label="Cor" className="h-11 w-44"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {cores.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div className="space-y-1">
                   <p className="text-xs text-muted-foreground">Como aplicar</p>
                   <Select value={modo} disabled={ocupado || andando} onValueChange={(v) => trocar(() => setModo(v as ModoAplicar))}>
