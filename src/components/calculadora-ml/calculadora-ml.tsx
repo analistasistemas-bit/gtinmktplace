@@ -12,11 +12,13 @@ export function CalculadoraML() {
   const categoriaAusente = !calculadora.entrada.categoriaId?.trim()
   const categoria = calculadora.entrada.categoriaId?.trim() ?? ''
   // A tabela dispara ~28 cotações no ML; junto com a tarifa, o ML devolve 429 (local_rate_limited)
-  // e a cotação oficial cai. Libera a tabela da categoria só depois da primeira cotação terminar.
+  // e a cotação oficial cai. Libera a tabela da categoria só depois da primeira cotação terminar
+  // (`idle` = ainda sem preço: a cotação nem começou, então a tabela espera).
   const [tabelaLiberada, setTabelaLiberada] = useState<string | null>(null)
+  const cotacaoTerminou = ['official', 'partial', 'estimated'].includes(calculadora.statusCotacao)
   useEffect(() => {
-    if (categoria && calculadora.statusCotacao !== 'loading') setTabelaLiberada(categoria)
-  }, [categoria, calculadora.statusCotacao])
+    if (categoria && cotacaoTerminou) setTabelaLiberada(categoria)
+  }, [categoria, cotacaoTerminou])
   // O nome vem do anúncio: só vale enquanto a categoria da tela ainda é a dele.
   const nomeCategoria = calculadora.anuncio?.categoriaId === calculadora.entrada.categoriaId
     ? calculadora.categoriaNome ?? undefined

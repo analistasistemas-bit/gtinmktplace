@@ -196,6 +196,17 @@ describe('Calculadora ML', () => {
     expect(screen.getByTestId('tabela-frete')).toBeInTheDocument()
   })
 
+  it('categoria sem preço (idle): tabela fica no aviso até haver cotação', () => {
+    estado = { ...estadoBase, statusCotacao: 'idle', entrada: { ...estadoBase.entrada, precoVenda: 0, categoriaId: 'MLB1' } }
+    const { rerender } = render(<CalculadoraML />)
+    expect(screen.queryByTestId('tabela-frete')).toBeNull()
+    expect(screen.getByText('A tabela de frete carrega depois da cotação.')).toBeInTheDocument()
+
+    estado = { ...estado, statusCotacao: 'estimated' }
+    rerender(<CalculadoraML />)
+    expect(screen.getByTestId('tabela-frete')).toBeInTheDocument()
+  })
+
   it('mantém aviso acionável quando a categoria está vazia', () => {
     render(<CalculadoraML />)
 
