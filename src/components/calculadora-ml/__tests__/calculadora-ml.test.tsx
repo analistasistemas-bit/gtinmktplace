@@ -229,7 +229,7 @@ describe('Calculadora ML', () => {
     const user = userEvent.setup()
     render(<CalculadoraML />)
 
-    expect(screen.getByText(/preço de venda -5%/i)).toBeInTheDocument()
+    expect(screen.getByText(/se o preço de venda cair 5%/i)).toBeInTheDocument()
     expect(screen.getByText(/3,93/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /ver premium/i }))
     expect(screen.getByText(/3,68/)).toBeInTheDocument()

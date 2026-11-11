@@ -73,10 +73,11 @@ export function ResultadoCalculadoraML({ resultado, statusCotacao, aviso, modali
   const icon = tipo === 'Comprar' ? CheckCircle2 : tipo === 'Dados insuficientes' || tipo === 'Margem atual' ? Info : CircleAlert
   const Icon = icon
   const sensibilidade = resultado.modalidades[visao]?.sensibilidade
+  const lucroAtual = resultado.modalidades[visao]?.lucro ?? 0
   const cenariosSensibilidade = sensibilidade ? [
-    { rotulo: 'Custo de compra +10%', cenario: sensibilidade.custoCompraMais10Pct },
-    { rotulo: 'Preço de venda -5%', cenario: sensibilidade.precoVendaMenos5Pct },
-    { rotulo: 'Frete +R$ 5', cenario: sensibilidade.freteMais5 },
+    { rotulo: 'Se o custo de compra subir 10%', cenario: sensibilidade.custoCompraMais10Pct },
+    { rotulo: 'Se o preço de venda cair 5%', cenario: sensibilidade.precoVendaMenos5Pct },
+    { rotulo: 'Se o frete subir R$ 5', cenario: sensibilidade.freteMais5 },
   ] : []
   return (
     <div className="space-y-4">
@@ -100,10 +101,10 @@ export function ResultadoCalculadoraML({ resultado, statusCotacao, aviso, modali
         <Modalidade nome="Premium" resultado={resultado.modalidades.premium} ativa={visao === 'premium'} mobile temMeta={temMeta} onSelecionar={() => setVisao('premium')} />
       </div>
       {sensibilidade && <section className="rounded-xl border border-border/70 bg-card p-4" aria-labelledby="sensibilidade-heading">
-        <h3 id="sensibilidade-heading" className="font-heading text-base font-semibold">Sensibilidade · {visao === 'classico' ? 'Clássico' : 'Premium'}</h3>
-        <p className="mt-1 text-sm text-muted-foreground">Variação do lucro por cenário.</p>
-        <dl className="mt-3 space-y-2 text-sm">
-          {cenariosSensibilidade.map(({ rotulo, cenario }) => <div key={rotulo} className="flex justify-between gap-3"><dt>{rotulo}</dt><dd className={cenario.variacaoLucro < 0 ? 'text-destructive' : 'text-success'}>{variacaoMoeda(cenario.variacaoLucro)}</dd></div>)}
+        <h3 id="sensibilidade-heading" className="font-heading text-base font-semibold">E se piorar? · {visao === 'classico' ? 'Clássico' : 'Premium'}</h3>
+        <p className="mt-1 text-sm text-muted-foreground">Lucro atual por unidade: <span className="font-medium text-foreground">{moeda(lucroAtual)}</span>. Veja quanto sobra se um item mudar:</p>
+        <dl className="mt-3 divide-y divide-border/60 text-sm">
+          {cenariosSensibilidade.map(({ rotulo, cenario }) => <div key={rotulo} className="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0"><dt>{rotulo}</dt><dd className="text-right"><span className={`font-semibold ${cenario.lucro < 0 ? 'text-destructive' : ''}`}>{cenario.lucro < 0 ? `Prejuízo de ${moeda(Math.abs(cenario.lucro))}` : `Sobra ${moeda(cenario.lucro)}`}</span> <span className={`text-xs ${cenario.variacaoLucro < 0 ? 'text-destructive' : 'text-success'}`}>({variacaoMoeda(cenario.variacaoLucro)})</span></dd></div>)}
         </dl>
       </section>}
       {resultado.peso && <p className="flex items-center gap-2 text-xs text-muted-foreground"><TrendingUp className="size-3.5" aria-hidden="true" /> Peso utilizado: {resultado.peso.pesoUtilizadoKg.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} kg (cubado: {resultado.peso.pesoCubadoKg.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} kg).</p>}
