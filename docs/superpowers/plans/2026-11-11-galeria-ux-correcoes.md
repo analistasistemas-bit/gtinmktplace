@@ -2,8 +2,8 @@
 
 **Data:** 11/11/2026 · **Entradas:** `docs/superpowers/specs/2026-11-11-galeria-ux-redesenho.md` (proposta de UX, skill `ui-ux-pro-max-fable5`) e `.superpowers/sdd/2026-11-08-galeria-da-cor/diagnostico-validacao-real.md` (causas-raiz, arquivo:linha). **Não muda regra de negócio** (fatos confirmados, cobrança, trava, saga). Revisão do plano: Fable 5.2. Diff por fase: Grok 4.7 high. Protótipo visual aprovado pelo Diego ANTES da Fase C.
 
-## Decisão tomada (recomendado, registrar no ADR-0201 adendo)
-Descrições longas (`descricao_fornecedor`, `descricao_ml`) e `titulo_ml` deixam de ser fatos citáveis por texto de imagem: aparecem só em "Ver todos os dados" (leitura) e não podem ancorar spec, benefício nem etapa. Motivo: a descrição de marketing confirmada inteira valida benefícios inventados e polui a tela (diagnóstico, "outros defeitos").
+## Decisão do Diego (11/11, após revisão do Fable 5.2)
+**Manter como está:** `descricao_fornecedor`, `descricao_ml` e `titulo_ml` continuam fatos citáveis (R1/R5.3 inalterados; `hashFatos` inalterado). Consequência no plano: a ancoragem de spec/etapa/benefício aceita o valor quando ele aparece **literalmente (normalizado: sem acento, caixa, espaços)** dentro do texto do fato citado — nunca por igualdade com o texto inteiro. Na tela, descrições longas ficam **recolhidas** (só leitura até expandir), com confirmação própria.
 
 ## Fase A — Roteiro correto no servidor (opus: regra que barra cobrança/aprovação)
 1. Mover para `_shared/galeria/regras.ts` a tabela **campos por missão** (quais de título/subtítulo/benefícios/etapas/legendas/specs cada missão mostra) e a **capacidade** (máx. legendas/specs por missão), hoje só em `compor.ts:41-43`/`layouts.ts`. O front importa de lá (`motivosDeTexto` passa a usar a mesma tabela). Teste de paridade.
@@ -29,6 +29,18 @@ Conforme a proposta, seções 3.1–3.6: página própria `/#/publicados/:mlItem
 1. Largura dos diálogos: `Revisao.tsx` modal "Publicar no Mercado Livre" (sem largura → `sm:max-w-sm`), `payment-profile-dialog`, `dialog-reajuste`, `preview-status` (`max-w-*` sem `sm:`). Correção: `sm:max-w-*` adequado em cada um; print antes/depois.
 2. Descrição do módulo `imagem_ia` (`src/lib/modulos.ts:62`) cita só o kit → incluir a galeria.
 3. Relatório do lote mostrou "2 aguardando" com confirmação já `confirmado` — investigar e corrigir se for a tela.
+
+## Ajustes v2 (Fable 5.2: APROVADO COM AJUSTES) — prevalecem sobre o texto acima
+
+1. **A6 sai** (decisão do Diego acima). **A4 passa a ser:** spec/etapa/benefício ancorados por contenção normalizada no fato citado; spec só com valor curto (≤ capacidade da caixa).
+2. **Largura também no servidor (B2 do Fable):** mover `linhasNecessarias`, `FATOR_LARGURA` e `layoutMissao` para `_shared/galeria/` (front importa de lá). A poda do `gerarRoteiroIA` descarta texto que não cabe e gera **rótulo curto de spec em código** (tabela por campo, ex.: MATERIAL → "Material"). Missão que ainda tiver erro depois da poda (palavras, termo proibido, sem âncora) nasce **desligada com motivo** — nunca ativa com erro. Invariante testado: para N retornos "sujos" do LLM, zero erro (servidor + largura) em toda missão ativa.
+3. **`fatosUsados`** podado aos fatos realmente citados pelos textos que sobraram e **derivado em código** (o operador não edita).
+4. **Medidas da embalagem** (`peso_gramas`, `altura_cm`, `largura_cm`, `comprimento_cm`) não podem virar spec (são da caixa, não do produto — R8.1). Ficam só em "Ver todos os dados".
+5. **Salvamento:** automático **só em rascunho**; roteiro aprovado tem botão "Editar" explícito (cria a versão nova). Um salvar em voo por vez, comparação por snapshot (sem travar o formulário a cada digitação), respostas fora de ordem descartadas, envio pendente ao trocar de passo/sair. "Continuar" = aprovar: mantém a regra de admin; não-admin vê o roteiro só leitura com aviso.
+6. **Página:** guarda própria (módulo `imagem_ia`, admin, MLB inexistente/de outra org → mensagem e volta); `listar`/`montar` devolvem título, miniatura e formato do anúncio para o cabeçalho (muda a edge — anotar); saída com rascunho pendente salva antes (HashRouter não tem `useBlocker`); voltar para Publicados preserva filtros e rolagem (estado na URL ou sessionStorage); migrar os testes de `DialogGaleria` (abertura sequencial, identidade, bloqueio por módulo) para a página — não apagar.
+7. **Erros em seção recolhida** abrem a seção sozinhos. **Ciência:** correção mínima no front (não zerar `ciente` ao salvar); a ciência em lote lista os campos (R1.3).
+8. **Ordem:** A e o protótipo em paralelo → B como **hook de estado** sem layout (C o consome) → C → D (independente, pode ir antes). **Deploy:** galeria-roteiro, galeria-fatos, galeria-gerar, galeria-imagens, galeria-aprovar, galeria-aplicar. O rascunho v1 da Fita Veludo é recriado na nova validação.
+9. **Testes extras:** os da seção (c) da revisão (`.superpowers/sdd/2026-11-08-galeria-da-cor/plano-ux-fable.txt`).
 
 ## Execução e revisão
 Ordem: A → B → (protótipo + aprovação do Diego) → C → D. Cada fase: TDD, `pnpm preflight`, revisão Grok 4.7 high do diff, rodada de correção. Depois: deploy das edges alteradas (galeria-roteiro, galeria-fatos e quem importar `_shared/galeria/regras.ts`/`roteiro.ts`), nova validação real com o Diego desde o passo 1.
