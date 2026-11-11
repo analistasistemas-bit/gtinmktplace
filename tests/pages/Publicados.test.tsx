@@ -158,6 +158,15 @@ vi.mock('@/hooks/useKitsVariacao', () => ({
 vi.mock('@/hooks/useModulosHabilitados', () => ({
   useModulosHabilitados: () => useModulosHabilitadosMock(),
 }));
+// Base do kit com variação: a família canônica do PAI (a mais recente), não a da linha (dedupe mantém a mais antiga).
+const fetchBaseCanonicaIdMock = vi.fn(async (_codigoPai: string) => 'f-canonica');
+vi.mock('@/lib/kit-variacao-edge', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/kit-variacao-edge')>()),
+  fetchBaseCanonicaId: (codigoPai: string) => fetchBaseCanonicaIdMock(codigoPai),
+}));
+vi.mock('@/components/kit-variacao/dialog-criar-kit-variacao', () => ({
+  DialogCriarKitVariacao: ({ familiaBaseId }: { familiaBaseId: string }) => <div role="dialog" aria-label="Criar kit com variação">base {familiaBaseId}</div>,
+}));
 
 // DialogFiscalProduto (T13) busca dados fiscais direto no supabase — fora do escopo deste teste
 // de página. Um stub que expõe `familiaId` basta para provar que o clique dispara o handler certo.
@@ -699,6 +708,17 @@ describe('Publicados', () => {
       render(<MemoryRouter><Publicados /></MemoryRouter>);
       expect(screen.getByRole('button', { name: 'Criar kit com variação' })).toBeEnabled();
       expect(screen.queryByRole('button', { name: 'Gerenciar kit' })).toBeNull();
+    });
+
+    it('abre o diálogo com a família canônica do PAI, não com a família (antiga) da linha', async () => {
+      useModulosHabilitadosMock.mockReturnValue({ data: ['kit_variacao'] });
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ familiaId: 'f-antiga', qtdVariacoesFamilia: 4, userProducts: true })], isLoading: false, error: null,
+      });
+      render(<MemoryRouter><Publicados /></MemoryRouter>);
+      fireEvent.click(screen.getByRole('button', { name: 'Criar kit com variação' }));
+      expect(await screen.findByRole('dialog', { name: 'Criar kit com variação' })).toHaveTextContent('base f-canonica');
+      expect(fetchBaseCanonicaIdMock).toHaveBeenCalledWith('01829149');
     });
 
     it('sem o módulo não aparece', () => {
