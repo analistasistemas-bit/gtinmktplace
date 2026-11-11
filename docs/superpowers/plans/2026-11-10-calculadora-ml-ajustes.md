@@ -65,6 +65,7 @@
   - `entradaDoKit(e, 2)`: custo ×2; fixos/variáveis/rebate iguais; dimensões via `dimensoesDoKit`; sem dimensões → undefined.
   - comissão 0%, custo 1, meta 33 → `preco === 1.50`, `confirmado: true` (1,49 daria 32,89%).
   - comissão 12% arredondada, custo 1, meta 33 → `preco === 1.83` (o ponto fixo 1,82 dá 32,967%; o solver avança centavos).
+  - comissão 11% + imposto 4% (ambos arredondados a centavo), custo 1, meta 84,26 → `preco === 135.20`, `confirmado: true` (exige 6 avanços de centavo a partir de 135,14).
   - comissão 12% abaixo de R$100 e 11% a partir de R$100, custo 1, meta 88,5 → `confirmado: true`, `preco === 200` (denominador ≤ 0 na 1ª faixa não encerra).
   - comissão oscilando na fronteira → menor preço verificado que cumpre a meta.
   - meta 95 com comissão 12% e imposto 8% → `confirmado: false` (ou `null` se nada foi cotado), sem lançar, no máximo `maxChamadas` chamadas a `cotarEm`.
@@ -80,7 +81,7 @@
     seguro se r && r.proveniencia !== 'estimated' && r.margemPctExata >= meta − 1e-9
     próximo = candidato(cot)
       denominador ≤ 0      → próximo = p × 2            (sondar faixa seguinte)
-      próximo ≤ p e !seguro → próximo = p + 0,01         (avançar centavos; até 5 vezes seguidas)
+      próximo ≤ p e !seguro → próximo = p + 0,01         (avançar centavos; limitado só por maxChamadas)
       próximo já visitado e algum seguro → parar
     seguro e próximo ≥ p → parar
   retorno: menor seguro (confirmado) | visitado de maior margem (não confirmado) | null
@@ -102,7 +103,8 @@
 - [ ] **Step 1: Testes que falham:**
   - tarifa `official` → frete da tarifa, `proveniencia: 'official'`, `statusCotacao === 'official'`.
   - tarifa `partial` (medidas abaixo do piso) ou `estimated` (falha) sem frete manual → `frete === null`, card sem selo oficial, `statusCotacao !== 'official'`, aviso com `motivo_proveniencia`.
-  - mesmas tarifas com frete manual confirmado → frete manual, `proveniencia: 'partial'`.
+  - tarifa `partial` com frete manual confirmado → frete manual, `proveniencia: 'partial'`.
+  - tarifa `estimated` (falha de frete **ou** comissão ausente) com frete manual confirmado → frete manual, `proveniencia` continua `'estimated'` (nunca promovida; nunca confirma meta).
   - sem dimensões → comportamento atual (`partial` + frete manual).
 - [ ] **Step 2:** rodar → FAIL.
 - [ ] **Step 3:** Implementar `cotacaoCalculadora`; `statusCotacao` e avisos derivados da proveniência resultante, não de `entrada.dimensoes`. Não tocar `src/lib/tarifa.ts`.
@@ -161,9 +163,10 @@
   - `fetchAnuncioCalculadora` rejeita (HTTP) ou devolve `preco: null` → preço do cadastro + aviso `"não foi possível ler o preço no ar"`; `salePriceFalhou` → aviso `"promoção"`.
   - lista de variações vazia → campos do produto limpos + aviso.
   - resposta de A chegando após selecionar B; cotação antiga chegando após edição de preço → ignoradas.
+  - editar custo (ou imposto, rebate) enquanto a cotação está em voo → a cotação **ainda publica** (a chave preço|categoria|dimensões não mudou) e o status sai de `loading`.
   - "Produto avulso" (null) → limpa campos do produto e `modalidadeDoAnuncio null`.
 - [ ] **Step 2:** rodar → FAIL.
-- [ ] **Step 3:** Implementar: montar a entrada nova **inteira** e aplicar numa única ação (`PRODUTO_CARREGADO`); ausente = limpo (`custoProduto 0`, `dimensoes undefined`, `aliquotaImpostoPct null`). O effect de cotação compara `chaveCotada` (preço|categoria|dimensões) e não recota se igual. Modalidade do anúncio só define o valor inicial.
+- [ ] **Step 3:** Implementar: montar a entrada nova **inteira** e aplicar numa única ação (`PRODUTO_CARREGADO`); ausente = limpo (`custoProduto 0`, `dimensoes undefined`, `aliquotaImpostoPct null`). Validade das respostas: **prefill e solver** por `revisao`; **cotação comum** pela própria chave (preço|categoria|dimensões) — resposta só é descartada se a chave atual mudou. O effect compara `chaveCotada` e não recota se igual. Modalidade do anúncio só define o valor inicial.
 - [ ] **Step 4:** testes + `pnpm exec tsc -b` → PASS. **Step 5:** Commit `feat(calculadora): revisão única no hook e produto publicado preenche tudo`.
 
 ### Task 5: Preço ⇄ margem ligados (I3)
@@ -185,8 +188,9 @@
   - solver `null` ou exceção → preço inalterado, `metaStatus 'nao_confirmada'`.
   - alterar custo/imposto/medidas/modalidade após `editarMargem` → preço mantido, `ultimoEditado 'preco'`.
   - sem categoria → solver com cotação manual, sempre `'nao_confirmada'`.
+  - preço 10, custo 1, rebate 2, demais 0 → `margemEfetiva === 110`, nada lança, `entrada.margemAlvoPct` segue a meta (ou 0).
 - [ ] **Step 2:** rodar → FAIL.
-- [ ] **Step 3:** Implementar. `cotarEm = (p, e) => calcularTarifaML(p, categoriaId, dimensoesDaTarifa(e.dimensoes?.alturaCm, e.dimensoes?.larguraCm, e.dimensoes?.comprimentoCm, e.dimensoes?.pesoKg), 0)` → null lança → `cotacaoCalculadora(t, taxas)`. `inicial` = cotação vigente da modalidade ativa. `margemExibida = metaStatus === 'calculando' ? metaSolicitada : margemEfetiva`. Veredito: `entrada.margemAlvoPct` = `metaSolicitada ?? margemEfetiva ?? 0`.
+- [ ] **Step 3:** Implementar. `cotarEm = (p, e) => calcularTarifaML(p, categoriaId, dimensoesDaTarifa(e.dimensoes?.alturaCm, e.dimensoes?.larguraCm, e.dimensoes?.comprimentoCm, e.dimensoes?.pesoKg), 0)` → null lança → `cotacaoCalculadora(t, taxas)`. `inicial` = cotação vigente da modalidade ativa. `margemExibida = metaStatus === 'calculando' ? metaSolicitada : margemEfetiva`. Veredito: `entrada.margemAlvoPct` = `metaSolicitada ?? 0` — **nunca** a margem efetiva (ela pode passar de 100%, ex.: rebate maior que custos, e o motor rejeita meta ≥ 100). Sem `metaSolicitada`, o veredito não cita meta (Task 6).
 - [ ] **Step 4:** testes + `pnpm exec tsc -b` → PASS. **Step 5:** Commit `feat(calculadora): preço e margem ligados pela modalidade ativa`.
 
 ### Task 6: UI — campos numéricos, modalidade, margem viva e central de decisão
