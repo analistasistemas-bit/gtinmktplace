@@ -153,6 +153,17 @@ describe('galeria-roteiro: criar', () => {
     expect((await chamar({ ...base, acao: 'aprovar', roteiro_id: id })).status).toBe(200)
   })
 
+  it('cores do anúncio chegam ao roteiro: título com "Preto" desliga a missão (fix round 3)', async () => {
+    f.ia.mockResolvedValueOnce(respostaIA([
+      missaoIA(1, { fatosUsados: ['nome'] }),
+      missaoIA(2, { headline: 'Renda Preto', fatosUsados: ['nome'] }),
+    ]))
+    const r = await chamar({ ...base, acao: 'criar' })
+    expect(r.status).toBe(200)
+    const m2 = (db.galeria_roteiros[0].conteudo as { missoes: Array<Linha & { motivoDesligada?: string }> }).missoes.find((m) => m.missao === 2)
+    expect(m2).toMatchObject({ ativa: false, motivoDesligada: expect.stringMatching(/cor do anúncio/) })
+  })
+
   it('criar confere a etiqueta (mesmo gancho do montar): DIVERGENTE nova recusa antes da IA', async () => {
     f.conferir.mockImplementationOnce(async () => { f.leitura = { marca: { legivel: true, valor: 'Outra Marca' } }; return true })
     const r = await chamar({ ...base, acao: 'criar' })

@@ -478,9 +478,9 @@ describe('ancoragem sem fragmento (fix round 1)', () => {
     expect(validarRoteiro(ficha([{ campo: 'atributo:WIDTH', rotulo: 'Largura', valor: '16mm' }]), fatos, false)).toEqual([])
   })
 
-  it('descrição: número cortado da unidade, item de lista de cores e oração negada não ancoram', () => {
+  it('descrição: número cortado da unidade não ancora', () => {
     const fatos = fatosFita()
-    for (const valor of ['100', '16', '25', 'Branco', 'Preto', 'metros']) {
+    for (const valor of ['100', '16', '25', 'metros']) { // cores: regra própria (fix round 3)
       expect(validarRoteiro(ficha([{ campo: 'descricao_ml', rotulo: 'X', valor }]), fatos, false), valor).toEqual([expect.stringMatching(/difere/)])
     }
     for (const valor of ['100% poliéster', '25 metros']) {
@@ -539,34 +539,54 @@ describe('ancoragem sem fragmento (fix round 1)', () => {
   })
 })
 
-// Fix round 2 (re-revisão Grok): seção de cores/variações só por TÍTULO; "sem" corta só o que vem depois.
-describe('seção de cores só por título (fix round 2)', () => {
-  const comBeneficios = async (descricao: string, beneficios: string[]) => {
+// Fix round 3 (decisão do controller): sem heurística de seção. Nome de QUALQUER cor do anúncio no texto da imagem é
+// recusado — o roteiro vale para todas as cores; a cor de cada imagem vai pela foto/cena. "sem" corta só o que vem depois.
+describe('cores do anúncio nunca ancoram texto (fix round 3)', () => {
+  const CORES = ['Branco', 'Preto']
+  const comBeneficios = async (descricao: string, beneficios: string[], cores = CORES) => {
     ia.create.mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify({ contrato: 'Fita', missoes: [
       { missao: 1, cena: 'capa', fatosUsados: [] },
       { missao: 4, cena: 'mesa', headline: 'Fita', beneficios, fatosUsados: [] },
     ] }) } }] })
-    const r = await gerarRoteiroIA({ modelo: 'm', categoria: 'x', moda: false, vistas: ['frente'], fatos: [fato('nome', 'Fita'), fato('descricao_fornecedor', descricao)] })
+    const r = await gerarRoteiroIA({ modelo: 'm', categoria: 'x', moda: false, vistas: ['frente'], fatos: [fato('nome', 'Fita'), fato('descricao_fornecedor', descricao)], cores })
     return r.missoes.find((m) => m.missao === 4)!
   }
+  const ficha = (valor: string): Roteiro => ({ categoria: 'x', contrato: 'Fita', missoes: [
+    { missao: 1, ativa: true, cena: 'capa', fatosUsados: [] },
+    { missao: 5, ativa: true, cena: 'ficha', headline: 'Dados do produto', specs: [{ campo: 'descricao_ml', rotulo: 'X', valor }], fatosUsados: [] },
+  ] })
 
-  it('frase comum com "modelo" não arma a seção: "Modelo clássico." + "✔ Alta resistência" ancora', async () => {
-    expect(await comBeneficios('Modelo clássico.\n✔ Alta resistência', ['Alta resistência'])).toMatchObject({ ativa: true, beneficios: ['Alta resistência'] })
+  it('"Modelo clássico: alta resistência" → "alta resistência" ancora', async () => {
+    expect(await comBeneficios('Modelo clássico: alta resistência', ['Alta resistência'])).toMatchObject({ ativa: true, beneficios: ['Alta resistência'] })
   })
 
-  it('descrição real da Fita: "Branco"/"Preto" sob CORES DISPONÍVEIS recusados; itens de BENEFÍCIOS aceitos', () => {
+  it('"Cores disponíveis." + "- Branco", título longo + "- Preto" e "Branco ou preto" → recusados', async () => {
+    expect((await comBeneficios('Cores disponíveis.\n- Branco\nToque macio.', ['Branco', 'Toque macio'])).beneficios).toEqual(['Toque macio'])
+    expect((await comBeneficios('Cores disponíveis para todos os pedidos da loja\n- Preto\nToque macio.', ['Preto', 'Toque macio'])).beneficios).toEqual(['Toque macio'])
+    expect((await comBeneficios('Branco ou preto. Toque macio.', ['Branco ou preto', 'Toque macio'])).beneficios).toEqual(['Toque macio'])
+  })
+
+  it('descrição real da Fita: benefícios aceitos, cores recusadas (validador)', () => {
     const fatos = fatosFita()
-    const ficha = (valor: string): Roteiro => ({ categoria: 'x', contrato: 'Fita', missoes: [
-      { missao: 1, ativa: true, cena: 'capa', fatosUsados: [] },
-      { missao: 5, ativa: true, cena: 'ficha', headline: 'Dados do produto', specs: [{ campo: 'descricao_ml', rotulo: 'X', valor }], fatosUsados: [] },
-    ] })
-    for (const v of ['Branco', 'Preto']) expect(validarRoteiro(ficha(v), fatos, false), v).toEqual([expect.stringMatching(/difere/)])
-    for (const v of ['Alta resistência', 'Excelente aderência', 'Discrição no visual']) expect(validarRoteiro(ficha(v), fatos, false), v).toEqual([])
+    for (const v of ['Branco', 'Preto', 'Branco ou preto']) {
+      expect(validarRoteiro(ficha(v), fatos, false, ['frente'], CORES), v).toEqual(expect.arrayContaining([expect.stringMatching(/cor do anúncio/)]))
+    }
+    for (const v of ['Alta resistência', 'Excelente aderência', 'Discrição no visual']) expect(validarRoteiro(ficha(v), fatos, false, ['frente'], CORES), v).toEqual([])
   })
 
-  it('título de cores desarma no próximo título ou parágrafo; "Cores: Branco e Preto" não ancora', async () => {
-    expect(await comBeneficios('Cores:\n- Branco\nBENEFÍCIOS\n- Toque macio', ['Toque macio', 'Branco'])).toMatchObject({ beneficios: ['Toque macio'] })
-    expect((await comBeneficios('Cores: Branco e Preto\nToque macio.', ['Branco e Preto', 'Toque macio'])).beneficios).toEqual(['Toque macio'])
+  it('título com cor do anúncio desliga a missão (texto vale para todas as cores)', async () => {
+    const x = retornoFita()
+    x.missoes[1].headline = 'Fita preta versátil'
+    x.missoes[3].headline = 'Fita Preto versátil'
+    ia.create.mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify(x) } }] })
+    const r = await gerarRoteiroIA({ modelo: 'm', categoria: 'x', moda: false, vistas: ['frente'], fatos: fatosFita(), cores: CORES })
+    expect(r.missoes.find((m) => m.missao === 4)).toMatchObject({ ativa: false, motivoDesligada: expect.stringMatching(/cor do anúncio/) })
+    // ponytail: comparação por palavra inteira — "preta" (flexão) não é o nome cadastrado "Preto" e passa.
+    expect(r.missoes.find((m) => m.missao === 2)?.ativa).toBe(true)
+  })
+
+  it('intencional: cor "Rosa" recusa "Acabamento rosa vibrante" mesmo sendo a cor do produto', async () => {
+    expect((await comBeneficios('Acabamento rosa vibrante. Toque macio.', ['Acabamento rosa vibrante', 'Toque macio'], ['Rosa'])).beneficios).toEqual(['Toque macio'])
   })
 
   it('"sem": aceita o trecho antes dele, recusa o depois; não/nunca seguem derrubando a oração', async () => {

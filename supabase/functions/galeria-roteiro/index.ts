@@ -6,7 +6,7 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
-import { carregarAnuncio, resolverAnuncio, type AnuncioGaleria } from '../_shared/galeria/anuncio.ts';
+import { carregarAnuncio, coresDoAnuncio, resolverAnuncio, type AnuncioGaleria } from '../_shared/galeria/anuncio.ts';
 import { calcularVigencia } from '../_shared/galeria/referencias.ts';
 import { conferirEtiqueta } from '../_shared/galeria/etiqueta.ts';
 import { cienciaPendente, errosPorMissao, gerarRoteiroIA, sanearRoteiro, validarRoteiro, type Roteiro } from '../_shared/galeria/roteiro.ts';
@@ -80,8 +80,8 @@ const vigencia = (admin: Admin, orgId: string, a: AnuncioGaleria) =>
   calcularVigencia(admin, orgId, a, (ctx) => conferirEtiqueta(admin, orgId, a, ctx));
 
 /** `erros` + `erros_por_missao`: a tela mostra o erro na missão (que segue ativa) até o operador corrigir ou desativar. */
-const resposta = (linha: LinhaRoteiro, v: Vigencia) => {
-  const erros = validarRoteiro(linha.conteudo, v.fatos, linha.moda, vistasDe(v));
+const resposta = (linha: LinhaRoteiro, v: Vigencia, a: AnuncioGaleria) => {
+  const erros = validarRoteiro(linha.conteudo, v.fatos, linha.moda, vistasDe(v), coresDoAnuncio(a));
   return { roteiro: linha, erros, erros_por_missao: errosPorMissao(erros), ciencia_pendente: cienciaPendente(linha.conteudo, v.fatos), fatos: v.fatos };
 };
 
@@ -120,7 +120,7 @@ Deno.serve(async (req) => {
         .order('versao', { ascending: false }).limit(1).maybeSingle();
       if (eL) throw new Error(eL.message);
       if (!vigente) return json({ roteiro: null, moda, familia_id: a.vigente.id, ...(aviso ? { aviso } : {}) });
-      return json({ ...resposta(vigente as LinhaRoteiro, await vigencia(admin, orgId, a)), moda, familia_id: a.vigente.id, ...(aviso ? { aviso } : {}) });
+      return json({ ...resposta(vigente as LinhaRoteiro, await vigencia(admin, orgId, a), a), moda, familia_id: a.vigente.id, ...(aviso ? { aviso } : {}) });
     }
 
     // Trabalho novo só na família vigente (a tela manda a que mostrou).
@@ -136,13 +136,14 @@ Deno.serve(async (req) => {
       try {
         conteudo = await gerarRoteiroIA({
           modelo: await resolverModeloTexto(admin, orgId), categoria: cat.nome, moda: cat.moda, vistas: vistasDe(v), fatos: v.fatos,
+          cores: coresDoAnuncio(a),
         });
       } catch (e) {
         console.error('[galeria-roteiro] modelo', (e as Error).message);
         return json({ error: 'roteiro_ia_falhou' }, 502);
       }
       const linha = await inserirRascunho(admin, orgId, userId, a, conteudo, cat.moda, v.fatos_hash);
-      return linha ? json(resposta(linha, v)) : json({ error: 'conflito_versao' }, 409);
+      return linha ? json(resposta(linha, v, a)) : json({ error: 'conflito_versao' }, 409);
     }
 
     const roteiroId = texto(body.roteiro_id, 64);
@@ -164,12 +165,12 @@ Deno.serve(async (req) => {
         const { data, error } = await admin.from('galeria_roteiros').update({ conteudo })
           .eq('id', linha.id).eq('org_id', orgId).eq('status', 'rascunho').select();
         if (error) throw new Error(error.message);
-        if (data && data.length > 0) return json(resposta(data[0] as LinhaRoteiro, v));
+        if (data && data.length > 0) return json(resposta(data[0] as LinhaRoteiro, v, a));
         // Aprovado por outra aba entre a leitura e o update: segue como edição de versão aprovada.
       }
       // Roteiro aprovado (ou desatualizado) é imutável: a edição vira a versão seguinte, em rascunho.
       const nova = await inserirRascunho(admin, orgId, userId, a, conteudo, linha.moda, v.fatos_hash);
-      return nova ? json(resposta(nova, v)) : json({ error: 'conflito_versao' }, 409);
+      return nova ? json(resposta(nova, v, a)) : json({ error: 'conflito_versao' }, 409);
     }
 
     // aprovar
@@ -182,7 +183,7 @@ Deno.serve(async (req) => {
     // leitura velha daria outro hash e o próximo `montar` desatualizaria o roteiro na hora. DIVERGENTE nova
     // reprova a aprovação (R1.3).
     const v = await vigencia(admin, orgId, a);
-    const erros = validarRoteiro(linha.conteudo, v.fatos, linha.moda, vistasDe(v));
+    const erros = validarRoteiro(linha.conteudo, v.fatos, linha.moda, vistasDe(v), coresDoAnuncio(a));
     if (erros.length > 0) return json({ error: 'roteiro_invalido', erros, erros_por_missao: errosPorMissao(erros) }, 422);
     let conteudo = linha.conteudo;
     const pendentes = cienciaPendente(conteudo, v.fatos);
