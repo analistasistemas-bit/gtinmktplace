@@ -1,3 +1,4 @@
+import { Skeleton } from '@/components/ui/skeleton'
 import { AlertTriangle, Calculator } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useCalculadoraML } from '@/hooks/useCalculadoraML'
@@ -62,11 +63,16 @@ export function CalculadoraML() {
               onEntrada={calculadora.atualizarEntrada}
               onTaxas={calculadora.atualizarTaxasManuais}
               onProduto={calculadora.selecionarProduto}
+              statusCotacao={calculadora.statusCotacao}
             />
           </section>
           <aside className="lg:sticky lg:top-4">
             {calculadora.carregandoProduto
-              ? <p className="rounded-xl border border-border/70 bg-card p-5 text-sm text-muted-foreground" role="status">Carregando produto…</p>
+              ? <div className="space-y-4" aria-hidden="true" data-testid="resultado-skeleton">
+                <Skeleton className="h-36 rounded-xl" />
+                <div className="grid gap-4 sm:grid-cols-2"><Skeleton className="h-80 rounded-xl" /><Skeleton className="hidden h-80 rounded-xl sm:block" /></div>
+                <Skeleton className="h-40 rounded-xl" />
+              </div>
               : <ResultadoCalculadoraML
               resultado={calculadora.resultado}
               statusCotacao={calculadora.statusCotacao}
