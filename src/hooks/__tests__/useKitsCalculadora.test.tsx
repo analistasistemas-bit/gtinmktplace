@@ -144,6 +144,33 @@ describe('useKitsCalculadora', () => {
     expect(cotarEm).toHaveBeenCalledTimes(chamadas)
   })
 
+  it('mudar N não recota as colunas 2 e 3 já calculadas', async () => {
+    const cotarEm = cotarOficial()
+    const { result, rerender } = renderHook((p: Args) => useKitsCalculadora(p), { initialProps: args({ cotarEm }) })
+    await avancar()
+    const custos = () => cotarEm.mock.calls.map(([, e]) => e.custoProduto)
+    const antes = custos().filter((c) => c !== 150).length
+    rerender(args({ cotarEm, quantidadeN: 5 }))
+    expect(result.current.slice(1, 3).map((c) => c.status)).toEqual(['ok', 'ok'])
+    await avancar()
+    expect(custos().filter((c) => c !== 150)).toHaveLength(antes)
+    expect(custos()).toContain(150)
+    expect(result.current.map((c) => c.status)).toEqual(['ok', 'ok', 'ok', 'ok'])
+  })
+
+  it('voltar de aguardando com a mesma entrada não recota', async () => {
+    const cotarEm = cotarOficial()
+    const { result, rerender } = renderHook((p: Args) => useKitsCalculadora(p), { initialProps: args({ cotarEm }) })
+    await avancar()
+    const chamadas = cotarEm.mock.calls.length
+    rerender(args({ cotarEm, aguardando: true }))
+    await avancar()
+    rerender(args({ cotarEm }))
+    expect(result.current[1]).toMatchObject({ status: 'ok', preco: 200 })
+    await avancar(1000)
+    expect(cotarEm).toHaveBeenCalledTimes(chamadas)
+  })
+
   it('debounce 400 ms: edições rápidas só cotam a última', async () => {
     const cotarEm = cotarOficial()
     const { rerender } = renderHook((p: Args) => useKitsCalculadora(p), { initialProps: args({ cotarEm, margemPct: 20 }) })

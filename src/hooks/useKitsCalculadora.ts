@@ -97,21 +97,36 @@ export function useKitsCalculadora({
   const kits = quantidades.slice(1)
   const semDados = !entrada.categoriaId?.trim() || !entrada.dimensoes ||
     entrada.aliquotaImpostoPct === null || margemPct === null
-  const cotar = !aguardando && !semDados
-  // Effect chaveado por valores: objeto novo com os mesmos números não recota.
-  const chave = cotar ? JSON.stringify([entrada, modalidade, margemPct, kits]) : null
-  const [publicado, setPublicado] = useState<{ chave: string; cotarEm: CotarEm; colunas: ColunaKit[] } | null>(null)
+  // Cache por coluna, chaveado por valores (entrada, modalidade, margem, q) + identidade de
+  // `cotarEm`: objeto novo com os mesmos números, mudar N ou voltar de `aguardando` não recota.
+  const base = semDados ? null : JSON.stringify([entrada, modalidade, margemPct])
+  const [cache, setCache] = useState<{ cotarEm: CotarEm; colunas: Record<string, ColunaKit> }>(
+    () => ({ cotarEm, colunas: {} }),
+  )
+  const vigentes = cache.cotarEm === cotarEm ? cache.colunas : {}
+  const faltando = base === null || aguardando ? [] : kits.filter((q) => !(`${base}|${q}` in vigentes))
+  const pendente = faltando.length ? JSON.stringify([base, faltando]) : null
 
   useEffect(() => {
-    if (chave === null) return
-    const [e, mod, meta, qs] = JSON.parse(chave) as [EntradaCalculadoraML, ModalidadeML, number, number[]]
+    if (pendente === null) return
+    const [b, qs] = JSON.parse(pendente) as [string, number[]]
+    const [e, mod, meta] = JSON.parse(b) as [EntradaCalculadoraML, ModalidadeML, number]
     let vigente = true
     const timer = window.setTimeout(() => {
-      Promise.all(qs.map((q) => calcularColuna(e, mod, meta, q, cotarEm)))
-        .then((colunas) => { if (vigente) setPublicado({ chave, cotarEm, colunas }) })
+      Promise.all(qs.map((q) => calcularColuna(e, mod, meta, q, cotarEm))).then((colunas) => {
+        if (!vigente) return
+        setCache((prev) => {
+          // Só a base atual fica no cache (limite = colunas visíveis + N anteriores da mesma base).
+          const mantidas = prev.cotarEm === cotarEm
+            ? Object.fromEntries(Object.entries(prev.colunas).filter(([k]) => k.startsWith(`${b}|`)))
+            : {}
+          for (const c of colunas) mantidas[`${b}|${c.quantidade}`] = c
+          return { cotarEm, colunas: mantidas }
+        })
+      })
     }, DEBOUNCE_KITS_MS)
     return () => { vigente = false; window.clearTimeout(timer) }
-  }, [chave, cotarEm])
+  }, [pendente, cotarEm])
 
   const unidade: ColunaKit = resultadoUnidade
     ? {
@@ -131,8 +146,7 @@ export function useKitsCalculadora({
     const custo = entrada.custoProduto * q
     if (aguardando) return vazia(q, custo, 'calculando')
     if (semDados) return vazia(q, custo, 'sem_dados')
-    if (publicado?.chave !== chave || publicado.cotarEm !== cotarEm) return vazia(q, custo, 'calculando')
-    return publicado.colunas.find((c) => c.quantidade === q) ?? vazia(q, custo, 'calculando')
+    return vigentes[`${base}|${q}`] ?? vazia(q, custo, 'calculando')
   })
   return [unidade, ...demais]
 }
