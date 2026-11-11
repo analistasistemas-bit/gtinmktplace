@@ -22,7 +22,7 @@
 - Nunca inventar dado de produto: o planejador só recebe planilha + ficha do ML + foto; `descricao_ml` e `titulo_ml` não entram.
 - Edges idempotentes; workers do QStash com `verify_jwt=false` (o `supabase/config.toml` já declara as `galeria-*`).
 - Texto de tela em pt-BR, sem jargão ("posição", "plano", "missão", "roteiro" não aparecem; usar "imagem", "foto"). Dropdown = `Select` de `src/components/ui/select.tsx`.
-- Testes: `pnpm test -- <caminho>` (vitest; cobre `src/**/__tests__`, `tests/` e `supabase/functions/**/__tests__`). Portão antes do deploy: `pnpm preflight`.
+- Testes: `pnpm exec vitest run <caminho>` (o `pnpm test -- <caminho>` roda a suíte inteira; vitest cobre `src/**/__tests__`, `tests/` e `supabase/functions/**/__tests__`). Portão antes do deploy: `pnpm preflight`.
 - Todo commit deixa `pnpm exec tsc --noEmit` e os testes dos arquivos tocados verdes. Única exceção: Tasks 7 e 8 podem sair em um commit só. O pipeline antigo (lupa, roteiro, fatos em tela) continua compilando até a Task 9, que o apaga antes do deploy.
 - Higgsfield (opcional por org) continua em 3:4 e sem regeração automática; só recebe o prompt novo e o alerta.
 - Deploy de edge e teste real em produção só com OK do Diego (Task 10).
@@ -125,7 +125,7 @@ export interface DadosPlanejador {
   ficha_do_anuncio: Record<string, string>        // atributos do item no ML: name → value_name (filtro na Task 5)
   total_de_cores: number; conteudo_da_embalagem: '1 unidade na cor escolhida'
 }
-export const TIMEOUT_PLANO_MS = [45_000, 30_000] as const   // 1ª e 2ª tentativa: a edge galeria-gerar tem de caber em 150 s
+export const TIMEOUT_PLANO_MS = [60_000, 30_000] as const   // 1ª e 2ª tentativa (medido 12/11: 34 s na 1ª): a edge galeria-gerar tem de caber em 150 s
 export const hashDados: (dados: DadosPlanejador) => string   // sha256 hex de JSON.stringify(dados)
 export function montarMensagens(dados: DadosPlanejador, refUrl: string, moda: boolean): unknown[]   // puro
 export async function gerarPlanoIA(p: { modelo: string; dados: DadosPlanejador; refUrl: string; moda: boolean; cores: string[] }): Promise<{ plano: Plano } | { erro: 'plano_ia_falhou' | 'plano_invalido'; erros?: string[] }>
@@ -139,7 +139,7 @@ it('mensagens levam os dois exemplos, os DADOS em JSON e a foto', …)   // user
 it('mensagens nunca levam descricao_ml nem titulo_ml', …)               // JSON.stringify(msgs) não contém 'descricao_ml'
 it('moda acrescenta a regra "nenhuma imagem leva texto"', …)
 it('resposta válida vira plano com dados_hash = hashDados(dados)', …)
-it('resposta inválida tenta uma segunda vez com os erros e, falhando de novo, devolve plano_invalido', …)  // 2 chamadas; timeouts 45 s e 30 s
+it('resposta inválida tenta uma segunda vez com os erros e, falhando de novo, devolve plano_invalido', …)  // 2 chamadas; timeouts 60 s e 30 s
 it('timeout ou erro do provedor → plano_ia_falhou, sem segunda chamada', …)
 ```
 
@@ -309,7 +309,7 @@ it('repetição do mesmo pedido_id devolve as linhas existentes sem chamar a IA'
 - [ ] **Step 2:** rodar os dois arquivos → FAIL.
 - [ ] **Step 3: implementar.** Ordem na edge: gate do módulo → anúncio → repetição do pedido → cores válidas → elegibilidade no ML (inalterada) → preço do mês (inalterado) → `calcularVigencia` → referência `frente` de cada cor → `garantirPlano` (foto = referência da 1ª cor pedida, URL assinada de 10 min) → posições indisponíveis → `planejarGeracoes` → `galeria_reservar_pedido` com todo item `origem: 'gerador'` e `referencia_id` da vista `frente` → `publicarJobs`. Saem da edge: `roteiro_versao`, ciência, o bloco de lupa (linhas 91-92 e 136-152) e `recortes`.
   Em `garantirPlano`: reaproveita só com formato 2 + família vigente + `fatos_hash` + `dados_hash` iguais. Se existe plano formato 2 que não serve e há imagens dele `gerada`/`aprovada` com `entregue_em` preenchido e fora de aplicação `aplicada`, sem `confirmarTroca` → `plano_desatualizado` com a quantidade (roteiro em formato antigo não pede confirmação). Depois da IA e **antes** do insert, reler o aprovado: se já serve, usar e não inserir. `insert` do rascunho em `galeria_roteiros` com `versao = max(versao do anúncio) + 1`, `conteudo`, `fatos_hash`, `moda`, `status: 'rascunho'`; erro `23505` → reler o aprovado e usar se servir. Depois `galeria_aprovar_roteiro`; retorno diferente de `'ok'` → apagar o rascunho e devolver `plano_ia_falhou`.
-- [ ] **Step 4:** conferir na documentação o limite de tempo de requisição das Edge Functions (premissa do plano: 150 s; planejador ≤ 75 s) e anotar no ledger; se for menor, parar e avisar.
+- [ ] **Step 4:** conferir na documentação o limite de tempo de requisição das Edge Functions (premissa do plano: 150 s; planejador ≤ 90 s) e anotar no ledger; se for menor, parar e avisar.
 - [ ] **Step 5:** rodar → PASS. `pnpm exec tsc --noEmit`. `deno check supabase/functions/galeria-gerar/index.ts`.
 - [ ] **Step 6:** commit `feat(galeria-ia): galeria-gerar cria o plano e pede a imagem inteira` e push.
 
