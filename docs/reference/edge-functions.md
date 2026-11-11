@@ -136,9 +136,10 @@
 | atualizar-status-publicado | true | HTTP (frontend, admin) | sim (PUT idempotente) |
 | metricas-vendas | true | HTTP (frontend) | sim (leitura) |
 | analisar-viabilidade | true | HTTP (frontend) | não |
-| tabela-frete-ml | true | HTTP (frontend) | sim (cache 24h) |
+| tabela-frete-ml | true | HTTP (frontend) | sim (cache 24h; 300 s se incompleta) |
+| ler-anuncio-calculadora | true | HTTP (frontend) | sim (somente leitura, sem cache) |
 | buscar-categorias-ml | true | HTTP (frontend) | sim (leitura) |
-| calcular-tarifa-ml | false | HTTP (JWT manual) | sim (cache 6h) |
+| calcular-tarifa-ml | false | HTTP (JWT manual) | sim (cache 6h; 300 s se estimated) |
 | **Acesso / usuários** ||||
 | platform-admin | true | HTTP (frontend, super-admin ativo) | leituras; fechamento idempotente por org/competência |
 | materializar-metricas | false | QStash schedule | sim (upsert por org/mês) |
@@ -2269,14 +2270,15 @@ um smoke test contra Postgres real antes do primeiro deploy.
   ficha de catálogo** — medido no spike: os atributos do produto são de especificação
   (`BRAND`, `SALE_FORMAT`, `UNITS_PER_PACK`…), e peso/medidas são `SELLER_PACKAGE_*`, atributo
   do anúncio de cada vendedor.
-- **calcular-tarifa-ml** — comissões (classic + premium) por preço/categoria + frete que o vendedor absorve (frete grátis ao comprador, via `GET /users/{id}/shipping_options/free`); `recebe = preço − comissão − frete − imposto` (imposto por origem somado ao cálculo client, ADR-0055). Body aceita `dimensoes` (peso/medidas da variação representativa); cache Redis 6h (chave inclui dimensões + vendedor). **Desde a ADR-0148:** a resposta carrega `proveniencia` (`official` / `partial` / `estimated`) e `motivo_proveniencia`; o cache foi para `tarifa:v3:` porque a forma mudou. `partial` significa que o frete usou o pacote padrão por falta de dimensões — a DRE recusa calcular fora de `official`, a Revisão segue lendo só os números.
+- **calcular-tarifa-ml** — comissões (classic + premium) por preço/categoria + frete que o vendedor absorve (frete grátis ao comprador, via `GET /users/{id}/shipping_options/free`); `recebe = preço − comissão − frete − imposto` (imposto por origem somado ao cálculo client, ADR-0055). Body aceita `dimensoes` (peso/medidas da variação representativa); cache Redis 6h (chave inclui dimensões + vendedor). Tarifa `estimated` usa TTL de 300 s (não fixa estimativa por 6h). **Desde a ADR-0148:** a resposta carrega `proveniencia` (`official` / `partial` / `estimated`) e `motivo_proveniencia`; o cache foi para `tarifa:v3:` porque a forma mudou. `partial` significa que o frete usou o pacote padrão por falta de dimensões — a DRE recusa calcular fora de `official`, a Revisão segue lendo só os números.
 - **buscar-categorias-ml** — sugestões opcionais para a Calculadora ML (ADR-0126). Recebe
   `{ query }` com 3–120 caracteres e devolve até 8 itens `{ id, nome, caminho? }` do preditor
   oficial do Mercado Livre. Exige JWT e resolve a conexão pela `org_id` da sessão. É
   deliberadamente **read-only**: usa somente o access token ainda válido já persistido e não faz
   refresh; sem conexão ou com token vencido devolve lista vazia para manter a digitação manual.
   Falha do preditor devolve 503 sanitizado, sem expor query, token ou payload externo nos logs.
-- **tabela-frete-ml** — grade compacta 7×4 (faixas de peso × preço) do frete que o vendedor absorve, para a Viabilidade. Body `{ categoria_ml_id }`; varre ~28 combinações via `shipping_options/free` (batch 5); cache Redis 24h `tabela-frete:v1:{org}:{categoria}`. Sem ME2 → `{ indisponivel: true, motivo: 'sem_me2' }`.
+- **tabela-frete-ml** — grade compacta 7×4 (faixas de peso × preço) do frete que o vendedor absorve, para a Viabilidade. Body `{ categoria_ml_id }`; varre ~28 combinações via `shipping_options/free` (batch 5); cache Redis `tabela-frete:v2:{org}:{categoria}` (24h; 300 s se alguma célula falhou). Célula sem cotação vem `null` (faixa indisponível, distinto de frete zero; a calculadora exibe "—"). Sem ME2 → `{ indisponivel: true, motivo: 'sem_me2' }`.
+- **ler-anuncio-calculadora** — somente leitura (só `GET` ao ML, nenhuma escrita), sem cache, `verify_jwt=true`, escopo por `org_id`. Body `{ codigo_pai, item_id | null }`; devolve para o prefill da calculadora o anúncio publicado: preço vivo (`sale_price`, senão `items`), modalidade (clássico/premium), categoria (id/nome, fonte item ou cadastro) e status. `item_id` fora da org/família → 404; body inválido → 400; sem conexão ML ou falha de leitura → 200 sem preço com `motivo` (`sem_conexao`, `falha_leitura_item`), a calculadora segue manual.
 
 ### Acesso / usuários
 
