@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-11-09
+atualizado: 2026-11-11
 ---
 
 # Changelog
@@ -8,6 +8,9 @@ atualizado: 2026-11-09
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-11-11
+- **Envio mais caro que a venda:** etiqueta cancelada pelo ML (`cost_exceeded`) não gera mais frete no PubliAI (era R$ 57 numa venda de R$ 40,99, lucro −R$ 44 falso no Telegram). Frete zera em `upsertVenda` e `sync-venda` avisa a categoria `financeiro`. Ver `docs/reference/edge-functions.md`.
 
 ## 2026-11-09
 

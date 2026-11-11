@@ -4,7 +4,7 @@
 
 - [x] `freteEfetivo` (`_shared/faturamento/venda.ts`): envio com substatus `cost_exceeded` → `frete_vendedor = 0` (o ML cancela a etiqueta; `/shipments/{id}/costs` ainda devolve a cotação, o vendedor não paga). Aplicado em `upsertVenda` (sync, reconciliação, backfill, devolução).
 - [x] `sync-venda`: alerta Telegram (categoria `financeiro`, dedup `envio_caro` por pedido) "Envio mais caro que a venda".
-- [ ] Deploy das edges que importam `faturamento/io.ts` e `sync-venda`; reprocessar pedidos `cost_exceeded` já gravados (ex.: 2000019473934850, pack 2000015984643249).
+- [x] Deploy 11/11: `sync-venda` v130, `sync-devolucao` v90, `backfill-faturamento` v113, `reconciliar-faturamento` v121. Pedido 2000019473934850 reprocessado (frete 57 → 0, líquido −21,75 → 35,25); alerta chegou no Telegram.
 
 ## Calculadora ML: ajustes (preço vivo, margem, kits, frete) — 2026-11-10
 

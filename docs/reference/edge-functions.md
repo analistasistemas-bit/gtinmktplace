@@ -2606,3 +2606,11 @@ desde a implementação original do casamento por GTIN (10 dias antes de ser per
 em `carregarCatalogo`. Redeploy: `sync-venda`, `backfill-faturamento`, `reconciliar-faturamento`,
 `ml-webhook`. Backfill reprocessou o histórico e reclassificou os itens afetados. Detalhe em
 `obsidian-vault/09-Logs/Changelog.md` (2026-07-03).
+
+## Envio mais caro que a venda (`cost_exceeded`) — 2026-11-11
+
+Envio com `substatus: cost_exceeded` (o ML cancela a etiqueta; `/shipments/{id}/costs` segue devolvendo a cotação, o
+vendedor não paga) grava `frete_vendedor = 0` via `freteEfetivo` (`_shared/faturamento/venda.ts`), aplicado em
+`upsertVenda` — vale para `sync-venda`, `sync-devolucao`, `reconciliar-faturamento` e `backfill-faturamento`
+(redeploy das quatro). `sync-venda` ainda avisa a categoria `financeiro` ("Envio mais caro que a venda"), uma vez por
+pedido (dedup `ml_notificacoes_enviadas`, entidade `envio_caro`). Sem migration.
