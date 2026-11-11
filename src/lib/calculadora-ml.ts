@@ -17,7 +17,8 @@ export type Proveniencia = 'official' | 'partial' | 'estimated'
 export interface EntradaCalculadoraML {
   precoVenda: number
   custoProduto: number
-  aliquotaImpostoPct: number
+  /** null = desconhecido (origem não definida); nunca presumir. */
+  aliquotaImpostoPct: number | null
   custosFixos: number
   custosVariaveis: number
   rebate: number
@@ -83,6 +84,8 @@ export interface ResultadoModalidadeML {
   custos: DecomposicaoCustosML
   lucro: number
   margemPct: number
+  /** Margem sem arredondar; `margemPct` é a exibida (2 casas). */
+  margemPctExata: number
   precoEquilibrio: PrecoProjetadoML
   precoAlvo: PrecoProjetadoML
   custoMaximoCompra: number
@@ -148,6 +151,7 @@ export function calcularSimulacaoML(
     veredito: calcularVeredito(
       entrada,
       modalidades[modalidadeParaDecisao],
+      entrada.aliquotaImpostoPct === null,
       cotacoes?.origem === 'manual' &&
         (cotacoes.classico.percentualComissaoPct === 0 ||
           cotacoes.classico.frete === null),
@@ -161,10 +165,11 @@ function calcularModalidade(
 ): ResultadoModalidadeML | null {
   if (!cotacao) return null
   validarCotacao(cotacao)
-  if (entrada.precoVenda === 0 || cotacao.frete === null) return null
+  const aliquotaImpostoPct = entrada.aliquotaImpostoPct
+  if (entrada.precoVenda === 0 || cotacao.frete === null || aliquotaImpostoPct === null) return null
 
   const imposto = arredondarMoeda(
-    (entrada.precoVenda * entrada.aliquotaImpostoPct) / 100,
+    (entrada.precoVenda * aliquotaImpostoPct) / 100,
   )
   const total = arredondarMoeda(
     entrada.custoProduto +
@@ -176,7 +181,8 @@ function calcularModalidade(
       entrada.rebate,
   )
   const lucro = arredondarMoeda(entrada.precoVenda - total)
-  const margemPct = arredondarMoeda((lucro / entrada.precoVenda) * 100)
+  const margemPctExata = (lucro / entrada.precoVenda) * 100
+  const margemPct = arredondarMoeda(margemPctExata)
   const basePreco =
     entrada.custoProduto +
     cotacao.taxaFixa +
@@ -185,7 +191,7 @@ function calcularModalidade(
     entrada.custosVariaveis -
     entrada.rebate
   const percentualCusto =
-    (cotacao.percentualComissaoPct + entrada.aliquotaImpostoPct) / 100
+    (cotacao.percentualComissaoPct + aliquotaImpostoPct) / 100
   const custoMaximoCompra = arredondarMoeda(
     entrada.precoVenda -
       cotacao.comissaoTotal -
@@ -211,6 +217,7 @@ function calcularModalidade(
     },
     lucro,
     margemPct,
+    margemPctExata,
     precoEquilibrio: criarPrecoProjetado(basePreco, percentualCusto, 0),
     precoAlvo: criarPrecoProjetado(
       basePreco,
@@ -218,11 +225,16 @@ function calcularModalidade(
       entrada.margemAlvoPct,
     ),
     custoMaximoCompra,
-    sensibilidade: calcularSensibilidade(entrada, { ...cotacao, frete: cotacao.frete }, lucro),
+    sensibilidade: calcularSensibilidade(
+      entrada,
+      aliquotaImpostoPct,
+      { ...cotacao, frete: cotacao.frete },
+      lucro,
+    ),
   }
 }
 
-function normalizarCotacoes(
+export function normalizarCotacoes(
   entrada: EntradaCalculadoraML,
   cotacoes?: CotacoesPorModalidade,
 ): Partial<Record<ModalidadeML, CustosModalidadeML>> {
@@ -280,8 +292,15 @@ function calcularProvenienciaGlobal(
 function calcularVeredito(
   entrada: EntradaCalculadoraML,
   resultado: ResultadoModalidadeML | null,
+  impostoDesconhecido: boolean,
   cotacaoManualIncompleta = false,
 ): VereditoML {
+  if (impostoDesconhecido) {
+    return {
+      tipo: 'Dados insuficientes',
+      fatores: ['Informe a alíquota de imposto (origem do produto não definida).'],
+    }
+  }
   if (entrada.precoVenda === 0 || !resultado || cotacaoManualIncompleta) {
     return {
       tipo: 'Dados insuficientes',
@@ -338,6 +357,7 @@ function calcularVeredito(
 
 function calcularSensibilidade(
   entrada: EntradaCalculadoraML,
+  aliquotaImpostoPct: number,
   cotacao: CustosModalidadeML & { frete: number },
   lucroAtual: number,
 ): SensibilidadeModalidadeML {
@@ -350,7 +370,7 @@ function calcularSensibilidade(
       cotacao.comissaoTotal +
         (precoVenda - entrada.precoVenda) * (cotacao.percentualComissaoPct / 100),
     )
-    const imposto = arredondarMoeda((precoVenda * entrada.aliquotaImpostoPct) / 100)
+    const imposto = arredondarMoeda((precoVenda * aliquotaImpostoPct) / 100)
     const lucro = arredondarMoeda(
       precoVenda - arredondarMoeda(
         custoProduto +
@@ -401,11 +421,15 @@ function criarPrecoProjetado(
 function validarEntrada(entrada: EntradaCalculadoraML): void {
   validarNaoNegativo('precoVenda', entrada.precoVenda)
   validarNaoNegativo('custoProduto', entrada.custoProduto)
-  validarPercentual('aliquotaImpostoPct', entrada.aliquotaImpostoPct)
+  if (entrada.aliquotaImpostoPct !== null) {
+    validarPercentual('aliquotaImpostoPct', entrada.aliquotaImpostoPct)
+  }
   validarNaoNegativo('custosFixos', entrada.custosFixos)
   validarNaoNegativo('custosVariaveis', entrada.custosVariaveis)
   validarNaoNegativo('rebate', entrada.rebate)
-  validarPercentual('margemAlvoPct', entrada.margemAlvoPct)
+  if (!Number.isFinite(entrada.margemAlvoPct) || entrada.margemAlvoPct >= 100) {
+    throw new RangeError('margemAlvoPct deve ser um número finito menor que 100.')
+  }
 }
 
 function validarCotacao(cotacao: CustosModalidadeML): void {

@@ -322,7 +322,7 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
         entrada.precoVenda,
         categoriaId,
         dimensoesCotacao,
-        entrada.aliquotaImpostoPct,
+        entrada.aliquotaImpostoPct ?? undefined,
       )
         .then((tarifa) => {
           if (sequenciaCotacao.current !== id) return
@@ -377,7 +377,7 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
         precoProjetado,
         categoriaId,
         dimensoesCotacao,
-        entrada.aliquotaImpostoPct,
+        entrada.aliquotaImpostoPct ?? undefined,
       )
       if (sequenciaMeta.current !== id) return null
       if (!tarifa) {

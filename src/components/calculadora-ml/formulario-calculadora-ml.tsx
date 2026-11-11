@@ -110,7 +110,7 @@ export function FormularioCalculadoraML({ entrada, taxas, produtos, produtoSelec
           <CampoNumero id="custo-produto" label="Custo de compra (R$)" value={entrada.custoProduto} onChange={(value) => onEntrada({ custoProduto: value })} />
           <CampoNumero id="preco-venda" label="Preço de venda (R$)" value={entrada.precoVenda} onChange={(value) => onEntrada({ precoVenda: value })} />
           <CampoNumero id="margem-alvo" label="Margem-alvo (%)" value={entrada.margemAlvoPct} onChange={(value) => onEntrada({ margemAlvoPct: value })} step="0.1" max={100} />
-          <CampoNumero id="imposto" label="Impostos (%)" value={entrada.aliquotaImpostoPct} onChange={(value) => onEntrada({ aliquotaImpostoPct: value })} step="0.1" max={100} />
+          <CampoNumero id="imposto" label="Impostos (%)" value={entrada.aliquotaImpostoPct ?? 0} onChange={(value) => onEntrada({ aliquotaImpostoPct: value })} step="0.1" max={100} />
         </div>
       </section>
 
