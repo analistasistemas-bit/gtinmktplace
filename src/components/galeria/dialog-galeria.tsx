@@ -95,7 +95,7 @@ export function DialogGaleria({ mlItemId, codigoPai, open, onOpenChange, isAdmin
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Galeria IA · {codigoPai}</DialogTitle>
           <DialogDescription>Confira os fatos do produto e aprove o roteiro das imagens.</DialogDescription>
