@@ -274,6 +274,11 @@ function calcularProvenienciaGlobal(
 ): Proveniencia {
   if (!entrada.categoriaId?.trim()) return 'estimated'
   if (cotacoes?.origem === 'manual') return 'estimated'
+  // Modalidade null (frete desconhecido) não pode rebaixar uma cotação estimated a partial.
+  if (
+    cotacoes?.classico.proveniencia === 'estimated' ||
+    (cotacoes && 'premium' in cotacoes && cotacoes.premium.proveniencia === 'estimated')
+  ) return 'estimated'
 
   const resultados = Object.values(modalidades)
   if (resultados.some((resultado) => resultado?.proveniencia === 'estimated')) {

@@ -237,8 +237,6 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
   const sequenciaCotacao = useRef(0)
   const sequenciaMeta = useRef(0)
   const sequenciaProduto = useRef(0)
-  const taxasManuaisRef = useRef(taxasManuais)
-  taxasManuaisRef.current = taxasManuais
 
   const produtos = useQuery({
     queryKey: QK.produtosEstoqueResumo,
@@ -357,7 +355,7 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
           }
           setTarifaOficial(tarifa)
           setStatusCotacao(provenienciaDaTarifa(tarifa).proveniencia)
-          setAvisoApi(avisoDaTarifa(tarifa, taxasManuaisRef.current))
+          setAvisoApi(null)
         })
         .catch(() => {
           if (sequenciaCotacao.current !== id) return
@@ -440,7 +438,8 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
     produtos,
     cotacao,
     statusCotacao,
-    aviso: avisoApi,
+    // Com tarifa aplicada, o aviso segue o frete manual atual; o state cobre idle/loading/falha.
+    aviso: tarifaOficial ? avisoDaTarifa(tarifaOficial, taxasManuais) : avisoApi,
     resultado,
     validarNaApi,
     cotacaoMeta,

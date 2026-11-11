@@ -318,3 +318,21 @@ describe('calcularSimulacaoML — margem exata e imposto desconhecido', () => {
     expect(classico?.margemPctExata).toBeLessThan(0)
   })
 })
+
+describe('calcularSimulacaoML — proveniência com frete desconhecido', () => {
+  const semFrete = (proveniencia: 'partial' | 'estimated'): CotacoesPorModalidade => ({
+    classico: { ...cotacoesBase.classico, frete: null, proveniencia },
+    premium: { ...(cotacoesBase as { premium: typeof cotacoesBase.classico }).premium, frete: null, proveniencia },
+  })
+
+  it('cotação estimated sem frete continua estimated (modalidades null não a rebaixam a partial)', () => {
+    const resultado = calcularSimulacaoML({ ...entradaBase, categoriaId: 'MLB1' }, semFrete('estimated'))
+    expect(resultado.modalidades.classico).toBeNull()
+    expect(resultado.proveniencia).toBe('estimated')
+  })
+
+  it('cotação partial sem frete continua partial', () => {
+    const resultado = calcularSimulacaoML({ ...entradaBase, categoriaId: 'MLB1' }, semFrete('partial'))
+    expect(resultado.proveniencia).toBe('partial')
+  })
+})

@@ -415,7 +415,7 @@ describe('useCalculadoraML', () => {
       expect(result.current.cotacao.classico.frete).toBeNull()
       expect('premium' in result.current.cotacao && result.current.cotacao.premium.frete).toBeNull()
       expect(result.current.cotacao.classico.proveniencia).toBe(proveniencia)
-      expect(result.current.resultado.proveniencia).not.toBe('official')
+      expect(result.current.resultado.proveniencia).toBe(proveniencia)
       expect(result.current.statusCotacao).not.toBe('official')
       expect(result.current.aviso).toContain(motivo)
     })
@@ -449,6 +449,25 @@ describe('useCalculadoraML', () => {
       expect('premium' in result.current.cotacao && result.current.cotacao.premium.proveniencia).toBe('estimated')
       expect(result.current.resultado.proveniencia).toBe('estimated')
       expect(result.current.statusCotacao).toBe('estimated')
+    })
+
+    it('aviso acompanha o frete manual confirmado ou zerado depois da cotação', async () => {
+      calcularTarifaMock.mockResolvedValue(tarifaNaoOficial('partial', 'medida abaixo do piso'))
+      const { result } = renderHook(
+        () => useCalculadoraML({ precoVenda: 100, categoriaId: 'MLB1', dimensoes, taxasManuais: { frete: 0 } }),
+        { wrapper },
+      )
+
+      await avancarCotacao()
+      expect(result.current.aviso).toMatch(/confirme o frete manual/i)
+
+      act(() => result.current.atualizarTaxasManuais({ frete: 9 }))
+      expect(result.current.aviso).toMatch(/frete manual confirmado/i)
+      expect(result.current.aviso).toContain('medida abaixo do piso')
+      expect(result.current.statusCotacao).toBe('partial')
+
+      act(() => result.current.atualizarTaxasManuais({ frete: 0 }))
+      expect(result.current.aviso).toMatch(/confirme o frete manual/i)
     })
 
     it('tarifa sem proveniência (resposta antiga) falha fechado como estimated', async () => {
