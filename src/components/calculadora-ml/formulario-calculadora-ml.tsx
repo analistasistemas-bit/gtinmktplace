@@ -235,7 +235,7 @@ export function FormularioCalculadoraML({
         <section className="space-y-4" aria-labelledby="custos-heading">
           <h2 id="custos-heading" className="font-heading text-lg font-semibold">Custos operacionais</h2>
           <div className="grid gap-4 sm:grid-cols-2">
-            <CampoNumero id="custos-fixos" label="Custos fixos por unidade (R$)" value={entrada.custosFixos} onChange={(value) => onEntrada({ custosFixos: value })} />
+            <CampoNumero id="custos-fixos" label="Custos fixos por venda (R$)" value={entrada.custosFixos} onChange={(value) => onEntrada({ custosFixos: value })} />
             <CampoNumero id="custos-variaveis" label="Custos variáveis (R$)" value={entrada.custosVariaveis} onChange={(value) => onEntrada({ custosVariaveis: value })} />
             <CampoNumero id="rebate" label="Rebate/desconto (R$)" value={entrada.rebate} onChange={(value) => onEntrada({ rebate: value })} />
           </div>

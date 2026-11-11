@@ -468,6 +468,35 @@ describe('Calculadora ML', () => {
       expect(screen.getByText(/central de decisão/i)).toBeInTheDocument()
     })
 
+    it('parcial com frete desconhecido: selo e título não falam em frete manual', () => {
+      const cotacaoParcial = (frete: number | null) => ({
+        origem: 'official' as const,
+        classico: { percentualComissaoPct: 12, taxaFixa: 5, comissaoTotal: 17, frete, proveniencia: 'partial' as const },
+        premium: { percentualComissaoPct: 17, taxaFixa: 5, comissaoTotal: 22, frete, proveniencia: 'partial' as const },
+      })
+      estado = {
+        ...estadoBase, statusCotacao: 'partial', cotacao: cotacaoParcial(null),
+        resultado: { ...estadoBase.resultado, proveniencia: 'partial', modalidades: { classico: null, premium: null } },
+      }
+      const { unmount } = render(<CalculadoraML />)
+      expect(screen.getByText('Parcial · frete desconhecido')).toBeInTheDocument()
+      expect(screen.getByText('Comissão oficial · frete não calculado')).toBeInTheDocument()
+      expect(screen.queryByText('Parcial · frete manual')).toBeNull()
+      expect(screen.queryByText('Comissão oficial e frete manual')).toBeNull()
+      unmount()
+
+      estado = { ...estado, cotacao: cotacaoParcial(10), resultado: { ...estadoBase.resultado, proveniencia: 'partial' } }
+      render(<CalculadoraML />)
+      expect(screen.getAllByText('Parcial · frete manual').length).toBeGreaterThan(0)
+      expect(screen.getByText('Comissão oficial e frete manual')).toBeInTheDocument()
+    })
+
+    it('custos fixos valem por venda (unidade ou kit)', () => {
+      render(<CalculadoraML />)
+      expect(screen.getByLabelText('Custos fixos por venda (R$)')).toBeInTheDocument()
+      expect(screen.queryByText(/custos fixos por unidade/i)).toBeNull()
+    })
+
     it('nenhum texto manda validar na API nem cita meta de 0%', () => {
       const { container } = render(<CalculadoraML />)
       expect(container.textContent).not.toMatch(/valide na api|validar na api|meta reversa|atinge a meta de 0\s?%/i)

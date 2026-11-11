@@ -14,15 +14,17 @@ interface ResultadoCalculadoraMLProps {
   modalidadeSelecionada: ModalidadeML
   /** Sem meta do operador, custo máximo e preço para margem-alvo não fazem sentido (meta 0). */
   temMeta: boolean
+  /** Cotação sem frete (nem oficial nem manual confirmado): selo/título não podem dizer "frete manual". */
+  freteDesconhecido?: boolean
 }
 
 const moeda = (valor: number | null | undefined) => valor == null ? 'Não calculado' : valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const pct = (valor: number) => `${valor.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`
 
-function SeloProveniencia({ proveniencia }: { proveniencia: ResultadoCalculadoraML['proveniencia'] }) {
+function SeloProveniencia({ proveniencia, freteDesconhecido = false }: { proveniencia: ResultadoCalculadoraML['proveniencia']; freteDesconhecido?: boolean }) {
   const config = {
     official: { label: 'Oficial · API ML', tone: 'success' as const },
-    partial: { label: 'Parcial · frete manual', tone: 'warning' as const },
+    partial: { label: freteDesconhecido ? 'Parcial · frete desconhecido' : 'Parcial · frete manual', tone: 'warning' as const },
     estimated: { label: 'Estimativa · dados manuais', tone: 'neutral' as const },
   }[proveniencia]
   return <StatusPill tone={config.tone}>{config.label}</StatusPill>
@@ -63,7 +65,7 @@ function variacaoMoeda(valor: number): string {
   return `${valor < 0 ? '−' : '+'}${moeda(Math.abs(valor))}`
 }
 
-export function ResultadoCalculadoraML({ resultado, statusCotacao, aviso, modalidadeSelecionada, temMeta }: ResultadoCalculadoraMLProps) {
+export function ResultadoCalculadoraML({ resultado, statusCotacao, aviso, modalidadeSelecionada, temMeta, freteDesconhecido = false }: ResultadoCalculadoraMLProps) {
   // Qual card o mobile mostra: nunca altera a modalidade da decisão; acompanha-a quando ela troca.
   const [visao, setVisao] = useState<ModalidadeML>(modalidadeSelecionada)
   useEffect(() => setVisao(modalidadeSelecionada), [modalidadeSelecionada])
@@ -81,13 +83,13 @@ export function ResultadoCalculadoraML({ resultado, statusCotacao, aviso, modali
       <section className="rounded-xl border border-border/70 bg-card p-5 shadow-sm" aria-live="polite" aria-atomic="true">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div><p className="text-sm text-muted-foreground">Central de decisão · {modalidadeSelecionada === 'classico' ? 'Clássico' : 'Premium'}</p><h2 className="mt-1 flex items-center gap-2 font-heading text-2xl font-semibold"><Icon className="size-6 text-primary" aria-hidden="true" />{tipo}</h2></div>
-          <SeloProveniencia proveniencia={resultado.proveniencia} />
+          <SeloProveniencia proveniencia={resultado.proveniencia} freteDesconhecido={freteDesconhecido} />
         </div>
         <ul className="mt-4 space-y-2 text-sm text-muted-foreground">{resultado.veredito.fatores.map((fator) => <li key={fator} className="flex gap-2"><span aria-hidden="true">•</span><span>{fator}</span></li>)}</ul>
       </section>
 
       <section className="rounded-xl border border-border/70 bg-muted/30 p-4" aria-label="Status da cotação" aria-live="polite" aria-atomic="true">
-        <div className="flex items-start gap-2"><Info className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" /><div className="text-sm"><p className="font-medium">{statusCotacao === 'loading' ? 'Consultando taxas oficiais…' : statusCotacao === 'official' ? 'Taxas oficiais aplicadas' : statusCotacao === 'partial' ? 'Comissão oficial e frete manual' : 'Taxas manuais estimadas'}</p><p className="mt-1 text-muted-foreground">{aviso ?? (statusCotacao === 'official' ? 'Comissão e frete vieram da API para esta categoria e preço.' : statusCotacao === 'partial' ? 'A comissão veio da API; o frete manual precisa ser confirmado.' : 'Categoria, comissão e frete podem variar; informe a categoria para usar as taxas oficiais.')}</p></div></div>
+        <div className="flex items-start gap-2"><Info className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" /><div className="text-sm"><p className="font-medium">{statusCotacao === 'loading' ? 'Consultando taxas oficiais…' : statusCotacao === 'official' ? 'Taxas oficiais aplicadas' : statusCotacao === 'partial' ? (freteDesconhecido ? 'Comissão oficial · frete não calculado' : 'Comissão oficial e frete manual') : 'Taxas manuais estimadas'}</p><p className="mt-1 text-muted-foreground">{aviso ?? (statusCotacao === 'official' ? 'Comissão e frete vieram da API para esta categoria e preço.' : statusCotacao === 'partial' ? 'A comissão veio da API; o frete manual precisa ser confirmado.' : 'Categoria, comissão e frete podem variar; informe a categoria para usar as taxas oficiais.')}</p></div></div>
       </section>
 
       <div className="flex gap-1 rounded-lg border border-border/70 bg-muted/40 p-1 sm:hidden" role="tablist" aria-label="Modalidade de anúncio">

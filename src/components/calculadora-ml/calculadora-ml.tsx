@@ -65,6 +65,7 @@ export function CalculadoraML() {
               taxas={calculadora.taxasManuais}
               modalidadeSelecionada={calculadora.modalidadeAtiva}
               temMeta={calculadora.metaSolicitada !== null}
+              freteDesconhecido={calculadora.cotacao.classico.frete === null}
             />}
           </aside>
         </div>
