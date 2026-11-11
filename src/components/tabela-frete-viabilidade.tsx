@@ -2,18 +2,18 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { fmtBRL } from '@/lib/formato';
 import { useTabelaFreteML, isTabelaFrete } from '@/hooks/useTabelaFreteML';
 
-function fmtCelula(valor: number): string {
-  if (valor <= 0) return '—';
-  return fmtBRL(valor);
+function fmtCelula(valor: number | null): string {
+  return valor === null ? '—' : fmtBRL(valor);
 }
 
 interface Props {
   categoriaMlId: string;
   categoriasMistas?: boolean;
   analiseConcluida: boolean;
+  contexto?: 'analise' | 'calculadora';
 }
 
-export function TabelaFreteViabilidade({ categoriaMlId, categoriasMistas, analiseConcluida }: Props) {
+export function TabelaFreteViabilidade({ categoriaMlId, categoriasMistas, analiseConcluida, contexto = 'analise' }: Props) {
   const { data, isLoading, isError } = useTabelaFreteML(categoriaMlId, analiseConcluida);
 
   if (isLoading) {
@@ -38,7 +38,9 @@ export function TabelaFreteViabilidade({ categoriaMlId, categoriasMistas, analis
     return (
       <div className="rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
         <p className="font-medium">Tabela de frete indisponível</p>
-        <p>Sua conta do Mercado Livre ainda não aderiu ao Mercado Envios — ative e refaça a análise.</p>
+        <p>{contexto === 'calculadora'
+            ? 'Sua conta do Mercado Livre ainda não aderiu ao Mercado Envios — ative para ver a tabela.'
+            : 'Sua conta do Mercado Livre ainda não aderiu ao Mercado Envios — ative e refaça a análise.'}</p>
       </div>
     );
   }
@@ -83,7 +85,11 @@ export function TabelaFreteViabilidade({ categoriaMlId, categoriasMistas, analis
               <tr key={peso.label} className="border-t border-border">
                 <td className="whitespace-nowrap px-2 py-1.5 font-medium text-foreground">{peso.label}</td>
                 {celulas[i]?.map((valor, j) => (
-                  <td key={faixasPreco[j]?.label ?? j} className="px-2 py-1.5 text-center tabular-nums">
+                  <td
+                    key={faixasPreco[j]?.label ?? j}
+                    className="px-2 py-1.5 text-center tabular-nums"
+                    title={valor === null ? 'Indisponível no Mercado Livre' : undefined}
+                  >
                     {fmtCelula(valor)}
                   </td>
                 ))}
@@ -94,7 +100,7 @@ export function TabelaFreteViabilidade({ categoriaMlId, categoriasMistas, analis
       </div>
       <p className="border-t border-border px-4 py-2 text-xs text-muted-foreground">
         Valores desta conta ML · categoria {categoriaMlId} · estimativa nacional.
-        {' '}— = frete pago pelo comprador nesta faixa.
+        {' '}R$ 0,00 = comprador paga o frete · — = o Mercado Livre não respondeu esta faixa
       </p>
     </div>
   );

@@ -5,13 +5,15 @@ import {
   FAIXAS_PESO,
 } from '../tabela-frete';
 
+const ok = (valor: number) => ({ valor, proveniencia: 'official' as const });
+
 describe('montarTabelaFrete', () => {
   it('monta grade 7×4 com labels das faixas', async () => {
     let chamadas = 0;
     const fetchFrete = vi.fn(async (_token, _mlUserId, preco, _cat, dim) => {
       chamadas++;
       const peso = dim?.peso_gramas ?? 0;
-      return preco + peso / 1000;
+      return ok(preco + peso / 1000);
     });
 
     const tabela = await montarTabelaFrete('tok', '123', 'MLB123', fetchFrete);
@@ -26,7 +28,7 @@ describe('montarTabelaFrete', () => {
 
   it('preenche células na ordem peso × preço', async () => {
     const fetchFrete = vi.fn(async (_t, _u, preco, _c, dim) =>
-      (dim?.peso_gramas ?? 0) * 100 + preco,
+      ok((dim?.peso_gramas ?? 0) * 100 + preco),
     );
 
     const { celulas } = await montarTabelaFrete('tok', '123', 'MLB999', fetchFrete);
@@ -38,7 +40,7 @@ describe('montarTabelaFrete', () => {
   });
 
   it('passa dimensões cúbicas de cada faixa de peso', async () => {
-    const fetchFrete = vi.fn(async () => 0);
+    const fetchFrete = vi.fn(async () => ok(0));
     await montarTabelaFrete('tok', '123', 'MLB1', fetchFrete);
 
     expect(fetchFrete).toHaveBeenCalledWith(
@@ -49,6 +51,15 @@ describe('montarTabelaFrete', () => {
       'tok', '123', 100, 'MLB1',
       { altura_cm: 31, largura_cm: 31, comprimento_cm: 31, peso_gramas: 30000 },
     );
+  });
+
+  it('default usa proveniência: estimated → null; official 0 → 0', async () => {
+    const fetchFrete = vi.fn(async (_t, _u, preco: number) =>
+      preco === 15
+        ? { valor: 0, proveniencia: 'estimated' as const, motivo: 'x' }
+        : { valor: preco === 35 ? 0 : 12, proveniencia: 'official' as const });
+    const { celulas } = await montarTabelaFrete('tok', '1', 'MLB1', fetchFrete);
+    expect(celulas[0]).toEqual([null, 0, 12, 12]);
   });
 
   it('FAIXAS_PRECO tem 4 labels representativos', () => {

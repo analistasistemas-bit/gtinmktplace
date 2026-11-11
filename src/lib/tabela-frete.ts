@@ -19,7 +19,8 @@ export interface FaixaPeso {
 export interface TabelaFrete {
   faixasPreco: FaixaPreco[];
   faixasPeso: FaixaPeso[];
-  celulas: number[][];
+  /** null = o ML não respondeu a faixa (≠ 0, que é comprador paga). */
+  celulas: (number | null)[][];
 }
 
 export interface TabelaFreteIndisponivel {
@@ -31,6 +32,10 @@ export type RespostaTabelaFrete = TabelaFrete | TabelaFreteIndisponivel | { erro
 
 export function isTabelaFrete(r: RespostaTabelaFrete): r is TabelaFrete {
   return r != null && 'celulas' in r && Array.isArray(r.celulas);
+}
+
+export function tabelaIncompleta(t: TabelaFrete): boolean {
+  return t.celulas.some((l) => l.some((c) => c === null));
 }
 
 export async function fetchTabelaFrete(categoriaMlId: string): Promise<RespostaTabelaFrete> {

@@ -4,6 +4,8 @@ import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { useCalculadoraML } from '@/hooks/useCalculadoraML'
 
+vi.mock('@/components/tabela-frete-viabilidade', () => ({ TabelaFreteViabilidade: () => <div data-testid="tabela-frete" /> }))
+
 const atualizarEntrada = vi.fn()
 const atualizarTaxasManuais = vi.fn()
 const selecionarProduto = vi.fn()

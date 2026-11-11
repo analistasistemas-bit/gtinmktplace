@@ -3,6 +3,7 @@ import { useCalculadoraML } from '@/hooks/useCalculadoraML'
 import { FormularioCalculadoraML } from './formulario-calculadora-ml'
 import { ResultadoCalculadoraML } from './resultado-calculadora-ml'
 import { QuadroKits } from './quadro-kits'
+import { TabelaFreteViabilidade } from '@/components/tabela-frete-viabilidade'
 
 export function CalculadoraML() {
   const calculadora = useCalculadoraML()
@@ -73,6 +74,10 @@ export function CalculadoraML() {
           cotarEm={calculadora.cotarEm}
           aguardando={calculadora.statusCotacao === 'loading' || calculadora.metaStatus === 'calculando'}
         />
+
+        {categoriaAusente
+          ? <p className="text-sm text-muted-foreground">Informe a categoria para ver a tabela de frete do Mercado Livre.</p>
+          : <TabelaFreteViabilidade categoriaMlId={calculadora.entrada.categoriaId!.trim()} analiseConcluida contexto="calculadora" />}
       </div>
     </div>
   )

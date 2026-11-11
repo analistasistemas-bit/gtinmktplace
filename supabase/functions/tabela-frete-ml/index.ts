@@ -5,8 +5,7 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { redisGet, redisSet } from '../_shared/redis/client.ts';
 import { montarTabelaFrete } from '../_shared/ml/tabela-frete.ts';
-
-const CACHE_TTL_S = 24 * 60 * 60; // 24h
+import { CHAVE_CACHE_PREFIXO, ttlTabelaFrete } from './ttl.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -36,7 +35,7 @@ Deno.serve(async (req) => {
   }
   if (!conexao) return json({ erro: true });
 
-  const cacheKey = `tabela-frete:v1:${orgId}:${categoria_ml_id}`;
+  const cacheKey = `${CHAVE_CACHE_PREFIXO}${orgId}:${categoria_ml_id}`;
 
   try {
     const cached = await redisGet(cacheKey);
@@ -46,7 +45,7 @@ Deno.serve(async (req) => {
     const mlUserId = conexao.contaExternaId || 'me';
     const tabela = await montarTabelaFrete(token, mlUserId, categoria_ml_id);
 
-    await redisSet(cacheKey, JSON.stringify(tabela), CACHE_TTL_S);
+    await redisSet(cacheKey, JSON.stringify(tabela), ttlTabelaFrete(tabela));
     return json(tabela);
   } catch (err) {
     console.error('tabela-frete-ml falhou:', err);
