@@ -1,6 +1,6 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-11-08
+atualizado: 2026-11-11
 ---
 
 # Sprint Atual
@@ -14,6 +14,8 @@ setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > **Fase de melhorias (roadmap local `docs/Roadmap/`, não versionado).** Ordem combinada com o Diego:
 > Monitor de Frete ✅ → Central de Promoções (MVP só leitura) ✅ → Operações em Massa ✅ → Promoções V2
 > (adesão em massa) ✅ — as duas últimas entregues juntas em 28/09 ([[0174-operacoes-em-massa-promocoes-v2|ADR-0174]]) → Painel de Ads (se a Avil investir em Ads). E5 Shopee entra quando houver conta.
+>
+> **🟡 Galeria da cor por IA ([[Índice de ADRs|ADR-0201]]) — implementada (2026-11-11), aguardando validação real com o Diego.** Nada no ar: faltam `db push` das 10 migrations, `HF_CREDENTIALS`, deploy das edges, agendamento QStash, portão da lupa (10 referências reais) e validação em Legacy e UP. Procedimento: `docs/superpowers/specs/2026-11-08-galeria-da-cor-entrega.md`.
 >
 > **🟢 Kit com variação ([[Índice de ADRs|ADR-0200]]) — em produção desde 2026-11-08, piloto OK na Zaven.**
 > Piloto OK; módulos `kit_variacao`/`imagem_ia` ligados só na Zaven. Entregues em 08/11 (main `f9a462d5`): estoque por cor e "máx N" por célula, texto automático da base, preço editável no Conferir, acompanhamento da montagem com aviso de fim e sem alarme falso, Encerrar kit e foto por IA com verificação (aprovação humana segue obrigatória). Também em 08/11 (main `70dd137b`): preço avulso das peças (normal e em promoção, lido do ML na hora pela edge `preco-avulso-kit`) nas 3 etapas do Criar kit e no Gerenciar kit, com aviso e "Criar mesmo assim" quando o kit sai mais caro que as peças separadas. Pendências e SHAs em `docs/TASKS.md`.

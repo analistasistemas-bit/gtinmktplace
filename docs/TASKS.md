@@ -1,5 +1,17 @@
 # PubliAI — Tasks
 
+## Galeria da cor por IA (ADR-0201) — 2026-11-11
+
+**Estado:** implementada na branch `worktree-imagens-anuncio-ia`, **aguardando validação real com o Diego**. Nada implantado: sem `db push`, sem deploy, sem agendamento, sem escrita no ML. Procedimento: `docs/superpowers/specs/2026-11-08-galeria-da-cor-entrega.md`.
+
+- [x] Tasks 0–15 (ensaio no ML, schema, fatos, roteiro, geração, exibição/cobrança, aprovação do final, aplicar/reverter com trava por MLB, UI) e lupa pela caixa do produto, todas com revisão externa.
+- [x] Task 16, parte código: edge `galeria-retencao` (só apaga órfãs não citadas, > 1 dia), RPC `galeria_retencao_listar` e agendamento diário em `scripts/qstash-agendar-galeria.ts`. A regra dos 30 dias do plano ficou de fora até decisão do Diego.
+- [x] Documentação (edges, modelo de dados, procedimento de entrega).
+- [ ] Task 16 Step 2 (Diego): `supabase db push` das 10 migrations, `HF_CREDENTIALS`, deploy das edges, `qstash-agendar-galeria.ts`, conferir `cron.job`.
+- [ ] Portão da lupa: 10 referências reais, >= 7/10 com lupa e nenhuma com fundo; só então esvaziar `MISSOES_LUPA_PENDENTE`.
+- [ ] Medições: saída do Qwen com referência sem marca; CPU da `galeria-aprovar` (<= 800 ms); PUT duplo e CORS; missão 6 com cena real.
+- [ ] Task 16 Step 3 (Diego): validação real em Legacy e UP (gerar, aprovar, aplicar, conferir, reverter).
+
 ## Preços por unidade a partir de agora (emenda ADR-0155) — 2026-11-08
 
 - [x] RPC `platform_save_unit_prices` (versão nova do termo na competência aberta; só Sonar/Imagem IA) + lock da org na entrega do Sonar.

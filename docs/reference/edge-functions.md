@@ -145,6 +145,17 @@
 | usuarios | true | HTTP (frontend, admin) | sim (upsert/idempotente) |
 | suporte | true | HTTP (frontend) | transições condicionais; início/renovação atômicos na RPC |
 | extensao | true | HTTP (extensão Chrome, JWT do usuário) | leituras e upserts por chave; contadores incrementais |
+| **Galeria da cor por IA (ADR-0201, implementada, aguardando validação real)** ||||
+| galeria-fatos | true | HTTP (frontend) | sim (upserts por chave; ficha remontada a cada ação) |
+| galeria-roteiro | true | HTTP (frontend) | sim (aprovação por RPC condicional) |
+| galeria-gerar | true | HTTP (frontend) | sim (`pedido_id` repetido devolve o que já existe) |
+| galeria-imagens | true | HTTP (frontend) | sim (`confirmar_exibicao` idempotente) |
+| galeria-aprovar | true | HTTP (frontend) | sim (RPC `galeria_aprovar_imagem`; caminho de upload novo a cada preparo) |
+| galeria-aplicar | true | HTTP (frontend, só admin) | sim (RPCs atômicas; queda retomável pelo despachante) |
+| galeria-despachante | false | QStash schedule `* * * * *` | sim (recomeça pela cabeça das consultas) |
+| galeria-worker | false | QStash (fila de geração) | sim (uma fase por mensagem, decidida pela linha) |
+| galeria-aplicar-worker | false | QStash (fila serial `publish-ml-<user_id>`) | sim (uma fase por mensagem, decidida pela linha) |
+| galeria-retencao | false | QStash schedule `0 7 * * *` | sim (só apaga o que nenhuma linha cita) |
 | **Utilitário** ||||
 | hello | false | HTTP (smoke test) | sim |
 | lead-landing-telegram | false | Webhook do FormSubmit (landing) | não (reenvio duplica o aviso) |
@@ -1446,6 +1457,52 @@ um smoke test contra Postgres real antes do primeiro deploy.
   Mudou `_shared/ai/tokens.ts`, `_shared/queue.ts`, `_shared/estoque/baixa.ts` e `_shared/ml/*`: redeployar dependentes.
 - **config.toml:** `kit-transferencia` e `kit-reposicao` com `verify_jwt=false`; `criar-kit-variacao`, `gerar-texto-kit`,
   `gerar-foto-kit` e `gerenciar-kit-variacao` com `verify_jwt=true`.
+
+### Galeria da cor por IA (ADR-0201) — implementada, aguardando validação real com o Diego
+
+Status: código e migrations prontos na branch `worktree-imagens-anuncio-ia`; **nada implantado**. Procedimento de entrega:
+[`docs/superpowers/specs/2026-11-08-galeria-da-cor-entrega.md`](../superpowers/specs/2026-11-08-galeria-da-cor-entrega.md).
+Lógica em `supabase/functions/_shared/galeria/`. Nenhuma edge desta família escreve no ML fora do `galeria-aplicar-worker`.
+
+- **galeria-fatos** *(`verify_jwt=true`)* — Ficha Verdade e referências (por cor/vista). A tela manda o MLB da linha de
+  Publicados; a edge resolve o anúncio/partição e a família vigente. Ações: `montar`, `confirmar`, `descartar`,
+  `manter_cadastro`, `corrigir_cadastro` (grava só na família, nunca no ML), `enviar_vista`. Toda ação remonta a ficha e as
+  referências e aplica a vigência (hash ≠ roteiro aprovado → `desatualizado`). `montar` também lê as caixas da lupa
+  (`galeria_referencias.detalhes`, só a vista frente) por visão.
+- **galeria-roteiro** *(`verify_jwt=true`)* — roteiro por família. Ações: `ler`, `criar`, `salvar`, `aprovar`
+  (`galeria_aprovar_roteiro`). Validação sempre em código; "Moda" decidido pela edge (path da categoria lida ao vivo).
+- **galeria-gerar** *(`verify_jwt=true`)* — pedido de geração `{pedido_id, ml_item_id, roteiro_versao, cores, missoes,
+  unit_cents_exibido}`. Gates em ordem: módulo, anúncio, repetição, roteiro aprovado vigente, elegibilidade no ML (só GET),
+  preço do mês, ciência/vistas por cor, lupa por (cor, missão), `galeria_reservar_pedido`. Missão com lupa travada
+  (`MISSOES_LUPA_PENDENTE`) é recusada sem reservar nem chamar provedor. Depois da reserva publica 1 job por imagem
+  `gerador`.
+- **galeria-imagens** *(`verify_jwt=true`)* — ações `listar` (imagens que ainda importam, URL assinada, preço congelado,
+  caixas/hash da lupa; nunca cobra nem grava), `confirmar_exibicao` (`galeria_confirmar_exibicao`: **a cobrança é da
+  exibição**, idempotente) e `reportar_invalida` (`falhou` sem cobrança).
+- **galeria-aprovar** *(`verify_jwt=true`)* — ações `preparar_upload` (URL assinada `upsert:false` para caminho novo
+  `<org>/galeria-ia/<familia>/finais/<imagem>-<nonce>.jpg`, gravado em `final_upload_path`) e `aprovar` (confere JPEG
+  1200×1540 ≤ 1 MB não branco, sha da referência, e grava por `galeria_aprovar_imagem`). Recortes/lupa: `lupa_pendente`
+  enquanto travadas; liberadas exigem leitura `ok` (`lupa_indisponivel`) e `lupa_hash` igual ao gravado (`lupa_desatualizada`).
+  Medir CPU com JPEG real na entrega (meta ≤ 800 ms).
+- **galeria-aplicar** *(`verify_jwt=true`, só admin, ADR-0060)* — ações `preparar` (manifesto + GET dos itens + plano em seco;
+  nunca escreve no ML), `confirmar` (`galeria_confirmar_aplicacao`: tudo ou nada em uma transação, publica 1 job por item),
+  `reverter` (`galeria_iniciar_reversao`) e `estado` (somente leitura). Erros: `somente_admin` (403), `item_ocupado`,
+  `escrita_pendente` (409), `ml_indisponivel` (503) e outros listados no cabeçalho do `index.ts`.
+- **galeria-despachante** *(`verify_jwt=false` + assinatura QStash, a cada 1 min)* — relógio: imagens a submeter/consultar,
+  visão pendente, itens e ações de aplicação, escritas adiadas dos escritores comuns (RPCs `galeria_trabalho_pendente*`,
+  `galeria_visao_pendente`, `galeria_manter_aplicacao`, `galeria_escritas_adiadas_pendentes`). Nunca escreve no ML.
+- **galeria-worker** *(`verify_jwt=false` + assinatura)* — geração: uma fase por mensagem (Higgsfield/OpenRouter). Nunca cobra.
+- **galeria-aplicar-worker** *(`verify_jwt=false` + assinatura)* — saga de aplicar/reverter na fila serial
+  `publish-ml-<user_id>` (`_shared/galeria/saga.ts`); único ponto da galeria que escreve no ML (PUT de fotos com compensação).
+- **galeria-retencao** *(`verify_jwt=false` + assinatura, 1×/dia 04:00 BRT)* — lista `<org>/galeria-ia/` com mais de 1 dia em
+  lotes de 100 pelo cursor `galeria_cursores` (RPC `galeria_retencao_listar`, só lista) e apaga pela API do Storage somente
+  cena órfã de posse perdida e final não citado em `final_path`/`final_upload_path`. Nunca apaga `referencias/`, arquivo
+  citado nem imagem aprovada. Na dúvida não apaga. A regra dos 30 dias do plano **não** foi implementada (decisão do Diego pendente).
+- **Alteradas por esta feature (trava de escrita por MLB, `ml_item_travas`):** `update-familia-ml` e `publicar-split-ml`
+  reservam a trava `escritor` antes de qualquer GET/PUT, adiam (`ml_escritas_adiadas`) em conflito com a saga e aceitam a
+  mensagem `acordar`; `remover-publicado` adquire a trava antes de qualquer ação destrutiva e recusa com `item_ocupado` (409).
+  Módulos de apoio: `_shared/ml/trava-item.ts`, `_shared/ml/atualizar-item.ts`, `_shared/ml/fotos.ts`,
+  `_shared/canais/{mercado-livre,contrato}.ts`, `_shared/queue.ts`, `_shared/ai/higgsfield.ts`.
 
 ### Marca própria / marca por produto (ADR-0186, ADR-0188)
 - **atualizar-marca-familia** *(HTTP, JWT — admin ou suporte `full`, auditado)* — "Editar marca" do card do

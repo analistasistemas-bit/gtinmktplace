@@ -1844,6 +1844,58 @@ Todas só `service_role`. As de transferência são `security definer`, dono `es
 - Platform: ver `platform_image_deliveries` acima.
 
 
+## Galeria da cor por IA (ADR-0201) — implementada, aguardando validação real
+
+Migrations (ordem): `20261109093335_galeria_da_cor`, `20261109122959_configuracoes_ai_model_galeria`,
+`20261109144013_galeria_leitura_etiqueta`, `20261109153037_galeria_aprovar_roteiro`, `20261110171517_galeria_despacho`,
+`20261110182442_galeria_concluir_geracao`, `20261110214652_galeria_aprovar_imagem`, `20261110231651_galeria_saga_aplicar`,
+`20261111102539_galeria_referencia_detalhes`, `20261111111558_galeria_retencao`. **Nenhuma aplicada em produção.** Todas as
+tabelas têm `org_id` e RLS; escrita só por `service_role` (edges). Tabelas com `anuncio_externo_id` usam `on delete set null`
+e um gatilho (`anuncios_externos_galeria_em_execucao`) barra apagar anúncio com aplicação em execução.
+
+- **`galeria_fatos`**: Ficha Verdade. `(org_id, anuncio_externo_id, familia_id, campo)` único; `valor`, `origem`
+  (`planilha|confirmado_operador`), `evidencia jsonb`, `descartado`.
+- **`galeria_referencias`**: foto de referência por cor/vista (`frente|costas|lateral`); `path`, `sha256`, `origem`
+  (`storage|ml|upload_operador`). Coluna `detalhes jsonb` (leitura da lupa: `estado` em `ok|sem_detalhe|falhou`, `versao`,
+  caixas, `ref_w/ref_h`, `hash`), gravada só por `galeria_gravar_detalhes` (condicional, uma gravação vence).
+- **`galeria_roteiros`**: `versao`, `conteudo jsonb`, `fatos_hash`, `moda`, `status` (`rascunho|aprovado|desatualizado`);
+  índice único parcial `galeria_roteiros_um_aprovado_uidx` (um aprovado por anúncio).
+- **`galeria_pedidos`**: pedido congelado (`itens jsonb`, `unit_cents`, `terms_id`, `elegivel`).
+- **`galeria_imagens`**: uma por (roteiro, cor, missão 1–7, geração); `origem` (`gerador|recorte`), `status`
+  (`pendente|submetendo|gerando|gerada|falhou|aprovada|descartada|desatualizada`), controle de fase (`fase`, `tentativa`,
+  `despacho_seq`, `posse`, `lease_ate`, `prazo_ate`), `cena_path`, `final_path`, `final_upload_path`, `final_sha256`,
+  `custo_usd`, `alertas`, `entregue_em` (exibição = cobrança), `aprovado_em`. Únicos: `galeria_imagens_vaga_uidx` e
+  `galeria_imagens_uma_aprovada_uidx` (uma aprovada por cor/missão/roteiro).
+- **`galeria_aplicacoes`**: saga por anúncio e cor (`modo` `substituir|adicionar`, `manifesto` imutável por gatilho, `retrato`,
+  `status` `preparada|em_andamento|aplicada|abortando|falhou|revertendo|revertida|reversao_incompleta`, `prazo_ate`,
+  `ciclo_ate`, `abortar_em`).
+- **`galeria_aplicacao_itens`**: um por MLB (`fotos_antes/novas/depois`, `corpo_planejado`, `base_esperada`, `put_em`,
+  `compensar_ate`, `status` `pendente|subindo|aplicando|aplicado|falhou|compensando|compensado|reversao_incompleta|pulado`,
+  controle de fase/posse/lease).
+- **`galeria_imagem_itens`**: imagem × item × aplicação (`upload_id`, `picture_id`).
+- **`galeria_leituras_etiqueta`**: cache da leitura da etiqueta por visão (`leitura jsonb`, `falhou`, `parcial`,
+  `pulou_por_erro`); SELECT para `authenticated` da org.
+- **`galeria_cursores`**: cursor genérico `(chave, cursor_em, cursor_id)`; usado pela retenção.
+- **`ml_item_travas`**: trava de escrita por MLB `(org_id, item_id)`; `dono_tipo` `galeria|escritor|quarentena`
+  (`galeria` sem `expira_em`; as demais com). **`ml_escritas_adiadas`**: escrita de `update-familia-ml`/`publicar-split-ml`
+  adiada por conflito (`itens text[]`, `job jsonb`, `adiado_desde`, `proxima_em`, `posse`, `assumida_ate`, `trava_dono`;
+  único `(familia_id, lote_id, endpoint)`).
+- **Coluna nova:** `configuracoes.ai_model_galeria text` (NULL = `google/gemini-nano-banana-2.1`); gatilho
+  `configuracoes_proteger_ai_model_galeria` (escrita só por super-admin em suporte ou servidor).
+- **Cobrança:** `platform_imagem_competencia(p_org)` (helper de competência) e `platform_image_delivery_on_generated` ajustado;
+  `galeria_confirmar_exibicao` grava a entrega (1 por imagem exibida; recorte não cobra). Ver `platform_image_deliveries`.
+- **RPCs (`security definer`; `revoke` de `public/anon/authenticated`, execução só `service_role`; `galeria_relogio` roda no pg_cron):** `galeria_reservar_pedido`, `galeria_confirmar_exibicao`,
+  `galeria_registrar_entrega`, `galeria_concluir_geracao`, `galeria_aprovar_roteiro`, `galeria_aprovar_imagem`,
+  `galeria_gravar_detalhes`, `galeria_confirmar_aplicacao`, `galeria_iniciar_reversao`, `galeria_assumir_item`,
+  `galeria_concluir_item`, `galeria_agregar_aplicacao`, `galeria_itens_da_aplicacao`, `galeria_manter_aplicacao`,
+  `galeria_soltar_travas`, `galeria_trabalho_pendente`, `galeria_trabalho_pendente_aplicacao`, `galeria_visao_pendente`,
+  `galeria_escritas_adiadas_pendentes`, `galeria_retencao_listar` (só lista `storage.objects` > 1 dia), `ml_travar_itens`,
+  `ml_estender_trava`, `ml_soltar_itens`, `lote_decidir_status`, `galeria_relogio`.
+- **Relógio no banco:** `pg_cron` job `galeria-relogio` (`*/5 * * * *`, `select public.galeria_relogio();`, só SQL).
+- **Storage:** prefixo `<org>/galeria-ia/` no bucket `imagens` (cenas, `referencias/`, `finais/`); políticas
+  `imagens: insert|update|delete org writable` em `storage.objects` recriadas com a exclusão de `galeria-ia` (o prefixo fica
+  fechado para escrita de `authenticated`; só `service_role` e a URL assinada emitida pela edge escrevem nele).
+
 ## Storage
 
 Bucket **`imagens`** (privado). Paths no formato `{user_id}/{lote_id}/{arquivo}` — **não mudaram

@@ -2,7 +2,12 @@
 
 > Documento vivo. Este e o retrato curto do estado atual do projeto. Historico detalhado fica em `project-history.md`.
 
-**Ultima atualizacao:** 2026-11-08
+**Ultima atualizacao:** 2026-11-11
+
+## Galeria da cor por IA (ADR-0201): implementada, aguardando validação real
+
+Código completo e revisado na branch `worktree-imagens-anuncio-ia` (Tasks 0–15, lupa pela caixa do produto e retenção do Storage). **Não está no ar:** nenhuma migration aplicada, nenhuma edge implantada, nenhum agendamento criado. A lupa segue travada (`MISSOES_LUPA_PENDENTE`) até o portão com 10 referências reais. Próximo passo: o Diego executa o checklist de `docs/superpowers/specs/2026-11-08-galeria-da-cor-entrega.md` (migrations, segredo `HF_CREDENTIALS`, deploy, agendamento, medições e validação real em Legacy e UP). Referências: `docs/reference/edge-functions.md` e `docs/reference/modelo-de-dados.md`, seções da galeria.
+
 
 ## Kit com variação: antes de ligar o módulo (histórico: tudo executado em 2026-11-08)
 
