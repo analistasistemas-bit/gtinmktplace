@@ -1,6 +1,7 @@
 // Galeria IA: nome legível de cada dado da ficha (a tela nunca mostra `atributo:*`, `*_cm`, `descricao_ml`).
 // O rótulo também é o rótulo da spec que o operador escolhe na ficha técnica (missão 5), como a poda do servidor faz.
 import type { Fato } from './api';
+import { missoesDisponiveis } from '../../../supabase/functions/_shared/galeria/regras';
 
 /** Espelho de `ROTULO_SPEC` (`_shared/galeria/roteiro.ts`, não exportado) + colunas da planilha. */
 const ROTULOS: Record<string, string> = {
@@ -30,6 +31,21 @@ export function rotuloFato(f: Pick<Fato, 'campo' | 'evidencia'>): string {
   const nome = f.evidencia?.nome;
   if (typeof nome === 'string' && nome.trim() !== '' && nome !== f.campo.replace(/^atributo:/, '')) return nome.trim();
   return capitalizar(f.campo.replace(/^atributo:/, ''));
+}
+
+/** Nome de cada imagem (missão) para o operador, fora de Moda; Moda usa os nomes de `regras.ts`. */
+export const IMAGEM_GERAL: Record<number, { nome: string; descricao: string }> = {
+  1: { nome: 'Capa', descricao: 'Só a foto do produto, sem texto' },
+  2: { nome: 'Onde usar', descricao: 'Título e subtítulo' },
+  3: { nome: 'Detalhe com lupa', descricao: 'Aproxima a textura do produto' },
+  4: { nome: 'Benefícios', descricao: 'Título e até 3 benefícios' },
+  5: { nome: 'Ficha técnica', descricao: 'Até 4 dados confirmados' },
+  6: { nome: 'Como usar', descricao: 'Título e até 4 passos' },
+  7: { nome: 'Detalhes', descricao: 'Recortes do produto' },
+};
+export function nomeImagem(missao: number, moda: boolean): string {
+  if (!moda) return IMAGEM_GERAL[missao]?.nome ?? `Imagem ${missao}`;
+  return missoesDisponiveis(true, ['frente', 'costas', 'lateral']).find((m) => m.missao === missao)?.nome ?? `Imagem ${missao}`;
 }
 
 /** Dado que pode virar texto de imagem (a regra do servidor: CONFIRMADO ou NÃO CONFERIDO com ciência). */

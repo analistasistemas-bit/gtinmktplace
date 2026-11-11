@@ -3,7 +3,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import { PassoGerar } from '../passo-gerar';
 import { CartaoImagem } from '../cartao-imagem';
-import { DialogGaleria } from '../dialog-galeria';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import GaleriaIA from '@/pages/GaleriaIA';
 import { imagemValida } from '@/lib/galeria/exibicao';
 import type { Ficha, ImagemGaleria, RespostaListar, RespostaRoteiro, Res, RoteiroAprovado } from '@/lib/galeria/api';
 
@@ -16,6 +17,10 @@ vi.mock('@/lib/galeria/compor', async (orig) => ({ ...(await orig<typeof import(
 vi.mock('@/lib/galeria/api', async (orig) => ({ ...(await orig<typeof import('@/lib/galeria/api')>()), ...api }));
 vi.mock('@/lib/storage', () => ({ signedUrl: vi.fn(async () => 'https://x.test/e.jpg') }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+// Página da galeria (antes DialogGaleria): guarda própria lê módulo, admin e a linha de Publicados.
+vi.mock('@/hooks/useModulosHabilitados', () => ({ useModulosHabilitados: () => ({ data: ['imagem_ia'] }) }));
+vi.mock('@/hooks/useOperacoes', () => ({ usePodeExecutarOperacao: () => true }));
+vi.mock('@/hooks/usePublicados', () => ({ usePublicados: () => ({ data: [] }) }));
 const valida = vi.hoisted(() => ({ fn: vi.fn() }));
 /** null = a trava real (MISSOES_LUPA_PENDENTE); {geral:[],moda:[]} = ramo liberado depois do portão (Task 16). */
 const trava = vi.hoisted(() => ({ travas: null as null | { geral: number[]; moda: number[] } }));
@@ -188,7 +193,7 @@ describe('PassoGerar — seleção e confirmação', () => {
     await screen.findByText(/por imagem/);
     await userEvent.click(screen.getByRole('button', { name: 'Gerar imagens' }));
     await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Voltar ao roteiro' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Voltar aos textos' }));
     expect(props.aoVoltarRoteiro).toHaveBeenCalled();
   });
 });
@@ -530,7 +535,19 @@ describe('imagemValida', () => {
   it('é a função usada pelo cartão (mock só neste arquivo)', () => { expect(imagemValida).toBe(valida.fn); });
 });
 
-describe('DialogGaleria — aba Gerar', () => {
+/** A galeria em página própria, no MLB da rota. */
+const pagina = (ml: string) => render(
+  <MemoryRouter initialEntries={[`/publicados/${ml}/galeria`]}>
+    <Routes><Route path="/publicados/:mlItemId/galeria" element={<GaleriaIA />} /></Routes>
+  </MemoryRouter>,
+);
+async function abrirGerar() {
+  const b = await screen.findByRole('button', { name: /Gerar e aprovar/ });
+  await waitFor(() => expect(b).toBeEnabled());
+  await userEvent.click(b);
+}
+
+describe('GaleriaIA — passo Gerar', () => {
   it('linhas split da mesma família: cada galeria lista, gera e confirma com o ml_item_id da sua linha', async () => {
     api.montarFicha.mockResolvedValue(ok(ficha(['Preto'])));
     api.lerRoteiro.mockResolvedValue(ok({ ...respRoteiro(), moda: false, familia_id: 'F1' }));
@@ -539,8 +556,8 @@ describe('DialogGaleria — aba Gerar', () => {
       api.listarImagens.mockResolvedValue(ok(lista([imagem()])));
       api.confirmarExibicao.mockResolvedValue(ok({ cobradas: 1 }));
       api.gerarImagens.mockResolvedValue(ok({ pedido_id: 'p', imagens: [] }));
-      const r = render(<DialogGaleria mlItemId={ml} codigoPai="0001" open onOpenChange={() => undefined} isAdmin />);
-      await userEvent.click(await screen.findByRole('tab', { name: /Gerar/ }));
+      const r = pagina(ml);
+      await abrirGerar();
       fireEvent.load(await screen.findByAltText('Preto · missão 1'));
       await userEvent.click(screen.getByRole('button', { name: 'Gerar imagens' }));
       await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
@@ -560,32 +577,32 @@ describe('DialogGaleria — aba Gerar', () => {
     }
   });
 
-  it('rascunho v3 sobre o v2 aprovado: aba Gerar continua, com as imagens do v2', async () => {
+  it('rascunho v3 sobre o v2 aprovado: passo Gerar continua, com as imagens do v2', async () => {
     api.montarFicha.mockResolvedValue(ok(ficha(['Preto'])));
     api.lerRoteiro.mockResolvedValue(ok({ ...respRoteiro('rascunho', 3), moda: false, familia_id: 'F1' }));
     api.listarImagens.mockResolvedValue(ok(lista([imagem()], 50, aprovado(undefined, { versao: 2 }))));
-    render(<DialogGaleria mlItemId="MLB1" codigoPai="0001" open onOpenChange={() => undefined} isAdmin />);
-    await userEvent.click(await screen.findByRole('tab', { name: /Gerar/ }));
+    pagina('MLB1');
+    await abrirGerar();
     fireEvent.load(await screen.findByAltText('Preto · missão 1'));
     await waitFor(() => expect(api.confirmarExibicao).toHaveBeenCalledWith('MLB1', ['i1']));
   });
 
-  it('sem roteiro aprovado mas com imagem pendente de exibição (família anterior): aba Gerar aparece', async () => {
+  it('sem roteiro aprovado mas com imagem pendente de exibição (família anterior): passo Gerar abre', async () => {
     api.montarFicha.mockResolvedValue(ok(ficha(['Preto'])));
     api.lerRoteiro.mockResolvedValue(ok({ roteiro: null, moda: false, familia_id: 'F1' }));
     api.listarImagens.mockResolvedValue(ok(lista([imagem({ pode_gerar_de_novo: false })], 50, null)));
-    render(<DialogGaleria mlItemId="MLB1" codigoPai="0001" open onOpenChange={() => undefined} isAdmin />);
-    await userEvent.click(await screen.findByRole('tab', { name: /Gerar/ }));
+    pagina('MLB1');
+    await abrirGerar();
     expect(await screen.findByAltText('Preto · missão 1')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Gerar imagens' })).toBeNull();
   });
 
-  it('sem roteiro aprovado nem imagem pendente não há aba Gerar', async () => {
+  it('sem roteiro aprovado nem imagem pendente o passo Gerar fica fechado', async () => {
     api.montarFicha.mockResolvedValue(ok(ficha(['Preto'])));
     api.lerRoteiro.mockResolvedValue(ok({ roteiro: null, moda: false, familia_id: 'F1' }));
     api.listarImagens.mockResolvedValue(ok(lista([], 50, null)));
-    render(<DialogGaleria mlItemId="MLB1" codigoPai="0001" open onOpenChange={() => undefined} isAdmin />);
-    await screen.findByRole('tab', { name: /Roteiro/ });
-    expect(screen.queryByRole('tab', { name: /Gerar/ })).toBeNull();
+    pagina('MLB1');
+    await screen.findByText('Conferir dados', { selector: 'h1' });
+    expect(screen.getByRole('button', { name: /Gerar e aprovar/ })).toBeDisabled();
   });
 });

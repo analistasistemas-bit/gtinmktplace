@@ -111,38 +111,38 @@ export function PassoAplicar({ mlItemId, ficha, isAdmin, aoFamiliaMudou }: {
 
   return (
     <div className="space-y-4">
-      {erro && <p role="alert" className="rounded border border-red-500/40 bg-red-500/10 p-2 text-sm">{erro}</p>}
+      {erro && <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm ring-1 ring-destructive/25">{erro}</p>}
       {avisoLeitura && (
-        <p role="alert" className="rounded border border-amber-500/40 bg-amber-500/10 p-2 text-sm">
+        <p role="alert" className="rounded-lg bg-warning/10 p-3 text-sm ring-1 ring-warning/25">
           Não foi possível atualizar o andamento agora. Mostrando o último status; tentando de novo.
         </p>
       )}
 
-      <div className="flex flex-wrap items-end gap-3 rounded border p-3 text-sm">
+      <section aria-label="Como aplicar" className="flex flex-wrap items-end gap-3 rounded-xl bg-card text-card-foreground shadow-sm ring-1 ring-foreground/5 p-4 text-sm">
         <div className="space-y-1">
           <p className="font-medium">Cor</p>
           <Select value={cor} disabled={ocupado} onValueChange={(v) => { setCor(v); setPreparada(null); }}>
-            <SelectTrigger aria-label="Cor" className="h-8 w-40 text-xs"><SelectValue /></SelectTrigger>
+            <SelectTrigger aria-label="Cor" className="h-11 w-44"><SelectValue /></SelectTrigger>
             <SelectContent>{ficha.cores.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
           </Select>
         </div>
         <div className="space-y-1">
           <p className="font-medium">Modo</p>
           <Select value={modo} disabled={ocupado} onValueChange={(v) => { setModo(v as ModoAplicar); setPreparada(null); }}>
-            <SelectTrigger aria-label="Modo" className="h-8 w-40 text-xs"><SelectValue /></SelectTrigger>
+            <SelectTrigger aria-label="Modo" className="h-11 w-60"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="substituir">Substituir</SelectItem>
-              <SelectItem value="adicionar">Adicionar</SelectItem>
+              <SelectItem value="substituir">Substituir as fotos da cor</SelectItem>
+              <SelectItem value="adicionar">Adicionar às fotos da cor</SelectItem>
             </SelectContent>
           </Select>
         </div>
-        <Button size="sm" disabled={!isAdmin || ocupado || !cor} title={bloqueio ?? 'Preparar a troca das fotos'} onClick={() => void preparar()}>
-          {ocupado && !preparada && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Preparar
+        <Button className="h-11 px-4" disabled={!isAdmin || ocupado || !cor} title={bloqueio ?? 'Ver o que muda antes de aplicar'} onClick={() => void preparar()}>
+          {ocupado && !preparada && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Aplicar na cor {cor}
         </Button>
-      </div>
+      </section>
 
       {preparada && (
-        <div className="space-y-3 rounded border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+        <div className="space-y-3 rounded-lg bg-warning/10 p-3 text-sm ring-1 ring-warning/25">
           <p className="font-medium">Isto troca as fotos da cor {preparada.cor} nos anúncios abaixo, no Mercado Livre. Modo: {preparada.modo === 'substituir' ? 'Substituir' : 'Adicionar'}.</p>
           <ul aria-label="Anúncios afetados" className="list-inside list-disc">
             {preparada.itens.map((i) => <li key={i}>{i}</li>)}
@@ -152,47 +152,47 @@ export function PassoAplicar({ mlItemId, ficha, isAdmin, aoFamiliaMudou }: {
             {preparada.manifesto.map((m) => <li key={m.imagem_id}>Missão {m.missao}</li>)}
           </ol>
           <div className="flex gap-2">
-            <Button size="sm" disabled={!isAdmin || ocupado} title={bloqueio ?? 'Confirmar a troca'} onClick={() => void confirmar()}>
+            <Button className="h-11 px-4" disabled={!isAdmin || ocupado} title={bloqueio ?? 'Confirmar a troca'} onClick={() => void confirmar()}>
               {ocupado && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Confirmar e trocar no ML
             </Button>
-            <Button size="sm" variant="outline" disabled={ocupado} onClick={() => setPreparada(null)}>Cancelar</Button>
+            <Button variant="outline" className="h-11 px-4" disabled={ocupado} onClick={() => setPreparada(null)}>Cancelar</Button>
           </div>
         </div>
       )}
 
       {reverterEm && (
-        <div className="space-y-3 rounded border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+        <div className="space-y-3 rounded-lg bg-warning/10 p-3 text-sm ring-1 ring-warning/25">
           <p className="font-medium">Isto volta as fotos anteriores da cor {reverterEm.cor} nos anúncios abaixo, no Mercado Livre.</p>
           <ul aria-label="Anúncios afetados" className="list-inside list-disc">
             {reverterEm.itens.map((i) => <li key={i.item_id}>{i.item_id}</li>)}
           </ul>
           <div className="flex gap-2">
-            <Button size="sm" disabled={!isAdmin || ocupado} title={bloqueio ?? 'Confirmar a reversão'} onClick={() => void reverter(reverterEm.id)}>
-              {ocupado && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Confirmar reversão
+            <Button className="h-11 px-4" disabled={!isAdmin || ocupado} title={bloqueio ?? 'Confirmar a reversão'} onClick={() => void reverter(reverterEm.id)}>
+              {ocupado && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Confirmar e desfazer
             </Button>
-            <Button size="sm" variant="outline" disabled={ocupado} onClick={() => setReverterEm(null)}>Cancelar</Button>
+            <Button variant="outline" className="h-11 px-4" disabled={ocupado} onClick={() => setReverterEm(null)}>Cancelar</Button>
           </div>
         </div>
       )}
 
       {aplicacoes.length > 0 && (
-        <ul aria-label="Aplicações" className="space-y-2">
+        <ul aria-label="Aplicações" aria-live="polite" className="space-y-2">
           {aplicacoes.map((a) => (
-            <li key={a.id} className="space-y-1 rounded border p-3 text-sm">
+            <li key={a.id} className="space-y-1 rounded-xl bg-card text-card-foreground shadow-sm ring-1 ring-foreground/5 p-4 text-sm">
               <div className="flex items-center justify-between gap-2">
-                <p className={PROBLEMA.has(a.status) ? 'font-medium text-red-600' : 'font-medium'}>
+                <p className={PROBLEMA.has(a.status) ? 'font-medium text-destructive' : 'font-medium'}>
                   {a.cor} · {a.modo === 'substituir' ? 'Substituir' : 'Adicionar'} · {STATUS[a.status] ?? a.status}
                 </p>
                 {a.status === 'aplicada' && (
-                  <Button size="sm" variant="outline" disabled={!isAdmin || ocupado} title={bloqueio ?? 'Voltar as fotos anteriores'}
-                    onClick={() => { setPreparada(null); setReverterEm(a); }}>Reverter</Button>
+                  <Button variant="outline" className="h-11 px-4" disabled={!isAdmin || ocupado} title={bloqueio ?? 'Voltar as fotos anteriores'}
+                    onClick={() => { setPreparada(null); setReverterEm(a); }}>Desfazer aplicação</Button>
                 )}
               </div>
               <ul className="space-y-0.5">
                 {a.itens.map((i) => (
-                  <li key={i.item_id} className={PROBLEMA.has(i.status) ? 'text-red-600' : 'text-muted-foreground'}>
+                  <li key={i.item_id} className={PROBLEMA.has(i.status) ? 'text-destructive' : 'text-muted-foreground'}>
                     {i.item_id}: {STATUS[i.status] ?? i.status}{i.erro ? ` (${i.erro})` : ''}
-                    {i.status === 'reversao_incompleta' && ' — confira as fotos no Mercado Livre'}
+                    {i.status === 'reversao_incompleta' && '. Confira as fotos no Mercado Livre'}
                   </li>
                 ))}
               </ul>

@@ -19,6 +19,7 @@ import {
 import { comporImagemFinal } from '@/lib/galeria/compor';
 import { lupaPendente, missoesDisponiveis, missoesSugeridas } from '../../../supabase/functions/_shared/galeria/regras';
 import { comLupa } from '../../../supabase/functions/_shared/galeria/lupa';
+import { nomeImagem } from '@/lib/galeria/rotulos';
 import { CartaoImagem } from './cartao-imagem';
 
 const POLLING_MS = 5000;
@@ -47,8 +48,10 @@ function bloqueioLupa(i: ImagemGaleria, moda: boolean): string | null {
   return i.lupa?.situacao === 'indisponivel' ? 'sem detalhe do produto na foto' : 'lendo a foto de referência';
 }
 
-export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro }: {
+export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoLista }: {
   mlItemId: string; ficha: Ficha; aoRecarregar: () => void; aoVoltarRoteiro: () => void;
+  /** Cada `listar`: a página conta as aprovadas para o rodapé. */
+  aoLista?: (l: RespostaListar) => void;
 }) {
   const [lista, setLista] = useState<RespostaListar | null>(null);
   const roteiro = lista?.roteiro ?? null;
@@ -115,6 +118,7 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro }: {
         return { ...i, url: urls.current.get(i.id) ?? i.url };
       });
       setLista({ ...r.dados, imagens });
+      aoLista?.({ ...r.dados, imagens });
       setUnit(r.dados.unit_cents);
       const pendentes = imagens.filter((i) => !i.exibida && validadas.current.has(i.id));
       pendentes.forEach((i) => confirmar(i.id));
@@ -124,6 +128,7 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro }: {
     };
     void rodar();
     return () => { vivo = false; clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `aoLista` só informa a página; não reinicia o polling
   }, [mlItemId, rodada, confirmar]);
 
   const exibida = useCallback((id: string) => { validadas.current.add(id); confirmar(id); }, [confirmar]);
@@ -226,78 +231,78 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro }: {
   return (
     <div className="space-y-4">
       {lista && !roteiro && (
-        <p className="text-sm text-muted-foreground">Aprove o roteiro para gerar imagens novas.</p>
+        <p className="text-sm text-muted-foreground">Aprove os textos das imagens (passo 2) para gerar imagens novas.</p>
       )}
       {roteiro && !podePedir && (
-        <p role="alert" className="rounded border border-amber-500/40 bg-amber-500/10 p-2 text-sm">
-          O roteiro aprovado é de uma família anterior deste anúncio. Crie e aprove o roteiro da família atual para gerar imagens novas.
+        <p role="alert" className="rounded-lg bg-warning/10 p-3 text-sm ring-1 ring-warning/25">
+          Os textos aprovados são de um cadastro anterior (família anterior) deste anúncio. Crie e aprove os textos do cadastro atual no passo 2 para gerar imagens novas.
         </p>
       )}
       {podePedir && (
-        <div className="space-y-2 rounded border p-3 text-sm">
+        <section aria-label="Gerar imagens" className="space-y-3 rounded-xl bg-card text-card-foreground shadow-sm ring-1 ring-foreground/5 p-4 text-sm">
           <p className="font-medium">Cores</p>
           <div className="flex flex-wrap gap-3">
             {ficha.cores.map((c) => (
-              <span key={c} className="flex items-center gap-2">
+              <span key={c} className="flex min-h-11 items-center gap-2">
                 <Checkbox aria-label={`Cor ${c}`} checked={cores.includes(c)}
                   onCheckedChange={(v) => { setCores(alternar(cores, c, v === true)); abrir(null); }} />{c}
               </span>
             ))}
           </div>
-          <p className="font-medium">Missões</p>
+          <p className="font-medium">Imagens</p>
           <div className="grid gap-1 sm:grid-cols-2">
             {ativas.map((n) => (
-              <span key={n} className="flex items-center gap-2">
+              <span key={n} className="flex min-h-11 items-center gap-2">
                 <Checkbox aria-label={`Missão ${n}`} checked={sel.includes(n)} disabled={!!motivos.get(n)}
                   onCheckedChange={(v) => { setMissoes(alternar(sel, n, v === true).sort((a, b) => a - b)); abrir(null); }} />
-                {n}. {info.get(n)?.nome}{info.get(n)?.usaGerador === false && !motivos.get(n) && <span className="text-xs text-muted-foreground">(recorte grátis)</span>}
-                {motivos.get(n) && <span className="text-xs text-amber-700">{motivos.get(n)}</span>}
+                {nomeImagem(n, moda)}{info.get(n)?.usaGerador === false && !motivos.get(n) && <span className="text-xs text-muted-foreground">(recorte grátis)</span>}
+                {motivos.get(n) && <span className="text-xs text-warning">{motivos.get(n)}</span>}
               </span>
             ))}
           </div>
           <p className="text-xs text-muted-foreground">
             {unit === null ? 'Carregando o preço…' : `Pedido novo: ${fmtBRL(unit / 100)} por imagem gerada (preço do mês), cobrada quando aparece na tela.`}
           </p>
-          <Button disabled={cores.length === 0 || sel.length === 0 || unit === null}
+          <Button className="h-11 w-fit px-4" disabled={cores.length === 0 || sel.length === 0 || unit === null}
             onClick={() => abrir({ cores: ficha.cores.filter((c) => cores.includes(c)), missoes: sel })}>
             Gerar imagens
           </Button>
-        </div>
+        </section>
       )}
 
       {podePedir && confirmando && resumo && (
-        <div className="space-y-2 rounded border p-3 text-sm">
-          <p className="font-medium">
+        <div className="space-y-3 rounded-xl bg-card text-card-foreground shadow-sm ring-1 ring-primary/40 p-4 text-sm">
+          <p className="text-lg font-semibold tabular-nums">
             {resumo.geradas} {resumo.geradas === 1 ? 'imagem' : 'imagens'} · {fmtBRL((resumo.geradas * unit!) / 100)}
           </p>
           {resumo.recortes > 0 && (
             <p className="text-xs text-muted-foreground">+ {resumo.recortes} {resumo.recortes === 1 ? 'recorte grátis' : 'recortes grátis'}</p>
           )}
           <div className="flex gap-2">
-            <Button disabled={ocupado || !!aviso?.bloqueia} onClick={() => void enviar()}>
+            <Button className="h-11 px-4" disabled={ocupado || !!aviso?.bloqueia} onClick={() => void enviar()}>
               {ocupado && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Confirmar
             </Button>
-            <Button variant="outline" disabled={ocupado} onClick={() => abrir(null)}>Cancelar</Button>
+            <Button variant="outline" className="h-11 px-4" disabled={ocupado} onClick={() => abrir(null)}>Cancelar</Button>
           </div>
         </div>
       )}
 
       {aviso && (
-        <div role="alert" className="space-y-2 rounded border border-red-500/40 bg-red-500/10 p-2 text-sm">
+        <div role="alert" className="space-y-2 rounded-lg bg-destructive/10 p-3 text-sm ring-1 ring-destructive/25">
           <p>{aviso.texto}</p>
           {aviso.detalhe && <p className="text-xs">{aviso.detalhe}</p>}
-          {aviso.acao === 'tentar' && <Button size="sm" variant="outline" disabled={ocupado} onClick={() => void enviar()}>Tentar de novo</Button>}
-          {aviso.acao === 'recarregar' && <Button size="sm" variant="outline" onClick={aoRecarregar}>Recarregar</Button>}
-          {aviso.acao === 'roteiro' && <Button size="sm" variant="outline" onClick={aoVoltarRoteiro}>Voltar ao roteiro</Button>}
+          {aviso.acao === 'tentar' && <Button variant="outline" className="h-11 px-4" disabled={ocupado} onClick={() => void enviar()}>Tentar de novo</Button>}
+          {aviso.acao === 'recarregar' && <Button variant="outline" className="h-11 px-4" onClick={aoRecarregar}>Recarregar</Button>}
+          {aviso.acao === 'roteiro' && <Button variant="outline" className="h-11 px-4" onClick={aoVoltarRoteiro}>Voltar aos textos</Button>}
         </div>
       )}
 
-      {erroLista && <p role="alert" className="text-sm text-red-600">{erroLista}</p>}
+      {erroLista && <p role="alert" className="text-sm text-destructive">{erroLista}</p>}
 
       {lista && lista.imagens.length > 0 && (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {lista.imagens.map((i: ImagemGaleria) => (
-            <CartaoImagem key={i.id} imagem={i} onExibida={exibida} onInvalida={invalida} onFalhaCarga={falhaCarga}
+            <CartaoImagem key={i.id} imagem={i} titulo={`${nomeImagem(i.missao, moda)} · ${i.cor}`} onExibida={exibida} onInvalida={invalida} onFalhaCarga={falhaCarga}
               onAprovar={roteiro && i.roteiro_id === roteiro.id ? aprovar : undefined}
               bloqueioAprovar={bloqueioLupa(i, moda) ?? undefined}
               onGerarDeNovo={podePedir && !motivoLupa(ficha, [i.cor], i.missao, moda) ? (x) => abrir({ cores: [x.cor], missoes: [x.missao] }) : undefined} />

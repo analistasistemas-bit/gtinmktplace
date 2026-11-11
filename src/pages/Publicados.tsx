@@ -84,7 +84,7 @@ import { DialogCriarKitVirtual } from '@/components/kit-virtual/DialogCriarKitVi
 import { DialogCriarKitVariacao } from '@/components/kit-variacao/dialog-criar-kit-variacao';
 import { DialogGerenciarKit } from '@/components/kit-variacao/dialog-gerenciar-kit';
 import { BotaoGaleria } from '@/components/galeria/botao-galeria';
-import { DialogGaleria } from '@/components/galeria/dialog-galeria';
+import { restaurarRolagem } from '@/lib/galeria/retorno';
 import { useKitsVariacao } from '@/hooks/useKitsVariacao';
 import type { KitVariacaoResumo } from '@/lib/kit-variacao-edge';
 import { AnunciosOrfaos } from '@/components/anuncios-orfaos';
@@ -347,7 +347,6 @@ interface LinhaProps {
   kitVariacao: KitVariacaoResumo | null;
   /** ADR-0201: módulo `imagem_ia` ligado; o botão "Galeria IA" abre o diálogo desta linha. */
   temImagemIA: boolean;
-  onAbrirGaleria: (alvo: { mlItemId: string; codigoPai: string }) => void;
   /** Kits com variação feitos a partir deste produto. */
   kitsVariacaoDaBase: KitVariacaoResumo[];
   onCriarKitVariacao: (familiaId: string) => void;
@@ -388,7 +387,7 @@ function LinhaTabela({
   onRetentarCatalogo, retentandoCatalogo, isAdmin, temFiscal, onPreencherFiscal,
   temModuloEstoque, onCriarKit, onMigrarPrecoPorVariacao, migrando,
   temKitVariacao, kitVariacao, kitsVariacaoDaBase, onCriarKitVariacao, onGerenciarKit, focoKit,
-  temImagemIA, onAbrirGaleria,
+  temImagemIA,
   selecionado, onSelecionar, motivoNaoSelecionavel: motivoSelecao,
 }: LinhaProps) {
   // Expansão persistida (sobrevive a ordenar/filtrar/paginar, que remonta a linha), como o sort.
@@ -566,7 +565,7 @@ function LinhaTabela({
             <PackagePlus className="h-3 w-3" />
           </Button>
 
-          <BotaoGaleria temImagemIA={temImagemIA} mlItemId={item.mlItemId} codigoPai={item.codigoPai} onAbrir={onAbrirGaleria} />
+          <BotaoGaleria temImagemIA={temImagemIA} mlItemId={item.mlItemId} />
 
           {temKitVariacao && !kitVariacao && temVariacaoDeCor && (
             <Button
@@ -1189,6 +1188,8 @@ export default function Publicados() {
 function AbaAnuncios({ abas }: { abas: ReactNode }) {
   const navigate = useNavigate();
   const { data: publicadosTodos = [], isLoading: loadingPublicados, error: erroPublicados, refetch: refetchPublicados } = usePublicados();
+  // Volta da Galeria IA (página própria): a rolagem do <main> volta depois que as linhas existem.
+  useEffect(() => { if (!loadingPublicados) restaurarRolagem(); }, [loadingPublicados]);
   const { data: statusData, isFetching: fetchingStatus, refetch: refetchStatus } = useStatusPublicados();
   const { data: familiasRisco } = useCatalogoEmRisco();
   // Fase 3 (2026-08-13): só os anúncios com a tag catalog_forewarning do ML entram no card — o
@@ -1216,8 +1217,6 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
   // ADR-0200: kit com variação. Sem o módulo as tabelas nem são lidas.
   const temKitVariacao = !!modulos?.includes('kit_variacao');
   const temImagemIA = !!modulos?.includes('imagem_ia');
-  // ADR-0201: identidade = a linha clicada (mlItemId); linhas split dividem a família, então nunca familiaId.
-  const [galeriaDe, setGaleriaDe] = useState<{ mlItemId: string; codigoPai: string } | null>(null);
   const { data: kitsVariacao } = useKitsVariacao(temKitVariacao);
   const kitPorCodigo = useMemo(() => new Map((kitsVariacao ?? []).map((k) => [k.codigoPaiKit, k])), [kitsVariacao]);
   // Kit com variação encerrado sai de Publicados (itens fechados no ML); segue no bloco "Kits com variação" da base.
@@ -1979,7 +1978,6 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
                         onGerenciarKit={setKitGerenciado}
                         focoKit={focoLinha?.mlItemId === item.mlItemId ? focoLinha.seq : null}
                         temImagemIA={temImagemIA}
-                        onAbrirGaleria={setGaleriaDe}
                         onMigrarPrecoPorVariacao={handleMigrarPrecoPorVariacao}
                         migrando={migrando && migrandoId === item.familiaId}
                         selecionado={selecao.has(item.mlItemId)}
@@ -2095,16 +2093,6 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
           kit={(kitsVariacao ?? []).find((k) => k.id === kitGerenciado.id) ?? kitGerenciado}
           open
           onOpenChange={(v) => { if (!v) setKitGerenciado(null); }}
-          isAdmin={isAdmin}
-        />
-      )}
-
-      {galeriaDe && (
-        <DialogGaleria
-          mlItemId={galeriaDe.mlItemId}
-          codigoPai={galeriaDe.codigoPai}
-          open
-          onOpenChange={(v) => { if (!v) setGaleriaDe(null); }}
           isAdmin={isAdmin}
         />
       )}

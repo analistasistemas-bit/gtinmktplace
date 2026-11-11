@@ -33,6 +33,10 @@ const Pulse = lazy(() => import('@/pages/Pulse'));
 const Vitrine = lazy(() => import('@/pages/Vitrine'));
 const Ads = lazy(() => import('@/pages/Ads'));
 const DetalheVendas = lazy(() => import('@/pages/DetalheVendas'));
+const GaleriaIA = lazy(() => import('@/pages/GaleriaIA'));
+// Só em `vite dev`: harness da Galeria IA com edges falsas para prints sem login (o build troca DEV por false e
+// descarta o import).
+const GaleriaHarness = import.meta.env.DEV ? lazy(() => import('@/pages/dev/GaleriaHarness')) : null;
 const Faturamento = lazy(() => import('@/pages/Faturamento'));
 const Financeiro = lazy(() => import('@/pages/Financeiro'));
 const DetalheFinanceiro = lazy(() => import('@/pages/DetalheFinanceiro'));
@@ -47,6 +51,7 @@ export function AppRoutes() {
       <Route path="/login" element={<Login />} />
       <Route path="/definir-senha" element={<DefinirSenha />} />
       <Route path="/reset-senha" element={<ResetSenha />} />
+      {GaleriaHarness && <Route path="/dev/galeria/:mlItemId/galeria" element={<GaleriaHarness />} />}
 
       <Route element={<ProtectedRoute />}>
         <Route path="/sem-acesso" element={<SemAcesso />} />
@@ -64,6 +69,7 @@ export function AppRoutes() {
             <Route path="/canais" element={<Navigate to="/configuracoes/canais" replace />} />
             <Route path="/publicados" element={<Publicados />} />
             <Route path="/publicados/vendas" element={<DetalheVendas />} />
+            <Route path="/publicados/:mlItemId/galeria" element={<GaleriaIA />} />
             <Route path="/promocoes" element={<Promocoes />} />
             <Route path="/promocoes/:promocaoId" element={<PromocaoDetalhe />} />
             <Route path="/operacoes" element={<Navigate to="/publicados?aba=operacoes" replace />} />

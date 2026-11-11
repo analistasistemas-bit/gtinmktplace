@@ -146,8 +146,11 @@ export function useRascunhoRoteiro({ mlItemId, familiaId, resp, podeEditar, aoRe
     setCiente((s) => { const n = new Set(s); for (const c of respRef.current?.ciencia_pendente ?? []) { if (v) n.add(c); else n.delete(c); } return n; });
   }, []);
 
+  /** Última resposta do servidor (id e pendências de ciência vigentes depois de um `descarregar`). */
+  const atual = useCallback(() => respRef.current, []);
+
   return {
-    rascunho, editavel, estado, erro, editar, descarregar, editarAprovado,
+    rascunho, editavel, estado, erro, editar, descarregar, editarAprovado, atual,
     tentarDeNovo: enviar,
     ciente, marcarCiencia, faltaCiencia: pendentes.some((c) => !ciente.has(c)),
   };

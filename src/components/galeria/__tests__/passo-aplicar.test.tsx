@@ -28,7 +28,7 @@ function montar(isAdmin = true, mlItemId = 'MLB3M') {
   return { ...r, aoFamiliaMudou };
 }
 const preparar = async () => {
-  await userEvent.click(await screen.findByRole('button', { name: 'Preparar' }));
+  await userEvent.click(await screen.findByRole('button', { name: /Aplicar na cor/ }));
 };
 
 beforeEach(() => {
@@ -42,8 +42,8 @@ describe('PassoAplicar — admin (ADR-0060)', () => {
   it('não admin: Preparar e Reverter desabilitados com title e nenhuma chamada de escrita', async () => {
     api.estadoAplicacoes.mockResolvedValue(ok({ aplicacoes: [aplicacao()] }));
     montar(false);
-    const prep = await screen.findByRole('button', { name: 'Preparar' });
-    const rev = await screen.findByRole('button', { name: 'Reverter' });
+    const prep = await screen.findByRole('button', { name: /Aplicar na cor/ });
+    const rev = await screen.findByRole('button', { name: 'Desfazer aplicação' });
     for (const b of [prep, rev]) {
       expect(b).toBeDisabled();
       expect(b).toHaveAttribute('title', expect.stringMatching(/administrador/i));
@@ -79,7 +79,7 @@ describe('PassoAplicar — preparar e confirmar', () => {
     api.prepararAplicacao.mockResolvedValueOnce(falha(409, 'limite', { detalhe: 'MLB3M:100R:15>12' }));
     montar();
     await screen.findByRole('combobox', { name: 'Modo' });
-    await escolherNoSelect(userEvent.setup(), 'Modo', 'Adicionar');
+    await escolherNoSelect(userEvent.setup(), 'Modo', 'Adicionar às fotos da cor');
     expect(screen.getByRole('combobox', { name: 'Modo' })).toHaveTextContent('Adicionar');
     await preparar();
     expect(await screen.findByRole('alert')).toHaveTextContent(/limite.*Substituir/i);
@@ -93,7 +93,7 @@ describe('PassoAplicar — preparar e confirmar', () => {
     await userEvent.click(await screen.findByRole('button', { name: /Confirmar e trocar/ }));
     expect(await screen.findByRole('alert')).toHaveTextContent(texto);
     expect(screen.queryByRole('list', { name: 'Anúncios afetados' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Preparar' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Aplicar na cor/ })).toBeEnabled();
   });
 
   it('familia_nao_vigente recarrega a galeria', async () => {
@@ -117,7 +117,7 @@ describe('PassoAplicar — fix round 1', () => {
     api.prepararAplicacao.mockReturnValueOnce(new Promise((r) => { resolver = r; }));
     montar();
     await screen.findByRole('combobox', { name: 'Modo' });
-    await escolherNoSelect(userEvent.setup(), 'Modo', 'Adicionar');
+    await escolherNoSelect(userEvent.setup(), 'Modo', 'Adicionar às fotos da cor');
     await preparar();
     expect(api.prepararAplicacao).toHaveBeenCalledWith('MLB3M', 'Rosa', 'adicionar');
     expect(screen.getByRole('combobox', { name: 'Cor' })).toBeDisabled();
@@ -150,7 +150,7 @@ describe('PassoAplicar — fix round 1', () => {
     await vi.advanceTimersByTimeAsync(5000);
     expect(await screen.findByRole('alert')).toHaveTextContent(/andamento/i);
     expect(api.estadoAplicacoes).toHaveBeenCalledTimes(4);
-    expect(screen.getByText(/MLB3P/).closest('li')!.className).toMatch(/red/);
+    expect(screen.getByText(/MLB3P/).closest('li')!.className).toMatch(/destructive/);
     await vi.advanceTimersByTimeAsync(5000);
     expect(api.estadoAplicacoes).toHaveBeenCalledTimes(5);
   });
@@ -165,7 +165,7 @@ describe('PassoAplicar — fix round 1', () => {
     await vi.advanceTimersByTimeAsync(15000);
     await screen.findByRole('alert');
     await vi.advanceTimersByTimeAsync(5000);
-    await screen.findByRole('button', { name: 'Reverter' });
+    await screen.findByRole('button', { name: 'Desfazer aplicação' });
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
@@ -185,21 +185,21 @@ describe('PassoAplicar — acompanhamento e reversão', () => {
     montar();
     for (const mlb of ['MLB3P', 'MLB3G']) {
       const li = (await screen.findByText(new RegExp(mlb))).closest('li')!;
-      expect(li.className).toMatch(/red/);
+      expect(li.className).toMatch(/destructive/);
     }
-    expect(screen.getByText(/MLB3M/).closest('li')!.className).not.toMatch(/red/);
-    expect(screen.queryByRole('button', { name: 'Reverter' })).not.toBeInTheDocument();
+    expect(screen.getByText(/MLB3M/).closest('li')!.className).not.toMatch(/destructive/);
+    expect(screen.queryByRole('button', { name: 'Desfazer aplicação' })).not.toBeInTheDocument();
   });
 
   it('aplicada oferece Reverter, que manda o ml_item_id da linha e a aplicação', async () => {
     api.estadoAplicacoes.mockResolvedValue(ok({ aplicacoes: [aplicacao()] }));
     api.reverterAplicacao.mockResolvedValue(ok({ status: 'revertendo' }));
     montar(true, 'MLB3M');
-    await userEvent.click(await screen.findByRole('button', { name: 'Reverter' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Desfazer aplicação' }));
     expect(api.reverterAplicacao).not.toHaveBeenCalled();
     expect(within(screen.getByRole('list', { name: 'Anúncios afetados' })).getAllByRole('listitem').map((i) => i.textContent)).toEqual(['MLB3P']);
     expect(screen.getByText(/volta as fotos anteriores/i)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: /Confirmar reversão/ }));
+    await userEvent.click(screen.getByRole('button', { name: /Confirmar e desfazer/ }));
     expect(api.reverterAplicacao).toHaveBeenCalledWith('MLB3M', 'APL1');
   });
 
@@ -207,8 +207,8 @@ describe('PassoAplicar — acompanhamento e reversão', () => {
     api.estadoAplicacoes.mockResolvedValue(ok({ aplicacoes: [aplicacao()] }));
     api.reverterAplicacao.mockResolvedValue(falha(409, 'item_ocupado'));
     montar();
-    await userEvent.click(await screen.findByRole('button', { name: 'Reverter' }));
-    await userEvent.click(await screen.findByRole('button', { name: /Confirmar reversão/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Desfazer aplicação' }));
+    await userEvent.click(await screen.findByRole('button', { name: /Confirmar e desfazer/ }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/Outra operação/);
   });
 
@@ -220,7 +220,7 @@ describe('PassoAplicar — acompanhamento e reversão', () => {
     await screen.findByText(/Aplicando/);
     expect(api.estadoAplicacoes).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(5000);
-    await screen.findByRole('button', { name: 'Reverter' });
+    await screen.findByRole('button', { name: 'Desfazer aplicação' });
     expect(api.estadoAplicacoes).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(15000);
     expect(api.estadoAplicacoes).toHaveBeenCalledTimes(2);

@@ -54,6 +54,8 @@ export interface MissaoRoteiro {
   headline?: string; subheadline?: string; beneficios?: string[];
   specs?: Array<{ campo: string; rotulo: string; valor: string }>;
   etapas?: string[]; legendas?: string[]; fatosUsados: string[];
+  /** Por que nasceu desligada (Fase A): lupa travada, sem dado, erro que a poda não resolve. Só em missão desligada. */
+  motivoDesligada?: string;
 }
 export interface Roteiro {
   categoria: string; contrato: string; missoes: MissaoRoteiro[];

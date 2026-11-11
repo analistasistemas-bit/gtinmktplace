@@ -16,8 +16,10 @@ const ROTULO: Record<string, string> = {
   gerada: 'Gerada', aprovada: 'Aprovada', descartada: 'Descartada', desatualizada: 'Desatualizada', falhou: 'Falhou',
 };
 
-export function CartaoImagem({ imagem, onGerarDeNovo, onAprovar, bloqueioAprovar, onExibida, onInvalida, onFalhaCarga }: {
+export function CartaoImagem({ imagem, titulo, onGerarDeNovo, onAprovar, bloqueioAprovar, onExibida, onInvalida, onFalhaCarga }: {
   imagem: ImagemGaleria;
+  /** Nome da imagem para o operador ("Capa · Branco"); sem ele, cor e missão. */
+  titulo?: string;
   /** Sem handler o botão não aparece (roteiro aprovado de outra família: o servidor recusaria). */
   onGerarDeNovo?: (imagem: ImagemGaleria) => void;
   /** Compõe e aprova; devolve o motivo da recusa (null = aprovada). Sem handler o botão não aparece. */
@@ -53,9 +55,9 @@ export function CartaoImagem({ imagem, onGerarDeNovo, onAprovar, bloqueioAprovar
   }
 
   return (
-    <div className="space-y-2 rounded border p-2 text-sm" data-status={imagem.status}>
+    <div className="flex flex-col gap-3 overflow-hidden rounded-xl bg-card text-card-foreground shadow-sm ring-1 ring-foreground/5 p-3 text-sm" data-status={imagem.status}>
       <div className="flex items-center justify-between gap-2">
-        <span className="font-medium">{nome}</span>
+        <span className="font-semibold">{titulo ?? nome}</span>
         <span className="flex items-center gap-1">
           {imagem.origem === 'recorte' && <StatusPill tone="neutral">Recorte grátis</StatusPill>}
           {!aberta && <StatusPill tone={imagem.status === 'falhou' ? 'danger' : 'neutral'}>{ROTULO[imagem.status] ?? imagem.status}</StatusPill>}
@@ -82,22 +84,22 @@ export function CartaoImagem({ imagem, onGerarDeNovo, onAprovar, bloqueioAprovar
         <p className="text-xs text-muted-foreground">Verificando a imagem…</p>
       )}
       {(imagem.alertas ?? []).length > 0 && (
-        <ul role="alert" className="space-y-1 rounded border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
+        <ul role="alert" className="space-y-1 rounded-lg bg-warning/10 p-2.5 text-xs ring-1 ring-warning/25">
           {imagem.alertas!.map((a, i) => <li key={i}>{a.nota}</li>)}
         </ul>
       )}
       <div className="flex flex-wrap gap-2">
         {onGerarDeNovo && imagem.origem === 'gerador' && imagem.pode_gerar_de_novo && (
-          <Button size="sm" variant="outline" onClick={() => onGerarDeNovo(imagem)}>Gerar de novo</Button>
+          <Button variant="outline" className="h-11 flex-1 px-4" onClick={() => onGerarDeNovo(imagem)}>Gerar de novo</Button>
         )}
         {onAprovar && aprovavel && (
-          <Button size="sm" disabled={aprovando || !!bloqueioAprovar} title={bloqueioAprovar} onClick={() => void aprovar()}>
+          <Button className="h-11 flex-1 px-4" disabled={aprovando || !!bloqueioAprovar} title={bloqueioAprovar} onClick={() => void aprovar()}>
             {aprovando ? <><Loader2 className="mr-1 h-3 w-3 animate-spin" />Aprovando…</> : 'Aprovar'}
           </Button>
         )}
       </div>
-      {onAprovar && aprovavel && bloqueioAprovar && <p className="text-xs text-amber-700">{bloqueioAprovar}</p>}
-      {motivo && <p role="alert" className="text-xs text-red-600">{motivo}</p>}
+      {onAprovar && aprovavel && bloqueioAprovar && <p className="text-xs text-warning">{bloqueioAprovar}</p>}
+      {motivo && <p role="alert" className="text-xs text-destructive">{motivo}</p>}
     </div>
   );
 }
