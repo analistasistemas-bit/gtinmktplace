@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { razaoContraste, corDeAcento } from '../contraste';
-import { layoutMissao, linhasNecessarias, lupasMissao, type Caixa } from '../layouts';
+import { layoutMissao, linhasNecessarias, lupasMissao, motivosDeTexto, type Caixa } from '../../../../supabase/functions/_shared/galeria/layouts';
+import { CAMPOS_DA_MISSAO, CAPACIDADE } from '../../../../supabase/functions/_shared/galeria/regras';
+import * as compor from '../compor';
 import { planejarCorte } from '../../../../supabase/functions/_shared/galeria/corte';
 import { areaCena, layoutCena } from '../../../../supabase/functions/_shared/galeria/layout-area';
 
@@ -164,5 +166,31 @@ describe('lupas (recortes da referência)', () => {
 
   it('demais missões sem lupa', () => {
     for (const m of [1, 2, 4, 5, 6]) expect(lupasMissao(m)).toEqual([]);
+  });
+});
+
+// Fase A: a regra de texto × layout é uma só, no módulo compartilhado (o roteiro na edge poda com ela).
+describe('paridade servidor × front (Fase A)', () => {
+  it('compor usa a mesma motivosDeTexto do módulo compartilhado', () => {
+    expect(compor.motivosDeTexto).toBe(motivosDeTexto);
+  });
+
+  it('CAPACIDADE = número de caixas de cada lista no layout', () => {
+    const muitos = { subheadline: 'x', beneficios: Array(9).fill('x'), specs: Array(9).fill({ rotulo: 'x', valor: 'x' }), etapas: Array(9).fill('x'), legendas: Array(9).fill('x') };
+    for (const [m, cap] of Object.entries(CAPACIDADE)) {
+      const [campo, n] = Object.entries(cap)[0];
+      const porItem = campo === 'specs' ? 2 : 1;
+      const semLista = layoutMissao(Number(m), { ...muitos, [campo]: [] }).length;
+      expect(layoutMissao(Number(m), muitos).length - semLista, `missão ${m}`).toBe(n! * porItem);
+    }
+  });
+
+  it('campo fora de CAMPOS_DA_MISSAO recusa; campo da tabela não', () => {
+    for (const [m, campos] of Object.entries(CAMPOS_DA_MISSAO)) {
+      for (const c of ['subheadline', 'beneficios', 'etapas', 'legendas'] as const) {
+        const motivos = motivosDeTexto(Number(m), { headline: 'Fita', [c]: c === 'subheadline' ? 'Fita' : ['Fita'] }, false);
+        expect(motivos.some((x) => /não aparece no layout/.test(x)), `missão ${m} ${c}`).toBe(!campos.includes(c));
+      }
+    }
   });
 });

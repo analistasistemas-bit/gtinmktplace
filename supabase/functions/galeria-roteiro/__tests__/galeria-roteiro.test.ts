@@ -129,7 +129,9 @@ describe('galeria-roteiro: criar', () => {
     expect(r.body.erros).toEqual([])
   })
 
-  it('fora de Moda: erro do código fica visível por missão, a missão segue ativa e aprovar recusa até corrigir', async () => {
+  // Fase A (Ajuste v2-2) inverte o teste antigo ("erro visível, missão segue ativa"): o que a poda não resolve nasce
+  // desligado com motivo e o rascunho já é aprovável.
+  it('fora de Moda: missão com erro depois da poda nasce desligada com motivo; o rascunho já aprova', async () => {
     f.ia.mockResolvedValueOnce(respostaIA([
       missaoIA(1, { fatosUsados: ['nome'] }),
       missaoIA(4, { headline: 'Renda Búfalo', beneficios: ['Largura de 20 cm'], fatosUsados: ['nome', 'largura_cm'] }),
@@ -139,20 +141,10 @@ describe('galeria-roteiro: criar', () => {
     const r = await chamar({ ...base, acao: 'criar' })
     expect(r.status).toBe(200)
     expect(db.galeria_roteiros[0]).toMatchObject({ moda: false })
-    // Erro visível: a missão 6 continua ativa e o erro vem por missão para a tela.
-    const m6 = (db.galeria_roteiros[0].conteudo as { missoes: Linha[] }).missoes.find((m) => m.missao === 6)
-    expect(m6).toMatchObject({ ativa: true, etapas: ['Lave em água quente'] })
-    expect(r.body).toMatchObject({
-      erros: [expect.stringMatching(/Missão 6: etapa "Lave em água quente" não é trecho/)],
-      erros_por_missao: { 6: [expect.stringMatching(/etapa "Lave em água quente"/)] },
-      ciencia_pendente: [],
-    })
-    // Aprovar recusa até o operador corrigir ou desativar.
+    const missoes = (db.galeria_roteiros[0].conteudo as { missoes: Array<Linha & { motivoDesligada?: string }> }).missoes
+    for (const n of [4, 5, 6]) expect(missoes.find((m) => m.missao === n)).toMatchObject({ ativa: false, motivoDesligada: expect.any(String) })
+    expect(r.body).toMatchObject({ erros: [], ciencia_pendente: [] })
     const id = db.galeria_roteiros[0].id
-    expect(await chamar({ ...base, acao: 'aprovar', roteiro_id: id })).toMatchObject({ status: 422, body: { error: 'roteiro_invalido' } })
-    const conteudo = structuredClone(db.galeria_roteiros[0].conteudo) as { missoes: Linha[] }
-    conteudo.missoes.find((m) => m.missao === 6)!.ativa = false
-    expect((await chamar({ ...base, acao: 'salvar', roteiro_id: id, conteudo })).body).toMatchObject({ erros: [] })
     expect((await chamar({ ...base, acao: 'aprovar', roteiro_id: id })).status).toBe(200)
   })
 

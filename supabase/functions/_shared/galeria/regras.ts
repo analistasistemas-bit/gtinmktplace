@@ -9,6 +9,22 @@ export const BLOCO_TECNICO =
 export const LIMITES = { headline: 5, subheadline: 10, beneficio: 6, etapa: 7, legenda: 5 } as const
 
 export type Missao = 1 | 2 | 3 | 4 | 5 | 6 | 7
+
+export type CampoLista = 'beneficios' | 'specs' | 'etapas' | 'legendas'
+export type CampoTexto = 'subheadline' | CampoLista
+
+/**
+ * Campos que o layout de cada missão mostra além do título (fora de Moda; a capa não leva texto). Fonte única do
+ * prompt e da poda do roteiro (servidor) e da composição/`motivosDeTexto` (front): o resto recusa, nunca some em silêncio.
+ */
+export const CAMPOS_DA_MISSAO: Readonly<Record<number, readonly CampoTexto[]>> = {
+  2: ['subheadline'], 3: ['subheadline', 'legendas'], 4: ['beneficios'], 5: ['specs'], 6: ['etapas'], 7: ['legendas'],
+}
+
+/** Itens que cabem no layout (= caixas de `layoutMissao`): a missão 3 tem um chip; a 7, duas legendas sob as lupas. */
+export const CAPACIDADE: Readonly<Record<number, Readonly<Partial<Record<CampoLista, number>>>>> = {
+  3: { legendas: 1 }, 4: { beneficios: 3 }, 5: { specs: 4 }, 6: { etapas: 4 }, 7: { legendas: 2 },
+}
 export type Vista = 'frente' | 'costas' | 'lateral'
 
 export interface MissaoDisponivel {

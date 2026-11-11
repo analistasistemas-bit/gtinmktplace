@@ -1,5 +1,5 @@
 // Áreas da cena que o gerador deixa livres para o texto composto depois (R6.3). Fonte única: o prompt (edge) descreve
-// a área com `areaTexto` e os layouts do front (`src/lib/galeria/layouts.ts`) só posicionam caixas dentro dos retângulos.
+// a área com `areaTexto` e os layouts (`layouts.ts`) só posicionam caixas dentro dos retângulos.
 // Puro e sem imports. Coordenadas no arquivo final 1200×1540. Missão 1 (capa) e 7 (recorte) não têm cena com texto.
 
 export interface RetanguloCena { x0: number; y0: number; x1: number; y1: number }
