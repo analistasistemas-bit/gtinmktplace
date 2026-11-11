@@ -538,3 +538,39 @@ describe('ancoragem sem fragmento (fix round 1)', () => {
     }
   })
 })
+
+// Fix round 2 (re-revisão Grok): seção de cores/variações só por TÍTULO; "sem" corta só o que vem depois.
+describe('seção de cores só por título (fix round 2)', () => {
+  const comBeneficios = async (descricao: string, beneficios: string[]) => {
+    ia.create.mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify({ contrato: 'Fita', missoes: [
+      { missao: 1, cena: 'capa', fatosUsados: [] },
+      { missao: 4, cena: 'mesa', headline: 'Fita', beneficios, fatosUsados: [] },
+    ] }) } }] })
+    const r = await gerarRoteiroIA({ modelo: 'm', categoria: 'x', moda: false, vistas: ['frente'], fatos: [fato('nome', 'Fita'), fato('descricao_fornecedor', descricao)] })
+    return r.missoes.find((m) => m.missao === 4)!
+  }
+
+  it('frase comum com "modelo" não arma a seção: "Modelo clássico." + "✔ Alta resistência" ancora', async () => {
+    expect(await comBeneficios('Modelo clássico.\n✔ Alta resistência', ['Alta resistência'])).toMatchObject({ ativa: true, beneficios: ['Alta resistência'] })
+  })
+
+  it('descrição real da Fita: "Branco"/"Preto" sob CORES DISPONÍVEIS recusados; itens de BENEFÍCIOS aceitos', () => {
+    const fatos = fatosFita()
+    const ficha = (valor: string): Roteiro => ({ categoria: 'x', contrato: 'Fita', missoes: [
+      { missao: 1, ativa: true, cena: 'capa', fatosUsados: [] },
+      { missao: 5, ativa: true, cena: 'ficha', headline: 'Dados do produto', specs: [{ campo: 'descricao_ml', rotulo: 'X', valor }], fatosUsados: [] },
+    ] })
+    for (const v of ['Branco', 'Preto']) expect(validarRoteiro(ficha(v), fatos, false), v).toEqual([expect.stringMatching(/difere/)])
+    for (const v of ['Alta resistência', 'Excelente aderência', 'Discrição no visual']) expect(validarRoteiro(ficha(v), fatos, false), v).toEqual([])
+  })
+
+  it('título de cores desarma no próximo título ou parágrafo; "Cores: Branco e Preto" não ancora', async () => {
+    expect(await comBeneficios('Cores:\n- Branco\nBENEFÍCIOS\n- Toque macio', ['Toque macio', 'Branco'])).toMatchObject({ beneficios: ['Toque macio'] })
+    expect((await comBeneficios('Cores: Branco e Preto\nToque macio.', ['Branco e Preto', 'Toque macio'])).beneficios).toEqual(['Toque macio'])
+  })
+
+  it('"sem": aceita o trecho antes dele, recusa o depois; não/nunca seguem derrubando a oração', async () => {
+    expect((await comBeneficios('Excelente aderência sem pesar no visual.', ['Excelente aderência', 'pesar no visual'])).beneficios).toEqual(['Excelente aderência'])
+    expect((await comBeneficios('Algodão não incluso.\nToque macio.', ['Algodão', 'Toque macio'])).beneficios).toEqual(['Toque macio'])
+  })
+})

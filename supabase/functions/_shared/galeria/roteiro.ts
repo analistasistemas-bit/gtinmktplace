@@ -63,24 +63,40 @@ const aparar = (s: string) => s.replace(/^[^\p{L}\p{N}]+/u, '').replace(/[^\p{L}
 const textoLongo = (campo: string) => campo.startsWith('descricao_') || campo === 'titulo_ml';
 const MARCADOR = /^\s*[-•✔*·▪–]\s*/u;
 const SECAO_VARIACAO = /(?<![\p{L}\p{N}])(?:cor|cores|variac\w*|tamanhos?|modelos?|opcoes|estampas?)(?![\p{L}\p{N}])/u;
-const NEGACAO = /(?<![\p{L}\p{N}])(?:nao|sem|nunca|jamais|nem)(?![\p{L}\p{N}])/u;
+const NEGACAO = /(?<![\p{L}\p{N}])(?:nao|nunca|jamais|nem)(?![\p{L}\p{N}])/u;
+const SEM = /(?<![\p{L}\p{N}])sem(?![\p{L}\p{N}])/u;
 const escapar = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/** Título de seção: linha sem marcador de lista, curta (≤5 palavras) e sem fim de frase ("🎨 CORES DISPONÍVEIS", "Cores:"). */
+const ehTitulo = (linha: string) => {
+  const t = aparar(linha.replace(/:\s*$/, ''));
+  return t !== '' && !MARCADOR.test(linha) && contarPalavras(t) <= 5 && !/[.!?;]\s*$/.test(linha.trim());
+};
+
 /**
- * Orações de um texto longo que podem ancorar trecho (normalizadas): fora de oração negada ("Não contém algodão")
- * e fora dos itens de lista sob título de cores/variações ("🎨 CORES DISPONÍVEIS" / "- Branco": o anúncio vende
- * uma cor por vez, a lista não é atributo do produto).
- * ponytail: título de seção = linha sem marcador de lista; parágrafo que cite "cor" também fecha a seção seguinte.
+ * Orações de um texto longo que podem ancorar trecho (normalizadas):
+ * - fora de oração negada ("Não contém algodão"); "sem" corta só o que vem depois dele ("aderência sem pesar…"
+ *   ancora "aderência", nunca "pesar…");
+ * - fora da seção de cores/variações: armada só por TÍTULO com cor/variação/tamanho/modelo/opções/estampa
+ *   ("🎨 CORES DISPONÍVEIS" / "- Branco" — o anúncio vende uma cor por vez) e desarmada no próximo título ou
+ *   parágrafo. Frase comum ("Modelo clássico.") não arma. O próprio título de variação também não ancora.
  */
 function oracoesCitaveis(valor: string): string[] {
   const saida: string[] = [];
   let variacao = false;
   for (const linha of valor.split('\n')) {
     if (!linha.trim()) continue;
-    const item = MARCADOR.test(linha);
-    if (!item) variacao = SECAO_VARIACAO.test(norm(linha));
-    if (item && variacao) continue;
-    for (const o of linha.split(/[.;!?]+/)) { const n = norm(o); if (n && !NEGACAO.test(n)) saida.push(n); }
+    if (!MARCADOR.test(linha)) {
+      variacao = ehTitulo(linha) && SECAO_VARIACAO.test(norm(linha));
+      if (variacao) continue;
+    } else if (variacao) continue;
+    for (const o of linha.split(/[.;!?]+/)) {
+      const n = norm(o);
+      if (!n || NEGACAO.test(n)) continue;
+      const sem = SEM.exec(n);
+      const antes = sem ? n.slice(0, sem.index).trim() : n;
+      if (antes) saida.push(antes);
+    }
   }
   return saida;
 }
