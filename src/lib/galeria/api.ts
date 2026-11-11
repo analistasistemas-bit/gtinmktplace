@@ -3,9 +3,8 @@
 // `functions.invoke` não popula `data` em não-2xx: status e corpo vêm de `corpoDoErroDaEdge`.
 import { supabase } from '@/lib/supabase';
 import { corpoDoErroDaEdge } from '@/lib/edge-erro';
-import type { TextosComposicao } from './compor';
 import { lupaPendente } from '../../../supabase/functions/_shared/galeria/regras';
-import { comLupa, type CaixaNorm } from '../../../supabase/functions/_shared/galeria/lupa';
+import { comLupa } from '../../../supabase/functions/_shared/galeria/lupa';
 
 export type EstadoFato = 'CONFIRMADO' | 'SUGERIDO' | 'DIVERGENTE' | 'NAO_CONFERIDO' | 'VARIA_POR_TAMANHO';
 export interface Caixa { x: number; y: number; w: number; h: number }
@@ -34,10 +33,6 @@ export interface Ficha {
   formato?: 'legacy' | 'user_products';
 }
 export type SituacaoLupa = 'ok' | 'lendo' | 'indisponivel';
-/** Caixas gravadas na referência (só com `situacao: 'ok'`); `hash` volta no aprovar. */
-export interface LupaImagem {
-  situacao: SituacaoLupa; produto?: CaixaNorm; detalhes?: CaixaNorm[]; ref_w?: number; ref_h?: number; hash?: string;
-}
 
 /**
  * Por que a missão não pode ser pedida para estas cores (null = pode): travada até o portão da Task 16, foto de
@@ -109,37 +104,27 @@ export const aprovarRoteiro = (mlItemId: string, familiaId: string, roteiroId: s
     acao: 'aprovar', ml_item_id: mlItemId, familia_id: familiaId, roteiro_id: roteiroId, ciencia_nao_conferido: cienciaNaoConferido,
   });
 
-// Task 10: geração (`galeria-gerar`) e imagens (`galeria-imagens`). O preço vem sempre do servidor.
+// ADR-0203 (tela única): geração (`galeria-gerar`) e imagens (`galeria-imagens`). O preço vem sempre do servidor.
 export interface AlertaImagem { tipo: string; nota: string }
 export interface ImagemGaleria {
-  id: string; cor: string; missao: number; geracao: number; origem: 'gerador' | 'recorte'; status: string;
-  /** null = verificação por visão ainda não respondeu. */
+  /** `missao` = número da posição (1..7) no plano. */
+  id: string; cor: string; missao: number; geracao: number; status: string;
+  /** null = a conferência do texto da imagem ainda não terminou. */
   alertas: AlertaImagem[] | null; erro: string | null;
   /** Já confirmada (cobrada): a tela não confirma de novo. */
   exibida: boolean; url: string | null;
-  /** Referência da cor/vista (assinada): a lupa da composição (Task 12). */
-  ref_url: string | null;
-  /** Missão com lupa: situação e caixas da referência; null = missão sem lupa. */
-  lupa?: LupaImagem | null;
-  /** Aprovar só a do roteiro aprovado atual (o servidor recusaria as demais). */
+  /** Só aprova a do plano vigente (`plano_id`); as de roteiro antigo ficam sem Aprovar. */
   roteiro_id: string;
-  /** Regra da RPC calculada no servidor: false com 3 gerações válidas, geração aberta ou fora do roteiro aprovado. */
+  /** Regra da RPC calculada no servidor: false com geração aberta, teto ou fora do plano vigente. */
   pode_gerar_de_novo: boolean;
-  /** Preço congelado no pedido desta imagem (o que a RPC cobra ao exibir); recorte = 0. */
+  /** Preço congelado no pedido desta imagem (o que a RPC cobra ao exibir). */
   unit_cents: number | null;
 }
-/** Roteiro aprovado do anúncio (mesmo com rascunho mais novo por cima). */
-export interface RoteiroAprovado {
-  id: string; versao: number; familia_id: string; moda: boolean; missoes_ativas: number[];
-  /** Textos das missões ativas do roteiro aprovado (composição do arquivo final, Task 12). */
-  textos: Record<number, TextosComposicao>;
-}
-/** `unit_cents` = preço do mês, só para pedido novo. Imagens: as do roteiro aprovado + toda cena não exibida do anúncio. */
+export interface PosicaoGaleria { posicao: number; nome: string; indisponivel?: string }
+/** `unit_cents` = preço do mês, só para pedido novo. `plano_id` = roteiro aprovado em formato 2 (null = ainda sem plano). */
 export interface RespostaListar {
-  roteiro: RoteiroAprovado | null; unit_cents: number; imagens: ImagemGaleria[];
-  // Task 6 (tela única); opcionais até a Task 8.
-  titulo?: string | null; cores?: string[]; moda?: boolean | null;
-  posicoes?: Array<{ posicao: number; nome: string; indisponivel?: string }>; plano_id?: string | null;
+  titulo: string | null; cores: string[]; moda: boolean | null; unit_cents: number;
+  posicoes: PosicaoGaleria[]; plano_id: string | null; imagens: ImagemGaleria[];
 }
 
 export const listarImagens = (mlItemId: string) =>
@@ -148,21 +133,18 @@ export const confirmarExibicao = (mlItemId: string, imagemIds: string[]) =>
   chamar<{ cobradas: number }>('galeria-imagens', { acao: 'confirmar_exibicao', ml_item_id: mlItemId, imagem_ids: imagemIds });
 export const reportarInvalida = (mlItemId: string, imagemId: string) =>
   chamar<{ reportada: boolean }>('galeria-imagens', { acao: 'reportar_invalida', ml_item_id: mlItemId, imagem_id: imagemId });
-// ponytail: roteiroVersao opcional só até a Task 8 (tela antiga ainda envia).
-export const gerarImagens = (mlItemId: string, p: { pedidoId: string; roteiroVersao?: number; cores: string[]; missoes: number[]; unitCentsExibido: number; confirmarTroca?: boolean }) =>
+export const gerarImagens = (mlItemId: string, p: { pedidoId: string; cores: string[]; missoes: number[]; unitCentsExibido: number; confirmarTroca?: boolean }) =>
   chamar<{ pedido_id: string; imagens: unknown[] }>('galeria-gerar', {
     pedido_id: p.pedidoId, ml_item_id: mlItemId, cores: p.cores, missoes: p.missoes,
     unit_cents_exibido: p.unitCentsExibido,
-    ...(p.roteiroVersao !== undefined ? { roteiro_versao: p.roteiroVersao } : {}),
     ...(p.confirmarTroca ? { confirmar_troca: true } : {}),
   });
 
 // Task 12: arquivo final composto no navegador → URL de upload assinada (upsert:false) → aprovar (`galeria-aprovar`).
 export const prepararUploadFinal = (mlItemId: string, imagemId: string) =>
   chamar<{ path: string; token: string; signed_url: string }>('galeria-aprovar', { acao: 'preparar_upload', ml_item_id: mlItemId, imagem_id: imagemId });
-/** `lupaHash` = hash das caixas usadas na composição (missão com lupa); o servidor confere com o gravado. */
-export const aprovarFinal = (mlItemId: string, imagemId: string, lupaHash?: string) =>
-  chamar<{ status: 'aprovada' }>('galeria-aprovar', { acao: 'aprovar', ml_item_id: mlItemId, imagem_id: imagemId, lupa_hash: lupaHash });
+export const aprovarFinal = (mlItemId: string, imagemId: string) =>
+  chamar<{ status: 'aprovada' }>('galeria-aprovar', { acao: 'aprovar', ml_item_id: mlItemId, imagem_id: imagemId });
 /** null = enviado; senão a mensagem do Storage. */
 export async function enviarFinal(path: string, token: string, arquivo: Blob): Promise<string | null> {
   const { error } = await supabase.storage.from('imagens').uploadToSignedUrl(path, token, arquivo, { contentType: 'image/jpeg' });

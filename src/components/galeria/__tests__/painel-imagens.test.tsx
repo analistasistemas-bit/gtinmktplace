@@ -1,221 +1,353 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { escolherNoSelect } from '@/test/select';
 import userEvent from '@testing-library/user-event';
-import { PassoGerar } from '../passo-gerar';
+import { PainelImagens } from '../painel-imagens';
 import { CartaoImagem } from '../cartao-imagem';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import GaleriaIA from '@/pages/GaleriaIA';
 import { imagemValida } from '@/lib/galeria/exibicao';
-import type { Ficha, ImagemGaleria, RespostaListar, RespostaRoteiro, Res, RoteiroAprovado } from '@/lib/galeria/api';
+import type { ImagemGaleria, PosicaoGaleria, RespostaListar, Res } from '@/lib/galeria/api';
 
 const api = vi.hoisted(() => ({
-  montarFicha: vi.fn(), lerRoteiro: vi.fn(), listarImagens: vi.fn(), gerarImagens: vi.fn(),
-  confirmarExibicao: vi.fn(), reportarInvalida: vi.fn(), prepararUploadFinal: vi.fn(), enviarFinal: vi.fn(), aprovarFinal: vi.fn(),
+  listarImagens: vi.fn(), gerarImagens: vi.fn(), confirmarExibicao: vi.fn(), reportarInvalida: vi.fn(),
+  prepararUploadFinal: vi.fn(), enviarFinal: vi.fn(), aprovarFinal: vi.fn(),
 }));
-const compor = vi.hoisted(() => ({ fn: vi.fn() }));
-vi.mock('@/lib/galeria/compor', async (orig) => ({ ...(await orig<typeof import('@/lib/galeria/compor')>()), comporImagemFinal: compor.fn }));
-vi.mock('@/lib/galeria/api', async (orig) => ({ ...(await orig<typeof import('@/lib/galeria/api')>()), ...api }));
-vi.mock('@/lib/storage', () => ({ signedUrl: vi.fn(async () => 'https://x.test/e.jpg') }));
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
-// Página da galeria (antes DialogGaleria): guarda própria lê módulo, admin e a linha de Publicados.
-vi.mock('@/hooks/useModulosHabilitados', () => ({ useModulosHabilitados: () => ({ data: ['imagem_ia'] }) }));
-vi.mock('@/hooks/useOperacoes', () => ({ usePodeExecutarOperacao: () => true }));
-vi.mock('@/hooks/usePublicados', () => ({ usePublicados: () => ({ data: [] }) }));
+const final = vi.hoisted(() => ({ fn: vi.fn() }));
 const valida = vi.hoisted(() => ({ fn: vi.fn() }));
-/** null = a trava real (MISSOES_LUPA_PENDENTE); {geral:[],moda:[]} = ramo liberado depois do portão (Task 16). */
-const trava = vi.hoisted(() => ({ travas: null as null | { geral: number[]; moda: number[] } }));
-vi.mock('../../../../supabase/functions/_shared/galeria/regras', async (orig) => {
-  const r = await orig<typeof import('../../../../supabase/functions/_shared/galeria/regras')>();
-  return { ...r, lupaPendente: (m: number, moda: boolean) => r.lupaPendente(m, moda, trava.travas ?? r.MISSOES_LUPA_PENDENTE) };
-});
+vi.mock('@/lib/galeria/api', async (orig) => ({ ...(await orig<typeof import('@/lib/galeria/api')>()), ...api }));
+vi.mock('@/lib/galeria/final', () => ({ montarArquivoFinal: final.fn }));
 vi.mock('@/lib/galeria/exibicao', async (orig) => ({ ...(await orig<typeof import('@/lib/galeria/exibicao')>()), imagemValida: valida.fn }));
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const ok = <T,>(dados: T): Res<T> => ({ ok: true, dados });
 const falha = (status: number, erro: string, corpo: Record<string, unknown> = {}): Res<never> => ({ ok: false, status, erro, corpo: { error: erro, ...corpo } });
 
-const ficha = (cores: string[]): Ficha => ({
-  anuncio_externo_id: 'A1', familia_id: 'F1', codigo_pai: '0001', cores, fatos: [], fatos_hash: 'h', roteiro_desatualizado: false, referencias: {},
-});
-const missao = (n: number, ativa = true) => ({ missao: n, ativa, cena: `cena ${n}`, fatosUsados: [] });
-const aprovado = (ativas = [1, 2, 3, 4, 5, 6, 7], extra: Partial<RoteiroAprovado> = {}): RoteiroAprovado =>
-  ({ id: 'R1', versao: 3, familia_id: 'F1', moda: false, missoes_ativas: ativas, textos: { 1: {}, 2: { headline: 'Prende firme' } }, ...extra });
-/** Resposta do `ler` (aba Roteiro). */
-const respRoteiro = (status = 'aprovado', versao = 3): RespostaRoteiro => ({
-  roteiro: { id: `R${versao}`, familia_id: 'F1', versao, status, moda: false,
-    conteudo: { categoria: 'c', contrato: 'k', missoes: [1, 2, 3, 4, 5, 6, 7].map((n) => missao(n)) } },
-  erros: [], erros_por_missao: {}, ciencia_pendente: [], fatos: [],
-});
+const NOMES = ['Capa', 'Em uso', 'Tira-dúvida', 'Benefícios', 'Ficha técnica', 'Como usar', 'Detalhes'];
+const posicoes = (indisponiveis: Record<number, string> = {}): PosicaoGaleria[] =>
+  NOMES.map((nome, k) => ({ posicao: k + 1, nome, ...(indisponiveis[k + 1] ? { indisponivel: indisponiveis[k + 1] } : {}) }));
 const imagem = (extra: Partial<ImagemGaleria> = {}): ImagemGaleria => ({
-  id: 'i1', cor: 'Preto', missao: 1, geracao: 1, origem: 'gerador', status: 'gerada', alertas: [], erro: null,
-  exibida: false, url: 'https://signed/i1.png', ref_url: 'https://signed/ref.jpg', roteiro_id: 'R1', pode_gerar_de_novo: true, unit_cents: 50, ...extra,
+  id: 'i1', cor: 'Preto', missao: 1, geracao: 1, status: 'gerada', alertas: [], erro: null,
+  exibida: false, url: 'https://signed/i1.png', roteiro_id: 'P1', pode_gerar_de_novo: true, unit_cents: 50, ...extra,
 });
-const lista = (imagens: ImagemGaleria[] = [], unit = 50, roteiro: RoteiroAprovado | null = aprovado()): RespostaListar =>
-  ({ roteiro, unit_cents: unit, imagens });
+const lista = (imagens: ImagemGaleria[] = [], extra: Partial<RespostaListar> = {}): RespostaListar =>
+  ({ titulo: 'Fita', cores: ['Preto'], moda: false, unit_cents: 50, posicoes: posicoes(), plano_id: 'P1', imagens, ...extra });
+const GERAR = /^Gerar · R\$\s0,50$/;
+const coresN = (n: number) => Array.from({ length: n }, (_, k) => `Cor ${k + 1}`);
 
-/** `rot` informado → `listar` devolve só esse roteiro, sem imagens. */
-function passo(cores = ['Preto'], rot?: RoteiroAprovado | null, mlItemId = 'MLB1') {
-  if (rot !== undefined) api.listarImagens.mockResolvedValue(ok(lista([], 50, rot)));
-  const props = { aoRecarregar: vi.fn(), aoVoltarRoteiro: vi.fn() };
-  render(<PassoGerar mlItemId={mlItemId} ficha={ficha(cores)} {...props} />);
-  return props;
+function painel(cor: string | null = 'Preto', mlItemId = 'MLB1') {
+  return render(<PainelImagens mlItemId={mlItemId} cor={cor} />);
 }
-/** Imagens que entram no pedido da cor escolhida (as bloqueadas pela lupa aparecem com o motivo, fora do pedido). */
-const noPedido = () => within(screen.getByRole('list', { name: 'Imagens deste pedido' })).getAllByRole('listitem')
-  .filter((li) => li.getAttribute('data-no-pedido') === 'true').map((li) => li.textContent);
-/** Botão principal do protótipo: "Gerar N imagens · R$ X" (a confirmação é o próprio preço no botão). */
-const botaoGerar = () => screen.getByRole('button', { name: /^Gerar \d+ imagens? ·/ });
-const gerar = () => userEvent.click(botaoGerar());
+/** Cartão de uma imagem pelo nome (com várias cores, o n-ésimo). */
+const cartaoDe = (el: HTMLElement) => el.closest('[data-estado]') as HTMLElement;
+const cartao = (nome: string, n = 0) => cartaoDe(screen.getAllByText(nome, { selector: 'span.font-semibold' })[n]);
+const esperaCartao = async (nome: string) => cartaoDe(await screen.findByText(nome, { selector: 'span.font-semibold' }));
+const dialogo = () => screen.getByRole('dialog');
+const confirmarGeracao = () => userEvent.click(within(dialogo()).getByRole('button', { name: /^(Confirmar|Tentar de novo)$/ }));
 
 beforeEach(() => {
   vi.clearAllMocks();
-  trava.travas = null;
   valida.fn.mockReturnValue(true);
   api.listarImagens.mockResolvedValue(ok(lista()));
   api.confirmarExibicao.mockResolvedValue(ok({ cobradas: 1 }));
   api.reportarInvalida.mockResolvedValue(ok({ reportada: true }));
   api.gerarImagens.mockResolvedValue(ok({ pedido_id: 'p', imagens: [] }));
-  compor.fn.mockResolvedValue(new Blob(['x'], { type: 'image/jpeg' }));
+  final.fn.mockResolvedValue(new Blob(['x'], { type: 'image/jpeg' }));
   api.prepararUploadFinal.mockResolvedValue(ok({ path: 'org/galeria-ia/F1/finais/i1-n.jpg', token: 't', signed_url: 'u' }));
   api.enviarFinal.mockResolvedValue(null);
   api.aprovarFinal.mockResolvedValue(ok({ status: 'aprovada' }));
 });
 afterEach(() => { vi.useRealTimers(); });
 
-describe('PassoGerar: seleção e confirmação', () => {
-  it('uma cor por pedido: entram as imagens ligadas do roteiro aprovado, menos as de lupa travada (com o motivo)', async () => {
-    passo(['A', 'B', 'C'], aprovado([1, 2, 3, 5, 7]));
-    await screen.findByText(/por imagem/);
-    expect(screen.getByRole('combobox', { name: 'Cor' })).toHaveTextContent('A');
-    expect(noPedido()).toEqual(['Capa', 'Onde usar', 'Ficha técnica']);
-    expect(screen.getAllByText(/Em breve/)).toHaveLength(2);
+describe('PainelImagens: grade e geração', () => {
+  it('mostra 7 cartões com os nomes das imagens mesmo sem plano', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([], { plano_id: null })));
+    painel();
+    await screen.findByText('Capa');
+    expect(document.querySelectorAll('[data-estado]')).toHaveLength(7);
+    NOMES.forEach((n) => expect(screen.getByText(n)).toBeInTheDocument());
+    expect(screen.getAllByRole('button', { name: GERAR })).toHaveLength(7);
   });
 
-  it('com 4 ou mais cores o pedido continua sendo de uma cor só (sem multiplicar o custo)', async () => {
-    passo(['A', 'B', 'C', 'D']);
-    await screen.findByText(/por imagem/);
-    expect(botaoGerar()).toHaveTextContent('Gerar 5 imagens · R$ 2,50');
-    await gerar();
-    expect(api.gerarImagens.mock.calls[0][1]).toMatchObject({ cores: ['A'], missoes: [1, 2, 4, 5, 6] });
-  });
-
-  it('ramo liberado: imagem 3 sem detalhe na cor escolhida fica fora com o motivo; em outra cor com lupa ok, entra', async () => {
-    trava.travas = { geral: [], moda: [] };
-    api.listarImagens.mockResolvedValue(ok(lista([], 50, aprovado())));
-    const f = { ...ficha(['Rosa', 'Preto']), lupa: {
-      Preto: { geral: { 3: 'ok', 7: 'ok' }, moda: { 5: 'ok', 7: 'ok' } },
-      Rosa: { geral: { 3: 'indisponivel', 7: 'ok' }, moda: { 5: 'ok', 7: 'ok' } },
-    } } as Ficha;
-    render(<PassoGerar mlItemId="MLB1" ficha={f} aoRecarregar={vi.fn()} aoVoltarRoteiro={vi.fn()} />);
-    await screen.findByText(/por imagem/);
-    expect(noPedido()).not.toContain('Detalhe com lupa');
-    expect(screen.getByText(/sem detalhe do produto na foto: Rosa/)).toBeInTheDocument();
-    expect(noPedido()).toContain('Detalhes (recorte grátis)');
-    await escolherNoSelect(userEvent.setup(), 'Cor', 'Preto');
-    expect(noPedido()).toContain('Detalhe com lupa');
-  });
-
-  it('o botão mostra "N imagens · R$ X" com o preço do servidor; recortes não entram no valor', async () => {
-    passo(['Preto', 'Rosa']);
-    await screen.findByText(/por imagem/);
-    // 1 cor × 5 imagens com gerador (a 3 e a 7, de lupa travada, ficam fora) = 5 × R$ 0,50 = R$ 2,50.
-    expect(botaoGerar()).toHaveTextContent('Gerar 5 imagens · R$ 2,50');
-    await gerar();
+  it('"Gerar" de um cartão pede só aquela imagem e cor, após confirmar o valor', async () => {
+    painel();
+    await userEvent.click(within(await esperaCartao('Benefícios')).getByRole('button', { name: GERAR }));
+    expect(within(dialogo()).getByText('1 imagem · R$ 0,50')).toBeInTheDocument();
+    expect(api.gerarImagens).not.toHaveBeenCalled();
+    await confirmarGeracao();
+    await waitFor(() => expect(api.gerarImagens).toHaveBeenCalledTimes(1));
     const [ml, p] = api.gerarImagens.mock.calls[0];
     expect(ml).toBe('MLB1');
-    expect(p).toMatchObject({ roteiroVersao: 3, cores: ['Preto'], missoes: [1, 2, 4, 5, 6], unitCentsExibido: 50 });
+    expect(p).toMatchObject({ cores: ['Preto'], missoes: [4], unitCentsExibido: 50 });
     expect(p.pedidoId).toMatch(/^[0-9a-f-]{36}$/);
   });
 
-  it('preco_mudou mostra o preço novo no botão e pede novo clique, com outro pedido_id', async () => {
-    api.gerarImagens.mockResolvedValueOnce(falha(409, 'preco_mudou', { unit_cents: 80 }));
-    passo();
-    await screen.findByText(/por imagem/);
-    await gerar();
-    expect(await screen.findByText(/preço mudou/i)).toBeInTheDocument();
-    expect(botaoGerar()).toHaveTextContent('Gerar 5 imagens · R$ 4,00');
-    expect(api.gerarImagens).toHaveBeenCalledTimes(1);
-    await gerar();
+  it('"Gerar todas" pede as imagens disponíveis que ainda não têm imagem viva da cor', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([
+      imagem({ id: 'a', missao: 1, status: 'aprovada' }), imagem({ id: 'b', missao: 2, status: 'gerando', url: null }),
+      imagem({ id: 'c', missao: 3, status: 'falhou', url: null, erro: 'timeout' }),
+    ], { posicoes: posicoes({ 5: 'Faltam dados do produto para esta imagem.' }) })));
+    painel();
+    const botao = await screen.findByRole('button', { name: /^Gerar todas/ });
+    expect(botao).toHaveTextContent('Gerar todas (4 imagens · R$ 2,00)');
+    await userEvent.click(botao);
+    expect(within(dialogo()).getByText('4 imagens · R$ 2,00')).toBeInTheDocument();
+    await confirmarGeracao();
+    await waitFor(() => expect(api.gerarImagens).toHaveBeenCalledTimes(1));
+    expect(api.gerarImagens.mock.calls[0][1]).toMatchObject({ cores: ['Preto'], missoes: [3, 4, 6, 7] });
+  });
+
+  it('"Todas as cores": pedidos de até 5 cores, em sequência; recusa no 2º pedido para e mostra o motivo, o 1º segue gerando', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([], { cores: coresN(12) })));
+    api.gerarImagens.mockResolvedValueOnce(ok({ pedido_id: 'p1', imagens: [] }))
+      .mockResolvedValueOnce(falha(409, 'teto', { bloqueadas: [{ cor: 'Cor 6', missao: 1 }] }));
+    painel(null);
+    await userEvent.click(await screen.findByRole('button', { name: /^Gerar todas/ }));
+    expect(within(dialogo()).getByText('84 imagens · R$ 42,00')).toBeInTheDocument();
+    expect(within(dialogo()).getByText('Enviado em 3 pedidos, um depois do outro.')).toBeInTheDocument();
+    await confirmarGeracao();
+    expect(await within(dialogo()).findByText(/gerou esta imagem 3 vezes/i)).toBeInTheDocument();
+    expect(within(dialogo()).getByText(/O 1º pedido já foi enviado e segue gerando/)).toBeInTheDocument();
     expect(api.gerarImagens).toHaveBeenCalledTimes(2);
+    const [a, b] = api.gerarImagens.mock.calls.map((c) => c[1]);
+    expect(a.cores).toEqual(coresN(12).slice(0, 5));
+    expect(b.cores).toEqual(coresN(12).slice(5, 10));
+    expect(a.pedidoId).not.toBe(b.pedidoId);
+    // O diálogo mostra o que sobrou (2 pedidos: 5 + 2 cores = 49 imagens), com o botão travado pela recusa.
+    expect(within(dialogo()).getByText('49 imagens · R$ 24,50')).toBeInTheDocument();
+    expect(within(dialogo()).getByRole('button', { name: 'Confirmar' })).toBeDisabled();
+  });
+
+  it('"Todas as cores" faz uma faixa por cor, com o nome da cor', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([], { cores: ['Branco', 'Preto'] })));
+    painel(null);
+    await screen.findAllByText('Capa');
+    expect(screen.getByRole('heading', { name: 'Branco' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Preto' })).toBeInTheDocument();
+    expect(document.querySelectorAll('[data-estado]')).toHaveLength(14);
+  });
+
+  it('diálogo mostra "273 imagens · R$ 136,50" para 39 cores × 7 a R$ 0,50', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([], { cores: coresN(39) })));
+    painel(null);
+    await userEvent.click(await screen.findByRole('button', { name: /^Gerar todas/ }));
+    expect(within(dialogo()).getByText('273 imagens · R$ 136,50')).toBeInTheDocument();
+    expect(within(dialogo()).getByText('Enviado em 8 pedidos, um depois do outro.')).toBeInTheDocument();
+  });
+
+  it('422 posicao_indisponivel: relista e reabre o diálogo com a quantidade e o total novos', async () => {
+    api.gerarImagens.mockResolvedValueOnce(falha(422, 'posicao_indisponivel', { missoes: [5] }));
+    painel();
+    await userEvent.click(await screen.findByRole('button', { name: /^Gerar todas/ }));
+    expect(within(dialogo()).getByText('7 imagens · R$ 3,50')).toBeInTheDocument();
+    api.listarImagens.mockResolvedValue(ok(lista([], { posicoes: posicoes({ 5: 'Faltam dados do produto para esta imagem.' }) })));
+    await confirmarGeracao();
+    expect(await within(dialogo()).findByText('6 imagens · R$ 3,00')).toBeInTheDocument();
+    expect(within(dialogo()).getByText(/Faltam dados do produto para algumas imagens/)).toBeInTheDocument();
+    expect(within(dialogo()).getByRole('button', { name: 'Confirmar' })).toBeEnabled();
+    await confirmarGeracao();
+    await waitFor(() => expect(api.gerarImagens).toHaveBeenCalledTimes(2));
+    expect(api.gerarImagens.mock.calls[1][1]).toMatchObject({ missoes: [1, 2, 3, 4, 6, 7] });
+    expect(api.gerarImagens.mock.calls[1][1].pedidoId).not.toBe(api.gerarImagens.mock.calls[0][1].pedidoId);
+  });
+
+  it('409 plano_desatualizado: diálogo "12 imagens prontas deixam de valer. Gerar mesmo assim?"; confirmar reenvia com confirmarTroca', async () => {
+    api.gerarImagens.mockResolvedValueOnce(falha(409, 'plano_desatualizado', { imagens: 12 }));
+    painel();
+    await userEvent.click(within(await esperaCartao('Capa')).getByRole('button', { name: GERAR }));
+    await confirmarGeracao();
+    expect(await screen.findByText('12 imagens prontas deixam de valer. Gerar mesmo assim?')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Gerar mesmo assim' }));
+    await waitFor(() => expect(api.gerarImagens).toHaveBeenCalledTimes(2));
+    const [a, b] = api.gerarImagens.mock.calls.map((c) => c[1]);
+    expect(a.confirmarTroca).toBeFalsy();
+    expect(b.confirmarTroca).toBe(true);
+    expect(b.pedidoId).toBe(a.pedidoId);
+    expect(b.missoes).toEqual([1]);
+  });
+
+  it('enquanto um pedido está em voo, todos os botões Gerar ficam desabilitados', async () => {
+    let liberar!: (r: Res<unknown>) => void;
+    api.gerarImagens.mockReturnValue(new Promise((r) => { liberar = r; }));
+    painel();
+    await userEvent.click(within(await esperaCartao('Capa')).getByRole('button', { name: /^Gerar ·/ }));
+    await confirmarGeracao();
+    await waitFor(() => expect(api.gerarImagens).toHaveBeenCalled());
+    const botoes = screen.getAllByRole('button', { name: /^Gerar( |$)/, hidden: true });
+    expect(botoes.length).toBeGreaterThan(7);
+    botoes.forEach((b) => expect(b).toBeDisabled());
+    await act(async () => { liberar(ok({ pedido_id: 'p', imagens: [] })); });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('cartão indisponível mostra o motivo e não tem botão', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([], { posicoes: posicoes({ 5: 'Faltam dados do produto para esta imagem.' }) })));
+    painel();
+    const c = await esperaCartao('Ficha técnica');
+    expect(c).toHaveAttribute('data-estado', 'indisponivel');
+    expect(within(c).getByText('Faltam dados do produto para esta imagem.')).toBeInTheDocument();
+    expect(within(c).queryByRole('button')).toBeNull();
+  });
+
+  it('não escreve "posição", "plano", "missão" nem "roteiro" na tela', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 2 }), imagem({ id: 'f', missao: 6, status: 'falhou', url: null, erro: 'codigo_estranho' })])));
+    painel();
+    await screen.findByText('Em uso');
+    expect(document.body.textContent).not.toMatch(/posi[cç][aã]o|plano|miss[aã]o|roteiro|codigo_estranho/i);
+  });
+});
+
+describe('PainelImagens: estados do cartão', () => {
+  it('alerta texto_extra aparece no cartão e não bloqueia Aprovar', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 2, alertas: [
+      { tipo: 'texto_extra', nota: '"Super oferta"' }, { tipo: 'texto_faltando', nota: 'Prende firme' }, { tipo: 'verificacao_indisponivel', nota: '' },
+    ] })])));
+    painel();
+    const c = await esperaCartao('Em uso');
+    expect(within(c).getByText('Texto a mais na imagem: "Super oferta"')).toBeInTheDocument();
+    expect(within(c).getByText('Faltou ou saiu errado o texto: Prende firme')).toBeInTheDocument();
+    expect(within(c).getByText('Não foi possível conferir o texto. Confira antes de aprovar.')).toBeInTheDocument();
+    expect(within(c).getByRole('button', { name: 'Aprovar' })).toBeEnabled();
+  });
+
+  it('imagem de plano antigo (roteiro_id ≠ plano_id) aparece sem Aprovar e com a nota', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 2, roteiro_id: 'P0' })])));
+    painel();
+    await screen.findByAltText('Em uso · Preto');
+    expect(screen.queryByRole('button', { name: 'Aprovar' })).toBeNull();
+    expect(screen.getByText('Imagem de uma versão anterior. Gere de novo.')).toBeInTheDocument();
+  });
+
+  it('sem plano ainda: imagem antiga não aprovada conta como faltando para o Gerar todas', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 2, roteiro_id: 'P0' })], { plano_id: null })));
+    painel();
+    expect(await screen.findByRole('button', { name: /^Gerar todas/ })).toHaveTextContent('Gerar todas (7 imagens · R$ 3,50)');
+  });
+
+  it('imagem com alertas null segue como "Gerando…" (sem imagem na tela) e mantém o polling', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ alertas: null })])));
+    painel();
+    const c = await esperaCartao('Capa');
+    expect(c).toHaveAttribute('data-estado', 'gerando');
+    expect(within(c).getByText('Gerando…')).toBeInTheDocument();
+    expect(screen.queryByAltText('Capa · Preto')).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(api.listarImagens).toHaveBeenCalledTimes(2);
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ alertas: [] })])));
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(await screen.findByAltText('Capa · Preto')).toBeInTheDocument();
+  });
+
+  it('aprovada: selo "Aprovada" e "Gerar outra"; falhou: motivo e "Tentar de novo"', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([
+      imagem({ id: 'a', missao: 1, status: 'aprovada', exibida: true }), imagem({ id: 'f', missao: 2, status: 'falhou', url: null, erro: 'teto' }),
+    ])));
+    painel();
+    const a = await esperaCartao('Capa');
+    expect(within(a).getByText('Aprovada')).toBeInTheDocument();
+    expect(within(a).getByRole('button', { name: 'Gerar outra' })).toBeInTheDocument();
+    expect(within(a).queryByRole('button', { name: 'Aprovar' })).toBeNull();
+    const f = cartao('Em uso');
+    expect(within(f).getByText('Você já gerou esta imagem 3 vezes.')).toBeInTheDocument();
+    await userEvent.click(within(f).getByRole('button', { name: 'Tentar de novo' }));
+    await confirmarGeracao();
+    await waitFor(() => expect(api.gerarImagens.mock.calls[0][1]).toMatchObject({ cores: ['Preto'], missoes: [2] }));
+  });
+
+  it('mostra a geração mais nova; com uma aprovada mais antiga, avisa que ela existe', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([
+      imagem({ id: 'v1', status: 'aprovada', geracao: 1, url: 'https://signed/v1.png' }), imagem({ id: 'v2', geracao: 2, url: 'https://signed/v2.png' }),
+    ])));
+    painel();
+    expect(await screen.findByAltText('Capa · Preto')).toHaveAttribute('src', 'https://signed/v2.png');
+    expect(screen.getByText('Existe uma versão aprovada desta imagem.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Aprovar' })).toBeInTheDocument();
+  });
+
+  it('"Gerar outra" abre a confirmação de 1 imagem, da cor e imagem do cartão', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ cor: 'Rosa', missao: 2 })], { cores: ['Preto', 'Rosa'] })));
+    painel('Rosa');
+    await userEvent.click(await screen.findByRole('button', { name: 'Gerar outra' }));
+    expect(within(dialogo()).getByText('1 imagem · R$ 0,50')).toBeInTheDocument();
+    await confirmarGeracao();
+    await waitFor(() => expect(api.gerarImagens.mock.calls[0][1]).toMatchObject({ cores: ['Rosa'], missoes: [2] }));
+  });
+
+  it('"Gerar outra" some quando o servidor diz que a vaga acabou', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ pode_gerar_de_novo: false })])));
+    painel();
+    await screen.findByAltText('Capa · Preto');
+    expect(screen.queryByRole('button', { name: 'Gerar outra' })).toBeNull();
+  });
+});
+
+describe('PainelImagens: recusas do pedido', () => {
+  const gerarCapa = async () => {
+    await userEvent.click(within(await esperaCartao('Capa')).getByRole('button', { name: /^Gerar ·/ }));
+    await confirmarGeracao();
+  };
+
+  it('preco_mudou mostra o preço novo no diálogo e pede nova confirmação, com outro pedido_id', async () => {
+    api.gerarImagens.mockResolvedValueOnce(falha(409, 'preco_mudou', { unit_cents: 80 }));
+    painel();
+    await gerarCapa();
+    expect(await within(dialogo()).findByText(/preço mudou para R\$\s0,80/i)).toBeInTheDocument();
+    expect(within(dialogo()).getByText('1 imagem · R$ 0,80')).toBeInTheDocument();
+    expect(api.gerarImagens).toHaveBeenCalledTimes(1);
+    await confirmarGeracao();
+    await waitFor(() => expect(api.gerarImagens).toHaveBeenCalledTimes(2));
     const [a, b] = api.gerarImagens.mock.calls.map((c) => c[1]);
     expect(b.unitCentsExibido).toBe(80);
     expect(b.pedidoId).not.toBe(a.pedidoId);
   });
 
-  it('recusa definitiva: motivo em português e botão desabilitado, sem nova tentativa', async () => {
+  it('recusa definitiva: motivo em português e Confirmar desabilitado, sem nova tentativa', async () => {
     api.gerarImagens.mockResolvedValueOnce(falha(409, 'teto', { bloqueadas: [{ cor: 'Preto', missao: 1, motivo: 'teto' }] }));
-    passo();
-    await screen.findByText(/por imagem/);
-    await gerar();
-    expect(await screen.findByText(/gerou esta imagem 3 vezes/i)).toBeInTheDocument();
-    expect(screen.getByText(/Capa · Preto/)).toBeInTheDocument();
-    expect(botaoGerar()).toBeDisabled();
+    painel();
+    await gerarCapa();
+    expect(await within(dialogo()).findByText(/gerou esta imagem 3 vezes/i)).toBeInTheDocument();
+    expect(within(dialogo()).getByText('Capa · Preto')).toBeInTheDocument();
+    expect(within(dialogo()).getByRole('button', { name: 'Confirmar' })).toBeDisabled();
     expect(api.gerarImagens).toHaveBeenCalledTimes(1);
   });
 
-  it('ml_indisponivel: tentar de novo reusa o mesmo pedido_id', async () => {
-    api.gerarImagens.mockResolvedValueOnce(falha(503, 'ml_indisponivel'));
-    passo();
-    await screen.findByText(/por imagem/);
-    await gerar();
-    expect(await screen.findByText(/Mercado Livre indisponível, tente de novo/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+  it.each([['ml_indisponivel', 503], ['rede', 0]])('%s: "Tentar de novo" reusa o mesmo pedido_id', async (erro, status) => {
+    api.gerarImagens.mockResolvedValueOnce(falha(status as number, erro as string));
+    painel();
+    await gerarCapa();
+    expect(await within(dialogo()).findByText(/Mercado Livre indisponível, tente de novo/)).toBeInTheDocument();
+    await confirmarGeracao();
+    await waitFor(() => expect(api.gerarImagens).toHaveBeenCalledTimes(2));
     const [a, b] = api.gerarImagens.mock.calls.map((c) => c[1]);
     expect(b.pedidoId).toBe(a.pedidoId);
     expect(b.cores).toEqual(a.cores);
   });
 
-  // Revisão B+C (Grok, achado 5): depois de rede/ml_indisponivel, o próprio botão Gerar repete o MESMO pedido
-  // (a RPC é idempotente pelo id); só trocar a cor ou a seleção abre outro.
-  it.each([['rede', 0], ['ml_indisponivel', 503]])('%s: o botão Gerar reusa o mesmo pedido_id', async (erro, status) => {
-    api.gerarImagens.mockResolvedValueOnce(falha(status as number, erro as string));
-    passo();
-    await screen.findByText(/por imagem/);
-    await gerar();
-    await screen.findByText(/Mercado Livre indisponível, tente de novo/);
-    await gerar();
-    const [a, b] = api.gerarImagens.mock.calls.map((c) => c[1]);
-    expect(b.pedidoId).toBe(a.pedidoId);
+  it('sem foto de referência: motivo e as cores', async () => {
+    api.gerarImagens.mockResolvedValueOnce(falha(409, 'sem_referencia', { cores: ['Preto'] }));
+    painel();
+    await gerarCapa();
+    expect(await within(dialogo()).findByText('Falta a foto real desta cor no cadastro.')).toBeInTheDocument();
+    expect(within(dialogo()).getByText('Preto')).toBeInTheDocument();
   });
 
-  it('familia_nao_vigente: botão Recarregar visível e Gerar desabilitado', async () => {
-    api.gerarImagens.mockResolvedValueOnce(falha(409, 'familia_nao_vigente', { familia_id_vigente: 'F2' }));
-    const props = passo();
-    await screen.findByText(/por imagem/);
-    await gerar();
-    await userEvent.click(await screen.findByRole('button', { name: 'Recarregar' }));
-    expect(props.aoRecarregar).toHaveBeenCalled();
-    expect(botaoGerar()).toBeDisabled();
-    expect(api.gerarImagens).toHaveBeenCalledTimes(1);
-  });
-
-  it('roteiro aprovado de família anterior: imagens visíveis, pedido novo bloqueado com aviso', async () => {
-    api.listarImagens.mockResolvedValue(ok(lista([imagem()], 50, aprovado(undefined, { familia_id: 'F-antiga' }))));
-    passo();
-    expect(await screen.findByAltText('Capa · Preto')).toBeInTheDocument();
-    expect(screen.getByText(/cadastro antigo/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Gerar \d+ imagens? ·/ })).toBeNull();
-  });
-
-  it('ciência pendente volta aos textos', async () => {
-    api.gerarImagens.mockResolvedValueOnce(falha(409, 'conteudo.ciencia_nao_conferido', { campos: ['Material'] }));
-    const props = passo();
-    await screen.findByText(/por imagem/);
-    await gerar();
-    await userEvent.click(await screen.findByRole('button', { name: 'Voltar aos textos' }));
-    expect(props.aoVoltarRoteiro).toHaveBeenCalled();
+  it('nenhuma mensagem do operador mostra código cru', async () => {
+    api.gerarImagens.mockResolvedValueOnce(falha(409, 'codigo_que_nao_existe', { bloqueadas: [{ cor: 'Preto', missao: 1 }] }));
+    painel();
+    await gerarCapa();
+    expect(await within(dialogo()).findByText('Não deu certo. Tente de novo; se repetir, avise o suporte.')).toBeInTheDocument();
+    expect(within(dialogo()).getByText('Capa · Preto')).toBeInTheDocument();
+    expect(screen.queryByText(/codigo_que_nao_existe|Erro:/)).toBeNull();
   });
 });
 
-describe('PassoGerar: exibição e cobrança', () => {
+describe('PainelImagens: exibição e cobrança', () => {
   it('listar → imagem válida confirma uma vez, mesmo com polls seguintes (URL estável)', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    api.listarImagens.mockResolvedValue(ok(lista([imagem(), imagem({ id: 'i2', status: 'gerando', url: null })])));
-    passo();
+    api.listarImagens.mockResolvedValue(ok(lista([imagem(), imagem({ id: 'i2', missao: 2, status: 'gerando', url: null })])));
+    painel();
     const img = await screen.findByAltText('Capa · Preto');
     fireEvent.load(img);
     await waitFor(() => expect(api.confirmarExibicao).toHaveBeenCalledWith('MLB1', ['i1']));
-    api.listarImagens.mockResolvedValue(ok(lista([imagem({ url: 'https://signed/outra.png', exibida: true }), imagem({ id: 'i2', status: 'gerando', url: null })])));
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ url: 'https://signed/outra.png', exibida: true }), imagem({ id: 'i2', missao: 2, status: 'gerando', url: null })])));
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
     expect(api.listarImagens).toHaveBeenCalledTimes(2);
     expect(screen.getByAltText('Capa · Preto')).toHaveAttribute('src', 'https://signed/i1.png');
@@ -226,7 +358,7 @@ describe('PassoGerar: exibição e cobrança', () => {
   it('imagem branca → reportar_invalida e nenhuma confirmação', async () => {
     valida.fn.mockReturnValue(false);
     api.listarImagens.mockResolvedValue(ok(lista([imagem()])));
-    passo();
+    painel();
     fireEvent.load(await screen.findByAltText('Capa · Preto'));
     await waitFor(() => expect(api.reportarInvalida).toHaveBeenCalledWith('MLB1', 'i1'));
     expect(api.confirmarExibicao).not.toHaveBeenCalled();
@@ -235,27 +367,26 @@ describe('PassoGerar: exibição e cobrança', () => {
   it('canvas contaminado (exceção na validação) → nem confirma nem reporta', async () => {
     valida.fn.mockImplementation(() => { throw new DOMException('tainted', 'SecurityError'); });
     api.listarImagens.mockResolvedValue(ok(lista([imagem()])));
-    passo();
+    painel();
     fireEvent.load(await screen.findByAltText('Capa · Preto'));
     await new Promise((r) => setTimeout(r, 0));
     expect(api.confirmarExibicao).not.toHaveBeenCalled();
     expect(api.reportarInvalida).not.toHaveBeenCalled();
   });
 
-  it('já exibida e recorte não chamam confirmação', async () => {
-    api.listarImagens.mockResolvedValue(ok(lista([imagem({ exibida: true }), imagem({ id: 'r', missao: 7, origem: 'recorte' })])));
-    passo();
+  it('já exibida não chama confirmação', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ exibida: true })])));
+    painel();
     fireEvent.load(await screen.findByAltText('Capa · Preto'));
-    fireEvent.load(screen.getByAltText('Detalhes · Preto'));
     await new Promise((r) => setTimeout(r, 0));
     expect(api.confirmarExibicao).not.toHaveBeenCalled();
   });
 
   it('polling para quando tudo é terminal e os alertas chegaram; para ao desmontar', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    api.listarImagens.mockResolvedValue(ok(lista([imagem({ alertas: null })])));
-    const { unmount } = render(<PassoGerar mlItemId="MLB1" ficha={ficha(['Preto'])} aoRecarregar={vi.fn()} aoVoltarRoteiro={vi.fn()} />);
-    await screen.findByAltText('Capa · Preto');
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ status: 'gerando', url: null })])));
+    const { unmount } = painel();
+    await screen.findByText('Capa');
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
     expect(api.listarImagens).toHaveBeenCalledTimes(2);
     unmount();
@@ -265,50 +396,38 @@ describe('PassoGerar: exibição e cobrança', () => {
 
   it('sem linha aberta e com alertas → não faz polling', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    api.listarImagens.mockResolvedValue(ok(lista([imagem(), imagem({ id: 'f', status: 'falhou', alertas: null, url: null })])));
-    passo();
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ exibida: true }), imagem({ id: 'f', missao: 2, status: 'falhou', alertas: null, url: null })])));
+    painel();
     await screen.findByAltText('Capa · Preto');
     await act(async () => { await vi.advanceTimersByTimeAsync(15000); });
     expect(api.listarImagens).toHaveBeenCalledTimes(1);
   });
 
-  it('listar com 503 continua o polling; com 4xx para', async () => {
+  it('listar com 503 continua o polling', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     api.listarImagens.mockResolvedValueOnce(falha(503, 'falha_interna')).mockResolvedValue(ok(lista([imagem()])));
-    passo();
-    expect(await screen.findByText(/Erro/)).toBeInTheDocument();
+    painel();
+    expect(await screen.findByText(/Erro interno/)).toBeInTheDocument();
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
     expect(await screen.findByAltText('Capa · Preto')).toBeInTheDocument();
     expect(api.listarImagens).toHaveBeenCalledTimes(2);
   });
 
-  it('listar com 409 não reagenda', async () => {
+  it('listar com 409 não reagenda e informa a página', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
+    const aoFalha = vi.fn();
     api.listarImagens.mockResolvedValue(falha(409, 'anuncio_ambiguo'));
-    passo();
+    render(<PainelImagens mlItemId="MLB1" cor="Preto" aoFalha={aoFalha} />);
     await screen.findByText(/identificar este anúncio/);
     await act(async () => { await vi.advanceTimersByTimeAsync(15000); });
     expect(api.listarImagens).toHaveBeenCalledTimes(1);
-  });
-
-  it('recusa definitiva seguida de poll com falha mantém o Gerar desabilitado', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    api.listarImagens.mockResolvedValueOnce(ok(lista([imagem({ status: 'gerando', url: null })]))).mockResolvedValue(falha(503, 'falha_interna'));
-    api.gerarImagens.mockResolvedValueOnce(falha(409, 'teto', { bloqueadas: [{ cor: 'Preto', missao: 1, motivo: 'teto' }] }));
-    passo();
-    await screen.findByText(/por imagem/);
-    await gerar();
-    await screen.findByText(/gerou esta imagem 3 vezes/i);
-    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
-    expect(api.listarImagens).toHaveBeenCalledTimes(2);
-    expect(botaoGerar()).toBeDisabled();
-    expect(screen.getByText(/gerou esta imagem 3 vezes/i)).toBeInTheDocument();
+    expect(aoFalha).toHaveBeenCalledWith('anuncio_ambiguo');
   });
 
   it('falha de carga não é terminal: aviso, sem cobrar nem reportar; o poll seguinte tenta com URL nova e cobra', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     api.listarImagens.mockResolvedValue(ok(lista([imagem()])));
-    passo();
+    painel();
     fireEvent.error(await screen.findByAltText('Capa · Preto'));
     expect(await screen.findByText(/Não foi possível exibir a imagem/)).toBeInTheDocument();
     expect(api.confirmarExibicao).not.toHaveBeenCalled();
@@ -325,7 +444,7 @@ describe('PassoGerar: exibição e cobrança', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     api.confirmarExibicao.mockResolvedValueOnce(falha(503, 'falha_interna')).mockResolvedValue(ok({ cobradas: 1 }));
     api.listarImagens.mockResolvedValue(ok(lista([imagem()])));
-    passo();
+    painel();
     fireEvent.load(await screen.findByAltText('Capa · Preto'));
     await waitFor(() => expect(api.confirmarExibicao).toHaveBeenCalledTimes(1));
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
@@ -335,234 +454,77 @@ describe('PassoGerar: exibição e cobrança', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
     expect(api.confirmarExibicao).toHaveBeenCalledTimes(2);
   });
-
-  it('preço só no botão: nem o cartão, nem o resumo repetem o valor', async () => {
-    api.listarImagens.mockResolvedValue(ok(lista([imagem({ unit_cents: 50 })], 80)));
-    passo();
-    await screen.findByAltText('Capa · Preto');
-    expect(botaoGerar()).toHaveTextContent('Gerar 5 imagens · R$ 4,00');
-    expect(screen.queryByText(/ao exibir/)).toBeNull();
-    expect(screen.queryByText('Resumo')).toBeNull();
-    expect(screen.getAllByText(/R\$\s/)).toHaveLength(1);
-  });
-
-  it('"Gerar de novo" não aparece quando o roteiro aprovado é de família anterior', async () => {
-    api.listarImagens.mockResolvedValue(ok(lista([imagem()], 50, aprovado([1, 2], { familia_id: 'F0' }))));
-    passo();
-    await screen.findByText(/cadastro antigo/);
-    expect(screen.queryByRole('button', { name: /^Gerar outra/ })).toBeNull();
-  });
-
-  it('"Gerar outra" mostra as restantes e abre a confirmação de 1 imagem junto ao cartão, da cor e missão dele', async () => {
-    api.listarImagens.mockResolvedValue(ok(lista([imagem({ cor: 'Rosa', missao: 2, geracao: 1 })])));
-    passo(['Rosa', 'Preto']);
-    const botao = await screen.findByRole('button', { name: /^Gerar outra \(2 restantes\)/ });
-    await userEvent.click(botao);
-    const cartao = botao.closest('[data-estado]') as HTMLElement;
-    expect(within(cartao).getByText(/1 imagem · R\$\s0,50/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
-    expect(api.gerarImagens.mock.calls[0][1]).toMatchObject({ cores: ['Rosa'], missoes: [2] });
-  });
 });
 
-describe('PassoGerar: gerar de novo e lupa', () => {
-  it('"Gerar de novo" some em missão bloqueada pela lupa (mesmo filtro da seleção)', async () => {
-    api.listarImagens.mockResolvedValue(ok(lista([imagem({ cor: 'Rosa', missao: 3 })])));
-    passo(['Preto', 'Rosa']);
-    await screen.findByText(/por imagem/);
-    expect(screen.queryByRole('button', { name: /^Gerar outra/ })).toBeNull();
-  });
-});
-
-describe('PassoGerar: aprovar (Task 12)', () => {
-  it('compõe com a cena, a referência e os textos do roteiro aprovado; sobe pela URL assinada e aprova', async () => {
-    api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 2 })])));
-    passo();
-    await userEvent.click(await screen.findByRole('button', { name: 'Aprovar' }));
-    await waitFor(() => expect(api.aprovarFinal).toHaveBeenCalledWith('MLB1', 'i1', undefined));
-    expect(compor.fn).toHaveBeenCalledWith({
-      cenaUrl: 'https://signed/i1.png', refUrl: 'https://signed/ref.jpg', missao: 2, textos: { headline: 'Prende firme' }, corProduto: null, moda: false,
-      lupa: null,
-    });
-    expect(api.prepararUploadFinal).toHaveBeenCalledWith('MLB1', 'i1');
+describe('PainelImagens: aprovar', () => {
+  it('recorta a imagem (só a capa é encaixada inteira), sobe pela URL assinada e aprova; não compõe texto', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ id: 'c1', missao: 1 }), imagem({ id: 'u2', missao: 2, url: 'https://signed/u2.png' })])));
+    painel();
+    await userEvent.click(within(await esperaCartao('Em uso')).getByRole('button', { name: 'Aprovar' }));
+    await waitFor(() => expect(api.aprovarFinal).toHaveBeenCalledWith('MLB1', 'u2'));
+    expect(final.fn).toHaveBeenCalledWith('https://signed/u2.png', false);
+    expect(api.prepararUploadFinal).toHaveBeenCalledWith('MLB1', 'u2');
     expect(api.enviarFinal).toHaveBeenCalledWith('org/galeria-ia/F1/finais/i1-n.jpg', 't', expect.any(Blob));
+    await userEvent.click(within(cartao('Capa')).getByRole('button', { name: 'Aprovar' }));
+    await waitFor(() => expect(final.fn).toHaveBeenCalledWith('https://signed/i1.png', true));
   });
 
-  it('missões com lupa/recorte cego (3 e 7; Moda 5 e 7): Aprovar desabilitado com "lupa em ajuste"', async () => {
-    api.listarImagens.mockResolvedValue(ok(lista([
-      imagem({ id: 'a', missao: 3 }), imagem({ id: 'b', missao: 7, origem: 'recorte', url: 'https://signed/ref.jpg' }),
-    ])));
-    passo();
-    await screen.findByAltText('Detalhe com lupa · Preto');
-    const botoes = screen.getAllByRole('button', { name: 'Aprovar' });
-    expect(botoes).toHaveLength(2);
-    for (const b of botoes) { expect(b).toBeDisabled(); expect(b).toHaveAttribute('title', 'Em breve'); }
-    expect(compor.fn).not.toHaveBeenCalled();
-  });
-
-  it('Moda: 5 e 7 bloqueadas, 3 (cena de costas) liberada', async () => {
-    api.listarImagens.mockResolvedValue(ok(lista([
-      imagem({ id: 'a', missao: 3 }), imagem({ id: 'b', missao: 5, origem: 'recorte' }),
-    ], 50, aprovado(undefined, { moda: true }))));
-    passo();
-    await screen.findAllByRole('img');
-    const [m3, m5] = screen.getAllByRole('button', { name: 'Aprovar' });
-    expect(m3).toBeEnabled();
-    expect(m5).toBeDisabled();
-  });
-
-  it('ramo liberado: missão 7 compõe com as caixas do listar e aprova enviando o hash delas', async () => {
-    trava.travas = { geral: [], moda: [] };
-    const caixas = { produto: { x: 0, y: 0, w: 1, h: 1 }, detalhes: [{ x: 0.1, y: 0.1, w: 0.1, h: 0.1 }, { x: 0.7, y: 0.7, w: 0.1, h: 0.1 }], ref_w: 1000, ref_h: 1000 };
-    api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 7, origem: 'recorte', url: 'https://signed/ref.jpg', lupa: { situacao: 'ok', ...caixas, hash: 'hashR' } })])));
-    passo();
-    await userEvent.click(await screen.findByRole('button', { name: 'Aprovar' }));
-    await waitFor(() => expect(api.aprovarFinal).toHaveBeenCalledWith('MLB1', 'i1', 'hashR'));
-    expect(compor.fn).toHaveBeenCalledWith(expect.objectContaining({ missao: 7, cenaUrl: null, lupa: caixas }));
-  });
-
-  it.each([['indisponivel', /sem detalhe do produto/i], ['lendo', /preparando esta imagem/i]] as const)(
-    'ramo liberado: lupa %s → Aprovar desabilitado com o motivo no cartão, nada composto', async (situacao, motivo) => {
-      trava.travas = { geral: [], moda: [] };
-      api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 3, lupa: { situacao } })])));
-      passo();
-      const botao = await screen.findByRole('button', { name: 'Aprovar' });
-      expect(botao).toBeDisabled();
-      expect(screen.getByText(motivo)).toBeInTheDocument();
-      expect(compor.fn).not.toHaveBeenCalled();
-    });
-
-  it('imagem de outro roteiro (não o aprovado atual): sem botão Aprovar', async () => {
-    api.listarImagens.mockResolvedValue(ok(lista([imagem({ roteiro_id: 'R-antigo' })])));
-    passo();
-    await screen.findByAltText('Capa · Preto');
-    expect(screen.queryByRole('button', { name: 'Aprovar' })).toBeNull();
-  });
-
-  // Revisão geral (bloqueador 1): o servidor só aprova gerador já cobrada; a tela confirma a exibição e repete o aprovar.
-  it('exibicao_pendente → confirma a exibição e repete só o aprovar (sem recompor nem novo upload)', async () => {
+  it('exibicao_pendente → confirma a exibição e repete só o aprovar (sem recortar nem novo upload)', async () => {
     api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 2, exibida: true })])));
     api.aprovarFinal.mockResolvedValueOnce(falha(409, 'exibicao_pendente'));
-    passo();
+    painel();
     await userEvent.click(await screen.findByRole('button', { name: 'Aprovar' }));
     await waitFor(() => expect(api.aprovarFinal).toHaveBeenCalledTimes(2));
     expect(api.confirmarExibicao).toHaveBeenCalledWith('MLB1', ['i1']);
-    expect(compor.fn).toHaveBeenCalledTimes(1);
+    expect(final.fn).toHaveBeenCalledTimes(1);
     expect(api.prepararUploadFinal).toHaveBeenCalledTimes(1);
   });
+
   it('exibicao_pendente de novo após confirmar → motivo no cartão, sem laço', async () => {
     api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 2, exibida: true })])));
     api.aprovarFinal.mockResolvedValue(falha(409, 'exibicao_pendente'));
-    passo();
+    painel();
     await userEvent.click(await screen.findByRole('button', { name: 'Aprovar' }));
     expect(await screen.findByText(/sendo registrada/i)).toBeInTheDocument();
     expect(api.aprovarFinal).toHaveBeenCalledTimes(2);
     expect(api.confirmarExibicao).toHaveBeenCalledTimes(1);
   });
-  it('texto que estoura: motivo claro no cartão e nada sobe', async () => {
-    compor.fn.mockRejectedValue(new Error('Etapa 1 não cabe em 2 linhas: encurte o texto no roteiro'));
+
+  it('imagem que não cabe no formato: motivo claro no cartão e nada sobe', async () => {
+    final.fn.mockRejectedValue(new Error('corte'));
     api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 2 })])));
-    passo();
+    painel();
     await userEvent.click(await screen.findByRole('button', { name: 'Aprovar' }));
-    expect(await screen.findByText(/Etapa 1 não cabe na imagem/)).toBeInTheDocument();
+    expect(await screen.findByText(/não cabe no formato do anúncio/)).toBeInTheDocument();
     expect(api.prepararUploadFinal).not.toHaveBeenCalled();
     expect(api.aprovarFinal).not.toHaveBeenCalled();
   });
 
-  it('arquivo recusado pelo servidor e referência trocada: motivo no cartão', async () => {
+  it('arquivo recusado pelo servidor: motivo no cartão', async () => {
     api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 2 })])));
     api.aprovarFinal.mockResolvedValueOnce(falha(422, 'arquivo_invalido', { erros: ['branca'] }));
-    passo();
+    painel();
     await userEvent.click(await screen.findByRole('button', { name: 'Aprovar' }));
     expect(await screen.findByText(/em branco/)).toBeInTheDocument();
-    api.aprovarFinal.mockResolvedValueOnce(falha(409, 'referencia_trocada'));
-    await userEvent.click(screen.getByRole('button', { name: 'Aprovar' }));
-    expect(await screen.findByText(/referência/i)).toBeInTheDocument();
-  });
-
-  it('sem botão Aprovar enquanto a verificação por visão não respondeu', async () => {
-    api.listarImagens.mockResolvedValue(ok(lista([imagem({ alertas: null })])));
-    passo();
-    await screen.findByText('Verificando texto e produto…');
-    expect(screen.queryByRole('button', { name: 'Aprovar' })).toBeNull();
   });
 });
 
 describe('CartaoImagem', () => {
-  it('mostra os alertas da verificação', () => {
-    render(<CartaoImagem imagem={imagem({ alertas: [{ tipo: 'cor', nota: 'Cor diferente da referência' }] })} onGerarDeNovo={vi.fn()} />);
-    expect(screen.getByRole('alert')).toHaveTextContent('Cor diferente da referência');
-  });
-
-  it('"Gerar de novo" some quando o servidor diz que a vaga acabou (teto ou em andamento)', () => {
-    render(<CartaoImagem imagem={imagem({ pode_gerar_de_novo: false })} onGerarDeNovo={vi.fn()} />);
-    expect(screen.queryByRole('button', { name: /^Gerar outra/ })).toBeNull();
-  });
-});
-
-describe('Gerar outra: restantes e confirmação por cartão', () => {
-  const duas = () => [imagem({ id: 'g1', cor: 'Preto', missao: 2, geracao: 1 }), imagem({ id: 'g2', cor: 'Preto', missao: 2, geracao: 2 })];
-
-  it('duas gerações ocupando vaga da mesma cor e imagem: "1 restante" em ambos os cartões; falhou não conta, imagem_invalida conta', async () => {
-    api.listarImagens.mockResolvedValue(ok(lista([...duas(), imagem({ id: 'g3', cor: 'Preto', missao: 2, geracao: 3, status: 'falhou', erro: 'timeout', url: null, pode_gerar_de_novo: false })])));
-    passo();
-    expect(await screen.findAllByRole('button', { name: /^Gerar outra \(1 restante\)/ })).toHaveLength(2);
-  });
-
-  it('com 3 ocupantes o botão fica desabilitado (0 restantes)', async () => {
-    api.listarImagens.mockResolvedValue(ok(lista([...duas(), imagem({ id: 'g3', cor: 'Preto', missao: 2, geracao: 3, status: 'falhou', erro: 'imagem_invalida' })])));
-    passo();
-    const botoes = await screen.findAllByRole('button', { name: /^Gerar outra \(0 restantes\)/ });
-    botoes.forEach((b) => expect(b).toBeDisabled());
-  });
-
-  it('o painel de confirmação aparece só no cartão clicado, mesmo com outra versão da mesma cor e imagem', async () => {
-    api.listarImagens.mockResolvedValue(ok(lista(duas())));
-    passo();
-    const botoes = await screen.findAllByRole('button', { name: /^Gerar outra/ });
-    await userEvent.click(botoes[1]);
-    const cartoes = document.querySelectorAll('[data-estado]');
-    expect(within(cartoes[1] as HTMLElement).getByRole('button', { name: 'Confirmar' })).toBeInTheDocument();
-    expect(within(cartoes[0] as HTMLElement).queryByRole('button', { name: 'Confirmar' })).toBeNull();
-  });
-
-  it('imagem de cor que saiu da ficha fica montada em bloco à parte, sem apagar o vazio da cor escolhida', async () => {
-    api.listarImagens.mockResolvedValue(ok(lista([imagem({ id: 'x', cor: 'Antiga', missao: 1 })])));
-    passo(['Preto']);
-    expect(await screen.findByText('Nenhuma imagem da cor Preto ainda.')).toBeInTheDocument();
-    const bloco = screen.getByRole('region', { name: /saíram do anúncio/i });
-    expect(within(bloco).getByAltText('Capa · Antiga')).toBeInTheDocument();
-  });
-});
-
-describe('Estados do cartão e grade da cor', () => {
+  const base = { nome: 'Capa', cor: 'Preto', preco: 'R$ 0,50' };
   it.each([
-    [{ status: 'gerando', url: null }, 'Gerando'], [{ alertas: null }, 'Verificando'], [{}, 'Pronta'],
-    [{ alertas: [{ tipo: 'texto', nota: 'Rótulo mudou' }] }, 'Confira'], [{ status: 'aprovada' }, 'Aprovada'],
-  ] as const)('%j → selo %s', (extra, selo) => {
-    render(<CartaoImagem imagem={imagem(extra as Partial<ImagemGaleria>)} />);
-    expect(screen.getByText(selo, { selector: '[data-tone]' })).toBeInTheDocument();
+    [{ status: 'gerando', url: null }, 'gerando'], [{ alertas: null }, 'gerando'], [{}, 'pronta'], [{ status: 'aprovada' }, 'aprovada'],
+    [{ status: 'falhou', url: null }, 'falhou'],
+  ] as const)('%j → estado %s', (extra, estado) => {
+    render(<CartaoImagem {...base} imagem={imagem(extra as Partial<ImagemGaleria>)} />);
+    expect(document.querySelector('[data-estado]')).toHaveAttribute('data-estado', estado);
   });
-
-  it('só as imagens da cor escolhida; trocar a cor troca a grade; cor sem imagem mostra o estado vazio', async () => {
-    api.listarImagens.mockResolvedValue(ok(lista([imagem({ id: 'a', cor: 'Preto' }), imagem({ id: 'b', cor: 'Rosa', missao: 2 })])));
-    passo(['Preto', 'Rosa', 'Azul']);
-    await screen.findByAltText('Capa · Preto');
-    expect(screen.queryByAltText('Onde usar · Rosa')).toBeNull();
-    await escolherNoSelect(userEvent.setup(), 'Cor', 'Rosa');
-    expect(screen.getByAltText('Onde usar · Rosa')).toBeInTheDocument();
-    await escolherNoSelect(userEvent.setup(), 'Cor', 'Azul');
-    expect(screen.getByText('Nenhuma imagem da cor Azul ainda.')).toBeInTheDocument();
-  });
-
-  it('nenhuma mensagem do operador mostra código cru nem termo interno', async () => {
-    api.gerarImagens.mockResolvedValueOnce(falha(409, 'codigo_que_nao_existe', { bloqueadas: [{ cor: 'Preto', missao: 1 }] }));
-    passo();
-    await screen.findByRole('button', { name: /^Gerar 5/ });
-    await gerar();
-    expect(await screen.findByText('Não deu certo. Tente de novo; se repetir, avise o suporte.')).toBeInTheDocument();
-    expect(screen.getByText('Capa · Preto')).toBeInTheDocument();
-    expect(screen.queryByText(/codigo_que_nao_existe|missão|Erro:/)).toBeNull();
+  it('sem imagem: vazio com o preço no botão; com motivo: indisponível', () => {
+    const { unmount } = render(<CartaoImagem {...base} onGerar={vi.fn()} />);
+    expect(screen.getByRole('button', { name: GERAR })).toBeInTheDocument();
+    unmount();
+    render(<CartaoImagem {...base} indisponivel="Sem dados." onGerar={vi.fn()} />);
+    expect(screen.getByText('Sem dados.')).toBeInTheDocument();
+    expect(screen.queryByRole('button')).toBeNull();
   });
 });
 
@@ -611,75 +573,4 @@ describe('imagemValida', () => {
     expect(() => f(img())).toThrow();
   });
   it('é a função usada pelo cartão (mock só neste arquivo)', () => { expect(imagemValida).toBe(valida.fn); });
-});
-
-/** A galeria em página própria, no MLB da rota. */
-const pagina = (ml: string) => render(
-  <MemoryRouter initialEntries={[`/publicados/${ml}/galeria`]}>
-    <Routes><Route path="/publicados/:mlItemId/galeria" element={<GaleriaIA />} /></Routes>
-  </MemoryRouter>,
-);
-async function abrirGerar() {
-  const b = await screen.findByRole('button', { name: /Gerar e aprovar/ });
-  await waitFor(() => expect(b).toBeEnabled());
-  await userEvent.click(b);
-}
-
-describe('GaleriaIA: passo Gerar', () => {
-  it('linhas split da mesma família: cada galeria lista, gera e confirma com o ml_item_id da sua linha', async () => {
-    api.montarFicha.mockResolvedValue(ok(ficha(['Preto'])));
-    api.lerRoteiro.mockResolvedValue(ok({ ...respRoteiro(), moda: false, familia_id: 'F1' }));
-    for (const ml of ['MLB-A', 'MLB-B']) {
-      vi.clearAllMocks();
-      api.listarImagens.mockResolvedValue(ok(lista([imagem()])));
-      api.confirmarExibicao.mockResolvedValue(ok({ cobradas: 1 }));
-      api.gerarImagens.mockResolvedValue(ok({ pedido_id: 'p', imagens: [] }));
-      const r = pagina(ml);
-      await abrirGerar();
-      fireEvent.load(await screen.findByAltText('Capa · Preto'));
-      await gerar();
-      expect(api.listarImagens).toHaveBeenCalledWith(ml);
-      expect(api.listarImagens.mock.calls.every((c) => c[0] === ml)).toBe(true);
-      await waitFor(() => expect(api.confirmarExibicao).toHaveBeenCalledWith(ml, ['i1']));
-      expect(api.gerarImagens.mock.calls[0][0]).toBe(ml);
-      // Task 12: preparar e aprovar também levam o ml_item_id da própria linha.
-      api.prepararUploadFinal.mockResolvedValue(ok({ path: 'p', token: 't', signed_url: 'u' }));
-      api.enviarFinal.mockResolvedValue(null);
-      api.aprovarFinal.mockResolvedValue(ok({ status: 'aprovada' }));
-      compor.fn.mockResolvedValue(new Blob(['x']));
-      await userEvent.click(screen.getByRole('button', { name: 'Aprovar' }));
-      await waitFor(() => expect(api.aprovarFinal).toHaveBeenCalledWith(ml, 'i1', undefined));
-      expect(api.prepararUploadFinal).toHaveBeenCalledWith(ml, 'i1');
-      r.unmount();
-    }
-  });
-
-  it('rascunho v3 sobre o v2 aprovado: passo Gerar continua, com as imagens do v2', async () => {
-    api.montarFicha.mockResolvedValue(ok(ficha(['Preto'])));
-    api.lerRoteiro.mockResolvedValue(ok({ ...respRoteiro('rascunho', 3), moda: false, familia_id: 'F1' }));
-    api.listarImagens.mockResolvedValue(ok(lista([imagem()], 50, aprovado(undefined, { versao: 2 }))));
-    pagina('MLB1');
-    await abrirGerar();
-    fireEvent.load(await screen.findByAltText('Capa · Preto'));
-    await waitFor(() => expect(api.confirmarExibicao).toHaveBeenCalledWith('MLB1', ['i1']));
-  });
-
-  it('sem roteiro aprovado mas com imagem pendente de exibição (família anterior): passo Gerar abre', async () => {
-    api.montarFicha.mockResolvedValue(ok(ficha(['Preto'])));
-    api.lerRoteiro.mockResolvedValue(ok({ roteiro: null, moda: false, familia_id: 'F1' }));
-    api.listarImagens.mockResolvedValue(ok(lista([imagem({ pode_gerar_de_novo: false })], 50, null)));
-    pagina('MLB1');
-    await abrirGerar();
-    expect(await screen.findByAltText('Capa · Preto')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Gerar \d+ imagens? ·/ })).toBeNull();
-  });
-
-  it('sem roteiro aprovado nem imagem pendente o passo Gerar fica fechado', async () => {
-    api.montarFicha.mockResolvedValue(ok(ficha(['Preto'])));
-    api.lerRoteiro.mockResolvedValue(ok({ roteiro: null, moda: false, familia_id: 'F1' }));
-    api.listarImagens.mockResolvedValue(ok(lista([], 50, null)));
-    pagina('MLB1');
-    await screen.findByText('Conferir dados', { selector: 'h1' });
-    expect(screen.getByRole('button', { name: /Gerar e aprovar/ })).toBeDisabled();
-  });
 });

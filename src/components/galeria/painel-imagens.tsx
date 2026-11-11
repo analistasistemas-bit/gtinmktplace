@@ -1,93 +1,91 @@
-// ADR-0201 (Task 10): passo "Gerar". Mostra as imagens que ainda importam no anúncio (as do roteiro aprovado + toda
-// cena produzida e não exibida, de qualquer família) e, com roteiro aprovado da família vigente, o pedido novo:
-// cores e missões, confirmação "N imagens · R$ X" com o preço do mês (recortes grátis fora do total).
-// Cobrança = exibição: a confirmação só sai depois que o <img> carregou e passou em `imagemValida` (no cartão); cada
-// imagem mostra o preço congelado no pedido dela, que é o que a RPC cobra. Polling de 5 s enquanto houver linha
-// aberta, verificação pendente, carga falha ou confirmação pendente; para ao sair do passo/fechar o diálogo.
-// Aprovar (Task 12): compõe o arquivo final no navegador com URLs frescas e os textos do roteiro aprovado, sobe pela URL
-// assinada do `preparar_upload` e aprova; tudo com o `ml_item_id` desta linha.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, ScanSearch } from 'lucide-react';
+// ADR-0203: painel da tela única. Mostra as 7 imagens possíveis de cada cor (ou de uma faixa por cor, em "Todas as
+// cores"), gera uma a uma ou todas, aprova e refaz. Toda geração passa pelo diálogo "N imagens · R$ X,XX".
+// Cobrança = exibição: a confirmação só sai depois que o <img> carregou e passou em `imagemValida` (no cartão); o poll de
+// 5 s repete a confirmação até o servidor dizer `exibida`. Polling enquanto houver imagem aberta, conferência do texto
+// pendente ou confirmação pendente; para ao desmontar.
+// "Todas as cores": pedidos de até 5 cores, um depois do outro; a primeira recusa para a fila (os anteriores seguem).
+// Aprovar: recorta o arquivo final no navegador com URL fresca (sem compor texto), sobe pela URL assinada e aprova.
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/components/ui/empty-state';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Skeleton } from '@/components/ui/skeleton';
 import { fmtBRL } from '@/lib/formato';
 import {
   aprovarFinal, confirmarExibicao, enviarFinal, gerarImagens, listarImagens, mensagemErro, prepararUploadFinal, reportarInvalida,
-  motivoLupa, type Ficha, type ImagemGaleria, type RespostaListar,
+  type ImagemGaleria, type RespostaListar,
 } from '@/lib/galeria/api';
-import { comporImagemFinal } from '@/lib/galeria/compor';
-import { lupaPendente, missoesDisponiveis } from '../../../supabase/functions/_shared/galeria/regras';
-import { comLupa } from '../../../supabase/functions/_shared/galeria/lupa';
-import { nomeImagem, rotuloFato } from '@/lib/galeria/rotulos';
+import { montarArquivoFinal } from '@/lib/galeria/final';
+import { emAndamento } from '@/lib/galeria/exibicao';
 import { CartaoImagem } from './cartao-imagem';
 
 const POLLING_MS = 5000;
+const POR_PEDIDO = 5;
 const ERRO_ARQUIVO: Record<string, string> = {
   formato: 'formato de arquivo inválido', dimensoes: 'tamanho fora do padrão', peso: 'arquivo pesado demais', branca: 'imagem em branco',
 };
-const TETO_GERACOES = 3;
 const FALHA_FINAL = 'Não foi possível preparar a imagem final. Tente aprovar de novo.';
-const ABERTOS = new Set(['pendente', 'submetendo', 'gerando']);
+/** Recusas em que outra tentativa com pedido novo pode dar certo (as demais travam o Confirmar). */
+const REFAZ_PEDIDO = new Set(['plano_ia_falhou', 'plano_invalido']);
 
-interface Alvo { cores: string[]; missoes: number[] }
-const mesmoAlvo = (a: Alvo | null, b: Alvo) => !!a && a.cores.join() === b.cores.join() && a.missoes.join() === b.missoes.join();
-interface Aviso { texto: string; detalhe?: string; acao?: 'tentar' | 'recarregar' | 'roteiro'; bloqueia: boolean }
+interface Pedido { cores: string[]; missoes: number[] }
+interface Aviso { texto: string; detalhe?: string; tentar?: boolean; bloqueia: boolean }
 
-/** Detalhe da recusa do galeria-gerar (cor/MLB, campos, (cor, missão) bloqueadas). */
-function detalheRecusa(c: Record<string, unknown>, moda: boolean): string | undefined {
-  if (Array.isArray(c.bloqueadas)) return (c.bloqueadas as Array<{ cor: string; missao: number }>).map((b) => `${nomeImagem(b.missao, moda)} · ${b.cor}`).join(', ');
-  if (Array.isArray(c.campos)) return (c.campos as string[]).map((x) => rotuloFato({ campo: x })).join(', ');
-  if (Array.isArray(c.cores)) return (c.cores as string[]).join(', ');
-  if (Array.isArray(c.missoes)) return (c.missoes as number[]).map((m) => nomeImagem(m, moda)).join(', ');
-  if (typeof c.cor === 'string') return c.cor;
-  return undefined;
+const quantidade = (ps: Pedido[]) => ps.reduce((n, p) => n + p.cores.length * p.missoes.length, 0);
+const imagens = (n: number) => `${n} ${n === 1 ? 'imagem' : 'imagens'}`;
+
+/** Pedidos para "Gerar todas": cores com as mesmas imagens faltando ficam juntas, em lotes de até 5. */
+function montarPedidos(cores: string[], disponiveis: number[], falta: (cor: string, posicao: number) => boolean): Pedido[] {
+  const grupos = new Map<string, Pedido>();
+  for (const cor of cores) {
+    const missoes = disponiveis.filter((p) => falta(cor, p));
+    if (missoes.length === 0) continue;
+    const g = grupos.get(missoes.join()) ?? { cores: [], missoes };
+    g.cores.push(cor);
+    grupos.set(missoes.join(), g);
+  }
+  return [...grupos.values()].flatMap((g) =>
+    Array.from({ length: Math.ceil(g.cores.length / POR_PEDIDO) }, (_, k) => ({ cores: g.cores.slice(k * POR_PEDIDO, (k + 1) * POR_PEDIDO), missoes: g.missoes })));
 }
 
-/** Erro da composição no navegador: só o "não cabe" é do operador (e tem ação); o resto vira frase única. */
-function motivoComposicao(e: unknown): string {
+/** Imagem que já vale para a posição: aberta, aprovada ou pronta do plano vigente. */
+const viva = (i: ImagemGaleria, planoId: string | null) => emAndamento(i) || i.status === 'aprovada' || (i.status === 'gerada' && i.roteiro_id === planoId);
+
+/** Geração mais recente da cor e posição (as do plano vigente primeiro); descartada e desatualizada não contam. */
+function maisRecente(gs: ImagemGaleria[], planoId: string | null): ImagemGaleria | undefined {
+  return gs.filter((i) => i.status !== 'descartada' && i.status !== 'desatualizada')
+    .sort((a, b) => Number(b.roteiro_id === planoId) - Number(a.roteiro_id === planoId) || b.geracao - a.geracao)[0];
+}
+
+function motivoArquivo(e: unknown): string {
   const m = e instanceof Error ? e.message : '';
-  const r = /^(.+?) não cabe em \d+ linha/.exec(m);
-  if (r) return `${r[1]} não cabe na imagem. Encurte o texto no passo 2.`;
-  console.warn('[galeria] composição falhou:', m);
+  if (m === 'corte') return 'Esta imagem não cabe no formato do anúncio. Gere de novo.';
+  console.warn('[galeria] arquivo final falhou:', m);
   return FALHA_FINAL;
 }
 
-/** Motivo para segurar o Aprovar de uma imagem de missão com lupa (null = pode). */
-function bloqueioLupa(i: ImagemGaleria, moda: boolean): string | null {
-  if (lupaPendente(i.missao, moda)) return 'Em breve';
-  if (!comLupa(i.missao, moda) || i.lupa?.situacao === 'ok') return null;
-  return i.lupa?.situacao === 'indisponivel' ? 'Sem detalhe do produto na foto' : 'Preparando esta imagem, aguarde';
-}
-
-export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoLista }: {
-  mlItemId: string; ficha: Ficha; aoRecarregar: () => void; aoVoltarRoteiro: () => void;
-  /** Cada `listar`: a página conta as aprovadas para o rodapé. */
+export function PainelImagens({ mlItemId, cor, aoLista, aoFalha }: {
+  mlItemId: string;
+  /** Cor mostrada; null = todas as cores do anúncio. */
+  cor: string | null;
+  /** Cada `listar`: a página lê título, cores e aprovadas. */
   aoLista?: (l: RespostaListar) => void;
+  /** `listar` recusado (4xx) ou com falha: a página decide se o anúncio nem existe. */
+  aoFalha?: (erro: string) => void;
 }) {
   const [lista, setLista] = useState<RespostaListar | null>(null);
-  const roteiro = lista?.roteiro ?? null;
-  const moda = roteiro?.moda === true;
-  const info = useMemo(() => new Map(missoesDisponiveis(moda, ['frente', 'costas', 'lateral']).map((m) => [m.missao as number, m])), [moda]);
-  const ativas = useMemo(() => (roteiro?.missoes_ativas ?? []).filter((m) => info.has(m)), [roteiro?.missoes_ativas, info]);
-
-  // Protótipo aprovado (Fase C): uma cor por pedido, escolhida no Select; as imagens são as ligadas no passo 2.
-  const [cor, setCor] = useState(ficha.cores[0] ?? '');
   const [unit, setUnit] = useState<number | null>(null);
-  // Só o "Gerar de novo" de um cartão pede confirmação à parte (1 imagem); o pedido principal confirma no botão com o preço.
-  const [confirmando, setConfirmando] = useState<Alvo | null>(null);
-  // Cartão que pediu o "Gerar outra" (por id: versões antigas da mesma cor e imagem não mostram o painel).
-  const [idConfirmando, setIdConfirmando] = useState<string | null>(null);
-  // Alvo do último envio: "Tentar de novo" (ml_indisponivel) repete o mesmo pedido.
-  const ultimo = useRef<Alvo | null>(null);
+  const [confirmando, setConfirmando] = useState<{ pedidos: Pedido[] } | null>(null);
+  const [troca, setTroca] = useState<number | null>(null);
   const [aviso, setAviso] = useState<Aviso | null>(null);
-  // Erro do `listar` fica separado do aviso do gerar: nunca reabre um Confirmar bloqueado.
+  const [banner, setBanner] = useState<string | null>(null);
   const [erroLista, setErroLista] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [rodada, setRodada] = useState(0);
-  // Um pedido_id por confirmação: a repetição (ml_indisponivel) reusa; nova confirmação gera outro.
-  const pedido = useRef<string | null>(null);
+  // Um pedido_id por pedido da fila: a repetição (ml_indisponivel) reusa; nova confirmação gera outros.
+  const ids = useRef<string[]>([]);
+  const trocaConfirmada = useRef(false);
   // URL assinada muda a cada listar: a primeira fica (senão o <img> recarrega a cada poll); carga falha a descarta.
   const urls = useRef(new Map<string, string>());
   // Passaram em `imagemValida`: o poll repete a confirmação até o servidor dizer `exibida` (RPC idempotente).
@@ -110,6 +108,18 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoL
     void confirmarExibicao(mlItemId, [id]).then((r) => { if (!r.ok) agendarRodada(); }).finally(() => emVoo.current.delete(id));
   }, [mlItemId, agendarRodada]);
 
+  /** Guarda a primeira URL de cada imagem e publica a lista. */
+  const receber = useCallback((dados: RespostaListar): ImagemGaleria[] => {
+    const todas = dados.imagens.map((i) => {
+      if (i.url && !urls.current.has(i.id)) urls.current.set(i.id, i.url);
+      return { ...i, url: urls.current.get(i.id) ?? i.url };
+    });
+    setLista({ ...dados, imagens: todas });
+    aoLista?.({ ...dados, imagens: todas });
+    setUnit(dados.unit_cents);
+    return todas;
+  }, [aoLista]);
+
   useEffect(() => {
     let vivo = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -118,27 +128,20 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoL
       if (!vivo) return;
       if (!r.ok) {
         setErroLista(mensagemErro(r.erro));
+        aoFalha?.(r.erro);
         // Falha passageira (rede/5xx) reagenda; recusa (4xx) para.
         if (r.erro === 'rede' || r.status === 0 || r.status >= 500) timer = setTimeout(rodar, POLLING_MS);
         return;
       }
       setErroLista(null);
-      const imagens = r.dados.imagens.map((i) => {
-        if (i.url && !urls.current.has(i.id)) urls.current.set(i.id, i.url);
-        return { ...i, url: urls.current.get(i.id) ?? i.url };
-      });
-      setLista({ ...r.dados, imagens });
-      aoLista?.({ ...r.dados, imagens });
-      setUnit(r.dados.unit_cents);
-      const pendentes = imagens.filter((i) => !i.exibida && validadas.current.has(i.id));
+      const todas = receber(r.dados);
+      const pendentes = todas.filter((i) => !i.exibida && validadas.current.has(i.id));
       pendentes.forEach((i) => confirmar(i.id));
-      const precisa = imagens.some((i) => ABERTOS.has(i.status) || (i.status === 'gerada' && i.origem === 'gerador' && i.alertas === null))
-        || pendentes.length > 0;
-      if (precisa) timer = setTimeout(rodar, POLLING_MS);
+      if (todas.some(emAndamento) || pendentes.length > 0) timer = setTimeout(rodar, POLLING_MS);
     };
     void rodar();
     return () => { vivo = false; clearTimeout(timer); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `aoLista` só informa a página; não reinicia o polling
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `aoLista`/`aoFalha` só informam a página; não reiniciam o polling
   }, [mlItemId, rodada, confirmar]);
 
   const exibida = useCallback((id: string) => { validadas.current.add(id); confirmar(id); }, [confirmar]);
@@ -156,35 +159,23 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoL
   }, [agendarRodada]);
 
   const aprovar = useCallback(async (img: ImagemGaleria): Promise<string | null> => {
-    // URLs assinadas vencem (10 min): o listar dá a cena, a referência e os textos vigentes no momento do clique.
+    // URLs assinadas vencem (10 min): o listar dá a URL vigente no momento do clique.
     const l = await listarImagens(mlItemId);
     if (!l.ok) return mensagemErro(l.erro);
     const i = l.dados.imagens.find((x) => x.id === img.id);
-    if (!i || !l.dados.roteiro) return mensagemErro('nao_aprovavel');
-    const bloqueio = bloqueioLupa(i, l.dados.roteiro.moda);
-    if (bloqueio) return bloqueio;
-    const comCaixas = comLupa(i.missao, l.dados.roteiro.moda);
-    const lu = i.lupa;
-    const caixas = comCaixas && lu?.situacao === 'ok' && lu.produto && lu.detalhes && lu.ref_w && lu.ref_h
-      ? { produto: lu.produto, detalhes: lu.detalhes, ref_w: lu.ref_w, ref_h: lu.ref_h } : null;
+    if (!i || !i.url || !l.dados.plano_id || i.roteiro_id !== l.dados.plano_id) return mensagemErro('nao_aprovavel');
     let arquivo: Blob;
-    try {
-      arquivo = await comporImagemFinal({
-        cenaUrl: i.origem === 'gerador' ? i.url : null, refUrl: i.ref_url, missao: i.missao,
-        textos: l.dados.roteiro.textos?.[i.missao] ?? {}, corProduto: null, moda: l.dados.roteiro.moda, lupa: caixas,
-      });
-    } catch (e) { return motivoComposicao(e); }
+    try { arquivo = await montarArquivoFinal(i.url, i.missao === 1); } catch (e) { return motivoArquivo(e); }
     const p = await prepararUploadFinal(mlItemId, i.id);
     if (!p.ok) return mensagemErro(p.erro);
     const falhaEnvio = await enviarFinal(p.dados.path, p.dados.token, arquivo);
     if (falhaEnvio) { console.warn('[galeria] envio do arquivo final:', falhaEnvio); return FALHA_FINAL; }
-    const hash = comCaixas ? i.lupa?.hash : undefined;
-    let a = await aprovarFinal(mlItemId, i.id, hash);
-    // Gerador só aprova já cobrada (revisão geral): confirma a exibição (idempotente) e repete UMA vez o aprovar: o
-    // arquivo final já está no `final_upload_path`, sem recompor nem subir de novo.
+    let a = await aprovarFinal(mlItemId, i.id);
+    // Só aprova imagem já cobrada: confirma a exibição (idempotente) e repete UMA vez o aprovar: o arquivo final já
+    // está no `final_upload_path`, sem recortar nem subir de novo.
     if (!a.ok && a.erro === 'exibicao_pendente') {
       const c = await confirmarExibicao(mlItemId, [i.id]);
-      if (c.ok) a = await aprovarFinal(mlItemId, i.id, hash);
+      if (c.ok) a = await aprovarFinal(mlItemId, i.id);
     }
     if (!a.ok) {
       return a.erro === 'arquivo_invalido'
@@ -195,164 +186,182 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoL
     return null;
   }, [mlItemId]);
 
-  /** Nova seleção = nova confirmação: limpa recusa e pedido. */
-  const abrir = (alvo: Alvo | null, id: string | null = null) => { pedido.current = null; setAviso(null); setConfirmando(alvo); setIdConfirmando(alvo ? id : null); };
+  const nomeDe = (p: number) => lista?.posicoes.find((x) => x.posicao === p)?.nome ?? `Imagem ${p}`;
 
-  async function enviar(alvo: Alvo | null) {
-    if (!alvo || unit === null || !roteiro) return;
-    ultimo.current = alvo;
-    pedido.current ??= crypto.randomUUID();
-    setOcupado(true);
-    const r = await gerarImagens(mlItemId, {
-      pedidoId: pedido.current, roteiroVersao: roteiro.versao, cores: alvo.cores, missoes: alvo.missoes, unitCentsExibido: unit,
-    });
-    setOcupado(false);
-    if (r.ok) {
-      pedido.current = null; setConfirmando(null); setIdConfirmando(null); setAviso(null);
-      toast.success('Geração pedida');
-      setRodada((n) => n + 1);
-      return;
-    }
-    if (r.erro === 'ml_indisponivel' || r.erro === 'rede') { setAviso({ texto: mensagemErro('ml_indisponivel'), acao: 'tentar', bloqueia: false }); return; }
-    pedido.current = null;
-    const novo = r.corpo.unit_cents;
-    if (r.erro === 'preco_mudou' && Number.isInteger(novo)) {
-      setUnit(novo as number);
-      setAviso({ texto: `O preço mudou para ${fmtBRL((novo as number) / 100)} por imagem. Confira o novo total e confirme de novo.`, bloqueia: false });
-      return;
-    }
-    setAviso({
-      texto: mensagemErro(r.erro), detalhe: detalheRecusa(r.corpo, moda), bloqueia: true,
-      acao: r.erro === 'familia_nao_vigente' ? 'recarregar' : r.erro === 'conteudo.ciencia_nao_conferido' ? 'roteiro' : undefined,
-    });
+  function fechar() {
+    ids.current = []; trocaConfirmada.current = false;
+    setConfirmando(null); setTroca(null); setAviso(null);
+  }
+  function abrir(pedidos: Pedido[]) {
+    if (pedidos.length === 0) return;
+    ids.current = []; trocaConfirmada.current = false;
+    setBanner(null); setAviso(null); setTroca(null); setConfirmando({ pedidos });
   }
 
-  const conta = (alvo: Alvo) => {
-    const comGerador = alvo.missoes.filter((m) => info.get(m)?.usaGerador).length;
-    return { geradas: alvo.cores.length * comGerador, recortes: alvo.cores.length * (alvo.missoes.length - comGerador) };
-  };
-  const resumo = confirmando && unit !== null ? conta(confirmando) : null;
-  // Pedido novo só pelo roteiro aprovado da família vigente (o galeria-gerar recusa os demais).
-  const podePedir = !!roteiro && roteiro.familia_id === ficha.familia_id;
-  // Imagem bloqueada para a cor (lupa travada, lendo ou sem detalhe) fica fora do pedido, com o motivo.
-  const motivos = new Map(ativas.map((m) => [m, motivoLupa(ficha, [cor], m, moda)]));
-  const sel = ativas.filter((m) => !motivos.get(m));
-  const principal: Alvo = { cores: cor ? [cor] : [], missoes: sel };
-  const total = unit !== null ? conta(principal) : null;
-  const rotuloTotal = total ? `${total.geradas} ${total.geradas === 1 ? 'imagem' : 'imagens'} · ${fmtBRL((total.geradas * unit!) / 100)}` : '';
+  /** Detalhe da recusa do galeria-gerar (cores, imagens ou (cor, imagem) bloqueadas). */
+  function detalheRecusa(c: Record<string, unknown>): string | undefined {
+    if (Array.isArray(c.bloqueadas)) return (c.bloqueadas as Array<{ cor: string; missao: number }>).map((b) => `${nomeDe(b.missao)} · ${b.cor}`).join(', ');
+    if (Array.isArray(c.cores)) return (c.cores as string[]).join(', ');
+    if (Array.isArray(c.missoes)) return (c.missoes as number[]).map(nomeDe).join(', ');
+    if (typeof c.cor === 'string') return c.cor;
+    return undefined;
+  }
 
-  const todas = lista?.imagens ?? [];
-  const visiveis = todas.filter((i) => i.cor === cor);
-  // Cor que saiu da ficha: continua montada (a exibição é o que cobra), em bloco à parte.
-  const antigas = todas.filter((i) => !ficha.cores.includes(i.cor));
-  // Mesma regra do servidor (`ocupaVaga`, `bloqueioDaVaga`): gerações do roteiro aprovado, da mesma cor e imagem, que ocupam vaga.
-  const restantesDe = (i: ImagemGaleria) => Math.max(0, TETO_GERACOES - todas.filter((x) => x.cor === i.cor && x.missao === i.missao
-    && x.roteiro_id === i.roteiro_id && x.origem === 'gerador' && (x.status !== 'falhou' || x.erro === 'imagem_invalida')).length);
-  const cartao = (i: ImagemGaleria) => (
-    <CartaoImagem key={i.id} imagem={i} titulo={`${nomeImagem(i.missao, moda)} · ${i.cor}`} restantes={restantesDe(i)} onExibida={exibida} onInvalida={invalida} onFalhaCarga={falhaCarga}
-      onAprovar={roteiro && i.roteiro_id === roteiro.id ? aprovar : undefined}
-      bloqueioAprovar={bloqueioLupa(i, moda) ?? undefined}
-      confirmacao={podePedir && confirmando && resumo && idConfirmando === i.id ? painelConfirmar : undefined}
-      onGerarDeNovo={podePedir && !motivoLupa(ficha, [i.cor], i.missao, moda) ? (x) => abrir({ cores: [x.cor], missoes: [x.missao] }, x.id) : undefined} />
-  );
+  /** Envia os pedidos que faltam, um depois do outro; a primeira recusa para a fila. */
+  async function enviar() {
+    if (!confirmando || unit === null) return;
+    let restantes = confirmando.pedidos;
+    setOcupado(true); setAviso(null);
+    while (restantes.length > 0) {
+      const [ped] = restantes;
+      ids.current[0] ??= crypto.randomUUID();
+      const r = await gerarImagens(mlItemId, {
+        pedidoId: ids.current[0], cores: ped.cores, missoes: ped.missoes, unitCentsExibido: unit, confirmarTroca: trocaConfirmada.current,
+      });
+      if (r.ok) { restantes = restantes.slice(1); ids.current.shift(); continue; }
 
-  /** Confirmação de "Gerar outra" junto ao cartão clicado (1 imagem; o pedido principal confirma no botão). */
-  const painelConfirmar = (
-    <div className="space-y-3 rounded-lg bg-muted/40 p-3 ring-1 ring-primary/40">
-      {resumo && (
-        <p className="font-semibold tabular-nums">
-          {resumo.geradas} {resumo.geradas === 1 ? 'imagem' : 'imagens'} · {fmtBRL((resumo.geradas * unit!) / 100)}
-        </p>
-      )}
-      {aviso && (
-        <div role="alert" className="space-y-2 rounded-lg bg-destructive/10 p-2.5 text-xs ring-1 ring-destructive/25">
-          <p>{aviso.texto}</p>
-          {aviso.detalhe && <p>{aviso.detalhe}</p>}
-          {aviso.acao === 'tentar' && <Button variant="outline" className="h-11 px-4" disabled={ocupado} onClick={() => void enviar(ultimo.current)}>Tentar de novo</Button>}
-          {aviso.acao === 'recarregar' && <Button variant="outline" className="h-11 px-4" onClick={aoRecarregar}>Recarregar</Button>}
-          {aviso.acao === 'roteiro' && <Button variant="outline" className="h-11 px-4" onClick={aoVoltarRoteiro}>Voltar aos textos</Button>}
-        </div>
-      )}
-      <div className="flex gap-2">
-        <Button className="h-11 px-4" disabled={ocupado || !!aviso?.bloqueia} onClick={() => void enviar(confirmando)}>
-          {ocupado && <Loader2 aria-hidden className="mr-2 size-4 motion-safe:animate-spin" />}Confirmar
-        </Button>
-        <Button variant="outline" className="h-11 px-4" disabled={ocupado} onClick={() => abrir(null)}>Cancelar</Button>
+      setOcupado(false);
+      setConfirmando({ pedidos: restantes });
+      const enviados = confirmando.pedidos.length - restantes.length;
+      const antes = enviados > 0 ? `${enviados === 1 ? 'O 1º pedido já foi enviado e segue gerando' : `Os ${enviados} primeiros pedidos já foram enviados e seguem gerando`}. ` : '';
+      if (r.erro === 'ml_indisponivel' || r.erro === 'rede') {
+        setAviso({ texto: antes + mensagemErro('ml_indisponivel'), tentar: true, bloqueia: false });
+        return;
+      }
+      if (r.erro === 'plano_desatualizado') { setTroca(Number(r.corpo.imagens) || 0); return; }
+      ids.current = [];
+      const novo = r.corpo.unit_cents;
+      if (r.erro === 'preco_mudou' && Number.isInteger(novo)) {
+        setUnit(novo as number);
+        setAviso({ texto: `${antes}O preço mudou para ${fmtBRL((novo as number) / 100)} por imagem. Confira o novo total e confirme de novo.`, bloqueia: false });
+        return;
+      }
+      if (r.erro === 'posicao_indisponivel') { await relistarSemIndisponiveis(restantes, r.corpo.missoes, antes); return; }
+      setAviso({ texto: antes + mensagemErro(r.erro), detalhe: detalheRecusa(r.corpo), bloqueia: !REFAZ_PEDIDO.has(r.erro) });
+      return;
+    }
+    setOcupado(false);
+    toast.success('Geração pedida');
+    fechar();
+    setRodada((n) => n + 1);
+  }
+
+  /** `posicao_indisponivel`: relê a lista, tira as imagens sem dados do pedido e reabre o diálogo com o novo total. */
+  async function relistarSemIndisponiveis(restantes: Pedido[], recusadas: unknown, antes: string) {
+    const l = await listarImagens(mlItemId);
+    const fora = new Set<number>(Array.isArray(recusadas) ? (recusadas as number[]) : []);
+    if (l.ok) {
+      receber(l.dados);
+      l.dados.posicoes.filter((p) => p.indisponivel).forEach((p) => fora.add(p.posicao));
+    }
+    const novos = restantes.map((p) => ({ ...p, missoes: p.missoes.filter((m) => !fora.has(m)) })).filter((p) => p.missoes.length > 0);
+    if (novos.length === 0) {
+      fechar();
+      setBanner('Faltam dados do produto para estas imagens. Elas não podem ser geradas.');
+      return;
+    }
+    setConfirmando({ pedidos: novos });
+    setAviso({ texto: `${antes}Faltam dados do produto para algumas imagens e elas ficaram de fora. Confira o novo total e confirme.`, bloqueia: false });
+  }
+
+  if (!lista) {
+    return (
+      <div className="space-y-3">
+        {erroLista && <p role="alert" className="text-sm text-destructive">{erroLista}</p>}
+        {!erroLista && (
+          <div aria-busy="true" aria-label="Carregando as imagens" className="grid grid-cols-2 gap-3 md:grid-cols-4 2xl:grid-cols-7">
+            {Array.from({ length: 7 }, (_, k) => <Skeleton key={k} className="aspect-[1200/1540] h-auto w-full rounded-xl" />)}
+          </div>
+        )}
       </div>
-    </div>
-  );
+    );
+  }
+
+  const preco = unit ?? lista.unit_cents;
+  const precoTxt = fmtBRL(preco / 100);
+  const coresEscopo = cor === null ? lista.cores : lista.cores.filter((c) => c === cor);
+  const disponiveis = lista.posicoes.filter((p) => !p.indisponivel).map((p) => p.posicao);
+  const faltaGerar = (c: string, p: number) => !lista.imagens.some((i) => i.cor === c && i.missao === p && viva(i, lista.plano_id));
+  const todas = montarPedidos(coresEscopo, disponiveis, faltaGerar);
+  const nTodas = quantidade(todas);
+  const nConfirmar = confirmando ? quantidade(confirmando.pedidos) : 0;
+  const gerarUma = (c: string, p: number) => abrir([{ cores: [c], missoes: [p] }]);
 
   return (
     <div className="space-y-4">
-      {lista && !roteiro && (
-        <p className="text-sm text-muted-foreground">Aprove os textos das imagens (passo 2) para gerar imagens novas.</p>
-      )}
-      {roteiro && !podePedir && (
-        <p role="alert" className="rounded-lg bg-warning/10 p-3 text-sm ring-1 ring-warning/25">
-          Os textos aprovados são de um cadastro antigo deste anúncio. Aprove os textos de novo no passo 2 para gerar imagens novas.
+      <section aria-label="Gerar todas" className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-card p-3 text-sm text-card-foreground shadow-sm ring-1 ring-foreground/5">
+        <p className="min-w-0 flex-1 text-muted-foreground">
+          {imagens(1)} custa <span className="font-medium tabular-nums text-foreground">{precoTxt}</span>. Cerca de 30 s por imagem. Cobrada quando aparece na tela.
         </p>
-      )}
-      {podePedir && (
-        <section aria-label="Gerar imagens" className="flex flex-col gap-4 rounded-xl bg-card p-4 text-sm text-card-foreground shadow-sm ring-1 ring-foreground/5">
-          <div className="flex flex-wrap items-end justify-between gap-x-5 gap-y-3">
-            <div className="flex flex-col gap-1">
-              <span id="gerar-cor" className="text-xs text-muted-foreground">Cor</span>
-              <Select value={cor} disabled={ocupado} onValueChange={(v) => { setCor(v); abrir(null); }}>
-                <SelectTrigger aria-labelledby="gerar-cor" className="h-11 w-48"><SelectValue /></SelectTrigger>
-                <SelectContent>{ficha.cores.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <Button className="h-11 px-4 max-sm:w-full" disabled={ocupado || !cor || sel.length === 0 || unit === null || (!total?.geradas && !total?.recortes) || !!aviso?.bloqueia}
-              onClick={() => {
-                // Revisão B+C (achado 5): depois de rede/ml_indisponivel, repetir o mesmo alvo reusa o pedido_id.
-                if (aviso?.acao === 'tentar' && mesmoAlvo(ultimo.current, principal)) { setAviso(null); setConfirmando(null); }
-                else abrir(null);
-                void enviar(principal);
-              }}>
-              {ocupado && !confirmando ? <><Loader2 aria-hidden className="motion-safe:animate-spin" />Gerando…</>
-                : unit === null ? 'Carregando o preço…' : `Gerar ${rotuloTotal}`}
-            </Button>
-          </div>
-          <ul aria-label="Imagens deste pedido" className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            {ativas.map((n) => (
-              <li key={n} data-no-pedido={!motivos.get(n)}>
-                <span className={motivos.get(n) ? '' : 'text-foreground'}>{nomeImagem(n, moda)}</span>
-                {info.get(n)?.usaGerador === false && !motivos.get(n) && ' (recorte grátis)'}
-                {motivos.get(n) && <span className="text-warning">: {motivos.get(n)}</span>}
-              </li>
-            ))}
-          </ul>
-          <p className="text-xs text-muted-foreground">
-            {unit === null ? '' : 'Cerca de 30 s por imagem. Cobrada quando aparece na tela.'}
-          </p>
-        </section>
-      )}
+        <Button className="h-10 px-4 max-sm:w-full" disabled={ocupado || nTodas === 0} onClick={() => abrir(todas)}>
+          {nTodas === 0 ? 'Gerar todas' : `Gerar todas (${imagens(nTodas)} · ${fmtBRL((nTodas * preco) / 100)})`}
+        </Button>
+      </section>
 
-      {aviso && !confirmando && (
-        <div role="alert" className="space-y-2 rounded-lg bg-destructive/10 p-3 text-sm ring-1 ring-destructive/25">
-          <p>{aviso.texto}</p>
-          {aviso.detalhe && <p className="text-xs">{aviso.detalhe}</p>}
-          {aviso.acao === 'tentar' && <Button variant="outline" className="h-11 px-4" disabled={ocupado} onClick={() => void enviar(ultimo.current)}>Tentar de novo</Button>}
-          {aviso.acao === 'recarregar' && <Button variant="outline" className="h-11 px-4" onClick={aoRecarregar}>Recarregar</Button>}
-          {aviso.acao === 'roteiro' && <Button variant="outline" className="h-11 px-4" onClick={aoVoltarRoteiro}>Voltar aos textos</Button>}
-        </div>
-      )}
-
+      {banner && <p role="alert" className="rounded-lg bg-warning/10 p-3 text-sm ring-1 ring-warning/25">{banner}</p>}
       {erroLista && <p role="alert" className="text-sm text-destructive">{erroLista}</p>}
 
-      {lista && visiveis.length > 0 && (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{visiveis.map(cartao)}</div>
-      )}
-      {lista && podePedir && visiveis.length === 0 && (
-        <EmptyState icon={ScanSearch} title={`Nenhuma imagem da cor ${cor} ainda.`}
-          description="Clique em Gerar acima. Cada imagem leva cerca de 30 s." />
-      )}
-      {antigas.length > 0 && (
-        <section aria-labelledby="antigas-h" className="space-y-3">
-          <h2 id="antigas-h" className="text-sm font-semibold">Imagens de cores que saíram do anúncio</h2>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{antigas.map(cartao)}</div>
+      {coresEscopo.map((c) => (
+        <section key={c} aria-label={cor === null ? `Imagens da cor ${c}` : 'Imagens'} className="space-y-2">
+          {cor === null && <h2 className="text-sm font-semibold">{c}</h2>}
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 2xl:grid-cols-7">
+            {lista.posicoes.map((p) => {
+              const gs = lista.imagens.filter((i) => i.cor === c && i.missao === p.posicao);
+              const atual = maisRecente(gs, lista.plano_id);
+              return (
+                <CartaoImagem key={p.posicao} nome={p.nome} cor={c} preco={precoTxt} imagem={atual} indisponivel={p.indisponivel}
+                  antiga={!!atual && atual.roteiro_id !== lista.plano_id}
+                  temAprovada={!!atual && gs.some((i) => i.status === 'aprovada' && i.id !== atual.id)}
+                  travado={ocupado} onGerar={p.indisponivel && !atual ? undefined : () => gerarUma(c, p.posicao)}
+                  onAprovar={aprovar} onExibida={exibida} onInvalida={invalida} onFalhaCarga={falhaCarga} />
+              );
+            })}
+          </div>
         </section>
-      )}
+      ))}
+
+      <Dialog open={!!confirmando && troca === null} onOpenChange={(o) => { if (!o && !ocupado) fechar(); }}>
+        <DialogContent processando={ocupado} rotuloProcessando="Enviando o pedido">
+          <DialogHeader>
+            <DialogTitle>Gerar imagens</DialogTitle>
+            <DialogDescription>Confira a quantidade e o valor antes de gerar.</DialogDescription>
+          </DialogHeader>
+          <p className="text-base font-semibold tabular-nums">{imagens(nConfirmar)} · {fmtBRL((nConfirmar * preco) / 100)}</p>
+          {(confirmando?.pedidos.length ?? 0) > 1 && (
+            <p className="text-xs text-muted-foreground">Enviado em {confirmando!.pedidos.length} pedidos, um depois do outro.</p>
+          )}
+          <p className="text-xs text-muted-foreground">Cerca de 30 s por imagem. Cobrada quando aparece na tela.</p>
+          {aviso && (
+            <div role="alert" className="space-y-1 rounded-lg bg-destructive/10 p-2.5 text-xs ring-1 ring-destructive/25">
+              <p>{aviso.texto}</p>
+              {aviso.detalhe && <p>{aviso.detalhe}</p>}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" className="h-10 px-4" disabled={ocupado} onClick={fechar}>Cancelar</Button>
+            <Button className="h-10 px-4" disabled={ocupado || !!aviso?.bloqueia} onClick={() => void enviar()}>
+              {ocupado && <Loader2 aria-hidden className="mr-2 size-4 motion-safe:animate-spin" />}{aviso?.tentar ? 'Tentar de novo' : 'Confirmar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={troca !== null} onOpenChange={(o) => { if (!o && !ocupado) fechar(); }}>
+        <DialogContent processando={ocupado} rotuloProcessando="Enviando o pedido">
+          <DialogHeader>
+            <DialogTitle>Dados do anúncio mudaram</DialogTitle>
+            <DialogDescription>
+              {`${troca ?? 0} ${troca === 1 ? 'imagem pronta deixa' : 'imagens prontas deixam'} de valer. Gerar mesmo assim?`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" className="h-10 px-4" disabled={ocupado} onClick={fechar}>Cancelar</Button>
+            <Button className="h-10 px-4" disabled={ocupado} onClick={() => { trocaConfirmada.current = true; setTroca(null); void enviar(); }}>
+              {ocupado && <Loader2 aria-hidden className="mr-2 size-4 motion-safe:animate-spin" />}Gerar mesmo assim
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

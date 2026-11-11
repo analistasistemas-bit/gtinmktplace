@@ -1,124 +1,138 @@
-// ADR-0201 (Task 10): cartão de uma imagem da galeria. Cobrança = exibição: só depois que o <img> carregou e
-// `imagemValida` disse sim é que `onExibida` sai; branca/vazia → `onInvalida`; exceção (canvas contaminado) → nada.
-// Falha de carga (rede, URL vencida, CORS) nunca é terminal: avisa e o próximo listar traz URL nova.
-// Alertas da verificação por visão (R8.5) só avisam; nunca escondem a imagem.
-// Aprovar (Task 12): compõe o arquivo final e aprova; recusa (texto que estoura, arquivo, referência) mostra o motivo.
-// Estados do protótipo: Gerando, Verificando, Pronta, Confira (alertas), Aprovada. Preço só no botão do passo.
-import { useState, type ReactNode } from 'react';
-import { AlertTriangle, Check, Loader2, RefreshCw, ScanSearch } from 'lucide-react';
+// ADR-0203: cartão de UMA imagem possível (cor × posição) da tela única. Estados: vazio, indisponível, gerando
+// (aberta ou esperando a conferência do texto), pronta, aprovada, falhou. Mostra sempre a geração mais recente.
+// Cobrança = exibição: só depois que o <img> carregou e `imagemValida` disse sim é que `onExibida` sai; branca/vazia →
+// `onInvalida`; exceção (canvas contaminado) → nada. Falha de carga nunca é terminal: o próximo listar traz URL nova.
+// Alertas da conferência do texto só avisam: nunca bloqueiam o Aprovar.
+import { useState } from 'react';
+import { Check, ImageOff, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
-import { imagemValida } from '@/lib/galeria/exibicao';
-import type { ImagemGaleria } from '@/lib/galeria/api';
+import { StatusPill } from '@/components/ui/status-pill';
+import { emAndamento, imagemValida } from '@/lib/galeria/exibicao';
+import { mensagemErro, type AlertaImagem, type ImagemGaleria } from '@/lib/galeria/api';
 
-const ABERTOS = new Set(['pendente', 'submetendo', 'gerando']);
-const OUTROS: Record<string, string> = { descartada: 'Descartada', desatualizada: 'Desatualizada', falhou: 'Não gerada' };
-
-type Estado = 'gerando' | 'verificando' | 'pronta' | 'confira' | 'aprovada' | 'outro';
-function estadoDoCartao(i: ImagemGaleria): Estado {
-  if (ABERTOS.has(i.status)) return 'gerando';
+type EstadoCartao = 'vazio' | 'indisponivel' | 'gerando' | 'pronta' | 'aprovada' | 'falhou';
+function estadoDoCartao(i: ImagemGaleria | undefined, indisponivel?: string): EstadoCartao {
+  if (!i) return indisponivel ? 'indisponivel' : 'vazio';
+  if (emAndamento(i)) return 'gerando';
   if (i.status === 'aprovada') return 'aprovada';
-  if (i.status !== 'gerada') return 'outro';
-  if (i.origem === 'gerador' && i.alertas === null) return 'verificando';
-  return (i.alertas ?? []).length > 0 ? 'confira' : 'pronta';
+  if (i.status === 'falhou') return 'falhou';
+  return 'pronta';
 }
 
-const SELO: Record<Exclude<Estado, 'outro'>, { rotulo: string; tom: StatusTone }> = {
-  gerando: { rotulo: 'Gerando', tom: 'info' }, verificando: { rotulo: 'Verificando', tom: 'info' }, pronta: { rotulo: 'Pronta', tom: 'neutral' },
-  confira: { rotulo: 'Confira', tom: 'warning' }, aprovada: { rotulo: 'Aprovada', tom: 'success' },
-};
+function textoAlerta(a: AlertaImagem): string {
+  if (a.tipo === 'texto_extra') return `Texto a mais na imagem: ${a.nota}`;
+  if (a.tipo === 'texto_faltando') return `Faltou ou saiu errado o texto: ${a.nota}`;
+  if (a.tipo === 'verificacao_indisponivel') return 'Não foi possível conferir o texto. Confira antes de aprovar.';
+  return a.nota;
+}
 
-export function CartaoImagem({ imagem, titulo, restantes, confirmacao, onGerarDeNovo, onAprovar, bloqueioAprovar, onExibida, onInvalida, onFalhaCarga }: {
-  imagem: ImagemGaleria;
-  /** Nome da imagem para o operador ("Capa · Branco"); sem ele, só a cor. */
-  titulo?: string;
-  /** Gerações que ainda cabem nesta cor e imagem (o pai conta como o servidor); 0 desabilita o botão. Ausente = sem contador. */
-  restantes?: number;
-  /** Confirmação de "Gerar outra" junto ao cartão (o pai decide quando existe). */
-  confirmacao?: ReactNode;
-  /** Sem handler o botão não aparece (roteiro aprovado de outra família: o servidor recusaria). */
-  onGerarDeNovo?: (imagem: ImagemGaleria) => void;
-  /** Compõe e aprova; devolve o motivo da recusa (null = aprovada). Sem handler o botão não aparece. */
+const MOLDURA = 'aspect-[1200/1540] w-full rounded-lg bg-muted';
+
+export function CartaoImagem({ nome, cor, preco, imagem, indisponivel, antiga = false, temAprovada = false, travado = false,
+  onGerar, onAprovar, onExibida, onInvalida, onFalhaCarga }: {
+  /** Nome da imagem para o operador ("Capa", "Ficha técnica"). */
+  nome: string;
+  cor: string;
+  /** Preço por imagem já formatado ("R$ 0,50"). */
+  preco: string;
+  /** Geração mais recente desta cor e posição (ausente = ainda não gerada). */
+  imagem?: ImagemGaleria;
+  /** Motivo de a posição não poder ser gerada (sem botão). */
+  indisponivel?: string;
+  /** Imagem de um plano anterior: aparece sem Aprovar. */
+  antiga?: boolean;
+  /** Existe outra geração aprovada desta posição (a que está à mostra é mais nova). */
+  temAprovada?: boolean;
+  /** Um pedido está em voo: nenhum botão de gerar vale. */
+  travado?: boolean;
+  /** "Gerar", "Gerar outra" e "Tentar de novo". */
+  onGerar?: () => void;
+  /** Compõe o arquivo final e aprova; devolve o motivo da recusa (null = aprovada). */
   onAprovar?: (imagem: ImagemGaleria) => Promise<string | null>;
-  /** Motivo para manter Aprovar desabilitado (vai no `title` e em texto visível), ex.: "Em breve". */
-  bloqueioAprovar?: string;
   onExibida?: (id: string) => void;
   onInvalida?: (id: string) => void;
   /** Não carregou: o pai descarta a URL guardada para o próximo listar trazer outra. */
   onFalhaCarga?: (id: string) => void;
 }) {
-  const nome = titulo ?? `Imagem · ${imagem.cor}`;
-  // URL que não carregou (não é prova de imagem ruim: nem confirma nem reporta); URL nova tenta de novo.
   const [urlQuebrada, setUrlQuebrada] = useState<string | null>(null);
   const [aprovando, setAprovando] = useState(false);
   const [motivo, setMotivo] = useState<string | null>(null);
-  const quebrou = !!imagem.url && urlQuebrada === imagem.url;
-  const estado = estadoDoCartao(imagem);
-  const cobravel = imagem.origem === 'gerador' && !imagem.exibida;
+  const estado = estadoDoCartao(imagem, indisponivel);
+  const quebrou = !!imagem?.url && urlQuebrada === imagem.url;
+  const alertas = estado === 'pronta' || estado === 'aprovada' ? imagem?.alertas ?? [] : [];
 
   async function aprovar() {
     setAprovando(true); setMotivo(null);
-    try { setMotivo(await onAprovar!(imagem)); } finally { setAprovando(false); }
+    try { setMotivo(await onAprovar!(imagem!)); } finally { setAprovando(false); }
   }
-  // Gerador só depois da verificação por visão (`alertas` nulo = pendente; o servidor recusaria).
-  const aprovavel = imagem.status === 'gerada' && !!imagem.url && (imagem.origem === 'recorte' || imagem.alertas !== null);
 
   function carregou(img: HTMLImageElement) {
-    if (!cobravel) return;
+    if (!imagem || imagem.exibida) return;
     let valida: boolean;
     try { valida = imagemValida(img); } catch { return; }
     if (valida) onExibida?.(imagem.id); else onInvalida?.(imagem.id);
   }
 
-  const selo = estado === 'outro' ? { rotulo: OUTROS[imagem.status] ?? imagem.status, tom: (imagem.status === 'falhou' ? 'danger' : 'neutral') as StatusTone } : SELO[estado];
+  // Imagem de plano anterior sempre pode ser refeita (é o único jeito de ela valer de novo).
+  const gerarOutra = !!onGerar && (antiga || !!imagem?.pode_gerar_de_novo);
   return (
-    <div className="flex flex-col gap-3 overflow-hidden rounded-xl bg-card text-card-foreground shadow-sm ring-1 ring-foreground/5 p-3 text-sm" data-status={imagem.status} data-estado={estado}>
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-semibold">{nome}</span>
-        <StatusPill tone={selo.tom}>
-          {estado === 'gerando' && <Loader2 aria-hidden className="size-3 motion-safe:animate-spin" />}
-          {estado === 'verificando' && <ScanSearch aria-hidden className="size-3" />}
-          {estado === 'confira' && <AlertTriangle aria-hidden className="size-3" />}
-          {estado === 'aprovada' && <Check aria-hidden className="size-3" />}
-          {selo.rotulo}
-        </StatusPill>
+    <div data-estado={estado} data-posicao={imagem?.missao}
+      className="flex min-w-0 flex-col gap-2 overflow-hidden rounded-xl bg-card p-2.5 text-sm text-card-foreground shadow-sm ring-1 ring-foreground/5">
+      <div className="flex min-h-6 items-center justify-between gap-2">
+        <span className="truncate font-semibold" title={nome}>{nome}</span>
+        {estado === 'aprovada' && <StatusPill tone="success"><Check aria-hidden className="size-3" />Aprovada</StatusPill>}
       </div>
+
       {estado === 'gerando' ? (
-        <div className="flex h-[36vh] min-h-56 flex-col items-center justify-center gap-1 rounded bg-muted text-muted-foreground">
+        <div role="status" className={`${MOLDURA} flex flex-col items-center justify-center gap-1.5 text-muted-foreground`}>
           <Loader2 aria-hidden className="size-4 motion-safe:animate-spin" />
-          <span>Gerando · cerca de 30 s</span>
+          <span>Gerando…</span>
         </div>
-      ) : imagem.url && imagem.status !== 'falhou' && !quebrou ? (
-        <img src={imagem.url} alt={nome} crossOrigin="anonymous" className="h-[36vh] min-h-56 w-full rounded bg-muted object-contain"
+      ) : (estado === 'pronta' || estado === 'aprovada') && imagem?.url && !quebrou ? (
+        <img src={imagem.url} alt={`${nome} · ${cor}`} crossOrigin="anonymous" className={`${MOLDURA} object-cover`}
           onLoad={(e) => carregou(e.currentTarget)} onError={() => { setUrlQuebrada(imagem.url); onFalhaCarga?.(imagem.id); }} />
-      ) : quebrou ? (
-        <p className="text-muted-foreground">Não foi possível exibir a imagem. Tentando de novo…</p>
+      ) : estado === 'pronta' || estado === 'aprovada' ? (
+        <div className={`${MOLDURA} flex flex-col items-center justify-center gap-1.5 p-2 text-center text-xs text-muted-foreground`}>
+          <ImageOff aria-hidden className="size-4" />
+          {quebrou ? 'Não foi possível exibir a imagem. Tentando de novo…' : 'Sem imagem.'}
+        </div>
       ) : (
-        <p className="text-muted-foreground" title={imagem.erro ?? undefined}>
-          {imagem.erro || imagem.status === 'falhou' ? 'Não foi possível gerar esta imagem. Gere de novo.' : 'Sem imagem.'}
-        </p>
+        <div className={`${MOLDURA} flex items-center justify-center border border-dashed p-2 text-center text-xs text-muted-foreground`}>
+          {estado === 'indisponivel' ? indisponivel
+            : estado === 'falhou' ? (imagem?.erro ? mensagemErro(imagem.erro) : 'Não foi possível gerar esta imagem.')
+              : 'Ainda não gerada'}
+        </div>
       )}
-      {estado === 'verificando' && <p className="text-xs text-muted-foreground">Verificando texto e produto…</p>}
-      {(imagem.alertas ?? []).length > 0 && (
-        <ul role="alert" className="space-y-1 rounded-lg bg-warning/10 p-2.5 text-xs ring-1 ring-warning/25">
-          {imagem.alertas!.map((a, i) => <li key={i}>{a.nota}</li>)}
+
+      {antiga && estado === 'pronta' && <p className="text-xs text-warning">Imagem de uma versão anterior. Gere de novo.</p>}
+      {temAprovada && estado !== 'aprovada' && <p className="text-xs text-muted-foreground">Existe uma versão aprovada desta imagem.</p>}
+      {alertas.length > 0 && (
+        <ul className="space-y-1 rounded-lg bg-warning/10 p-2 text-xs ring-1 ring-warning/25">
+          {alertas.map((a, k) => <li key={k}>{textoAlerta(a)}</li>)}
         </ul>
       )}
-      <div className="flex flex-wrap gap-2">
-        {onAprovar && aprovavel && (
-          <Button className="h-11 flex-1 px-4" disabled={aprovando || !!bloqueioAprovar} title={bloqueioAprovar} onClick={() => void aprovar()}>
-            {aprovando ? <><Loader2 aria-hidden className="mr-1 size-3 motion-safe:animate-spin" />Aprovando…</> : <><Check aria-hidden />Aprovar</>}
+
+      <div className="mt-auto flex flex-col gap-2">
+        {estado === 'vazio' && onGerar && (
+          <Button className="h-10 w-full px-3" disabled={travado} onClick={onGerar}>Gerar · {preco}</Button>
+        )}
+        {estado === 'falhou' && onGerar && (
+          <Button variant="outline" className="h-10 w-full px-3" disabled={travado} onClick={onGerar}>
+            <RefreshCw aria-hidden />Tentar de novo
           </Button>
         )}
-        {onGerarDeNovo && imagem.origem === 'gerador' && imagem.pode_gerar_de_novo && (
-          <Button variant="outline" className="h-11 flex-1 px-4" disabled={restantes === 0} onClick={() => onGerarDeNovo(imagem)}>
-            <RefreshCw aria-hidden />Gerar outra{restantes !== undefined && ' '}{restantes !== undefined && <span className="font-normal text-muted-foreground tabular-nums">({restantes} {restantes === 1 ? 'restante' : 'restantes'})</span>}
+        {estado === 'pronta' && !antiga && !!imagem?.url && onAprovar && (
+          <Button className="h-10 w-full px-3" disabled={aprovando} onClick={() => void aprovar()}>
+            {aprovando ? <><Loader2 aria-hidden className="motion-safe:animate-spin" />Aprovando…</> : <><Check aria-hidden />Aprovar</>}
+          </Button>
+        )}
+        {(estado === 'pronta' || estado === 'aprovada') && gerarOutra && (
+          <Button variant="outline" className="h-10 w-full px-3" disabled={travado} onClick={onGerar}>
+            <RefreshCw aria-hidden />Gerar outra
           </Button>
         )}
       </div>
-      {onAprovar && aprovavel && bloqueioAprovar && <p className="text-xs text-warning">{bloqueioAprovar}</p>}
       {motivo && <p role="alert" className="text-xs text-destructive">{motivo}</p>}
-      {confirmacao}
     </div>
   );
 }

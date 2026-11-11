@@ -1,4 +1,4 @@
-// ADR-0201 (Task 15) + Fase C2: passo "Aplicar no anúncio", fiel ao protótipo aprovado. Troca as fotos aprovadas de
+// ADR-0201 (Task 15) + Fase C2: seção "Colocar no anúncio", fiel ao protótipo aprovado. Troca as fotos aprovadas de
 // uma cor no Mercado Livre e desfaz. Só admin (ADR-0060). Fluxo: "Ver prévia" chama Preparar (nunca escreve no ML; a
 // edge congela o manifesto e devolve, por MLB, as fotos da cor hoje × depois) → "Aplicar na cor X" no rodapé abre a
 // confirmação → Confirmar (a saga roda no servidor). A tela só acompanha: lê o estado a cada 5 s enquanto houver
@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   APLICACAO_EM_ANDAMENTO, confirmarAplicacao, estadoAplicacoes, mensagemErro, prepararAplicacao,
-  reverterAplicacao, type AplicacaoPreparada, type EstadoAplicacao, type Ficha, type ItemAplicacao, type ModoAplicar,
+  reverterAplicacao, type AplicacaoPreparada, type EstadoAplicacao, type ItemAplicacao, type ModoAplicar,
   type PreviaItem, type Res,
 } from '@/lib/galeria/api';
 import { nomeImagem } from '@/lib/galeria/rotulos';
@@ -137,8 +137,8 @@ function LinhaMLB({ itemId, cor, formato, item }: { itemId: string; cor: string;
   );
 }
 
-export function PassoAplicar({ mlItemId, ficha, isAdmin, moda = false, formato = 'Anúncio', aprovadasPorCor, aoFamiliaMudou, aoIrParaGerar, aoVoltar }: {
-  mlItemId: string; ficha: Ficha; isAdmin: boolean; moda?: boolean;
+export function PassoAplicar({ mlItemId, cores: coresDoAnuncio, isAdmin, moda = false, formato = 'Anúncio', aprovadasPorCor, aoFamiliaMudou, aoIrParaGerar, aoVoltar }: {
+  mlItemId: string; /** Cores do anúncio (a tela única as lê do `listar`). */ cores: string[]; isAdmin: boolean; moda?: boolean;
   /** "Legacy" ou "User Products" (linha de Publicados). */
   formato?: string;
   /** Aprovadas do roteiro aprovado, por cor; null = lista indisponível (a edge decide). */
@@ -148,7 +148,7 @@ export function PassoAplicar({ mlItemId, ficha, isAdmin, moda = false, formato =
   aoIrParaGerar: () => void;
   aoVoltar: () => void;
 }) {
-  const cores = aprovadasPorCor ? ficha.cores.filter((c) => (aprovadasPorCor[c] ?? 0) > 0) : ficha.cores;
+  const cores = aprovadasPorCor ? coresDoAnuncio.filter((c) => (aprovadasPorCor[c] ?? 0) > 0) : coresDoAnuncio;
   const [corEscolhida, setCor] = useState(cores[0] ?? '');
   // A lista de aprovadas pode chegar depois: a cor escolhida só vale se ainda tiver aprovada.
   const cor = cores.includes(corEscolhida) ? corEscolhida : cores[0] ?? '';
@@ -240,7 +240,7 @@ export function PassoAplicar({ mlItemId, ficha, isAdmin, moda = false, formato =
     : new Set(porMLB.map((p) => p.variacoes)).size === 1 ? ` Vale para as ${porMLB[0].variacoes} variações desta cor.`
       : ` Variações da cor por anúncio: ${porMLB.map((p) => `${p.item_id} (${p.variacoes})`).join(', ')}.`;
 
-  const rodape = semAprovadas ? { texto: 'Aprove ao menos 1 imagem no passo 3', ok: false }
+  const rodape = semAprovadas ? { texto: 'Aprove ao menos 1 imagem', ok: false }
     : !isAdmin ? { texto: 'Somente administradores aplicam as fotos no anúncio.', ok: false }
     : andando ? { texto: estadoAtual?.status === 'revertendo' ? 'Desfazendo no Mercado Livre…' : 'Aplicando no Mercado Livre…', ok: false }
     : estadoAtual?.status === 'revertida' ? { texto: `Aplicação desfeita. As fotos anteriores da cor ${atual!.cor} voltaram.`, ok: false }
@@ -251,7 +251,7 @@ export function PassoAplicar({ mlItemId, ficha, isAdmin, moda = false, formato =
 
   return (
     <>
-      <MioloPasso titulo="Aplicar no anúncio" frase={`Escolha como as imagens aprovadas entram nas fotos da cor${cor ? ` ${cor}` : ''}.`}>
+      <MioloPasso titulo="Colocar no anúncio" frase={`Escolha como as imagens aprovadas entram nas fotos da cor${cor ? ` ${cor}` : ''}.`}>
         <div className="max-w-[760px] space-y-4">
           {erro && <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm ring-1 ring-destructive/25">{erro}</p>}
           {avisoLeitura && (
@@ -261,9 +261,9 @@ export function PassoAplicar({ mlItemId, ficha, isAdmin, moda = false, formato =
           )}
 
           {semAprovadas ? (
-            <EmptyState icon={Images} title="Aprove ao menos 1 imagem no passo 3"
-              description="Só as imagens aprovadas entram nas fotos do anúncio. Gere as imagens de uma cor e aprove as que vão para o Mercado Livre."
-              action={<Button variant="outline" className="h-11 px-4" onClick={aoIrParaGerar}>Ir para Gerar e aprovar</Button>} />
+            <EmptyState icon={Images} title="Aprove ao menos 1 imagem"
+              description="Só as imagens aprovadas entram nas fotos do anúncio. Gere as imagens da cor e aprove as que vão para o Mercado Livre."
+              action={<Button variant="outline" className="h-11 px-4" onClick={aoIrParaGerar}>Voltar às imagens</Button>} />
           ) : (
             <section aria-label="Prévia" className="overflow-hidden rounded-xl bg-card text-card-foreground shadow-sm ring-1 ring-foreground/5 text-sm">
               <div className="flex flex-wrap items-end gap-3 p-4">

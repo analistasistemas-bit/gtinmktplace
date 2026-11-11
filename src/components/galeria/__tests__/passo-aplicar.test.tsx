@@ -25,7 +25,7 @@ const aplicacao = (extra: Partial<EstadoAplicacao> = {}): EstadoAplicacao => ({
 function montar(isAdmin = true, mlItemId = 'MLB3M', aprovadasPorCor: Record<string, number> | null = { Rosa: 3, Azul: 1 }) {
   const aoFamiliaMudou = vi.fn();
   const aoIrParaGerar = vi.fn();
-  const r = render(<PassoAplicar mlItemId={mlItemId} ficha={ficha} isAdmin={isAdmin} aprovadasPorCor={aprovadasPorCor} formato="Legacy"
+  const r = render(<PassoAplicar mlItemId={mlItemId} cores={ficha.cores} isAdmin={isAdmin} aprovadasPorCor={aprovadasPorCor} formato="Legacy"
     aoFamiliaMudou={aoFamiliaMudou} aoIrParaGerar={aoIrParaGerar} aoVoltar={vi.fn()} />);
   return { ...r, aoFamiliaMudou, aoIrParaGerar };
 }
@@ -369,12 +369,12 @@ describe('PassoAplicar: prévia e acompanhamento (Fase C2)', () => {
     expect(screen.getByText('MLB3G').closest('li')).toHaveTextContent('A aplicação parou antes deste anúncio');
   });
 
-  it('sem imagem aprovada: estado vazio que leva ao passo 3, sem chamar Preparar', async () => {
+  it('sem imagem aprovada: estado vazio que volta às imagens, sem chamar Preparar', async () => {
     const { aoIrParaGerar } = montar(true, 'MLB3M', {});
-    expect(await screen.findByText('Aprove ao menos 1 imagem no passo 3', { selector: 'p.font-medium' })).toBeInTheDocument();
+    expect(await screen.findByText('Aprove ao menos 1 imagem', { selector: 'p.font-medium' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Ver prévia' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Aplicar' })).toBeDisabled();
-    await userEvent.click(screen.getByRole('button', { name: 'Ir para Gerar e aprovar' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Voltar às imagens' }));
     expect(aoIrParaGerar).toHaveBeenCalled();
     expect(api.prepararAplicacao).not.toHaveBeenCalled();
   });

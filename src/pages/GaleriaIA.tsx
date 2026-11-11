@@ -1,34 +1,25 @@
-// ADR-0201 + plano 2026-11-11 (Fase C): Galeria IA em página própria, `/#/publicados/:mlItemId/galeria`.
-// Identidade = `ml_item_id` da rota (linhas split dividem a família); a família vigente volta da edge e é ela que a tela
-// reenvia. Guarda própria (link direto): módulo `imagem_ia`, anúncio da org; aprovar/aplicar só admin (os demais leem).
-// Abertura sequencial: `montar` (pode chamar a visão paga e desatualizar o roteiro) → `ler` → `listar` (só leitura).
-import { useCallback, useEffect, useRef, useState } from 'react';
+// ADR-0203: Galeria IA em tela única, `/#/publicados/:mlItemId/galeria`. Sem passos: escolhe a cor (ou todas), gera as
+// 7 imagens uma a uma ou todas, aprova e coloca no anúncio.
+// Identidade = `ml_item_id` da rota (linhas split dividem a família). Guarda própria (link direto): módulo `imagem_ia`;
+// anúncio da org (a edge recusa o resto). Aprovar/aplicar só admin (os demais leem).
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, Check, Images, X } from 'lucide-react';
-import { toast } from 'sonner';
+import { AlertTriangle, ArrowLeft, Images, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CarregandoMarca } from '@/components/ui/carregando-marca';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { usePodeExecutarOperacao } from '@/hooks/useOperacoes';
 import { usePublicados } from '@/hooks/usePublicados';
 import { fmtBRL } from '@/lib/formato';
-import {
-  ERROS_DE_RECARGA, lerRoteiro, listarImagens, mensagemErro, montarFicha,
-  type Ficha, type Res, type RespostaListar, type RespostaRoteiro,
-} from '@/lib/galeria/api';
+import { mensagemErro, type RespostaListar } from '@/lib/galeria/api';
 import { caminhoDeVolta } from '@/lib/galeria/retorno';
-import { cn } from '@/lib/utils';
-import { PassoConferir } from '@/components/galeria/passo-conferir';
-import { PassoEscolher } from '@/components/galeria/passo-escolher';
-import { PassoGerar } from '@/components/galeria/passo-gerar';
+import { PainelImagens } from '@/components/galeria/painel-imagens';
 import { PassoAplicar } from '@/components/galeria/passo-aplicar';
-import { MioloPasso, Rodape } from '@/components/galeria/rodape';
 
-type Falha = Extract<Res<unknown>, { ok: false }>;
-type Passo = 1 | 2 | 3 | 4;
-const PASSOS: Record<Passo, string> = { 1: 'Conferir dados', 2: 'Escolher imagens', 3: 'Gerar e aprovar', 4: 'Aplicar no anúncio' };
-/** Recusas do `montar` que querem dizer "este anúncio não é seu / não existe / não tem galeria". */
+/** Recusas do `listar` que querem dizer "este anúncio não é seu / não existe / não tem galeria". */
 const SEM_ACESSO = new Set(['anuncio_ambiguo', 'sem_familia_vigente', 'modulo_desligado', 'sem_anuncio']);
+const TODAS = '__todas__';
 
 function TelaParada({ titulo, texto }: { titulo: string; texto: string }) {
   const navigate = useNavigate();
@@ -48,115 +39,22 @@ export default function GaleriaIA() {
   const isAdmin = usePodeExecutarOperacao();
   const modulos = useModulosHabilitados({ retryOnMount: false });
   const semModulo = !!modulos.data && !modulos.data.includes('imagem_ia');
-  // Revisão B+C (achado 6): só abre com a lista de módulos em mãos (a edge recusaria antes da visão de qualquer jeito).
+  // Só abre com a lista de módulos em mãos (a edge recusaria antes de qualquer geração de qualquer jeito).
   // Falha ao ler a lista não prende a tela: a edge é fail-closed e responde modulo_desligado.
   const modulosProntos = !!modulos.data || !!modulos.isError;
   const { data: publicados } = usePublicados();
   const anuncio = publicados?.find((p) => p.mlItemId === mlItemId);
 
-  const [ficha, setFicha] = useState<Ficha | null>(null);
-  const [resp, setResp] = useState<RespostaRoteiro | null>(null);
-  const [moda, setModa] = useState<boolean | null>(null);
-  const [passo, setPasso] = useState<Passo>(1);
-  const [alcancado, setAlcancado] = useState<Passo>(1);
-  const [carregando, setCarregando] = useState(true);
-  const [erro, setErro] = useState<string | null>(null);
-  const [parada, setParada] = useState<string | null>(null);
-  // `ler` respondeu nesta abertura: só então o passo 2 sabe se há roteiro vigente e pode oferecer "Criar".
-  const [roteiroLido, setRoteiroLido] = useState(false);
-  // Algo para gerar/aplicar: roteiro aprovado do anúncio (mesmo com rascunho por cima) ou cena não exibida.
-  const [temGaleria, setTemGaleria] = useState(false);
   const [lista, setLista] = useState<RespostaListar | null>(null);
-  // Cabeçalho do anúncio no ML: só vem na abertura (`montar`); as outras ações da ficha não o trazem.
-  const [cab, setCab] = useState<Pick<Ficha, 'capa_url' | 'titulo_anuncio' | 'preco_anuncio' | 'formato'>>({});
-  const capa = cab.capa_url ?? null;
-  const [capaQuebrou, setCapaQuebrou] = useState(false);
-  const abertura = useRef(0);
-  // Envio pendente do passo 2 (Fase B): sai antes de trocar de passo ou voltar a Publicados.
-  const descarga = useRef<(() => Promise<boolean>) | null>(null);
-  const registrarDescarga = useCallback((f: (() => Promise<boolean>) | null) => { descarga.current = f; }, []);
+  const [escolha, setEscolha] = useState<string | null>(null);
+  const [parada, setParada] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  // Muda quando o painel precisa recomeçar do zero (cadastro do anúncio mudou durante a aplicação).
+  const [recarga, setRecarga] = useState(0);
 
-  const carregar = useCallback(async () => {
-    const id = ++abertura.current;
-    setCarregando(true); setRoteiroLido(false);
-    const r = await montarFicha(mlItemId);
-    if (id !== abertura.current) return;
-    // Não limpa o erro: a mensagem que motivou a recarga (categoria_mudou etc.) sobrevive a ela.
-    if (!r.ok) {
-      if (SEM_ACESSO.has(r.erro)) setParada(r.erro); else setErro(mensagemErro(r.erro));
-      setCarregando(false);
-      return;
-    }
-    setCab({ capa_url: r.dados.capa_url, titulo_anuncio: r.dados.titulo_anuncio, preco_anuncio: r.dados.preco_anuncio, formato: r.dados.formato });
-    setCapaQuebrou(false);
-    const l = await lerRoteiro(mlItemId);
-    if (id !== abertura.current) return;
-    setFicha(r.dados);
-    let aprovado = false;
-    if (l.ok) {
-      setModa(l.dados.moda);
-      const rr = l.dados.roteiro ? (l.dados as RespostaRoteiro) : null;
-      setResp(rr);
-      aprovado = rr?.roteiro.status === 'aprovado';
-      setRoteiroLido(true);
-      if (l.dados.aviso) setErro(mensagemErro(l.dados.aviso));
-    } else setErro(mensagemErro(l.erro));
-    const g = await listarImagens(mlItemId);
-    if (id !== abertura.current) return;
-    const tem = g.ok && (!!g.dados.roteiro || g.dados.imagens.some((i) => i.origem === 'gerador' && !i.exibida));
-    setTemGaleria(tem);
-    if (g.ok) setLista(g.dados);
-    setAlcancado((a) => (Math.max(a, tem || aprovado ? 4 : l.ok && l.dados.roteiro ? 2 : 1) as Passo));
-    setCarregando(false);
-  }, [mlItemId]);
+  useEffect(() => { setLista(null); setEscolha(null); setParada(null); setErro(null); }, [mlItemId]);
 
-  useEffect(() => {
-    if (semModulo || !mlItemId || !modulosProntos) return;
-    setFicha(null); setResp(null); setModa(null); setPasso(1); setAlcancado(1); setTemGaleria(false); setLista(null); setCab({});
-    setErro(null); setParada(null);
-    void carregar();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    return () => { abertura.current++; };
-  }, [mlItemId, semModulo, modulosProntos, carregar]);
-
-  /** Falha de qualquer ação: mensagem clara; erros que invalidam o chão recarregam e descartam o roteiro em tela. */
-  const falhou = useCallback((f: Falha) => {
-    // Erro que o passo já mostra no lugar certo (campos, rodapé) não empilha banner geral (I6).
-    if (f.erro !== 'roteiro_invalido' && f.erro !== 'ciencia_pendente') setErro(mensagemErro(f.erro));
-    if (f.erro === 'roteiro_invalido') {
-      setResp((r) => (r ? { ...r, erros: (f.corpo.erros as string[]) ?? r.erros, erros_por_missao: (f.corpo.erros_por_missao as Record<string, string[]>) ?? r.erros_por_missao } : r));
-    } else if (f.erro === 'ciencia_pendente') {
-      setResp((r) => (r ? { ...r, ciencia_pendente: (f.corpo.campos as string[]) ?? r.ciencia_pendente } : r));
-    }
-    if (ERROS_DE_RECARGA.has(f.erro)) { setResp(null); void carregar(); }
-  }, [carregar]);
-
-  const aoMudarFicha = useCallback((r: Res<Ficha>) => {
-    if (r.ok) { setFicha(r.dados); setErro(null); } else falhou(r);
-  }, [falhou]);
-
-  const aoResposta = useCallback((r: RespostaRoteiro) => { setResp(r); setModa(r.roteiro.moda); setErro(null); }, []);
-
-  async function irPara(p: Passo) {
-    if (p === passo) return;
-    if (descarga.current && !(await descarga.current())) {
-      toast.error('Não foi possível salvar os textos. Tente de novo antes de sair do passo.');
-      return;
-    }
-    setPasso(p);
-    setAlcancado((a) => (Math.max(a, p) as Passo));
-    document.querySelector('main')?.scrollTo({ top: 0 });
-  }
-
-  // Revisão B+C (achado 2): mesmo critério da troca de passo; com o salvar falhando, avisa e fica.
-  async function voltar(e: React.MouseEvent) {
-    e.preventDefault();
-    if (descarga.current && !(await descarga.current())) {
-      toast.error('Não foi possível salvar os textos. Tente de novo antes de sair da galeria.');
-      return;
-    }
-    navigate(caminhoDeVolta());
-  }
+  const aoFalha = useCallback((e: string) => { if (SEM_ACESSO.has(e)) setParada(e); }, []);
 
   if (semModulo) return <TelaParada titulo="Galeria IA indisponível" texto={mensagemErro('modulo_desligado')} />;
   if (parada) {
@@ -164,113 +62,62 @@ export default function GaleriaIA() {
       texto={parada === 'modulo_desligado' ? mensagemErro(parada) : 'Este anúncio não existe ou não é desta organização.'} />;
   }
 
-  const podeGerar = resp?.roteiro.status === 'aprovado' || temGaleria;
-  // Link direto: o cabeçalho vem do `montar`; Publicados (cache) só completa o que o ML não respondeu.
-  const titulo = cab.titulo_anuncio ?? anuncio?.titulo ?? (ficha ? `Produto ${ficha.codigo_pai}` : 'Galeria IA');
-  const formato = cab.formato ? (cab.formato === 'user_products' ? 'User Products' : 'Legacy')
-    : anuncio ? (anuncio.userProducts ? 'User Products' : 'Legacy') : null;
-  const preco = cab.preco_anuncio ?? anuncio?.precoPublicacao ?? null;
-  const aprovadasLista = (lista?.imagens ?? []).filter((i) => i.status === 'aprovada' && i.roteiro_id === lista?.roteiro?.id);
-  const aprovadas = aprovadasLista.length;
-  const gerandoImagens = (lista?.imagens ?? []).some((i) => ['pendente', 'submetendo', 'gerando'].includes(i.status)
-    || (i.status === 'gerada' && i.origem === 'gerador' && i.alertas === null));
-  const aprovadasPorCor = lista ? aprovadasLista.reduce<Record<string, number>>((m, i) => ({ ...m, [i.cor]: (m[i.cor] ?? 0) + 1 }), {}) : null;
+  const cores = lista?.cores ?? [];
+  // Padrão: a primeira cor (todas as cores de uma vez é escolha do operador, pelo custo e pelo tamanho da tela).
+  const cor: string | null = escolha === TODAS ? null : escolha && cores.includes(escolha) ? escolha : cores[0] ?? null;
+  const titulo = lista?.titulo ?? anuncio?.titulo ?? 'Fotos com IA';
+  const formato = anuncio ? (anuncio.userProducts ? 'User Products' : 'Legacy') : 'Anúncio';
+  const aprovadas = lista && cor ? lista.imagens.filter((i) => i.status === 'aprovada' && i.cor === cor && i.roteiro_id === lista.plano_id).length : 0;
 
   return (
     <div className="flex min-h-full flex-col">
       <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85">
-        <div className="mx-auto w-full max-w-[1240px] px-4 sm:px-6">
-          <div className="flex items-center gap-3 py-1.5 sm:py-2.5">
-            <Link to={caminhoDeVolta()} onClick={(e) => void voltar(e)}
-              className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md px-2 font-medium text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
-              <ArrowLeft aria-hidden className="size-4" /><span className="max-sm:sr-only">Publicados</span>
-            </Link>
-            {capa && !capaQuebrou ? (
-              <img src={capa} alt="" data-testid="capa-anuncio" onError={() => setCapaQuebrou(true)}
-                className="size-11 shrink-0 rounded-md border bg-muted object-cover" />
-            ) : (
-              <div aria-hidden data-testid="capa-icone" className="grid size-11 shrink-0 place-items-center rounded-md border bg-muted text-muted-foreground">
-                <Images className="size-5" />
-              </div>
-            )}
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold sm:text-base" title={titulo}>{titulo}</p>
-              <p className="flex flex-wrap gap-x-2.5 gap-y-0.5 text-xs text-muted-foreground">
-                <span className="tabular-nums">{mlItemId}</span>
-                {formato && <span>{formato}</span>}
-                {preco !== null && <span className="tabular-nums">{fmtBRL(preco)}</span>}
-                {ficha && ficha.cores.length > 0 && <span className="max-sm:hidden">Cores: {ficha.cores.join(' · ')}</span>}
-              </p>
-            </div>
+        <div className="mx-auto flex w-full max-w-[1240px] flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2 sm:px-6 sm:py-2.5">
+          <Link to={caminhoDeVolta()}
+            className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-md px-2 font-medium text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
+            <ArrowLeft aria-hidden className="size-4" /><span className="max-sm:sr-only">Publicados</span>
+          </Link>
+          <div aria-hidden className="grid size-10 shrink-0 place-items-center rounded-md border bg-muted text-muted-foreground">
+            <Images className="size-5" />
           </div>
-          <nav aria-label="Passos da galeria">
-            <ol className="flex gap-1 pb-1.5 sm:pb-2.5">
-              {([1, 2, 3, 4] as Passo[]).map((n) => {
-                const atual = n === passo;
-                const feito = n < passo || (n < alcancado && !atual);
-                const bloqueado = n > alcancado || ((n === 3 || n === 4) && !podeGerar) || !ficha;
-                return (
-                  <li key={n} className={cn('min-w-0 flex-1', atual && 'max-md:flex-[4]')}>
-                    <button type="button" disabled={bloqueado} aria-current={atual ? 'step' : undefined} onClick={() => void irPara(n)}
-                      className={cn(
-                        'relative flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left font-medium outline-none',
-                        'after:absolute after:inset-x-2.5 after:bottom-0 after:h-0.5 after:rounded-full after:bg-border',
-                        'hover:enabled:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-55 max-md:justify-center',
-                        atual ? 'text-foreground after:bg-primary' : 'text-muted-foreground', feito && !atual && 'after:bg-success/55',
-                      )}>
-                      <span className={cn('grid size-6 shrink-0 place-items-center rounded-full border text-xs font-semibold',
-                        atual && 'border-primary bg-primary text-primary-foreground',
-                        feito && !atual && 'border-success/35 bg-success/15 text-success')}>
-                        {feito && !atual ? <Check aria-hidden className="size-3.5" /> : n}
-                      </span>
-                      <span className={cn('truncate', !atual && 'max-md:sr-only')}>{PASSOS[n]}</span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ol>
-          </nav>
+          <div className="min-w-0 flex-1 basis-40">
+            <p className="truncate text-sm font-semibold sm:text-base" title={titulo}>{titulo}</p>
+            <p className="flex flex-wrap gap-x-2.5 gap-y-0.5 text-xs text-muted-foreground">
+              <span className="tabular-nums">{mlItemId}</span>
+              <span>{formato}</span>
+              {lista && <span className="tabular-nums">{fmtBRL(lista.unit_cents / 100)} por imagem</span>}
+            </p>
+          </div>
+          {cores.length > 0 && (
+            <Select value={escolha === TODAS ? TODAS : cor ?? ''} onValueChange={setEscolha}>
+              <SelectTrigger aria-label="Cor das imagens" className="h-10 w-full sm:w-56"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {cores.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                <SelectItem value={TODAS}>Todas as cores</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
         </div>
       </header>
 
-      {erro && (
-        <div className="mx-auto w-full max-w-[1240px] px-4 pt-4 sm:px-6">
+      <div className="mx-auto w-full max-w-[1240px] space-y-4 px-4 pb-8 pt-4 sm:px-6">
+        {erro && (
           <div role="alert" className="flex items-start gap-2 rounded-lg bg-destructive/10 p-3 text-sm ring-1 ring-destructive/25">
             <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
             <span className="flex-1">{erro}</span>
-            <Button variant="ghost" size="icon" className="size-11 -my-3 -mr-2" aria-label="Fechar aviso" onClick={() => setErro(null)}><X aria-hidden /></Button>
+            <Button variant="ghost" size="icon" className="size-10 -my-2 -mr-2" aria-label="Fechar aviso" onClick={() => setErro(null)}><X aria-hidden /></Button>
           </div>
-        </div>
-      )}
+        )}
+        {modulosProntos
+          ? <PainelImagens key={`${mlItemId}:${recarga}`} mlItemId={mlItemId} cor={cor} aoLista={setLista} aoFalha={aoFalha} />
+          : <div className="flex justify-center py-16"><CarregandoMarca rotulo="Carregando" mensagem="Abrindo a galeria…" /></div>}
+      </div>
 
-      {!ficha ? (
-        <div className="flex flex-1 items-center justify-center py-16">
-          {carregando ? <CarregandoMarca rotulo="Carregando" mensagem="Abrindo a galeria…" /> : (
-            <Button variant="outline" className="h-11 px-4" onClick={() => { setErro(null); void carregar(); }}>Tentar de novo</Button>
-          )}
-        </div>
-      ) : passo === 1 ? (
-        <PassoConferir mlItemId={mlItemId} ficha={ficha} moda={moda} aoMudar={aoMudarFicha} aoContinuar={() => void irPara(2)} />
-      ) : passo === 2 ? (
-        <PassoEscolher mlItemId={mlItemId} ficha={ficha} isAdmin={isAdmin} resp={resp} podeCriar={roteiroLido}
-          aoResposta={aoResposta} aoFalhar={falhou} aoRegistrarDescarga={registrarDescarga}
-          aoContinuar={async (aprovou) => {
-            if (aprovou) await carregar();
-            setPasso(3); setAlcancado(4);
-          }} />
-      ) : passo === 3 ? (
-        <>
-          <MioloPasso titulo="Gerar e aprovar" frase="Gere as imagens de uma cor e aprove as que vão para o anúncio.">
-            <PassoGerar mlItemId={mlItemId} ficha={ficha} aoRecarregar={() => void carregar()} aoVoltarRoteiro={() => void irPara(2)} aoLista={setLista} />
-          </MioloPasso>
-          <Rodape ok={aprovadas > 0 && !gerandoImagens} rotulo="Continuar" aoClicar={() => void irPara(4)}
-            texto={gerandoImagens ? 'Aguarde as imagens ficarem prontas' : aprovadas > 0 ? `${aprovadas} ${aprovadas === 1 ? 'imagem aprovada' : 'imagens aprovadas'} (${Object.entries(aprovadasPorCor ?? {}).map(([c, n]) => `${c}: ${n}`).join(' · ')})` : 'Aprove ao menos 1 imagem para continuar'} />
-        </>
-      ) : (
-        <PassoAplicar mlItemId={mlItemId} ficha={ficha} isAdmin={isAdmin} moda={moda ?? false} aprovadasPorCor={aprovadasPorCor}
-          formato={formato ?? 'Anúncio'}
-          aoFamiliaMudou={(m) => { setErro(m); setResp(null); void carregar(); }}
-          aoIrParaGerar={() => void irPara(3)} aoVoltar={() => navigate(caminhoDeVolta())} />
+      {lista && cor && aprovadas > 0 && (
+        <PassoAplicar key={cor} mlItemId={mlItemId} cores={[cor]} isAdmin={isAdmin} moda={lista.moda ?? false}
+          aprovadasPorCor={{ [cor]: aprovadas }} formato={formato}
+          aoFamiliaMudou={(m) => { setErro(m); setLista(null); setRecarga((n) => n + 1); }}
+          aoIrParaGerar={() => document.querySelector('main')?.scrollTo({ top: 0 })} aoVoltar={() => navigate(caminhoDeVolta())} />
       )}
     </div>
   );

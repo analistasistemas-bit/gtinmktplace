@@ -1,82 +1,64 @@
 // SÓ DESENVOLVIMENTO (rota registrada em App.tsx apenas com `import.meta.env.DEV`; fora do bundle de produção).
-// Harness de visualização da Galeria IA para prints sem login: a página real, com as edges trocadas por respostas
-// falsas montadas com os dados da Fita Veludo (validação real de 11/11; sem ids). Nada sai do navegador.
-// `?cen=div` mostra a divergência da etiqueta; `?cen=falha` faz o salvar falhar. Passo 4 (Fase C2): `?cen=p4` abre com
-// o roteiro aprovado e 2 imagens aprovadas na cor Branco; `?cen=p4falha` igual, mas a aplicação não passa no MLB;
-// `?cen=p4vazio` aprovado sem nenhuma imagem aprovada. `?cen=semcapa` abre sem a miniatura do anúncio.
+// Harness de visualização da tela única da Galeria IA para prints sem login: a página real, com as edges trocadas por
+// respostas falsas. Nada sai do navegador. Dados fixos cobrem todos os estados do cartão (cor Branco) e uma segunda cor
+// (Preto) para a faixa "Todas as cores" (escolha "Todas as cores" no seletor do cabeçalho).
+// Interativo: "Gerar" cria uma imagem que fica "Gerando…" por ~3 s e depois pronta; "Aprovar" aprova de mentira; a
+// aplicação no anúncio é simulada (andando ~2 s, depois o fim).
+// A cor Branco já abre com 2 imagens aprovadas (seção "Colocar no anúncio").
 import { supabase } from '@/lib/supabase';
 import { queryClient } from '@/lib/query-client';
 import { QK } from '@/lib/queries';
 import { useAuthStore } from '@/stores/auth-store';
-import type { Fato, Ficha, ImagemGaleria, Roteiro } from '@/lib/galeria/api';
+import type { ImagemGaleria, RespostaListar } from '@/lib/galeria/api';
 import GaleriaIA from '../GaleriaIA';
 
-const cen = new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('cen');
+const svg = (fundo: string, rolo: string) => `data:image/svg+xml;utf8,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1540"><rect width="1200" height="1540" fill="${fundo}"/><ellipse cx="620" cy="1220" rx="320" ry="50" fill="#00000022"/><circle cx="600" cy="880" r="300" fill="${rolo}" stroke="#c8c8d0" stroke-width="8"/><circle cx="600" cy="880" r="200" fill="none" stroke="#c8c8d0" stroke-width="8"/><circle cx="600" cy="880" r="100" fill="#cdb9a0"/></svg>`)}`;
 
-const DESC_PAI = 'O fecho de contato (velcro) da Búfalo de 16 mm é a solução ideal para quem busca fixação firme, praticidade e alta resistência em detalhes delicados. Confeccionada em 100% poliéster durável, esta peça de 25 metros oferece alto rendimento.';
-const DESC_ML = 'A Fita de Veludo de 16mm é a solução ideal para quem busca fixação firme, praticidade e alta resistência em detalhes delicados. Composição: 100% poliéster. Metragem: 25 metros.';
+const POSICOES = [
+  { posicao: 1, nome: 'Capa' }, { posicao: 2, nome: 'Em uso' }, { posicao: 3, nome: 'Tira-dúvida' }, { posicao: 4, nome: 'Benefícios' },
+  { posicao: 5, nome: 'Ficha técnica', indisponivel: 'Faltam dados do produto para esta imagem.' }, { posicao: 6, nome: 'Como usar' },
+  { posicao: 7, nome: 'Detalhes' },
+];
+const PLANO = 'P1';
+const imagem = (id: string, cor: string, missao: number, extra: Partial<ImagemGaleria> = {}): ImagemGaleria => ({
+  id, cor, missao, geracao: 1, status: 'gerada', alertas: [], erro: null, exibida: true,
+  url: svg('#e9e9f0', cor === 'Preto' ? '#3a3a44' : '#fbfbf7'), roteiro_id: PLANO, pode_gerar_de_novo: true, unit_cents: 50, ...extra,
+});
 
-const svg = (fundo: string, rolo: string, texto = false) => `data:image/svg+xml;utf8,${encodeURIComponent(
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 154"><rect width="120" height="154" fill="${fundo}"/>${texto ? '<rect x="12" y="14" width="70" height="9" rx="2" fill="#3b3f58"/><rect x="12" y="28" width="50" height="6" rx="2" fill="#7a7f99"/>' : ''}<ellipse cx="62" cy="122" rx="32" ry="5" fill="#00000022"/><circle cx="60" cy="88" r="30" fill="${rolo}" stroke="#c8c8d0"/><circle cx="60" cy="88" r="20" fill="none" stroke="#c8c8d0"/><circle cx="60" cy="88" r="10" fill="#cdb9a0"/></svg>`)}`;
+/** Branco: aprovada, pronta com versão aprovada mais antiga, pronta com os 3 alertas, gerando, falhou, indisponível (5), vazio (7 sem imagem). */
+const imgs: ImagemGaleria[] = [
+  imagem('b1', 'Branco', 1, { status: 'aprovada' }),
+  imagem('b2a', 'Branco', 2, { status: 'aprovada' }),
+  imagem('b2b', 'Branco', 2, { geracao: 2 }),
+  imagem('b3', 'Branco', 3, { alertas: [
+    { tipo: 'texto_extra', nota: '"Super oferta"' }, { tipo: 'texto_faltando', nota: 'Prende firme' }, { tipo: 'verificacao_indisponivel', nota: '' },
+  ] }),
+  imagem('b4', 'Branco', 4, { status: 'gerando', url: null, exibida: false }),
+  imagem('b6', 'Branco', 6, { status: 'falhou', url: null, erro: 'teto' }),
+  // Preto: esperando a conferência do texto, roteiro antigo, conferência fora do ar.
+  imagem('p1', 'Preto', 1, { alertas: null }),
+  imagem('p2', 'Preto', 2, { roteiro_id: 'P0' }),
+  imagem('p3', 'Preto', 3, { alertas: [{ tipo: 'verificacao_indisponivel', nota: '' }] }),
+];
+const abertas = new Map<string, number>();
 
-function fatosIniciais(): Fato[] {
-  const f = (campo: string, valor: string, estado: Fato['estado'], nome?: string, extra: Partial<Fato> = {}): Fato =>
-    ({ campo, valor, estado, origem: estado === 'SUGERIDO' ? 'atributo_ml' : 'planilha', evidencia: nome ? { nome } : {}, ...extra });
-  return [
-    f('nome', 'FITAS DE VELUDO 16MM CORES C/25MTS', 'CONFIRMADO'),
-    f('origem', 'importado', 'CONFIRMADO'),
-    f('descricao_fornecedor', DESC_PAI, 'CONFIRMADO'),
-    ...(['peso_gramas', 'altura_cm', 'largura_cm', 'comprimento_cm'] as const).map((c, i) => f(c, ['287', '3.5', '24.5', '24.5'][i], 'CONFIRMADO')),
-    f('atributo:MATERIAL', '100% poliéster', 'SUGERIDO', 'Material'),
-    cen === 'div'
-      ? f('atributo:WIDTH', '16 mm', 'DIVERGENTE', 'Largura', { etiqueta: { legivel: true, valor: '15 mm', foto: { origem: 'referencia', ref: 'x', url: svg('#f4efe6', '#fbfbf7') }, caixa: { x: 0.1, y: 0.3, w: 0.8, h: 0.4 } } })
-      : f('atributo:WIDTH', '16 mm', 'SUGERIDO', 'Largura'),
-    f('atributo:LENGTH', '25 m', 'SUGERIDO', 'Comprimento'),
-    f('atributo:BRAND', 'BUFALO', 'SUGERIDO', 'Marca'),
-    f('atributo:UNITS_PER_PACK', '1', 'SUGERIDO', 'Unidades por pacote'),
-    f('titulo_ml', 'FITAS VELUDO 16MM 25M | 100% POLIÉSTER | ALTA RESISTÊNCIA', 'SUGERIDO'),
-    f('descricao_ml', DESC_ML, 'SUGERIDO'),
-  ];
+const atraso = (ms: number) => new Promise((r) => setTimeout(r, ms));
+function listar(): RespostaListar {
+  const agora = Date.now();
+  return {
+    titulo: 'FITAS VELUDO 16MM 25M | 100% POLIÉSTER | ALTA RESISTÊNCIA', cores: ['Branco', 'Preto'], moda: false, unit_cents: 50,
+    posicoes: POSICOES, plano_id: PLANO,
+    imagens: imgs.map((i) => (abertas.has(i.id) && agora > abertas.get(i.id)! ? { ...i, status: 'gerada', url: svg('#e9e9f0', '#fbfbf7') } : i)),
+  };
 }
 
-/** Roteiro como a Fase A devolve para a Fita (ativas 1, 2, 4, 5; 3 e 7 travadas pela lupa; 6 sem passos). */
-const roteiroFita = (): Roteiro => ({
-  categoria: 'Fitas', contrato: 'Representar sempre a fita de veludo para fecho de contato, com largura de 16 mm, nas duas faces (macho e fêmea) na mesma cor escolhida. Não mostrar embalagem nem texto na cena.',
-  missoes: [
-    { missao: 1, ativa: true, cena: 'Rolos da fita na cor escolhida sobre fundo limpo e neutro.', fatosUsados: [] },
-    { missao: 2, ativa: true, cena: 'A fita em uso: roupa infantil, acessório compacto e artesanato.', headline: 'Versátil no dia a dia', subheadline: 'Laços, tiaras, embalagens de presente e decoração de festas infantis', fatosUsados: ['descricao_fornecedor'] },
-    { missao: 3, ativa: false, cena: '', fatosUsados: [], motivoDesligada: 'Lupa em ajuste: a missão fica travada até a amostra real ser aprovada' },
-    { missao: 4, ativa: false, cena: 'A fita ao lado de aplicações delicadas.', headline: 'Fixação prática e discreta', beneficios: ['Alta resistência', 'Praticidade na aplicação', 'Excelente aderência'], fatosUsados: ['descricao_fornecedor'] },
-    { missao: 5, ativa: false, cena: 'Rolo e as duas faces da fita, organizados.', headline: 'Dados do produto', specs: [{ campo: 'atributo:MATERIAL', rotulo: 'Material', valor: '100% poliéster' }, { campo: 'atributo:LENGTH', rotulo: 'Comprimento', valor: '25 m' }], fatosUsados: [] },
-    { missao: 6, ativa: false, cena: '', fatosUsados: [], motivoDesligada: 'Sem etapa de uso escrita nos dados confirmados (R5.3)' },
-    { missao: 7, ativa: false, cena: '', fatosUsados: [], motivoDesligada: 'Lupa em ajuste: a missão fica travada até a amostra real ser aprovada' },
-  ],
-});
-
-const p4 = cen?.startsWith('p4') ?? false;
-const estado = { fatos: fatosIniciais(), roteiro: roteiroFita(), status: p4 ? 'aprovado' : 'rascunho', versao: 1, geradas: [] as ImagemGaleria[] };
-const ficha = (): Ficha => ({
-  anuncio_externo_id: 'A1', familia_id: 'F1', codigo_pai: '02864', cores: ['Branco', 'Preto'], fatos: estado.fatos,
-  fatos_hash: 'h', roteiro_desatualizado: false, referencias: {},
-  capa_url: cen === 'semcapa' ? null : svg('#f4f4f6', '#fbfbf7'),
-});
-const resp = () => ({
-  roteiro: { id: `R${estado.versao}`, familia_id: 'F1', versao: estado.versao, status: estado.status, moda: false, conteudo: estado.roteiro },
-  erros: [], erros_por_missao: {}, ciencia_pendente: [], fatos: estado.fatos, moda: false, familia_id: 'F1',
-});
-const imagem = (id: string, missao: number, extra: Partial<ImagemGaleria> = {}): ImagemGaleria => ({
-  id, cor: 'Branco', missao, geracao: 1, origem: 'gerador', status: 'gerada', alertas: [], erro: null, exibida: true,
-  url: svg('#e9e9f0', '#fbfbf7', missao !== 1), ref_url: null, roteiro_id: `R${estado.versao}`, pode_gerar_de_novo: true, unit_cents: 50, ...extra,
-});
-const atraso = (ms: number) => new Promise((r) => setTimeout(r, ms));
-if (p4 && cen !== 'p4vazio') estado.geradas = [imagem('a1', 1, { status: 'aprovada' }), imagem('a2', 2, { status: 'aprovada' })];
-
-// Passo 4: fotos de hoje da cor (3, como na validação da Fita) e a aplicação simulada (andando ~2 s, depois o fim).
+// Aplicação no anúncio simulada.
 const MLB = 'MLB7168683146';
 const aplic = { modo: 'substituir', cor: 'Branco', confirmadaEm: 0, desfeita: false };
 function preparar(b: Record<string, unknown>) {
   aplic.modo = String(b.modo); aplic.cor = String(b.cor); aplic.confirmadaEm = 0; aplic.desfeita = false;
-  const aprovadas = estado.geradas.filter((g) => g.status === 'aprovada' && g.cor === aplic.cor).sort((x, y) => x.missao - y.missao);
+  const aprovadas = imgs.filter((g) => g.status === 'aprovada' && g.cor === aplic.cor).sort((x, y) => x.missao - y.missao);
   const subst = aplic.modo === 'substituir';
   const hoje = [0, 1, 2].map((i) => ({ id: `H${i}`, url: svg(['#ededf1', '#e6e6ec', '#f1efe9'][i], '#fbfbf7'), sai: subst }));
   const novas = aprovadas.map((g) => ({ id: `novo-${g.missao}`, url: g.url, nova: true, missao: g.missao }));
@@ -89,43 +71,30 @@ function preparar(b: Record<string, unknown>) {
 function estadoAplic() {
   if (!aplic.confirmadaEm) return { aplicacoes: [] };
   const andando = Date.now() - aplic.confirmadaEm < 2500;
-  const falhou = cen === 'p4falha';
-  const status = aplic.desfeita ? 'revertida' : andando ? 'em_andamento' : falhou ? 'falhou' : 'aplicada';
-  const item = aplic.desfeita ? 'compensado' : andando ? 'subindo' : falhou ? 'pulado' : 'aplicado';
-  return { aplicacoes: [{ id: 'AP1', cor: aplic.cor, modo: aplic.modo, status, manifesto: [],
-    itens: [{ item_id: MLB, status: item, erro: falhou && !andando ? 'put_incerto_sem_efeito' : null }] }] };
+  const status = aplic.desfeita ? 'revertida' : andando ? 'em_andamento' : 'aplicada';
+  const item = aplic.desfeita ? 'compensado' : andando ? 'subindo' : 'aplicado';
+  return { aplicacoes: [{ id: 'AP1', cor: aplic.cor, modo: aplic.modo, status, manifesto: [], itens: [{ item_id: MLB, status: item, erro: null }] }] };
 }
 
 async function responder(edge: string, b: Record<string, unknown>): Promise<unknown> {
   await atraso(250);
   const acao = b.acao;
-  if (edge === 'galeria-fatos') {
-    if (acao === 'confirmar' || acao === 'manter_cadastro' || acao === 'corrigir_cadastro') {
-      estado.fatos = estado.fatos.map((f) => (f.campo === b.campo
-        ? { ...f, estado: 'CONFIRMADO', valor: acao === 'corrigir_cadastro' ? String(b.valor) : f.valor, origem: 'confirmado_operador' } : f));
-    }
-    return ficha();
-  }
-  if (edge === 'galeria-roteiro') {
-    if (acao === 'salvar') {
-      if (cen === 'falha') throw new Error('falha_interna');
-      estado.roteiro = b.conteudo as Roteiro;
-      if (estado.status !== 'rascunho') { estado.versao += 1; estado.status = 'rascunho'; }
-    }
-    if (acao === 'aprovar') { estado.status = 'aprovado'; return { roteiro_id: `R${estado.versao}`, status: 'aprovado', fatos_hash: 'h' }; }
-    return resp();
-  }
-  if (edge === 'galeria-imagens') {
-    const aprovado = estado.status === 'aprovado';
-    return {
-      roteiro: aprovado ? { id: `R${estado.versao}`, versao: estado.versao, familia_id: 'F1', moda: false, missoes_ativas: estado.roteiro.missoes.filter((m) => m.ativa).map((m) => m.missao), textos: {} } : null,
-      unit_cents: 50, imagens: estado.geradas,
-    };
-  }
+  if (edge === 'galeria-imagens') return acao === 'listar' ? listar() : acao === 'confirmar_exibicao' ? { cobradas: 1 } : { reportada: true };
   if (edge === 'galeria-gerar') {
-    const missoes = b.missoes as number[];
-    estado.geradas = missoes.flatMap((m, i) => (b.cores as string[]).map((c) => imagem(`i${m}${c}`, m, { cor: c, alertas: i === 1 ? [{ tipo: 'texto', nota: 'O texto do rótulo pode ter mudado. Confira antes de aprovar.' }] : [] })));
+    for (const m of b.missoes as number[]) {
+      for (const c of b.cores as string[]) {
+        const id = `n${m}${c}${Date.now()}`;
+        imgs.push(imagem(id, c, m, { geracao: 9, status: 'gerando', url: null, exibida: false }));
+        abertas.set(id, Date.now() + 3000);
+      }
+    }
     return { pedido_id: b.pedido_id, imagens: [] };
+  }
+  if (edge === 'galeria-aprovar') {
+    if (acao === 'preparar_upload') return { path: 'harness/final.jpg', token: 't', signed_url: 'u' };
+    const i = imgs.find((x) => x.id === b.imagem_id);
+    if (i) i.status = 'aprovada';
+    return { status: 'aprovada' };
   }
   if (edge === 'galeria-aplicar') {
     if (acao === 'preparar') return preparar(b);
@@ -136,7 +105,7 @@ async function responder(edge: string, b: Record<string, unknown>): Promise<unkn
   return {};
 }
 
-// Troca as edges e a sessão só nesta rota de desenvolvimento.
+// Troca as edges, o upload e a sessão só nesta rota de desenvolvimento.
 // `supabase.functions` é um getter que cria um cliente novo a cada acesso: troca no protótipo.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (Object.getPrototypeOf(supabase.functions) as any).invoke = async (edge: string, { body }: { body: Record<string, unknown> }) => {
@@ -144,12 +113,14 @@ async function responder(edge: string, b: Record<string, unknown>): Promise<unkn
     return { data: null, error: { context: new Response(JSON.stringify({ error: (e as Error).message }), { status: 500 }) } };
   }
 };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(Object.getPrototypeOf(supabase.storage) as any).from = () => ({ uploadToSignedUrl: async () => ({ error: null }) });
 useAuthStore.setState({ profile: { is_admin: true } as never, profileLoading: false });
 queryClient.setQueryDefaults(QK.publicados, { staleTime: Infinity });
 queryClient.setQueryData(QK.modulosHabilitados, ['imagem_ia']);
 queryClient.setQueryData(QK.publicados, [{
   familiaId: 'F1', codigoPai: '02864', gtin: null, titulo: 'FITAS VELUDO 16MM 25M | 100% POLIÉSTER | ALTA RESISTÊNCIA', fornecedor: null,
-  tipo: null, categoria: null, precoPublicacao: 28.4, precoPublicacaoMax: 28.4, descricao: null, mlItemId: 'MLB7168683146', mlPermalink: null, publicadoEm: null,
+  tipo: null, categoria: null, precoPublicacao: 28.4, precoPublicacaoMax: 28.4, descricao: null, mlItemId: MLB, mlPermalink: null, publicadoEm: null,
 }]);
 
 export default function GaleriaHarness() {

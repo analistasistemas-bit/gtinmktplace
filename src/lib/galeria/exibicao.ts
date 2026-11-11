@@ -16,3 +16,7 @@ export function imagemValida(img: HTMLImageElement): boolean {
   ctx.drawImage(img, 0, 0);
   return variancia64(w, h, (x, y) => ctx.getImageData(x, y, 1, 1).data) > LIMIAR_VARIANCIA;
 }
+
+const ABERTOS = new Set(['pendente', 'submetendo', 'gerando']);
+/** Imagem que ainda não terminou: geração aberta ou texto ainda sendo conferido (`alertas` nulo). */
+export const emAndamento = (i: { status: string; alertas: unknown[] | null }) => ABERTOS.has(i.status) || (i.status === 'gerada' && i.alertas === null);
