@@ -47,6 +47,8 @@ R1.6 Lição real: os três agentes de origem afirmaram poliéster na Renda Búf
 
 ## 2. Análise estratégica (dentro do roteiro, sem cobrança)
 
+> **ADIADA PARA A V2** (decisão do Diego, 11/11/2026, após a revisão geral do Fable 5.2). A v1 não implementa R2.1–R2.3: o roteiro é ancorado só nos fatos do cadastro (R1) e nas missões (R5). As regras abaixo ficam como desenho da v2.
+
 R2.1 [A2] Persona, contexto de uso, até 7 dúvidas e 5 objeções; cada objeção aponta a imagem que a responde e o
 fato `CONFIRMADO` que a sustenta. Objeção sem fato não vira imagem 3.
 
