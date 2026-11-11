@@ -13,6 +13,11 @@ describe('MODULOS', () => {
     expect(m?.nome).toBe('Extensão do navegador');
     expect(m?.menu).toBeUndefined();
   });
+  it('imagem_ia descreve o gatilho de cobrança de cada uso (kit aprovada, galeria exibida)', () => {
+    const d = MODULOS.find((x) => x.id === 'imagem_ia')?.descricao ?? '';
+    expect(d).toMatch(/kit[^.]*aprovada/i);
+    expect(d).toMatch(/[Gg]aleria[^.]*exibida/);
+  });
   it('ids são únicos', () => {
     expect(new Set(MODULOS.map((m) => m.id)).size).toBe(MODULOS.length);
   });

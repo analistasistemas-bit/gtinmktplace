@@ -122,4 +122,12 @@ describe('Revisao — ações em massa', () => {
     fireEvent.click(screen.getByRole('button', { name: /publicar selecionada/i }));
     expect(screen.getByText('Publicar no Mercado Livre')).toBeInTheDocument();
   });
+
+  it('modal de publicar usa largura sm:max-w-xl (o padrão sm:max-w-sm do Dialog estourava o conteúdo)', () => {
+    renderRevisao();
+    fireEvent.click(screen.getAllByRole('checkbox')[0]);
+    fireEvent.click(screen.getByRole('button', { name: /publicar selecionada/i }));
+    expect(screen.getByRole('dialog')).toHaveClass('sm:max-w-xl');
+    expect(screen.getByRole('dialog')).not.toHaveClass('sm:max-w-sm');
+  });
 });

@@ -59,7 +59,7 @@ export const MODULOS: Modulo[] = [
   {
     id: 'imagem_ia',
     nome: 'Imagem por IA',
-    descricao: 'Fotos por IA: foto do kit (ADR-0200) e galeria da cor dos anúncios (ADR-0201), cobradas por imagem exibida.',
+    descricao: 'Foto do kit por IA, cobrada por imagem aprovada, mesmo se descartada depois (ADR-0200). Galeria da cor dos anúncios, cobrada por imagem exibida (ADR-0201).',
   },
 ];
 
