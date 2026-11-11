@@ -43,8 +43,8 @@ function CampoTexto({ id, rotulo, valor, limite, erro, desabilitado, aoMudar }: 
   id: string; rotulo: string; valor: string; limite: number; erro?: string; desabilitado: boolean; aoMudar: (v: string) => void;
 }) {
   const n = palavras(valor);
-  // Contador e erro dizem a mesma coisa: com erro no campo, o contador também fica em alerta.
-  const alerta = n > limite || !!erro;
+  // Contador é de palavras: só fica em alerta quando as palavras passam. Erro de largura (caracteres) fica na linha do erro.
+  const alerta = n > limite;
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={id} className="flex items-baseline justify-between gap-2 text-sm font-medium">

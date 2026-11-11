@@ -235,7 +235,10 @@ export function PassoAplicar({ mlItemId, ficha, isAdmin, moda = false, formato =
     if (encerrada) listaMLB.current?.querySelector('[data-problema="true"]')?.scrollIntoView?.({ block: 'center' });
   }, [encerrada]);
   // Confirmar altera todas as variações da cor, não só a que a prévia mostra.
-  const nVariacoes = Math.max(0, ...(atual?.previa ?? []).map((p) => p.variacoes ?? 0));
+  const porMLB = (atual?.previa ?? []).filter((p) => (p.variacoes ?? 0) > 0);
+  const avisoVariacoes = !porMLB.some((p) => p.variacoes! > 1) ? ''
+    : new Set(porMLB.map((p) => p.variacoes)).size === 1 ? ` Vale para as ${porMLB[0].variacoes} variações desta cor.`
+      : ` Variações da cor por anúncio: ${porMLB.map((p) => `${p.item_id} (${p.variacoes})`).join(', ')}.`;
 
   const rodape = semAprovadas ? { texto: 'Aprove ao menos 1 imagem no passo 3', ok: false }
     : !isAdmin ? { texto: 'Somente administradores aplicam as fotos no anúncio.', ok: false }
@@ -376,7 +379,7 @@ export function PassoAplicar({ mlItemId, ficha, isAdmin, moda = false, formato =
                   ? `Vai adicionar ${plural(nNovas, 'imagem aprovada', 'imagens aprovadas')} às fotos da cor ${atual?.cor} ${anuncios} e manter as fotos atuais.`
                   : `Vai trocar ${nSaem === undefined ? 'as fotos' : plural(nSaem, 'foto', 'fotos')} da cor ${atual?.cor} ${anuncios} pelas ${plural(nNovas, 'imagem aprovada', 'imagens aprovadas')}.`
                 : `Vai adicionar ${plural(nNovas, 'imagem aprovada', 'imagens aprovadas')} às fotos da cor ${atual?.cor} ${anuncios}.`}
-              {nVariacoes > 1 && ` Vale para as ${nVariacoes} variações desta cor.`}
+              {avisoVariacoes}
               {' '}Isso é visível para compradores imediatamente. Você pode desfazer depois.
             </AlertDialogDescription>
           </AlertDialogHeader>

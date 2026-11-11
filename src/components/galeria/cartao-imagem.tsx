@@ -12,8 +12,6 @@ import { imagemValida } from '@/lib/galeria/exibicao';
 import type { ImagemGaleria } from '@/lib/galeria/api';
 
 const ABERTOS = new Set(['pendente', 'submetendo', 'gerando']);
-/** Teto de gerações por imagem no roteiro aprovado (a regra é do servidor; aqui só o contador do botão). */
-const TETO_GERACOES = 3;
 const OUTROS: Record<string, string> = { descartada: 'Descartada', desatualizada: 'Desatualizada', falhou: 'Não gerada' };
 
 type Estado = 'gerando' | 'verificando' | 'pronta' | 'confira' | 'aprovada' | 'outro';
@@ -30,10 +28,12 @@ const SELO: Record<Exclude<Estado, 'outro'>, { rotulo: string; tom: StatusTone }
   confira: { rotulo: 'Confira', tom: 'warning' }, aprovada: { rotulo: 'Aprovada', tom: 'success' },
 };
 
-export function CartaoImagem({ imagem, titulo, confirmacao, onGerarDeNovo, onAprovar, bloqueioAprovar, onExibida, onInvalida, onFalhaCarga }: {
+export function CartaoImagem({ imagem, titulo, restantes, confirmacao, onGerarDeNovo, onAprovar, bloqueioAprovar, onExibida, onInvalida, onFalhaCarga }: {
   imagem: ImagemGaleria;
   /** Nome da imagem para o operador ("Capa · Branco"); sem ele, só a cor. */
   titulo?: string;
+  /** Gerações que ainda cabem nesta cor e imagem (o pai conta como o servidor); 0 desabilita o botão. Ausente = sem contador. */
+  restantes?: number;
   /** Confirmação de "Gerar outra" junto ao cartão (o pai decide quando existe). */
   confirmacao?: ReactNode;
   /** Sem handler o botão não aparece (roteiro aprovado de outra família: o servidor recusaria). */
@@ -62,7 +62,6 @@ export function CartaoImagem({ imagem, titulo, confirmacao, onGerarDeNovo, onApr
   }
   // Gerador só depois da verificação por visão (`alertas` nulo = pendente; o servidor recusaria).
   const aprovavel = imagem.status === 'gerada' && !!imagem.url && (imagem.origem === 'recorte' || imagem.alertas !== null);
-  const restantes = Math.max(0, TETO_GERACOES - imagem.geracao);
 
   function carregou(img: HTMLImageElement) {
     if (!cobravel) return;
@@ -85,12 +84,12 @@ export function CartaoImagem({ imagem, titulo, confirmacao, onGerarDeNovo, onApr
         </StatusPill>
       </div>
       {estado === 'gerando' ? (
-        <div className="flex aspect-[1200/1540] flex-col items-center justify-center gap-1 rounded bg-muted text-muted-foreground">
+        <div className="flex h-[36vh] min-h-56 flex-col items-center justify-center gap-1 rounded bg-muted text-muted-foreground">
           <Loader2 aria-hidden className="size-4 motion-safe:animate-spin" />
           <span>Gerando · cerca de 30 s</span>
         </div>
       ) : imagem.url && imagem.status !== 'falhou' && !quebrou ? (
-        <img src={imagem.url} alt={nome} crossOrigin="anonymous" className="w-full rounded object-contain"
+        <img src={imagem.url} alt={nome} crossOrigin="anonymous" className="h-[36vh] min-h-56 w-full rounded bg-muted object-contain"
           onLoad={(e) => carregou(e.currentTarget)} onError={() => { setUrlQuebrada(imagem.url); onFalhaCarga?.(imagem.id); }} />
       ) : quebrou ? (
         <p className="text-muted-foreground">Não foi possível exibir a imagem. Tentando de novo…</p>
@@ -112,8 +111,8 @@ export function CartaoImagem({ imagem, titulo, confirmacao, onGerarDeNovo, onApr
           </Button>
         )}
         {onGerarDeNovo && imagem.origem === 'gerador' && imagem.pode_gerar_de_novo && (
-          <Button variant="outline" className="h-11 flex-1 px-4" onClick={() => onGerarDeNovo(imagem)}>
-            <RefreshCw aria-hidden />Gerar outra{restantes > 0 && ' '}{restantes > 0 && <span className="font-normal text-muted-foreground tabular-nums">({restantes} {restantes === 1 ? 'restante' : 'restantes'})</span>}
+          <Button variant="outline" className="h-11 flex-1 px-4" disabled={restantes === 0} onClick={() => onGerarDeNovo(imagem)}>
+            <RefreshCw aria-hidden />Gerar outra{restantes !== undefined && ' '}{restantes !== undefined && <span className="font-normal text-muted-foreground tabular-nums">({restantes} {restantes === 1 ? 'restante' : 'restantes'})</span>}
           </Button>
         )}
       </div>

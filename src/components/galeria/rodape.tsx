@@ -28,7 +28,7 @@ export function Rodape({ texto, ok, rotulo, aoClicar, ocupado = false, concluido
         <div className="flex shrink-0 items-center gap-2">
           {extra}
           <Button variant={variante} className="h-11 px-3 text-sm sm:min-w-36 sm:px-4" disabled={!ok || ocupado} onClick={aoClicar}>
-            {ocupado && <Loader2 aria-hidden className="animate-spin" />}
+            {ocupado && <Loader2 aria-hidden className="motion-safe:animate-spin" />}
             {rotulo}
             {seta && !ocupado && <ArrowRight aria-hidden />}
           </Button>

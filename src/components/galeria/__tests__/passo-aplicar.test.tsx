@@ -307,6 +307,17 @@ describe('PassoAplicar: prévia e acompanhamento (Fase C2)', () => {
     expect(await screen.findByRole('alertdialog')).toHaveTextContent('Vale para as 3 variações desta cor.');
   });
 
+  it('MLB com contagens diferentes: o diálogo traz a contagem de cada um, não o máximo', async () => {
+    const p = comPrevia.previa[0];
+    api.prepararAplicacao.mockResolvedValue(ok({ ...comPrevia, itens: ['MLB1', 'MLB2'], previa: [{ ...p, variacoes: 2 }, { ...p, item_id: 'MLB2', variacoes: 1 }] }));
+    montar(true, 'MLB1');
+    await preparar();
+    await userEvent.click(await screen.findByRole('button', { name: /^Aplicar na cor Rosa/ }));
+    const dlg = await screen.findByRole('alertdialog');
+    expect(dlg).toHaveTextContent('Variações da cor por anúncio: MLB1 (2), MLB2 (1).');
+    expect(dlg).not.toHaveTextContent('Vale para as 2 variações');
+  });
+
   it('com 1 variação não aparece o aviso de variações', async () => {
     api.prepararAplicacao.mockResolvedValue(ok({ ...comPrevia, previa: [{ ...comPrevia.previa[0], variacoes: 1 }] }));
     montar(true, 'MLB1');

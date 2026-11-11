@@ -264,7 +264,7 @@ export default function GaleriaIA() {
             <PassoGerar mlItemId={mlItemId} ficha={ficha} aoRecarregar={() => void carregar()} aoVoltarRoteiro={() => void irPara(2)} aoLista={setLista} />
           </MioloPasso>
           <Rodape ok={aprovadas > 0 && !gerandoImagens} rotulo="Continuar" aoClicar={() => void irPara(4)}
-            texto={gerandoImagens ? 'Aguarde as imagens ficarem prontas' : aprovadas > 0 ? `${aprovadas} ${aprovadas === 1 ? 'imagem aprovada' : 'imagens aprovadas'}` : 'Aprove ao menos 1 imagem para continuar'} />
+            texto={gerandoImagens ? 'Aguarde as imagens ficarem prontas' : aprovadas > 0 ? `${aprovadas} ${aprovadas === 1 ? 'imagem aprovada' : 'imagens aprovadas'} (${Object.entries(aprovadasPorCor ?? {}).map(([c, n]) => `${c}: ${n}`).join(' · ')})` : 'Aprove ao menos 1 imagem para continuar'} />
         </>
       ) : (
         <PassoAplicar mlItemId={mlItemId} ficha={ficha} isAdmin={isAdmin} moda={moda ?? false} aprovadasPorCor={aprovadasPorCor}

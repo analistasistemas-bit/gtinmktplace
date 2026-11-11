@@ -25,8 +25,9 @@ import { CartaoImagem } from './cartao-imagem';
 
 const POLLING_MS = 5000;
 const ERRO_ARQUIVO: Record<string, string> = {
-  formato: 'não é JPEG', dimensoes: 'tamanho fora do padrão', peso: 'arquivo pesado demais', branca: 'imagem em branco',
+  formato: 'formato de arquivo inválido', dimensoes: 'tamanho fora do padrão', peso: 'arquivo pesado demais', branca: 'imagem em branco',
 };
+const TETO_GERACOES = 3;
 const FALHA_FINAL = 'Não foi possível preparar a imagem final. Tente aprovar de novo.';
 const ABERTOS = new Set(['pendente', 'submetendo', 'gerando']);
 
@@ -76,6 +77,8 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoL
   const [unit, setUnit] = useState<number | null>(null);
   // Só o "Gerar de novo" de um cartão pede confirmação à parte (1 imagem); o pedido principal confirma no botão com o preço.
   const [confirmando, setConfirmando] = useState<Alvo | null>(null);
+  // Cartão que pediu o "Gerar outra" (por id: versões antigas da mesma cor e imagem não mostram o painel).
+  const [idConfirmando, setIdConfirmando] = useState<string | null>(null);
   // Alvo do último envio: "Tentar de novo" (ml_indisponivel) repete o mesmo pedido.
   const ultimo = useRef<Alvo | null>(null);
   const [aviso, setAviso] = useState<Aviso | null>(null);
@@ -193,7 +196,7 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoL
   }, [mlItemId]);
 
   /** Nova seleção = nova confirmação: limpa recusa e pedido. */
-  const abrir = (alvo: Alvo | null) => { pedido.current = null; setAviso(null); setConfirmando(alvo); };
+  const abrir = (alvo: Alvo | null, id: string | null = null) => { pedido.current = null; setAviso(null); setConfirmando(alvo); setIdConfirmando(alvo ? id : null); };
 
   async function enviar(alvo: Alvo | null) {
     if (!alvo || unit === null || !roteiro) return;
@@ -205,7 +208,7 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoL
     });
     setOcupado(false);
     if (r.ok) {
-      pedido.current = null; setConfirmando(null); setAviso(null);
+      pedido.current = null; setConfirmando(null); setIdConfirmando(null); setAviso(null);
       toast.success('Geração pedida');
       setRodada((n) => n + 1);
       return;
@@ -238,7 +241,20 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoL
   const total = unit !== null ? conta(principal) : null;
   const rotuloTotal = total ? `${total.geradas} ${total.geradas === 1 ? 'imagem' : 'imagens'} · ${fmtBRL((total.geradas * unit!) / 100)}` : '';
 
-  const visiveis = (lista?.imagens ?? []).filter((i) => i.cor === cor || !ficha.cores.includes(i.cor));
+  const todas = lista?.imagens ?? [];
+  const visiveis = todas.filter((i) => i.cor === cor);
+  // Cor que saiu da ficha: continua montada (a exibição é o que cobra), em bloco à parte.
+  const antigas = todas.filter((i) => !ficha.cores.includes(i.cor));
+  // Mesma regra do servidor (`ocupaVaga`, `bloqueioDaVaga`): gerações do roteiro aprovado, da mesma cor e imagem, que ocupam vaga.
+  const restantesDe = (i: ImagemGaleria) => Math.max(0, TETO_GERACOES - todas.filter((x) => x.cor === i.cor && x.missao === i.missao
+    && x.roteiro_id === i.roteiro_id && x.origem === 'gerador' && (x.status !== 'falhou' || x.erro === 'imagem_invalida')).length);
+  const cartao = (i: ImagemGaleria) => (
+    <CartaoImagem key={i.id} imagem={i} titulo={`${nomeImagem(i.missao, moda)} · ${i.cor}`} restantes={restantesDe(i)} onExibida={exibida} onInvalida={invalida} onFalhaCarga={falhaCarga}
+      onAprovar={roteiro && i.roteiro_id === roteiro.id ? aprovar : undefined}
+      bloqueioAprovar={bloqueioLupa(i, moda) ?? undefined}
+      confirmacao={podePedir && confirmando && resumo && idConfirmando === i.id ? painelConfirmar : undefined}
+      onGerarDeNovo={podePedir && !motivoLupa(ficha, [i.cor], i.missao, moda) ? (x) => abrir({ cores: [x.cor], missoes: [x.missao] }, x.id) : undefined} />
+  );
 
   /** Confirmação de "Gerar outra" junto ao cartão clicado (1 imagem; o pedido principal confirma no botão). */
   const painelConfirmar = (
@@ -325,19 +341,17 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoL
       {erroLista && <p role="alert" className="text-sm text-destructive">{erroLista}</p>}
 
       {lista && visiveis.length > 0 && (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {visiveis.map((i: ImagemGaleria) => (
-            <CartaoImagem key={i.id} imagem={i} titulo={`${nomeImagem(i.missao, moda)} · ${i.cor}`} onExibida={exibida} onInvalida={invalida} onFalhaCarga={falhaCarga}
-              onAprovar={roteiro && i.roteiro_id === roteiro.id ? aprovar : undefined}
-              bloqueioAprovar={bloqueioLupa(i, moda) ?? undefined}
-              confirmacao={podePedir && confirmando && resumo && confirmando.cores[0] === i.cor && confirmando.missoes[0] === i.missao && confirmando.missoes.length === 1 ? painelConfirmar : undefined}
-              onGerarDeNovo={podePedir && !motivoLupa(ficha, [i.cor], i.missao, moda) ? (x) => abrir({ cores: [x.cor], missoes: [x.missao] }) : undefined} />
-          ))}
-        </div>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{visiveis.map(cartao)}</div>
       )}
       {lista && podePedir && visiveis.length === 0 && (
         <EmptyState icon={ScanSearch} title={`Nenhuma imagem da cor ${cor} ainda.`}
           description="Clique em Gerar acima. Cada imagem leva cerca de 30 s." />
+      )}
+      {antigas.length > 0 && (
+        <section aria-labelledby="antigas-h" className="space-y-3">
+          <h2 id="antigas-h" className="text-sm font-semibold">Imagens de cores que saíram do anúncio</h2>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{antigas.map(cartao)}</div>
+        </section>
       )}
     </div>
   );

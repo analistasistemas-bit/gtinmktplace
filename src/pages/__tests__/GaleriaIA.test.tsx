@@ -335,10 +335,10 @@ describe('Passo 2: Escolher imagens', () => {
   it('texto que estoura a largura da caixa bloqueia o Continuar, com o motivo ao lado do campo', async () => {
     await noPasso2(resposta({ missoes: [missao(1), missao(2, { headline: 'Aplicação extraordinária instantânea profissionalíssima garantida' })] }));
     expect(screen.getByRole('alert')).toHaveTextContent(/Passou \d+ caracteres; encurte para caber/);
-    // O contador do campo fica em alerta junto do erro (não mostra "10 de 10" neutro ao lado dele).
+    // Erro de caracteres fica na linha do erro; o contador (de palavras) não pinta de vermelho em unidade errada.
     const contador = document.getElementById('f-headline-n')!;
-    expect(contador).toHaveAttribute('data-excedeu', 'true');
-    expect(contador).toHaveClass('text-destructive');
+    expect(contador).toHaveAttribute('data-excedeu', 'false');
+    expect(screen.getByLabelText(/^Título/)).toHaveAttribute('aria-invalid', 'true');
     expect(continuar()).toBeDisabled();
   });
 
@@ -555,6 +555,14 @@ describe('Passos 3 e 4 na página', () => {
     await waitFor(() => expect(api.estadoAplicacoes).toHaveBeenCalledWith('MLB-B'));
     expect(screen.getByRole('button', { name: /Aplicar na cor Preto/ })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Ver prévia' })).toBeDisabled();
+  });
+
+  it('rodapé do passo 3 diz a que cor se referem as aprovadas', async () => {
+    api.lerRoteiro.mockResolvedValue(comLer(resposta({ status: 'aprovado' })));
+    api.listarImagens.mockResolvedValue(ok(aprovadoListar));
+    abrir('MLB-B');
+    await irPasso(/Gerar e aprovar/);
+    expect(await screen.findByText('1 imagem aprovada (Preto: 1)')).toBeInTheDocument();
   });
 
   it('roteiro aprovado sem imagem aprovada: o passo 4 mostra o estado vazio e leva ao passo 3', async () => {

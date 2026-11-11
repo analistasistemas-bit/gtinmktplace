@@ -455,7 +455,7 @@ describe('PassoGerar: aprovar (Task 12)', () => {
     api.aprovarFinal.mockResolvedValue(falha(409, 'exibicao_pendente'));
     passo();
     await userEvent.click(await screen.findByRole('button', { name: 'Aprovar' }));
-    expect(await screen.findByText(/cobrança/i)).toBeInTheDocument();
+    expect(await screen.findByText(/sendo registrada/i)).toBeInTheDocument();
     expect(api.aprovarFinal).toHaveBeenCalledTimes(2);
     expect(api.confirmarExibicao).toHaveBeenCalledTimes(1);
   });
@@ -497,6 +497,41 @@ describe('CartaoImagem', () => {
   it('"Gerar de novo" some quando o servidor diz que a vaga acabou (teto ou em andamento)', () => {
     render(<CartaoImagem imagem={imagem({ pode_gerar_de_novo: false })} onGerarDeNovo={vi.fn()} />);
     expect(screen.queryByRole('button', { name: /^Gerar outra/ })).toBeNull();
+  });
+});
+
+describe('Gerar outra: restantes e confirmação por cartão', () => {
+  const duas = () => [imagem({ id: 'g1', cor: 'Preto', missao: 2, geracao: 1 }), imagem({ id: 'g2', cor: 'Preto', missao: 2, geracao: 2 })];
+
+  it('duas gerações ocupando vaga da mesma cor e imagem: "1 restante" em ambos os cartões; falhou não conta, imagem_invalida conta', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([...duas(), imagem({ id: 'g3', cor: 'Preto', missao: 2, geracao: 3, status: 'falhou', erro: 'timeout', url: null, pode_gerar_de_novo: false })])));
+    passo();
+    expect(await screen.findAllByRole('button', { name: /^Gerar outra \(1 restante\)/ })).toHaveLength(2);
+  });
+
+  it('com 3 ocupantes o botão fica desabilitado (0 restantes)', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([...duas(), imagem({ id: 'g3', cor: 'Preto', missao: 2, geracao: 3, status: 'falhou', erro: 'imagem_invalida' })])));
+    passo();
+    const botoes = await screen.findAllByRole('button', { name: /^Gerar outra \(0 restantes\)/ });
+    botoes.forEach((b) => expect(b).toBeDisabled());
+  });
+
+  it('o painel de confirmação aparece só no cartão clicado, mesmo com outra versão da mesma cor e imagem', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista(duas())));
+    passo();
+    const botoes = await screen.findAllByRole('button', { name: /^Gerar outra/ });
+    await userEvent.click(botoes[1]);
+    const cartoes = document.querySelectorAll('[data-estado]');
+    expect(within(cartoes[1] as HTMLElement).getByRole('button', { name: 'Confirmar' })).toBeInTheDocument();
+    expect(within(cartoes[0] as HTMLElement).queryByRole('button', { name: 'Confirmar' })).toBeNull();
+  });
+
+  it('imagem de cor que saiu da ficha fica montada em bloco à parte, sem apagar o vazio da cor escolhida', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ id: 'x', cor: 'Antiga', missao: 1 })])));
+    passo(['Preto']);
+    expect(await screen.findByText('Nenhuma imagem da cor Preto ainda.')).toBeInTheDocument();
+    const bloco = screen.getByRole('region', { name: /saíram do anúncio/i });
+    expect(within(bloco).getByAltText('Capa · Antiga')).toBeInTheDocument();
   });
 });
 
