@@ -110,14 +110,3 @@ export function lupasMissao(missao: number): Lupa[] {
   if (missao === 7) return [{ x: 108, y: 700, lado: 408 }, { x: 684, y: 700, lado: 408 }];
   return [];
 }
-
-/**
- * Dois recortes quadrados da referência (px da referência) para lupas/detalhes: terço da menor dimensão,
- * centrados na horizontal, a 15% e 85% da folga vertical (afastados ≥ um lado: nunca se sobrepõem). Sem gerador (R3.3).
- */
-export function recortesDetalhe(refW: number, refH: number): Array<{ x: number; y: number; w: number; h: number }> {
-  const lado = Math.max(1, Math.floor(Math.min(refW, refH) / 3));
-  return [0.15, 0.85].map((fy) => ({
-    x: Math.floor((refW - lado) / 2), y: Math.floor((refH - lado) * fy), w: lado, h: lado,
-  }));
-}

@@ -17,6 +17,12 @@ vi.mock('@/lib/galeria/api', async (orig) => ({ ...(await orig<typeof import('@/
 vi.mock('@/lib/storage', () => ({ signedUrl: vi.fn(async () => 'https://x.test/e.jpg') }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 const valida = vi.hoisted(() => ({ fn: vi.fn() }));
+/** null = a trava real (MISSOES_LUPA_PENDENTE); {geral:[],moda:[]} = ramo liberado depois do portão (Task 16). */
+const trava = vi.hoisted(() => ({ travas: null as null | { geral: number[]; moda: number[] } }));
+vi.mock('../../../../supabase/functions/_shared/galeria/regras', async (orig) => {
+  const r = await orig<typeof import('../../../../supabase/functions/_shared/galeria/regras')>();
+  return { ...r, lupaPendente: (m: number, moda: boolean) => r.lupaPendente(m, moda, trava.travas ?? r.MISSOES_LUPA_PENDENTE) };
+});
 vi.mock('@/lib/galeria/exibicao', async (orig) => ({ ...(await orig<typeof import('@/lib/galeria/exibicao')>()), imagemValida: valida.fn }));
 
 const ok = <T,>(dados: T): Res<T> => ({ ok: true, dados });
@@ -53,6 +59,7 @@ const marcadas = () => screen.getAllByRole('checkbox', { name: /^Missão \d/ })
 
 beforeEach(() => {
   vi.clearAllMocks();
+  trava.travas = null;
   valida.fn.mockReturnValue(true);
   api.listarImagens.mockResolvedValue(ok(lista()));
   api.confirmarExibicao.mockResolvedValue(ok({ cobradas: 1 }));
@@ -66,29 +73,52 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); });
 
 describe('PassoGerar — seleção e confirmação', () => {
-  it('missões pré-marcadas por missoesSugeridas (até 3 cores: as sete ativas; 4+ cores: 1–4)', async () => {
+  it('missões pré-marcadas por missoesSugeridas (até 3 cores: as sete ativas; 4+ cores: 1–4), menos as de lupa travada', async () => {
     passo(['A', 'B', 'C'], aprovado([1, 2, 3, 5, 7]));
     await screen.findByText(/por imagem/);
-    expect(marcadas()).toEqual(['Missão 1', 'Missão 2', 'Missão 3', 'Missão 5', 'Missão 7']);
+    expect(marcadas()).toEqual(['Missão 1', 'Missão 2', 'Missão 5']);
   });
 
-  it('com 4 cores só 1–4 vêm marcadas', async () => {
+  it('com 4 cores só 1–4 vêm marcadas (a 3, de lupa travada, não)', async () => {
     passo(['A', 'B', 'C', 'D']);
     await screen.findByText(/por imagem/);
-    expect(marcadas()).toEqual(['Missão 1', 'Missão 2', 'Missão 3', 'Missão 4']);
+    expect(marcadas()).toEqual(['Missão 1', 'Missão 2', 'Missão 4']);
+  });
+
+  it('lupa travada (3 e 7): checkbox desabilitado com o motivo visível', async () => {
+    passo(['Preto']);
+    await screen.findByText(/por imagem/);
+    for (const n of [3, 7]) expect(screen.getByRole('checkbox', { name: `Missão ${n}` })).toBeDisabled();
+    expect(screen.getAllByText('lupa em ajuste')).toHaveLength(2);
+  });
+
+  it('ramo liberado: missão 3 sem detalhe numa cor marcada → desabilitada com o motivo e a cor; com lupa ok → habilitada', async () => {
+    trava.travas = { geral: [], moda: [] };
+    api.listarImagens.mockResolvedValue(ok(lista([], 50, aprovado())));
+    const f = { ...ficha(['Preto', 'Rosa']), lupa: {
+      Preto: { geral: { 3: 'ok', 7: 'ok' }, moda: { 5: 'ok', 7: 'ok' } },
+      Rosa: { geral: { 3: 'indisponivel', 7: 'ok' }, moda: { 5: 'ok', 7: 'ok' } },
+    } } as Ficha;
+    render(<PassoGerar mlItemId="MLB1" ficha={f} aoRecarregar={vi.fn()} aoVoltarRoteiro={vi.fn()} />);
+    await screen.findByText(/por imagem/);
+    expect(screen.getByRole('checkbox', { name: 'Missão 3' })).toBeDisabled();
+    expect(screen.getByText('sem detalhe do produto na foto: Rosa')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Missão 7' })).toBeEnabled();
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Cor Rosa' }));
+    expect(screen.getByRole('checkbox', { name: 'Missão 3' })).toBeEnabled();
   });
 
   it('confirmação mostra "N imagens · R$ X" com o preço do servidor; recortes não entram', async () => {
     passo(['Preto', 'Rosa']);
     await screen.findByText(/por imagem/);
     await userEvent.click(screen.getByRole('button', { name: 'Gerar imagens' }));
-    // 2 cores × 6 missões com gerador (a 7 é recorte) = 12 × R$ 0,50 = R$ 6,00.
-    expect(screen.getByText(/12 imagens · R\$\s6,00/)).toBeInTheDocument();
-    expect(screen.getByText(/2 recortes grátis/)).toBeInTheDocument();
+    // 2 cores × 5 missões com gerador (a 3 e a 7, de lupa travada, ficam fora) = 10 × R$ 0,50 = R$ 5,00.
+    expect(screen.getByText(/10 imagens · R\$\s5,00/)).toBeInTheDocument();
+    expect(screen.queryByText(/recortes? grát/)).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
     const [ml, p] = api.gerarImagens.mock.calls[0];
     expect(ml).toBe('MLB1');
-    expect(p).toMatchObject({ roteiroVersao: 3, cores: ['Preto', 'Rosa'], missoes: [1, 2, 3, 4, 5, 6, 7], unitCentsExibido: 50 });
+    expect(p).toMatchObject({ roteiroVersao: 3, cores: ['Preto', 'Rosa'], missoes: [1, 2, 4, 5, 6], unitCentsExibido: 50 });
     expect(p.pedidoId).toMatch(/^[0-9a-f-]{36}$/);
   });
 
@@ -99,7 +129,7 @@ describe('PassoGerar — seleção e confirmação', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Gerar imagens' }));
     await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
     expect(await screen.findByText(/preço mudou/i)).toBeInTheDocument();
-    expect(screen.getByText(/6 imagens · R\$\s4,80/)).toBeInTheDocument();
+    expect(screen.getByText(/5 imagens · R\$\s4,00/)).toBeInTheDocument();
     expect(api.gerarImagens).toHaveBeenCalledTimes(1);
     await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
     expect(api.gerarImagens).toHaveBeenCalledTimes(2);
@@ -323,9 +353,10 @@ describe('PassoGerar — aprovar (Task 12)', () => {
     api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 2 })])));
     passo();
     await userEvent.click(await screen.findByRole('button', { name: 'Aprovar' }));
-    await waitFor(() => expect(api.aprovarFinal).toHaveBeenCalledWith('MLB1', 'i1'));
+    await waitFor(() => expect(api.aprovarFinal).toHaveBeenCalledWith('MLB1', 'i1', undefined));
     expect(compor.fn).toHaveBeenCalledWith({
       cenaUrl: 'https://signed/i1.png', refUrl: 'https://signed/ref.jpg', missao: 2, textos: { headline: 'Prende firme' }, corProduto: null, moda: false,
+      lupa: null,
     });
     expect(api.prepararUploadFinal).toHaveBeenCalledWith('MLB1', 'i1');
     expect(api.enviarFinal).toHaveBeenCalledWith('org/galeria-ia/F1/finais/i1-n.jpg', 't', expect.any(Blob));
@@ -353,6 +384,27 @@ describe('PassoGerar — aprovar (Task 12)', () => {
     expect(m3).toBeEnabled();
     expect(m5).toBeDisabled();
   });
+
+  it('ramo liberado: missão 7 compõe com as caixas do listar e aprova enviando o hash delas', async () => {
+    trava.travas = { geral: [], moda: [] };
+    const caixas = { produto: { x: 0, y: 0, w: 1, h: 1 }, detalhes: [{ x: 0.1, y: 0.1, w: 0.1, h: 0.1 }, { x: 0.7, y: 0.7, w: 0.1, h: 0.1 }], ref_w: 1000, ref_h: 1000 };
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 7, origem: 'recorte', url: 'https://signed/ref.jpg', lupa: { situacao: 'ok', ...caixas, hash: 'hashR' } })])));
+    passo();
+    await userEvent.click(await screen.findByRole('button', { name: 'Aprovar' }));
+    await waitFor(() => expect(api.aprovarFinal).toHaveBeenCalledWith('MLB1', 'i1', 'hashR'));
+    expect(compor.fn).toHaveBeenCalledWith(expect.objectContaining({ missao: 7, cenaUrl: null, lupa: caixas }));
+  });
+
+  it.each([['indisponivel', /sem detalhe do produto/], ['lendo', /lendo a foto/]] as const)(
+    'ramo liberado: lupa %s → Aprovar desabilitado com o motivo no cartão, nada composto', async (situacao, motivo) => {
+      trava.travas = { geral: [], moda: [] };
+      api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 3, lupa: { situacao } })])));
+      passo();
+      const botao = await screen.findByRole('button', { name: 'Aprovar' });
+      expect(botao).toBeDisabled();
+      expect(screen.getByText(motivo)).toBeInTheDocument();
+      expect(compor.fn).not.toHaveBeenCalled();
+    });
 
   it('imagem de outro roteiro (não o aprovado atual): sem botão Aprovar', async () => {
     api.listarImagens.mockResolvedValue(ok(lista([imagem({ roteiro_id: 'R-antigo' })])));

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { razaoContraste, corDeAcento } from '../contraste';
-import { layoutMissao, linhasNecessarias, lupasMissao, recortesDetalhe, type Caixa } from '../layouts';
+import { layoutMissao, linhasNecessarias, lupasMissao, type Caixa } from '../layouts';
 import { planejarCorte } from '../../../../supabase/functions/_shared/galeria/corte';
 import { areaCena, layoutCena } from '../../../../supabase/functions/_shared/galeria/layout-area';
 
@@ -137,32 +137,6 @@ describe('textos máximos cabem nas caixas (revisão T11)', () => {
   });
 });
 
-describe('recortesDetalhe', () => {
-  it('os dois recortes não se sobrepõem (referência quadrada inclusive)', () => {
-    for (const [w, h] of [[1000, 1000], [864, 1152], [600, 300], [300, 600]]) {
-      const [a, b] = recortesDetalhe(w, h);
-      const separa = a.y + a.h <= b.y || b.y + b.h <= a.y || a.x + a.w <= b.x || b.x + b.w <= a.x;
-      expect(separa).toBe(true);
-    }
-  });
-
-  it('dois recortes quadrados, inteiros e dentro da referência', () => {
-    for (const [w, h] of [[1000, 1000], [864, 1152], [600, 300]]) {
-      const r = recortesDetalhe(w, h);
-      expect(r).toHaveLength(2);
-      for (const c of r) {
-        expect(c.w).toBe(c.h);
-        expect(Number.isInteger(c.x) && Number.isInteger(c.y) && Number.isInteger(c.w)).toBe(true);
-        expect(c.x).toBeGreaterThanOrEqual(0);
-        expect(c.y).toBeGreaterThanOrEqual(0);
-        expect(c.x + c.w).toBeLessThanOrEqual(w);
-        expect(c.y + c.h).toBeLessThanOrEqual(h);
-      }
-    }
-  });
-});
-
-// Task 12 (adendo T11): a lupa da missão 3 vai no canto inferior esquerdo, reservado de novo ao gerador.
 describe('lupas (recortes da referência)', () => {
   const sobrepoe = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) =>
     a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;

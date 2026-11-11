@@ -2,12 +2,15 @@
 // 1200×1540 (nunca esticar; capa com preenchimento branco), texto do roteiro aprovado em Inter sobre placa branca
 // opaca (estilo A) e lupas recortadas da referência real (R3.3). Moda e capa sem texto. Recortes (missão 7, Moda 5 e 7)
 // usam só `refUrl`. Texto que não cabe na caixa recusa com motivo — nunca é cortado nem sai da área.
+// Lupa pela caixa do produto: o recorte sai de `recortesLupa` (o mesmo módulo da edge) sobre as caixas gravadas na
+// referência; sem caixas, caixas que não cabem ou referência com outras dimensões → lança (nunca recorta às cegas).
 // As imagens vêm do Storage (outra origem): `crossOrigin = 'anonymous'` antes do `src`, senão o canvas fica sujo e
 // `toBlob` lança SecurityError (o bucket precisa de CORS para a origem do app — procedimento da Task 16).
 import { ALTURA_FINAL, LARGURA_FINAL, PESO_MAXIMO_FINAL, planejarCorte } from '../../../supabase/functions/_shared/galeria/corte';
 import { missoesDisponiveis } from '../../../supabase/functions/_shared/galeria/regras';
+import { comLupa, recortesLupa, type CaixaNorm, type Quadrado } from '../../../supabase/functions/_shared/galeria/lupa';
 import { razaoContraste, TEXTO_ESCURO } from './contraste';
-import { layoutMissao, linhasNecessarias, lupasMissao, recortesDetalhe, type Caixa } from './layouts';
+import { layoutMissao, linhasNecessarias, lupasMissao, type Caixa } from './layouts';
 
 export interface TextosComposicao {
   headline?: string; subheadline?: string; beneficios?: string[];
@@ -17,6 +20,8 @@ export interface EntradaComposicao {
   cenaUrl: string | null; refUrl: string | null; missao: number; textos: TextosComposicao;
   /** `#rrggbb` da cor do produto (acento); null = só texto escuro. */
   corProduto: string | null; moda: boolean;
+  /** Caixas da leitura da referência (missão com lupa); null/ausente → a composição recusa. */
+  lupa?: { produto: CaixaNorm; detalhes: CaixaNorm[]; ref_w: number; ref_h: number } | null;
 }
 
 // Placa 100% opaca (≥92% exigido): o contraste "na cor composta" é exatamente o medido contra branco.
@@ -100,6 +105,19 @@ function toBlob(canvas: HTMLCanvasElement, q: number): Promise<Blob> {
   return new Promise((ok, falha) => canvas.toBlob((b) => (b ? ok(b) : falha(new Error('Falha ao gerar o JPEG'))), 'image/jpeg', q));
 }
 
+/** Referência carregada + quadrados da lupa pelas caixas gravadas (mesma geometria da edge). */
+async function recortesDaReferencia(e: EntradaComposicao): Promise<{ ref: HTMLImageElement; r: Quadrado[] }> {
+  const l = e.lupa;
+  if (!comLupa(e.missao, e.moda) || !l) throw new Error('Lupa indisponível: sem as caixas do produto na foto de referência');
+  const ref = await carregar(e.refUrl);
+  if (ref.naturalWidth !== l.ref_w || ref.naturalHeight !== l.ref_h) {
+    throw new Error('A foto de referência tem dimensões diferentes das lidas para a lupa: recarregue e tente de novo');
+  }
+  const r = recortesLupa(l.ref_w, l.ref_h, l, e.missao, e.moda);
+  if (!r || r.length === 0) throw new Error('Lupa indisponível: o detalhe não cabe dentro do produto na foto');
+  return { ref, r };
+}
+
 export async function comporImagemFinal(e: EntradaComposicao): Promise<Blob> {
   const motivos = motivosDeTexto(e.missao, e.textos, e.moda);
   if (motivos.length > 0) throw new Error(motivos.join(' · '));
@@ -121,11 +139,10 @@ export async function comporImagemFinal(e: EntradaComposicao): Promise<Blob> {
   ctx.fillStyle = PLACA; ctx.fillRect(0, 0, LARGURA_FINAL, ALTURA_FINAL);
 
   if (ehRecorte(e.missao, e.moda)) {
-    const ref = await carregar(e.refUrl);
-    const r = recortesDetalhe(ref.naturalWidth, ref.naturalHeight);
+    const { ref, r } = await recortesDaReferencia(e);
     if (e.moda) {
-      // Moda sem texto: um recorte em 1200×1200 no centro (7 = alto: alça/gola; 5 = baixo: tecido).
-      const q = r[e.missao === 7 ? 0 : 1];
+      // Moda sem texto: o recorte do detalhe (5 = 1º, 7 = 2º) em 1200×1200 no centro.
+      const q = r[0];
       ctx.drawImage(ref, q.x, q.y, q.w, q.h, 0, (ALTURA_FINAL - LARGURA_FINAL) / 2, LARGURA_FINAL, LARGURA_FINAL);
     } else {
       lupasMissao(e.missao).forEach((l, i) => lupa(ctx, ref, r[i], l, acento));
@@ -142,8 +159,7 @@ export async function comporImagemFinal(e: EntradaComposicao): Promise<Blob> {
       ctx.drawImage(cena, Math.round((LARGURA_FINAL - dw) / 2), Math.round((ALTURA_FINAL - dh) / 2), dw, dh);
     }
     if (!e.moda && lupasMissao(e.missao).length > 0) {
-      const ref = await carregar(e.refUrl);
-      const r = recortesDetalhe(ref.naturalWidth, ref.naturalHeight);
+      const { ref, r } = await recortesDaReferencia(e);
       lupasMissao(e.missao).forEach((l, i) => lupa(ctx, ref, r[i], l, acento));
     }
   }

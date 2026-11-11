@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { comporImagemFinal, motivosDeTexto, type TextosComposicao } from '../compor';
+import { recortesLupa } from '../../../../supabase/functions/_shared/galeria/lupa';
 
 // Task 12: composição no navegador com canvas mockado (o jsdom não tem canvas). A prova visual real é o Step 5.
 interface Carga { src: string; crossOrigin: string | null }
@@ -25,7 +26,7 @@ class FakeImage {
 
 beforeEach(() => {
   cargas = []; qualidades = []; fontes = []; fonteOk = true;
-  dims = { cena: [864, 1152], ref: [500, 500], quadrada: [1024, 1024] };
+  dims = { cena: [864, 1152], ref: [1000, 1000], quadrada: [1024, 1024] };
   pesoPorQualidade = () => 400_000;
   const fn = () => vi.fn();
   ctx = {
@@ -51,6 +52,12 @@ const T: TextosComposicao = {
   headline: 'Prende firme', subheadline: 'Sem costura e sem cola', beneficios: ['Lava na máquina', 'Não desfia'],
   specs: [{ rotulo: 'Largura', valor: '25 mm' }], etapas: ['Corte o tamanho', 'Cole na borda'], legendas: ['Trama fechada', 'Borda firme'],
 };
+/** Caixas gravadas pela leitura da referência 1000×1000 (`dims.ref`): dois detalhes disjuntos dentro do produto. */
+const LUPA = {
+  produto: { x: 0, y: 0, w: 1, h: 1 }, detalhes: [{ x: 0.05, y: 0.05, w: 0.1, h: 0.1 }, { x: 0.7, y: 0.7, w: 0.2, h: 0.2 }],
+  ref_w: 1000, ref_h: 1000,
+};
+const LUPA_MODA = { ...LUPA, ref_w: 1500, ref_h: 1500 };
 const compor = (missao: number, extra: Partial<Parameters<typeof comporImagemFinal>[0]> = {}) =>
   comporImagemFinal({ cenaUrl: 'cena', refUrl: 'ref', missao, textos: T, corProduto: null, moda: false, ...extra });
 const textosDesenhados = () => ctx.fillText.mock.calls.map((c) => c[0] as string);
@@ -98,7 +105,7 @@ describe('comporImagemFinal', () => {
   });
 
   it('missão 7 não carrega cenaUrl: duas lupas da referência e as legendas', async () => {
-    await compor(7);
+    await compor(7, { lupa: LUPA });
     expect(cargas.map((c) => c.src)).toEqual(['ref']);
     expect(cargas[0].crossOrigin).toBe('anonymous');
     expect(ctx.drawImage).toHaveBeenCalledTimes(2);
@@ -106,16 +113,43 @@ describe('comporImagemFinal', () => {
   });
 
   it('Moda 5 e 7 (recortes) não carregam cenaUrl nem desenham texto', async () => {
-    await compor(5, { moda: true });
-    await compor(7, { moda: true });
+    dims.ref = [1500, 1500];
+    await compor(5, { moda: true, lupa: LUPA_MODA });
+    await compor(7, { moda: true, lupa: LUPA_MODA });
     expect(cargas.map((c) => c.src)).toEqual(['ref', 'ref']);
     expect(ctx.fillText).not.toHaveBeenCalled();
   });
 
   it('missão 3: lupa recortada da referência (além da cena)', async () => {
-    await compor(3);
+    await compor(3, { lupa: LUPA });
     expect(cargas.map((c) => c.src)).toEqual(['cena', 'ref']);
     expect(ctx.arc).toHaveBeenCalled();
+  });
+
+  it.each([[3, false], [7, false], [5, true], [7, true]])('missão %s (Moda %s) sem caixas → lança, nunca recorta às cegas', async (m, moda) => {
+    await expect(compor(m, { moda, lupa: null })).rejects.toThrow(/lupa/i);
+    await expect(compor(m, { moda })).rejects.toThrow(/lupa/i);
+    expect(ctx.drawImage.mock.calls.filter((c) => c[0] && (c[0] as { naturalWidth: number }).naturalWidth === 1000)).toEqual([]);
+  });
+
+  it('referência com dimensões diferentes das gravadas na leitura → lança', async () => {
+    await expect(compor(7, { lupa: { ...LUPA, ref_w: 1200 } })).rejects.toThrow(/dimens/i);
+  });
+
+  it('caixas que não cabem (missão 7 com um só detalhe) → lança', async () => {
+    await expect(compor(7, { lupa: { ...LUPA, detalhes: [LUPA.detalhes[0]] } })).rejects.toThrow(/lupa/i);
+  });
+
+  it('paridade front × edge: o retângulo de origem das lupas é exatamente o recortesLupa do _shared', async () => {
+    await compor(7, { lupa: LUPA });
+    const origens = ctx.drawImage.mock.calls.map((c) => ({ x: c[1], y: c[2], w: c[3], h: c[4] }));
+    expect(origens).toEqual(recortesLupa(1000, 1000, LUPA, 7, false));
+    ctx.drawImage.mockClear();
+    dims.ref = [1500, 1500];
+    await compor(7, { moda: true, lupa: LUPA_MODA });
+    const [, x, y, w, h, dx, dy, dw, dh] = ctx.drawImage.mock.calls[0];
+    expect([{ x, y, w, h }]).toEqual(recortesLupa(1500, 1500, LUPA_MODA, 7, true));
+    expect([dx, dy, dw, dh]).toEqual([0, 170, 1200, 1200]);
   });
 
   it('laço de qualidade 0,92 → 0,70 até ≤1 MB', async () => {

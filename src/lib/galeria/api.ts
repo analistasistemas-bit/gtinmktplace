@@ -4,6 +4,8 @@
 import { supabase } from '@/lib/supabase';
 import { corpoDoErroDaEdge } from '@/lib/edge-erro';
 import type { TextosComposicao } from './compor';
+import { lupaPendente } from '../../../supabase/functions/_shared/galeria/regras';
+import { comLupa, type CaixaNorm } from '../../../supabase/functions/_shared/galeria/lupa';
 
 export type EstadoFato = 'CONFIRMADO' | 'SUGERIDO' | 'DIVERGENTE' | 'NAO_CONFERIDO' | 'VARIA_POR_TAMANHO';
 export interface Caixa { x: number; y: number; w: number; h: number }
@@ -23,6 +25,27 @@ export interface Ficha {
   anuncio_externo_id: string; familia_id: string; codigo_pai: string; cores: string[];
   fatos: Fato[]; fatos_hash: string; roteiro_desatualizado: boolean;
   referencias: Record<string, Partial<Record<Vista, { path?: string; erro?: string }>>>;
+  /** Lupa pela caixa do produto, por cor: situação de cada missão com lupa (geral 3/7, Moda 5/7). */
+  lupa?: Record<string, Record<'geral' | 'moda', Record<number, SituacaoLupa>>>;
+}
+export type SituacaoLupa = 'ok' | 'lendo' | 'indisponivel';
+/** Caixas gravadas na referência (só com `situacao: 'ok'`); `hash` volta no aprovar. */
+export interface LupaImagem {
+  situacao: SituacaoLupa; produto?: CaixaNorm; detalhes?: CaixaNorm[]; ref_w?: number; ref_h?: number; hash?: string;
+}
+
+/**
+ * Por que a missão não pode ser pedida para estas cores (null = pode): travada até o portão da Task 16, foto de
+ * referência ainda sendo lida, ou sem detalhe do produto na foto. Missão sem lupa → null.
+ */
+export function motivoLupa(ficha: Ficha, cores: string[], missao: number, moda: boolean): string | null {
+  if (lupaPendente(missao, moda)) return 'lupa em ajuste';
+  if (!comLupa(missao, moda)) return null;
+  const de = (s: SituacaoLupa) => cores.filter((c) => (ficha.lupa?.[c]?.[moda ? 'moda' : 'geral']?.[missao] ?? 'lendo') === s);
+  const sem = de('indisponivel');
+  if (sem.length > 0) return `sem detalhe do produto na foto: ${sem.join(', ')}`;
+  const lendo = de('lendo');
+  return lendo.length > 0 ? `lendo a foto de referência: ${lendo.join(', ')}` : null;
 }
 
 export interface MissaoRoteiro {
@@ -88,6 +111,8 @@ export interface ImagemGaleria {
   exibida: boolean; url: string | null;
   /** Referência da cor/vista (assinada): a lupa da composição (Task 12). */
   ref_url: string | null;
+  /** Missão com lupa: situação e caixas da referência; null = missão sem lupa. */
+  lupa?: LupaImagem | null;
   /** Aprovar só a do roteiro aprovado atual (o servidor recusaria as demais). */
   roteiro_id: string;
   /** Regra da RPC calculada no servidor: false com 3 gerações válidas, geração aberta ou fora do roteiro aprovado. */
@@ -119,8 +144,9 @@ export const gerarImagens = (mlItemId: string, p: { pedidoId: string; roteiroVer
 // Task 12: arquivo final composto no navegador → URL de upload assinada (upsert:false) → aprovar (`galeria-aprovar`).
 export const prepararUploadFinal = (mlItemId: string, imagemId: string) =>
   chamar<{ path: string; token: string; signed_url: string }>('galeria-aprovar', { acao: 'preparar_upload', ml_item_id: mlItemId, imagem_id: imagemId });
-export const aprovarFinal = (mlItemId: string, imagemId: string) =>
-  chamar<{ status: 'aprovada' }>('galeria-aprovar', { acao: 'aprovar', ml_item_id: mlItemId, imagem_id: imagemId });
+/** `lupaHash` = hash das caixas usadas na composição (missão com lupa); o servidor confere com o gravado. */
+export const aprovarFinal = (mlItemId: string, imagemId: string, lupaHash?: string) =>
+  chamar<{ status: 'aprovada' }>('galeria-aprovar', { acao: 'aprovar', ml_item_id: mlItemId, imagem_id: imagemId, lupa_hash: lupaHash });
 /** null = enviado; senão a mensagem do Storage. */
 export async function enviarFinal(path: string, token: string, arquivo: Blob): Promise<string | null> {
   const { error } = await supabase.storage.from('imagens').uploadToSignedUrl(path, token, arquivo, { contentType: 'image/jpeg' });
@@ -189,7 +215,10 @@ const MENSAGENS: Record<string, string> = {
   upload_trocado: 'Outra aprovação desta imagem está em andamento. Tente de novo.',
   referencia_trocada: 'A foto de referência da cor mudou depois desta imagem. Gere de novo.',
   verificacao_pendente: 'A verificação da imagem ainda não terminou. Aguarde alguns segundos.',
-  lupa_pendente: 'Missão com lupa em ajuste: a aprovação está suspensa até definirmos a origem do recorte.',
+  lupa_pendente: 'Missão com lupa em ajuste: geração e aprovação suspensas até a validação do recorte.',
+  lupa_lendo: 'A foto de referência ainda está sendo lida para a lupa. Recarregue a ficha em instantes e tente de novo.',
+  lupa_indisponivel: 'Sem detalhe do produto na foto de referência desta cor: a missão com lupa fica indisponível.',
+  lupa_desatualizada: 'A lupa mudou desde a composição (ou a página está desatualizada). Recarregue e aprove de novo.',
   aprovacao_concorrente: 'Outra geração desta missão foi aprovada ao mesmo tempo. Recarregue e confira.',
   somente_admin: 'Somente administradores podem aplicar ou reverter fotos no Mercado Livre.',
   sem_aprovadas: 'Esta cor não tem imagem aprovada no roteiro atual.',
