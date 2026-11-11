@@ -15,7 +15,8 @@ raiz = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 cmd = {
     # codex: -i é variádico; se anexar imagem, o prompt vem ANTES dos -i
     'codex': ['codex', 'exec', '-m', 'gpt-6.1-sol', '-c', 'model_reasoning_effort=high', '-s', 'read-only', prompt],
-    'grok': ['cursor-agent', '-p', '--mode', 'ask', '--model', 'grok-4.7-xhigh', prompt],
+    # diff por task e pré-merge (definitivo desde 11/11, CLAUDE.md)
+    'grok': ['cursor-agent', '-p', '--mode', 'ask', '--model', 'grok-4.7-high', '--trust', '--output-format', 'text', prompt],
     # reserva do Codex quando a cota acabar (memória feedback_revisor_fallback_kimi)
     'gemini': ['cursor-agent', '-p', '--mode', 'ask', '--model', 'gemini-4-argon-high', prompt],
     # revisor das tasks desde 10/11 (pedido do Diego): Fable 5.2 da conta Claude, só leitura; prompt pelo stdin
