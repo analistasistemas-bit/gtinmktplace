@@ -46,8 +46,8 @@ export function recortesLupa(
   if (!(refW > 0 && refH > 0) || usa.some((i) => !d.detalhes[i])) return null;
   const p0x = Math.ceil(d.produto.x * refW);
   const p0y = Math.ceil(d.produto.y * refH);
-  const p1x = Math.floor((d.produto.x + d.produto.w) * refW);
-  const p1y = Math.floor((d.produto.y + d.produto.h) * refH);
+  const p1x = Math.min(Math.floor((d.produto.x + d.produto.w) * refW), refW); // tolerância da caixa nunca passa da imagem
+  const p1y = Math.min(Math.floor((d.produto.y + d.produto.h) * refH), refH);
   const cabe = Math.min(p1x - p0x, p1y - p0y);
   const minimo = moda ? LADO_MINIMO.moda : LADO_MINIMO.geral;
   const quadrados: Quadrado[] = [];

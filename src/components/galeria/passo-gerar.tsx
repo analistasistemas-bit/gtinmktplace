@@ -293,7 +293,7 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro }: {
             <CartaoImagem key={i.id} imagem={i} onExibida={exibida} onInvalida={invalida} onFalhaCarga={falhaCarga}
               onAprovar={roteiro && i.roteiro_id === roteiro.id ? aprovar : undefined}
               bloqueioAprovar={bloqueioLupa(i, moda) ?? undefined}
-              onGerarDeNovo={podePedir ? (x) => abrir({ cores: [x.cor], missoes: [x.missao] }) : undefined} />
+              onGerarDeNovo={podePedir && !motivoLupa(ficha, [i.cor], i.missao, moda) ? (x) => abrir({ cores: [x.cor], missoes: [x.missao] }) : undefined} />
           ))}
         </div>
       )}

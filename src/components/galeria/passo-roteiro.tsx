@@ -146,7 +146,7 @@ export function PassoRoteiro({ mlItemId, ficha, isAdmin, podeCriar, resp, aoResp
               Ativa
             </div>
           </div>
-          {motivoDe(m.missao) && <p className="text-xs text-amber-700">{motivoDe(m.missao)}</p>}
+          {motivoDe(m.missao) && <p className="text-xs text-amber-700"><span>{motivoDe(m.missao)}</span>{m.ativa && <strong> — missão ativa, será ignorada na geração</strong>}</p>}
           {[...(porMissao[String(m.missao)] ?? []), ...(largura[m.missao] ?? [])]
             .map((e) => <p key={e} role="alert" className="text-sm text-red-600">{e}</p>)}
           <div className="block text-sm">

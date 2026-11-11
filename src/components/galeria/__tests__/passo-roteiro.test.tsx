@@ -33,6 +33,7 @@ describe('PassoRoteiro — lupa', () => {
     montar(ficha(), [1, 2, 3]);
     expect(screen.getAllByText('lupa em ajuste')).toHaveLength(2);
     expect(ativa(3)).toBeEnabled(); // já ativa: dá para desativar
+    expect(screen.getAllByText(/será ignorada/)).toHaveLength(1); // só a 3 está ativa: sinalizada
     expect(ativa(7)).toBeDisabled();
     expect(ativa(1)).toBeEnabled();
   });

@@ -55,6 +55,14 @@ describe('infoJpeg', () => {
     expect(infoJpeg(ruim)?.orientacao).toBe(0)
     expect(infoJpeg(new Uint8Array([0x89, 0x50, 0x4e, 0x47]))).toBeNull()
   })
+
+  it('EXIF Orientation depois do SOF (antes do SOS) também é lida', () => {
+    const base = jpeg(800, 600, 6) // SOI, APP1, SOF, EOI
+    const app1 = Array.from(base.subarray(2, base.length - 2 - 19)) // APP1 apenas
+    const sof = Array.from(jpeg(800, 600).subarray(2, 21))
+    const tarde = new Uint8Array([0xff, 0xd8, ...sof, ...app1, 0xff, 0xda, 0, 2, 0xff, 0xd9])
+    expect(infoJpeg(tarde)).toEqual({ w: 800, h: 600, orientacao: 6 })
+  })
 })
 
 describe('lerDetalhesPorVisao', () => {

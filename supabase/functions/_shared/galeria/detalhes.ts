@@ -44,7 +44,8 @@ function caixa(c: unknown): CaixaNorm | null {
   const { x, y, w, h } = c as Record<string, unknown>;
   if (![x, y, w, h].every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
   const b = { x, y, w, h } as CaixaNorm;
-  return b.x >= 0 && b.y >= 0 && b.w > 0 && b.h > 0 && b.x + b.w <= 1 + TOL && b.y + b.h <= 1 + TOL ? b : null;
+  if (!(b.x >= 0 && b.y >= 0 && b.w > 0 && b.h > 0 && b.x + b.w <= 1 + TOL && b.y + b.h <= 1 + TOL)) return null;
+  return { x: b.x, y: b.y, w: Math.min(b.w, 1 - b.x), h: Math.min(b.h, 1 - b.y) }; // tolerância absorvida: nunca passa de 1
 }
 const contem = (p: CaixaNorm, d: CaixaNorm) =>
   d.x >= p.x - TOL && d.y >= p.y - TOL && d.x + d.w <= p.x + p.w + TOL && d.y + d.h <= p.y + p.h + TOL;
@@ -79,12 +80,13 @@ export async function lerDetalhesPorVisao(url: string, signal?: AbortSignal): Pr
 export function infoJpeg(b: Uint8Array): { w: number; h: number; orientacao: number } | null {
   if (!(b.length >= 4 && b[0] === 0xff && b[1] === 0xd8)) return null;
   let orientacao = 1;
+  let dim: { w: number; h: number } | null = null;
   let i = 2;
   while (i + 4 <= b.length) {
     if (b[i] !== 0xff) return null;
     const m = b[i + 1];
     if (m === 0xff) { i++; continue; }
-    if (m === 0xd9 || m === 0xda) return null; // fim ou dados antes de um SOF
+    if (m === 0xd9 || m === 0xda) break; // fim ou início dos dados: o EXIF pode vir depois do SOF, nunca depois do SOS
     const len = (b[i + 2] << 8) | b[i + 3];
     if (len < 2) return null;
     if (m === 0xe1 && String.fromCharCode(...b.subarray(i + 4, i + 10)) === 'Exif\0\0') {
@@ -94,11 +96,12 @@ export function infoJpeg(b: Uint8Array): { w: number; h: number; orientacao: num
       if (i + 9 > b.length) return null;
       const h = (b[i + 5] << 8) | b[i + 6];
       const w = (b[i + 7] << 8) | b[i + 8];
-      return w > 0 && h > 0 ? { w, h, orientacao } : null;
+      if (!(w > 0 && h > 0)) return null;
+      dim = { w, h };
     }
     i += 2 + len;
   }
-  return null;
+  return dim && { ...dim, orientacao };
 }
 
 function orientacaoExif(b: Uint8Array, t: number, fim: number): number {

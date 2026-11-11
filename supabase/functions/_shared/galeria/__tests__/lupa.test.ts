@@ -24,6 +24,13 @@ describe('recortesLupa', () => {
     expect(g).toEqual({ x: 360, y: 240, w: 480, h: 480 })
   })
 
+  it('caixa 1,0009 (tolerância) em referência de 4000 px: o quadrado nunca passa da imagem', () => {
+    const d = { produto: { x: 0.5, y: 0.5, w: 0.5009, h: 0.5009 }, detalhes: [{ x: 0.95, y: 0.95, w: 0.0509, h: 0.0509 }] }
+    const [q] = recortesLupa(4000, 4000, d, 3, false)!
+    expect(q.x + q.w).toBeLessThanOrEqual(4000)
+    expect(q.y + q.h).toBeLessThanOrEqual(4000)
+  })
+
   it('caixa alongada (alça 0,05 × 0,4) num produto estreito → não cabe (nunca quadrado de fundo)', () => {
     const d = { produto: { x: 0.45, y: 0.1, w: 0.1, h: 0.8 }, detalhes: [{ x: 0.475, y: 0.2, w: 0.05, h: 0.4 }] }
     expect(recortesLupa(W, H, d, 3, false)).toBeNull()

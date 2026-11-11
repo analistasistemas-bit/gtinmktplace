@@ -348,6 +348,15 @@ describe('PassoGerar — exibição e cobrança', () => {
   });
 });
 
+describe('PassoGerar — gerar de novo e lupa', () => {
+  it('"Gerar de novo" some em missão bloqueada pela lupa (mesmo filtro da seleção)', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ cor: 'Rosa', missao: 3 })])));
+    passo(['Preto', 'Rosa']);
+    await screen.findByText(/por imagem/);
+    expect(screen.queryByRole('button', { name: 'Gerar de novo' })).toBeNull();
+  });
+});
+
 describe('PassoGerar — aprovar (Task 12)', () => {
   it('compõe com a cena, a referência e os textos do roteiro aprovado; sobe pela URL assinada e aprova', async () => {
     api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 2 })])));
