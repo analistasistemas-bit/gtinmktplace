@@ -348,7 +348,7 @@ export function reducerCalculadora(estado: EstadoCalculadoraML, acao: AcaoCalcul
         tocado(c) ? estado.entrada[c] : carga.entrada[c]
       const modalidade = tocado('modalidadeParaDecisao')
         ? estado.modalidade
-        : carga.modalidadeDoAnuncio ?? estado.modalidade
+        : carga.modalidadeDoAnuncio ?? 'classico'
       return comChave({
         ...estado,
         entrada: {

@@ -647,6 +647,19 @@ describe('useCalculadoraML', () => {
       expect(result.current.entrada).toMatchObject({ custoProduto: 99, precoVenda: 20, categoriaId: 'MLB200339' })
     })
 
+    it('A Premium do anúncio → B sem anúncio: toggle volta para Clássico', async () => {
+      fetchVariacoesMock.mockResolvedValueOnce(variacoesA).mockResolvedValueOnce(variacoesB)
+      fetchAnuncioMock.mockResolvedValueOnce(publicado({ modalidade: 'premium' })).mockResolvedValueOnce(naoPublicado())
+      const { result } = render()
+
+      await selecionar(result, produtoA)
+      expect(result.current.modalidadeAtiva).toBe('premium')
+      await selecionar(result, produtoB)
+
+      expect(result.current.modalidadeAtiva).toBe('classico')
+      expect(result.current.entrada.modalidadeParaDecisao).toBe('classico')
+    })
+
     it('"Produto avulso" limpa os campos do produto e a modalidade do anúncio', async () => {
       fetchVariacoesMock.mockResolvedValue(variacoesA)
       fetchAnuncioMock.mockResolvedValue(publicado({ modalidade: 'premium' }))
