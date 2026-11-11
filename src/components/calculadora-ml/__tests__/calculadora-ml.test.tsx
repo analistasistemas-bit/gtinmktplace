@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { useCalculadoraML } from '@/hooks/useCalculadoraML'
 
-vi.mock('@/components/tabela-frete-viabilidade', () => ({ TabelaFreteViabilidade: () => <div data-testid="tabela-frete" /> }))
+vi.mock('@/components/tabela-frete-viabilidade', () => ({ TabelaFreteViabilidade: (p: { categoriaMlId: string; contexto?: string }) => <div data-testid="tabela-frete" data-contexto={p.contexto} data-categoria={p.categoriaMlId} /> }))
 
 const atualizarEntrada = vi.fn()
 const atualizarTaxasManuais = vi.fn()
@@ -160,6 +160,23 @@ describe('Calculadora ML', () => {
       cotarEm: estadoBase.cotarEm,
       resultadoUnidade: estadoBase.resultado.modalidades.classico,
     }))
+  })
+
+  it('sem categoria: frase no lugar da tabela de frete', () => {
+    render(<CalculadoraML />)
+
+    expect(screen.getByText('Informe a categoria para ver a tabela de frete do Mercado Livre.')).toBeInTheDocument()
+    expect(screen.queryByTestId('tabela-frete')).toBeNull()
+  })
+
+  it('com categoria: tabela de frete no contexto da calculadora', () => {
+    estado = { ...estadoBase, entrada: { ...estadoBase.entrada, categoriaId: 'MLB1' } }
+    render(<CalculadoraML />)
+
+    const tabela = screen.getByTestId('tabela-frete')
+    expect(tabela).toHaveAttribute('data-contexto', 'calculadora')
+    expect(tabela).toHaveAttribute('data-categoria', 'MLB1')
+    expect(screen.queryByText(/Informe a categoria para ver a tabela/)).toBeNull()
   })
 
   it('mantém aviso acionável quando a categoria está vazia', () => {
