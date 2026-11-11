@@ -6,6 +6,7 @@
 - [x] `tabela-frete-ml`: célula sem cotação `null`, cache v2, TTL 300 s se incompleta. `calcular-tarifa-ml`: TTL 300 s para tarifa `estimated`.
 - [x] Calculadora: campos sem setas, modalidade e margem viva, preço por margem (centavos, tarifa relida), quadro de kits com frete e margem por quantidade, tabela de frete.
 - [ ] Validação visual, push, CI verde e deploy (`ler-anuncio-calculadora`, `tabela-frete-ml`, `calcular-tarifa-ml`) antes do merge; smoke 200 (org) / 404 (outra org).
+- [x] 2026-11-11 (só frontend, `63bee81f` e `35e8ca15`): sensibilidade vira "E se piorar?" com lucro atual e "Sobra R$ X"/"Prejuízo de R$ X" + delta por cenário; quadro de kits mostra `(−x,x%)` ao lado do preço por unidade (N>1, confirmado, só se houver economia) contra 1 unidade, com `title` (hover) e popover (toque/teclado). Sem validação visual no navegador/celular.
 
 ## CREATE divergente em categoria User Products (emenda ADR-0160) — 2026-11-09
 
