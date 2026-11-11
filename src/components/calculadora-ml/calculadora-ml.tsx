@@ -36,6 +36,7 @@ export function CalculadoraML() {
               produtos={produtos}
               produtoSelecionado={calculadora.produtoSelecionado}
               produtosCarregando={calculadora.produtos.isLoading}
+              carregando={calculadora.carregandoProduto}
               onPreco={calculadora.editarPreco}
               onMargem={calculadora.editarMargem}
               margemExibida={calculadora.margemExibida}
@@ -55,25 +56,27 @@ export function CalculadoraML() {
           </section>
           <aside className="lg:sticky lg:top-4">
             <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground"><ShieldCheck className="size-4 text-primary" aria-hidden="true" /> Resultado transparente e acionável</div>
-            <ResultadoCalculadoraML
+            {calculadora.carregandoProduto
+              ? <p className="rounded-xl border border-border/70 bg-card p-5 text-sm text-muted-foreground" role="status">Carregando produto…</p>
+              : <ResultadoCalculadoraML
               resultado={calculadora.resultado}
               statusCotacao={calculadora.statusCotacao}
               aviso={calculadora.aviso}
               taxas={calculadora.taxasManuais}
               modalidadeSelecionada={calculadora.modalidadeAtiva}
               temMeta={calculadora.metaSolicitada !== null}
-            />
+            />}
           </aside>
         </div>
 
-        <QuadroKits
+        {!calculadora.carregandoProduto && <QuadroKits
           entrada={calculadora.entrada}
           modalidade={calculadora.modalidadeAtiva}
           margemPct={calculadora.margemEfetiva}
           resultadoUnidade={calculadora.resultado.modalidades[calculadora.modalidadeAtiva]}
           cotarEm={calculadora.cotarEm}
           aguardando={calculadora.statusCotacao === 'loading' || calculadora.metaStatus === 'calculando'}
-        />
+        />}
 
         {categoriaAusente
           ? <p className="text-sm text-muted-foreground">Informe a categoria para ver a tabela de frete do Mercado Livre.</p>

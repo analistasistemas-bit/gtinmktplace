@@ -18,6 +18,8 @@ interface FormularioCalculadoraMLProps {
   produtos: ProdutoCalculadoraML[]
   produtoSelecionado: ProdutoCalculadoraML | null
   produtosCarregando: boolean
+  /** Prefill do produto em andamento: campos desabilitados até carregar (nada do produto anterior é editável). */
+  carregando?: boolean
   onEntrada: (parcial: Partial<EntradaCalculadoraML>) => void
   onTaxas: (parcial: Partial<TaxasManuaisML>) => void
   onProduto: (produto: ProdutoCalculadoraML | null) => void
@@ -129,7 +131,7 @@ const moeda = (valor: number) => valor.toLocaleString('pt-BR', { style: 'currenc
 const pct2 = (valor: number) => `${valor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
 
 export function FormularioCalculadoraML({
-  entrada, taxas, produtos, produtoSelecionado, produtosCarregando, onEntrada, onTaxas, onProduto,
+  entrada, taxas, produtos, produtoSelecionado, produtosCarregando, carregando = false, onEntrada, onTaxas, onProduto,
   onPreco, onMargem, margemExibida, metaStatus, metaSolicitada, modalidade, modalidadeDoAnuncio = null, onModalidade,
   avisosProduto = [], categoriaNome, variacaoUsada = null, anuncio = null,
 }: FormularioCalculadoraMLProps) {
@@ -185,80 +187,86 @@ export function FormularioCalculadoraML({
             </SelectContent>
           </Select>
         </div>
+        {carregando && <p className="text-sm text-muted-foreground" role="status">Carregando produto…</p>}
         {variacaoUsada && <p className="text-xs text-muted-foreground">Preço/medidas da variação {variacaoUsada.codigo}{variacaoUsada.cor ? ` (${variacaoUsada.cor})` : ''}</p>}
         {avisosProduto.length > 0 && (
           <ul className="space-y-1 rounded-lg border border-warning/40 bg-warning/10 p-3 text-xs" role="status" aria-label="Avisos do produto">
             {avisosProduto.map((aviso) => <li key={aviso}>{aviso}</li>)}
           </ul>
         )}
-        <BuscaCategoriaML value={entrada.categoriaId} nome={categoriaNome} onSelect={(categoria) => onEntrada({ categoriaId: categoria.id })} />
+        <fieldset disabled={carregando} className="min-w-0 disabled:opacity-60">
+          <BuscaCategoriaML value={entrada.categoriaId} nome={categoriaNome} onSelect={(categoria) => onEntrada({ categoriaId: categoria.id })} />
+        </fieldset>
       </section>
 
-      <section className="space-y-4" aria-labelledby="comercial-heading">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 id="comercial-heading" className="font-heading text-lg font-semibold">Compra e venda</h2>
-          <div className="flex gap-1 rounded-lg border border-border/70 bg-muted/40 p-1" role="group" aria-label="Modalidade do anúncio">
-            {(['classico', 'premium'] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                aria-pressed={modalidade === m}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${modalidade === m ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}
-                onClick={() => onModalidade(m)}
-              >
-                {ROTULO_MODALIDADE[m]}{modalidadeDoAnuncio === m ? ' · do anúncio' : ''}
-              </button>
-            ))}
+      <fieldset disabled={carregando} className="min-w-0 space-y-6 disabled:opacity-60">
+
+        <section className="space-y-4" aria-labelledby="comercial-heading">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 id="comercial-heading" className="font-heading text-lg font-semibold">Compra e venda</h2>
+            <div className="flex gap-1 rounded-lg border border-border/70 bg-muted/40 p-1" role="group" aria-label="Modalidade do anúncio">
+              {(['classico', 'premium'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  aria-pressed={modalidade === m}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${modalidade === m ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}
+                  onClick={() => onModalidade(m)}
+                >
+                  {ROTULO_MODALIDADE[m]}{modalidadeDoAnuncio === m ? ' · do anúncio' : ''}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <CampoNumero id="custo-produto" label="Custo de compra (R$)" value={entrada.custoProduto} onChange={(value) => onEntrada({ custoProduto: value })} />
-          <CampoNumero
-            id="preco-venda"
-            label="Preço de venda (R$)"
-            value={entrada.precoVenda}
-            onChange={onPreco}
-            hint={emPromocao ? <>Em promoção no ML: <s>{moeda(anuncio!.precoOriginal!)}</s> por {moeda(anuncio!.preco!)}</> : undefined}
-          />
-          <CampoNumero id="margem" label="Margem (%)" value={margemExibida} onChange={onMargem} vazio="ignorar" permiteNegativo maxExclusivo={100} hint={dicaMargem} />
-          <CampoNumero id="imposto" label="Impostos (%)" value={entrada.aliquotaImpostoPct} onChange={(value) => onEntrada({ aliquotaImpostoPct: value })} vazio="null" onVazio={() => onEntrada({ aliquotaImpostoPct: null })} casas={[0, 2]} />
-        </div>
-      </section>
-
-      <section className="space-y-4" aria-labelledby="custos-heading">
-        <h2 id="custos-heading" className="font-heading text-lg font-semibold">Custos operacionais</h2>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <CampoNumero id="custos-fixos" label="Custos fixos por unidade (R$)" value={entrada.custosFixos} onChange={(value) => onEntrada({ custosFixos: value })} />
-          <CampoNumero id="custos-variaveis" label="Custos variáveis (R$)" value={entrada.custosVariaveis} onChange={(value) => onEntrada({ custosVariaveis: value })} />
-          <CampoNumero id="rebate" label="Rebate/desconto (R$)" value={entrada.rebate} onChange={(value) => onEntrada({ rebate: value })} />
-        </div>
-      </section>
-
-      <section className="space-y-4" aria-labelledby="logistica-heading">
-        <div><h2 id="logistica-heading" className="font-heading text-lg font-semibold">Logística e taxas manuais</h2><p className="mt-1 text-sm text-muted-foreground">Use o frete manual somente quando a cotação oficial não estiver disponível.</p></div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <CampoNumero id="altura" label="Altura (cm)" value={dimensoesRascunho.alturaCm ?? 0} onChange={(value) => setDimensao('alturaCm', value)} casas={[0, 3]} />
-          <CampoNumero id="largura" label="Largura (cm)" value={dimensoesRascunho.larguraCm ?? 0} onChange={(value) => setDimensao('larguraCm', value)} casas={[0, 3]} />
-          <CampoNumero id="comprimento" label="Comprimento (cm)" value={dimensoesRascunho.comprimentoCm ?? 0} onChange={(value) => setDimensao('comprimentoCm', value)} casas={[0, 3]} />
-          <CampoNumero id="peso" label="Peso real (kg)" value={dimensoesRascunho.pesoKg ?? 0} onChange={(value) => setDimensao('pesoKg', value)} casas={[0, 3]} />
-        </div>
-        <div className="rounded-lg border border-border/70 bg-muted/30 p-3">
-          <p className="mb-3 text-sm font-medium">Fallback manual (estimativa)</p>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <CampoNumero id="comissao-manual" label="Comissão (%)" value={taxas.percentualComissaoPct} onChange={(value) => onTaxas({ percentualComissaoPct: value })} max={95} casas={[0, 2]} />
-            <CampoNumero id="taxa-fixa-manual" label="Taxa fixa (R$)" value={taxas.taxaFixa} onChange={(value) => onTaxas({ taxaFixa: value })} />
-            <CampoNumero id="frete-manual" label="Frete (R$)" value={taxas.frete ?? 0} onChange={(value) => onTaxas({ frete: value, freteRealmenteZero: value === 0 ? taxas.freteRealmenteZero : false })} hint="Informe 0 apenas se o frete for realmente zero." />
-          </div>
-          <label className="mt-3 flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={taxas.freteRealmenteZero}
-              onChange={(event) => onTaxas({ freteRealmenteZero: event.target.checked })}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <CampoNumero id="custo-produto" label="Custo de compra (R$)" value={entrada.custoProduto} onChange={(value) => onEntrada({ custoProduto: value })} />
+            <CampoNumero
+              id="preco-venda"
+              label="Preço de venda (R$)"
+              value={entrada.precoVenda}
+              onChange={onPreco}
+              hint={emPromocao ? <>Em promoção no ML: <s>{moeda(anuncio!.precoOriginal!)}</s> por {moeda(anuncio!.preco!)}</> : undefined}
             />
-            Frete realmente zero
-          </label>
-        </div>
-      </section>
+            <CampoNumero id="margem" label="Margem (%)" value={margemExibida} onChange={onMargem} vazio="ignorar" permiteNegativo maxExclusivo={100} hint={dicaMargem} />
+            <CampoNumero id="imposto" label="Impostos (%)" value={entrada.aliquotaImpostoPct} onChange={(value) => onEntrada({ aliquotaImpostoPct: value })} vazio="null" onVazio={() => onEntrada({ aliquotaImpostoPct: null })} casas={[0, 2]} />
+          </div>
+        </section>
+
+        <section className="space-y-4" aria-labelledby="custos-heading">
+          <h2 id="custos-heading" className="font-heading text-lg font-semibold">Custos operacionais</h2>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <CampoNumero id="custos-fixos" label="Custos fixos por unidade (R$)" value={entrada.custosFixos} onChange={(value) => onEntrada({ custosFixos: value })} />
+            <CampoNumero id="custos-variaveis" label="Custos variáveis (R$)" value={entrada.custosVariaveis} onChange={(value) => onEntrada({ custosVariaveis: value })} />
+            <CampoNumero id="rebate" label="Rebate/desconto (R$)" value={entrada.rebate} onChange={(value) => onEntrada({ rebate: value })} />
+          </div>
+        </section>
+
+        <section className="space-y-4" aria-labelledby="logistica-heading">
+          <div><h2 id="logistica-heading" className="font-heading text-lg font-semibold">Logística e taxas manuais</h2><p className="mt-1 text-sm text-muted-foreground">Use o frete manual somente quando a cotação oficial não estiver disponível.</p></div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <CampoNumero id="altura" label="Altura (cm)" value={dimensoesRascunho.alturaCm ?? 0} onChange={(value) => setDimensao('alturaCm', value)} casas={[0, 3]} />
+            <CampoNumero id="largura" label="Largura (cm)" value={dimensoesRascunho.larguraCm ?? 0} onChange={(value) => setDimensao('larguraCm', value)} casas={[0, 3]} />
+            <CampoNumero id="comprimento" label="Comprimento (cm)" value={dimensoesRascunho.comprimentoCm ?? 0} onChange={(value) => setDimensao('comprimentoCm', value)} casas={[0, 3]} />
+            <CampoNumero id="peso" label="Peso real (kg)" value={dimensoesRascunho.pesoKg ?? 0} onChange={(value) => setDimensao('pesoKg', value)} casas={[0, 3]} />
+          </div>
+          <div className="rounded-lg border border-border/70 bg-muted/30 p-3">
+            <p className="mb-3 text-sm font-medium">Fallback manual (estimativa)</p>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <CampoNumero id="comissao-manual" label="Comissão (%)" value={taxas.percentualComissaoPct} onChange={(value) => onTaxas({ percentualComissaoPct: value })} max={95} casas={[0, 2]} />
+              <CampoNumero id="taxa-fixa-manual" label="Taxa fixa (R$)" value={taxas.taxaFixa} onChange={(value) => onTaxas({ taxaFixa: value })} />
+              <CampoNumero id="frete-manual" label="Frete (R$)" value={taxas.frete ?? 0} onChange={(value) => onTaxas({ frete: value, freteRealmenteZero: value === 0 ? taxas.freteRealmenteZero : false })} hint="Informe 0 apenas se o frete for realmente zero." />
+            </div>
+            <label className="mt-3 flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={taxas.freteRealmenteZero}
+                onChange={(event) => onTaxas({ freteRealmenteZero: event.target.checked })}
+              />
+              Frete realmente zero
+            </label>
+          </div>
+        </section>
+      </fieldset>
       <Button type="button" variant="ghost" size="sm" onClick={() => onProduto(null)} disabled={!produtoSelecionado}>Limpar produto cadastrado</Button>
     </div>
   )

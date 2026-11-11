@@ -660,6 +660,29 @@ describe('useCalculadoraML', () => {
       expect(result.current.entrada.modalidadeParaDecisao).toBe('classico')
     })
 
+    it('carregandoProduto: liga na seleção e desliga só no prefill dessa seleção', async () => {
+      const variacoesAtrasadas = adiado<VariacaoComSaldo[]>()
+      fetchVariacoesMock.mockReturnValueOnce(variacoesAtrasadas.promise)
+      const { result } = render()
+      expect(result.current.carregandoProduto).toBe(false)
+
+      act(() => { void result.current.selecionarProduto(produtoA) })
+      expect(result.current.carregandoProduto).toBe(true)
+      await act(async () => { variacoesAtrasadas.resolve(variacoesA) })
+
+      expect(result.current.carregandoProduto).toBe(false)
+      expect(result.current.entrada).toMatchObject({ custoProduto: 10, precoVenda: 30 })
+    })
+
+    it('carregandoProduto desliga quando a leitura das variações falha', async () => {
+      fetchVariacoesMock.mockRejectedValueOnce(new Error('rede'))
+      const { result } = render()
+
+      await selecionar(result, produtoA)
+
+      expect(result.current.carregandoProduto).toBe(false)
+    })
+
     it('"Produto avulso" limpa os campos do produto e a modalidade do anúncio', async () => {
       fetchVariacoesMock.mockResolvedValue(variacoesA)
       fetchAnuncioMock.mockResolvedValue(publicado({ modalidade: 'premium' }))
@@ -833,6 +856,32 @@ describe('useCalculadoraML', () => {
       expect(result.current.entrada.precoVenda).toBe(51)
       expect(result.current.metaSolicitada).toBeNull()
       expect(result.current.metaStatus).toBeNull()
+    })
+
+    it('solver em voo que resolve durante a carga do produto não grava preço', async () => {
+      const solver = adiado<Tarifa | null>()
+      const variacoesAtrasadas = adiado<VariacaoComSaldo[]>()
+      calcularTarifaMock
+        .mockResolvedValueOnce(tarifaNoPreco(100))
+        .mockImplementationOnce(() => solver.promise)
+        .mockImplementation(async (p: number) => tarifaNoPreco(p))
+      fetchVariacoesMock.mockReturnValueOnce(variacoesAtrasadas.promise)
+      const { result } = renderHook(() => useCalculadoraML(base), { wrapper })
+      await avancarCotacao()
+
+      act(() => result.current.editarMargem(38))
+      await avancarSolver()
+      act(() => { void result.current.selecionarProduto(produtoResumo) })
+      await act(async () => { solver.resolve(tarifaNoPreco(117.65)) })
+      await avancarSolver()
+
+      expect(result.current.carregandoProduto).toBe(true)
+      expect(result.current.entrada.precoVenda).toBe(100)
+      expect(result.current.metaStatus).toBeNull()
+
+      await act(async () => { variacoesAtrasadas.resolve([variacao('SKU-2', { custo: 31, preco: 51 })]) })
+      expect(result.current.carregandoProduto).toBe(false)
+      expect(result.current.entrada).toMatchObject({ precoVenda: 51, custoProduto: 31 })
     })
 
     it('solver não confirmado: melhor candidato, margem exibida é a efetiva, meta fica para o rótulo', async () => {
@@ -1081,6 +1130,18 @@ describe('useCalculadoraML', () => {
       const proximo = reducerCalculadora(estado, { type: 'SELECIONAR', selecao: 1, produto: produtoResumo })
 
       expect(proximo).toMatchObject({ avisosProduto: [], anuncio: null, variacaoUsada: null, categoriaNome: null })
+    })
+
+    it('SELECIONAR liga carregandoProduto e invalida o solver; só o PRODUTO_CARREGADO dessa seleção desliga', () => {
+      const calculando = reducerCalculadora(estadoInicialCalculadora({ precoVenda: 100, categoriaId: 'MLB1' }), { type: 'EDITAR_MARGEM', meta: 30 })
+      const selecionado = reducerCalculadora(calculando, { type: 'SELECIONAR', selecao: 1, produto: produtoResumo })
+      expect(selecionado).toMatchObject({ carregandoProduto: true, metaStatus: null })
+      expect(selecionado.revisao).toBe(calculando.revisao + 1)
+
+      const antigo = reducerCalculadora(selecionado, { type: 'PRODUTO_CARREGADO', selecao: 0, carga, aliquotas: undefined })
+      expect(antigo.carregandoProduto).toBe(true)
+      const carregado = reducerCalculadora(selecionado, { type: 'PRODUTO_CARREGADO', selecao: 1, carga, aliquotas: undefined })
+      expect(carregado.carregandoProduto).toBe(false)
     })
 
     it('ALIQUOTAS zera o selo de meta (ok / nao_confirmada) mas mantém calculando', () => {

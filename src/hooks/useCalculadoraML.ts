@@ -209,6 +209,8 @@ export interface EstadoCalculadoraML {
   /** Token da seleção: valida o prefill; edições do operador não o invalidam. */
   selecaoProduto: number
   produtoSelecionado: ProdutoCalculadoraML | null
+  /** Liga no SELECIONAR; só o PRODUTO_CARREGADO dessa seleção desliga. A tela fica bloqueada. */
+  carregandoProduto: boolean
   entrada: EntradaCalculadoraML
   taxasManuais: TaxasManuaisML
   /** Tarifa crua da chave atual; a cotação é derivada no render com as taxas manuais (Task 2). */
@@ -330,6 +332,10 @@ export function reducerCalculadora(estado: EstadoCalculadoraML, acao: AcaoCalcul
     case 'SELECIONAR':
       return {
         ...estado,
+        // Seleção é ação do operador: a revisão nova e o metaStatus zerado derrubam o solver em voo.
+        revisao: estado.revisao + 1,
+        metaStatus: null,
+        carregandoProduto: true,
         selecaoProduto: acao.selecao,
         produtoSelecionado: acao.produto,
         // Nada do produto anterior aparece sob o nome do novo até o prefill terminar.
@@ -351,6 +357,7 @@ export function reducerCalculadora(estado: EstadoCalculadoraML, acao: AcaoCalcul
         : carga.modalidadeDoAnuncio ?? 'classico'
       return comChave({
         ...estado,
+        carregandoProduto: false,
         entrada: {
           ...estado.entrada,
           custoProduto: doProduto('custoProduto'),
@@ -436,6 +443,7 @@ export function estadoInicialCalculadora(opcoes: UseCalculadoraMLOptions = {}): 
     revisao: 0,
     selecaoProduto: 0,
     produtoSelecionado: null,
+    carregandoProduto: false,
     entrada: { ...ENTRADA_INICIAL, ...entradaInicial, modalidadeParaDecisao: modalidade },
     taxasManuais: { ...TAXAS_MANUAIS_INICIAIS, ...taxasManuais },
     tarifa: null,
@@ -718,6 +726,7 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
     taxasManuais,
     atualizarTaxasManuais,
     produtoSelecionado: estado.produtoSelecionado,
+    carregandoProduto: estado.carregandoProduto,
     selecionarProduto,
     produtos,
     cotacao,

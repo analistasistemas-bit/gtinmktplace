@@ -40,6 +40,7 @@ const estadoBase = {
   taxasManuais: { percentualComissaoPct: 12, taxaFixa: 5, frete: 10, freteRealmenteZero: false },
   atualizarTaxasManuais,
   produtoSelecionado: null,
+  carregandoProduto: false,
   selecionarProduto,
   produtos: { data: produtosData, isLoading: false, isError: false, refetch: vi.fn() },
   cotacao: { origem: 'manual' as const, classico: { percentualComissaoPct: 12, taxaFixa: 5, comissaoTotal: 17, frete: 10, proveniencia: 'estimated' as const } },
@@ -434,6 +435,25 @@ describe('Calculadora ML', () => {
       render(<FormularioCalculadoraML {...props} />)
       await user.click(screen.getByRole('button', { name: /^premium$/i }))
       expect(props.onModalidade).toHaveBeenCalledWith('premium')
+    })
+
+    it('carregando produto: campos desabilitados, central de decisão e kits ocultos', () => {
+      estado = { ...estadoBase, carregandoProduto: true }
+      render(<CalculadoraML />)
+
+      expect(screen.getAllByText('Carregando produto…').length).toBeGreaterThan(0)
+      for (const rotulo of ['Custo de compra (R$)', 'Preço de venda (R$)', 'Margem (%)', 'Impostos (%)', 'Altura (cm)', 'Frete (R$)']) {
+        expect(screen.getByLabelText(rotulo)).toBeDisabled()
+      }
+      expect(screen.getByRole('button', { name: /^premium$/i })).toBeDisabled()
+      expect(screen.queryByText(/central de decisão/i)).toBeNull()
+      expect(screen.queryByRole('heading', { name: /kits com a mesma margem/i })).toBeNull()
+    })
+
+    it('fora da carga, campos habilitados e central de decisão visível', () => {
+      render(<CalculadoraML />)
+      expect(screen.getByLabelText('Preço de venda (R$)')).toBeEnabled()
+      expect(screen.getByText(/central de decisão/i)).toBeInTheDocument()
     })
 
     it('nenhum texto manda validar na API nem cita meta de 0%', () => {
