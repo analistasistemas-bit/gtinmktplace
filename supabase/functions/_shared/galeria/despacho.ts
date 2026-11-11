@@ -2,7 +2,7 @@
 // O SQL (`galeria_trabalho_pendente`, `galeria_visao_pendente`, `galeria_trabalho_pendente_aplicacao`,
 // `galeria_escritas_adiadas_pendentes`, migration 20261110171517) traz só linhas acionáveis, cabeça por prazo, sem
 // cursor; `selecionarTrabalho` (puro) decide a ação com as mesmas regras. Cada publicação incrementa `despacho_seq` por
-// compare-and-set (`deduplicationId = ${id}:${seq}`) e grava `publicado_em` só das mensagens aceitas, condicionado a
+// compare-and-set (`deduplicationId = ${id}_${seq}`; o QStash recusa ":") e grava `publicado_em` só das mensagens aceitas, condicionado a
 // `fase` + `despacho_seq`. Sem import de Deno/npm: QStash e relógio entram por `deps`.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { talvezFinalizarLote } from '../lote/finalizar.ts';
@@ -116,7 +116,7 @@ export interface DepsDespacho {
 
 function mensagem(t: Trabalho, base: string): MensagemQStash {
   const body = { tipo: t.tipo, id: t.id, fase: t.fase, tentativa: t.tentativa, despacho_seq: t.despacho_seq, acao: t.acao };
-  const comum = { body, deduplicationId: `${t.id}:${t.despacho_seq}` };
+  const comum = { body, deduplicationId: `${t.id}_${t.despacho_seq}` };
   // Submissão paga sem retry do QStash: a idempotência dela é o claim com `tentativa` no banco.
   if (t.tipo === 'imagem') return { ...comum, url: `${base}/functions/v1/galeria-worker`, retries: t.acao === 'submeter' ? 0 : 3 };
   return { ...comum, url: `${base}/functions/v1/galeria-aplicar-worker`, queueName: `publish-ml-${t.userId}`, retries: 3 };

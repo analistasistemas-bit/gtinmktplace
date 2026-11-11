@@ -46,6 +46,6 @@ describe('galeria-despachante', () => {
     expect(f.fake.rpcs.map((x) => [x.nome, x.args.p_limite])).toEqual(expect.arrayContaining([
       ['galeria_trabalho_pendente', 50], ['galeria_visao_pendente', 20], ['galeria_trabalho_pendente_aplicacao', 20],
     ]))
-    expect(f.batch.mock.calls[0][0]).toEqual([expect.objectContaining({ url: 'https://x.supabase.co/functions/v1/galeria-worker', deduplicationId: 'g1:1' })])
+    expect(f.batch.mock.calls[0][0]).toEqual([expect.objectContaining({ url: 'https://x.supabase.co/functions/v1/galeria-worker', deduplicationId: 'g1_1' })])
   })
 })

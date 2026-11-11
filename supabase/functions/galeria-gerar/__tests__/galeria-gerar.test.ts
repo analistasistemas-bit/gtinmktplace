@@ -133,7 +133,7 @@ describe('galeria-gerar', () => {
     ])
     const msgs = f.batch.mock.calls[0][0] as Linha[]
     expect(msgs).toHaveLength(4)
-    expect(msgs[0]).toMatchObject({ url: 'https://x.supabase.co/functions/v1/galeria-worker', retries: 0, deduplicationId: 'img0:1',
+    expect(msgs[0]).toMatchObject({ url: 'https://x.supabase.co/functions/v1/galeria-worker', retries: 0, deduplicationId: 'img0_1',
       body: { tipo: 'imagem', id: 'img0', fase: 0, tentativa: 0, despacho_seq: 1, acao: 'submeter' } })
     expect(db.galeria_imagens.filter((i) => i.origem === 'recorte').every((i) => i.status === 'gerada')).toBe(true)
     expect((r.body.imagens as Linha[])).toHaveLength(6)
