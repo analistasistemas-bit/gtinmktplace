@@ -180,6 +180,22 @@ describe('Calculadora ML', () => {
     expect(screen.queryByText(/Informe a categoria para ver a tabela/)).toBeNull()
   })
 
+  it('tabela de frete só busca depois da cotação principal (evita rajada que faz o ML devolver 429)', () => {
+    estado = { ...estadoBase, statusCotacao: 'loading', entrada: { ...estadoBase.entrada, categoriaId: 'MLB1' } }
+    const { rerender } = render(<CalculadoraML />)
+    expect(screen.queryByTestId('tabela-frete')).toBeNull()
+    expect(screen.getByText('A tabela de frete carrega depois da cotação.')).toBeInTheDocument()
+
+    estado = { ...estado, statusCotacao: 'official' }
+    rerender(<CalculadoraML />)
+    expect(screen.getByTestId('tabela-frete')).toBeInTheDocument()
+
+    // Nova cotação (ex.: editou o preço) não desmonta a tabela já liberada para a categoria.
+    estado = { ...estado, statusCotacao: 'loading' }
+    rerender(<CalculadoraML />)
+    expect(screen.getByTestId('tabela-frete')).toBeInTheDocument()
+  })
+
   it('mantém aviso acionável quando a categoria está vazia', () => {
     render(<CalculadoraML />)
 
