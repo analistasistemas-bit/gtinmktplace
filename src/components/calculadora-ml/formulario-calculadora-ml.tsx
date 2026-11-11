@@ -78,7 +78,7 @@ interface CampoNumeroProps {
 }
 
 /** Texto local até o blur: digita "12," sem o pai reformatar; fora do foco mostra pt-BR. */
-function CampoNumero({ id, label, value, onChange, vazio = 'zero', onVazio, permiteNegativo = false, max, maxExclusivo, casas = [2, 2], hint }: CampoNumeroProps) {
+export function CampoNumero({ id, label, value, onChange, vazio = 'zero', onVazio, permiteNegativo = false, max, maxExclusivo, casas = [2, 2], hint }: CampoNumeroProps) {
   const [rascunho, setRascunho] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const formatado = value === null || !Number.isFinite(value)

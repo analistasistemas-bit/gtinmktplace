@@ -2,6 +2,7 @@ import { AlertTriangle, Calculator, ShieldCheck } from 'lucide-react'
 import { useCalculadoraML } from '@/hooks/useCalculadoraML'
 import { FormularioCalculadoraML } from './formulario-calculadora-ml'
 import { ResultadoCalculadoraML } from './resultado-calculadora-ml'
+import { QuadroKits } from './quadro-kits'
 
 export function CalculadoraML() {
   const calculadora = useCalculadoraML()
@@ -63,6 +64,15 @@ export function CalculadoraML() {
             />
           </aside>
         </div>
+
+        <QuadroKits
+          entrada={calculadora.entrada}
+          modalidade={calculadora.modalidadeAtiva}
+          margemPct={calculadora.margemEfetiva}
+          resultadoUnidade={calculadora.resultado.modalidades[calculadora.modalidadeAtiva]}
+          cotarEm={calculadora.cotarEm}
+          aguardando={calculadora.statusCotacao === 'loading' || calculadora.metaStatus === 'calculando'}
+        />
       </div>
     </div>
   )

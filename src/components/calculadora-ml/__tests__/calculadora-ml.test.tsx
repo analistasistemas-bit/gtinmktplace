@@ -106,6 +106,8 @@ vi.mock('@/hooks/useCalculadoraML', () => ({
   },
 }))
 vi.mock('@/hooks/useCategoriasML', () => ({ useCategoriasML: () => categoriasState }))
+const { useKitsMock } = vi.hoisted(() => ({ useKitsMock: vi.fn(() => []) }))
+vi.mock('@/hooks/useKitsCalculadora', () => ({ useKitsCalculadora: useKitsMock }))
 
 import { CalculadoraML } from '../calculadora-ml'
 import { BuscaCategoriaML } from '../busca-categoria-ml'
@@ -143,6 +145,19 @@ describe('Calculadora ML', () => {
     vi.clearAllMocks()
     estado = estadoBase
     categoriasState = { data: [], isLoading: false, isError: false, refetch: refetchCategorias }
+  })
+
+  it('quadro de kits usa a margem efetiva (nunca a meta não confirmada) e aguarda cotação/solver', () => {
+    estado = { ...estadoBase, metaSolicitada: 50, metaStatus: 'nao_confirmada', margemEfetiva: 23, statusCotacao: 'loading' }
+    render(<CalculadoraML />)
+    expect(screen.getByRole('heading', { name: /kits com a mesma margem/i })).toBeInTheDocument()
+    expect(useKitsMock).toHaveBeenLastCalledWith(expect.objectContaining({
+      margemPct: 23,
+      modalidade: 'classico',
+      aguardando: true,
+      cotarEm: estadoBase.cotarEm,
+      resultadoUnidade: estadoBase.resultado.modalidades.classico,
+    }))
   })
 
   it('mantém aviso acionável quando a categoria está vazia', () => {
