@@ -135,7 +135,12 @@ export interface RoteiroAprovado {
   textos: Record<number, TextosComposicao>;
 }
 /** `unit_cents` = preço do mês, só para pedido novo. Imagens: as do roteiro aprovado + toda cena não exibida do anúncio. */
-export interface RespostaListar { roteiro: RoteiroAprovado | null; unit_cents: number; imagens: ImagemGaleria[] }
+export interface RespostaListar {
+  roteiro: RoteiroAprovado | null; unit_cents: number; imagens: ImagemGaleria[];
+  // Task 6 (tela única); opcionais até a Task 8.
+  titulo?: string | null; cores?: string[]; moda?: boolean | null;
+  posicoes?: Array<{ posicao: number; nome: string; indisponivel?: string }>; plano_id?: string | null;
+}
 
 export const listarImagens = (mlItemId: string) =>
   chamar<RespostaListar>('galeria-imagens', { acao: 'listar', ml_item_id: mlItemId });
@@ -143,10 +148,13 @@ export const confirmarExibicao = (mlItemId: string, imagemIds: string[]) =>
   chamar<{ cobradas: number }>('galeria-imagens', { acao: 'confirmar_exibicao', ml_item_id: mlItemId, imagem_ids: imagemIds });
 export const reportarInvalida = (mlItemId: string, imagemId: string) =>
   chamar<{ reportada: boolean }>('galeria-imagens', { acao: 'reportar_invalida', ml_item_id: mlItemId, imagem_id: imagemId });
-export const gerarImagens = (mlItemId: string, p: { pedidoId: string; roteiroVersao: number; cores: string[]; missoes: number[]; unitCentsExibido: number }) =>
+// ponytail: roteiroVersao opcional só até a Task 8 (tela antiga ainda envia).
+export const gerarImagens = (mlItemId: string, p: { pedidoId: string; roteiroVersao?: number; cores: string[]; missoes: number[]; unitCentsExibido: number; confirmarTroca?: boolean }) =>
   chamar<{ pedido_id: string; imagens: unknown[] }>('galeria-gerar', {
-    pedido_id: p.pedidoId, ml_item_id: mlItemId, roteiro_versao: p.roteiroVersao, cores: p.cores, missoes: p.missoes,
+    pedido_id: p.pedidoId, ml_item_id: mlItemId, cores: p.cores, missoes: p.missoes,
     unit_cents_exibido: p.unitCentsExibido,
+    ...(p.roteiroVersao !== undefined ? { roteiro_versao: p.roteiroVersao } : {}),
+    ...(p.confirmarTroca ? { confirmar_troca: true } : {}),
   });
 
 // Task 12: arquivo final composto no navegador → URL de upload assinada (upsert:false) → aprovar (`galeria-aprovar`).
@@ -224,7 +232,13 @@ const MENSAGENS: Record<string, string> = {
   valor_invalido: 'O valor da etiqueta não é aceito para este atributo.',
   nao_rascunho: 'Estes textos já foram aprovados. Edite para criar uma nova versão.',
   ja_aprovada: 'Esta imagem já está aprovada.',
-  desatualizada: 'Os dados mudaram depois que os textos foram aprovados. Revise e aprove os textos no passo 2.',
+  desatualizada: 'Os dados do anúncio mudaram. Gere as imagens de novo.',
+  plano_ia_falhou: 'Não foi possível preparar as imagens agora. Tente de novo.',
+  plano_invalido: 'Não foi possível preparar as imagens agora. Tente de novo.',
+  posicao_indisponivel: 'Faltam dados do produto para esta imagem.',
+  plano_desatualizado: 'Os dados do anúncio mudaram.',
+  sem_referencia: 'Falta a foto real desta cor no cadastro.',
+  plano_antigo: 'Esta imagem é de uma versão anterior. Gere de novo.',
   nao_aprovavel: 'Esta imagem não pode ser aprovada agora. Gere de novo ou recarregue a página.',
   nao_encontrada: 'Imagem não encontrada neste anúncio.',
   sem_upload: 'O arquivo final não foi preparado. Tente aprovar de novo.',
