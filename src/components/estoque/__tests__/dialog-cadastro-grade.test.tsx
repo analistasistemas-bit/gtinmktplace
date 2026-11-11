@@ -1264,7 +1264,8 @@ describe('DialogCadastroGrade — origemNota (ADR-0181)', () => {
     expect(payload.fatorNota).toBe(1);
     expect(payload.variacoes.map((v: { quantidadeNota?: number }) => v.quantidadeNota)).toEqual([2, 0]);
     expect(payload.variacoes.some((v: object) => 'estoqueInicial' in v)).toBe(false);
-    expect(onCadastrado).toHaveBeenCalledWith({ codigoPai: '00000020', sugestaoDistribuicao });
+    // onCadastrado roda depois do `await cadastrarProduto`; sob carga não dá para checar de forma síncrona.
+    await waitFor(() => expect(onCadastrado).toHaveBeenCalledWith({ codigoPai: '00000020', sugestaoDistribuicao }));
   });
 
   it('foto que falhou: etapa de fotos sem "Ir para a Revisão"', async () => {
