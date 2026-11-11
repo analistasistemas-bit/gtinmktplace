@@ -59,12 +59,48 @@ const palavra = (alvo: string, termo: string) =>
 const unidadeDoCampo = (campo: string) => (/_cm$/.test(campo) ? 'cm' : /_gramas$/.test(campo) ? 'g' : null);
 /** Sem marcador de lista nem pontuação nas pontas ("✔ Alta resistência", "Secar à sombra."); o % final fica. */
 const aparar = (s: string) => s.replace(/^[^\p{L}\p{N}]+/u, '').replace(/[^\p{L}\p{N}%]+$/u, '').trim();
+/** Textos longos citáveis por trecho (decisão do Diego, 11/11): as descrições e o título do anúncio. */
+const textoLongo = (campo: string) => campo.startsWith('descricao_') || campo === 'titulo_ml';
+const MARCADOR = /^\s*[-•✔*·▪–]\s*/u;
+const SECAO_VARIACAO = /(?<![\p{L}\p{N}])(?:cor|cores|variac\w*|tamanhos?|modelos?|opcoes|estampas?)(?![\p{L}\p{N}])/u;
+const NEGACAO = /(?<![\p{L}\p{N}])(?:nao|sem|nunca|jamais|nem)(?![\p{L}\p{N}])/u;
+const escapar = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 /**
- * Decisão do Diego (11/11): descrições seguem citáveis, mas spec/benefício só ancoram se o trecho aparece
- * LITERALMENTE no fato (sem acento, caixa e espaço extra; borda de palavra: "5 metros" não está em "25 metros").
- * ponytail: não lê negação ("não contém algodão" contém "algodão"); a etapa usa a oração inteira por isso.
+ * Orações de um texto longo que podem ancorar trecho (normalizadas): fora de oração negada ("Não contém algodão")
+ * e fora dos itens de lista sob título de cores/variações ("🎨 CORES DISPONÍVEIS" / "- Branco": o anúncio vende
+ * uma cor por vez, a lista não é atributo do produto).
+ * ponytail: título de seção = linha sem marcador de lista; parágrafo que cite "cor" também fecha a seção seguinte.
  */
-const contem = (fato: string, trecho: string) => { const t = norm(aparar(trecho)); return t !== '' && palavra(norm(fato), t); };
+function oracoesCitaveis(valor: string): string[] {
+  const saida: string[] = [];
+  let variacao = false;
+  for (const linha of valor.split('\n')) {
+    if (!linha.trim()) continue;
+    const item = MARCADOR.test(linha);
+    if (!item) variacao = SECAO_VARIACAO.test(norm(linha));
+    if (item && variacao) continue;
+    for (const o of linha.split(/[.;!?]+/)) { const n = norm(o); if (n && !NEGACAO.test(n)) saida.push(n); }
+  }
+  return saida;
+}
+
+/**
+ * Trecho escrito literalmente numa oração citável do texto longo, sem fragmento: precisa de letra (número sozinho
+ * nunca ancora: "100", "16"), não começa no meio de "número + unidade" ("metros" de "25 metros", "mm" de "16mm") e
+ * não termina num número que tem unidade/percentual em seguida ("16" de "16 mm").
+ */
+function trechoCitavel(valor: string, trecho: string): boolean {
+  const t = norm(aparar(trecho));
+  if (!/\p{L}/u.test(t)) return false;
+  const antes = /^\p{N}/u.test(t) ? '(?<![\\p{L}\\p{N}]|\\p{N}[.,])' : '(?<![\\p{L}\\p{N}%]|\\p{N}[.,]?\\s*)';
+  const depois = /\p{N}$/u.test(t) ? '(?![\\p{L}\\p{N}%]|[.,]\\p{N}|\\s*[\\p{L}%])' : '(?![\\p{L}\\p{N}])';
+  const re = new RegExp(`${antes}${escapar(t)}${depois}`, 'u');
+  return oracoesCitaveis(valor).some((o) => re.test(o));
+}
+
+/** Spec/benefício ancorados no fato (fix round 1): fato curto só pelo valor INTEIRO; texto longo por trecho citável. */
+const ancora = (f: Fato, trecho: string) => (textoLongo(f.campo) ? trechoCitavel(f.valor, trecho) : mesmoValor(trecho, f.valor));
 /** Orações de um fato (por . ; ! ? e quebra de linha), aparadas. Mesma função no prompt, na poda e na validação. */
 export const oracoes = (valor: string): string[] => valor.split(/[.;!?\n]+/).map(aparar).filter(Boolean);
 
@@ -107,14 +143,17 @@ function semAncora(texto: string, fatos: Fato[]): string[] {
 }
 
 /**
- * Mesmo valor do fato (medida da planilha vem sem unidade: "20" em largura_cm aceita "20 cm") ou trecho contido
- * nele (descrição confirmada: "100% poliéster" dentro do texto).
+ * Mesmo valor do fato (medida da planilha vem sem unidade: "20" em largura_cm aceita "20 cm") ou, em texto longo,
+ * trecho citável dele ("100% poliéster" na descrição confirmada). Atributo curto: nunca pedaço ("16" ≠ "16 mm").
  */
 function specConfere(spec: SpecRoteiro, fato: Fato): boolean {
   if (mesmoValor(spec.valor, fato.valor)) return true;
   const unidade = unidadeDoCampo(fato.campo);
-  return (!!unidade && mesmoValor(spec.valor, `${fato.valor} ${unidade}`)) || contem(fato.valor, spec.valor);
+  return (!!unidade && mesmoValor(spec.valor, `${fato.valor} ${unidade}`)) || (textoLongo(fato.campo) && trechoCitavel(fato.valor, spec.valor));
 }
+
+/** Campos que nunca viram spec: medidas da embalagem (R8.1) e o nome (não é dado técnico; o modelo recorta "16MM"). */
+const foraDaSpec = (campo: string) => MEDIDAS_EMBALAGEM.has(campo) || campo === 'nome';
 
 /** Erros do roteiro (vazio = válido). `moda` vem da edge; qualquer `moda` dentro do JSON é ignorado. */
 export function validarRoteiro(r: Roteiro, fatos: Fato[], moda: boolean, vistas: Vista[] = ['frente']): string[] {
@@ -169,6 +208,7 @@ export function validarRoteiro(r: Roteiro, fatos: Fato[], moda: boolean, vistas:
       if (!s.rotulo) erros.push(`${p} spec sem rótulo`);
       if (!s.valor) erros.push(`${p} spec sem valor`);
       if (MEDIDAS_EMBALAGEM.has(s.campo)) { erros.push(`${p} "${s.campo}" é medida da embalagem; não vira spec (R8.1)`); continue; }
+      if (s.campo === 'nome') { erros.push(`${p} "nome" não vira spec (nome do produto não é dado técnico)`); continue; }
       const f = porCampo.get(s.campo);
       if (f && UTILIZAVEL.has(f.estado) && !specConfere(s, f)) erros.push(`${p} "${s.campo}" = "${s.valor}" difere do fato "${f.valor}"`);
     }
@@ -304,7 +344,7 @@ export function sanearRoteiro(bruto: unknown, categoria: string): Roteiro | null
 
 // Rótulo curto da spec em código (Ajuste v2-2): cabe na caixa de rótulo (~11 caracteres).
 const ROTULO_SPEC: Record<string, string> = {
-  nome: 'Produto', marca: 'Marca', origem: 'Origem', 'atributo:BRAND': 'Marca', 'atributo:MATERIAL': 'Material',
+  marca: 'Marca', origem: 'Origem', 'atributo:BRAND': 'Marca', 'atributo:MATERIAL': 'Material',
   'atributo:MAIN_MATERIAL': 'Material', 'atributo:LENGTH': 'Comprimento', 'atributo:WIDTH': 'Largura',
   'atributo:HEIGHT': 'Altura', 'atributo:COLOR': 'Cor', 'atributo:MODEL': 'Modelo', 'atributo:UNITS_PER_PACK': 'Unidades',
 };
@@ -333,14 +373,14 @@ function podar(missao: number, t: Partial<MissaoRoteiro>, usaveis: Fato[], etapa
     const v = (t[k] ?? []).filter((x) => ok(x) && cabe({ [k]: [x] })).slice(0, cap[k]);
     if (v.length > 0) out[k] = v;
   };
-  manter('beneficios', (b) => livre(b, LIMITES.beneficio) && usaveis.some((f) => contem(f.valor, b)));
+  manter('beneficios', (b) => livre(b, LIMITES.beneficio) && usaveis.some((f) => ancora(f, b)));
   manter('etapas', (e) => contarPalavras(e) <= LIMITES.etapa && limpo(e) && etapasOk.has(norm(aparar(e))));
   manter('legendas', (l) => livre(l, LIMITES.legenda));
   if (campos.includes('specs')) {
     const specs: SpecRoteiro[] = [];
     for (const s of t.specs ?? []) {
       const f = porCampo.get(s.campo);
-      if (!f || MEDIDAS_EMBALAGEM.has(f.campo) || !specConfere(s, f) || !limpo(s.valor)) continue;
+      if (!f || foraDaSpec(f.campo) || !specConfere(s, f) || !limpo(s.valor)) continue;
       const nomeAtributo = typeof f.evidencia?.nome === 'string' && f.evidencia.nome !== f.evidencia.atributo ? f.evidencia.nome : '';
       const rotulo = [ROTULO_SPEC[f.campo], nomeAtributo, s.rotulo]
         .find((r) => !!r && limpo(r) && cabe({ specs: [{ rotulo: r, valor: s.valor }] }));
@@ -361,7 +401,7 @@ function derivarFatosUsados(m: MissaoRoteiro, usaveis: Fato[], citadosPelaIA: st
   const texto = norm(livre.join(' \n '));
   const usa = (f: Fato) => citadosPelaIA.includes(f.campo)
     || (m.specs ?? []).some((s) => s.campo === f.campo)
-    || (m.beneficios ?? []).some((b) => contem(f.valor, b))
+    || (m.beneficios ?? []).some((b) => ancora(f, b))
     || (f.estado === 'CONFIRMADO' && (m.etapas ?? []).some((e) => oracoes(f.valor).map(norm).includes(norm(aparar(e)))))
     || livre.some((x) => semAncora(x, [f]).length < semAncora(x, []).length)
     || (norm(f.valor) !== '' && palavra(texto, norm(f.valor)));
@@ -380,7 +420,7 @@ export async function gerarRoteiroIA({ modelo, categoria, moda, vistas, fatos }:
 }): Promise<Roteiro> {
   const disponiveis = missoesDisponiveis(moda, vistas);
   const usaveis = fatos.filter((f) => UTILIZAVEL.has(f.estado));
-  const paraSpec = usaveis.filter((f) => !MEDIDAS_EMBALAGEM.has(f.campo));
+  const paraSpec = usaveis.filter((f) => !foraDaSpec(f.campo));
   // Passos de uso só existem em texto escrito por pessoa e confirmado (R5.3): as descrições.
   const etapas = [...new Map(usaveis.filter((f) => f.estado === 'CONFIRMADO' && f.campo.startsWith('descricao_'))
     .flatMap((f) => oracoes(f.valor)).filter((o) => contarPalavras(o) <= LIMITES.etapa).map((o) => [norm(o), o])).values()];
@@ -418,6 +458,8 @@ export async function gerarRoteiroIA({ modelo, categoria, moda, vistas, fatos }:
   try { ia = JSON.parse(String((resp as any).choices?.[0]?.message?.content ?? '')); } catch { throw new Error('roteiro_ia_invalido'); }
   if (!ia || typeof ia !== 'object' || !Array.isArray(ia.missoes)) throw new Error('roteiro_ia_invalido');
   const porMissao = new Map((ia.missoes as Array<Record<string, unknown>>).filter((m) => m && typeof m === 'object').map((m) => [m.missao, m]));
+  // A capa é sempre gerada (R5.2) e o contrato vai em todo prompt (R3): sem eles o rascunho nunca seria aprovável.
+  if (!str(ia.contrato) || !str(porMissao.get(1)?.cena)) throw new Error('roteiro_ia_invalido');
 
   const missoes = disponiveis.map((d): MissaoRoteiro => {
     const motivo = motivos.get(d.missao);
@@ -441,7 +483,8 @@ export async function gerarRoteiroIA({ modelo, categoria, moda, vistas, fatos }:
       ...motivosDeTexto(m.missao, m, moda),
       ...(lista && !(m[lista]?.length) ? [`${SEM_ITEM[lista]} vem dos dados confirmados`] : []),
     ];
-    return problemas.length > 0 ? { ...m, ativa: false, motivoDesligada: problemas[0] } : m;
+    // Desligada nasce sem texto residual (o que a poda e a validação recusaram não fica no JSON gravado).
+    return problemas.length > 0 ? { missao: m.missao, ativa: false, cena: m.cena, fatosUsados: [], motivoDesligada: problemas[0] } : m;
   });
   return roteiro;
 }

@@ -143,6 +143,11 @@ describe('galeria-roteiro: criar', () => {
     expect(db.galeria_roteiros[0]).toMatchObject({ moda: false })
     const missoes = (db.galeria_roteiros[0].conteudo as { missoes: Array<Linha & { motivoDesligada?: string }> }).missoes
     for (const n of [4, 5, 6]) expect(missoes.find((m) => m.missao === n)).toMatchObject({ ativa: false, motivoDesligada: expect.any(String) })
+    // O que a poda recusou não fica no JSON gravado (religar a missão não traz de volta a spec nem a etapa).
+    const gravado = JSON.stringify(db.galeria_roteiros[0].conteudo)
+    expect(gravado).not.toContain('largura_cm')
+    expect(gravado).not.toContain('Lave em água quente')
+    expect(gravado).not.toContain('Largura de 20 cm')
     expect(r.body).toMatchObject({ erros: [], ciencia_pendente: [] })
     const id = db.galeria_roteiros[0].id
     expect((await chamar({ ...base, acao: 'aprovar', roteiro_id: id })).status).toBe(200)

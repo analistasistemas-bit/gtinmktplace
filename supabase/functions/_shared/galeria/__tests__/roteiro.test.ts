@@ -306,6 +306,7 @@ describe('gerarRoteiroIA: roteiro nasce aprovável (Fase A)', () => {
   /** Invariante: toda missão ativa sem erro do servidor nem de largura; toda desligada (não omitida) com motivo. */
   const semErroNasAtivas = (r: Roteiro, fatos: Fato[], moda = false) => {
     const porMissao = errosPorMissao(validarRoteiro(r, fatos, moda, ['frente']))
+    expect(porMissao.geral ?? [], 'gerais').toEqual([])
     for (const m of r.missoes.filter((x) => x.ativa)) {
       expect(porMissao[String(m.missao)] ?? [], `missão ${m.missao}`).toEqual([])
       expect(motivosDeTexto(m.missao, m, moda), `largura ${m.missao}`).toEqual([])
@@ -458,5 +459,82 @@ describe('sanearRoteiro: motivo de missão desligada', () => {
       { missao: 3, ativa: false, cena: 'c', fatosUsados: [], motivoDesligada: 'Lupa em ajuste' },
     ] }, 'Rendas')!
     expect(r.missoes.map((m) => m.motivoDesligada)).toEqual([undefined, 'Lupa em ajuste'])
+  })
+})
+
+// Fix round 1 (revisão Grok da Fase A): contenção não aceita fragmento; spec fora do nome; capa obrigatória.
+describe('ancoragem sem fragmento (fix round 1)', () => {
+  const ficha = (specs: Roteiro['missoes'][number]['specs']): Roteiro => ({ categoria: 'x', contrato: 'Fita', missoes: [
+    { missao: 1, ativa: true, cena: 'capa', fatosUsados: [] },
+    { missao: 5, ativa: true, cena: 'ficha', headline: 'Dados do produto', specs, fatosUsados: [] },
+  ] })
+  const confirmados = () => [...fatosFita().filter((f) => !['atributo:WIDTH', 'atributo:MATERIAL'].includes(f.campo)),
+    fato('atributo:WIDTH', '16 mm'), fato('atributo:MATERIAL', '100% poliéster')]
+
+  it('atributo curto exige o valor inteiro: "16" × "16 mm" e "100" × "100% poliéster" recusados', () => {
+    const fatos = confirmados()
+    expect(validarRoteiro(ficha([{ campo: 'atributo:WIDTH', rotulo: 'Largura', valor: '16' }]), fatos, false)).toEqual([expect.stringMatching(/difere/)])
+    expect(validarRoteiro(ficha([{ campo: 'atributo:MATERIAL', rotulo: 'Material', valor: '100' }]), fatos, false)).toEqual([expect.stringMatching(/difere/)])
+    expect(validarRoteiro(ficha([{ campo: 'atributo:WIDTH', rotulo: 'Largura', valor: '16mm' }]), fatos, false)).toEqual([])
+  })
+
+  it('descrição: número cortado da unidade, item de lista de cores e oração negada não ancoram', () => {
+    const fatos = fatosFita()
+    for (const valor of ['100', '16', '25', 'Branco', 'Preto', 'metros']) {
+      expect(validarRoteiro(ficha([{ campo: 'descricao_ml', rotulo: 'X', valor }]), fatos, false), valor).toEqual([expect.stringMatching(/difere/)])
+    }
+    for (const valor of ['100% poliéster', '25 metros']) {
+      expect(validarRoteiro(ficha([{ campo: 'descricao_ml', rotulo: 'X', valor }]), fatos, false), valor).toEqual([])
+    }
+  })
+
+  it('benefício "algodão" em "Não contém algodão." é recusado na poda; o da oração afirmativa fica', async () => {
+    const fatos = [fato('nome', 'Fita'), fato('descricao_fornecedor', 'Não contém algodão. Toque macio.')]
+    ia.create.mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify({ contrato: 'Fita', missoes: [
+      { missao: 1, cena: 'capa', fatosUsados: [] },
+      { missao: 4, cena: 'mesa', headline: 'Fita', beneficios: ['algodão', 'Toque macio'], fatosUsados: [] },
+    ] }) } }] })
+    const r = await gerarRoteiroIA({ modelo: 'm', categoria: 'x', moda: false, vistas: ['frente'], fatos })
+    expect(r.missoes.find((m) => m.missao === 4)).toMatchObject({ ativa: true, beneficios: ['Toque macio'] })
+  })
+
+  it('spec não ancora no fato nome ("Produto: 16MM" recortado do nome)', async () => {
+    expect(validarRoteiro(ficha([{ campo: 'nome', rotulo: 'Produto', valor: '16MM' }]), fatosFita(), false))
+      .toEqual(expect.arrayContaining([expect.stringMatching(/"nome".*não vira spec/)]))
+    const x = retornoFita()
+    x.missoes[4].specs = [{ campo: 'nome', rotulo: 'Produto', valor: '16MM' }, { campo: 'descricao_ml', rotulo: 'Metragem', valor: '25 metros' }]
+    ia.create.mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify(x) } }] })
+    const r = await gerarRoteiroIA({ modelo: 'm', categoria: 'x', moda: false, vistas: ['frente'], fatos: fatosFita() })
+    expect(r.missoes.find((m) => m.missao === 5)?.specs).toEqual([{ campo: 'descricao_ml', rotulo: 'Metragem', valor: '25 metros' }])
+    const dados = JSON.parse(ia.create.mock.calls.at(-1)![0].messages[1].content.replace(/^DATA \(JSON\):\n/, ''))
+    expect(dados.missoes.find((m: { missao: number }) => m.missao === 5).fatos_para_spec).not.toContain('nome')
+  })
+
+  it('capa omitida, capa sem cena ou contrato vazio → roteiro_ia_invalido (a capa não desliga, R5.2)', async () => {
+    const sujos: Array<(x: ReturnType<typeof retornoFita>) => void> = [
+      (x) => { x.missoes.splice(0, 1) },
+      (x) => { x.missoes[0].cena = '  ' },
+      (x) => { x.contrato = '' },
+    ]
+    for (const sujar of sujos) {
+      const x = retornoFita()
+      sujar(x)
+      ia.create.mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify(x) } }] })
+      await expect(gerarRoteiroIA({ modelo: 'm', categoria: 'x', moda: false, vistas: ['frente'], fatos: fatosFita() })).rejects.toThrow(/roteiro_ia_invalido/)
+    }
+  })
+
+  it('missão nascida desligada não guarda texto residual', async () => {
+    const r = await (async () => {
+      ia.create.mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify(retornoFita()) } }] })
+      return gerarRoteiroIA({ modelo: 'm', categoria: 'x', moda: false, vistas: ['frente'], fatos: fatosFita() })
+    })()
+    for (const m of r.missoes.filter((y) => !y.ativa)) {
+      expect(m, `missão ${m.missao}`).not.toHaveProperty('headline')
+      expect(m).not.toHaveProperty('subheadline')
+      expect(m).not.toHaveProperty('etapas')
+      expect(m).not.toHaveProperty('specs')
+      expect(m.fatosUsados).toEqual([])
+    }
   })
 })
