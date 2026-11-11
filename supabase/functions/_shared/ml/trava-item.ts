@@ -26,9 +26,11 @@ export async function travarItens(admin: SupabaseClient, orgId: string, itens: s
   return data === true;
 }
 
-/** Antes de cada PUT. Falha de gravação = false (o PUT não sai). */
-export async function estenderTrava(admin: SupabaseClient, orgId: string, itens: string[], dono: string): Promise<boolean> {
-  const { data, error } = await admin.rpc('ml_estender_trava', { p_org: orgId, p_itens: itens, p_dono: dono, p_seg: QUARENTENA_PUT_S });
+/** Antes de cada PUT (padrão 900 s). Falha de gravação = false (o PUT não sai). */
+export async function estenderTrava(
+  admin: SupabaseClient, orgId: string, itens: string[], dono: string, seg = QUARENTENA_PUT_S,
+): Promise<boolean> {
+  const { data, error } = await admin.rpc('ml_estender_trava', { p_org: orgId, p_itens: itens, p_dono: dono, p_seg: seg });
   return !error && data === true;
 }
 

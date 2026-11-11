@@ -1,12 +1,12 @@
 // ADR-0201 Task 14 — saga de aplicar e reverter (worker por fase), sem rede. O banco é o fake em memória com as RPCs da
 // saga espelhadas (assumir, concluir com aborto atômico, manter/agregar); o ML é um fake com estado por item. O "tick"
 // faz o que o despachante faz: ação de nível da aplicação + uma mensagem por item acionável.
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeAdmin, JPEG } from './fake-admin'
 import { createHash } from 'node:crypto'
 import type { ItemElegibilidade } from '../alvos'
 import type { CorpoFotosML } from '../../ml/atualizar-item'
-import { decidirReconciliacao, executarItem, passoSaga, type AplicacaoSaga, type ItemSaga, type PortasML } from '../saga'
+import { decidirReconciliacao, executarItem, passoSaga, PORTAS_ML, type AplicacaoSaga, type ItemSaga, type PortasML } from '../saga'
 
 type Linha = Record<string, unknown>
 const sha256Hex = (b: Uint8Array) => createHash('sha256').update(b).digest('hex')
@@ -36,8 +36,11 @@ class MLFake implements PortasML {
   item(id: string, pictures: string[], variacoes: Array<{ id: number; sku: string; pictureIds: string[] }> = []) {
     this.itens.set(id, { id, catalogListing: false, tags: [], sku: variacoes.length ? null : 'SKU-' + id, pictures, variacoes })
   }
+  /** Efeito colateral no meio do GET (ex.: o relógio atravessa o prazo). */
+  aoLer: (() => void) | null = null
   async lerItem(_t: string, id: string) {
     this.gets++
+    this.aoLer?.()
     for (const p of this.pendentes.filter((x) => x.itemId === id && x.em <= agora)) this.aplicar(p.itemId, p.corpo)
     this.pendentes = this.pendentes.filter((x) => !(x.itemId === id && x.em <= agora))
     if (this.indisponivel.has(id)) return null
@@ -141,8 +144,7 @@ function iniciarReversao() {
   compensarAplicados(a.id as string)
 }
 
-let vigente = 'fam'
-const deps = () => ({ agora: () => new Date(agora), token: async () => 'tok', ml, familiaVigente: async () => vigente })
+const deps = () => ({ agora: () => new Date(agora), token: async () => 'tok', ml })
 /** Um tick do despachante: ação da aplicação + uma mensagem por item acionável (na ordem dos itens). */
 async function tick(min = 1) {
   avancar(min)
@@ -160,7 +162,6 @@ async function ticks(n: number, min = 1) { for (let k = 0; k < n; k++) await tic
 const ALVO = (mlb: string) => [{ sku: `R-${mlb}`, variationId: 1 }]
 function montar(mlbs: string[], n = 1, opts: { plano?: boolean; status?: string } = {}) {
   agora = T0
-  vigente = 'fam'
   ml = new MLFake()
   const arquivos = new Map<string, Uint8Array>()
   const imagens: Linha[] = []
@@ -276,6 +277,30 @@ describe('saga — caminho feliz', () => {
     expect((ml.itens.get('P') as unknown as Linha).available_quantity).toBe(0)
     expect(JSON.stringify(ml.puts[0].corpo)).not.toContain('available_quantity')
   })
+
+  it('caminho real até atualizarFotosItemML (fetch mockado): corpo HTTP só com pictures/variations, sem available_quantity', async () => {
+    // Revisão T14 (Minor do desvio 4): exercita o PUT de verdade, não só a constante CORPO_MINIMO.
+    ;(ml.itens.get('P') as unknown as Linha).available_quantity = 7
+    const corpos: Array<{ url: string; method?: string; body: Linha }> = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: { method?: string; body?: string }) => {
+      const body = JSON.parse(init?.body ?? '{}') as Linha
+      corpos.push({ url, method: init?.method, body })
+      ml.aplicar('P', body as unknown as CorpoFotosML)
+      return new Response('{}', { status: 200 })
+    }))
+    ml.putFotos = PORTAS_ML.putFotos
+    try {
+      await ticks(2)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+    expect(corpos).toHaveLength(1)
+    expect(corpos[0]).toMatchObject({ url: 'https://api.mercadolibre.com/items/P', method: 'PUT' })
+    expect(Object.keys(corpos[0].body).sort()).toEqual(['pictures', 'variations'])
+    expect(JSON.stringify(corpos[0].body)).not.toMatch(/available_quantity|price|status/)
+    expect(itemDe('P').status).toBe('aplicado')
+    expect((ml.itens.get('P') as unknown as Linha).available_quantity).toBe(7)
+  })
 })
 
 describe('saga — falhas na ida, aborto e compensação', () => {
@@ -383,19 +408,40 @@ describe('saga — falhas na ida, aborto e compensação', () => {
     expect(aplicacao().status).toBe('revertida')
   })
 
-  it('família vigente do anúncio troca entre o upload e o PUT do 2º item (UPDATE dispensado da trava) → 2º pulado sem PUT, 1º compensado', async () => {
-    montar(['P', 'M'])
+  it('Rosa aplicada no P e outra família do anúncio publicada (import só de estoque) → M e G seguem, nada é compensado', async () => {
+    // Revisão T14 achado 1: vigência de família é do `confirmar` (a RPC); a ida não aborta por troca de família.
+    montar(['P', 'M', 'G'])
     await tick()
-    itemDe('M').lease_ate = em(2)
+    itemDe('M').lease_ate = em(3)
+    itemDe('G').lease_ate = em(3)
     await tick()
     expect(itemDe('P').status).toBe('aplicado')
-    vigente = 'famB'
-    await tick(2)
-    expect(itemDe('M')).toMatchObject({ status: 'pulado', erro: 'familia_nao_vigente' })
-    expect(putsDe('M')).toEqual([])
-    expect(aplicacao().status).toBe('abortando')
+    // Import só de estoque publica outra família do mesmo anúncio (dispensado da trava) e mexe no estoque do M:
+    // a ida não consulta família vigente (a versão anterior abortava aqui e compensava o P).
+    ;(ml.itens.get('M') as unknown as Linha).available_quantity = 0
+    await ticks(3)
+    expect(db.galeria_aplicacao_itens.map((i) => i.status)).toEqual(['aplicado', 'aplicado', 'aplicado'])
+    expect(putsDe('P')).toHaveLength(1)   // nenhum PUT de volta
+    expect(aplicacao()).toMatchObject({ status: 'aplicada', abortar_em: null })
+  })
+
+  it('prazo vence entre o GET e o PUT de ida → portão relido antes do PUT, zero PUT de ida', async () => {
+    // Revisão T14 achado 2: o portão é relido do banco (e com o relógio de agora) imediatamente antes do PUT.
+    await tick()   // upload
+    ml.aoLer = () => { agora = T0 + 31 * 60_000 }   // o GET atravessa o prazo (em(30))
     await tick()
-    expect(itemDe('P').status).toBe('compensado')
+    expect(putsDe('P')).toEqual([])
+    expect(itemDe('P')).toMatchObject({ status: 'pulado', erro: 'prazo_vencido' })
+    expect(aplicacao().abortar_em).not.toBeNull()
+    expect(aplicacao().status).toBe('falhou')
+  })
+
+  it('roteiro desatualizado entre o GET e o PUT de ida → zero PUT de ida', async () => {
+    await tick()
+    ml.aoLer = () => { db.galeria_roteiros[0].status = 'desatualizado' }
+    await tick()
+    expect(putsDe('P')).toEqual([])
+    expect(itemDe('P')).toMatchObject({ status: 'pulado', erro: 'roteiro_trocado' })
   })
 
   it('prazo_ate vencido → aborta e compensa (sem PUT de ida novo)', async () => {

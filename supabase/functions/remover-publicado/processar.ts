@@ -13,7 +13,8 @@ import {
 } from '../_shared/user-products/remover-composicao.ts';
 import { STATUS_KIT_VIVO } from '../_shared/estoque/kit.ts';
 import { EMBED_MODULOS, kitLigado, skusParticipantes } from '../_shared/kit-variacao/politica.ts';
-import { soltarItens, travarItens } from '../_shared/ml/trava-item.ts';
+import { estenderTrava, soltarItens, travarItens } from '../_shared/ml/trava-item.ts';
+import { idDerivado } from '../_shared/galeria/pedido.ts';
 
 export interface RemoverPublicadoInput {
   familiaId: string;
@@ -158,23 +159,54 @@ async function kitsVirtuaisPublicadosBloqueando(
 }
 
 /**
- * ADR-0201 (adendo 6): Remover e Republicar adquirem a trava `escritor` de todos os MLB do produto antes da primeira ação
- * destrutiva (pausar/encerrar no ML, `preparar_republicacao`, deletes) e soltam no fim. Exceção no meio mantém a trava
- * (um PUT pode ter saído sem resposta): ela vence sozinha em 600 s.
+ * Trava mantida quando o fluxo para no meio (pausou e não concluiu): o retry é um clique do operador ("tente de novo em
+ * instantes"). Bem abaixo do teto de 240 min dos escritores adiados (`update-familia-ml`/split), que esperam em vez de
+ * virar `erro`; cada retry que para de novo renova.
+ */
+export const TTL_PENDENTE_S = 30 * 60;
+
+/** Dono estável por produto: o retry (de qualquer cópia do mesmo `codigo_pai`) reconhece a própria trava. */
+const donoRemocao = (orgId: string, canal: string, codigoPai: string) => idDerivado(orgId, `remover:${canal}:${codigoPai}`, 0, 0);
+
+interface EstadoTrava {
+  dono: string | null; itens: string[];
+  /** Esta chamada já pediu uma ação destrutiva no ML (marcado ANTES da chamada: exceção nela conta). */
+  mexeu: boolean;
+  /** A trava própria já existia: uma chamada anterior parou no meio e esta é a continuação. */
+  continuacao: boolean;
+}
+
+/**
+ * ADR-0201 (adendo 6; revisão T14): Remover e Republicar adquirem a trava `escritor` de todos os MLB do produto antes da
+ * primeira ação destrutiva (pausar/encerrar no ML, `preparar_republicacao`, deletes). Só soltam com o fluxo concluído
+ * (`ok`/`preservada`) ou quando nada foi mexido (nem nesta chamada nem numa anterior). Parou no meio (pausa parcial,
+ * `em_processamento`/`remocao_pendente`/`em_voo` depois de pausar, exceção) → a trava é MANTIDA e estendida por
+ * `TTL_PENDENTE_S`: a galeria não troca fotos no meio de um Republicar/Remover.
  */
 export async function removerPublicado(deps: RemoverPublicadoDeps, input: RemoverPublicadoInput): Promise<ResultadoRemocao> {
-  const dono = crypto.randomUUID();
-  let travou = false;
-  const r = await removerPublicadoTravado(deps, input, async (itens) => {
-    travou = await travarItens(deps.admin, input.orgId, itens, dono);
-    return travou;
-  });
-  if (travou) await soltarItens(deps.admin, input.orgId, dono);
+  const trava: EstadoTrava = { dono: null, itens: [], mexeu: false, continuacao: false };
+  let r: ResultadoRemocao;
+  try {
+    r = await removerPublicadoTravado(deps, input, trava);
+  } catch (e) {
+    await fecharTrava(deps.admin, input.orgId, trava, false);
+    throw e;
+  }
+  await fecharTrava(deps.admin, input.orgId, trava, r.tipo === 'ok' || r.tipo === 'preservada');
   return r;
 }
 
+async function fecharTrava(admin: SupabaseClient, orgId: string, t: EstadoTrava, concluido: boolean): Promise<void> {
+  if (!t.dono) return;
+  if (concluido || (!t.mexeu && !t.continuacao)) return soltarItens(admin, orgId, t.dono);
+  // Falha ao estender: a trava segue com o TTL que já tinha (vence sozinha); nunca solta aqui.
+  if (!(await estenderTrava(admin, orgId, t.itens, t.dono, TTL_PENDENTE_S))) {
+    console.error('[remover-publicado] estender trava pendente falhou', t.itens.join(','));
+  }
+}
+
 async function removerPublicadoTravado(
-  deps: RemoverPublicadoDeps, input: RemoverPublicadoInput, travar: (itens: string[]) => Promise<boolean>,
+  deps: RemoverPublicadoDeps, input: RemoverPublicadoInput, trava: EstadoTrava,
 ): Promise<ResultadoRemocao> {
   const { admin } = deps;
   const { familiaId, orgId, canal } = input;
@@ -323,7 +355,14 @@ async function removerPublicadoTravado(
 
   // ADR-0201: daqui em diante tudo é destrutivo — trava todos os MLB do produto (partições, raiz e filhos UP).
   const itensTrava = coletarIdsMLRemover(alvo.ml_item_id as string | null, filhos, idsRaizes);
-  if (itensTrava.length > 0 && !(await travar(itensTrava))) return { tipo: 'item_ocupado' };
+  if (itensTrava.length > 0) {
+    const dono = donoRemocao(orgId, canal, alvo.codigo_pai as string);
+    const { data: proprias, error: propriasErr } = await admin.from('ml_item_travas').select('item_id')
+      .eq('org_id', orgId).eq('dono_id', dono).eq('dono_tipo', 'escritor').limit(1);
+    if (propriasErr) throw new Error(`remover-publicado: consultar trava própria falhou: ${propriasErr.message}`);
+    if (!(await travarItens(admin, orgId, itensTrava, dono))) return { tipo: 'item_ocupado' };
+    Object.assign(trava, { dono, itens: itensTrava, continuacao: (proprias ?? []).length > 0 });
+  }
 
   if (input.preservarFamilia) {
     // ADR-0185: a RPC prepara a cópia mais nova com vínculo; se ela ainda está em processamento a
@@ -362,6 +401,7 @@ async function removerPublicadoTravado(
         },
       };
       const removerComposicao = deps.removerComposicao ?? removerComposicaoUP;
+      trava.mexeu = true;
       const resultado = await removerComposicao(portas, filhos);
       if (resultado.tipo === 'incompleto') {
         return { tipo: 'remocao_pendente', pendentes: resultado.pendentes };
@@ -409,6 +449,7 @@ async function removerPublicadoTravado(
           else throw new Error(`remover-publicado: consultar anúncio ${id} no ML falhou: ${(e as Error).message}`);
         }
         if (!itemSumiu && statusItem === 'active') {
+          trava.mexeu = true;
           await atualizarStatusML(token, id, 'paused');
         }
       }
@@ -452,6 +493,7 @@ async function removerPublicadoTravado(
       return { tipo: 'em_voo' };
     }
   }
+  trava.mexeu = true;
   await encerrarItensMLRemocao(deps.ctx.getToken, snapshots);
 
   // Codex P2: o vínculo de UPDATE é GLOBAL por (user_id, codigo_pai, ml_item_id not null) —

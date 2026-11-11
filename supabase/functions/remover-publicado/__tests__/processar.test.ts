@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { removerPublicado } from '../processar';
 
 // Fake admin client: fila FIFO por tabela, consumida na ordem real das queries do
@@ -70,14 +70,14 @@ function fakeAdmin(filas: Record<string, unknown[]>) {
   const rpcs: { nome: string; args: unknown; tabelasDeletadasAntes: string[] }[] = [];
   const travas: { nome: string; args: any; deletesAntes: number }[] = [];
   const admin: any = {
-    from: (tabela: string) => chain(tabela),
+    from: (tabela: string) => (tabela === 'ml_item_travas' ? consultaTravas() : chain(tabela)),
     storage: { from: () => ({ remove: async (paths: string[]) => { removidos.push(paths); return { error: null }; } }) },
     rpc: async (nome: string, args: unknown) => {
       // ADR-0200: participação é leitura (fila `rpc:kit_skus_participantes`), não entra em `rpcs`.
       // ADR-0201: trava de escrita por MLB fica fora de `rpcs` (registrada em `travas` com a ordem dos deletes).
-      if (nome === 'ml_travar_itens' || nome === 'ml_soltar_itens') {
+      if (nome === 'ml_travar_itens' || nome === 'ml_soltar_itens' || nome === 'ml_estender_trava') {
         travas.push({ nome, args, deletesAntes: deletes.length });
-        return { data: nome === 'ml_travar_itens' ? travaLivre : 1, error: null };
+        return { data: rpcTrava(nome, args as any), error: null };
       }
       if (nome === 'kit_skus_participantes') {
         const v = proximo(`rpc:${nome}`);
@@ -99,6 +99,54 @@ function fakeAdmin(filas: Record<string, unknown[]>) {
   return { admin, deletes, updates, removidos, rpcs, travas };
 }
 let travaLivre = true;
+
+// Espelho stateful de ml_item_travas + ml_travar_itens/ml_estender_trava/ml_soltar_itens (SQL real coberto pelo teste
+// SQL da Task 2): dono, tipo e expiração por item. `travaLivre = false` simula uma saga da galeria segurando tudo.
+type TravaFake = { dono: string; tipo: string; expira: number | null };
+const travasDb = new Map<string, TravaFake>();
+beforeEach(() => travasDb.clear());
+function rpcTrava(nome: string, a: { p_itens?: string[]; p_dono: string; p_tipo?: string; p_ttl_seg?: number | null; p_seg?: number }) {
+  const agora = Date.now();
+  if (nome === 'ml_travar_itens') {
+    if (!travaLivre) return false;
+    const ocupado = a.p_itens!.some((i) => {
+      const t = travasDb.get(i);
+      return !!t && t.dono !== a.p_dono && (t.tipo === 'galeria' || (t.expira ?? 0) > agora);
+    });
+    if (ocupado) return false;
+    const exp = a.p_tipo === 'escritor' ? agora + a.p_ttl_seg! * 1000 : null;
+    for (const i of a.p_itens!) {
+      const t = travasDb.get(i);
+      const mesma = t && t.dono === a.p_dono && t.tipo === 'escritor' && a.p_tipo === 'escritor';
+      travasDb.set(i, { dono: a.p_dono, tipo: a.p_tipo!, expira: mesma ? Math.max(t!.expira!, exp!) : exp });
+    }
+    return true;
+  }
+  if (nome === 'ml_estender_trava') {
+    let n = 0;
+    for (const i of new Set(a.p_itens)) {
+      const t = travasDb.get(i);
+      if (t && t.dono === a.p_dono && t.tipo === 'escritor') { t.expira = Math.max(t.expira ?? 0, agora + a.p_seg! * 1000); n++; }
+    }
+    return n === new Set(a.p_itens).size;
+  }
+  let n = 0;
+  for (const [i, t] of [...travasDb]) if (t.dono === a.p_dono && t.tipo === 'escritor') { travasDb.delete(i); n++; }
+  return n;
+}
+function consultaTravas(): any {
+  const f: Record<string, unknown> = {};
+  const q: any = {
+    select: () => q, limit: () => q,
+    eq: (c: string, v: unknown) => { f[c] = v; return q; },
+    then: (resolve: any) => Promise.resolve({
+      data: [...travasDb].filter(([, t]) => (f.dono_id == null || t.dono === f.dono_id) && (f.dono_tipo == null || t.tipo === f.dono_tipo))
+        .map(([item_id]) => ({ item_id })),
+      error: null,
+    }).then(resolve),
+  };
+  return q;
+}
 
 const ORG = 'org-1';
 const DONO = 'user-1'; // dono dos paths de Storage (1º segmento de pasta) — membro de ORG
@@ -1369,7 +1417,7 @@ describe('removerPublicado — SKU em kit com variação (ADR-0200, Task 7)', ()
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ status: 'paused' }), { status: 200 })));
     const { admin } = cenario([]);
     const rpc0 = admin.rpc;
-    admin.rpc = async (n: string, a: unknown) => (['kit_skus_participantes', 'ml_travar_itens', 'ml_soltar_itens'].includes(n)
+    admin.rpc = async (n: string, a: unknown) => (['kit_skus_participantes', 'ml_travar_itens', 'ml_soltar_itens', 'ml_estender_trava'].includes(n)
       ? rpc0(n, a) : { data: null, error: { message: 'republicar:kit_publicacao_pendente' } });
     const r = await removerPublicado(
       { admin, ctx: CTX, conexao: CONEXAO },
@@ -1384,7 +1432,7 @@ describe('removerPublicado — SKU em kit com variação (ADR-0200, Task 7)', ()
       : new Response(JSON.stringify({ status: 'paused' }), { status: 200 }))));
     const { admin } = cenario([]);
     const rpc0 = admin.rpc;
-    admin.rpc = async (n: string, a: unknown) => (['kit_skus_participantes', 'ml_travar_itens', 'ml_soltar_itens'].includes(n)
+    admin.rpc = async (n: string, a: unknown) => (['kit_skus_participantes', 'ml_travar_itens', 'ml_soltar_itens', 'ml_estender_trava'].includes(n)
       ? rpc0(n, a) : { data: null, error: { message: 'republicar:kit_em_transferencia' } });
     const r = await removerPublicado(
       { admin, ctx: CTX, conexao: CONEXAO },
@@ -1449,5 +1497,97 @@ describe('removerPublicado — trava de escrita por MLB (ADR-0201)', () => {
     expect(r.tipo).toBe('ok');
     expect(travas.map((t) => [t.nome, t.deletesAntes])).toEqual([['ml_travar_itens', 0], ['ml_soltar_itens', deletes.length]]);
     expect(travas[1].args).toEqual({ p_org: ORG, p_dono: travas[0].args.p_dono });
+  });
+
+  // Revisão T14 achado 3: a trava só sai depois da última ação destrutiva. Fluxo parado no meio (pausou e a RPC
+  // devolveu em_processamento, remocao_pendente, exceção) mantém e ESTENDE a trava até o retry do operador; o retry
+  // reconhece a própria trava (dono derivado de org + canal + codigo_pai) e solta só ao concluir.
+  const cenarioRepublicar = (rpc: unknown) => fakeAdmin({
+    familias: [{ id: 'fam-1', lote_id: 'lote-40', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG }, []],
+    anuncios_externos: [[{ id: 'ext-1', mudando_composicao: false, item_externo_id: 'MLB1' }], [{ mudando_composicao: false }]],
+    anuncios_externos_itens: [[]],
+    'rpc:preparar_republicacao': [rpc],
+  });
+  const stubAtivo = (status: string) => {
+    const puts: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (_u: string, o?: { method?: string; body?: string }) => {
+      if (o?.method === 'PUT') { puts.push(String(o.body)); return new Response('{}', { status: 200 }); }
+      return new Response(JSON.stringify({ status }), { status: 200 });
+    }));
+    return puts;
+  };
+  const galeriaTenta = (admin: any) => admin.rpc('ml_travar_itens', { p_org: ORG, p_itens: ['MLB1'], p_tipo: 'galeria', p_dono: 'apl-x', p_ttl_seg: null });
+  const REPUBLICAR = { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true };
+
+  it('Republicar pausa e a RPC devolve em_processamento → trava MANTIDA e estendida; galeria concorrente recebe item_ocupado; retry conclui e solta', async () => {
+    const puts = stubAtivo('active');
+    const t0 = Date.now();
+    const a = cenarioRepublicar(ERRO('republicar:em_processamento'));
+    const r1 = await removerPublicado({ admin: a.admin, ctx: CTX, conexao: CONEXAO }, REPUBLICAR);
+    expect(r1).toEqual({ tipo: 'em_processamento' });
+    expect(puts).toEqual([JSON.stringify({ status: 'paused' })]);   // o anúncio já saiu de venda
+    expect(a.travas.map((t) => t.nome)).toEqual(['ml_travar_itens', 'ml_estender_trava']);
+    const trava = travasDb.get('MLB1')!;
+    expect(trava).toMatchObject({ tipo: 'escritor', dono: a.travas[0].args.p_dono });
+    expect(trava.expira! - t0).toBeGreaterThan(600_000);   // não fica só nos 600 s da aquisição
+    // galeria_confirmar_aplicacao chama ml_travar_itens(tipo galeria): escritor vigente → item_ocupado (SQL: teste T2).
+    expect((await galeriaTenta(a.admin)).data).toBe(false);
+
+    stubAtivo('paused');
+    const b = cenarioRepublicar([]);
+    const r2 = await removerPublicado({ admin: b.admin, ctx: CTX, conexao: CONEXAO }, REPUBLICAR);
+    expect(r2).toEqual({ tipo: 'preservada', familiaId: 'fam-1', loteId: 'lote-40' });
+    expect(b.travas[0].args.p_dono).toBe(a.travas[0].args.p_dono);   // retry = mesmo dono
+    expect(b.travas.map((t) => t.nome)).toEqual(['ml_travar_itens', 'ml_soltar_itens']);
+    expect(travasDb.size).toBe(0);
+    expect((await galeriaTenta(b.admin)).data).toBe(true);
+  });
+
+  it('retry que para no precheck em_processamento (antes de pausar) continua o fluxo anterior → trava mantida', async () => {
+    stubAtivo('active');
+    const a = cenarioRepublicar(ERRO('republicar:em_processamento'));
+    await removerPublicado({ admin: a.admin, ctx: CTX, conexao: CONEXAO }, REPUBLICAR);
+    const b = fakeAdmin({
+      familias: [{ id: 'fam-1', lote_id: 'lote-40', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG }, [], [], { status: 'publicando' }],
+      anuncios_externos: [[{ id: 'ext-1', mudando_composicao: false, item_externo_id: 'MLB1' }]],
+      anuncios_externos_itens: [[]],
+    });
+    const r = await removerPublicado({ admin: b.admin, ctx: CTX, conexao: CONEXAO }, REPUBLICAR);
+    expect(r).toEqual({ tipo: 'em_processamento' });
+    expect(b.travas.map((t) => t.nome)).toEqual(['ml_travar_itens', 'ml_estender_trava']);
+    expect((await galeriaTenta(b.admin)).data).toBe(false);
+  });
+
+  it('exceção depois de pausar → trava estendida (além dos 600 s) e o erro sobe', async () => {
+    stubAtivo('active');
+    const t0 = Date.now();
+    const a = cenarioRepublicar(ERRO('falha qualquer'));
+    await expect(removerPublicado({ admin: a.admin, ctx: CTX, conexao: CONEXAO }, REPUBLICAR)).rejects.toThrow(/preparar republicação falhou/);
+    expect(a.travas.map((t) => t.nome)).toEqual(['ml_travar_itens', 'ml_estender_trava']);
+    expect(travasDb.get('MLB1')!.expira! - t0).toBeGreaterThan(600_000);
+  });
+
+  it('Republicar UP com remocao_pendente → trava mantida', async () => {
+    const { admin, travas } = fakeAdmin({
+      familias: [{ id: 'fam-1', lote_id: 'lote-40', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG }, []],
+      anuncios_externos: [[{ id: 'ext-1', mudando_composicao: false, item_externo_id: 'MLB1' }]],
+      anuncios_externos_itens: [[{ sku: 'A', item_externo_id: 'MLB1', retirado: false, status: 'ativo' }]],
+    });
+    const r = await removerPublicado(
+      { admin, ctx: CTX, conexao: CONEXAO, removerComposicao: async () => ({ tipo: 'incompleto', pendentes: ['A'] }) as never },
+      REPUBLICAR,
+    );
+    expect(r).toEqual({ tipo: 'remocao_pendente', pendentes: ['A'] });
+    expect(travas.map((t) => t.nome)).toEqual(['ml_travar_itens', 'ml_estender_trava']);
+    expect(travasDb.get('MLB1')?.tipo).toBe('escritor');
+  });
+
+  it('recusa sem nenhuma ação destrutiva (tem_movimentacao) → solta na hora', async () => {
+    vi.stubGlobal('fetch', stubFetchML({ MLB1: { sold_quantity: 3 }, MLB2: { sold_quantity: 0 } }));
+    const { admin, travas } = cenario();
+    const r = await removerPublicado({ admin, ctx: CTX, conexao: CONEXAO }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    expect(r).toEqual({ tipo: 'tem_movimentacao' });
+    expect(travas.map((t) => t.nome)).toEqual(['ml_travar_itens', 'ml_soltar_itens']);
+    expect(travasDb.size).toBe(0);
   });
 });
