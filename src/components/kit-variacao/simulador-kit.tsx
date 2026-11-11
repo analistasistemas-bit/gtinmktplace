@@ -182,10 +182,13 @@ export function SimuladorKit({ familiaBaseId, cores, pecas, quantidades, preco, 
               : estado === 'indisponivel' ? 'Lucro não calculado.'
               : 'Lucro calculado sem imposto.'}
           </p>
-          <label htmlFor="kit-seguir-mesmo-assim" className="mt-2 flex items-center gap-2">
-            <Checkbox id="kit-seguir-mesmo-assim" checked={confirmado} onCheckedChange={(v) => setConfirmadoEm(v ? chaveConta : null)} />
-            Seguir mesmo assim
-          </label>
+          {/* Sem `onPodeSeguir` (etapa 2, só leitura) não há o que liberar: a confirmação fica na etapa 3. */}
+          {onPodeSeguir && (
+            <label htmlFor="kit-seguir-mesmo-assim" className="mt-2 flex items-center gap-2">
+              <Checkbox id="kit-seguir-mesmo-assim" checked={confirmado} onCheckedChange={(v) => setConfirmadoEm(v ? chaveConta : null)} />
+              Seguir mesmo assim
+            </label>
+          )}
         </div>
       )}
     </section>

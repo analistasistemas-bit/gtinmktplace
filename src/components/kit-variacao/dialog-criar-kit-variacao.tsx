@@ -450,6 +450,11 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
                       <SelectItem value="gold_pro">Premium</SelectItem>
                     </SelectContent>
                   </Select>
+                  {/* Lucro ao vivo enquanto o preço é digitado (mesmo simulador da etapa 3, sem a confirmação). */}
+                  <SimuladorKit
+                    familiaBaseId={familiaBaseId} cores={marcadas} pecas={pecas} quantidades={quantidades}
+                    preco={precoNum} tipo={tipo}
+                  />
                 </div>
               </section>
 
