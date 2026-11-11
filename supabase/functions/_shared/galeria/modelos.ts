@@ -23,7 +23,7 @@ export interface ModeloGaleria {
 // Grok, e a geração real do Grok com image_urls + aspect_ratio saiu 3:4 (864×1152) com o produto da referência.
 
 // Custos: medição de 08/11/2026 (o plano não fixa valor).
-// Nano Banana: 0,039 = custo real medido (tabela 0,042).
+// Nano Banana: 0,06 = custo em 2K (ADR-0203, item 10); vale só quando a resposta vem sem `usage.cost`.
 export const MODELOS_GALERIA: Record<string, ModeloGaleria> = {
   'google/gemini-nano-banana-2.1': {
     slug: 'google/gemini-nano-banana-2.1',
@@ -32,7 +32,7 @@ export const MODELOS_GALERIA: Record<string, ModeloGaleria> = {
     campoReferencia: null,
     campoProporcao: null,
     extra: {},
-    custoUsd: 0.039,
+    custoUsd: 0.06,
     rotulo: 'Nano Banana 2.1',
   },
   'xai/grok-imagine-image-2.0': {

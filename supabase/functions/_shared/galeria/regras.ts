@@ -37,25 +37,26 @@ export interface MissaoDisponivel {
   vista: Vista
 }
 
+// ADR-0203: as sete são imagem inteira do gerador. Nomes = fonte única da tela.
 const GERAL: ReadonlyArray<Omit<MissaoDisponivel, 'vista'>> = [
   { missao: 1, nome: 'Capa', comTexto: false, usaGerador: true },
-  { missao: 2, nome: 'Contexto de uso', comTexto: true, usaGerador: true },
-  { missao: 3, nome: 'Quebra de objeção', comTexto: true, usaGerador: true },
+  { missao: 2, nome: 'Em uso', comTexto: true, usaGerador: true },
+  { missao: 3, nome: 'Tira-dúvida', comTexto: true, usaGerador: true },
   { missao: 4, nome: 'Benefícios', comTexto: true, usaGerador: true },
-  { missao: 5, nome: 'Especificações', comTexto: true, usaGerador: true },
+  { missao: 5, nome: 'Ficha técnica', comTexto: true, usaGerador: true },
   { missao: 6, nome: 'Como usar', comTexto: true, usaGerador: true },
-  { missao: 7, nome: 'Detalhes', comTexto: true, usaGerador: false },
+  { missao: 7, nome: 'Detalhes', comTexto: true, usaGerador: true },
 ]
 
-// R5.5. `vista` = foto de referência exigida; a 5 e a 7 são recortes da frente (R3.3), sem gerador.
+// R5.5 + ADR-0203: `vista` = foto de referência exigida; o gerador recebe só a frente, então todas exigem a frente.
 const MODA: ReadonlyArray<Omit<MissaoDisponivel, 'comTexto'>> = [
   { missao: 1, nome: 'Capa', usaGerador: true, vista: 'frente' },
   { missao: 2, nome: 'Em uso', usaGerador: true, vista: 'frente' },
-  { missao: 3, nome: 'De costas', usaGerador: true, vista: 'costas' },
-  { missao: 4, nome: 'Lateral', usaGerador: true, vista: 'lateral' },
-  { missao: 5, nome: 'Detalhe do tecido', usaGerador: false, vista: 'frente' },
+  { missao: 3, nome: 'Outro enquadramento', usaGerador: true, vista: 'frente' },
+  { missao: 4, nome: 'Close da peça', usaGerador: true, vista: 'frente' },
+  { missao: 5, nome: 'Detalhe do tecido', usaGerador: true, vista: 'frente' },
   { missao: 6, nome: 'Combinação', usaGerador: true, vista: 'frente' },
-  { missao: 7, nome: 'Detalhe de alça, gola ou costura', usaGerador: false, vista: 'frente' },
+  { missao: 7, nome: 'Detalhe de acabamento', usaGerador: true, vista: 'frente' },
 ]
 
 /** Missões oferecidas; vistas "De costas"/"Lateral" só com referência cadastrada (R3.2). */

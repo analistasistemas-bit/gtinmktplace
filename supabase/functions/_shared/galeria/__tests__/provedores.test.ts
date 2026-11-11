@@ -49,7 +49,7 @@ describe('modeloGaleria', () => {
 
 describe('custos e endpoints', () => {
   it('custo exato de cada modelo (medição de 08/11)', () => {
-    expect(MODELOS_GALERIA['google/gemini-nano-banana-2.1'].custoUsd).toBe(0.039)
+    expect(MODELOS_GALERIA['google/gemini-nano-banana-2.1'].custoUsd).toBe(0.06) // 2K (ADR-0203)
     expect(MODELOS_GALERIA['xai/grok-imagine-image-2.0'].custoUsd).toBe(0.06)
     expect(MODELOS_GALERIA['alibaba/qwen-image-3/edit'].custoUsd).toBe(0.04)
   })

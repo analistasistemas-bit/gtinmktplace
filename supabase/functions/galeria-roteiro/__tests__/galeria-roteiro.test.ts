@@ -122,7 +122,7 @@ describe('galeria-roteiro: criar', () => {
     expect(linha).toMatchObject({ familia_id: 'famB', anuncio_externo_id: 'an1', versao: 1, status: 'rascunho', moda: true, criado_por: 'u1' })
     const conteudo = linha.conteudo as { categoria: string; missoes: Linha[] }
     expect(conteudo.categoria).toBe('Blusas')
-    expect(conteudo.missoes.map((m) => m.missao)).toEqual([1, 2, 5, 6, 7]) // sem costas/lateral: sem referência
+    expect(conteudo.missoes.map((m) => m.missao)).toEqual([1, 2, 3, 4, 5, 6, 7]) // ADR-0203: todas só com a frente
     expect(conteudo.missoes.some((m) => 'headline' in m)).toBe(false)
     // Missões que o modelo omitiu nascem inativas: o rascunho não nasce travado.
     expect(conteudo.missoes.filter((m) => m.ativa).map((m) => m.missao)).toEqual([1, 2])

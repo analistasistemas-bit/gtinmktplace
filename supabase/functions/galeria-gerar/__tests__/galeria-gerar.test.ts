@@ -116,23 +116,19 @@ const semCusto = () => {
 }
 
 describe('galeria-gerar', () => {
-  it('reserva o pedido com preço e termos congelados, recortes já gerada, e publica um job por imagem gerador', async () => {
+  // ADR-0203 (Task 4): a missão 7 deixou de ser recorte; vai ao gerador como as demais.
+  it('reserva o pedido com preço e termos congelados e publica um job por imagem gerador (inclusive a 7)', async () => {
     f.travas = { geral: [], moda: [] } // ramo liberado: missão 7 com lupa_ok
     const r = await chamar(pedido({ missoes: [1, 2, 7] }))
     expect(r.status).toBe(200)
     const reserva = fake.rpcs.find((x) => x.nome === 'galeria_reservar_pedido')!.args.p_pedido as Linha & { itens: Linha[] }
     expect(reserva).toMatchObject({ id: PEDIDO, org_id: 'org', anuncio_externo_id: 'an1', familia_id: 'famB', roteiro_id: 'rot2',
       unit_cents: 50, terms_id: 'termos1', elegivel: true, criado_por: 'u1' })
-    expect(reserva.itens).toEqual([
-      { cor: 'Rosa', missao: 1, origem: 'gerador', referencia_id: 'refR', modelo: 'google/gemini-nano-banana-2.1', provedor: 'openrouter' },
-      { cor: 'Rosa', missao: 2, origem: 'gerador', referencia_id: 'refR', modelo: 'google/gemini-nano-banana-2.1', provedor: 'openrouter' },
-      { cor: 'Azul', missao: 1, origem: 'gerador', referencia_id: 'refA', modelo: 'google/gemini-nano-banana-2.1', provedor: 'openrouter' },
-      { cor: 'Azul', missao: 2, origem: 'gerador', referencia_id: 'refA', modelo: 'google/gemini-nano-banana-2.1', provedor: 'openrouter' },
-      { cor: 'Rosa', missao: 7, origem: 'recorte', referencia_id: 'refR' },
-      { cor: 'Azul', missao: 7, origem: 'recorte', referencia_id: 'refA' },
-    ])
+    const g = (cor: string, missao: number, referencia_id: string) =>
+      ({ cor, missao, origem: 'gerador', referencia_id, modelo: 'google/gemini-nano-banana-2.1', provedor: 'openrouter' })
+    expect(reserva.itens).toEqual([g('Rosa', 1, 'refR'), g('Rosa', 2, 'refR'), g('Rosa', 7, 'refR'), g('Azul', 1, 'refA'), g('Azul', 2, 'refA'), g('Azul', 7, 'refA')])
     const msgs = f.batch.mock.calls[0][0] as Linha[]
-    expect(msgs).toHaveLength(4)
+    expect(msgs).toHaveLength(6)
     expect(msgs[0]).toMatchObject({ url: 'https://x.supabase.co/functions/v1/galeria-worker', retries: 0, deduplicationId: 'img0_1',
       body: { tipo: 'imagem', id: 'img0', fase: 0, tentativa: 0, despacho_seq: 1, acao: 'submeter' } })
     expect(db.galeria_imagens.filter((i) => i.origem === 'recorte').every((i) => i.status === 'gerada')).toBe(true)
@@ -205,8 +201,10 @@ describe('galeria-gerar', () => {
     semCusto()
   })
 
-  it('Moda: "De costas" sem referência de costas na cor → sem_vista (por cor), sem pedido', async () => {
+  // ADR-0203 (Task 4): em Moda todas as missões exigem só a frente.
+  it('Moda: cor sem referência de frente → sem_vista (por cor), sem pedido', async () => {
     db.galeria_roteiros = [roteiro({ moda: true })]
+    f.vigencia.referencias.Azul.frente = f.vigencia.referencias.Azul.costas
     const r = await chamar(pedido({ missoes: [3] }))
     expect(r).toEqual({ status: 409, body: { error: 'sem_vista', bloqueadas: [{ cor: 'Azul', missao: 3, motivo: 'sem_vista' }] } })
     semCusto()

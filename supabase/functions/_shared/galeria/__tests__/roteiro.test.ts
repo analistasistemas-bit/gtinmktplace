@@ -112,12 +112,13 @@ describe('validarRoteiro', () => {
     expect(validarRoteiro(renda(), fatos, false)).toEqual([expect.stringMatching(/atributo:COLOR.*divergente/)])
   })
 
-  it('Moda: "De costas" só com referência de costas (R3.2)', () => {
+  // ADR-0203 (Task 4): em Moda todas as missões exigem só a foto de frente.
+  it('Moda: "De costas" só exige a referência de frente', () => {
     const r: Roteiro = { categoria: 'Blusas', contrato: 'Blusa preta', missoes: [
       { missao: 1, ativa: true, cena: 'Capa', fatosUsados: [] },
       { missao: 3, ativa: true, cena: 'Costas', fatosUsados: [] },
     ] }
-    expect(validarRoteiro(r, FATOS, true, ['frente'])).toEqual([expect.stringMatching(/Missão 3: .*não disponível/)])
+    expect(validarRoteiro(r, FATOS, true, ['frente'])).toEqual([])
     expect(validarRoteiro(r, FATOS, true, ['frente', 'costas'])).toEqual([])
   })
 
@@ -238,7 +239,7 @@ describe('gerarRoteiroIA', () => {
       })),
     }))
     const r = await gerarRoteiroIA({ modelo: 'openai/gpt-6-luna', categoria: 'Blusas', moda: true, vistas: ['frente'], fatos: FATOS })
-    expect(r.missoes.map((m) => m.missao)).toEqual([1, 2, 5, 6, 7])
+    expect(r.missoes.map((m) => m.missao)).toEqual([1, 2, 3, 4, 5, 6, 7]) // ADR-0203: todas só com a frente
     expect(r.missoes.every((m) => m.headline === undefined && m.beneficios === undefined)).toBe(true)
     expect(r.missoes.find((m) => m.missao === 2)?.cena).toBe('cena 2')
     expect(r.categoria).toBe('Blusas')
@@ -435,12 +436,13 @@ describe('validarRoteiro: ancoragem e regras da Fase A', () => {
       .toEqual([expect.stringMatching(/largura_cm.*embalagem/)])
   })
 
-  it('recorte (missão 7 geral) não exige cena', () => {
+  // ADR-0203 (Task 4): a missão 7 deixou de ser recorte e passa pelo gerador, então exige cena.
+  it('missão 7 geral (agora pelo gerador) exige cena', () => {
     const r: Roteiro = { categoria: 'x', contrato: 'Renda', missoes: [
       { missao: 1, ativa: true, cena: 'capa', fatosUsados: [] },
       { missao: 7, ativa: true, cena: '', headline: 'Renda Búfalo', fatosUsados: ['nome'] },
     ] }
-    expect(validarRoteiro(r, FATOS, false)).toEqual([])
+    expect(validarRoteiro(r, FATOS, false)).toEqual(['Missão 7: cena vazia'])
   })
 
   it('etapa de linha com marcador ("✔ Fechamentos de roupas") casa sem o marcador', () => {

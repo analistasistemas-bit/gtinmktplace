@@ -39,7 +39,7 @@ Responda APENAS JSON:
  "paleta": {"cor1": {"nome": "...", "hex": "#..."}, "cor2": {"nome": "...", "hex": "#..."}},
  "imagens": [{"posicao": 1, "funcao": "...", "textos": ["cada texto exato que aparece na imagem"], "prompt": "..."}, ... 7 itens]}`
 
-const LINHA_MODA = 'MODA: nenhuma imagem leva texto ("textos": [] em todas). Só vistas que a foto sustenta; nunca invente costas ou lateral.'
+const LINHA_MODA = 'MODA: nenhuma imagem leva texto ("textos": [] em todas). As 7 funções em Moda são: 1 capa; 2 em uso; 3 em uso, outro enquadramento; 4 close da peça; 5 detalhe do tecido; 6 combinação com outras peças; 7 detalhe de acabamento. Só vistas que a foto sustenta; nunca invente costas ou lateral.'
 
 export function montarMensagens(dados: DadosPlanejador, refUrl: string, moda: boolean): unknown[] {
   const texto = 'EXEMPLO A (fita de velcro), prompts 1 a 7:\n' + EXEMPLO_FITA + '\n\nEXEMPLO B (camiseta):\n' + EXEMPLO_CAMISETA +

@@ -38,11 +38,17 @@ describe('missoesSugeridas', () => {
 describe('missoesDisponiveis', () => {
   const TEXTO_GERAL = { 1: false, 2: true, 3: true, 4: true, 5: true, 6: true, 7: true }
 
-  it('fora de Moda: sete missões; só a 7 é recorte (sem gerador)', () => {
+  // ADR-0203: imagem inteira do gerador nas sete, só com a foto de frente; nomes = fonte única da tela.
+  it('fora de Moda: as sete pelo gerador, vista frente, com os nomes novos', () => {
     const m = missoesDisponiveis(false, ['frente'])
+    expect(m.map((x) => x.nome)).toEqual(['Capa', 'Em uso', 'Tira-dúvida', 'Benefícios', 'Ficha técnica', 'Como usar', 'Detalhes'])
+    expect(m.every((x) => x.usaGerador && x.vista === 'frente')).toBe(true)
+  })
+
+  it('Moda: só com a foto de frente, as sete pelo gerador e vista frente', () => {
+    const m = missoesDisponiveis(true, ['frente'])
     expect(m.map((x) => x.missao)).toEqual([1, 2, 3, 4, 5, 6, 7])
-    expect(m.filter((x) => x.usaGerador).map((x) => x.missao)).toEqual([1, 2, 3, 4, 5, 6])
-    expect(m.filter((x) => !x.usaGerador).map((x) => x.missao)).toEqual([7])
+    expect(m.every((x) => x.usaGerador && x.vista === 'frente')).toBe(true)
   })
 
   it('fora de Moda: a capa não leva texto e as missões 2 a 7 levam, cada uma', () => {
@@ -56,22 +62,8 @@ describe('missoesDisponiveis', () => {
     for (const x of m) expect(x.comTexto, `missão ${x.missao}`).toBe(false)
   })
 
-  it('Moda: as missões 5 e 7 são recorte (sem gerador); gerador só em 1, 2, 3, 4 e 6', () => {
-    const m = missoesDisponiveis(true, ['frente', 'costas', 'lateral'])
-    expect(m.filter((x) => !x.usaGerador).map((x) => x.missao)).toEqual([5, 7])
-    expect(m.filter((x) => x.usaGerador).map((x) => x.missao)).toEqual([1, 2, 3, 4, 6])
-  })
-
-  it('Moda sem foto de costas não oferece "De costas"; com foto oferece', () => {
-    const sem = missoesDisponiveis(true, ['frente'])
-    expect(sem.some((x) => x.nome === 'De costas')).toBe(false)
-    const com = missoesDisponiveis(true, ['frente', 'costas'])
-    expect(com.find((x) => x.nome === 'De costas')?.vista).toBe('costas')
-  })
-
-  it('Moda sem vista lateral não oferece "Lateral"', () => {
-    expect(missoesDisponiveis(true, ['frente', 'costas']).some((x) => x.nome === 'Lateral')).toBe(false)
-    expect(missoesDisponiveis(true, ['frente', 'lateral']).some((x) => x.nome === 'Lateral')).toBe(true)
+  it('Moda sem nenhuma foto de frente não oferece nada', () => {
+    expect(missoesDisponiveis(true, ['costas', 'lateral'])).toEqual([])
   })
 })
 

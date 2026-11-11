@@ -4,17 +4,19 @@
 // grava posse + lease; toda gravação seguinte exige `posse = minha`. A conclusão (cena_path, prompt, custo e
 // gerada|desatualizada pela vigência do roteiro) é um único update, na RPC `galeria_concluir_geracao`. A visão é fase
 // própria: claim só de posse/lease, grava só `alertas`. O worker nunca cobra (a cobrança é da exibição, Task 10).
+// ADR-0203: o prompt vem do plano (formato 2) e a imagem é inteira (4:5 em 2K no OpenRouter). No OpenRouter o texto da
+// imagem é conferido antes de concluir; divergente na 1ª tentativa → a imagem é descartada (custo somado na linha) e a
+// regra de `tentativa` de `proximaFase` faz UMA nova submissão. Higgsfield: 3:4, sem conferência inline (fase alertar).
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { openrouterClient } from '../ai/client.ts';
 import { dimensoesImagem, extrairImagem } from '../ai/imagem.ts';
 import { consultarHF, submeterHF, TIMEOUT_HF_MS, type ConsultaHF } from '../ai/higgsfield.ts';
 import { corpoHF, modeloGaleria, type ModeloGaleria } from './provedores.ts';
-import { layoutCena } from './layout-area.ts';
-import { corpoOpenRouter, montarPromptCena } from './prompt.ts';
-import { verificarCena } from './alertas.ts';
+import { corpoOpenRouter } from './prompt.ts';
 import { cenaUtil } from './corte.ts';
 import { corSlug } from './referencias.ts';
-import type { Roteiro } from './roteiro.ts';
+import { ehPlano, montarPromptImagem, type Plano } from './plano.ts';
+import { conferirTexto, divergente, type AlertaTexto } from './conferir-texto.ts';
 
 export const LEASE_MS = 150_000;
 export const PRAZO_GERACAO_MS = 12 * 60_000;
@@ -36,12 +38,14 @@ export interface LinhaWorker {
   provider_request_id: string | null; status: string; fase: number; tentativa: number;
   lease_ate: string | null; prazo_ate: string | null; criado_em: string;
   prompt: string | null; cena_path: string | null; alertas: unknown;
+  /** Custo já gasto nesta linha (imagem descartada pela conferência); somado ao da chamada seguinte. */
+  custo_usd: number | null;
 }
 export interface MensagemWorker { fase: number; tentativa: number }
 
 const ABERTOS = ['pendente', 'submetendo', 'gerando'];
 const COLUNAS = 'id, org_id, familia_id, roteiro_id, referencia_id, cor, missao, geracao, origem, modelo, '
-  + 'provider_request_id, status, fase, tentativa, lease_ate, prazo_ate, criado_em, prompt, cena_path, alertas';
+  + 'provider_request_id, status, fase, tentativa, lease_ate, prazo_ate, criado_em, prompt, cena_path, alertas, custo_usd';
 
 const prazoDe = (l: LinhaWorker) => (l.prazo_ate ? Date.parse(l.prazo_ate) : Date.parse(l.criado_em) + PRAZO_GERACAO_MS);
 
@@ -75,6 +79,8 @@ export interface DepsWorker {
   fetchFn?: typeof fetch;
   /** Testes; na edge vale o env HF_CREDENTIALS. */
   credenciaisHF?: string;
+  /** Testes; na edge vale `conferirTexto`. */
+  conferir?: typeof conferirTexto;
 }
 
 export type ResultadoWorker =
@@ -106,6 +112,8 @@ export async function executarImagem(admin: SupabaseClient, msg: MensagemWorker 
   const roteiro = await lerRoteiro(admin, linha.roteiro_id);
   // Linha de roteiro trocado nunca paga nova chamada (a pendente vai a falhou; a submetendo sem id também).
   if ((fase === 'submeter') && roteiro?.status !== 'aprovado') return falharSemPosse('roteiro_trocado');
+  // Roteiro aprovado no formato antigo (cena sem texto) nunca gera pelo prompt novo nem paga chamada.
+  if ((fase === 'submeter') && !ehPlano(roteiro!.conteudo)) return falharSemPosse('plano_antigo');
 
   // Claim atômico com a transição.
   const posse = crypto.randomUUID();
@@ -130,9 +138,12 @@ export async function executarImagem(admin: SupabaseClient, msg: MensagemWorker 
   const modelo = modeloGaleria(linha.modelo);
   const opHF = { fetchFn: deps.fetchFn, credenciais: deps.credenciaisHF, timeoutMs: TIMEOUT_GERACAO_MS };
 
-  const concluir = async (bytes: Uint8Array, ext: string, mime: string, prompt: string | null, custo: number): Promise<ResultadoWorker> => {
+  const util = (bytes: Uint8Array) => {
     const d = dimensoesImagem(bytes);
-    if (!d || bytes.length < MIN_BYTES || !cenaUtil(linha.missao, d.largura, d.altura)) return falhar('cena_inutil');
+    return !!d && bytes.length >= MIN_BYTES && cenaUtil(linha.missao, d.largura, d.altura);
+  };
+  const concluir = async (bytes: Uint8Array, ext: string, mime: string, prompt: string | null, custo: number): Promise<ResultadoWorker> => {
+    if (!util(bytes)) return falhar('cena_inutil');
     // Caminho imutável por posse: upload tardio de quem perdeu a posse nunca sobrescreve o do vencedor.
     const path = `${linha.org_id}/galeria-ia/${linha.familia_id}/${corSlug(linha.cor)}/${linha.missao}-${linha.geracao}-${linha.id}-${posse}.${ext}`;
     const { error: eUp } = await admin.storage.from('imagens').upload(path, new Blob([bytes as Uint8Array<ArrayBuffer>], { type: mime }), { contentType: mime, upsert: false });
@@ -154,22 +165,48 @@ export async function executarImagem(admin: SupabaseClient, msg: MensagemWorker 
   };
 
   if (submeter) {
-    const m = roteiro!.conteudo.missoes?.find((x) => x.missao === linha.missao);
-    if (!m) return falhar('missao_ausente');
-    const prompt = montarPromptCena(m, roteiro!.conteudo, roteiro!.moda, linha.cor, layoutCena(m.missao));
+    const plano = roteiro!.conteudo as Plano;
+    const posicao = plano.imagens.find((x) => x.posicao === linha.missao);
+    if (!posicao) return falhar('missao_ausente');
+    if (posicao.indisponivel) return falhar('posicao_indisponivel');
+    const prompt = montarPromptImagem(plano, linha.missao, linha.cor);
     const refUrl = await urlAssinada(admin, await caminhoReferencia(admin, linha.referencia_id), VALIDADE_REFERENCIA_S);
     if (!refUrl) return falhar('sem_referencia');
     if (modelo.provedor === 'openrouter') {
-      let gerada: ReturnType<typeof extrairImagem> & { custo: number };
+      let gerada: ReturnType<typeof extrairImagem> & { custo: number; url: string };
       try {
-        // deno-lint-ignore no-explicit-any
-        const resp = await openrouterClient().chat.completions.create(corpoOpenRouter(modelo.slug, prompt, [refUrl]) as any,
+        const resp = await openrouterClient().chat.completions.create(
+          // deno-lint-ignore no-explicit-any
+          corpoOpenRouter(modelo.slug, prompt, [refUrl], { aspecto: '4:5', tamanho: '2K' }) as any,
           { maxRetries: 0, signal: AbortSignal.timeout(TIMEOUT_GERACAO_MS) });
-        gerada = { ...extrairImagem(resp), custo: custoOpenRouter(modelo, resp) };
+        // A conferência lê a data URL da própria resposta (já validada por extrairImagem): nada sobe para conferir.
+        // deno-lint-ignore no-explicit-any
+        gerada = { ...extrairImagem(resp), custo: custoOpenRouter(modelo, resp), url: (resp as any).choices[0].message.images[0].image_url.url };
       } catch (e) {
         return erroPago(e as Erro);
       }
-      return concluir(gerada.bytes, gerada.ext, gerada.mime, prompt, gerada.custo);
+      const custoAcumulado = (linha.custo_usd ?? 0) + gerada.custo;
+      // Imagem inútil não gasta a visão (caminho de sempre: falhou/cena_inutil).
+      if (!util(gerada.bytes)) return falhar('cena_inutil');
+      const alertas = await (deps.conferir ?? conferirTexto)({ imagemUrl: gerada.url, esperados: posicao.textos });
+      // `tentativa` local já é a do claim (1 na 1ª submissão, 2 na regeração): no máximo uma regeração.
+      if (divergente(alertas) && tentativa < 2) {
+        console.warn('[galeria-worker] texto divergente, regerando', linha.id, alertas);
+        return (await comPosse({ custo_usd: custoAcumulado, posse: null, lease_ate: null })) ? 'liberada' : 'perdeu_posse';
+      }
+      const r = await concluir(gerada.bytes, gerada.ext, gerada.mime, prompt, custoAcumulado);
+      // A RPC já soltou a posse; `alertas is null` não pisa numa visão que chegou antes. Falha aqui não muda o
+      // resultado: a fase alertar refaz a conferência. Leitura que não respondeu (a data URL de 2K é pesada) também
+      // fica para a fase alertar, que lê pela URL assinada: só resultado de verdade é gravado aqui.
+      if ((r === 'gerada' || r === 'desatualizada') && !alertas.some((a) => a.tipo === 'verificacao_indisponivel')) {
+        try {
+          const { error: eA } = await tabela().update({ alertas }).eq('id', linha.id).is('alertas', null);
+          if (eA) throw new Error(eA.message);
+        } catch (e) {
+          console.error('[galeria-worker] alertas', linha.id, (e as Error).message);
+        }
+      }
+      return r;
     }
     let requestId: string;
     try {
@@ -217,7 +254,7 @@ function custoOpenRouter(modelo: ModeloGaleria, resp: unknown): number {
 async function lerRoteiro(admin: SupabaseClient, id: string) {
   const { data, error } = await admin.from('galeria_roteiros').select('id, status, moda, conteudo').eq('id', id).maybeSingle();
   if (error) throw new Error(error.message);
-  return data as { id: string; status: string; moda: boolean; conteudo: Roteiro } | null;
+  return data as { id: string; status: string; moda: boolean; conteudo: unknown } | null;
 }
 
 async function caminhoReferencia(admin: SupabaseClient, id: string | null): Promise<string | null> {
@@ -243,14 +280,15 @@ async function alertar(admin: SupabaseClient, l: LinhaWorker, deps: DepsWorker):
     .or(`lease_ate.is.null,lease_ate.lt.${agora.toISOString()}`).select('id');
   if (error) throw new Error(error.message);
   if ((claim ?? []).length !== 1) return 'ocupado';
-  const roteiro = await lerRoteiro(admin, l.roteiro_id);
-  const cenaUrl = await urlAssinada(admin, l.cena_path);
-  const alertas = cenaUrl
-    ? await verificarCena({
-      cenaUrl, referenciaUrl: await urlAssinada(admin, await caminhoReferencia(admin, l.referencia_id)),
-      cor: l.cor, contrato: roteiro?.conteudo?.contrato ?? '',
-    })
-    : [{ tipo: 'verificacao_indisponivel', nota: 'cena indisponível' }];
+  const conteudo = (await lerRoteiro(admin, l.roteiro_id))?.conteudo;
+  const posicao = ehPlano(conteudo) ? conteudo.imagens.find((x) => x.posicao === l.missao) : undefined;
+  const cenaUrl = posicao ? await urlAssinada(admin, l.cena_path) : null;
+  // Nunca deixa `alertas` nulo depois de rodar (senão a visão volta em todo despacho).
+  const alertas: AlertaTexto[] = !posicao
+    ? [{ tipo: 'verificacao_indisponivel', nota: 'imagem sem plano para conferir' }]
+    : !cenaUrl
+    ? [{ tipo: 'verificacao_indisponivel', nota: 'cena indisponível' }]
+    : await (deps.conferir ?? conferirTexto)({ imagemUrl: cenaUrl, esperados: posicao.textos });
   const { data, error: eF } = await admin.from('galeria_imagens').update({ alertas, posse: null, lease_ate: null })
     .eq('id', l.id).eq('posse', posse).select('id');
   if (eF) throw new Error(eF.message);

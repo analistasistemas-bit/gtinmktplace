@@ -27,6 +27,12 @@ describe('corte', () => {
     expect(p.y).toBe(Math.round((1200 - p.altura) / 2))
     expect(cenaUtil(3, 896, 1200)).toBe(true)
   })
+  it('4:5 em 2K (1856×2304, medido em 12/11) serve: corte lateral de ~3,3%', () => {
+    expect(cenaUtil(2, 1856, 2304)).toBe(true)
+    const p = planejarCorte(1856, 2304, false)
+    expect(p.modo).toBe('corte')
+    expect(p.perda).toBeCloseTo(0.033, 2)
+  })
   it('dimensão inválida → bloqueado', () => {
     expect(planejarCorte(0, 100, true).modo).toBe('bloqueado')
   })
@@ -78,6 +84,10 @@ describe('corpo das chamadas pede 3:4', () => {
     expect(c.image_config).toEqual({ aspect_ratio: '3:4' })
     expect(c.modalities).toEqual(['image', 'text'])
     expect(c.messages[0].content).toEqual([{ type: 'text', text: 'P' }, { type: 'image_url', image_url: { url: 'https://signed/ref.jpg' } }])
+  })
+  it('OpenRouter com formato e tamanho: 4:5 em 2K (ADR-0203)', () => {
+    const c = corpoOpenRouter('google/gemini-nano-banana-2.1', 'P', [], { aspecto: '4:5', tamanho: '2K' }) as Record<string, any>
+    expect(c.image_config).toEqual({ aspect_ratio: '4:5', image_size: '2K' })
   })
   it('Higgsfield: campo de proporção medido recebe 3:4 (todo modelo com proporção medida)', () => {
     const medidos = Object.values(MODELOS_GALERIA).filter((m) => m.provedor === 'higgsfield' && m.campoProporcao)

@@ -23,11 +23,15 @@ describe('planejarGeracoes', () => {
     expect(r.bloqueadas).toEqual([])
   })
 
-  it('missão 7 e Moda 5 vão para recortes', () => {
-    expect(planejarGeracoes({ ...base, cores: ['Rosa'], missoes: [1, 7] }).recortes).toEqual([{ cor: 'Rosa', missao: 7, geracao: 1 }])
-    const moda = planejarGeracoes({ ...base, moda: true, cores: ['Rosa'], missoes: [5] })
-    expect(moda.recortes).toEqual([{ cor: 'Rosa', missao: 5, geracao: 1 }])
-    expect(moda.novas).toEqual([])
+  // ADR-0203: nenhuma imagem é recorte; as sete vão ao gerador (geral e Moda).
+  it('as sete vão para novas e nenhuma para recortes (geral e Moda)', () => {
+    const todas = [1, 2, 3, 4, 5, 6, 7] as const
+    for (const moda of [false, true]) {
+      const r = planejarGeracoes({ ...base, moda, cores: ['Rosa'], missoes: [...todas] })
+      expect(r.recortes).toEqual([])
+      expect(r.novas).toEqual(todas.map((missao) => ({ cor: 'Rosa', missao, geracao: 1 })))
+      expect(r.bloqueadas).toEqual([])
+    }
   })
 
   it('3 entregues (inclusive desatualizada) → teto; falhou não conta; roteiro anterior não conta', () => {
@@ -59,13 +63,13 @@ describe('planejarGeracoes', () => {
       .toEqual([{ cor: 'Rosa', missao: 1, motivo: 'em_andamento' }])
   })
 
-  it('Moda "De costas" sem referência de costas → sem_vista só na cor que não tem', () => {
-    const r = planejarGeracoes({ ...base, moda: true, vistasPorCor: { Rosa: ['frente', 'costas'], Azul: ['frente'] }, cores: ['Rosa', 'Azul'], missoes: [3] })
+  it('Moda só exige a foto de frente: sem frente → sem_vista só na cor que não tem', () => {
+    const r = planejarGeracoes({ ...base, moda: true, vistasPorCor: { Rosa: ['frente'], Azul: ['costas'] }, cores: ['Rosa', 'Azul'], missoes: [3] })
     expect(r.novas).toEqual([{ cor: 'Rosa', missao: 3, geracao: 1 }])
     expect(r.bloqueadas).toEqual([{ cor: 'Azul', missao: 3, motivo: 'sem_vista' }])
   })
 
-  it('cor sem foto real (nenhuma referência) → sem_vista, inclusive recorte', () => {
+  it('cor sem foto real (nenhuma referência) → sem_vista', () => {
     const r = planejarGeracoes({ ...base, vistasPorCor: {}, cores: ['Rosa'], missoes: [1, 7] })
     expect(r.bloqueadas.map((b) => b.motivo)).toEqual(['sem_vista', 'sem_vista'])
   })

@@ -34,12 +34,14 @@ export function montarPromptCena(m: MissaoRoteiro, r: Roteiro, moda: boolean, co
   ].filter((l): l is string => !!l).join('\n');
 }
 
-/** Corpo do chat.completions do OpenRouter: imagem 3:4 no corpo, custo na resposta (`usage.cost`). */
-export function corpoOpenRouter(modelo: string, prompt: string, referencias: string[]): Record<string, unknown> {
+/** Corpo do chat.completions do OpenRouter: formato da imagem no corpo (padrão 3:4), custo na resposta (`usage.cost`). */
+export function corpoOpenRouter(
+  modelo: string, prompt: string, referencias: string[], imagem: { aspecto: string; tamanho?: string } = { aspecto: '3:4' },
+): Record<string, unknown> {
   return {
     model: modelo,
     modalities: ['image', 'text'],
-    image_config: { aspect_ratio: '3:4' },
+    image_config: { aspect_ratio: imagem.aspecto, ...(imagem.tamanho ? { image_size: imagem.tamanho } : {}) },
     usage: { include: true },
     messages: [{
       role: 'user',
