@@ -41,7 +41,7 @@ export function PreviewStatus({ acao, itens, foraDoLote, origemId, aberto, onFec
 
   return (
     <Dialog open={aberto} onOpenChange={(o) => { if (!o) onFechar(); }}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{rotulo}</DialogTitle>
           <DialogDescription>Anúncios de catálogo ligados a estes também mudam.</DialogDescription>

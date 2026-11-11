@@ -24,7 +24,7 @@ export function DialogReajuste({ quantidade, onFechar, onVerPreview }: {
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onFechar(); }}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Alterar preço</DialogTitle>
           <DialogDescription>

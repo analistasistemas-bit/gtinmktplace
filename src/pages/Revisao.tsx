@@ -711,7 +711,7 @@ export default function Revisao() {
         </DialogContent>
       </Dialog>
       <Dialog open={confirmando} onOpenChange={setConfirmando}>
-        <DialogContent processando={publicando} rotuloProcessando="Enfileirando publicação">
+        <DialogContent className="sm:max-w-xl" processando={publicando} rotuloProcessando="Enfileirando publicação">
           <DialogHeader>
             <DialogTitle>Publicar no Mercado Livre</DialogTitle>
           </DialogHeader>
@@ -778,14 +778,14 @@ export default function Revisao() {
                     {familiasComPrecoAlterado.length} produto(s) com preço alterado — exceção à escolha acima
                   </span>
                   {familiasComPrecoAlterado.map((f) => (
-                    <label key={f.id} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                    <label key={f.id} className="flex min-w-0 items-center gap-1.5 text-xs cursor-pointer">
                       <Checkbox
                         checked={somenteEstoqueOverrides.has(f.id)}
                         onCheckedChange={(v) => toggleSomenteEstoqueOverride(f.id, v === true)}
                         aria-label={`Exceção para ${f.titulo}`}
                       />
-                      <span className="truncate">{f.titulo}</span>
-                      <span className="text-muted-foreground">
+                      <span className="min-w-0 truncate" title={f.titulo}>{f.titulo}</span>
+                      <span className="shrink-0 whitespace-nowrap text-muted-foreground">
                         ({somenteEstoqueOverrides.has(f.id)
                           ? (somenteEstoqueGlobal ? 'atualizar tudo' : 'somente estoque')
                           : (somenteEstoqueGlobal ? 'somente estoque' : 'atualizar tudo')})
