@@ -127,6 +127,28 @@ export async function enviarFinal(path: string, token: string, arquivo: Blob): P
   return error ? error.message : null;
 }
 
+// Task 15: aplicar e reverter no ML (`galeria-aplicar`, só admin). Toda ação leva o `ml_item_id` da própria linha.
+export type ModoAplicar = 'substituir' | 'adicionar';
+export interface ManifestoItem { imagem_id: string; missao: number; final_sha256: string | null }
+export interface AplicacaoPreparada { aplicacao_id: string; status: 'preparada'; itens: string[]; manifesto: ManifestoItem[] }
+export interface ItemAplicacao { item_id: string; status: string; erro: string | null }
+export interface EstadoAplicacao {
+  id: string; cor: string; modo: ModoAplicar; status: string; manifesto: ManifestoItem[]; itens: ItemAplicacao[];
+}
+/** Aplicações que ainda andam sozinhas no servidor: a tela repete a leitura enquanto houver uma. */
+export const APLICACAO_EM_ANDAMENTO = new Set(['em_andamento', 'abortando', 'revertendo']);
+
+const aplicar = <T,>(acao: string, mlItemId: string, extra: Record<string, unknown> = {}) =>
+  chamar<T>('galeria-aplicar', { acao, ml_item_id: mlItemId, ...extra });
+export const prepararAplicacao = (mlItemId: string, cor: string, modo: ModoAplicar) =>
+  aplicar<AplicacaoPreparada>('preparar', mlItemId, { cor, modo });
+export const confirmarAplicacao = (mlItemId: string, aplicacaoId: string) =>
+  aplicar<{ status: 'em_andamento' }>('confirmar', mlItemId, { aplicacao_id: aplicacaoId });
+export const reverterAplicacao = (mlItemId: string, aplicacaoId: string) =>
+  aplicar<{ status: 'revertendo' }>('reverter', mlItemId, { aplicacao_id: aplicacaoId });
+export const estadoAplicacoes = (mlItemId: string) =>
+  aplicar<{ aplicacoes: EstadoAplicacao[] }>('estado', mlItemId);
+
 const MENSAGENS: Record<string, string> = {
   catalogo: 'Anúncio de catálogo: a galeria não troca fotos de catálogo.',
   catalogo_desconhecido: 'Não foi possível confirmar no Mercado Livre se o anúncio é de catálogo.',
@@ -169,6 +191,17 @@ const MENSAGENS: Record<string, string> = {
   verificacao_pendente: 'A verificação da imagem ainda não terminou. Aguarde alguns segundos.',
   lupa_pendente: 'Missão com lupa em ajuste: a aprovação está suspensa até definirmos a origem do recorte.',
   aprovacao_concorrente: 'Outra geração desta missão foi aprovada ao mesmo tempo. Recarregue e confira.',
+  somente_admin: 'Somente administradores podem aplicar ou reverter fotos no Mercado Livre.',
+  sem_aprovadas: 'Esta cor não tem imagem aprovada no roteiro atual.',
+  sem_final: 'Há imagem aprovada sem o arquivo final. Aprove de novo.',
+  migracao_pendente: 'O anúncio está em migração de variações no Mercado Livre. Tente depois.',
+  formato_bloqueado: 'O formato deste anúncio exigiria alterar a quantidade; a galeria não faz isso.',
+  mudou: 'As fotos do anúncio mudaram no Mercado Livre desde a preparação. Prepare de novo.',
+  limite: 'Passaria do limite de fotos do Mercado Livre. Use Substituir.',
+  variacao_ausente: 'Uma variação desta cor não foi encontrada no anúncio.',
+  item_ocupado: 'Outra operação está mexendo neste anúncio. Tente em alguns minutos.',
+  escrita_pendente: 'Há uma atualização do anúncio aguardando. Tente em alguns minutos.',
+  reversao_incompleta: 'A reversão deste anúncio ficou incompleta. Confira as fotos no Mercado Livre.',
   falha_interna: 'Erro interno. Tente de novo.',
   rede: 'Sem conexão com o servidor.',
 };

@@ -238,3 +238,39 @@ describe('galeria-aplicar — confirmar e reverter', () => {
     expect((await chamar({ acao: 'reverter', ml_item_id: 'MLB1', aplicacao_id: APL })).status).toBe(404)
   })
 })
+
+describe('galeria-aplicar — estado (somente leitura)', () => {
+  const semear = (anuncio = 'an1', id = APL, criado = '2026-11-10T10:00:00Z') => {
+    db.galeria_aplicacoes.push({ id, org_id: 'org', anuncio_externo_id: anuncio, familia_id: 'famB', cor: 'Rosa', modo: 'substituir',
+      status: 'aplicada', manifesto: [{ imagem_id: 'g1', missao: 1, final_sha256: 's' }], criado_em: criado, retrato: { segredo: true } })
+    db.galeria_aplicacao_itens.push({ id: `it-${id}`, org_id: 'org', aplicacao_id: id, item_id: 'MLB1', status: 'pulado', erro: 'x', fotos_antes: {} })
+  }
+  const B = '22222222-2222-4222-8222-222222222222'
+
+  it('não admin → 403', async () => {
+    f.auth = { ...f.auth, isAdmin: false }
+    expect((await chamar({ acao: 'estado', ml_item_id: 'MLB1' })).status).toBe(403)
+  })
+
+  it('sem aplicacao_id lista as do anúncio da linha (mais nova primeiro), com itens e manifesto, sem escrever nem chamar o ML', async () => {
+    semear('an1', APL, '2026-11-10T10:00:00Z')
+    semear('an1', B, '2026-11-11T10:00:00Z')
+    semear('an2', '33333333-3333-4333-8333-333333333333')
+    const r = await chamar({ acao: 'estado', ml_item_id: 'MLB1' })
+    expect(r.status).toBe(200)
+    const lista = r.body.aplicacoes as Linha[]
+    expect(lista.map((a) => a.id)).toEqual([B, APL])
+    expect(lista[0]).toEqual({ id: B, cor: 'Rosa', modo: 'substituir', status: 'aplicada',
+      manifesto: [{ imagem_id: 'g1', missao: 1, final_sha256: 's' }], itens: [{ item_id: 'MLB1', status: 'pulado', erro: 'x' }] })
+    expect(fake.rpcs).toEqual([])
+    expect(metodos).toEqual([])
+  })
+
+  it('com aplicacao_id devolve só essa; de outra org → lista vazia', async () => {
+    semear('an1', APL)
+    semear('an1', B)
+    expect(((await chamar({ acao: 'estado', ml_item_id: 'MLB1', aplicacao_id: APL })).body.aplicacoes as Linha[]).map((a) => a.id)).toEqual([APL])
+    db.galeria_aplicacoes.forEach((a) => { a.org_id = 'outra' })
+    expect((await chamar({ acao: 'estado', ml_item_id: 'MLB1' })).body).toEqual({ aplicacoes: [] })
+  })
+})

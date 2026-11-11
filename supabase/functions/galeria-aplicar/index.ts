@@ -9,6 +9,8 @@
 //   em_andamento — tudo ou nada numa transação), depois publica um job por item na fila do dono (otimização).
 // - reverter {ml_item_id, aplicacao_id}: operação histórica (qualquer família do mesmo anúncio):
 //   `galeria_iniciar_reversao` (trava, revertendo, aplicado → compensando, numa transação); o despachante executa.
+// - estado {ml_item_id, aplicacao_id?}: somente leitura para a tela acompanhar a saga (aplicações do anúncio da linha,
+//   mais novas primeiro, com o status e o erro de cada MLB). Não escreve nem chama o ML.
 // Queda da edge depois de qualquer RPC deixa o estado coerente e retomável pelo despachante; antes dela, nada mudou.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
@@ -70,12 +72,28 @@ Deno.serve(async (req) => {
   const aplicacaoId = typeof body.aplicacao_id === 'string' && UUID.test(body.aplicacao_id) ? body.aplicacao_id.toLowerCase() : null;
   const cor = typeof body.cor === 'string' && body.cor.trim() !== '' ? body.cor : null;
   const modo = body.modo === 'substituir' || body.modo === 'adicionar' ? body.modo : null;
-  if (!mlItemId || !['preparar', 'confirmar', 'reverter'].includes(acao as string)) return json({ error: 'pedido_invalido' }, 400);
-  if (acao === 'preparar' ? !cor || !modo : !aplicacaoId) return json({ error: 'pedido_invalido' }, 400);
+  if (!mlItemId || !['preparar', 'confirmar', 'reverter', 'estado'].includes(acao as string)) return json({ error: 'pedido_invalido' }, 400);
+  if (acao === 'preparar' ? !cor || !modo : acao !== 'estado' && !aplicacaoId) return json({ error: 'pedido_invalido' }, 400);
 
   try {
     const r = await resolverAnuncio(admin, orgId, mlItemId);
     if ('erro' in r) return json({ error: r.erro }, 409);
+
+    if (acao === 'estado') {
+      let q = admin.from('galeria_aplicacoes').select('id, cor, modo, status, manifesto')
+        .eq('org_id', orgId).eq('anuncio_externo_id', r.anuncioId);
+      if (aplicacaoId) q = q.eq('id', aplicacaoId);
+      const { data: apls, error: eL } = await q.order('criado_em', { ascending: false }).limit(20);
+      if (eL) throw new Error(eL.message);
+      const ids = (apls ?? []).map((a: { id: string }) => a.id);
+      const { data: its, error: eIt } = ids.length === 0 ? { data: [], error: null }
+        : await admin.from('galeria_aplicacao_itens').select('aplicacao_id, item_id, status, erro').eq('org_id', orgId).in('aplicacao_id', ids);
+      if (eIt) throw new Error(eIt.message);
+      return json({ aplicacoes: (apls ?? []).map((a: { id: string; cor: string; modo: string; status: string; manifesto: unknown }) => ({
+        id: a.id, cor: a.cor, modo: a.modo, status: a.status, manifesto: a.manifesto,
+        itens: (its ?? []).filter((i: { aplicacao_id: string }) => i.aplicacao_id === a.id)
+          .map((i: { item_id: string; status: string; erro: string | null }) => ({ item_id: i.item_id, status: i.status, erro: i.erro })) })) });
+    }
 
     if (acao !== 'preparar') {
       const { data: apl, error: eA } = await admin.from('galeria_aplicacoes').select('id, familia_id, status')

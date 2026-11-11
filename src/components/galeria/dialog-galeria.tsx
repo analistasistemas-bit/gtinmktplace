@@ -14,6 +14,7 @@ import {
 import { PassoFatos } from './passo-fatos';
 import { PassoRoteiro } from './passo-roteiro';
 import { PassoGerar } from './passo-gerar';
+import { PassoAplicar } from './passo-aplicar';
 
 type Falha = Extract<Res<unknown>, { ok: false }>;
 
@@ -23,7 +24,7 @@ export function DialogGaleria({ mlItemId, codigoPai, open, onOpenChange, isAdmin
   const [ficha, setFicha] = useState<Ficha | null>(null);
   const [resp, setResp] = useState<RespostaRoteiro | null>(null);
   const [moda, setModa] = useState<boolean | null>(null);
-  const [passo, setPasso] = useState<'fatos' | 'roteiro' | 'gerar'>('fatos');
+  const [passo, setPasso] = useState<'fatos' | 'roteiro' | 'gerar' | 'aplicar'>('fatos');
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -114,9 +115,15 @@ export function DialogGaleria({ mlItemId, codigoPai, open, onOpenChange, isAdmin
                 <Button role="tab" aria-selected={passo === 'gerar'} size="sm" variant={passo === 'gerar' ? 'default' : 'outline'}
                   onClick={() => setPasso('gerar')}>3. Gerar</Button>
               )}
+              {podeGerar && (
+                <Button role="tab" aria-selected={passo === 'aplicar'} size="sm" variant={passo === 'aplicar' ? 'default' : 'outline'}
+                  onClick={() => setPasso('aplicar')}>4. Aplicar</Button>
+              )}
             </div>
             {passo === 'fatos'
               ? <PassoFatos mlItemId={mlItemId} ficha={ficha} moda={moda} aoMudar={aoMudarFicha} />
+              : passo === 'aplicar' && podeGerar
+                ? <PassoAplicar mlItemId={mlItemId} ficha={ficha} isAdmin={isAdmin} aoRecarregar={() => void carregar()} />
               : passo === 'gerar' && podeGerar
                 ? <PassoGerar mlItemId={mlItemId} ficha={ficha} aoRecarregar={() => void carregar()} aoVoltarRoteiro={() => setPasso('roteiro')} />
                 : <PassoRoteiro mlItemId={mlItemId} ficha={ficha} isAdmin={isAdmin} resp={resp} podeCriar={roteiroLido}
