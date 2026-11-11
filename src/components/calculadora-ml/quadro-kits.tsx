@@ -1,13 +1,34 @@
 import { useState } from 'react'
 import { Boxes } from 'lucide-react'
 import { useKitsCalculadora, type ColunaKit, type UseKitsCalculadoraArgs } from '@/hooks/useKitsCalculadora'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill'
 import { CampoNumero } from './formulario-calculadora-ml'
 
 type QuadroKitsProps = Omit<UseKitsCalculadoraArgs, 'quantidadeN'>
 
 const moeda = (valor: number) => valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+const pct1 = (valor: number) => `${valor.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
 const pct2 = (valor: number) => `${valor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
+
+/** Desconto por unidade do kit contra levar 1 unidade; só kits (N>1) confirmados e com economia. */
+function DescontoUnitario({ coluna, referencia }: { coluna: ColunaKit; referencia: number | null }) {
+  if (coluna.quantidade === 1 || coluna.status !== 'ok' || coluna.precoUnitario === null || !referencia) return null
+  const desconto = (1 - coluna.precoUnitario / referencia) * 100
+  if (desconto <= 0) return null
+  const texto = `${pct1(desconto)}`
+  const explicacao = `Cada unidade custa ${pct1(desconto)} menos do que na compra de 1 unidade (${moeda(referencia)}).`
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button" title={explicacao} className="ml-1.5 cursor-help rounded-sm text-xs font-medium text-success underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <span aria-hidden>(−{texto})</span><span className="sr-only">{explicacao}</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 text-sm text-muted-foreground">{explicacao}</PopoverContent>
+    </Popover>
+  )
+}
 
 const STATUS: Record<ColunaKit['status'], { label: string; tone: StatusTone }> = {
   ok: { label: 'Confirmado', tone: 'success' },
@@ -29,6 +50,7 @@ const LINHAS: { label: string; valor: (c: ColunaKit) => string }[] = [
 export function QuadroKits(props: QuadroKitsProps) {
   const [quantidadeN, setQuantidadeN] = useState(1)
   const colunas = useKitsCalculadora({ ...props, quantidadeN })
+  const precoUnitarioUmaUnidade = colunas.find((c) => c.quantidade === 1)?.precoUnitario ?? null
 
   return (
     <section className="rounded-xl border border-border/70 bg-card p-5 sm:p-6" aria-labelledby="quadro-kits-heading">
@@ -57,7 +79,7 @@ export function QuadroKits(props: QuadroKitsProps) {
             {LINHAS.map((linha) => (
               <tr key={linha.label} className="border-b border-border/40 last:border-0">
                 <th scope="row" className="py-2 pr-3 text-left font-normal text-muted-foreground">{linha.label}</th>
-                {colunas.map((c) => <td key={c.quantidade} className="px-3 py-2 text-right tabular-nums">{c.status === 'calculando' && linha.label !== 'Custo do produto' ? '…' : linha.valor(c)}</td>)}
+                {colunas.map((c) => <td key={c.quantidade} className="px-3 py-2 text-right tabular-nums">{c.status === 'calculando' && linha.label !== 'Custo do produto' ? '…' : linha.valor(c)}{linha.label === 'Preço por unidade' && <DescontoUnitario coluna={c} referencia={precoUnitarioUmaUnidade} />}</td>)}
               </tr>
             ))}
           </tbody>

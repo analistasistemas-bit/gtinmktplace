@@ -62,4 +62,16 @@ describe('QuadroKits', () => {
     expect(screen.getByText(/desconhecido/i)).toBeInTheDocument()
     expect(screen.getByText('R$ 38,00')).toBeInTheDocument()
   })
+
+  it('mostra o desconto por unidade só nos kits confirmados, contra 1 unidade, com explicação', () => {
+    useKitsMock.mockImplementation(() => [
+      coluna(1, { precoUnitario: 100 }),
+      coluna(2, { precoUnitario: 65 }),
+      coluna(3, { precoUnitario: 50, status: 'nao_confirmado' }),
+    ])
+    render(<QuadroKits {...props} />)
+    expect(screen.getAllByText('(−35,0%)')).toHaveLength(1)
+    expect(screen.getByText(/cada unidade custa 35,0% menos do que na compra de 1 unidade \(R\$\s100,00\)/i)).toBeInTheDocument()
+    expect(screen.queryByText(/50,0%/)).toBeNull()
+  })
 })
