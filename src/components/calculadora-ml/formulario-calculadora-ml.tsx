@@ -228,7 +228,7 @@ export function FormularioCalculadoraML({
               hint={emPromocao ? <>Em promoção no ML: <s>{moeda(anuncio!.precoOriginal!)}</s> por {moeda(anuncio!.preco!)}</> : undefined}
             />
             <CampoNumero id="margem" label="Margem (%)" value={margemExibida} onChange={onMargem} vazio="ignorar" permiteNegativo maxExclusivo={100} hint={dicaMargem} />
-            <CampoNumero id="imposto" label="Impostos (%)" value={entrada.aliquotaImpostoPct} onChange={(value) => onEntrada({ aliquotaImpostoPct: value })} vazio="null" onVazio={() => onEntrada({ aliquotaImpostoPct: null })} casas={[0, 2]} />
+            <CampoNumero id="imposto" label="Impostos (%)" value={entrada.aliquotaImpostoPct} onChange={(value) => onEntrada({ aliquotaImpostoPct: value })} vazio="null" onVazio={() => onEntrada({ aliquotaImpostoPct: null })} max={100} casas={[0, 2]} />
           </div>
         </section>
 

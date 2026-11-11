@@ -256,6 +256,18 @@ describe('Calculadora ML', () => {
     expect(screen.getAllByRole('alert')).toHaveLength(3)
   })
 
+  it('imposto acima de 100% mostra erro e não grava o valor', () => {
+    const props = propsForm()
+    render(<FormularioCalculadoraML {...props} />)
+
+    expect(() => fireEvent.change(screen.getByLabelText('Impostos (%)'), { target: { value: '160' } })).not.toThrow()
+    expect(props.onEntrada).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert')).toHaveTextContent(/no máximo 100/i)
+
+    fireEvent.change(screen.getByLabelText('Impostos (%)'), { target: { value: '100' } })
+    expect(props.onEntrada).toHaveBeenLastCalledWith({ aliquotaImpostoPct: 100 })
+  })
+
   it('margem aceita negativo e < 100; imposto vazio vira null; demais vazios viram 0', () => {
     const props = propsForm()
     render(<FormularioCalculadoraML {...props} />)
