@@ -274,7 +274,7 @@ describe('Calculadora ML', () => {
     render(<FormularioCalculadoraML {...props} />)
 
     fireEvent.change(screen.getByLabelText('Custo de compra (R$)'), { target: { value: '-5' } })
-    fireEvent.change(screen.getByLabelText('Margem (%)'), { target: { value: '100' } })
+    fireEvent.change(screen.getByLabelText('Margem desejada (%)'), { target: { value: '100' } })
     fireEvent.change(screen.getByLabelText('Comissão (%)'), { target: { value: '140' } })
 
     expect(props.onEntrada).not.toHaveBeenCalled()
@@ -299,9 +299,9 @@ describe('Calculadora ML', () => {
     const props = propsForm()
     render(<FormularioCalculadoraML {...props} />)
 
-    fireEvent.change(screen.getByLabelText('Margem (%)'), { target: { value: '-12,5' } })
+    fireEvent.change(screen.getByLabelText('Margem desejada (%)'), { target: { value: '-12,5' } })
     expect(props.onMargem).toHaveBeenLastCalledWith(-12.5)
-    fireEvent.change(screen.getByLabelText('Margem (%)'), { target: { value: '' } })
+    fireEvent.change(screen.getByLabelText('Margem desejada (%)'), { target: { value: '' } })
     expect(props.onMargem).toHaveBeenCalledTimes(1)
 
     fireEvent.change(screen.getByLabelText('Impostos (%)'), { target: { value: '' } })
@@ -343,6 +343,19 @@ describe('Calculadora ML', () => {
     expect(within(barra).getByText('Comprar')).toBeInTheDocument()
     await user.click(screen.getByRole('tab', { name: /clássico/i }))
     expect(within(barra).getByText('R$ 18,00')).toBeInTheDocument()
+  })
+
+  it('sem meta: veredito "Margem atual" orienta a definir a margem desejada; com meta, a dica some', () => {
+    estado = { ...estadoBase, metaSolicitada: null, resultado: { ...estadoBase.resultado, veredito: { tipo: 'Margem atual' as const, fatores: ['Margem de 23% no preço atual.'] } } }
+    const { unmount } = render(<CalculadoraML />)
+    expect(screen.getByText(/defina a/i)).toHaveTextContent(/margem desejada/i)
+    expect(screen.getByText(/mostra a margem atual/i)).toBeInTheDocument()
+    unmount()
+
+    estado = estadoBase
+    render(<CalculadoraML />)
+    expect(screen.queryByText(/defina a/i)).toBeNull()
+    expect(screen.queryByText(/mostra a margem atual/i)).toBeNull()
   })
 
   it('status da cotação some com taxas oficiais e aparece nos demais', () => {
@@ -409,7 +422,7 @@ describe('Calculadora ML', () => {
       const user = userEvent.setup()
       render(<CalculadoraML />)
 
-      await user.click(screen.getByLabelText('Margem (%)'))
+      await user.click(screen.getByLabelText('Margem desejada (%)'))
       await user.tab()
       await user.click(screen.getByLabelText('Preço de venda (R$)'))
       await user.tab()
@@ -420,7 +433,7 @@ describe('Calculadora ML', () => {
 
     it('digitar na margem chama editarMargem; no preço, editarPreco', () => {
       render(<CalculadoraML />)
-      fireEvent.change(screen.getByLabelText('Margem (%)'), { target: { value: '38' } })
+      fireEvent.change(screen.getByLabelText('Margem desejada (%)'), { target: { value: '38' } })
       fireEvent.change(screen.getByLabelText('Preço de venda (R$)'), { target: { value: '120,5' } })
 
       expect(editarMargem).toHaveBeenCalledWith(38)
@@ -428,10 +441,10 @@ describe('Calculadora ML', () => {
       expect(atualizarEntrada).not.toHaveBeenCalledWith(expect.objectContaining({ margemAlvoPct: expect.anything() }))
     })
 
-    it('"Margem (%)" mostra margemExibida com 2 casas; imposto null aparece vazio', () => {
+    it('"Margem desejada (%)" mostra margemExibida com 2 casas; imposto null aparece vazio', () => {
       estado = { ...estadoBase, margemExibida: 23, entrada: { ...estadoBase.entrada, aliquotaImpostoPct: null } }
       render(<CalculadoraML />)
-      expect(screen.getByLabelText('Margem (%)')).toHaveValue('23,00')
+      expect(screen.getByLabelText('Margem desejada (%)')).toHaveValue('23,00')
       expect(screen.getByLabelText('Impostos (%)')).toHaveValue('')
     })
 
@@ -515,7 +528,7 @@ describe('Calculadora ML', () => {
       render(<CalculadoraML />)
 
       expect(screen.getAllByText('Carregando produto…').length).toBeGreaterThan(0)
-      for (const rotulo of ['Custo de compra (R$)', 'Preço de venda (R$)', 'Margem (%)', 'Impostos (%)', 'Altura (cm)', 'Frete (R$)']) {
+      for (const rotulo of ['Custo de compra (R$)', 'Preço de venda (R$)', 'Margem desejada (%)', 'Impostos (%)', 'Altura (cm)', 'Frete (R$)']) {
         expect(screen.getByLabelText(rotulo)).toBeDisabled()
       }
       expect(screen.getByRole('button', { name: /^premium$/i })).toBeDisabled()

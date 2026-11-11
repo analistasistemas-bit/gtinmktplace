@@ -162,7 +162,9 @@ export function FormularioCalculadoraML({
     ? <span role="status">Calculando o preço para a meta…</span>
     : metaStatus === 'nao_confirmada' && metaSolicitada !== null
       ? <span role="status">Preço calculado, mas meta de {pct2(metaSolicitada)} não confirmada.</span>
-      : undefined
+      : metaSolicitada === null
+        ? <span>Mostra a margem atual. Digite a margem que você quer para ver o preço e a recomendação.</span>
+        : undefined
   return (
     <div className="space-y-6">
       <section className="space-y-4" aria-labelledby="contexto-heading">
@@ -227,7 +229,7 @@ export function FormularioCalculadoraML({
               onChange={onPreco}
               hint={emPromocao ? <>Em promoção no ML: <s>{moeda(anuncio!.precoOriginal!)}</s> por {moeda(anuncio!.preco!)}</> : undefined}
             />
-            <CampoNumero id="margem" label="Margem (%)" value={margemExibida} onChange={onMargem} vazio="ignorar" permiteNegativo maxExclusivo={100} hint={dicaMargem} />
+            <CampoNumero id="margem" label="Margem desejada (%)" value={margemExibida} onChange={onMargem} vazio="ignorar" permiteNegativo maxExclusivo={100} hint={dicaMargem} />
             <CampoNumero id="imposto" label="Impostos (%)" value={entrada.aliquotaImpostoPct} onChange={(value) => onEntrada({ aliquotaImpostoPct: value })} vazio="null" onVazio={() => onEntrada({ aliquotaImpostoPct: null })} max={100} casas={[0, 2]} />
           </div>
         </section>

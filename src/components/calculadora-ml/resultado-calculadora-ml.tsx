@@ -92,6 +92,7 @@ export function ResultadoCalculadoraML({ resultado, statusCotacao, aviso, modali
           <SeloProveniencia proveniencia={resultado.proveniencia} freteDesconhecido={freteDesconhecido} />
         </div>
         <ul className="mt-4 space-y-2 text-sm text-muted-foreground">{resultado.veredito.fatores.map((fator) => <li key={fator} className="flex gap-2"><span aria-hidden="true">•</span><span>{fator}</span></li>)}</ul>
+        {tipo === 'Margem atual' && <p className="mt-3 text-sm text-muted-foreground">Defina a <span className="font-medium text-foreground">margem desejada</span> no formulário para ver a recomendação (comprar, negociar custo ou ajustar preço).</p>}
       </section>
 
       {statusCotacao !== 'official' && <section className="rounded-xl border border-border/70 bg-muted/30 p-4" aria-label="Status da cotação" aria-live="polite" aria-atomic="true">
