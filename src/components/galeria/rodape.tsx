@@ -4,7 +4,7 @@ import { AlertTriangle, ArrowRight, Check, Info, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
-export function Rodape({ texto, ok, rotulo, aoClicar, ocupado = false, concluido = false, seta = true, extra }: {
+export function Rodape({ texto, ok, rotulo, aoClicar, ocupado = false, concluido = false, seta = true, extra, variante = 'default' }: {
   texto: string;
   /** false = o texto é o que falta e o botão fica desabilitado. */
   ok: boolean;
@@ -14,6 +14,8 @@ export function Rodape({ texto, ok, rotulo, aoClicar, ocupado = false, concluido
   concluido?: boolean;
   seta?: boolean;
   extra?: ReactNode;
+  /** `outline` quando a ação principal do passo está no conteúdo (passo 4). */
+  variante?: 'default' | 'outline';
 }) {
   const Icone = concluido ? Check : ok ? Info : AlertTriangle;
   return (
@@ -25,7 +27,7 @@ export function Rodape({ texto, ok, rotulo, aoClicar, ocupado = false, concluido
         </p>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           {extra}
-          <Button className="h-11 px-4 text-sm sm:min-w-36" disabled={!ok || ocupado} onClick={aoClicar}>
+          <Button variant={variante} className="h-11 px-4 text-sm sm:min-w-36" disabled={!ok || ocupado} onClick={aoClicar}>
             {ocupado && <Loader2 aria-hidden className="animate-spin" />}
             {rotulo}
             {seta && !ocupado && <ArrowRight aria-hidden />}

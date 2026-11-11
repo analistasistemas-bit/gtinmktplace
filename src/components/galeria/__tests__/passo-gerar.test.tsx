@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { escolherNoSelect } from '@/test/select';
 import userEvent from '@testing-library/user-event';
 import { PassoGerar } from '../passo-gerar';
 import { CartaoImagem } from '../cartao-imagem';
@@ -59,8 +60,12 @@ function passo(cores = ['Preto'], rot?: RoteiroAprovado | null, mlItemId = 'MLB1
   render(<PassoGerar mlItemId={mlItemId} ficha={ficha(cores)} {...props} />);
   return props;
 }
-const marcadas = () => screen.getAllByRole('checkbox', { name: /^Missão \d/ })
-  .filter((c) => c.getAttribute('data-state') === 'checked').map((c) => c.getAttribute('aria-label'));
+/** Imagens que entram no pedido da cor escolhida (as bloqueadas pela lupa aparecem com o motivo, fora do pedido). */
+const noPedido = () => within(screen.getByRole('list', { name: 'Imagens deste pedido' })).getAllByRole('listitem')
+  .filter((li) => li.getAttribute('data-no-pedido') === 'true').map((li) => li.textContent);
+/** Botão principal do protótipo: "Gerar N imagens · R$ X" (a confirmação é o próprio preço no botão). */
+const botaoGerar = () => screen.getByRole('button', { name: /^Gerar \d+ imagens? ·/ });
+const gerar = () => userEvent.click(botaoGerar());
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -78,80 +83,73 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); });
 
 describe('PassoGerar — seleção e confirmação', () => {
-  it('missões pré-marcadas por missoesSugeridas (até 3 cores: as sete ativas; 4+ cores: 1–4), menos as de lupa travada', async () => {
+  it('uma cor por pedido: entram as imagens ligadas do roteiro aprovado, menos as de lupa travada (com o motivo)', async () => {
     passo(['A', 'B', 'C'], aprovado([1, 2, 3, 5, 7]));
     await screen.findByText(/por imagem/);
-    expect(marcadas()).toEqual(['Missão 1', 'Missão 2', 'Missão 5']);
+    expect(screen.getByRole('combobox', { name: 'Cor' })).toHaveTextContent('A');
+    expect(noPedido()).toEqual(['Capa', 'Onde usar', 'Ficha técnica']);
+    expect(screen.getAllByText(/lupa em ajuste/)).toHaveLength(2);
   });
 
-  it('com 4 cores só 1–4 vêm marcadas (a 3, de lupa travada, não)', async () => {
+  it('com 4 ou mais cores o pedido continua sendo de uma cor só (sem multiplicar o custo)', async () => {
     passo(['A', 'B', 'C', 'D']);
     await screen.findByText(/por imagem/);
-    expect(marcadas()).toEqual(['Missão 1', 'Missão 2', 'Missão 4']);
+    expect(botaoGerar()).toHaveTextContent('Gerar 5 imagens · R$ 2,50');
+    await gerar();
+    expect(api.gerarImagens.mock.calls[0][1]).toMatchObject({ cores: ['A'], missoes: [1, 2, 4, 5, 6] });
   });
 
-  it('lupa travada (3 e 7): checkbox desabilitado com o motivo visível', async () => {
-    passo(['Preto']);
-    await screen.findByText(/por imagem/);
-    for (const n of [3, 7]) expect(screen.getByRole('checkbox', { name: `Missão ${n}` })).toBeDisabled();
-    expect(screen.getAllByText('lupa em ajuste')).toHaveLength(2);
-  });
-
-  it('ramo liberado: missão 3 sem detalhe numa cor marcada → desabilitada com o motivo e a cor; com lupa ok → habilitada', async () => {
+  it('ramo liberado: imagem 3 sem detalhe na cor escolhida fica fora com o motivo; em outra cor com lupa ok, entra', async () => {
     trava.travas = { geral: [], moda: [] };
     api.listarImagens.mockResolvedValue(ok(lista([], 50, aprovado())));
-    const f = { ...ficha(['Preto', 'Rosa']), lupa: {
+    const f = { ...ficha(['Rosa', 'Preto']), lupa: {
       Preto: { geral: { 3: 'ok', 7: 'ok' }, moda: { 5: 'ok', 7: 'ok' } },
       Rosa: { geral: { 3: 'indisponivel', 7: 'ok' }, moda: { 5: 'ok', 7: 'ok' } },
     } } as Ficha;
     render(<PassoGerar mlItemId="MLB1" ficha={f} aoRecarregar={vi.fn()} aoVoltarRoteiro={vi.fn()} />);
     await screen.findByText(/por imagem/);
-    expect(screen.getByRole('checkbox', { name: 'Missão 3' })).toBeDisabled();
-    expect(screen.getByText('sem detalhe do produto na foto: Rosa')).toBeInTheDocument();
-    expect(screen.getByRole('checkbox', { name: 'Missão 7' })).toBeEnabled();
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Cor Rosa' }));
-    expect(screen.getByRole('checkbox', { name: 'Missão 3' })).toBeEnabled();
+    expect(noPedido()).not.toContain('Detalhe com lupa');
+    expect(screen.getByText(/sem detalhe do produto na foto: Rosa/)).toBeInTheDocument();
+    expect(noPedido()).toContain('Detalhes (recorte grátis)');
+    await escolherNoSelect(userEvent.setup(), 'Cor', 'Preto');
+    expect(noPedido()).toContain('Detalhe com lupa');
   });
 
-  it('confirmação mostra "N imagens · R$ X" com o preço do servidor; recortes não entram', async () => {
+  it('o botão mostra "N imagens · R$ X" com o preço do servidor; recortes não entram no valor', async () => {
     passo(['Preto', 'Rosa']);
     await screen.findByText(/por imagem/);
-    await userEvent.click(screen.getByRole('button', { name: 'Gerar imagens' }));
-    // 2 cores × 5 missões com gerador (a 3 e a 7, de lupa travada, ficam fora) = 10 × R$ 0,50 = R$ 5,00.
-    expect(screen.getByText(/10 imagens · R\$\s5,00/)).toBeInTheDocument();
-    expect(screen.queryByText(/recortes? grát/)).toBeNull();
-    await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
+    // 1 cor × 5 imagens com gerador (a 3 e a 7, de lupa travada, ficam fora) = 5 × R$ 0,50 = R$ 2,50.
+    expect(botaoGerar()).toHaveTextContent('Gerar 5 imagens · R$ 2,50');
+    await gerar();
     const [ml, p] = api.gerarImagens.mock.calls[0];
     expect(ml).toBe('MLB1');
-    expect(p).toMatchObject({ roteiroVersao: 3, cores: ['Preto', 'Rosa'], missoes: [1, 2, 4, 5, 6], unitCentsExibido: 50 });
+    expect(p).toMatchObject({ roteiroVersao: 3, cores: ['Preto'], missoes: [1, 2, 4, 5, 6], unitCentsExibido: 50 });
     expect(p.pedidoId).toMatch(/^[0-9a-f-]{36}$/);
   });
 
-  it('preco_mudou mostra o preço novo e pede nova confirmação com outro pedido_id', async () => {
+  it('preco_mudou mostra o preço novo no botão e pede novo clique, com outro pedido_id', async () => {
     api.gerarImagens.mockResolvedValueOnce(falha(409, 'preco_mudou', { unit_cents: 80 }));
     passo();
     await screen.findByText(/por imagem/);
-    await userEvent.click(screen.getByRole('button', { name: 'Gerar imagens' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
+    await gerar();
     expect(await screen.findByText(/preço mudou/i)).toBeInTheDocument();
-    expect(screen.getByText(/5 imagens · R\$\s4,00/)).toBeInTheDocument();
+    expect(botaoGerar()).toHaveTextContent('Gerar 5 imagens · R$ 4,00');
     expect(api.gerarImagens).toHaveBeenCalledTimes(1);
-    await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
+    await gerar();
     expect(api.gerarImagens).toHaveBeenCalledTimes(2);
     const [a, b] = api.gerarImagens.mock.calls.map((c) => c[1]);
     expect(b.unitCentsExibido).toBe(80);
     expect(b.pedidoId).not.toBe(a.pedidoId);
   });
 
-  it('recusa definitiva: motivo em português e confirmação desabilitada, sem nova tentativa', async () => {
+  it('recusa definitiva: motivo em português e botão desabilitado, sem nova tentativa', async () => {
     api.gerarImagens.mockResolvedValueOnce(falha(409, 'teto', { bloqueadas: [{ cor: 'Preto', missao: 1, motivo: 'teto' }] }));
     passo();
     await screen.findByText(/por imagem/);
-    await userEvent.click(screen.getByRole('button', { name: 'Gerar imagens' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
+    await gerar();
     expect(await screen.findByText(/limite de 3 gerações/i)).toBeInTheDocument();
     expect(screen.getByText(/Preto · missão 1/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeDisabled();
+    expect(botaoGerar()).toBeDisabled();
     expect(api.gerarImagens).toHaveBeenCalledTimes(1);
   });
 
@@ -159,23 +157,22 @@ describe('PassoGerar — seleção e confirmação', () => {
     api.gerarImagens.mockResolvedValueOnce(falha(503, 'ml_indisponivel'));
     passo();
     await screen.findByText(/por imagem/);
-    await userEvent.click(screen.getByRole('button', { name: 'Gerar imagens' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
+    await gerar();
     expect(await screen.findByText(/Mercado Livre indisponível, tente de novo/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
     const [a, b] = api.gerarImagens.mock.calls.map((c) => c[1]);
     expect(b.pedidoId).toBe(a.pedidoId);
+    expect(b.cores).toEqual(a.cores);
   });
 
-  it('familia_nao_vigente: botão Recarregar visível e Confirmar desabilitado', async () => {
+  it('familia_nao_vigente: botão Recarregar visível e Gerar desabilitado', async () => {
     api.gerarImagens.mockResolvedValueOnce(falha(409, 'familia_nao_vigente', { familia_id_vigente: 'F2' }));
     const props = passo();
     await screen.findByText(/por imagem/);
-    await userEvent.click(screen.getByRole('button', { name: 'Gerar imagens' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
+    await gerar();
     await userEvent.click(await screen.findByRole('button', { name: 'Recarregar' }));
     expect(props.aoRecarregar).toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeDisabled();
+    expect(botaoGerar()).toBeDisabled();
     expect(api.gerarImagens).toHaveBeenCalledTimes(1);
   });
 
@@ -184,15 +181,14 @@ describe('PassoGerar — seleção e confirmação', () => {
     passo();
     expect(await screen.findByAltText('Preto · missão 1')).toBeInTheDocument();
     expect(screen.getByText(/família anterior/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Gerar imagens' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Gerar \d+ imagens? ·/ })).toBeNull();
   });
 
-  it('ciência pendente volta ao roteiro', async () => {
+  it('ciência pendente volta aos textos', async () => {
     api.gerarImagens.mockResolvedValueOnce(falha(409, 'conteudo.ciencia_nao_conferido', { campos: ['Material'] }));
     const props = passo();
     await screen.findByText(/por imagem/);
-    await userEvent.click(screen.getByRole('button', { name: 'Gerar imagens' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
+    await gerar();
     await userEvent.click(await screen.findByRole('button', { name: 'Voltar aos textos' }));
     expect(props.aoVoltarRoteiro).toHaveBeenCalled();
   });
@@ -282,18 +278,17 @@ describe('PassoGerar — exibição e cobrança', () => {
     expect(api.listarImagens).toHaveBeenCalledTimes(1);
   });
 
-  it('recusa definitiva seguida de poll com falha mantém o Confirmar desabilitado', async () => {
+  it('recusa definitiva seguida de poll com falha mantém o Gerar desabilitado', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     api.listarImagens.mockResolvedValueOnce(ok(lista([imagem({ status: 'gerando', url: null })]))).mockResolvedValue(falha(503, 'falha_interna'));
     api.gerarImagens.mockResolvedValueOnce(falha(409, 'teto', { bloqueadas: [{ cor: 'Preto', missao: 1, motivo: 'teto' }] }));
     passo();
     await screen.findByText(/por imagem/);
-    await userEvent.click(screen.getByRole('button', { name: 'Gerar imagens' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
+    await gerar();
     await screen.findByText(/limite de 3 gerações/i);
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
     expect(api.listarImagens).toHaveBeenCalledTimes(2);
-    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeDisabled();
+    expect(botaoGerar()).toBeDisabled();
     expect(screen.getByText(/limite de 3 gerações/i)).toBeInTheDocument();
   });
 
@@ -332,8 +327,7 @@ describe('PassoGerar — exibição e cobrança', () => {
     api.listarImagens.mockResolvedValue(ok(lista([imagem({ unit_cents: 50 })], 80)));
     passo();
     expect(await screen.findByText(/R\$\s0,50 ao exibir/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Gerar imagens' }));
-    expect(screen.getByText(/5 imagens · R\$\s4,00/)).toBeInTheDocument();
+    expect(botaoGerar()).toHaveTextContent('Gerar 5 imagens · R$ 4,00');
   });
 
   it('"Gerar de novo" não aparece quando o roteiro aprovado é de família anterior', async () => {
@@ -559,8 +553,7 @@ describe('GaleriaIA — passo Gerar', () => {
       const r = pagina(ml);
       await abrirGerar();
       fireEvent.load(await screen.findByAltText('Preto · missão 1'));
-      await userEvent.click(screen.getByRole('button', { name: 'Gerar imagens' }));
-      await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
+      await gerar();
       expect(api.listarImagens).toHaveBeenCalledWith(ml);
       expect(api.listarImagens.mock.calls.every((c) => c[0] === ml)).toBe(true);
       await waitFor(() => expect(api.confirmarExibicao).toHaveBeenCalledWith(ml, ['i1']));
@@ -594,7 +587,7 @@ describe('GaleriaIA — passo Gerar', () => {
     pagina('MLB1');
     await abrirGerar();
     expect(await screen.findByAltText('Preto · missão 1')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Gerar imagens' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Gerar \d+ imagens? ·/ })).toBeNull();
   });
 
   it('sem roteiro aprovado nem imagem pendente o passo Gerar fica fechado', async () => {

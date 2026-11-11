@@ -10,14 +10,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { fmtBRL } from '@/lib/formato';
 import {
   aprovarFinal, confirmarExibicao, enviarFinal, gerarImagens, listarImagens, mensagemErro, prepararUploadFinal, reportarInvalida,
   motivoLupa, type Ficha, type ImagemGaleria, type RespostaListar,
 } from '@/lib/galeria/api';
 import { comporImagemFinal } from '@/lib/galeria/compor';
-import { lupaPendente, missoesDisponiveis, missoesSugeridas } from '../../../supabase/functions/_shared/galeria/regras';
+import { lupaPendente, missoesDisponiveis } from '../../../supabase/functions/_shared/galeria/regras';
 import { comLupa } from '../../../supabase/functions/_shared/galeria/lupa';
 import { nomeImagem } from '@/lib/galeria/rotulos';
 import { CartaoImagem } from './cartao-imagem';
@@ -59,11 +59,13 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoL
   const info = useMemo(() => new Map(missoesDisponiveis(moda, ['frente', 'costas', 'lateral']).map((m) => [m.missao as number, m])), [moda]);
   const ativas = useMemo(() => (roteiro?.missoes_ativas ?? []).filter((m) => info.has(m)), [roteiro?.missoes_ativas, info]);
 
-  const [cores, setCores] = useState<string[]>(ficha.cores);
-  // Pré-marcadas por `missoesSugeridas` quando o roteiro aprovado chega (null = ainda não chegou).
-  const [missoes, setMissoes] = useState<number[] | null>(null);
+  // Protótipo aprovado (Fase C): uma cor por pedido, escolhida no Select; as imagens são as ligadas no passo 2.
+  const [cor, setCor] = useState(ficha.cores[0] ?? '');
   const [unit, setUnit] = useState<number | null>(null);
+  // Só o "Gerar de novo" de um cartão pede confirmação à parte (1 imagem); o pedido principal confirma no botão com o preço.
   const [confirmando, setConfirmando] = useState<Alvo | null>(null);
+  // Alvo do último envio: "Tentar de novo" (ml_indisponivel) repete o mesmo pedido.
+  const ultimo = useRef<Alvo | null>(null);
   const [aviso, setAviso] = useState<Aviso | null>(null);
   // Erro do `listar` fica separado do aviso do gerar: nunca reabre um Confirmar bloqueado.
   const [erroLista, setErroLista] = useState<string | null>(null);
@@ -77,13 +79,6 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoL
   const validadas = useRef(new Set<string>());
   const emVoo = useRef(new Set<string>());
   const reportadas = useRef(new Set<string>());
-
-  useEffect(() => {
-    if (!roteiro || missoes !== null) return;
-    const sugeridas = new Set<number>(missoesSugeridas(ficha.cores.length));
-    // Missão bloqueada (lupa travada, lendo ou sem detalhe) nunca vem pré-marcada.
-    setMissoes(ativas.filter((m) => sugeridas.has(m) && motivoLupa(ficha, ficha.cores, m, moda) === null));
-  }, [roteiro, missoes, ativas, ficha, moda]);
 
   // Nova rodada do `listar` daqui a 5 s (nunca em laço imediato: com CORS ausente toda carga falha).
   const proxima = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -187,14 +182,14 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoL
 
   /** Nova seleção = nova confirmação: limpa recusa e pedido. */
   const abrir = (alvo: Alvo | null) => { pedido.current = null; setAviso(null); setConfirmando(alvo); };
-  const alternar = <T,>(xs: T[], v: T, marcar: boolean) => (marcar ? [...xs, v] : xs.filter((x) => x !== v));
 
-  async function enviar() {
-    if (!confirmando || unit === null || !roteiro) return;
+  async function enviar(alvo: Alvo | null) {
+    if (!alvo || unit === null || !roteiro) return;
+    ultimo.current = alvo;
     pedido.current ??= crypto.randomUUID();
     setOcupado(true);
     const r = await gerarImagens(mlItemId, {
-      pedidoId: pedido.current, roteiroVersao: roteiro.versao, cores: confirmando.cores, missoes: confirmando.missoes, unitCentsExibido: unit,
+      pedidoId: pedido.current, roteiroVersao: roteiro.versao, cores: alvo.cores, missoes: alvo.missoes, unitCentsExibido: unit,
     });
     setOcupado(false);
     if (r.ok) {
@@ -224,9 +219,12 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoL
   const resumo = confirmando && unit !== null ? conta(confirmando) : null;
   // Pedido novo só pelo roteiro aprovado da família vigente (o galeria-gerar recusa os demais).
   const podePedir = !!roteiro && roteiro.familia_id === ficha.familia_id;
-  // Missão bloqueada para alguma cor marcada sai da seleção efetiva (e do pedido).
-  const motivos = new Map(ativas.map((m) => [m, motivoLupa(ficha, cores, m, moda)]));
-  const sel = (missoes ?? []).filter((m) => !motivos.get(m));
+  // Imagem bloqueada para a cor (lupa travada, lendo ou sem detalhe) fica fora do pedido, com o motivo.
+  const motivos = new Map(ativas.map((m) => [m, motivoLupa(ficha, [cor], m, moda)]));
+  const sel = ativas.filter((m) => !motivos.get(m));
+  const principal: Alvo = { cores: cor ? [cor] : [], missoes: sel };
+  const total = unit !== null ? conta(principal) : null;
+  const rotuloTotal = total ? `${total.geradas} ${total.geradas === 1 ? 'imagem' : 'imagens'} · ${fmtBRL((total.geradas * unit!) / 100)}` : '';
 
   return (
     <div className="space-y-4">
@@ -239,34 +237,36 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoL
         </p>
       )}
       {podePedir && (
-        <section aria-label="Gerar imagens" className="space-y-3 rounded-xl bg-card text-card-foreground shadow-sm ring-1 ring-foreground/5 p-4 text-sm">
-          <p className="font-medium">Cores</p>
-          <div className="flex flex-wrap gap-3">
-            {ficha.cores.map((c) => (
-              <span key={c} className="flex min-h-11 items-center gap-2">
-                <Checkbox aria-label={`Cor ${c}`} checked={cores.includes(c)}
-                  onCheckedChange={(v) => { setCores(alternar(cores, c, v === true)); abrir(null); }} />{c}
-              </span>
-            ))}
+        <section aria-label="Gerar imagens" className="flex flex-col gap-4 rounded-xl bg-card p-4 text-sm text-card-foreground shadow-sm ring-1 ring-foreground/5">
+          <div className="flex flex-wrap items-end gap-x-5 gap-y-3">
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-muted-foreground">Cor</span>
+              <Select value={cor} disabled={ocupado} onValueChange={(v) => { setCor(v); abrir(null); }}>
+                <SelectTrigger aria-label="Cor" className="h-11 w-48"><SelectValue /></SelectTrigger>
+                <SelectContent>{ficha.cores.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="flex min-w-40 flex-1 flex-col gap-1">
+              <span className="text-xs text-muted-foreground">Resumo</span>
+              <p className="text-lg font-semibold tabular-nums" aria-live="polite">{unit === null ? 'Carregando o preço…' : rotuloTotal}</p>
+            </div>
+            <Button className="h-11 px-4" disabled={ocupado || !cor || sel.length === 0 || unit === null || (!total?.geradas && !total?.recortes) || !!aviso?.bloqueia}
+              onClick={() => { abrir(null); void enviar(principal); }}>
+              {ocupado && !confirmando ? <><Loader2 className="animate-spin" aria-hidden />Gerando…</> : `Gerar ${rotuloTotal}`}
+            </Button>
           </div>
-          <p className="font-medium">Imagens</p>
-          <div className="grid gap-1 sm:grid-cols-2">
+          <ul aria-label="Imagens deste pedido" className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
             {ativas.map((n) => (
-              <span key={n} className="flex min-h-11 items-center gap-2">
-                <Checkbox aria-label={`Missão ${n}`} checked={sel.includes(n)} disabled={!!motivos.get(n)}
-                  onCheckedChange={(v) => { setMissoes(alternar(sel, n, v === true).sort((a, b) => a - b)); abrir(null); }} />
-                {nomeImagem(n, moda)}{info.get(n)?.usaGerador === false && !motivos.get(n) && <span className="text-xs text-muted-foreground">(recorte grátis)</span>}
-                {motivos.get(n) && <span className="text-xs text-warning">{motivos.get(n)}</span>}
-              </span>
+              <li key={n} data-no-pedido={!motivos.get(n)}>
+                <span className={motivos.get(n) ? '' : 'text-foreground'}>{nomeImagem(n, moda)}</span>
+                {info.get(n)?.usaGerador === false && !motivos.get(n) && ' (recorte grátis)'}
+                {motivos.get(n) && <span className="text-warning">: {motivos.get(n)}</span>}
+              </li>
             ))}
-          </div>
+          </ul>
           <p className="text-xs text-muted-foreground">
-            {unit === null ? 'Carregando o preço…' : `Pedido novo: ${fmtBRL(unit / 100)} por imagem gerada (preço do mês), cobrada quando aparece na tela.`}
+            {unit === null ? '' : `${fmtBRL(unit / 100)} por imagem gerada (preço do mês), cobrada quando aparece na tela. Cerca de 30 s cada.`}
           </p>
-          <Button className="h-11 w-fit px-4" disabled={cores.length === 0 || sel.length === 0 || unit === null}
-            onClick={() => abrir({ cores: ficha.cores.filter((c) => cores.includes(c)), missoes: sel })}>
-            Gerar imagens
-          </Button>
         </section>
       )}
 
@@ -279,7 +279,7 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoL
             <p className="text-xs text-muted-foreground">+ {resumo.recortes} {resumo.recortes === 1 ? 'recorte grátis' : 'recortes grátis'}</p>
           )}
           <div className="flex gap-2">
-            <Button className="h-11 px-4" disabled={ocupado || !!aviso?.bloqueia} onClick={() => void enviar()}>
+            <Button className="h-11 px-4" disabled={ocupado || !!aviso?.bloqueia} onClick={() => void enviar(confirmando)}>
               {ocupado && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Confirmar
             </Button>
             <Button variant="outline" className="h-11 px-4" disabled={ocupado} onClick={() => abrir(null)}>Cancelar</Button>
@@ -291,7 +291,7 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro, aoL
         <div role="alert" className="space-y-2 rounded-lg bg-destructive/10 p-3 text-sm ring-1 ring-destructive/25">
           <p>{aviso.texto}</p>
           {aviso.detalhe && <p className="text-xs">{aviso.detalhe}</p>}
-          {aviso.acao === 'tentar' && <Button variant="outline" className="h-11 px-4" disabled={ocupado} onClick={() => void enviar()}>Tentar de novo</Button>}
+          {aviso.acao === 'tentar' && <Button variant="outline" className="h-11 px-4" disabled={ocupado} onClick={() => void enviar(ultimo.current)}>Tentar de novo</Button>}
           {aviso.acao === 'recarregar' && <Button variant="outline" className="h-11 px-4" onClick={aoRecarregar}>Recarregar</Button>}
           {aviso.acao === 'roteiro' && <Button variant="outline" className="h-11 px-4" onClick={aoVoltarRoteiro}>Voltar aos textos</Button>}
         </div>

@@ -167,6 +167,8 @@ export function PassoEscolher({ mlItemId, ficha, isAdmin, podeCriar, resp, aoRes
       if (!(await h.descarregar())) return;
       const atual = h.atual();
       if (!atual) return;
+      // R1.3: o salvar pode trazer pendência nova de ciência; só vai ao servidor o que o operador marcou.
+      if (atual.ciencia_pendente.some((c) => !h.ciente.has(c))) return;
       const a = await aprovarRoteiro(mlItemId, fam, atual.roteiro.id, atual.ciencia_pendente);
       if (!a.ok) { aoFalhar(a); return; }
       toast.success('Textos aprovados');

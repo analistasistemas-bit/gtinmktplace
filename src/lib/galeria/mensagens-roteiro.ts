@@ -27,6 +27,7 @@ export function traduzirErro(msg: string, m?: MissaoRoteiro): ErroTela {
   if (/cena vazia/.test(t)) return { campo: 'cena', texto: 'Descreva a cena da imagem.' };
   if (/Contrato de identidade vazio/.test(t)) return { campo: 'contrato', texto: 'Descreva como o produto deve aparecer nas imagens.' };
   if ((r = /termo proibido "(.+)"/.exec(t))) return { campo: null, texto: `"${r[1]}" não pode aparecer na imagem. Tire do texto.` };
+  if ((r = /"(.+)" é cor do anúncio/.exec(t))) return { campo: null, texto: `"${r[1]}" é uma cor do anúncio. O texto vale para todas as cores: tire a cor.` };
   if ((r = /"(.+)" no texto não vem de fato citado/.exec(t))) return { campo: null, texto: `"${r[1]}" não está nos dados confirmados. Use um valor confirmado no passo 1.` };
   if (/etapa .* não é trecho/.test(t)) return { campo: 'etapas', texto: 'Cada passo precisa ser uma frase inteira das instruções do cadastro.' };
   if (/medida da embalagem|difere do fato|spec sem/.test(t)) return { campo: 'specs', texto: 'Esse valor não está nos dados confirmados. Escolha da lista.' };

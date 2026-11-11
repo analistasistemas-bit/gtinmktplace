@@ -346,6 +346,19 @@ describe('Passo 2 — Escolher imagens', () => {
     await waitFor(() => expect(api.aprovarRoteiro).toHaveBeenCalledWith('MLB1', 'F1', 'R1', ['atributo:MATERIAL']));
   });
 
+  it('ciência que surge no salvar feito pelo Continuar: não aprova sem o operador marcar (R1.3)', async () => {
+    api.salvarRoteiro.mockImplementation(async (_m: string, _f: string, _id: string, c) =>
+      ok({ ...resposta({ ciencia_pendente: ['atributo:MATERIAL'] }), roteiro: { ...resposta().roteiro, conteudo: c } }));
+    await noPasso2(resposta({ missoes: [missao(1), missao(2, { headline: 'Prende firme' })] }),
+      ficha([fato('atributo:MATERIAL', 'NAO_CONFERIDO', '100% poliéster')]));
+    await userEvent.type(screen.getByLabelText(/^Título/), ' poliéster');
+    await userEvent.click(continuar());
+    expect(await screen.findByText(/Alguns dados não aparecem na etiqueta: Material/)).toBeInTheDocument();
+    expect(api.salvarRoteiro).toHaveBeenCalled();
+    expect(api.aprovarRoteiro).not.toHaveBeenCalled();
+    expect(continuar()).toBeDisabled();
+  });
+
   it('não-admin: só leitura, com aviso; não aprova nem liga imagem', async () => {
     ctx.admin = false;
     await noPasso2(resposta({ missoes: [missao(1), missao(2, { headline: 'Prende firme' })] }));

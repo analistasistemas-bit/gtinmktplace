@@ -233,7 +233,7 @@ export default function GaleriaIA() {
           }} />
       ) : passo === 3 ? (
         <>
-          <MioloPasso titulo="Gerar e aprovar" frase="Gere as imagens das cores e aprove as que vão para o anúncio.">
+          <MioloPasso titulo="Gerar e aprovar" frase="Gere as imagens de uma cor e aprove as que vão para o anúncio.">
             <PassoGerar mlItemId={mlItemId} ficha={ficha} aoRecarregar={() => void carregar()} aoVoltarRoteiro={() => void irPara(2)} aoLista={setLista} />
           </MioloPasso>
           <Rodape ok={aprovadas > 0} rotulo="Continuar" aoClicar={() => void irPara(4)}
@@ -245,7 +245,7 @@ export default function GaleriaIA() {
             <PassoAplicar mlItemId={mlItemId} ficha={ficha} isAdmin={isAdmin}
               aoFamiliaMudou={(m) => { setErro(m); setResp(null); void carregar(); }} />
           </MioloPasso>
-          <Rodape ok concluido seta={false} rotulo="Voltar a Publicados" aoClicar={() => navigate(caminhoDeVolta())}
+          <Rodape ok concluido seta={false} variante="outline" rotulo="Voltar a Publicados" aoClicar={() => navigate(caminhoDeVolta())}
             texto={isAdmin ? 'Aplique uma cor por vez. Você pode desfazer depois.' : 'Somente administradores aplicam as fotos no anúncio.'} />
         </>
       )}
