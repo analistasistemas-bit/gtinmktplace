@@ -99,6 +99,14 @@ describe('precoPorMargem', () => {
     expect(r?.preco).toBe(200)
   })
 
+  it('sondagem parte da base completa (com frete) → 20.200 dentro do teto de chamadas', async () => {
+    const pct = (p: number) => (p < 10_000 ? 12 : 11)
+    const r = await precoPorMargem(entrada(1), 'classico', 88.5, custos(1, 12, { frete: 100 }), fake(pct, { frete: 100 }))
+
+    expect(r?.preco).toBe(20200)
+    expect(r?.confirmado).toBe(true)
+  })
+
   it('fronteira de faixa: fica em 47,62 abaixo de 50; sobe a 55,74 quando cai em 14%', async () => {
     const pct = (p: number) => (p < 50 ? 12 : 14)
 

@@ -62,7 +62,8 @@ export async function precoPorMargem(
   const imposto = entrada.aliquotaImpostoPct
   if (imposto === null) return null
   const fixos = entrada.custoProduto + entrada.custosFixos + entrada.custosVariaveis - entrada.rebate
-  if (centavos(fixos + inicial.taxaFixa + (inicial.frete ?? 0)) <= 0) return null
+  const baseInicial = centavos(fixos + inicial.taxaFixa + (inicial.frete ?? 0))
+  if (baseInicial <= 0) return null
 
   /** null = denominador ≤ 0 (meta inatingível nesta faixa). */
   const candidato = (c: CustosModalidadeML): number | null => {
@@ -73,7 +74,7 @@ export async function precoPorMargem(
 
   const visitados = new Map<number, PrecoPorMargem>()
   const atingem: PrecoPorMargem[] = []
-  let p = candidato(inicial) ?? centavos(Math.max(fixos, 1) * 2)
+  let p = candidato(inicial) ?? centavos(Math.max(baseInicial, 1) * 2)
 
   for (let i = 0; i < maxChamadas && p <= TETO_SONDAGEM; i++) {
     let cotacao: CotacoesPorModalidade
