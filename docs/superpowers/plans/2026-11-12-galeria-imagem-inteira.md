@@ -16,7 +16,7 @@
 
 - Worktree `galeria-imagem-inteira`, branch `worktree-imagens-anuncio-ia`. Bash simples, `/usr/bin/git`, um comando por chamada. Nunca commitar `deno.lock`.
 - **Push ao fim de cada task** (`/usr/bin/git push origin worktree-imagens-anuncio-ia`): em 12/11 o worktree anterior foi removido por fora e tudo que não estava no remoto se perdeu.
-- Nenhuma migration nova. Se uma task concluir que precisa de DDL, parar e avisar (ADR-0043: só `supabase migration new` + `supabase db push`).
+- Uma única migration nova, a da Task 8b (categoria `imagem_ia` nas notificações). Fora dela, se uma task concluir que precisa de DDL, parar e avisar (ADR-0043: só `supabase migration new` + `supabase db push`).
 - Nenhuma escrita no Mercado Livre fora da saga existente (`galeria-aplicar` / `galeria-aplicar-worker`). Este plano não toca `saga.ts`, `aplicar.ts`, `alvos.ts` nem as RPCs de trava e cobrança.
 - Cobrança: continua na exibição (`galeria_confirmar_exibicao`), preço congelado no pedido. Nenhuma task altera valor, regra ou RPC de cobrança.
 - Nunca inventar dado de produto: o planejador só recebe planilha + ficha do ML + foto; `descricao_ml` e `titulo_ml` não entram.
@@ -399,6 +399,30 @@ it('imagem com alertas null segue como "Gerando…" e mantém o polling', …)
 - [ ] **Step 4:** rodar → PASS. `pnpm exec tsc --noEmit` → sem erro.
 - [ ] **Step 5: verificação visual.** `GaleriaHarness.tsx` com dados fixos cobrindo todos os estados do cartão; copiar `.env.local` do checkout principal; `pnpm dev --port 5180 --strictPort`; skill `playwright-cli` em sessão isolada: print em 1440 px e 390 px da rota do harness. Sem estouro horizontal, botões com no mínimo 40 px de altura. Mandar os prints ao Diego e **esperar o OK da tela** antes da Task 10.
 - [ ] **Step 6:** commit `feat(galeria-ia): tela única (gerar foto a foto ou todas, aprovar, colocar no anúncio)` e push.
+
+---
+
+### Task 8b (opus): aviso de imagens prontas, só para quem pediu (pedido do Diego em 12/11)
+
+**Files:**
+- Create: `supabase/migrations/<timestamp>_galeria_aviso_imagens_prontas.sql` (via `supabase migration new`), `supabase/functions/_shared/galeria/aviso-pronto.ts`
+- Modify: `supabase/functions/_shared/galeria/despacho.ts` (chamada no fim do tick), `src/components/notificacoes-bell.tsx`, `src/lib/notificacoes-categorias.ts`
+- Test: `supabase/functions/_shared/galeria/__tests__/aviso-pronto.test.ts`, teste do sino, `supabase/tests/` (SQL do CHECK)
+
+**Interfaces:**
+- Produces: `avisarPedidosProntos(admin, deps: { agora: Date; appUrl: string; enviar: typeof enviarTelegram }): Promise<number>` (nº de avisos novos).
+
+Regras (ADR-0203 item 11):
+- Migration: só acrescenta `'imagem_ia'` ao CHECK `notificacoes_categoria_check` (recriar com a lista vigente + o valor novo). Não entra em `profiles.telegram_categorias` (não é assinável).
+- Rodada = pedidos de um mesmo `criado_por` no mesmo anúncio criados nas últimas 3 h. Pronta = nenhuma imagem desses pedidos em `pendente|submetendo|gerando` e nenhuma `gerada` com `alertas` nulo.
+- Chave da notificação: `galeria_pronta:<id do pedido mais recente da rodada>`; insert com `onConflict (user_id, chave)` ignorando duplicata; Telegram só quando a linha foi criada agora, para `profiles.telegram_chat_id` do `criado_por`, com o bot da org e `telegram_ativo`.
+- Texto: `Suas imagens ficaram prontas: <título>. <N> para conferir[, <M> não saíram]. Abra para aprovar: <APP_URL>/#/publicados/<ml_item_id>/galeria`.
+- Sino: categoria `imagem_ia` abre a rota interna da galeria (não link externo).
+- Falha do aviso nunca derruba o tick (catch + log). O aviso não chama cobrança.
+
+- [ ] Testes: rodada com imagem aberta não avisa; com `gerada` sem alertas não avisa; pronta avisa uma vez (2º tick não repete); dois pedidos da mesma rodada → um aviso; outro usuário no mesmo anúncio → aviso próprio; sem chat_id → só app; `telegram_ativo` falso → só app; erro no Telegram não lança; contagem "não saíram" = `falhou`.
+- [ ] Implementar; `pnpm exec vitest run supabase/functions/_shared/galeria/__tests__`; `pnpm exec tsc --noEmit`; `npm run db:check` fica para a Task 10 (a migration só sobe com OK do Diego).
+- [ ] Commit `feat(galeria-ia): aviso de imagens prontas no app e no Telegram para quem pediu` e push.
 
 ---
 

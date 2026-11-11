@@ -28,6 +28,8 @@ Medição de 12/11/2026 (Fita Velcro Búfalo e Fio Amigurumi Círculo, Nano Bana
 9. **Vigência.** O plano guarda o mesmo `fatos_hash` do ADR-0201 e o hash dos dados enviados ao planejador. Planilha, foto de referência ou ficha do anúncio mudou: o próximo pedido cria plano novo e as imagens do plano anterior ainda não aplicadas ficam desatualizadas. Como essas imagens já foram cobradas, a troca só acontece depois de o operador confirmar, vendo quantas imagens deixam de valer.
 10. **Gerador padrão:** Nano Banana 2.1 em 2K, formato 4:5. Os modelos da Higgsfield seguem selecionáveis por organização, em 3:4 e sem a regeração automática.
 
+11. **Aviso de imagens prontas, só para quem pediu.** A geração roda no servidor; o operador pode sair da tela. Quando todos os pedidos que ele fez para um anúncio terminam (nenhuma imagem em geração nem aguardando conferência), ele recebe um aviso no app e, se tiver Telegram cadastrado, no Telegram, com o link da tela. É exceção ao ADR-0085 (aviso para os assinantes de uma categoria): este vai para um usuário só, e por isso não usa `notificarCategoria`. Um aviso por rodada, idempotente pela chave única da notificação. O aviso não cobra nada: a cobrança continua na exibição.
+
 ## Alternativas descartadas
 
 - **Manter o texto composto pelo sistema e melhorar o layout:** reprovado na validação real; não chega ao padrão pedido.
@@ -37,7 +39,7 @@ Medição de 12/11/2026 (Fita Velcro Búfalo e Fio Amigurumi Círculo, Nano Bana
 
 ## Consequências
 
-- Saem de uso: tela de conferência de dados, roteiro editável, composição em canvas, lupa e recorte, leitura de etiqueta por visão. As tabelas ficam; nenhuma migration é necessária.
+- Saem de uso: tela de conferência de dados, roteiro editável, composição em canvas, lupa e recorte, leitura de etiqueta por visão. As tabelas ficam; a única migration é a da categoria `imagem_ia` nas notificações do app (item 11).
 - O custo por imagem sobe de cerca de US$ 0,04 para US$ 0,06 (2K), mais a regeração automática. O preço por imagem cobrado do cliente é decisão comercial separada.
 - O risco de texto errado passa a ser tratado por conferência automática mais aprovação humana, e não por construção.
 - Letra miúda do rótulo pode sair embaralhada; o operador decide na aprovação.

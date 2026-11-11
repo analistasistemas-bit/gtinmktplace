@@ -1,13 +1,13 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeAdmin } from '../../_shared/galeria/__tests__/fake-admin'
+import type { Plano } from '../../_shared/galeria/plano.ts'
 
 const f = vi.hoisted(() => ({
   serve: vi.fn(), fake: null as unknown as { admin: unknown },
   vigencia: null as unknown as Record<string, unknown>,
   batch: vi.fn(),
   garantir: vi.fn(async () => {}),
-  /** null = a trava real (MISSOES_LUPA_PENDENTE); {geral:[],moda:[]} = ramo liberado depois do portão (Task 16). */
-  travas: null as null | { geral: number[]; moda: number[] },
+  planejar: vi.fn(),
 }))
 
 vi.mock('../../_shared/cors.ts', () => ({ corsHeaders: {}, handleOptions: () => new Response() }))
@@ -18,20 +18,21 @@ vi.mock('../../_shared/supabase.ts', () => ({ adminClient: () => f.fake.admin })
 vi.mock('../../_shared/canais/conexao.ts', () => ({ resolverConexaoEstrita: vi.fn(async () => ({ id: 'cx' })) }))
 vi.mock('../../_shared/ml/token.ts', () => ({ getValidAccessTokenConexao: vi.fn(async () => 'tok') }))
 vi.mock('../../_shared/galeria/referencias.ts', () => ({ calcularVigencia: vi.fn(async () => f.vigencia) }))
-vi.mock('../../_shared/ai/client.ts', () => ({ openrouterClient: () => { throw new Error('nunca chama IA') } }))
-vi.mock('../../_shared/galeria/regras.ts', async (orig) => {
-  const r = await orig<typeof import('../../_shared/galeria/regras.ts')>()
-  return { ...r, lupaPendente: (m: number, moda: boolean) => r.lupaPendente(m, moda, f.travas ?? r.MISSOES_LUPA_PENDENTE) }
-})
+vi.mock('../../_shared/ai/client.ts', () => ({ openrouterClient: () => { throw new Error('nunca chama IA real') } }))
+vi.mock('../../_shared/galeria/planejador.ts', async (orig) => ({
+  ...(await orig<typeof import('../../_shared/galeria/planejador.ts')>()), gerarPlanoIA: f.planejar,
+}))
 vi.mock('../../_shared/queue.ts', () => ({ qstashClient: () => ({ batchJSON: f.batch }), garantirFilaSerial: f.garantir }))
 
-const { VERSAO_LEITURA } = await import('../../_shared/galeria/detalhes.ts')
+const { hashDados } = await import('../../_shared/galeria/planejador.ts')
 
 type Linha = Record<string, unknown>
 let db: Record<string, Linha[]>
 let fake: ReturnType<typeof fakeAdmin>
 let fetchs: string[]
 let itemML: Linha
+let fichaML: { status?: number; attributes?: unknown[] }
+let categoria: Array<{ id: string }> | null
 let handler: (req: Request) => Promise<Response>
 
 beforeAll(async () => {
@@ -43,18 +44,30 @@ beforeAll(async () => {
 const PEDIDO = '6f1c2a3e-8b4d-4c5e-9f60-718293a4b5c6'
 const ref = (id: string) => ({ id, path: `org/galeria-ia/famB/referencias/${id}.jpg`, sha256: id })
 const SEM = { erro: 'sem_referencia' }
-const PRODUTO = { x: 0.1, y: 0.1, w: 0.8, h: 0.8 }
-/** Leitura da lupa (galeria_referencias.detalhes) com dois detalhes disjuntos: geral 3/7 e Moda 5/7 cabem. */
-const lupaOk = (extra: Linha = {}) => ({
-  estado: 'ok', versao: VERSAO_LEITURA, tentado_em: '2026-11-11T10:00:00Z', produto: PRODUTO, ref_w: 1200, ref_h: 1500, hash: 'h',
-  detalhes: [{ x: 0.15, y: 0.15, w: 0.1, h: 0.1 }, { x: 0.7, y: 0.7, w: 0.1, h: 0.1 }], ...extra,
+
+const planoDe = (dadosHash: string, indisponiveis: number[] = []): Plano => ({
+  formato: 2, dados_hash: dadosHash, conflitos: [],
+  paleta: { cor1: { nome: 'Rosa', hex: '#D91F58' }, cor2: { nome: 'Amarelo', hex: '#F2D631' } },
+  imagens: ([1, 2, 3, 4, 5, 6, 7] as const).map((posicao) => indisponiveis.includes(posicao)
+    ? { posicao, funcao: `f${posicao}`, textos: [], prompt: '', indisponivel: 'poucos dados' }
+    : { posicao, funcao: `f${posicao}`, textos: [], prompt: `p${posicao} {{COR}}` }),
 })
-const refLinha = (id: string, detalhes: unknown) => ({ id, org_id: 'org', vista: 'frente', detalhes })
-const missoes = (n: number[]) => n.map((missao) => ({ missao, ativa: true, cena: `cena ${missao}`, fatosUsados: [] }))
-const roteiro = (extra: Linha = {}) => ({
-  id: 'rot2', org_id: 'org', anuncio_externo_id: 'an1', familia_id: 'famB', versao: 2, status: 'aprovado', moda: false,
-  fatos_hash: 'h', conteudo: { categoria: 'Rendas', contrato: 'Renda', missoes: missoes([1, 2, 3, 4, 5, 6, 7]) }, ...extra,
-})
+
+/** Espelho de galeria_aprovar_roteiro (20261109153037). */
+const espelhoAprovar = (d: Record<string, Linha[]>) => (args: Linha) => {
+  const r = d.galeria_roteiros.find((x) => x.id === args.p_roteiro && x.org_id === args.p_org)
+  if (!r) return 'nao_encontrado'
+  if (r.status !== 'rascunho') return 'nao_rascunho'
+  if (r.familia_id !== args.p_familia) return 'familia_nao_vigente'
+  d.galeria_roteiros.filter((x) => x.anuncio_externo_id === r.anuncio_externo_id && x.status === 'aprovado').forEach((x) => { x.status = 'desatualizado' })
+  for (const i of d.galeria_imagens) {
+    if (i.anuncio_externo_id !== r.anuncio_externo_id || i.roteiro_id === r.id) continue
+    if (i.status === 'pendente') Object.assign(i, { status: 'falhou', erro: 'roteiro_trocado' })
+    else if (i.status === 'gerada' || i.status === 'aprovada') i.status = 'desatualizada'
+  }
+  Object.assign(r, { status: 'aprovado', fatos_hash: args.p_fatos_hash, conteudo: args.p_conteudo })
+  return 'ok'
+}
 
 beforeEach(() => {
   db = {
@@ -62,25 +75,25 @@ beforeEach(() => {
     anuncios_externos: [{ id: 'an1', org_id: 'org', canal: 'mercado_livre', codigo_pai: '100', item_externo_id: 'MLB1', variacoes_externas: { '100R': {}, '100A': {} } }],
     anuncios_externos_itens: [],
     familias: [
-      { id: 'famA', org_id: 'org', codigo_pai: '100', publicado_em: '2026-11-01T10:00:00Z', variacoes: [{ codigo: '100R', cor: 'Rosa' }, { codigo: '100A', cor: 'Azul' }] },
-      { id: 'famB', org_id: 'org', codigo_pai: '100', publicado_em: '2026-11-05T10:00:00Z', variacoes: [{ codigo: '100R', cor: 'Rosa' }, { codigo: '100A', cor: 'Azul' }] },
+      { id: 'famA', org_id: 'org', codigo_pai: '100', publicado_em: '2026-11-01T10:00:00Z', categoria_ml_id: 'MLB999', variacoes: [{ codigo: '100R', cor: 'Rosa' }, { codigo: '100A', cor: 'Azul' }] },
+      { id: 'famB', org_id: 'org', codigo_pai: '100', publicado_em: '2026-11-05T10:00:00Z', categoria_ml_id: 'MLB999', nome_pai: 'Renda',
+        variacoes: [{ codigo: '100R', cor: 'Rosa' }, { codigo: '100A', cor: 'Azul' }] },
     ],
-    galeria_roteiros: [roteiro()],
-    galeria_pedidos: [], galeria_imagens: [], configuracoes: [],
-    galeria_referencias: [refLinha('refR', lupaOk()), refLinha('refA', lupaOk())],
+    galeria_roteiros: [],
+    galeria_pedidos: [], galeria_imagens: [], galeria_aplicacoes: [], configuracoes: [],
   }
-  f.travas = null
   fake = fakeAdmin(db)
   f.fake = fake
   fake.respostasRpc.platform_resolve_terms = () => ({ id: 'termos1', image_unit_cents: 50 })
-  // Espelho da RPC: grava pedido e linhas (recorte já nasce gerada com alertas []).
+  fake.respostasRpc.galeria_aprovar_roteiro = espelhoAprovar(db)
+  // Espelho da RPC: grava pedido e linhas.
   fake.respostasRpc.galeria_reservar_pedido = ({ p_pedido }) => {
     const p = p_pedido as Linha & { itens: Linha[] }
     db.galeria_pedidos.push({ id: p.id, org_id: p.org_id, anuncio_externo_id: p.anuncio_externo_id, unit_cents: p.unit_cents, terms_id: p.terms_id, elegivel: p.elegivel })
     const linhas = p.itens.map((it, n) => ({
       id: `img${n}`, org_id: p.org_id, anuncio_externo_id: p.anuncio_externo_id, pedido_id: p.id, roteiro_id: p.roteiro_id,
-      cor: it.cor, missao: it.missao, geracao: 1, origem: it.origem, status: it.origem === 'recorte' ? 'gerada' : 'pendente',
-      alertas: it.origem === 'recorte' ? [] : null, fase: 0, tentativa: 0, despacho_seq: 0, publicado_em: null,
+      cor: it.cor, missao: it.missao, geracao: 1, origem: it.origem, status: 'pendente',
+      alertas: null, fase: 0, tentativa: 0, despacho_seq: 0, publicado_em: null,
     }))
     db.galeria_imagens.push(...linhas)
     return linhas
@@ -91,11 +104,19 @@ beforeEach(() => {
   }
   f.batch.mockReset()
   f.batch.mockImplementation(async (msgs: unknown[]) => msgs.map((_, i) => ({ messageId: `m${i}` })))
+  f.planejar.mockReset()
+  f.planejar.mockImplementation(async (q: { dados: Parameters<typeof hashDados>[0] }) => ({ plano: planoDe(hashDados(q.dados)) }))
   itemML = { id: 'MLB1', catalog_listing: false, variations: [{ id: 11, seller_custom_field: '100R' }, { id: 12, seller_custom_field: '100A' }] }
+  fichaML = { attributes: [{ id: 'MATERIAL', name: 'Material', value_name: 'Algodão' }] }
+  categoria = [{ id: 'MLB1574' }, { id: 'MLB999' }]
   fetchs = []
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     fetchs.push(url)
+    if (url === 'https://api.mercadolibre.com/items/MLB1?attributes=attributes') {
+      return fichaML.status ? new Response('{}', { status: fichaML.status }) : Response.json({ attributes: fichaML.attributes })
+    }
     if (url.startsWith('https://api.mercadolibre.com/items/MLB1')) return itemML.__status ? new Response('{}', { status: itemML.__status as number }) : Response.json(itemML)
+    if (url === 'https://api.mercadolibre.com/categories/MLB999') return categoria ? Response.json({ path_from_root: categoria }) : new Response('{}', { status: 500 })
     return new Response('{}', { status: 500 })
   }))
 })
@@ -105,40 +126,62 @@ const chamar = async (body: Linha) => {
   return { status: r.status, body: await r.json() as Linha }
 }
 const pedido = (extra: Linha = {}) => ({
-  pedido_id: PEDIDO, ml_item_id: 'MLB1', roteiro_versao: 2, cores: ['Rosa', 'Azul'], missoes: [1, 2], unit_cents_exibido: 50, ...extra,
+  pedido_id: PEDIDO, ml_item_id: 'MLB1', cores: ['Rosa', 'Azul'], missoes: [1, 2], unit_cents_exibido: 50, ...extra,
 })
-const semCusto = () => {
-  expect(db.galeria_pedidos).toEqual([])
-  expect(db.galeria_imagens).toEqual([])
+const semPedido = () => {
+  expect(db.galeria_pedidos.filter((p) => p.id === PEDIDO)).toEqual([])
+  expect(db.galeria_imagens.filter((i) => i.pedido_id === PEDIDO)).toEqual([])
   expect(fake.rpcs.map((r) => r.nome)).not.toContain('galeria_reservar_pedido')
   expect(fetchs.filter((u) => /openrouter|higgsfield/.test(u))).toEqual([])
   expect(f.batch).not.toHaveBeenCalled()
 }
+/** Recusa antes do plano: além de sem pedido, sem IA e sem plano gravado. */
+const semCusto = () => {
+  semPedido()
+  expect(f.planejar).not.toHaveBeenCalled()
+  expect(db.galeria_roteiros).toEqual([])
+}
+const reserva = () => fake.rpcs.find((x) => x.nome === 'galeria_reservar_pedido')!.args.p_pedido as Linha & { itens: Linha[] }
+const aprovado = () => db.galeria_roteiros.find((r) => r.status === 'aprovado')!
 
 describe('galeria-gerar', () => {
-  // ADR-0203 (Task 4): a missão 7 deixou de ser recorte; vai ao gerador como as demais.
-  it('reserva o pedido com preço e termos congelados e publica um job por imagem gerador (inclusive a 7)', async () => {
-    f.travas = { geral: [], moda: [] } // ramo liberado: missão 7 com lupa_ok
+  it('sem plano: cria o plano e reserva todas como origem gerador', async () => {
     const r = await chamar(pedido({ missoes: [1, 2, 7] }))
     expect(r.status).toBe(200)
-    const reserva = fake.rpcs.find((x) => x.nome === 'galeria_reservar_pedido')!.args.p_pedido as Linha & { itens: Linha[] }
-    expect(reserva).toMatchObject({ id: PEDIDO, org_id: 'org', anuncio_externo_id: 'an1', familia_id: 'famB', roteiro_id: 'rot2',
+    expect(f.planejar).toHaveBeenCalledTimes(1)
+    expect(f.planejar.mock.calls[0][0]).toMatchObject({
+      refUrl: 'https://signed/org/galeria-ia/famB/referencias/refR.jpg', moda: false, cores: ['Azul', 'Rosa'],
+      dados: { nome: 'Renda', ficha_do_anuncio: { Material: 'Algodão' }, total_de_cores: 2 },
+    })
+    expect(fetchs).toContain('https://api.mercadolibre.com/items/MLB1?attributes=attributes')
+    const rot = aprovado()
+    expect(rot).toMatchObject({ familia_id: 'famB', fatos_hash: 'h', moda: false, versao: 1 })
+    expect(reserva()).toMatchObject({ id: PEDIDO, org_id: 'org', anuncio_externo_id: 'an1', familia_id: 'famB', roteiro_id: rot.id,
       unit_cents: 50, terms_id: 'termos1', elegivel: true, criado_por: 'u1' })
     const g = (cor: string, missao: number, referencia_id: string) =>
       ({ cor, missao, origem: 'gerador', referencia_id, modelo: 'google/gemini-nano-banana-2.1', provedor: 'openrouter' })
-    expect(reserva.itens).toEqual([g('Rosa', 1, 'refR'), g('Rosa', 2, 'refR'), g('Rosa', 7, 'refR'), g('Azul', 1, 'refA'), g('Azul', 2, 'refA'), g('Azul', 7, 'refA')])
+    expect(reserva().itens).toEqual([g('Rosa', 1, 'refR'), g('Rosa', 2, 'refR'), g('Rosa', 7, 'refR'), g('Azul', 1, 'refA'), g('Azul', 2, 'refA'), g('Azul', 7, 'refA')])
     const msgs = f.batch.mock.calls[0][0] as Linha[]
     expect(msgs).toHaveLength(6)
     expect(msgs[0]).toMatchObject({ url: 'https://x.supabase.co/functions/v1/galeria-worker', retries: 0, deduplicationId: 'img0_1',
       body: { tipo: 'imagem', id: 'img0', fase: 0, tentativa: 0, despacho_seq: 1, acao: 'submeter' } })
-    expect(db.galeria_imagens.filter((i) => i.origem === 'recorte').every((i) => i.status === 'gerada')).toBe(true)
     expect((r.body.imagens as Linha[])).toHaveLength(6)
+  })
+
+  it('segundo pedido com o plano ainda válido reaproveita (sem nova IA nem novo roteiro)', async () => {
+    await chamar(pedido({ missoes: [1] }))
+    const rot = aprovado()
+    db.galeria_imagens.forEach((i) => { i.status = 'gerada' })
+    expect((await chamar(pedido({ pedido_id: '7f1c2a3e-8b4d-4c5e-9f60-718293a4b5c6', missoes: [2] }))).status).toBe(200)
+    expect(f.planejar).toHaveBeenCalledTimes(1)
+    expect(db.galeria_roteiros).toHaveLength(1)
+    expect((fake.rpcs.filter((x) => x.nome === 'galeria_reservar_pedido')[1].args.p_pedido as Linha).roteiro_id).toBe(rot.id)
   })
 
   it('sem condição comercial → pedido não elegível, preço 0', async () => {
     fake.respostasRpc.platform_resolve_terms = () => ({ id: null, image_unit_cents: null })
     expect((await chamar(pedido({ unit_cents_exibido: 0 }))).status).toBe(200)
-    expect(fake.rpcs.find((x) => x.nome === 'galeria_reservar_pedido')!.args.p_pedido).toMatchObject({ unit_cents: 0, terms_id: null, elegivel: false })
+    expect(reserva()).toMatchObject({ unit_cents: 0, terms_id: null, elegivel: false })
   })
 
   it('preço do mês ≠ exibido → preco_mudou com o novo preço, sem pedido', async () => {
@@ -147,19 +190,13 @@ describe('galeria-gerar', () => {
     semCusto()
   })
 
-  it('roteiro aprovado de família antiga do mesmo anúncio → 409 familia_nao_vigente com o id vigente', async () => {
-    db.galeria_roteiros = [roteiro({ familia_id: 'famA' })]
-    const r = await chamar(pedido())
-    expect(r).toEqual({ status: 409, body: { error: 'familia_nao_vigente', familia_id_vigente: 'famB' } })
+  it('nenhuma recusa anterior ao plano chama a IA (preço mudou, catálogo, cor inválida)', async () => {
+    expect((await chamar(pedido({ unit_cents_exibido: 40 }))).body.error).toBe('preco_mudou')
+    expect(await chamar(pedido({ cores: ['Rosa', 'Verde'] }))).toEqual({ status: 400, body: { error: 'cor_invalida', cores: ['Verde'] } })
+    itemML = { ...itemML, catalog_listing: true }
+    expect((await chamar(pedido())).body.error).toBe('catalogo')
     semCusto()
-  })
-
-  it('roteiro não aprovado (ou outra versão) → recusa', async () => {
-    db.galeria_roteiros = [roteiro({ status: 'rascunho' })]
-    expect((await chamar(pedido())).body.error).toBe('roteiro_nao_aprovado')
-    db.galeria_roteiros = [roteiro()]
-    expect((await chamar(pedido({ roteiro_versao: 3 }))).body.error).toBe('roteiro_nao_aprovado')
-    semCusto()
+    expect(fetchs.filter((u) => u.includes('attributes=attributes') || u.includes('/categories/'))).toEqual([])
   })
 
   it.each([[true, 'catalogo'], [undefined, 'catalogo_desconhecido']])('item com catalog_listing %s → %s, zero linhas e nenhum provedor', async (cat, motivo) => {
@@ -193,51 +230,90 @@ describe('galeria-gerar', () => {
     semCusto()
   })
 
-  it('fato NAO_CONFERIDO citado sem ciência do operador → conteudo.ciencia_nao_conferido', async () => {
-    db.galeria_roteiros[0].conteudo = { categoria: 'Rendas', contrato: 'Renda', missoes: [{ missao: 1, ativa: true, cena: 'c', fatosUsados: ['marca'] }] }
-    f.vigencia = { ...f.vigencia, fatos: [{ campo: 'marca', valor: 'Avil', estado: 'NAO_CONFERIDO', origem: 'planilha', evidencia: {} }] }
-    const r = await chamar(pedido({ missoes: [1] }))
-    expect(r).toEqual({ status: 409, body: { error: 'conteudo.ciencia_nao_conferido', campos: ['marca'] } })
+  it('cor sem foto de referência → 409 { error: "sem_referencia", cores: [...] }', async () => {
+    // Costas existe, frente não: o gerador só usa a frente.
+    f.vigencia.referencias = { Rosa: { frente: SEM, costas: ref('refRc'), lateral: SEM }, Azul: { frente: SEM, costas: SEM, lateral: SEM } }
+    expect(await chamar(pedido())).toEqual({ status: 409, body: { error: 'sem_referencia', cores: ['Rosa', 'Azul'] } })
     semCusto()
   })
 
-  // ADR-0203 (Task 4): em Moda todas as missões exigem só a frente.
-  it('Moda: cor sem referência de frente → sem_vista (por cor), sem pedido', async () => {
-    db.galeria_roteiros = [roteiro({ moda: true })]
-    f.vigencia.referencias.Azul.frente = f.vigencia.referencias.Azul.costas
-    const r = await chamar(pedido({ missoes: [3] }))
-    expect(r).toEqual({ status: 409, body: { error: 'sem_vista', bloqueadas: [{ cor: 'Azul', missao: 3, motivo: 'sem_vista' }] } })
+  it('plano falhou → 502 { error: "plano_ia_falhou" } e nenhum pedido reservado', async () => {
+    f.planejar.mockResolvedValueOnce({ erro: 'plano_ia_falhou' })
+    expect(await chamar(pedido())).toEqual({ status: 502, body: { error: 'plano_ia_falhou' } })
+    f.planejar.mockResolvedValueOnce({ erro: 'plano_invalido', erros: ['posicoes'] })
+    expect(await chamar(pedido())).toEqual({ status: 502, body: { error: 'plano_invalido' } })
+    semPedido()
+    expect(db.galeria_roteiros).toEqual([])
+  })
+
+  it('ficha do ML ou categoria ilegível → 503, sem IA nem pedido', async () => {
+    fichaML = { status: 500 }
+    expect(await chamar(pedido())).toEqual({ status: 503, body: { error: 'ml_indisponivel' } })
+    fichaML = { attributes: [] }
+    categoria = null
+    expect(await chamar(pedido())).toEqual({ status: 503, body: { error: 'categoria_indisponivel' } })
     semCusto()
   })
 
-  it('missão desativada no roteiro → recusa', async () => {
-    db.galeria_roteiros[0].conteudo = { categoria: 'Rendas', contrato: 'Renda', missoes: [{ missao: 1, ativa: true, cena: 'c', fatosUsados: [] }, { missao: 2, ativa: false, cena: 'c', fatosUsados: [] }] }
-    expect((await chamar(pedido({ missoes: [2] }))).body).toEqual({ error: 'missao_inativa', missoes: [2] })
-    semCusto()
+  it('posição indisponível pedida → 422 { error: "posicao_indisponivel", missoes: [5] }', async () => {
+    f.planejar.mockImplementationOnce(async (q: { dados: Parameters<typeof hashDados>[0] }) => ({ plano: planoDe(hashDados(q.dados), [5]) }))
+    expect(await chamar(pedido({ missoes: [1, 4, 5] }))).toEqual({ status: 422, body: { error: 'posicao_indisponivel', missoes: [5] } })
+    semPedido()
+    // O plano fica (vale para as outras posições): o próximo pedido sem a 5 reaproveita.
+    expect((await chamar(pedido({ missoes: [1, 4] }))).status).toBe(200)
+    expect(f.planejar).toHaveBeenCalledTimes(1)
   })
 
-  it('repetir o mesmo pedido_id devolve as linhas existentes, sem nova reserva nem conferência de preço', async () => {
+  describe('plano desatualizado', () => {
+    beforeEach(async () => {
+      await chamar(pedido({ pedido_id: '7f1c2a3e-8b4d-4c5e-9f60-718293a4b5c6', missoes: [1] }))
+      db.galeria_imagens.forEach((i) => { Object.assign(i, { status: 'gerada', entregue_em: '2026-11-10T10:00:00Z' }) })
+      fake.rpcs.length = 0
+      f.batch.mockClear()
+      f.vigencia.fatos_hash = 'h2' // planilha ou foto mudou
+    })
+
+    it('sem confirmar_troca → 409 { error: "plano_desatualizado", imagens: N } e nenhum pedido reservado', async () => {
+      expect(await chamar(pedido())).toEqual({ status: 409, body: { error: 'plano_desatualizado', imagens: 2 } })
+      expect(f.planejar).toHaveBeenCalledTimes(1) // só o do beforeEach
+      semPedido()
+    })
+
+    it('confirmar_troca só é repassado como true quando o corpo traz exatamente true', async () => {
+      for (const v of ['true', 1, 'sim', {}]) {
+        expect((await chamar(pedido({ confirmar_troca: v }))).body).toEqual({ error: 'plano_desatualizado', imagens: 2 })
+      }
+      expect(f.planejar).toHaveBeenCalledTimes(1)
+      const r = await chamar(pedido({ confirmar_troca: true }))
+      expect(r.status).toBe(200)
+      expect(f.planejar).toHaveBeenCalledTimes(2)
+      expect(aprovado()).toMatchObject({ fatos_hash: 'h2', versao: 2 })
+      expect(reserva().roteiro_id).toBe(aprovado().id)
+    })
+  })
+
+  it('repetição do mesmo pedido_id devolve as linhas existentes sem chamar a IA', async () => {
     await chamar(pedido())
     const reservas = fake.rpcs.filter((x) => x.nome === 'galeria_reservar_pedido').length
     f.batch.mockClear()
+    f.planejar.mockClear()
     fake.respostasRpc.platform_resolve_terms = () => ({ id: 'termos2', image_unit_cents: 99 })
-    const r = await chamar(pedido())
+    f.vigencia.fatos_hash = 'h2' // nem a vigência mudada é conferida de novo
+    const r = await chamar(pedido({ unit_cents_exibido: 99 }))
     expect(r.status).toBe(200)
     expect((r.body.imagens as Linha[])).toHaveLength(4)
     expect(fake.rpcs.filter((x) => x.nome === 'galeria_reservar_pedido')).toHaveLength(reservas)
+    expect(f.planejar).not.toHaveBeenCalled()
+    expect(f.batch).not.toHaveBeenCalled()
   })
 
-  it('corrida: a RPC recusa em_andamento → 409', async () => {
-    fake.respostasRpc.galeria_reservar_pedido = () => { throw { message: 'em_andamento', code: 'P0001' } }
-    expect(await chamar(pedido())).toEqual({ status: 409, body: { error: 'em_andamento' } })
+  it.each(['em_andamento', 'teto'])('corrida: a RPC recusa %s → 409', async (motivo) => {
+    fake.respostasRpc.galeria_reservar_pedido = () => { throw { message: motivo, code: 'P0001' } }
+    expect(await chamar(pedido())).toEqual({ status: 409, body: { error: motivo } })
   })
 
-  // Revisão geral (bloqueador 3): fato editado em outra tela depois do roteiro aprovado → mesma comparação do `preparar`
-  // do galeria-aplicar; nunca reserva nem cobra imagem que o aplicar recusaria.
-  it('fatos_hash vigente ≠ o do roteiro aprovado → 409 desatualizada antes de reservar (zero linhas, zero provedor)', async () => {
-    f.vigencia.fatos_hash = 'h2'
-    expect(await chamar(pedido())).toMatchObject({ status: 409, body: { error: 'desatualizada' } })
-    semCusto()
+  it('roteiro_versao no corpo é ignorado', async () => {
+    expect((await chamar(pedido({ roteiro_versao: 99 }))).status).toBe(200)
   })
 
   it('org sem o módulo imagem_ia → 403', async () => {
@@ -249,49 +325,5 @@ describe('galeria-gerar', () => {
   it('falha ao publicar o job não derruba o pedido (o despachante retoma)', async () => {
     f.batch.mockRejectedValueOnce(new Error('qstash fora'))
     expect((await chamar(pedido())).status).toBe(200)
-  })
-
-  describe('lupa pela caixa do produto (nunca cobra o que não aprova)', () => {
-    it.each([
-      ['geral 3 (gerador)', false, [3]], ['geral 7 (recorte)', false, [7]], ['Moda 5 (recorte)', true, [5]], ['Moda 7 (recorte)', true, [7]],
-    ])('%s em MISSOES_LUPA_PENDENTE com lupa_ok → 409 lupa_pendente, zero linhas', async (_n, moda, ms) => {
-      db.galeria_roteiros = [roteiro({ moda })]
-      const r = await chamar(pedido({ missoes: [1, ...ms] }))
-      expect(r).toEqual({ status: 409, body: { error: 'lupa_pendente', missoes: ms } })
-      semCusto()
-    })
-
-    it('geral 3 com cor sem detalhe (lupa_ok=false) → 409 lupa_indisponivel, zero linhas e nenhum provedor', async () => {
-      f.travas = { geral: [], moda: [] }
-      db.galeria_referencias = [refLinha('refR', lupaOk()), refLinha('refA', { estado: 'sem_detalhe', versao: VERSAO_LEITURA, tentado_em: 't' })]
-      const r = await chamar(pedido({ missoes: [1, 3] }))
-      expect(r).toEqual({ status: 409, body: { error: 'lupa_indisponivel', bloqueadas: [{ cor: 'Azul', missao: 3, motivo: 'lupa_indisponivel' }] } })
-      semCusto()
-    })
-
-    it.each([
-      ['nunca lida', null], ['falhou', { estado: 'falhou', versao: VERSAO_LEITURA, tentado_em: 't' }],
-      ['versão antiga', lupaOk({ versao: 'openai/velho#lupa-v0' })],
-    ])('leitura %s → 409 lupa_lendo (retentável, distinta de sem_detalhe), zero linhas', async (_n, d) => {
-      f.travas = { geral: [], moda: [] }
-      db.galeria_referencias = [refLinha('refR', d), refLinha('refA', lupaOk())]
-      const r = await chamar(pedido({ missoes: [3] }))
-      expect(r).toEqual({ status: 409, body: { error: 'lupa_lendo', bloqueadas: [{ cor: 'Rosa', missao: 3, motivo: 'lupa_lendo' }] } })
-      semCusto()
-    })
-
-    it('recorte (geral 7) com um só detalhe (não cabe) → nenhuma linha reservada', async () => {
-      f.travas = { geral: [], moda: [] }
-      db.galeria_referencias = [refLinha('refR', lupaOk({ detalhes: [{ x: 0.15, y: 0.15, w: 0.1, h: 0.1 }] })), refLinha('refA', lupaOk())]
-      const r = await chamar(pedido({ missoes: [1, 7] }))
-      expect(r.body).toEqual({ error: 'lupa_indisponivel', bloqueadas: [{ cor: 'Rosa', missao: 7, motivo: 'lupa_indisponivel' }] })
-      semCusto()
-    })
-
-    it('ramo liberado com lupa_ok em todas as cores → reserva geral 3 (gerador) normalmente', async () => {
-      f.travas = { geral: [], moda: [] }
-      expect((await chamar(pedido({ missoes: [3] }))).status).toBe(200)
-      expect((fake.rpcs.find((x) => x.nome === 'galeria_reservar_pedido')!.args.p_pedido as { itens: Linha[] }).itens.map((i) => i.missao)).toEqual([3, 3])
-    })
   })
 })
