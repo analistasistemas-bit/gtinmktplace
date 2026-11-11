@@ -303,3 +303,8 @@ verify_jwt = true
 # (assinatura conferida no código).
 [functions.galeria-aplicar-worker]
 verify_jwt = false
+
+# ADR-0201 (Galeria da cor por IA): retenção do Storage da galeria (só órfãs não citadas, > 1 dia). Só QStash
+# (agendamento 1×/dia; assinatura conferida no código).
+[functions.galeria-retencao]
+verify_jwt = false
