@@ -56,13 +56,13 @@ export function missoesSugeridas(nCores: number): Missao[] {
 }
 
 /**
- * Task 12, fix 1: a lupa/recorte é um corte cego da referência (`recortesDetalhe`), que pode pegar parede ou mesa.
- * Até o Diego decidir a origem do recorte, a aprovação dessas missões fica bloqueada — na edge `galeria-aprovar`
- * (garantia) e na tela. Para liberar, esvazie as listas.
+ * Task 12, fix 1 + adendo 11/11 (lupa pela caixa do produto, `lupa.ts`): as missões com lupa/recorte ficam travadas
+ * até o Diego aprovar a amostra real (portão da Task 16) — `galeria-gerar` recusa (nunca cobra), `galeria-aprovar`
+ * recusa e a tela desabilita. Para liberar, esvazie as listas (commit próprio). Testes do ramo liberado injetam `travas`.
  */
 export const MISSOES_LUPA_PENDENTE: { geral: readonly number[]; moda: readonly number[] } = { geral: [3, 7], moda: [5, 7] }
-export const lupaPendente = (missao: number, moda: boolean): boolean =>
-  (moda ? MISSOES_LUPA_PENDENTE.moda : MISSOES_LUPA_PENDENTE.geral).includes(missao)
+export const lupaPendente = (missao: number, moda: boolean, travas = MISSOES_LUPA_PENDENTE): boolean =>
+  (moda ? travas.moda : travas.geral).includes(missao)
 
 // Categorias de Moda — GET https://api.mercadolibre.com/categories/{id} (público, sem token),
 // consultado em 2026-11-09. Raiz: MLB1430 "Calçados, Roupas e Bolsas" (22 filhas diretas).

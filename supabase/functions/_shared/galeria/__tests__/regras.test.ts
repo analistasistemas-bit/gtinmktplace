@@ -5,6 +5,8 @@ import {
   contarPalavras,
   ehModa,
   LIMITES,
+  lupaPendente,
+  MISSOES_LUPA_PENDENTE,
   missoesDisponiveis,
   missoesSugeridas,
   termosProibidos,
@@ -88,6 +90,15 @@ const PATH_CALCADO = [
   { id: 'MLB23262', name: 'Calçados' },
   { id: 'MLB275584', name: 'Alpargata' },
 ]
+
+describe('lupaPendente', () => {
+  it('trava geral 3/7 e Moda 5/7 até o portão da Task 16; travas injetadas por parâmetro liberam', () => {
+    expect(MISSOES_LUPA_PENDENTE).toEqual({ geral: [3, 7], moda: [5, 7] })
+    expect([1, 2, 3, 4, 5, 6, 7].filter((m) => lupaPendente(m, false))).toEqual([3, 7])
+    expect([1, 2, 3, 4, 5, 6, 7].filter((m) => lupaPendente(m, true))).toEqual([5, 7])
+    expect(lupaPendente(3, false, { geral: [], moda: [] })).toBe(false)
+  })
+})
 
 describe('ehModa', () => {
   it('verdadeiro para o path real de uma regata', () => {
