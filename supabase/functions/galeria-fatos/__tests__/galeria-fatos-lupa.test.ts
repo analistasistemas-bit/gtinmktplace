@@ -36,6 +36,7 @@ const urls = () => f.create.mock.calls.map((c) => (c[0].messages[1].content[0].i
 beforeEach(() => {
   f.create.mockReset()
   db = {
+    organizations: [{ id: 'org', modulos_habilitados: ['imagem_ia'] }, { id: 'org2', modulos_habilitados: ['imagem_ia'] }],
     anuncios_externos: [{ id: 'an1', org_id: 'org', canal: 'mercado_livre', codigo_pai: '100', item_externo_id: 'MLB1', variacoes_externas: { '100P': {}, '100R': {} } }],
     anuncios_externos_itens: [], profiles: [{ id: 'u1', org_id: 'org' }],
     familias: [{

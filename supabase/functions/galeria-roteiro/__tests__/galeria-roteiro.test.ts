@@ -45,6 +45,7 @@ const missaoIA = (missao: number, extra: Linha = {}) => ({
 
 beforeEach(() => {
   db = {
+    organizations: [{ id: 'org', modulos_habilitados: ['imagem_ia'] }, { id: 'org2', modulos_habilitados: ['imagem_ia'] }],
     anuncios_externos: [{
       id: 'an1', org_id: 'org', canal: 'mercado_livre', codigo_pai: '100', item_externo_id: 'MLB1', variacoes_externas: { '100P': {} },
     }],
@@ -101,6 +102,16 @@ const roteiro = (extra: Linha) => db.galeria_roteiros.push({
 })
 
 describe('galeria-roteiro: criar', () => {
+  // Revisão geral (item 4): o roteiro chama o modelo de texto por conta da Daludi; exige o módulo imagem_ia.
+  it('módulo imagem_ia desligado → 403 modulo_desligado em toda ação, sem IA nem gravação', async () => {
+    db.organizations[0].modulos_habilitados = []
+    for (const acao of ['criar', 'ler', 'salvar', 'aprovar']) {
+      expect(await chamar({ ...base, acao })).toMatchObject({ status: 403, body: { error: 'modulo_desligado' } })
+    }
+    expect(f.ia).not.toHaveBeenCalled()
+    expect(db.galeria_roteiros).toEqual([])
+  })
+
   it('categoria e Moda ao vivo; o texto do modelo some em Moda; grava rascunho v1 na família vigente', async () => {
     caminho = [{ id: 'MLB1430', name: 'Calçados, Roupas e Bolsas' }, { id: 'MLB3112', name: 'Blusas' }]
     f.ia.mockResolvedValueOnce(respostaIA([missaoIA(1), missaoIA(2, { headline: 'Blusa linda', fatosUsados: ['nome'] })]))

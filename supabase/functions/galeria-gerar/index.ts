@@ -2,7 +2,8 @@
 // POST {pedido_id, ml_item_id, roteiro_versao, cores, missoes, unit_cents_exibido}. Ordem: gate do módulo → anúncio →
 // repetição do mesmo pedido (devolve o que já existe) → roteiro aprovado da família vigente → elegibilidade no ML
 // (catálogo, conjunto da cor) → preço do mês → ciência e vistas por cor → lupa por (cor, missão) →
-// `galeria_reservar_pedido`. Missão com lupa travada (`lupa_pendente`) recusa logo depois do roteiro. Nenhuma recusa
+// `galeria_reservar_pedido`. Fatos vigentes ≠ `fatos_hash` do roteiro → `desatualizada`. Missão com lupa travada
+// (`lupa_pendente`) recusa logo depois do roteiro. Nenhuma recusa
 // reserva pedido nem chama provedor. Depois da reserva publica um job por imagem `gerador` (otimização: o despachante
 // retoma o que se perder). Só GET no ML; nunca escreve em anúncio.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
@@ -72,7 +73,7 @@ Deno.serve(async (req) => {
     }
 
     // Um aprovado por anúncio (índice único): a versão pedida tem de ser ele, e da família vigente.
-    const { data: rot, error: eR } = await admin.from('galeria_roteiros').select('id, familia_id, versao, moda, conteudo')
+    const { data: rot, error: eR } = await admin.from('galeria_roteiros').select('id, familia_id, versao, moda, conteudo, fatos_hash')
       .eq('org_id', orgId).eq('anuncio_externo_id', a.anuncioId).eq('status', 'aprovado').maybeSingle();
     if (eR) throw new Error(eR.message);
     if (!rot || rot.versao !== versao) return json({ error: 'roteiro_nao_aprovado' }, 409);
@@ -121,6 +122,9 @@ Deno.serve(async (req) => {
 
     // Ciência (R1.3) e vistas por cor (R3.2). Sem `conferir`: o gerar nunca paga visão da etiqueta.
     const v = await calcularVigencia(admin, orgId, a);
+    // Fato mudou depois do roteiro aprovado (outra tela): a mesma comparação do `preparar` do galeria-aplicar. Nunca
+    // reserva nem cobra imagem que o aplicar recusaria (revisão geral, bloqueador 3).
+    if (v.fatos_hash !== rot.fatos_hash) return json({ error: 'desatualizada' }, 409);
     const pendentes = cienciaPendente(conteudo, v.fatos);
     if (pendentes.length > 0) return json({ error: 'conteudo.ciencia_nao_conferido', campos: pendentes }, 409);
     const refDe = (cor: string, vista: Vista) => {
@@ -147,7 +151,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    const { data: linhas, error: eL } = await admin.from('galeria_imagens').select('roteiro_id, cor, missao, geracao, status, origem')
+    const { data: linhas, error: eL } = await admin.from('galeria_imagens').select('roteiro_id, cor, missao, geracao, status, origem, erro')
       .eq('org_id', orgId).eq('anuncio_externo_id', a.anuncioId).in('cor', cores);
     if (eL) throw new Error(eL.message);
     const plano = planejarGeracoes({ roteiroId: rot.id, cores, missoes, moda, vistasPorCor, linhas: (linhas ?? []) as LinhaVaga[] });

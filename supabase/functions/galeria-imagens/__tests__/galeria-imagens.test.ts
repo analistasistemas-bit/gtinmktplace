@@ -32,7 +32,7 @@ const img = (n: number, extra: Linha = {}): Linha => ({
 beforeEach(() => {
   f.org = 'org'
   db = {
-    organizations: [{ id: 'org' }, { id: 'org2' }],
+    organizations: [{ id: 'org', modulos_habilitados: ['imagem_ia'] }, { id: 'org2', modulos_habilitados: ['imagem_ia'] }],
     anuncios_externos: [
       { id: 'an1', org_id: 'org', canal: 'mercado_livre', codigo_pai: '100', item_externo_id: 'MLB1', variacoes_externas: { '100R': {} } },
       // Split: outra partição do mesmo produto (mesma família).
@@ -244,5 +244,29 @@ describe('galeria-imagens — reportar_invalida', () => {
     )
     for (let n = 1; n <= 5; n++) expect((await reportar(U(n))).body).toEqual({ reportada: false })
     expect(db.galeria_imagens.every((i) => i.status !== 'falhou')).toBe(true)
+  })
+
+  // Revisão geral (bloqueador 2): reportar não devolve a vaga — 3 reportes seguidos esgotam o teto da (cor, missão).
+  it('3 reportes seguidos → "Gerar de novo" some (conta no teto) e o erro fica imagem_invalida', async () => {
+    for (let g = 1; g <= 3; g++) {
+      db.galeria_imagens.push(img(g, { missao: 2, geracao: g }))
+      expect((await reportar(U(g))).body).toEqual({ reportada: true })
+    }
+    expect(db.galeria_imagens.every((i) => i.status === 'falhou' && i.erro === 'imagem_invalida')).toBe(true)
+    const imgs = (await chamar({ acao: 'listar', ml_item_id: 'MLB1' })).body.imagens as Linha[]
+    expect(imgs.filter((i) => i.missao === 2).map((i) => i.pode_gerar_de_novo)).toEqual([false, false, false])
+  })
+})
+
+describe('galeria-imagens — módulo imagem_ia', () => {
+  it('desligado → 403 modulo_desligado em toda ação, sem ler, cobrar nem gravar', async () => {
+    db.organizations[0].modulos_habilitados = []
+    db.galeria_imagens.push(img(1))
+    for (const body of [{ acao: 'listar', ml_item_id: 'MLB1' }, { acao: 'confirmar_exibicao', ml_item_id: 'MLB1', imagem_ids: [U(1)] },
+      { acao: 'reportar_invalida', ml_item_id: 'MLB1', imagem_id: U(1) }]) {
+      expect(await chamar(body)).toMatchObject({ status: 403, body: { error: 'modulo_desligado' } })
+    }
+    expect(fake.rpcs).toEqual([])
+    expect(db.galeria_imagens[0]).toMatchObject({ status: 'gerada', entregue_em: null })
   })
 })

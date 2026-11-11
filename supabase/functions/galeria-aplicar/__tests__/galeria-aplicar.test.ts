@@ -43,6 +43,7 @@ beforeEach(() => {
   f.auth = { userId: 'u1', orgId: 'org', isAdmin: true, support: null }
   f.fatosHash = 'h'
   db = {
+    organizations: [{ id: 'org', modulos_habilitados: ['imagem_ia'] }, { id: 'org2', modulos_habilitados: ['imagem_ia'] }],
     anuncios_externos: [
       { id: 'an1', org_id: 'org', canal: 'mercado_livre', codigo_pai: '100', item_externo_id: 'MLB1', variacoes_externas: { '100R': {}, '100A': {} } },
       // Split: partição 2 do mesmo produto.
@@ -89,6 +90,20 @@ const preparar = (extra: Linha = {}) => chamar({ acao: 'preparar', ml_item_id: '
 const APL = '11111111-1111-4111-8111-111111111111'
 
 describe('galeria-aplicar — preparar', () => {
+  // Revisão geral (item 4): aplicar foto nova exige o módulo imagem_ia. Reverter e estado ficam fora do gate: desligar
+  // o módulo é o plano de volta e não pode prender fotos já aplicadas no ML.
+  it('módulo imagem_ia desligado → preparar e confirmar 403; estado e reverter seguem', async () => {
+    db.organizations[0].modulos_habilitados = []
+    for (const acao of ['preparar', 'confirmar']) {
+      expect(await chamar({ acao, ml_item_id: 'MLB1', cor: 'Rosa', modo: 'substituir', aplicacao_id: APL }))
+        .toMatchObject({ status: 403, body: { error: 'modulo_desligado' } })
+    }
+    expect(db.galeria_aplicacoes).toEqual([])
+    expect(metodos).toEqual([])
+    expect((await chamar({ acao: 'estado', ml_item_id: 'MLB1' })).status).toBe(200)
+    expect((await chamar({ acao: 'reverter', ml_item_id: 'MLB1', aplicacao_id: APL })).body).not.toEqual({ error: 'modulo_desligado' })
+  })
+
   it('não admin → 403 (todas as ações)', async () => {
     f.auth = { ...f.auth, isAdmin: false }
     for (const acao of ['preparar', 'confirmar', 'reverter']) {

@@ -63,7 +63,8 @@ function medidasDoFato(f: Fato) {
  * - número com unidade conhecida (mm, cm, m, g, kg, ml, l…) só passa com a MESMA medida (convertida) num fato
  *   citado — dígito igual não basta ("20 metros" ≠ largura_cm 20);
  * - número sem unidade (ou com %/palavra comum) passa se o número está no valor de um fato citado;
- * - material de `MATERIAIS` no texto (palavra inteira, COM acento) precisa estar no valor de um fato citado.
+ * - material de `MATERIAIS` no texto (palavra inteira, acento ignorado; `lã` só com acento) precisa estar no valor
+ *   de um fato citado.
  */
 function semAncora(texto: string, fatos: Fato[]): string[] {
   const t = norm(texto);
@@ -75,10 +76,13 @@ function semAncora(texto: string, fatos: Fato[]): string[] {
       : (norm(f.valor).match(new RegExp(NUM, 'g')) ?? []).map(numero).includes(numero(n))));
     if (!ok) faltam.push(token.trim());
   }
-  // ponytail: material fora de MATERIAIS não é ancorado (limite conhecido); texto sem acento ("algodao") também não.
+  // Sem acento dos dois lados (revisão geral, Renda Búfalo: "100% algodao" passava contra "100% poliéster"). Só `lã`
+  // exige o acento: sem ele vira "la" e colide com "lá".
+  // ponytail: material fora de MATERIAIS não é ancorado (limite conhecido); "100% la" sem acento também não.
   const comAcento = texto.normalize('NFC').toLowerCase();
   for (const mat of MATERIAIS) {
-    if (palavra(comAcento, mat) && !fatos.some((f) => palavra(norm(f.valor), norm(mat)))) faltam.push(mat);
+    const citado = mat === 'lã' ? palavra(comAcento, mat) : palavra(t, norm(mat));
+    if (citado && !fatos.some((f) => palavra(norm(f.valor), norm(mat)))) faltam.push(mat);
   }
   return faltam;
 }

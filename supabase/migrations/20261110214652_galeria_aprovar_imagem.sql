@@ -7,9 +7,13 @@
 --   - imagem da org e do anúncio, `gerada` (repetição já `aprovada` com o mesmo arquivo → ok, sem gravar);
 --   - `final_upload_path` ainda é o arquivo que a edge conferiu (um `preparar_upload` concorrente troca o caminho);
 --   - imagem `gerador` com `alertas` nulo → a verificação por visão ainda não rodou (recorte nasce com `[]`);
+--   - imagem `gerador` sem `entregue_em` → ainda não cobrada (exibição não confirmada); recorte nunca é cobrado;
 --   - roteiro da imagem ainda é o aprovado.
 -- Devolve código, nunca levanta por estado:
---   ok | nao_encontrada | desatualizada | nao_aprovavel | upload_trocado | verificacao_pendente | aprovacao_concorrente.
+--   ok | nao_encontrada | desatualizada | nao_aprovavel | upload_trocado | verificacao_pendente | exibicao_pendente |
+--   aprovacao_concorrente.
+-- Editada no lugar na revisão geral (11/11): nenhuma migration da galeria foi aplicada em produção (última aplicada
+-- 20261108235937).
 -- A anterior volta a `gerada` mesmo se citada em manifesto `preparada`/em andamento/`aplicada`: a Task 14 trata
 -- (galeria_confirmar_aplicacao já devolve `desatualizada` para manifesto com imagem que deixou de ser aprovada).
 create unique index galeria_imagens_uma_aprovada_uidx
@@ -32,6 +36,9 @@ begin
   if v_i.status <> 'gerada' then return 'nao_aprovavel'; end if;
   if v_i.final_upload_path is distinct from p_upload_path then return 'upload_trocado'; end if;
   if v_i.origem = 'gerador' and v_i.alertas is null then return 'verificacao_pendente'; end if;
+  -- Revisão geral (bloqueador 1): gerador só aprova já cobrada (exibida). Sem isso, foto aplicada sem nenhuma linha em
+  -- platform_image_deliveries; a tela repete `galeria_confirmar_exibicao` (idempotente) e tenta de novo.
+  if v_i.origem = 'gerador' and v_i.entregue_em is null then return 'exibicao_pendente'; end if;
   if not exists (select 1 from public.galeria_roteiros r where r.id = v_i.roteiro_id and r.status = 'aprovado') then
     return 'desatualizada';
   end if;

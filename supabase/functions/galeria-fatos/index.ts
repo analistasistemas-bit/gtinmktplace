@@ -6,6 +6,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
+import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { carregarAnuncio, coresDoAnuncio, resolverAnuncio, type AnuncioGaleria } from '../_shared/galeria/anuncio.ts';
 import { calcularVigencia, ehJpeg, gravarReferencia, lerFicha, type Referencia } from '../_shared/galeria/referencias.ts';
 import { conferirEtiqueta } from '../_shared/galeria/etiqueta.ts';
@@ -154,6 +155,8 @@ Deno.serve(async (req) => {
   if (!mlItemId) return json({ error: 'ml_item_id_obrigatorio' }, 400);
 
   const admin = adminClient();
+  // ADR-0201 §8 (revisão geral): visão da etiqueta e escrita na ficha por conta da Daludi → exige o módulo imagem_ia (fail-closed).
+  if (!(await exigirModulo(admin, orgId, 'imagem_ia'))) return json({ error: 'modulo_desligado' }, 403);
   try {
     const r = await resolverAnuncio(admin, orgId, mlItemId);
     if ('erro' in r) return json({ error: r.erro }, 409);

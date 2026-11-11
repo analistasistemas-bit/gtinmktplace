@@ -142,6 +142,20 @@ describe('validarRoteiro', () => {
     expect(validarRoteiro(r, fatos, false)).toEqual([expect.stringMatching(/Missão 4: "algodão" no texto não vem de fato citado/)])
   })
 
+  // Revisão geral (item 6), caso Renda Búfalo: o modelo escreve sem acento e o material passava sem âncora.
+  it('material sem acento: "100% algodao" × fato "100% poliéster" → erro; "poliester" × "poliéster" passa; "lá" não é lã', () => {
+    const fatos = FATOS.map((f) => (f.campo === 'atributo:MAIN_MATERIAL' ? { ...f, valor: '100% poliéster' } : f))
+    const com = (headline: string) => {
+      const r = comMissao({ headline, beneficios: [], fatosUsados: ['atributo:MAIN_MATERIAL'] })
+      r.missoes = r.missoes.filter((m) => m.missao !== 5)
+      return validarRoteiro(r, fatos, false)
+    }
+    expect(com('100% algodao')).toEqual([expect.stringMatching(/Missão 4: "algodão" no texto não vem de fato citado/)])
+    expect(com('Renda Búfalo 100% poliamida')).toEqual([expect.stringMatching(/"poliamida" no texto não vem de fato citado/)])
+    expect(com('100% poliester')).toEqual([])
+    expect(com('Leve para lá')).toEqual([])
+  })
+
   it('texto ancorado: número sem fato citado → erro; medida convertida do fato citado passa', () => {
     expect(validarRoteiro(comMissao({ beneficios: ['Rolo com 50 metros'] }), FATOS, false))
       .toEqual([expect.stringMatching(/Missão 4: "50 metros" no texto não vem de fato citado/)])

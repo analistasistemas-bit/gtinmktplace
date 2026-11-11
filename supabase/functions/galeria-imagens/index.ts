@@ -9,10 +9,12 @@
 // - confirmar_exibicao {ml_item_id, imagem_ids}: o navegador exibiu e validou a imagem → `galeria_confirmar_exibicao`
 //   (cobrança = exibição, Task 2; idempotente). Operação histórica: só exige o mesmo anúncio.
 // - reportar_invalida {ml_item_id, imagem_id}: imagem branca/ilegível no navegador → `falhou` sem cobrança (falha
-//   técnica não gasta vaga). Só linha `gerada`, `gerador`, ainda não exibida, deste anúncio (qualquer família) e desta org.
+//   `imagem_invalida`; revisão geral: ocupa vaga no teto, pois o provedor foi pago — pedido.ts / galeria_reservar_pedido).
+//   Só linha `gerada`, `gerador`, ainda não exibida, deste anúncio (qualquer família) e desta org.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
+import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { resolverAnuncio } from '../_shared/galeria/anuncio.ts';
 import { bloqueioDaVaga, precoDoMes, type LinhaVaga } from '../_shared/galeria/pedido.ts';
 import { missoesDisponiveis } from '../_shared/galeria/regras.ts';
@@ -43,6 +45,8 @@ Deno.serve(async (req) => {
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
   const { orgId } = auth;
   const admin = adminClient();
+  // ADR-0201 §8 (revisão geral): mostrar, cobrar e reportar imagens exige o módulo imagem_ia (fail-closed).
+  if (!(await exigirModulo(admin, orgId, 'imagem_ia'))) return json({ error: 'modulo_desligado' }, 403);
 
   const body = await req.json().catch(() => ({})) as Record<string, unknown>;
   const acao = body.acao;

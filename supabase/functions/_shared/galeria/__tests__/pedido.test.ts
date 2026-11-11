@@ -40,6 +40,19 @@ describe('planejarGeracoes', () => {
       .toEqual([{ cor: 'Rosa', missao: 2, geracao: 3 }])
   })
 
+  // Revisão geral (bloqueador 2): imagem reportada inválida pelo cliente (`falhou` + erro `imagem_invalida`) gastou
+  // geração no provedor: conta no teto, igual à RPC. Falha técnica (outro erro) continua não contando.
+  it('3 reportadas inválidas → 4ª geração recusada teto; falha técnica não conta; geração segue a numeração', () => {
+    const inv = (g: number) => linha('Rosa', 2, g, 'falhou', { erro: 'imagem_invalida' })
+    expect(planejarGeracoes({ ...base, linhas: [inv(1), inv(2), inv(3)], cores: ['Rosa'], missoes: [2] }).bloqueadas)
+      .toEqual([{ cor: 'Rosa', missao: 2, motivo: 'teto' }])
+    const tecnicas = [1, 1, 1].map((g) => linha('Rosa', 2, g, 'falhou', { erro: 'provedor_falhou' }))
+    expect(planejarGeracoes({ ...base, linhas: tecnicas, cores: ['Rosa'], missoes: [2] }).novas)
+      .toEqual([{ cor: 'Rosa', missao: 2, geracao: 1 }])
+    expect(planejarGeracoes({ ...base, linhas: [inv(1), inv(2)], cores: ['Rosa'], missoes: [2] }).novas)
+      .toEqual([{ cor: 'Rosa', missao: 2, geracao: 3 }])
+  })
+
   it('geração aberta (de qualquer roteiro) → em_andamento', () => {
     const linhas = [linha('Rosa', 1, 1, 'gerando', { roteiro_id: 'rot-velho' })]
     expect(planejarGeracoes({ ...base, linhas, cores: ['Rosa'], missoes: [1] }).bloqueadas)

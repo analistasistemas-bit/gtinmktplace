@@ -58,8 +58,17 @@ const LUPA = {
   ref_w: 1000, ref_h: 1000,
 };
 const LUPA_MODA = { ...LUPA, ref_w: 1500, ref_h: 1500 };
+/** Só os campos que o layout da missão mostra (o roteiro real manda os textos da própria missão). */
+const CAMPOS: Record<number, Array<keyof TextosComposicao>> = {
+  2: ['headline', 'subheadline'], 3: ['headline', 'subheadline', 'legendas'], 4: ['headline', 'beneficios'],
+  5: ['headline', 'specs'], 6: ['headline', 'etapas'], 7: ['headline', 'legendas'],
+};
+const doLayout = (missao: number, t: TextosComposicao = T): TextosComposicao => {
+  const r = Object.fromEntries((CAMPOS[missao] ?? []).map((c) => [c, t[c]])) as TextosComposicao;
+  return missao === 3 && r.legendas ? { ...r, legendas: r.legendas.slice(0, 1) } : r; // missão 3: um chip só
+};
 const compor = (missao: number, extra: Partial<Parameters<typeof comporImagemFinal>[0]> = {}) =>
-  comporImagemFinal({ cenaUrl: 'cena', refUrl: 'ref', missao, textos: T, corProduto: null, moda: false, ...extra });
+  comporImagemFinal({ cenaUrl: 'cena', refUrl: 'ref', missao, textos: doLayout(missao), corProduto: null, moda: false, ...extra });
 const textosDesenhados = () => ctx.fillText.mock.calls.map((c) => c[0] as string);
 
 describe('comporImagemFinal', () => {
@@ -186,7 +195,7 @@ describe('estouro de texto (adendo T11): recusa com motivo, nunca corta', () => 
   it('etapa de 7 palavras longas (>52 caracteres) → motivo e composição recusada sem carregar nada', async () => {
     expect(ETAPA_LONGA.split(' ')).toHaveLength(7);
     expect(ETAPA_LONGA.length).toBeGreaterThan(52);
-    const t = { ...T, etapas: [ETAPA_LONGA] };
+    const t = doLayout(6, { ...T, etapas: [ETAPA_LONGA] });
     expect(motivosDeTexto(6, t, false)).toEqual([expect.stringMatching(/Etapa 1/)]);
     await expect(compor(6, { textos: t })).rejects.toThrow(/Etapa 1/);
     expect(cargas).toEqual([]);
@@ -195,15 +204,38 @@ describe('estouro de texto (adendo T11): recusa com motivo, nunca corta', () => 
   it('headline de 5 palavras longas (>40 caracteres) → motivo', () => {
     expect(HEADLINE_LONGA.split(' ')).toHaveLength(5);
     expect(HEADLINE_LONGA.length).toBeGreaterThan(40);
-    for (const m of [2, 3, 4, 5, 6, 7]) expect(motivosDeTexto(m, { ...T, headline: HEADLINE_LONGA }, false)).toEqual([expect.stringMatching(/Título/)]);
+    for (const m of [2, 3, 4, 5, 6, 7]) expect(motivosDeTexto(m, doLayout(m, { ...T, headline: HEADLINE_LONGA }), false)).toEqual([expect.stringMatching(/Título/)]);
   });
 
   it('mais itens do que o layout comporta → motivo (nunca some em silêncio)', () => {
-    expect(motivosDeTexto(4, { ...T, beneficios: ['a', 'b', 'c', 'd'] }, false)).toEqual([expect.stringMatching(/comporta/)]);
+    expect(motivosDeTexto(4, doLayout(4, { ...T, beneficios: ['a', 'b', 'c', 'd'] }), false)).toEqual([expect.stringMatching(/comporta/)]);
+  });
+
+  // Revisão geral (item 5): texto aprovado no roteiro que o layout da missão não mostra nunca some em silêncio — a
+  // composição recusa com motivo e o passo Roteiro barra a aprovação pela mesma função.
+  it('missão 2 com benefícios, etapas, specs ou legendas → motivo por campo e composição recusada', async () => {
+    const t = { headline: 'Prende firme', beneficios: ['Não desfia'], etapas: ['Corte'], specs: [{ rotulo: 'Largura', valor: '25 mm' }], legendas: ['Borda'] };
+    expect(motivosDeTexto(2, t, false)).toEqual([
+      expect.stringMatching(/Benefícios.*missão 2/), expect.stringMatching(/Especificações.*missão 2/),
+      expect.stringMatching(/Etapas.*missão 2/), expect.stringMatching(/Legendas.*missão 2/),
+    ]);
+    await expect(compor(2, { textos: t })).rejects.toThrow(/Benefícios/);
+    expect(cargas).toEqual([]);
+  });
+
+  it('missão 3 com duas legendas (um chip só) ou com etapas → motivo', async () => {
+    expect(motivosDeTexto(3, { headline: 'Prende firme', legendas: ['Trama fechada', 'Borda firme'] }, false))
+      .toEqual([expect.stringMatching(/comporta/)]);
+    expect(motivosDeTexto(3, { headline: 'Prende firme', etapas: ['Corte'] }, false)).toEqual([expect.stringMatching(/Etapas.*missão 3/)]);
+    await expect(compor(3, { textos: { headline: 'Prende firme', legendas: ['Trama', 'Borda'] } })).rejects.toThrow(/comporta/);
+  });
+
+  it('campo vazio ou só espaço fora do layout não conta', () => {
+    expect(motivosDeTexto(2, { headline: 'Prende firme', subheadline: '', beneficios: [], legendas: ['  '] }, false)).toEqual([]);
   });
 
   it('textos normais, capa e Moda → sem motivo', () => {
-    for (const m of [2, 3, 4, 5, 6, 7]) expect(motivosDeTexto(m, T, false)).toEqual([]);
+    for (const m of [2, 3, 4, 5, 6, 7]) expect(motivosDeTexto(m, doLayout(m), false)).toEqual([]);
     expect(motivosDeTexto(1, { ...T, headline: HEADLINE_LONGA }, false)).toEqual([]);
     expect(motivosDeTexto(2, { ...T, headline: HEADLINE_LONGA }, true)).toEqual([]);
   });

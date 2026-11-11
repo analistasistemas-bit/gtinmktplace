@@ -183,4 +183,46 @@ begin
   perform pg_temp.afirmar(has_function_privilege('service_role', 'public.galeria_manter_aplicacao(uuid)', 'execute'), 'service_role executa');
 end $$;
 
+-- Revisão geral (bloqueador 2): `reportar_invalida` (edge galeria-imagens: `falhou` + erro `imagem_invalida`) não
+-- devolve a vaga — a geração foi paga ao provedor. 3 reportes → 4ª reserva `teto`; falha técnica não conta.
+do $$
+declare
+  o constant uuid := '97800000-0000-0000-0000-000000000001';
+  u constant uuid := '97800000-0000-0000-0000-000000000101';
+  v_lote uuid; v_fam uuid; v_an uuid; v_rot uuid; k int; r record; v_ok boolean;
+  pedir constant text := 'select * from public.galeria_reservar_pedido(jsonb_build_object(''id'', gen_random_uuid(),
+    ''org_id'', $1, ''anuncio_externo_id'', $2, ''familia_id'', $3, ''roteiro_id'', $4, ''unit_cents'', 50, ''terms_id'', null,
+    ''elegivel'', false, ''itens'', jsonb_build_array(jsonb_build_object(''cor'', $5, ''missao'', 2))))';
+begin
+  insert into public.lotes (user_id, org_id, status, origem) values (u, o, 'concluido', 'manual') returning id into v_lote;
+  insert into public.familias (lote_id, user_id, org_id, codigo_pai, nome_pai, operacao, origem, chave_cadastro, status)
+  values (v_lote, u, o, '97800002', '97800002', 'CREATE', 'nacional', gen_random_uuid(), 'publicado') returning id into v_fam;
+  insert into public.anuncios_externos (user_id, org_id, canal, codigo_pai, particao, status)
+  values (u, o, 'mercado_livre', '97800002', 0, 'publicado') returning id into v_an;
+  insert into public.galeria_roteiros (org_id, anuncio_externo_id, familia_id, versao, conteudo, fatos_hash, moda, status)
+  values (o, v_an, v_fam, 1, '{}'::jsonb, 'h1', false, 'aprovado') returning id into v_rot;
+
+  -- Falha técnica não gasta vaga: 3 seguidas e a próxima ainda é a geração 1.
+  for k in 1..3 loop
+    execute pedir into r using o, v_an, v_fam, v_rot, 'Tecnica';
+    perform pg_temp.afirmar(r.geracao = 1, 'falha técnica gastou vaga');
+    update public.galeria_imagens set status = 'falhou', erro = 'provedor_falhou' where id = r.id;
+  end loop;
+
+  -- 3 reportadas inválidas → a 4ª é recusada `teto`; numeração 1, 2, 3.
+  for k in 1..3 loop
+    execute pedir into r using o, v_an, v_fam, v_rot, 'Invalida';
+    perform pg_temp.afirmar(r.geracao = k, format('reportada inválida não ocupou a geração %s', k));
+    update public.galeria_imagens set status = 'falhou', erro = 'imagem_invalida' where id = r.id;
+  end loop;
+  begin
+    execute pedir into r using o, v_an, v_fam, v_rot, 'Invalida';
+    v_ok := false;
+  exception when raise_exception then
+    if sqlerrm <> 'teto' then raise; end if;
+    v_ok := true;
+  end;
+  perform pg_temp.afirmar(v_ok, '4ª geração após 3 reportes aceita (vaga devolvida)');
+end $$;
+
 rollback;

@@ -50,6 +50,8 @@ const img = (n: number, extra: Linha = {}): Linha => ({
   id: U(n), org_id: 'org', anuncio_externo_id: 'an1', familia_id: 'famB', roteiro_id: 'rot2', pedido_id: 'p1',
   cor: 'Rosa', missao: 1, geracao: 1, origem: 'gerador', status: 'gerada', cena_path: `c/${n}.png`,
   alertas: [], referencia_id: 'refR', final_upload_path: null, final_path: null, final_sha256: null,
+  // Gerador já exibida (cobrada) por padrão; recorte nunca é cobrado.
+  entregue_em: extra.origem === 'recorte' ? null : '2026-11-10T10:00:00Z',
   aprovado_em: null, aprovado_por: null, ...extra,
 })
 const FINAL_REAL = new Uint8Array(readFileSync('supabase/functions/_shared/galeria/__tests__/fixtures/final-real.jpg'))
@@ -71,6 +73,7 @@ beforeEach(() => {
   f.preparar.mockReset()
   f.preparar.mockImplementation(async () => f.refAtual)
   db = {
+    organizations: [{ id: 'org', modulos_habilitados: ['imagem_ia'] }, { id: 'org2', modulos_habilitados: ['imagem_ia'] }],
     anuncios_externos: [
       { id: 'an1', org_id: 'org', canal: 'mercado_livre', codigo_pai: '100', item_externo_id: 'MLB1', variacoes_externas: { '100R': {} } },
       // Split: outra partição do mesmo produto (mesma família).
@@ -97,6 +100,7 @@ beforeEach(() => {
     if (i.status !== 'gerada') return 'nao_aprovavel'
     if (i.final_upload_path !== p_upload_path) return 'upload_trocado'
     if (i.origem === 'gerador' && i.alertas == null) return 'verificacao_pendente'
+    if (i.origem === 'gerador' && i.entregue_em == null) return 'exibicao_pendente'
     for (const g of db.galeria_imagens) {
       if (g.org_id === p_org && g.roteiro_id === i.roteiro_id && g.cor === i.cor && g.missao === i.missao && g.status === 'aprovada' && g.id !== i.id) g.status = 'gerada'
     }
@@ -212,6 +216,23 @@ describe('galeria-aprovar — aprovar', () => {
     db.galeria_imagens.push(img(1, { alertas: null }))
     await prepararESubir(1)
     expect(await aprovar(U(1))).toMatchObject({ status: 409, body: { error: 'verificacao_pendente' } })
+  })
+
+  // Revisão geral (bloqueador 1): aprovar sem cobrança. Recusa antes de baixar o arquivo; o espelho da RPC também recusa.
+  it('gerador ainda não exibida (sem entregue_em) → 409 exibicao_pendente, sem RPC nem gravar', async () => {
+    db.galeria_imagens.push(img(1, { entregue_em: null }))
+    await prepararESubir(1)
+    expect(await aprovar(U(1))).toMatchObject({ status: 409, body: { error: 'exibicao_pendente' } })
+    expect(fake.rpcs.map((x) => x.nome)).not.toContain('galeria_aprovar_imagem')
+    expect(linha(1)).toMatchObject({ status: 'gerada', final_path: null })
+  })
+
+  it('módulo imagem_ia desligado → 403 modulo_desligado, sem ler nem gravar', async () => {
+    db.organizations[0].modulos_habilitados = []
+    db.galeria_imagens.push(img(1))
+    expect(await preparar(U(1))).toMatchObject({ status: 403, body: { error: 'modulo_desligado' } })
+    expect(await aprovar(U(1))).toMatchObject({ status: 403, body: { error: 'modulo_desligado' } })
+    expect(linha(1)).toMatchObject({ status: 'gerada', final_upload_path: null })
   })
 
   // Fix round 1: lupa é recorte cego da referência; até a decisão do Diego, a edge recusa (a tela só esconde).

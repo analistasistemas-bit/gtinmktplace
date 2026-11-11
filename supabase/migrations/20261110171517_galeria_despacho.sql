@@ -2,6 +2,8 @@
 --
 -- 1. galeria_reservar_pedido: corpo idêntico ao de 20261109093335, exceto o insert — recorte nasce `gerada`, sem
 --    cena e com alertas [] (vem da foto real; nunca vai ao worker nem à visão). `create or replace` mantém os grants.
+--    Revisão geral (11/11, editada no lugar: nada da galeria aplicado em produção): `falhou` com erro
+--    `imagem_invalida` (reportada pelo cliente) ocupa vaga no teto e na numeração. Espelho TS: pedido.ts.
 -- 2. Consultas do despachante (service_role): galeria_trabalho_pendente, galeria_visao_pendente,
 --    galeria_trabalho_pendente_aplicacao e galeria_escritas_adiadas_pendentes; galeria_manter_aplicacao executa as
 --    ações de nível da aplicação (abortar por prazo, compensar aplicados, agregar) sob lock.
@@ -73,14 +75,16 @@ begin
                 and g.cor = v_cor and g.missao = v_missao and g.status in ('pendente', 'submetendo', 'gerando')) then
       raise exception 'em_andamento' using errcode = 'P0001';
     end if;
+    -- Ocupa vaga: tudo fora de `falhou` + a reportada inválida pelo cliente (`falhou` com erro `imagem_invalida`,
+    -- revisão geral): foi paga ao provedor e não pode reabrir geração sem limite. Falha técnica não ocupa.
     if v_origem = 'gerador' and (select count(*) from public.galeria_imagens g
         where g.org_id = v_org and g.roteiro_id = v_roteiro and g.cor = v_cor and g.missao = v_missao
-          and g.origem = 'gerador' and g.status <> 'falhou') >= 3 then
+          and g.origem = 'gerador' and (g.status <> 'falhou' or g.erro = 'imagem_invalida')) >= 3 then
       raise exception 'teto' using errcode = 'P0001';
     end if;
     select coalesce(max(g.geracao), 0) + 1 into v_geracao from public.galeria_imagens g
      where g.org_id = v_org and g.roteiro_id = v_roteiro and g.cor = v_cor and g.missao = v_missao
-       and g.status <> 'falhou';
+       and (g.status <> 'falhou' or g.erro = 'imagem_invalida');
     -- Recorte (missão 7, lupas, Moda 5) vem da foto real: nasce gerada, sem cena e com alertas [] (não passa pela
     -- visão nem pelo worker).
     insert into public.galeria_imagens (org_id, anuncio_externo_id, familia_id, pedido_id, roteiro_id, cor, missao,

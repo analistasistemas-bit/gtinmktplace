@@ -15,6 +15,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
+import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { carregarAnuncio, resolverAnuncio } from '../_shared/galeria/anuncio.ts';
 import { calcularVigencia } from '../_shared/galeria/referencias.ts';
 import { alvosDaCor, lerElegibilidadeItemML, motivoElegibilidade, type ItemElegibilidade } from '../_shared/galeria/alvos.ts';
@@ -73,6 +74,11 @@ Deno.serve(async (req) => {
   const cor = typeof body.cor === 'string' && body.cor.trim() !== '' ? body.cor : null;
   const modo = body.modo === 'substituir' || body.modo === 'adicionar' ? body.modo : null;
   if (!mlItemId || !['preparar', 'confirmar', 'reverter', 'estado'].includes(acao as string)) return json({ error: 'pedido_invalido' }, 400);
+  // ADR-0201 §8 (revisão geral): aplicar foto nova exige o módulo imagem_ia (fail-closed). Reverter e estado ficam fora:
+  // desligar o módulo é o plano de volta e não pode prender no ML as fotos já aplicadas.
+  if ((acao === 'preparar' || acao === 'confirmar') && !(await exigirModulo(admin, orgId, 'imagem_ia'))) {
+    return json({ error: 'modulo_desligado' }, 403);
+  }
   if (acao === 'preparar' ? !cor || !modo : acao !== 'estado' && !aplicacaoId) return json({ error: 'pedido_invalido' }, 400);
 
   try {

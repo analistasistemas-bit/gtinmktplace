@@ -42,6 +42,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   db = {
+    organizations: [{ id: 'org', modulos_habilitados: ['imagem_ia'] }, { id: 'org2', modulos_habilitados: ['imagem_ia'] }],
     anuncios_externos: [{
       id: 'an1', org_id: 'org', canal: 'mercado_livre', codigo_pai: '100', item_externo_id: 'MLB1',
       variacoes_externas: { '100P': {}, '100M': {} },
@@ -81,6 +82,17 @@ const chamar = async (body: Linha) => {
 const fatoDe = (body: Linha, campo: string) => (body.fatos as Linha[]).find((x) => x.campo === campo)
 
 describe('galeria-fatos', () => {
+  // Revisão geral (item 4): visão da etiqueta e escrita na ficha exigem o módulo imagem_ia (gasto da Daludi).
+  it('módulo imagem_ia desligado → 403 modulo_desligado, sem visão nem gravação', async () => {
+    db.organizations[0].modulos_habilitados = []
+    f.conferir.mockClear()
+    for (const acao of ['montar', 'confirmar', 'enviar_vista']) {
+      expect(await chamar({ acao, ml_item_id: 'MLB1', campo: 'nome' })).toMatchObject({ status: 403, body: { error: 'modulo_desligado' } })
+    }
+    expect(f.conferir).not.toHaveBeenCalled()
+    expect(db.galeria_referencias ?? []).toEqual([])
+  })
+
   it('MLB que não identifica um único anúncio da org → 409 anuncio_ambiguo', async () => {
     expect(await chamar({ acao: 'montar', ml_item_id: 'MLB404' })).toMatchObject({ status: 409, body: { error: 'anuncio_ambiguo' } })
   })

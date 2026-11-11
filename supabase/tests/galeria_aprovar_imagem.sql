@@ -32,7 +32,7 @@ declare
   o constant uuid := '97900000-0000-0000-0000-000000000001';
   u constant uuid := '97900000-0000-0000-0000-000000000101';
   v_lote uuid; v_fam uuid; v_an uuid; v_an2 uuid; v_rot uuid; v_ped uuid := gen_random_uuid();
-  v_g1 uuid; v_g2 uuid; v_rec uuid; v_des uuid; v_pend uuid; v_r text; v_ok boolean;
+  v_g1 uuid; v_g2 uuid; v_nexib uuid; v_rec uuid; v_des uuid; v_pend uuid; v_r text; v_ok boolean;
 begin
   insert into public.lotes (user_id, org_id, status, origem) values (u, o, 'concluido', 'manual') returning id into v_lote;
   insert into public.familias (lote_id, user_id, org_id, codigo_pai, nome_pai, operacao, origem, chave_cadastro, status)
@@ -47,13 +47,18 @@ begin
   values (v_ped, o, v_an, v_fam, v_rot, '[]'::jsonb, 50, false);
 
   insert into public.galeria_imagens (org_id, anuncio_externo_id, familia_id, pedido_id, roteiro_id, cor, missao, geracao,
-    request_id, origem, status, cena_path, alertas, final_upload_path) values
-    (o, v_an, v_fam, v_ped, v_rot, 'Rosa', 1, 1, gen_random_uuid(), 'gerador', 'gerada', 'c1.jpg', '[]'::jsonb, 'f/g1-a.jpg')
+    request_id, origem, status, cena_path, alertas, final_upload_path, entregue_em) values
+    (o, v_an, v_fam, v_ped, v_rot, 'Rosa', 1, 1, gen_random_uuid(), 'gerador', 'gerada', 'c1.jpg', '[]'::jsonb, 'f/g1-a.jpg', now())
     returning id into v_g1;
   insert into public.galeria_imagens (org_id, anuncio_externo_id, familia_id, pedido_id, roteiro_id, cor, missao, geracao,
-    request_id, origem, status, cena_path, alertas, final_upload_path) values
-    (o, v_an, v_fam, v_ped, v_rot, 'Rosa', 1, 2, gen_random_uuid(), 'gerador', 'gerada', 'c2.jpg', '[]'::jsonb, 'f/g2-a.jpg')
+    request_id, origem, status, cena_path, alertas, final_upload_path, entregue_em) values
+    (o, v_an, v_fam, v_ped, v_rot, 'Rosa', 1, 2, gen_random_uuid(), 'gerador', 'gerada', 'c2.jpg', '[]'::jsonb, 'f/g2-a.jpg', now())
     returning id into v_g2;
+  -- Revisão geral (bloqueador 1): gerador verificada mas nunca exibida (sem cobrança) não aprova.
+  insert into public.galeria_imagens (org_id, anuncio_externo_id, familia_id, pedido_id, roteiro_id, cor, missao, geracao,
+    request_id, origem, status, cena_path, alertas, final_upload_path) values
+    (o, v_an, v_fam, v_ped, v_rot, 'Rosa', 4, 1, gen_random_uuid(), 'gerador', 'gerada', 'c5.jpg', '[]'::jsonb, 'f/nx-a.jpg')
+    returning id into v_nexib;
   insert into public.galeria_imagens (org_id, anuncio_externo_id, familia_id, pedido_id, roteiro_id, cor, missao, geracao,
     request_id, origem, status, alertas, final_upload_path) values
     (o, v_an, v_fam, v_ped, v_rot, 'Rosa', 7, 1, gen_random_uuid(), 'recorte', 'gerada', '[]'::jsonb, 'f/rec-a.jpg')
@@ -80,6 +85,8 @@ begin
   perform pg_temp.afirmar(public.galeria_aprovar_imagem(o, v_an, v_des, 'f/d-a.jpg', 's', u) = 'desatualizada', 'desatualizada recusa');
   perform pg_temp.afirmar(public.galeria_aprovar_imagem(o, v_an, v_pend, 'f/p-a.jpg', 's', u) = 'verificacao_pendente', 'alertas nulo recusa');
   perform pg_temp.afirmar(public.galeria_aprovar_imagem(o, v_an, v_g1, 'f/g1-OUTRO.jpg', 's', u) = 'upload_trocado', 'caminho trocado recusa');
+  perform pg_temp.afirmar(public.galeria_aprovar_imagem(o, v_an, v_nexib, 'f/nx-a.jpg', 's', u) = 'exibicao_pendente', 'gerador sem entregue_em recusa');
+  perform pg_temp.afirmar((select status = 'gerada' and final_path is null from public.galeria_imagens where id = v_nexib), 'exibicao_pendente não grava');
   perform pg_temp.afirmar(public.galeria_aprovar_imagem(o, v_an2, v_g1, 'f/g1-a.jpg', 's', u) = 'nao_encontrada', 'outra partição não alcança');
   perform pg_temp.afirmar(public.galeria_aprovar_imagem(gen_random_uuid(), v_an, v_g1, 'f/g1-a.jpg', 's', u) = 'nao_encontrada', 'outra org não alcança');
   perform pg_temp.afirmar((select count(*) from public.galeria_imagens where org_id = o and status = 'aprovada') = 0, 'recusas não gravam');
@@ -98,7 +105,7 @@ begin
   perform pg_temp.afirmar((select count(*) from public.galeria_imagens where org_id = o and roteiro_id = v_rot and cor = 'Rosa'
     and missao = 1 and status = 'aprovada') = 1, 'uma capa aprovada');
 
-  -- 5. Recorte (alertas []) aprova sem verificação por visão.
+  -- 5. Recorte (alertas [], nunca cobrado: entregue_em nulo) aprova sem verificação por visão nem exibição.
   perform pg_temp.afirmar(public.galeria_aprovar_imagem(o, v_an, v_rec, 'f/rec-a.jpg', 'sha3', u) = 'ok', 'recorte aprova');
 
   -- 6. Roteiro que deixou de ser o aprovado → desatualizada.

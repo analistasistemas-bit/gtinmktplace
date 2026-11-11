@@ -8,12 +8,15 @@
 //   a referência (sha atual da cor/vista = o da imagem) e grava pela RPC `galeria_aprovar_imagem` (uma aprovada por
 //   cor, missão e roteiro, na mesma transação). Recorte nasce com `alertas = []`; gerador com `alertas` nulo =
 //   verificação por visão ainda não rodou. `verificacao_indisponivel` não bloqueia (só aparece no cartão).
+//   Gerador sem `entregue_em` (exibição ainda não confirmada = não cobrada) → `exibicao_pendente` (revisão geral).
+//   Exige o módulo `imagem_ia`.
 //   Missões com lupa/recorte → `lupa_pendente` enquanto travadas (portão da Task 16, regras.ts). Liberadas, exigem a
 //   leitura `ok` da referência vigente com o recorte cabendo (`lupa_indisponivel`) e `lupa_hash` no corpo = o hash das
 //   caixas gravadas (`lupa_desatualizada`): bundle antigo, sem hash, nunca aprova recorte às cegas.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
+import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { carregarAnuncio, resolverAnuncio } from '../_shared/galeria/anuncio.ts';
 import { carregarFotosAplicadas, prepararReferencia, sha256Hex } from '../_shared/galeria/referencias.ts';
 import { lupaPendente, missoesDisponiveis } from '../_shared/galeria/regras.ts';
@@ -28,7 +31,7 @@ const json = (body: unknown, status = 200) =>
 
 interface LinhaImagem {
   id: string; familia_id: string; roteiro_id: string; cor: string; missao: number; origem: string; status: string;
-  alertas: unknown; referencia_id: string | null; final_upload_path: string | null;
+  alertas: unknown; referencia_id: string | null; final_upload_path: string | null; entregue_em: string | null;
 }
 
 /** Status que impede preparar/aprovar → código do erro (null = `gerada`, pode seguir). */
@@ -44,6 +47,8 @@ Deno.serve(async (req) => {
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
   const { orgId, userId } = auth;
   const admin = adminClient();
+  // ADR-0201 §8 (revisão geral): aprovar escreve no Storage e na galeria; exige o módulo imagem_ia (fail-closed).
+  if (!(await exigirModulo(admin, orgId, 'imagem_ia'))) return json({ error: 'modulo_desligado' }, 403);
 
   const body = await req.json().catch(() => ({})) as Record<string, unknown>;
   const acao = body.acao;
@@ -55,7 +60,7 @@ Deno.serve(async (req) => {
     const r = await resolverAnuncio(admin, orgId, mlItemId);
     if ('erro' in r) return json({ error: r.erro }, 409);
     const { data: im, error: eI } = await admin.from('galeria_imagens')
-      .select('id, familia_id, roteiro_id, cor, missao, origem, status, alertas, referencia_id, final_upload_path')
+      .select('id, familia_id, roteiro_id, cor, missao, origem, status, alertas, referencia_id, final_upload_path, entregue_em')
       .eq('org_id', orgId).eq('anuncio_externo_id', r.anuncioId).eq('id', imagemId).maybeSingle();
     if (eI) throw new Error(eI.message);
     if (!im) return json({ error: 'nao_encontrada' }, 404);
@@ -81,6 +86,8 @@ Deno.serve(async (req) => {
     const b = img.status === 'aprovada' ? null : bloqueio(img.status);
     if (b) return json({ error: b }, 409);
     if (img.origem === 'gerador' && img.alertas == null) return json({ error: 'verificacao_pendente' }, 409);
+    // Gerador só aprova já cobrada (R8.3): a tela repete `confirmar_exibicao` e tenta de novo. A RPC confere de novo.
+    if (img.origem === 'gerador' && img.status !== 'aprovada' && !img.entregue_em) return json({ error: 'exibicao_pendente' }, 409);
     const { data: rot, error: eR } = await admin.from('galeria_roteiros').select('moda').eq('id', img.roteiro_id).eq('org_id', orgId).maybeSingle();
     if (eR) throw new Error(eR.message);
     const moda = rot?.moda === true;

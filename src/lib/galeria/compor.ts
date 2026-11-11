@@ -1,7 +1,8 @@
 // ADR-0201 (Task 12): composição do arquivo final no navegador (R6.3–R6.5, R9.1). Cena cortada ao centro para
 // 1200×1540 (nunca esticar; capa com preenchimento branco), texto do roteiro aprovado em Inter sobre placa branca
 // opaca (estilo A) e lupas recortadas da referência real (R3.3). Moda e capa sem texto. Recortes (missão 7, Moda 5 e 7)
-// usam só `refUrl`. Texto que não cabe na caixa recusa com motivo — nunca é cortado nem sai da área.
+// usam só `refUrl`. Texto que não cabe na caixa, ou campo que o layout da missão não mostra, recusa com motivo — nunca
+// é cortado, sai da área ou some em silêncio.
 // Lupa pela caixa do produto: o recorte sai de `recortesLupa` (o mesmo módulo da edge) sobre as caixas gravadas na
 // referência; sem caixas, caixas que não cabem ou referência com outras dimensões → lança (nunca recorta às cegas).
 // As imagens vêm do Storage (outra origem): `crossOrigin = 'anonymous'` antes do `src`, senão o canvas fica sujo e
@@ -36,15 +37,29 @@ const nfc = (s: string | undefined) => (s ?? '').normalize('NFC').trim();
 const ehRecorte = (missao: number, moda: boolean) =>
   missoesDisponiveis(moda, ['frente', 'costas', 'lateral']).find((m) => m.missao === missao)?.usaGerador === false;
 
-/** Pares texto × caixa na ordem de `layoutMissao`; `excesso` = mais textos do que caixas (nunca some em silêncio). */
-function trechos(missao: number, t: TextosComposicao): { lista: Trecho[]; excesso: boolean } {
+/** Campos que cada missão mostra (além do título); o resto, se preenchido, recusa (nunca some em silêncio). */
+const CAMPOS_DA_MISSAO: Record<number, ReadonlyArray<keyof TextosComposicao>> = {
+  2: ['subheadline'], 3: ['subheadline', 'legendas'], 4: ['beneficios'], 5: ['specs'], 6: ['etapas'], 7: ['legendas'],
+};
+const ROTULO_CAMPO: Array<[keyof TextosComposicao, string]> = [
+  ['subheadline', 'Subtítulo'], ['beneficios', 'Benefícios'], ['specs', 'Especificações'], ['etapas', 'Etapas'], ['legendas', 'Legendas'],
+];
+const preenchido = (v: TextosComposicao[keyof TextosComposicao]) => (Array.isArray(v)
+  ? v.some((x) => (typeof x === 'string' ? x : `${x.rotulo ?? ''}${x.valor ?? ''}`).trim() !== '')
+  : (v ?? '').trim() !== '');
+
+/**
+ * Pares texto × caixa na ordem de `layoutMissao`; `excesso` = mais textos do que caixas; `fora` = campos preenchidos que
+ * o layout da missão não mostra (revisão geral: nenhum texto aprovado some em silêncio).
+ */
+function trechos(missao: number, t: TextosComposicao): { lista: Trecho[]; excesso: boolean; fora: string[] } {
   const caixas = layoutMissao(missao, t);
   const itens: Array<Omit<Trecho, 'caixa'>> = [{ rotulo: 'Título', texto: nfc(t.headline) }];
   const serie = (nome: string, xs: string[] = [], marca?: (i: number) => string) =>
     xs.forEach((x, i) => itens.push({ rotulo: `${nome} ${i + 1}`, texto: nfc(x), marcador: marca?.(i) }));
   if (missao === 2 || missao === 3) {
     if (t.subheadline) itens.push({ rotulo: 'Subtítulo', texto: nfc(t.subheadline) });
-    if (missao === 3 && t.legendas?.length) itens.push({ rotulo: 'Legenda', texto: nfc(t.legendas[0]) }); // chip
+    if (missao === 3) serie('Legenda', t.legendas); // um chip só: a 2ª legenda vira excesso
   } else if (missao === 4) serie('Benefício', t.beneficios, () => '•');
   else if (missao === 5) {
     (t.specs ?? []).forEach((s, i) => itens.push({ rotulo: `Rótulo ${i + 1}`, texto: nfc(s.rotulo) }, { rotulo: `Valor ${i + 1}`, texto: nfc(s.valor) }));
@@ -53,16 +68,21 @@ function trechos(missao: number, t: TextosComposicao): { lista: Trecho[]; excess
   return {
     lista: itens.slice(0, caixas.length).map((x, i) => ({ ...x, caixa: caixas[i] })).filter((x) => x.texto !== ''),
     excesso: itens.length > caixas.length,
+    fora: ROTULO_CAMPO.filter(([c]) => !(CAMPOS_DA_MISSAO[missao] ?? []).includes(c) && preenchido(t[c])).map(([, r]) => r),
   };
 }
 
 /** Motivos para recusar a composição por texto (vazio = cabe). Capa e Moda não levam texto. */
 export function motivosDeTexto(missao: number, textos: TextosComposicao, moda: boolean): string[] {
   if (moda || missao === 1) return [];
-  const { lista, excesso } = trechos(missao, textos);
+  const { lista, excesso, fora } = trechos(missao, textos);
   const m = lista.filter((x) => linhasNecessarias(x.texto, x.caixa.fontePx, x.caixa.w) > x.caixa.linhasMax)
     .map((x) => `${x.rotulo} não cabe em ${x.caixa.linhasMax} linha${x.caixa.linhasMax > 1 ? 's' : ''}: encurte o texto no roteiro`);
-  return excesso ? [`Há mais textos do que o layout da missão ${missao} comporta`, ...m] : m;
+  return [
+    ...(excesso ? [`Há mais textos do que o layout da missão ${missao} comporta`] : []),
+    ...fora.map((r) => `${r} não aparece no layout da missão ${missao}: remova do roteiro`),
+    ...m,
+  ];
 }
 
 function carregar(url: string | null): Promise<HTMLImageElement> {

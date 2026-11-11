@@ -234,6 +234,14 @@ describe('galeria-gerar', () => {
     expect(await chamar(pedido())).toEqual({ status: 409, body: { error: 'em_andamento' } })
   })
 
+  // Revisão geral (bloqueador 3): fato editado em outra tela depois do roteiro aprovado → mesma comparação do `preparar`
+  // do galeria-aplicar; nunca reserva nem cobra imagem que o aplicar recusaria.
+  it('fatos_hash vigente ≠ o do roteiro aprovado → 409 desatualizada antes de reservar (zero linhas, zero provedor)', async () => {
+    f.vigencia.fatos_hash = 'h2'
+    expect(await chamar(pedido())).toMatchObject({ status: 409, body: { error: 'desatualizada' } })
+    semCusto()
+  })
+
   it('org sem o módulo imagem_ia → 403', async () => {
     db.organizations[0].modulos_habilitados = []
     expect((await chamar(pedido())).status).toBe(403)

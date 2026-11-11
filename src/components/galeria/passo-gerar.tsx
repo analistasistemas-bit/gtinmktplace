@@ -163,7 +163,14 @@ export function PassoGerar({ mlItemId, ficha, aoRecarregar, aoVoltarRoteiro }: {
     if (!p.ok) return mensagemErro(p.erro);
     const falhaEnvio = await enviarFinal(p.dados.path, p.dados.token, arquivo);
     if (falhaEnvio) return `Falha ao enviar o arquivo final: ${falhaEnvio}`;
-    const a = await aprovarFinal(mlItemId, i.id, comCaixas ? i.lupa?.hash : undefined);
+    const hash = comCaixas ? i.lupa?.hash : undefined;
+    let a = await aprovarFinal(mlItemId, i.id, hash);
+    // Gerador só aprova já cobrada (revisão geral): confirma a exibição (idempotente) e repete UMA vez o aprovar — o
+    // arquivo final já está no `final_upload_path`, sem recompor nem subir de novo.
+    if (!a.ok && a.erro === 'exibicao_pendente') {
+      const c = await confirmarExibicao(mlItemId, [i.id]);
+      if (c.ok) a = await aprovarFinal(mlItemId, i.id, hash);
+    }
     if (!a.ok) {
       return a.erro === 'arquivo_invalido'
         ? `Arquivo final recusado: ${((a.corpo.erros as string[] | undefined) ?? []).map((x) => ERRO_ARQUIVO[x] ?? x).join(', ')}`

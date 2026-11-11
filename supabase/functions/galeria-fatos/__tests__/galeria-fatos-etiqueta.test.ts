@@ -46,6 +46,7 @@ const leitura = (valor: string) => ({
 beforeEach(() => {
   f.create.mockReset()
   db = {
+    organizations: [{ id: 'org', modulos_habilitados: ['imagem_ia'] }, { id: 'org2', modulos_habilitados: ['imagem_ia'] }],
     anuncios_externos: [{ id: 'an1', org_id: 'org', canal: 'mercado_livre', codigo_pai: '100', item_externo_id: 'MLB1', variacoes_externas: { '100P': {} } }],
     anuncios_externos_itens: [], profiles: [{ id: 'u1', org_id: 'org' }], familias: [],
     galeria_fatos: [], galeria_referencias: [], galeria_imagem_itens: [], galeria_roteiros: [], galeria_imagens: [], galeria_aplicacoes: [],

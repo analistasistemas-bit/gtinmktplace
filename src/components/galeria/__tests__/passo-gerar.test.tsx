@@ -422,6 +422,26 @@ describe('PassoGerar — aprovar (Task 12)', () => {
     expect(screen.queryByRole('button', { name: 'Aprovar' })).toBeNull();
   });
 
+  // Revisão geral (bloqueador 1): o servidor só aprova gerador já cobrada; a tela confirma a exibição e repete o aprovar.
+  it('exibicao_pendente → confirma a exibição e repete só o aprovar (sem recompor nem novo upload)', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 2, exibida: true })])));
+    api.aprovarFinal.mockResolvedValueOnce(falha(409, 'exibicao_pendente'));
+    passo();
+    await userEvent.click(await screen.findByRole('button', { name: 'Aprovar' }));
+    await waitFor(() => expect(api.aprovarFinal).toHaveBeenCalledTimes(2));
+    expect(api.confirmarExibicao).toHaveBeenCalledWith('MLB1', ['i1']);
+    expect(compor.fn).toHaveBeenCalledTimes(1);
+    expect(api.prepararUploadFinal).toHaveBeenCalledTimes(1);
+  });
+  it('exibicao_pendente de novo após confirmar → motivo no cartão, sem laço', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 2, exibida: true })])));
+    api.aprovarFinal.mockResolvedValue(falha(409, 'exibicao_pendente'));
+    passo();
+    await userEvent.click(await screen.findByRole('button', { name: 'Aprovar' }));
+    expect(await screen.findByText(/cobrança/i)).toBeInTheDocument();
+    expect(api.aprovarFinal).toHaveBeenCalledTimes(2);
+    expect(api.confirmarExibicao).toHaveBeenCalledTimes(1);
+  });
   it('texto que estoura: motivo claro no cartão e nada sobe', async () => {
     compor.fn.mockRejectedValue(new Error('Etapa 1 não cabe em 2 linhas: encurte o texto no roteiro'));
     api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 2 })])));
