@@ -23,9 +23,9 @@ const aplicacao = (extra: Partial<EstadoAplicacao> = {}): EstadoAplicacao => ({
 });
 
 function montar(isAdmin = true, mlItemId = 'MLB3M') {
-  const aoRecarregar = vi.fn();
-  const r = render(<PassoAplicar mlItemId={mlItemId} ficha={ficha} isAdmin={isAdmin} aoRecarregar={aoRecarregar} />);
-  return { ...r, aoRecarregar };
+  const aoFamiliaMudou = vi.fn();
+  const r = render(<PassoAplicar mlItemId={mlItemId} ficha={ficha} isAdmin={isAdmin} aoFamiliaMudou={aoFamiliaMudou} />);
+  return { ...r, aoFamiliaMudou };
 }
 const preparar = async () => {
   await userEvent.click(await screen.findByRole('button', { name: 'Preparar' }));
@@ -98,9 +98,9 @@ describe('PassoAplicar — preparar e confirmar', () => {
 
   it('familia_nao_vigente recarrega a galeria', async () => {
     api.prepararAplicacao.mockResolvedValue(falha(409, 'familia_nao_vigente', { familia_id_vigente: 'F2' }));
-    const { aoRecarregar } = montar();
+    const { aoFamiliaMudou } = montar();
     await preparar();
-    await waitFor(() => expect(aoRecarregar).toHaveBeenCalled());
+    await waitFor(() => expect(aoFamiliaMudou).toHaveBeenCalledWith(expect.stringMatching(/família.*mudou.*F2/i)));
   });
 
   it('recusa com detalhe mostra o MLB', async () => {
@@ -108,6 +108,72 @@ describe('PassoAplicar — preparar e confirmar', () => {
     montar();
     await preparar();
     expect(await screen.findByRole('alert')).toHaveTextContent('MLB3G');
+  });
+});
+
+describe('PassoAplicar — fix round 1', () => {
+  it('Cor/Modo travados com Preparar em voo; confirmação mostra a cor e o modo do clique', async () => {
+    let resolver!: (r: Res<typeof preparada>) => void;
+    api.prepararAplicacao.mockReturnValueOnce(new Promise((r) => { resolver = r; }));
+    montar();
+    await screen.findByRole('combobox', { name: 'Modo' });
+    await escolherNoSelect(userEvent.setup(), 'Modo', 'Adicionar');
+    await preparar();
+    expect(api.prepararAplicacao).toHaveBeenCalledWith('MLB3M', 'Rosa', 'adicionar');
+    expect(screen.getByRole('combobox', { name: 'Cor' })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Modo' })).toBeDisabled();
+    resolver(ok(preparada));
+    const painel = (await screen.findByRole('list', { name: 'Anúncios afetados' })).parentElement!;
+    expect(painel).toHaveTextContent('Rosa');
+    expect(painel).toHaveTextContent(/Adicionar/);
+    expect(painel).not.toHaveTextContent(/substituem/);
+    expect(screen.getByRole('combobox', { name: 'Cor' })).toBeEnabled();
+  });
+
+  it('trocar Cor/Modo com a confirmação aberta a descarta; a confirmar usa a aplicação preparada', async () => {
+    montar();
+    await preparar();
+    await screen.findByRole('list', { name: 'Anúncios afetados' });
+    await escolherNoSelect(userEvent.setup(), 'Cor', 'Azul');
+    expect(screen.queryByRole('list', { name: 'Anúncios afetados' })).not.toBeInTheDocument();
+  });
+
+  it.each([[401], [409], [503], [0]])('estado com falha %s reagenda; 3 falhas seguidas avisam sem apagar o último status', async (status) => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const vermelha = aplicacao({ status: 'revertendo', itens: [{ item_id: 'MLB3P', status: 'reversao_incompleta', erro: null }] });
+    api.estadoAplicacoes.mockResolvedValueOnce(ok({ aplicacoes: [vermelha] })).mockResolvedValue(falha(status, status === 0 ? 'rede' : 'x'));
+    montar();
+    await screen.findByText(/MLB3P/);
+    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/andamento/i);
+    expect(api.estadoAplicacoes).toHaveBeenCalledTimes(4);
+    expect(screen.getByText(/MLB3P/).closest('li')!.className).toMatch(/red/);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(api.estadoAplicacoes).toHaveBeenCalledTimes(5);
+  });
+
+  it('o aviso some quando a leitura volta', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    api.estadoAplicacoes.mockResolvedValueOnce(ok({ aplicacoes: [aplicacao({ status: 'em_andamento' })] }))
+      .mockResolvedValueOnce(falha(0, 'rede')).mockResolvedValueOnce(falha(0, 'rede')).mockResolvedValueOnce(falha(0, 'rede'))
+      .mockResolvedValue(ok({ aplicacoes: [aplicacao({ status: 'aplicada' })] }));
+    montar();
+    await screen.findByText(/Aplicando/);
+    await vi.advanceTimersByTimeAsync(15000);
+    await screen.findByRole('alert');
+    await vi.advanceTimersByTimeAsync(5000);
+    await screen.findByRole('button', { name: 'Reverter' });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('sem_conexao_ml no Preparar fala de aplicar fotos', async () => {
+    api.prepararAplicacao.mockResolvedValue(falha(409, 'sem_conexao_ml'));
+    montar();
+    await preparar();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Conecte a conta do Mercado Livre antes de aplicar as fotos');
   });
 });
 
@@ -130,6 +196,10 @@ describe('PassoAplicar — acompanhamento e reversão', () => {
     api.reverterAplicacao.mockResolvedValue(ok({ status: 'revertendo' }));
     montar(true, 'MLB3M');
     await userEvent.click(await screen.findByRole('button', { name: 'Reverter' }));
+    expect(api.reverterAplicacao).not.toHaveBeenCalled();
+    expect(within(screen.getByRole('list', { name: 'Anúncios afetados' })).getAllByRole('listitem').map((i) => i.textContent)).toEqual(['MLB3P']);
+    expect(screen.getByText(/volta as fotos anteriores/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Confirmar reversão/ }));
     expect(api.reverterAplicacao).toHaveBeenCalledWith('MLB3M', 'APL1');
   });
 
@@ -138,6 +208,7 @@ describe('PassoAplicar — acompanhamento e reversão', () => {
     api.reverterAplicacao.mockResolvedValue(falha(409, 'item_ocupado'));
     montar();
     await userEvent.click(await screen.findByRole('button', { name: 'Reverter' }));
+    await userEvent.click(await screen.findByRole('button', { name: /Confirmar reversão/ }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/Outra operação/);
   });
 

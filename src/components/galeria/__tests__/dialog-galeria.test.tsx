@@ -8,7 +8,7 @@ import type { Fato, Ficha, RespostaRoteiro, Res } from '@/lib/galeria/api';
 const api = vi.hoisted(() => ({
   montarFicha: vi.fn(), lerRoteiro: vi.fn(), confirmarFato: vi.fn(), descartarFato: vi.fn(), manterCadastro: vi.fn(),
   corrigirCadastro: vi.fn(), enviarVista: vi.fn(), criarRoteiro: vi.fn(), salvarRoteiro: vi.fn(), aprovarRoteiro: vi.fn(),
-  listarImagens: vi.fn(), estadoAplicacoes: vi.fn(),
+  listarImagens: vi.fn(), estadoAplicacoes: vi.fn(), prepararAplicacao: vi.fn(),
 }));
 vi.mock('@/lib/galeria/api', async (orig) => ({ ...(await orig<typeof import('@/lib/galeria/api')>()), ...api }));
 vi.mock('@/lib/storage', () => ({ signedUrl: vi.fn(async () => 'https://x.test/etiqueta.jpg') }));
@@ -54,6 +54,17 @@ describe('DialogGaleria — aplicar', () => {
     await userEvent.click(await screen.findByRole('tab', { name: /4\. Aplicar/ }));
     await waitFor(() => expect(api.estadoAplicacoes).toHaveBeenCalledWith('MLB-B'));
     expect(screen.getByRole('button', { name: 'Preparar' })).toBeDisabled();
+  });
+
+  it('familia_nao_vigente no Preparar sobrevive à recarga, com o id vigente', async () => {
+    api.lerRoteiro.mockResolvedValue(ok({ ...resposta({ status: 'aprovado' }), moda: false, familia_id: 'F1' }));
+    api.prepararAplicacao.mockResolvedValue(falha(409, 'familia_nao_vigente', { familia_id_vigente: 'F2' }));
+    abrir('MLB-B');
+    await userEvent.click(await screen.findByRole('tab', { name: /4\. Aplicar/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Preparar' }));
+    await waitFor(() => expect(api.montarFicha).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/F2/);
+    expect(screen.getByRole('alert')).toHaveTextContent(/família/i);
   });
 
   it('sem roteiro aprovado não há passo Aplicar', async () => {

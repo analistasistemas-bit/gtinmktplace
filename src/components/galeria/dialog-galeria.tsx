@@ -123,7 +123,7 @@ export function DialogGaleria({ mlItemId, codigoPai, open, onOpenChange, isAdmin
             {passo === 'fatos'
               ? <PassoFatos mlItemId={mlItemId} ficha={ficha} moda={moda} aoMudar={aoMudarFicha} />
               : passo === 'aplicar' && podeGerar
-                ? <PassoAplicar mlItemId={mlItemId} ficha={ficha} isAdmin={isAdmin} aoRecarregar={() => void carregar()} />
+                ? <PassoAplicar mlItemId={mlItemId} ficha={ficha} isAdmin={isAdmin} aoFamiliaMudou={(m) => { setErro(m); setResp(null); void carregar(); }} />
               : passo === 'gerar' && podeGerar
                 ? <PassoGerar mlItemId={mlItemId} ficha={ficha} aoRecarregar={() => void carregar()} aoVoltarRoteiro={() => setPasso('roteiro')} />
                 : <PassoRoteiro mlItemId={mlItemId} ficha={ficha} isAdmin={isAdmin} resp={resp} podeCriar={roteiroLido}
