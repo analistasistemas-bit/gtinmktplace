@@ -6,6 +6,8 @@ const f = vi.hoisted(() => ({
   vigencia: null as unknown as Record<string, unknown>,
   batch: vi.fn(),
   garantir: vi.fn(async () => {}),
+  /** null = a trava real (MISSOES_LUPA_PENDENTE); {geral:[],moda:[]} = ramo liberado depois do portão (Task 16). */
+  travas: null as null | { geral: number[]; moda: number[] },
 }))
 
 vi.mock('../../_shared/cors.ts', () => ({ corsHeaders: {}, handleOptions: () => new Response() }))
@@ -17,7 +19,13 @@ vi.mock('../../_shared/canais/conexao.ts', () => ({ resolverConexaoEstrita: vi.f
 vi.mock('../../_shared/ml/token.ts', () => ({ getValidAccessTokenConexao: vi.fn(async () => 'tok') }))
 vi.mock('../../_shared/galeria/referencias.ts', () => ({ calcularVigencia: vi.fn(async () => f.vigencia) }))
 vi.mock('../../_shared/ai/client.ts', () => ({ openrouterClient: () => { throw new Error('nunca chama IA') } }))
+vi.mock('../../_shared/galeria/regras.ts', async (orig) => {
+  const r = await orig<typeof import('../../_shared/galeria/regras.ts')>()
+  return { ...r, lupaPendente: (m: number, moda: boolean) => r.lupaPendente(m, moda, f.travas ?? r.MISSOES_LUPA_PENDENTE) }
+})
 vi.mock('../../_shared/queue.ts', () => ({ qstashClient: () => ({ batchJSON: f.batch }), garantirFilaSerial: f.garantir }))
+
+const { VERSAO_LEITURA } = await import('../../_shared/galeria/detalhes.ts')
 
 type Linha = Record<string, unknown>
 let db: Record<string, Linha[]>
@@ -35,6 +43,13 @@ beforeAll(async () => {
 const PEDIDO = '6f1c2a3e-8b4d-4c5e-9f60-718293a4b5c6'
 const ref = (id: string) => ({ id, path: `org/galeria-ia/famB/referencias/${id}.jpg`, sha256: id })
 const SEM = { erro: 'sem_referencia' }
+const PRODUTO = { x: 0.1, y: 0.1, w: 0.8, h: 0.8 }
+/** Leitura da lupa (galeria_referencias.detalhes) com dois detalhes disjuntos: geral 3/7 e Moda 5/7 cabem. */
+const lupaOk = (extra: Linha = {}) => ({
+  estado: 'ok', versao: VERSAO_LEITURA, tentado_em: '2026-11-11T10:00:00Z', produto: PRODUTO, ref_w: 1200, ref_h: 1500, hash: 'h',
+  detalhes: [{ x: 0.15, y: 0.15, w: 0.1, h: 0.1 }, { x: 0.7, y: 0.7, w: 0.1, h: 0.1 }], ...extra,
+})
+const refLinha = (id: string, detalhes: unknown) => ({ id, org_id: 'org', vista: 'frente', detalhes })
 const missoes = (n: number[]) => n.map((missao) => ({ missao, ativa: true, cena: `cena ${missao}`, fatosUsados: [] }))
 const roteiro = (extra: Linha = {}) => ({
   id: 'rot2', org_id: 'org', anuncio_externo_id: 'an1', familia_id: 'famB', versao: 2, status: 'aprovado', moda: false,
@@ -52,7 +67,9 @@ beforeEach(() => {
     ],
     galeria_roteiros: [roteiro()],
     galeria_pedidos: [], galeria_imagens: [], configuracoes: [],
+    galeria_referencias: [refLinha('refR', lupaOk()), refLinha('refA', lupaOk())],
   }
+  f.travas = null
   fake = fakeAdmin(db)
   f.fake = fake
   fake.respostasRpc.platform_resolve_terms = () => ({ id: 'termos1', image_unit_cents: 50 })
@@ -88,7 +105,7 @@ const chamar = async (body: Linha) => {
   return { status: r.status, body: await r.json() as Linha }
 }
 const pedido = (extra: Linha = {}) => ({
-  pedido_id: PEDIDO, ml_item_id: 'MLB1', roteiro_versao: 2, cores: ['Rosa', 'Azul'], missoes: [1, 2, 7], unit_cents_exibido: 50, ...extra,
+  pedido_id: PEDIDO, ml_item_id: 'MLB1', roteiro_versao: 2, cores: ['Rosa', 'Azul'], missoes: [1, 2], unit_cents_exibido: 50, ...extra,
 })
 const semCusto = () => {
   expect(db.galeria_pedidos).toEqual([])
@@ -100,7 +117,8 @@ const semCusto = () => {
 
 describe('galeria-gerar', () => {
   it('reserva o pedido com preço e termos congelados, recortes já gerada, e publica um job por imagem gerador', async () => {
-    const r = await chamar(pedido())
+    f.travas = { geral: [], moda: [] } // ramo liberado: missão 7 com lupa_ok
+    const r = await chamar(pedido({ missoes: [1, 2, 7] }))
     expect(r.status).toBe(200)
     const reserva = fake.rpcs.find((x) => x.nome === 'galeria_reservar_pedido')!.args.p_pedido as Linha & { itens: Linha[] }
     expect(reserva).toMatchObject({ id: PEDIDO, org_id: 'org', anuncio_externo_id: 'an1', familia_id: 'famB', roteiro_id: 'rot2',
@@ -207,7 +225,7 @@ describe('galeria-gerar', () => {
     fake.respostasRpc.platform_resolve_terms = () => ({ id: 'termos2', image_unit_cents: 99 })
     const r = await chamar(pedido())
     expect(r.status).toBe(200)
-    expect((r.body.imagens as Linha[])).toHaveLength(6)
+    expect((r.body.imagens as Linha[])).toHaveLength(4)
     expect(fake.rpcs.filter((x) => x.nome === 'galeria_reservar_pedido')).toHaveLength(reservas)
   })
 
@@ -225,5 +243,49 @@ describe('galeria-gerar', () => {
   it('falha ao publicar o job não derruba o pedido (o despachante retoma)', async () => {
     f.batch.mockRejectedValueOnce(new Error('qstash fora'))
     expect((await chamar(pedido())).status).toBe(200)
+  })
+
+  describe('lupa pela caixa do produto (nunca cobra o que não aprova)', () => {
+    it.each([
+      ['geral 3 (gerador)', false, [3]], ['geral 7 (recorte)', false, [7]], ['Moda 5 (recorte)', true, [5]], ['Moda 7 (recorte)', true, [7]],
+    ])('%s em MISSOES_LUPA_PENDENTE com lupa_ok → 409 lupa_pendente, zero linhas', async (_n, moda, ms) => {
+      db.galeria_roteiros = [roteiro({ moda })]
+      const r = await chamar(pedido({ missoes: [1, ...ms] }))
+      expect(r).toEqual({ status: 409, body: { error: 'lupa_pendente', missoes: ms } })
+      semCusto()
+    })
+
+    it('geral 3 com cor sem detalhe (lupa_ok=false) → 409 lupa_indisponivel, zero linhas e nenhum provedor', async () => {
+      f.travas = { geral: [], moda: [] }
+      db.galeria_referencias = [refLinha('refR', lupaOk()), refLinha('refA', { estado: 'sem_detalhe', versao: VERSAO_LEITURA, tentado_em: 't' })]
+      const r = await chamar(pedido({ missoes: [1, 3] }))
+      expect(r).toEqual({ status: 409, body: { error: 'lupa_indisponivel', bloqueadas: [{ cor: 'Azul', missao: 3, motivo: 'lupa_indisponivel' }] } })
+      semCusto()
+    })
+
+    it.each([
+      ['nunca lida', null], ['falhou', { estado: 'falhou', versao: VERSAO_LEITURA, tentado_em: 't' }],
+      ['versão antiga', lupaOk({ versao: 'openai/velho#lupa-v0' })],
+    ])('leitura %s → 409 lupa_lendo (retentável, distinta de sem_detalhe), zero linhas', async (_n, d) => {
+      f.travas = { geral: [], moda: [] }
+      db.galeria_referencias = [refLinha('refR', d), refLinha('refA', lupaOk())]
+      const r = await chamar(pedido({ missoes: [3] }))
+      expect(r).toEqual({ status: 409, body: { error: 'lupa_lendo', bloqueadas: [{ cor: 'Rosa', missao: 3, motivo: 'lupa_lendo' }] } })
+      semCusto()
+    })
+
+    it('recorte (geral 7) com um só detalhe (não cabe) → nenhuma linha reservada', async () => {
+      f.travas = { geral: [], moda: [] }
+      db.galeria_referencias = [refLinha('refR', lupaOk({ detalhes: [{ x: 0.15, y: 0.15, w: 0.1, h: 0.1 }] })), refLinha('refA', lupaOk())]
+      const r = await chamar(pedido({ missoes: [1, 7] }))
+      expect(r.body).toEqual({ error: 'lupa_indisponivel', bloqueadas: [{ cor: 'Rosa', missao: 7, motivo: 'lupa_indisponivel' }] })
+      semCusto()
+    })
+
+    it('ramo liberado com lupa_ok em todas as cores → reserva geral 3 (gerador) normalmente', async () => {
+      f.travas = { geral: [], moda: [] }
+      expect((await chamar(pedido({ missoes: [3] }))).status).toBe(200)
+      expect((fake.rpcs.find((x) => x.nome === 'galeria_reservar_pedido')!.args.p_pedido as { itens: Linha[] }).itens.map((i) => i.missao)).toEqual([3, 3])
+    })
   })
 })

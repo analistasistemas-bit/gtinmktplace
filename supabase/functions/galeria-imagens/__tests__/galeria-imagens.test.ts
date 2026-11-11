@@ -8,6 +8,8 @@ vi.mock('../../_shared/auth.ts', () => ({
   requireUserOrg: vi.fn(async () => ({ userId: 'u1', orgId: f.org, isAdmin: false, support: null })),
 }))
 vi.mock('../../_shared/supabase.ts', () => ({ adminClient: () => f.fake.admin }))
+vi.mock('../../_shared/ai/client.ts', () => ({ openrouterClient: () => { throw new Error('nunca chama IA') } }))
+const { VERSAO_LEITURA } = await import('../../_shared/galeria/detalhes.ts')
 
 type Linha = Record<string, unknown>
 let db: Record<string, Linha[]>
@@ -110,6 +112,24 @@ describe('galeria-imagens — listar', () => {
     const r = await listar()
     expect((r.body.imagens as Linha[])[0]).toMatchObject({ ref_url: 'https://signed/org/galeria-ia/famB/referencias/rosa.jpg', roteiro_id: 'rot2' })
     expect((r.body.roteiro as Linha).textos).toEqual({ 2: { headline: 'Prende firme', subheadline: 'Sem costura' } })
+  })
+
+  it('lupa pela caixa do produto: missão com lupa traz caixas, dimensões, hash e situação; sem lupa → null; nunca chama visão', async () => {
+    const d = {
+      estado: 'ok', versao: VERSAO_LEITURA, tentado_em: 't', produto: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 },
+      detalhes: [{ x: 0.15, y: 0.15, w: 0.1, h: 0.1 }], ref_w: 1200, ref_h: 1500, hash: 'hashR',
+    }
+    db.galeria_referencias[0].detalhes = d
+    db.galeria_imagens.push(img(1, { missao: 3 }), img(2, { missao: 7, origem: 'recorte', cena_path: null }), img(3, { missao: 2 }))
+    const imgs = (await listar()).body.imagens as Linha[]
+    expect(imgs.find((i) => i.id === U(1))!.lupa).toEqual({
+      situacao: 'ok', produto: d.produto, detalhes: d.detalhes, ref_w: 1200, ref_h: 1500, hash: 'hashR',
+    })
+    // Missão 7 com um só detalhe: não cabe → indisponível (a tela não compõe).
+    expect(imgs.find((i) => i.id === U(2))!.lupa).toMatchObject({ situacao: 'indisponivel' })
+    expect(imgs.find((i) => i.id === U(3))!.lupa).toBeNull()
+    db.galeria_referencias[0].detalhes = null
+    expect(((await listar()).body.imagens as Linha[]).find((i) => i.id === U(1))!.lupa).toEqual({ situacao: 'lendo' })
   })
 
   it('histórico: cenas da família A (B publicada depois) não exibidas aparecem e cobram 1', async () => {

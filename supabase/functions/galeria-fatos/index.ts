@@ -7,8 +7,10 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { carregarAnuncio, coresDoAnuncio, resolverAnuncio, type AnuncioGaleria } from '../_shared/galeria/anuncio.ts';
-import { calcularVigencia, ehJpeg, gravarReferencia, lerFicha } from '../_shared/galeria/referencias.ts';
+import { calcularVigencia, ehJpeg, gravarReferencia, lerFicha, type Referencia } from '../_shared/galeria/referencias.ts';
 import { conferirEtiqueta } from '../_shared/galeria/etiqueta.ts';
+import { garantirDetalhes, VERSAO_LEITURA } from '../_shared/galeria/detalhes.ts';
+import { MISSOES_COM_LUPA, situacaoLupa } from '../_shared/galeria/lupa.ts';
 import type { Fato } from '../_shared/galeria/fatos.ts';
 import { resolverConexaoEstrita } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
@@ -105,7 +107,22 @@ async function montar(admin: Admin, orgId: string, a: AnuncioGaleria) {
   return {
     anuncio_externo_id: a.anuncioId, familia_id: a.vigente.id, codigo_pai: a.codigoPai, cores: coresDoAnuncio(a),
     ...v, fatos: await comUrlDoRecorte(admin, orgId, v.fatos), roteiro_desatualizado: desatualizado,
+    lupa: await lerLupas(admin, orgId, v.referencias),
   };
+}
+
+/**
+ * Lupa pela caixa do produto: lê (visão, prazo global) só a referência `frente` de cada cor que precisa, depois do
+ * hash (a leitura não entra em `fatos_hash`). Devolve, por cor, a situação de cada missão com lupa (geral e Moda;
+ * o roteiro decide qual vale), calculada sobre a leitura relida do banco. Falha nunca derruba o `montar`.
+ */
+async function lerLupas(admin: Admin, orgId: string, referencias: Record<string, Record<string, Referencia | { erro: string }>>) {
+  const frente: Record<string, Referencia> = {};
+  for (const [cor, r] of Object.entries(referencias)) if (r.frente && !('erro' in r.frente)) frente[cor] = r.frente;
+  const lidas = await garantirDetalhes(admin, orgId, Object.values(frente));
+  const porModo = (cor: string, moda: boolean) => Object.fromEntries((moda ? MISSOES_COM_LUPA.moda : MISSOES_COM_LUPA.geral)
+    .map((m) => [m, situacaoLupa(frente[cor] ? lidas[frente[cor].id] : null, m, moda, VERSAO_LEITURA)]));
+  return Object.fromEntries(Object.keys(referencias).map((cor) => [cor, { geral: porModo(cor, false), moda: porModo(cor, true) }]));
 }
 
 /** Valor do atributo pela regra da Revisão (`atributos-familia`): closed-set grava o `value_id` do dicionário. */

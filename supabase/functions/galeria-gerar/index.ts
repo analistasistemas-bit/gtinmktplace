@@ -1,7 +1,8 @@
 // ADR-0201 (Galeria da cor por IA), Task 8: pedido de geração. Chamada pela tela com o JWT do operador (verify_jwt = true).
 // POST {pedido_id, ml_item_id, roteiro_versao, cores, missoes, unit_cents_exibido}. Ordem: gate do módulo → anúncio →
 // repetição do mesmo pedido (devolve o que já existe) → roteiro aprovado da família vigente → elegibilidade no ML
-// (catálogo, conjunto da cor) → preço do mês → ciência e vistas por cor → `galeria_reservar_pedido`. Nenhuma recusa
+// (catálogo, conjunto da cor) → preço do mês → ciência e vistas por cor → lupa por (cor, missão) →
+// `galeria_reservar_pedido`. Missão com lupa travada (`lupa_pendente`) recusa logo depois do roteiro. Nenhuma recusa
 // reserva pedido nem chama provedor. Depois da reserva publica um job por imagem `gerador` (otimização: o despachante
 // retoma o que se perder). Só GET no ML; nunca escreve em anúncio.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
@@ -11,7 +12,9 @@ import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { carregarAnuncio, coresDoAnuncio, resolverAnuncio } from '../_shared/galeria/anuncio.ts';
 import { calcularVigencia } from '../_shared/galeria/referencias.ts';
 import { cienciaPendente, type Roteiro } from '../_shared/galeria/roteiro.ts';
-import { missoesDisponiveis, type Missao, type Vista } from '../_shared/galeria/regras.ts';
+import { lupaPendente, missoesDisponiveis, type Missao, type Vista } from '../_shared/galeria/regras.ts';
+import { comLupa, situacaoLupa, type DetalhesLupa } from '../_shared/galeria/lupa.ts';
+import { VERSAO_LEITURA } from '../_shared/galeria/detalhes.ts';
 import { resolverModeloGaleria } from '../_shared/galeria/provedores.ts';
 import { planejarGeracoes, precoDoMes, type LinhaVaga } from '../_shared/galeria/pedido.ts';
 import { alvosDaCor, lerElegibilidadeItemML, motivoElegibilidade, type ItemElegibilidade } from '../_shared/galeria/alvos.ts';
@@ -83,6 +86,9 @@ Deno.serve(async (req) => {
     const ativas = new Set((conteudo.missoes ?? []).filter((m) => m.ativa).map((m) => m.missao));
     const inativas = missoes.filter((m) => !ativas.has(m));
     if (inativas.length > 0) return json({ error: 'missao_inativa', missoes: inativas }, 422);
+    // Lupa travada até o portão da Task 16: nunca reserva (nem cobra) o que o aprovar recusaria.
+    const travadas = missoes.filter((m) => lupaPendente(m, moda));
+    if (travadas.length > 0) return json({ error: 'lupa_pendente', missoes: travadas }, 409);
 
     // Elegibilidade no ML antes de qualquer custo (R0.2, ADR §5). Um GET por item, memoizado.
     const cx = await resolverConexaoEstrita(admin, orgId, 'mercado_livre');
@@ -122,6 +128,24 @@ Deno.serve(async (req) => {
       return x && !('erro' in x) ? x : null;
     };
     const vistasPorCor = Object.fromEntries(cores.map((c) => [c, VISTAS.filter((vista) => refDe(c, vista))]));
+
+    // Lupa pela caixa do produto (gerador e recorte): toda (cor, missão) com lupa precisa da leitura `ok` da
+    // referência `frente` vigente e do recorte cabendo. Sem referência, o `planejarGeracoes` recusa (sem_vista).
+    const comRef = cores.flatMap((cor) => missoes.filter((m) => comLupa(m, moda)).map((missao) => ({ cor, missao, ref: refDe(cor, 'frente') })))
+      .filter((x) => x.ref);
+    if (comRef.length > 0) {
+      const { data: dets, error: eD } = await admin.from('galeria_referencias').select('id, detalhes').eq('org_id', orgId)
+        .in('id', [...new Set(comRef.map((x) => x.ref!.id))]);
+      if (eD) throw new Error(eD.message);
+      const det = new Map(((dets ?? []) as Array<{ id: string; detalhes: DetalhesLupa | null }>).map((d) => [d.id, d.detalhes]));
+      const sem = comRef.map(({ cor, missao, ref }) => ({ cor, missao, motivo: situacaoLupa(det.get(ref!.id), missao, moda, VERSAO_LEITURA) }))
+        .filter((x) => x.motivo !== 'ok');
+      // `lupa_indisponivel` é definitivo (o operador desmarca); `lupa_lendo` é retentável (próximo `montar`).
+      const motivo = sem.some((x) => x.motivo === 'indisponivel') ? 'lupa_indisponivel' : 'lupa_lendo';
+      if (sem.length > 0) {
+        return json({ error: motivo, bloqueadas: sem.filter((x) => `lupa_${x.motivo}` === motivo).map((x) => ({ cor: x.cor, missao: x.missao, motivo })) }, 409);
+      }
+    }
 
     const { data: linhas, error: eL } = await admin.from('galeria_imagens').select('roteiro_id, cor, missao, geracao, status, origem')
       .eq('org_id', orgId).eq('anuncio_externo_id', a.anuncioId).in('cor', cores);

@@ -17,6 +17,8 @@ vi.mock('../../_shared/ml/token.ts', () => ({ getValidAccessTokenConexao: vi.fn(
 vi.mock('../../_shared/galeria/etiqueta.ts', () => ({
   lerLeituraEtiqueta: vi.fn(async () => f.leitura), conferirEtiqueta: f.conferir,
 }))
+// Lupa pela caixa do produto: coberta em galeria-fatos-lupa.test.ts.
+vi.mock('../../_shared/galeria/detalhes.ts', () => ({ garantirDetalhes: vi.fn(async () => ({})), VERSAO_LEITURA: 'v' }))
 // Dicionário da categoria (closed-set): o mesmo formato que a Revisão usa em validarValorAtributo.
 vi.mock('../../_shared/categoria/schema.ts', () => ({
   lerSchemaAtributos: vi.fn(async () => [

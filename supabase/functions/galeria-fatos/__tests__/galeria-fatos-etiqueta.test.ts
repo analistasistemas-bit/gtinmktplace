@@ -13,6 +13,8 @@ vi.mock('../../_shared/supabase.ts', () => ({ adminClient: () => f.fake.admin })
 vi.mock('../../_shared/canais/conexao.ts', () => ({ resolverConexaoEstrita: vi.fn(async () => ({ id: 'cx' })) }))
 vi.mock('../../_shared/ml/token.ts', () => ({ getValidAccessTokenConexao: vi.fn(async () => 'tok') }))
 vi.mock('../../_shared/ai/client.ts', () => ({ openrouterClient: () => ({ chat: { completions: { create: f.create } } }) }))
+// Lupa pela caixa do produto: coberta em galeria-fatos-lupa.test.ts.
+vi.mock('../../_shared/galeria/detalhes.ts', () => ({ garantirDetalhes: vi.fn(async () => ({})), VERSAO_LEITURA: 'v' }))
 vi.mock('../../_shared/categoria/schema.ts', () => ({
   lerSchemaAtributos: vi.fn(async () => [
     { id: 'MAIN_MATERIAL', nome: 'Material', required: false, conditionalRequired: false, valueType: 'list',

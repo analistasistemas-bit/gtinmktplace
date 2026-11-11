@@ -4,6 +4,8 @@
 //   exibida, de qualquer família), com URL assinada, o preço congelado no pedido de cada uma, o preço do mês (só para
 //   pedido novo; mesma fonte do galeria-gerar) e se "Gerar de novo" ainda cabe. Nunca cobra nem grava. Task 12: cada
 //   imagem traz `ref_url` (referência assinada, para a lupa) e o roteiro traz `textos` por missão ativa (composição).
+//   Lupa pela caixa do produto: imagem de missão com lupa traz `lupa` = situação + caixas, dimensões e hash gravados na
+//   referência (nunca baixa a referência nem chama visão aqui); o navegador compõe com elas e devolve o hash ao aprovar.
 // - confirmar_exibicao {ml_item_id, imagem_ids}: o navegador exibiu e validou a imagem → `galeria_confirmar_exibicao`
 //   (cobrança = exibição, Task 2; idempotente). Operação histórica: só exige o mesmo anúncio.
 // - reportar_invalida {ml_item_id, imagem_id}: imagem branca/ilegível no navegador → `falhou` sem cobrança (falha
@@ -14,6 +16,8 @@ import { requireUserOrg } from '../_shared/auth.ts';
 import { resolverAnuncio } from '../_shared/galeria/anuncio.ts';
 import { bloqueioDaVaga, precoDoMes, type LinhaVaga } from '../_shared/galeria/pedido.ts';
 import { missoesDisponiveis } from '../_shared/galeria/regras.ts';
+import { comLupa, situacaoLupa, type DetalhesLupa } from '../_shared/galeria/lupa.ts';
+import { VERSAO_LEITURA } from '../_shared/galeria/detalhes.ts';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_IDS = 100;
@@ -100,10 +104,14 @@ Deno.serve(async (req) => {
     // Referência de toda imagem: recorte é a própria imagem; gerador usa para a lupa da composição (Task 12).
     const refIds = [...new Set(mostrar.filter((l) => l.referencia_id).map((l) => l.referencia_id!))];
     const refPath = new Map<string, string>();
+    const refDetalhes = new Map<string, DetalhesLupa | null>();
     if (refIds.length > 0) {
-      const { data: refs, error: eRef } = await admin.from('galeria_referencias').select('id, path').eq('org_id', orgId).in('id', refIds);
+      const { data: refs, error: eRef } = await admin.from('galeria_referencias').select('id, path, detalhes').eq('org_id', orgId).in('id', refIds);
       if (eRef) throw new Error(eRef.message);
-      for (const x of (refs ?? []) as Array<{ id: string; path: string }>) refPath.set(x.id, x.path);
+      for (const x of (refs ?? []) as Array<{ id: string; path: string; detalhes: DetalhesLupa | null }>) {
+        refPath.set(x.id, x.path);
+        refDetalhes.set(x.id, x.detalhes ?? null);
+      }
     }
     // Preço da exibição = o congelado no pedido (é o que a RPC cobra), nunca o do mês.
     const pedidoIds = [...new Set(mostrar.map((l) => l.pedido_id).filter(Boolean))];
@@ -121,6 +129,14 @@ Deno.serve(async (req) => {
 
     const moda = rot?.moda === true;
     const usaGerador = new Map(missoesDisponiveis(moda, ['frente', 'costas', 'lateral']).map((m) => [m.missao as number, m.usaGerador]));
+    const lupaDe = (l: LinhaImagem) => {
+      if (!comLupa(l.missao, moda)) return null;
+      const d = refDetalhes.get(l.referencia_id ?? '') ?? null;
+      const situacao = situacaoLupa(d, l.missao, moda, VERSAO_LEITURA);
+      return situacao === 'ok' && d?.estado === 'ok'
+        ? { situacao, produto: d.produto, detalhes: d.detalhes, ref_w: d.ref_w, ref_h: d.ref_h, hash: d.hash }
+        : { situacao };
+    };
     const imagens = await Promise.all(mostrar.map(async (l) => {
       const refUrl = await assinar(refPath.get(l.referencia_id ?? ''));
       return {
@@ -128,7 +144,7 @@ Deno.serve(async (req) => {
         alertas: l.alertas ?? null, erro: l.erro, exibida: l.entregue_em !== null,
         unit_cents: l.origem === 'gerador' ? precoPedido.get(l.pedido_id) ?? null : 0,
         url: l.origem === 'recorte' ? refUrl : await assinar(l.cena_path),
-        ref_url: refUrl, roteiro_id: l.roteiro_id,
+        ref_url: refUrl, roteiro_id: l.roteiro_id, lupa: lupaDe(l),
         // Gerar novo só pelo roteiro aprovado (o galeria-gerar ainda exige família vigente).
         pode_gerar_de_novo: !!rot && l.roteiro_id === rot.id && l.origem === 'gerador'
           && bloqueioDaVaga(linhas, rot.id, l.cor, l.missao, usaGerador.get(l.missao) ?? true) === null,
