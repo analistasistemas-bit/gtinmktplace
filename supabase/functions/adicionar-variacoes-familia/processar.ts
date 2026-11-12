@@ -528,6 +528,8 @@ export function clonarFamilia(
 // colunas ficam órfãs no banco e nenhum builder as toca mais, aqui ou em `montarVariacaoNova`.
 export const STRIP_VARIACAO = [
   'id', 'criado_em', 'atualizado_em', 'familia_id', 'exibir_com_desconto', 'desconto_pct',
+  // Galeria das peças do kit (ADR-0200, adendo 12/11): variação nova nunca herda fotos de outra; nasce com o default `[]`.
+  'galeria_ml_fotos',
 ] as const;
 
 /**
