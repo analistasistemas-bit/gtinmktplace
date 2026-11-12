@@ -46,7 +46,10 @@ export function atributosDeFicha(attrs: unknown): AtributoItem[] {
     if (!id || POR_SKU.has(id) || id.startsWith(PREFIXO_PACOTE)) continue;
     const valueId = cru.value_id != null ? String(cru.value_id) : null;
     const valueName = cru.value_name != null ? String(cru.value_name) : null;
-    if (valueId) out.push({ id, value_id: valueId } as AtributoItem);
+    // O nome vai junto do id (incidente 12/11/2026, 92710170): o ML dá value_id também a texto
+    // livre fora do dicionário da categoria, e só com esse id o POST volta 400 "Value name ... was
+    // not provided and couldn't be resolved from attributes database". O par é o que o GET devolveu.
+    if (valueId) out.push({ id, value_id: valueId, ...(valueName ? { value_name: valueName } : {}) } as AtributoItem);
     else if (valueName) out.push({ id, value_name: valueName } as AtributoItem);
   }
   return out;

@@ -104,13 +104,14 @@ describe('atualizarFamiliaUP — cor nova herda a ficha do irmão (incidente do 
   it('BRAND vai com o value_id do irmão, não com o texto cru do fornecedor', async () => {
     await atualizarFamiliaUP(args());
     const attrs = atributosEnviados();
-    expect(attrs).toContainEqual({ id: 'BRAND', value_id: '9165622' });
-    expect(attrs.find((a) => a.id === 'BRAND')?.value_name).toBeUndefined();
+    // O nome que acompanha o id é o do ML ("Búfalo"), nunca o cru do fornecedor ("BUFALO") —
+    // incidente 12/11/2026: id sem nome derrubou o POST com FABRIC_DESIGN fora do dicionário.
+    expect(attrs).toContainEqual({ id: 'BRAND', value_id: '9165622', value_name: 'Búfalo' });
   });
 
   it('COMPOSITION — que o app nunca envia — chega no payload vindo do irmão', async () => {
     await atualizarFamiliaUP(args());
-    expect(atributosEnviados()).toContainEqual({ id: 'COMPOSITION', value_id: '4904381' });
+    expect(atributosEnviados()).toContainEqual({ id: 'COMPOSITION', value_id: '4904381', value_name: '100% poliéster' });
   });
 
   it('não herda a COR do irmão (senão a cor nova nasceria Azul-petróleo)', async () => {
@@ -141,9 +142,9 @@ describe('atualizarFamiliaUP — cor nova herda a ficha do irmão (incidente do 
 // Caracterização (Codex #12): payload COMPLETO que o código de ANTES da feature (ADR-0166
 // 2026-09-24c) gerava para a família sem tamanho — literais copiados da saída real daquele código.
 // Família sem tamanho tem que continuar byte a byte igual (INV-1).
-const PAYLOAD_SEM_TAMANHO_ATUAL = {"category_id":"","currency_id":"BRL","buying_mode":"buy_it_now","listing_type_id":"gold_special","condition":"new","pictures":[{"id":"P2"}],"attributes":[{"id":"BRAND","value_id":"9165622"},{"id":"MANUFACTURER","value_id":"9165622"},{"id":"COMPOSITION","value_id":"4904381"},{"id":"LENGTH","value_name":"10 m"},{"id":"COLOR","value_name":"Preto"},{"id":"SELLER_PACKAGE_HEIGHT","value_name":"43 cm"},{"id":"SELLER_PACKAGE_WIDTH","value_name":"16 cm"},{"id":"SELLER_PACKAGE_LENGTH","value_name":"36 cm"},{"id":"SELLER_PACKAGE_WEIGHT","value_name":"2200 g"}],"price":10,"available_quantity":40,"seller_custom_field":"NOVA","family_name":"T"};
+const PAYLOAD_SEM_TAMANHO_ATUAL = {"category_id":"","currency_id":"BRL","buying_mode":"buy_it_now","listing_type_id":"gold_special","condition":"new","pictures":[{"id":"P2"}],"attributes":[{"id":"BRAND","value_id":"9165622","value_name":"Búfalo"},{"id":"MANUFACTURER","value_id":"9165622","value_name":"Búfalo"},{"id":"COMPOSITION","value_id":"4904381","value_name":"100% poliéster"},{"id":"LENGTH","value_name":"10 m"},{"id":"COLOR","value_name":"Preto"},{"id":"SELLER_PACKAGE_HEIGHT","value_name":"43 cm"},{"id":"SELLER_PACKAGE_WIDTH","value_name":"16 cm"},{"id":"SELLER_PACKAGE_LENGTH","value_name":"36 cm"},{"id":"SELLER_PACKAGE_WEIGHT","value_name":"2200 g"}],"price":10,"available_quantity":40,"seller_custom_field":"NOVA","family_name":"T"};
 // Irmão remoto COM SIZE* e banco sem tamanho: hoje o SIZE* do irmão é herdado — continua sendo.
-const PAYLOAD_SEM_TAMANHO_IRMAO_COM_SIZE = {"category_id":"","currency_id":"BRL","buying_mode":"buy_it_now","listing_type_id":"gold_special","condition":"new","pictures":[{"id":"P2"}],"attributes":[{"id":"BRAND","value_id":"9165622"},{"id":"MANUFACTURER","value_id":"9165622"},{"id":"COMPOSITION","value_id":"4904381"},{"id":"SIZE","value_name":"M"},{"id":"SIZE_GRID_ID","value_name":"CH1"},{"id":"SIZE_GRID_ROW_ID","value_name":"CH1:2"},{"id":"LENGTH","value_name":"10 m"},{"id":"COLOR","value_name":"Preto"},{"id":"SELLER_PACKAGE_HEIGHT","value_name":"43 cm"},{"id":"SELLER_PACKAGE_WIDTH","value_name":"16 cm"},{"id":"SELLER_PACKAGE_LENGTH","value_name":"36 cm"},{"id":"SELLER_PACKAGE_WEIGHT","value_name":"2200 g"}],"price":10,"available_quantity":40,"seller_custom_field":"NOVA","family_name":"T"};
+const PAYLOAD_SEM_TAMANHO_IRMAO_COM_SIZE = {"category_id":"","currency_id":"BRL","buying_mode":"buy_it_now","listing_type_id":"gold_special","condition":"new","pictures":[{"id":"P2"}],"attributes":[{"id":"BRAND","value_id":"9165622","value_name":"Búfalo"},{"id":"MANUFACTURER","value_id":"9165622","value_name":"Búfalo"},{"id":"COMPOSITION","value_id":"4904381","value_name":"100% poliéster"},{"id":"SIZE","value_name":"M"},{"id":"SIZE_GRID_ID","value_name":"CH1"},{"id":"SIZE_GRID_ROW_ID","value_name":"CH1:2"},{"id":"LENGTH","value_name":"10 m"},{"id":"COLOR","value_name":"Preto"},{"id":"SELLER_PACKAGE_HEIGHT","value_name":"43 cm"},{"id":"SELLER_PACKAGE_WIDTH","value_name":"16 cm"},{"id":"SELLER_PACKAGE_LENGTH","value_name":"36 cm"},{"id":"SELLER_PACKAGE_WEIGHT","value_name":"2200 g"}],"price":10,"available_quantity":40,"seller_custom_field":"NOVA","family_name":"T"};
 
 describe('atualizarFamiliaUP — família sem tamanho (INV-1)', () => {
   it('payload completo idêntico ao de antes da feature, e chart nunca é chamado', async () => {
@@ -372,7 +373,7 @@ describe('atualizarFamiliaUP — marca do produto (ADR-0188)', () => {
     const attrs = atributosEnviados();
     expect(attrs).toContainEqual({ id: 'BRAND', value_name: 'Zaven' });
     expect(attrs).toContainEqual({ id: 'MANUFACTURER', value_name: 'Zaven' });
-    expect(attrs.find((a) => a.id === 'COMPOSITION')).toEqual({ id: 'COMPOSITION', value_id: '4904381' });
+    expect(attrs.find((a) => a.id === 'COMPOSITION')).toEqual({ id: 'COMPOSITION', value_id: '4904381', value_name: '100% poliéster' });
   });
 
   it('cor nova: irmão já com a marca da org normalizada (value_id) → herda o value_id, não texto cru', async () => {
@@ -381,7 +382,7 @@ describe('atualizarFamiliaUP — marca do produto (ADR-0188)', () => {
       { id: 'COLOR', value_id: '52024', value_name: 'Azul-petróleo' },
     ] }), { status: 200 })) as typeof fetch;
     await atualizarFamiliaUP(args({ marcaProduto: 'Zaven' }));
-    expect(atributosEnviados().find((a) => a.id === 'BRAND')).toEqual({ id: 'BRAND', value_id: '777' });
+    expect(atributosEnviados().find((a) => a.id === 'BRAND')).toEqual({ id: 'BRAND', value_id: '777', value_name: 'Zaven' });
   });
 
   it('reposição: atributos da família entregues à saga já com a marca da org', async () => {

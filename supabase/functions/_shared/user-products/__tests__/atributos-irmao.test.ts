@@ -21,8 +21,18 @@ const FICHA_DO_IRMAO = [
 describe('atributosDeFicha', () => {
   it('preserva value_id — é ele que casa com o dicionário do ML', () => {
     const r = atributosDeFicha(FICHA_DO_IRMAO);
-    expect(r).toContainEqual({ id: 'BRAND', value_id: '9165622' });
-    expect(r).toContainEqual({ id: 'COMPOSITION', value_id: '4904381' });
+    expect(r).toContainEqual({ id: 'BRAND', value_id: '9165622', value_name: 'Búfalo' });
+    expect(r).toContainEqual({ id: 'COMPOSITION', value_id: '4904381', value_name: '100% poliéster' });
+  });
+
+  // Incidente 12/11/2026 (produto 92710170, cor 02743795): o irmão tinha FABRIC_DESIGN com um
+  // value_id que o ML atribuiu a um texto livre ("Estampas de Natal" — o dicionário da categoria
+  // MLB439096 só tem Liso/Listras). Só com o value_id, o POST /items voltou 400:
+  // "Value name of attribute FABRIC_DESIGN was not provided and couldn't be resolved from
+  // attributes database". O nome tem que ir junto: é o fallback do próprio ML.
+  it('manda o value_name junto do value_id — id fora do dicionário não se resolve sozinho no POST', () => {
+    const r = atributosDeFicha([{ id: 'FABRIC_DESIGN', value_id: '99999999', value_name: 'Estampas de Natal' }]);
+    expect(r).toEqual([{ id: 'FABRIC_DESIGN', value_id: '99999999', value_name: 'Estampas de Natal' }]);
   });
 
   it('usa value_name quando o atributo não tem value_id', () => {
