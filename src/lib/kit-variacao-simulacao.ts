@@ -82,7 +82,7 @@ export interface SimulacaoKit {
 }
 
 /** ResumoLucro (o mesmo de `DetalheRecebe`) a partir da tarifa oficial, sem recalcular nada. */
-function resumoDaTarifa(
+export function resumoDaTarifa(
   t: Tarifa, tipo: 'gold_special' | 'gold_pro', preco: number, custo: number, rotulo: string, aliquotaPct: number,
 ): ResumoLucro {
   const c = tipo === 'gold_pro' ? t.premium : t.classico;
