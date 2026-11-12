@@ -18,10 +18,15 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
 
-  let orgId: string;
-  try { ({ orgId } = await requireUserOrg(req)); }
+  let context: Awaited<ReturnType<typeof requireUserOrg>>;
+  try { context = await requireUserOrg(req); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
+  const { orgId } = context;
   const admin = adminClient();
+  // Mesmo gate de criar-kit-variacao: a prévia só existe para quem pode criar o kit (ADR-0060).
+  if (!context.isAdmin && context.support?.scope !== 'full') {
+    return json({ error: 'Somente administradores podem ver a prévia da galeria' }, 403);
+  }
   if (!(await exigirModulo(admin, orgId, 'kit_variacao'))) {
     return json({ error: 'Kit com variação não habilitado para esta organização.' }, 403);
   }

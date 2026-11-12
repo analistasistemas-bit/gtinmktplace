@@ -381,7 +381,7 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin: ehAdmin }
                   Desmontar
                 </Button>
                 <Button
-                  disabled={ocupado || totalKits === 0 || faltas.length > 0 || semFoto.length > 0}
+                  disabled={ocupado || totalKits === 0 || faltas.length > 0 || semFoto.length > 0 || galeriaQ.isFetching}
                   onClick={() => setConfirmar('montar')}
                 >
                   Montar mais

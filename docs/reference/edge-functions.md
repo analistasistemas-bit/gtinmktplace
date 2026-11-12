@@ -1418,7 +1418,7 @@ um smoke test contra Postgres real antes do primeiro deploy.
   `encerrando` e enfileira a saga `encerrar`. Enfileira a saga ou a reposição. Recusas: `versao`, `up_ocupado`, `alvos_invalidos`, `sku_sem_anuncio`,
   `so_em_kit_desligado`, `pedido_diferente`, `kit_nao_encontrado` (404), `modulo_desligado` (403).
 - **fotos-pecas-kit** — proposta de galeria com as fotos das peças da combinação (adendo 12/11 do ADR-0200). `verify_jwt=true`,
-  módulo `kit_variacao`, token da org. Corpo `{familia_base_id, combinacoes:[{rotulo, cores}]}`; os itens das peças saem dos
+  módulo `kit_variacao`, só admin (mesmo gate de `criar-kit-variacao`), token da org. Corpo `{familia_base_id, combinacoes:[{rotulo, cores}]}`; os itens das peças saem dos
   vínculos da org (nunca do corpo): por cor, a variação da base de menor código com item (`pecaDaCor`). Lê `/items/bulk`
   (`id,status,sub_status,pictures`, lotes de 20 ids únicos) e `settings.max_pictures_per_item` da categoria; aplica
   `montarGaleriaKit` (foto k = imagem k+2 da peça da cor k mod n; capa da peça fora; slot sem foto pula a vez; sem repetição;

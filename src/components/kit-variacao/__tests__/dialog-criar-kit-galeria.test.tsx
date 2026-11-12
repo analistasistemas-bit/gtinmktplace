@@ -118,6 +118,19 @@ describe('DialogCriarKitVariacao: galeria das peças', () => {
     expect(pedido.galeria).toBeUndefined();
   });
 
+  it('leitura da galeria em voo: "Próximo" fica travado (não deixa criar sem a galeria que o operador ainda não viu)', async () => {
+    let resolver: (g: Record<string, GaleriaProposta>) => void = () => {};
+    vi.mocked(fetchGaleriasPecasKit).mockReset().mockReturnValue(new Promise((r) => { resolver = r; }));
+    const user = userEvent.setup();
+    abrir();
+    await irParaEtapa2(user);
+    expect(await screen.findByText(/lendo as fotos das peças/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Próximo' })).toBeDisabled();
+    resolver({ 'Preto e Branco': GALERIA });
+    await screen.findByRole('list', { name: 'Fotos das peças no anúncio' });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Próximo' })).toBeEnabled());
+  });
+
   it('leitura das fotos das peças falhou: mostra "indisponíveis" e cria só com a foto do kit', async () => {
     vi.mocked(fetchGaleriasPecasKit).mockReset().mockRejectedValue(new Error('rede'));
     const user = userEvent.setup();

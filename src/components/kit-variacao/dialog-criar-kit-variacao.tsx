@@ -292,6 +292,8 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
         enviadas.current.set(rotulo, { file, path });
         caminhos[rotulo] = path;
       }
+      // A leitura da galeria ainda em voo: não cria (o operador não viu a prévia; a lista não volta depois de criada).
+      if (galeriaQ.isFetching) throw new Error('Aguarde a leitura das fotos das peças terminar.');
       // Só o que o operador viu na prévia e manteve; o servidor recalcula a proposta e descarta o que não confere.
       const galeria: Record<string, string[]> = {};
       for (const c of combinacoesPublicadas) {
@@ -759,12 +761,12 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
             ) : etapa === 'anuncio' ? (
               <>
                 <Button variant="outline" disabled={texto.isPending || gerandoFoto} onClick={() => sairDasFotos('montagem')}>Voltar</Button>
-                <Button disabled={!podeAnuncio || gerandoFoto} onClick={() => sairDasFotos('conferir')}>Próximo</Button>
+                <Button disabled={!podeAnuncio || gerandoFoto || galeriaQ.isFetching} onClick={() => sairDasFotos('conferir')}>Próximo</Button>
               </>
             ) : (
               <>
                 <Button variant="outline" disabled={criar.isPending} onClick={() => setEtapa('anuncio')}>Voltar</Button>
-                <Button disabled={!(precoNum > 0) || !podeSeguir || !avulsoOk || criar.isPending} onClick={() => criar.mutate()}>
+                <Button disabled={!(precoNum > 0) || !podeSeguir || !avulsoOk || criar.isPending || galeriaQ.isFetching} onClick={() => criar.mutate()}>
                   {criar.isPending ? 'Criando…' : 'Criar kit'}
                 </Button>
               </>

@@ -73,13 +73,13 @@ export function GaleriaPecas({ proposta, escolha, onChange, carregando, erro, de
       </div>
       {ligada ? (
         <ol className="flex flex-wrap gap-1.5" aria-label="Fotos das peças no anúncio">
-          {proposta.fotos.map((f) => {
+          {proposta.fotos.map((f, i) => {
             const fora = !mantidas.has(f.id);
             const numero = fora ? null : ++posicao;
             return (
               <li key={f.id} className={cn('relative h-14 w-14 shrink-0 overflow-hidden rounded-md border bg-background', fora && 'opacity-45')}>
                 {f.url
-                  ? <img src={f.url} alt={`Foto da peça ${f.cor}`} loading="lazy" className="h-full w-full object-cover" />
+                  ? <img src={f.url} alt={`Foto ${i + 1} da lista, peça ${f.cor}`} loading="lazy" className="h-full w-full object-cover" />
                   : <div className="flex h-full w-full items-center justify-center text-[10px] text-muted-foreground">sem prévia</div>}
                 <span className="absolute left-0 top-0 rounded-br-md bg-background/90 px-1 text-[10px] font-medium tabular-nums">
                   {numero ?? '–'}
@@ -87,7 +87,7 @@ export function GaleriaPecas({ proposta, escolha, onChange, carregando, erro, de
                 <span className="absolute inset-x-0 bottom-0 truncate bg-background/90 px-1 text-[10px] text-muted-foreground">{f.cor}</span>
                 <button
                   type="button" disabled={desabilitado}
-                  aria-label={fora ? `Restaurar foto de ${f.cor}` : `Remover foto ${numero} (${f.cor})`}
+                  aria-label={fora ? `Restaurar foto removida ${i + 1} da lista (${f.cor})` : `Remover foto ${numero} (${f.cor})`}
                   onClick={() => onChange(alternarFoto(escolha, f.id))}
                   className="absolute right-0 top-0 flex h-6 w-6 items-center justify-center rounded-bl-md bg-background/90 text-muted-foreground hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50"
                 >

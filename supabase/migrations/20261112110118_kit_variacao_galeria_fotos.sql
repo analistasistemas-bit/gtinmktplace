@@ -1,6 +1,7 @@
 -- ADR-0200 (adendo 12/11): galeria de fotos das peças no anúncio do kit.
 -- Referência, não cópia: `[{ "id": "<picture_id no ML>", "item": "<MLB da peça de origem>" }]`, na ordem do anúncio.
--- Vazio = só a foto do kit. RLS da tabela já cobre (org_id); nenhum trigger de kit olha esta coluna.
+-- Vazio = só a foto do kit. Coluna nova não muda o acesso: valem as policies já existentes de `variacoes`; a edge e o
+-- worker escrevem com service role filtrando por org_id. Nenhum trigger de kit olha esta coluna.
 alter table public.variacoes
   add column if not exists galeria_ml_fotos jsonb not null default '[]'::jsonb;
 

@@ -28,12 +28,20 @@ export async function prepararGaleria(
   }
 }
 
-/** 400 do ML com alguma causa `item.pictures.*` (max, picture_not_found, invalid…). */
+/**
+ * 400 do ML com recusa DEFINITIVA de foto: causa `item.pictures.*` (max, invalid…) ou `picture_not_found` em qualquer forma.
+ * `item.pictures.unavailable` sozinha é transitória (a foto do kit ainda propaga): não desliga a galeria.
+ */
 export function erroDeFoto(status: number, corpo: unknown): boolean {
   if (status !== 400) return false;
   const causas = (corpo as { cause?: unknown } | null)?.cause;
-  return Array.isArray(causas) && causas.some((c) => typeof (c as { code?: unknown })?.code === 'string'
-    && String((c as { code: string }).code).startsWith('item.pictures.'));
+  if (!Array.isArray(causas)) return false;
+  return causas.some((c) => {
+    const code = (c as { code?: unknown })?.code;
+    if (typeof code !== 'string') return false;
+    if (code.includes('picture_not_found')) return true;
+    return code.startsWith('item.pictures.') && !code.endsWith('.unavailable');
+  });
 }
 
 /**

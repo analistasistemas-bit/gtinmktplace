@@ -50,6 +50,14 @@ describe('erroDeFoto', () => {
     expect(erroDeFoto(400, corpo('item.pictures.picture_not_found'))).toBe(true);
     expect(erroDeFoto(400, corpo('item.attributes.invalid', 'item.pictures.invalid'))).toBe(true);
   });
+  it('picture_not_found solto (código registrado na medição de 12/11) também conta', () => {
+    expect(erroDeFoto(400, corpo('picture_not_found'))).toBe(true);
+    expect(erroDeFoto(400, corpo('item.pictures.invalid_size'))).toBe(true);
+  });
+  it('item.pictures.unavailable é transitório (foto do kit ainda propagando): não desliga a galeria', () => {
+    expect(erroDeFoto(400, corpo('item.pictures.unavailable'))).toBe(false);
+    expect(erroDeFoto(400, corpo('item.pictures.unavailable', 'item.pictures.max'))).toBe(true);
+  });
   it('outra causa, outro status ou corpo ilegível não é erro de foto', () => {
     expect(erroDeFoto(400, corpo('item.attributes.invalid'))).toBe(false);
     expect(erroDeFoto(500, corpo('item.pictures.max'))).toBe(false);

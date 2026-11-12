@@ -30,7 +30,7 @@ describe('GaleriaPecas', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Remover foto 3 (Caqui)' }));
     expect(onChange).toHaveBeenCalledWith({ ligada: true, removidas: ['C3'] });
     rerender(<GaleriaPecas proposta={proposta()} escolha={{ ligada: true, removidas: ['C3'] }} onChange={onChange} />);
-    expect(screen.getByRole('button', { name: 'Restaurar foto de Caqui' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Restaurar foto removida 2 da lista (Caqui)' })).toBeInTheDocument();
     expect(screen.getByText('no anúncio: 2 fotos das peças', { exact: false })).toBeInTheDocument();
   });
 
