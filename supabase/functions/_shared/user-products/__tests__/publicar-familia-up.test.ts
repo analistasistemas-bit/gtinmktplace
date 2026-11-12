@@ -803,3 +803,29 @@ describe('publicarFamiliaUP — COLOR com value_id do dicionário da categoria',
     expect(cor(montar('s-royal'))).toEqual({ id: 'COLOR', value_name: 'Azul Royal' });
   });
 });
+
+// ADR-0204: o payload plano por SKU leva `anuncio.galeriaFotoIds` (só preenchido pelo publish-familia-ml para kit
+// vinculado). Sem ele — inclusive o kit com variação, cujo canônico nunca tem galeria — o payload não muda.
+describe('prepararPayloadUP — galeria do kit vinculado (ADR-0204)', () => {
+  const anuncio: AnuncioCanonico = {
+    titulo: 'Kit 2 Linhas', descricao: 'd', categoriaId: 'MLB1', atributos: [],
+    capaFotoId: 'CAPA', capa2FotoId: null, capa3FotoId: null, dimensoes: null,
+    variacoes: [{ sku: 'K1', cor: 'Azul', estoque: 3, preco: 20, gtin: null, fotoId: null }],
+  };
+  const preparar = async (a: AnuncioCanonico) => {
+    const { prepararPayloadUP } = await import('../publicar-familia-up');
+    const { montar } = await prepararPayloadUP({
+      admin: {} as never, ctx: { getToken: async () => 't' }, conexao: { id: 'c1' } as never,
+      familia: { id: 'f', titulo_ml: 'Kit 2 Linhas', nome_pai: null, codigo_pai: 'K' } as never,
+      anuncio: a, categoriaId: 'MLB1', lerSchemaAtributosFn: async () => [],
+    });
+    return montar(a.variacoes[0]);
+  };
+  it('sem galeriaFotoIds → payload de sempre', async () => {
+    expect(JSON.stringify(await preparar(anuncio))).toMatchInlineSnapshot(`"{"category_id":"MLB1","currency_id":"BRL","buying_mode":"buy_it_now","listing_type_id":"gold_special","condition":"new","pictures":[{"id":"CAPA"}],"attributes":[{"id":"COLOR","value_name":"Azul"}],"price":20,"available_quantity":3,"seller_custom_field":"K1","family_name":"Kit 2 Linhas"}"`);
+  });
+  it('com galeriaFotoIds → ids ao fim de pictures, sem repetir a capa', async () => {
+    const p = await preparar({ ...anuncio, galeriaFotoIds: ['G1', 'CAPA', 'G2'] });
+    expect(p.pictures).toEqual([{ id: 'CAPA' }, { id: 'G1' }, { id: 'G2' }]);
+  });
+});

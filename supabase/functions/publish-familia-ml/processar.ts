@@ -30,6 +30,9 @@ import { itemConfirmarCriado } from '../_shared/confirmacao/registrar.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { montarMensagemTetoAnuncio } from '../_shared/notificacoes/estoque.ts';
 import { EMBED_MODULOS, kitLigado, skusParticipantes } from '../_shared/kit-variacao/politica.ts';
+import { fotosDaColuna } from '../_shared/kit-variacao/galeria-coluna.ts';
+import { revalidarGaleria } from '../_shared/kit-variacao/galeria-leitura.ts';
+import { prepararGaleria } from '../_shared/kit-variacao/galeria-criar.ts';
 
 export interface Job {
   familia_id: string; lote_id: string; listing_type_id?: string;
@@ -150,6 +153,9 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
     return { tipo: 'ja_publicado' };
   }
 
+  // ADR-0204: o payload deste CREATE levou a galeria da base do kit vinculado (lido no catch da recusa de foto).
+  // deno-lint-ignore no-unused-vars -- lido pelo rebaixamento da recusa de foto (Task 5); remover o ignore lá.
+  let galeriaUsada = false;
   try {
     // Spec reajuste C2: reajuste de preço em massa ativo → 400 definitivo (erro de consulta retenta).
     await exigirSemReajusteAtivo(admin, familia.org_id as string, familia.codigo_pai as string);
@@ -191,6 +197,28 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
       anuncio.gtinPackFallback = await gtinDaUnidadeBase(
         admin, familia.org_id as string, familia.kit_base_codigo_pai as string,
       );
+    }
+
+    // ADR-0204: kit vinculado leva a galeria da base (`variacoes.galeria_ml_fotos`). Só aqui — nunca no canônico, que é
+    // o mesmo do kit com variação. Relida no ML antes do POST; o que sumiu/foi moderado sai. Nunca trava a publicação.
+    if (familia.kit_base_codigo_pai && familia.kit_multiplicador) {
+      const vk = variacoes.find((v) => (fotosDaColuna(v.galeria_ml_fotos)?.length ?? 0) > 0);
+      if (vk) {
+        const prep = await prepararGaleria(
+          fotosDaColuna(vk.galeria_ml_fotos) ?? [], async (fs) => revalidarGaleria(await ctx.getToken(), fs),
+        );
+        if (prep.aviso) {
+          try {
+            await (deps.notificar ?? notificarCategoria)(admin, familia.org_id, 'estoque', `Kit ${vk.codigo}: ${prep.aviso}`, {
+              chave: `kit_galeria:${vk.codigo}:reduzida`,
+            });
+          } catch (e) { console.warn('kit_galeria_aviso_falhou', String(e)); }
+        }
+        if (prep.fotos.length > 0) {
+          anuncio.galeriaFotoIds = prep.fotos.map((x) => x.id);
+          galeriaUsada = true;
+        }
+      }
     }
 
     // ── ADR-0088: roteamento multi-cor User Products ────────────────────────────────────────

@@ -146,7 +146,7 @@ export const mercadoLivreConnector: ChannelConnector = {
         ? variacoesInput.map((v) => ({ ...v, gtin: v.gtin ?? a.gtinPackFallback ?? null }))
         : variacoesInput,
       a.capaFotoId, a.capa2FotoId, a.capa3FotoId,
-      a.listingTypeId, a.dimensoes, aceitaEmptyGtin, formato,
+      a.listingTypeId, a.dimensoes, aceitaEmptyGtin, formato, a.galeriaFotoIds,
     );
     // ADR-0087: as duas tentativas (seed da categoria + retry reativo) ficam dentro de UM
     // único try/catch — se a 2ª falhar (novo erro do ML, ou `montarPayloadItem` lançando na

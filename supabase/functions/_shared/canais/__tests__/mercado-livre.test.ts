@@ -435,6 +435,43 @@ describe('criarAnuncio: retry reativo de item plano (ADR-0087)', () => {
     expect(chamadas[0].variations[0].attributes).toContainEqual({ id: 'GTIN', value_name: '7899999999999' });
   });
 
+  // ADR-0204: a galeria do kit vinculado vai em TODAS as tentativas (1º POST, retry 'plano', retry GTIN de pack).
+  it('galeriaFotoIds vai no 1º POST e no retry plano', async () => {
+    const chamadas = stubItems([
+      { status: 400, body: { message: 'Validation error', cause: causaExata } },
+      { status: 200, body: { id: 'MLB2', permalink: 'x', variations: [] } },
+    ]);
+    const res = await mercadoLivreConnector.criarAnuncio(ctxFake, { ...anuncioBase, capaFotoId: 'CAPA', galeriaFotoIds: ['G1', 'G2'] });
+    expect(res.ok).toBe(true);
+    expect(chamadas[0].pictures).toEqual([{ id: 'CAPA' }, { id: 'G1' }, { id: 'G2' }]);
+    expect(chamadas[0].variations[0].picture_ids).toEqual(['CAPA', 'G1', 'G2']);
+    expect(chamadas[1].family_name).toBe('Kit Agulha Crochê');
+    expect(chamadas[1].pictures).toEqual([{ id: 'CAPA' }, { id: 'G1' }, { id: 'G2' }]);
+  });
+
+  it('galeriaFotoIds vai no retry com GTIN de pack', async () => {
+    const chamadas = stubItems([
+      { status: 400, body: { message: 'Validation error', cause: causaGtin } },
+      { status: 200, body: { id: 'MLB9', permalink: 'x', variations: [] } },
+    ]);
+    const res = await mercadoLivreConnector.criarAnuncio(ctxFake, {
+      ...anuncioBase, capaFotoId: 'CAPA', gtinPackFallback: '7891000444764', galeriaFotoIds: ['G1'],
+    });
+    expect(res.ok).toBe(true);
+    expect(chamadas).toHaveLength(2);
+    expect(chamadas[1].pictures).toEqual([{ id: 'CAPA' }, { id: 'G1' }]);
+    expect(chamadas[1].variations[0].picture_ids).toEqual(['CAPA', 'G1']);
+  });
+
+  it('sem galeriaFotoIds o POST sai idêntico ao de antes (regressão)', async () => {
+    const a = stubItems([{ status: 200, body: { id: 'MLB1', permalink: 'x', variations: [] } }]);
+    await mercadoLivreConnector.criarAnuncio(ctxFake, { ...anuncioBase, capaFotoId: 'CAPA' });
+    const b = stubItems([{ status: 200, body: { id: 'MLB1', permalink: 'x', variations: [] } }]);
+    await mercadoLivreConnector.criarAnuncio(ctxFake, { ...anuncioBase, capaFotoId: 'CAPA', galeriaFotoIds: [] });
+    expect(JSON.stringify(a[0])).toMatchInlineSnapshot(`"{"title":"Kit Agulha Crochê","category_id":"MLB999999","currency_id":"BRL","buying_mode":"buy_it_now","listing_type_id":"gold_special","condition":"new","pictures":[{"id":"CAPA"}],"attributes":[],"variations":[{"attribute_combinations":[{"id":"COLOR","value_name":"Único"}],"available_quantity":5,"price":33.5,"picture_ids":["CAPA"],"seller_custom_field":"A1"}]}"`);
+    expect(JSON.stringify(b[0])).toBe(JSON.stringify(a[0]));
+  });
+
   it('família com >1 variação + assinatura exata → reconstrução lança internamente (ADR-0084), capturado sem 2º POST', async () => {
     const chamadas = stubItems([
       { status: 400, body: { message: 'Validation error', cause: causaExata } },

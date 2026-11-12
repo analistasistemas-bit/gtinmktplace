@@ -380,3 +380,55 @@ describe('montarPayloadItem — COLOR com value_id do dicionário (item plano)',
     expect(p.attributes).toEqual(expect.arrayContaining([{ name: 'Tamanho', value_name: 'TAM 01' }]));
   });
 });
+
+// ADR-0204: regressão byte-idêntica. Sem `galeriaExtra`, o payload de TODAS as famílias tem que sair
+// exatamente como antes da galeria do kit vinculado (snapshots tirados no código intocado).
+describe('montarPayloadItem — regressão byte-idêntica sem galeria (ADR-0204)', () => {
+  const comTamanho = {
+    ...variacoes[0], tamanho: 'M', sizeLabel: 'M', sizeGridId: 'G1', sizeGridRowId: 'G1:2',
+  };
+  it('ramo variations sem tamanho', () => {
+    expect(JSON.stringify(montarPayloadItem(familia, variacoes, capaPictureId, 'CAPA2', 'CAPA3', undefined, null, true)))
+      .toMatchInlineSnapshot(`"{"title":"Linha XIK 120 Várias Cores","category_id":"MLB270273","currency_id":"BRL","buying_mode":"buy_it_now","listing_type_id":"gold_special","condition":"new","pictures":[{"id":"CAPA1"},{"id":"CAPA2"},{"id":"CAPA3"},{"id":"PIC1"},{"id":"PIC2"}],"attributes":[{"id":"BRAND","value_name":"Avil"},{"id":"MODEL","value_name":"XIK 120"}],"variations":[{"attribute_combinations":[{"id":"COLOR","value_name":"Azul"}],"available_quantity":5,"price":9.9,"picture_ids":["CAPA1","CAPA2","CAPA3","PIC1"],"seller_custom_field":"00000101","attributes":[{"id":"GTIN","value_name":"7891234567895"}]},{"attribute_combinations":[{"id":"COLOR","value_name":"Verde"}],"available_quantity":0,"price":9.9,"picture_ids":["CAPA1","CAPA2","CAPA3","PIC2"],"seller_custom_field":"00000102","attributes":[{"id":"EMPTY_GTIN_REASON","value_id":"17055160"}]}]}"`);
+  });
+  it('ramo variations com tamanho', () => {
+    expect(JSON.stringify(montarPayloadItem(familia, [comTamanho], capaPictureId, 'CAPA2', null)))
+      .toMatchInlineSnapshot(`"{"title":"Linha XIK 120 Várias Cores","category_id":"MLB270273","currency_id":"BRL","buying_mode":"buy_it_now","listing_type_id":"gold_special","condition":"new","pictures":[{"id":"CAPA1"},{"id":"CAPA2"},{"id":"PIC1"}],"attributes":[{"id":"BRAND","value_name":"Avil"},{"id":"MODEL","value_name":"XIK 120"}],"variations":[{"attribute_combinations":[{"id":"COLOR","value_name":"Azul"}],"available_quantity":5,"price":9.9,"picture_ids":["CAPA1","CAPA2","PIC1"],"seller_custom_field":"00000101","attributes":[{"id":"GTIN","value_name":"7891234567895"}]}]}"`);
+  });
+  it('ramo plano sem tamanho', () => {
+    expect(JSON.stringify(montarPayloadItem(familia, [variacoes[0]], capaPictureId, 'CAPA2', 'CAPA3', undefined, null, undefined, 'plano')))
+      .toMatchInlineSnapshot(`"{"category_id":"MLB270273","currency_id":"BRL","buying_mode":"buy_it_now","listing_type_id":"gold_special","condition":"new","pictures":[{"id":"CAPA1"},{"id":"CAPA2"},{"id":"CAPA3"},{"id":"PIC1"}],"attributes":[{"id":"BRAND","value_name":"Avil"},{"id":"MODEL","value_name":"XIK 120"},{"id":"COLOR","value_name":"Azul"},{"id":"GTIN","value_name":"7891234567895"}],"price":9.9,"available_quantity":5,"seller_custom_field":"00000101","family_name":"Linha XIK 120 Várias Cores"}"`);
+  });
+  it('ramo plano com tamanho', () => {
+    expect(JSON.stringify(montarPayloadItem(familia, [comTamanho], null, null, null, 'gold_pro', null, true, 'plano')))
+      .toMatchInlineSnapshot(`"{"category_id":"MLB270273","currency_id":"BRL","buying_mode":"buy_it_now","listing_type_id":"gold_pro","condition":"new","pictures":[{"id":"PIC1"}],"attributes":[{"id":"BRAND","value_name":"Avil"},{"id":"MODEL","value_name":"XIK 120"},{"id":"COLOR","value_name":"Azul"},{"id":"GTIN","value_name":"7891234567895"},{"id":"SIZE","value_name":"M"},{"id":"SIZE_GRID_ID","value_name":"G1"},{"id":"SIZE_GRID_ROW_ID","value_name":"G1:2"}],"price":9.9,"available_quantity":5,"seller_custom_field":"00000101","family_name":"Linha XIK 120 Várias Cores"}"`);
+  });
+  it('galeriaExtra vazia ou ausente → mesmo JSON (os dois ramos)', () => {
+    const sem = montarPayloadItem(familia, variacoes, capaPictureId, 'CAPA2', null);
+    expect(JSON.stringify(montarPayloadItem(familia, variacoes, capaPictureId, 'CAPA2', null, undefined, undefined, undefined, undefined, [])))
+      .toBe(JSON.stringify(sem));
+    const plano = montarPayloadItem(familia, [variacoes[0]], capaPictureId, null, null, undefined, null, undefined, 'plano');
+    expect(JSON.stringify(montarPayloadItem(familia, [variacoes[0]], capaPictureId, null, null, undefined, null, undefined, 'plano', undefined)))
+      .toBe(JSON.stringify(plano));
+  });
+});
+
+// ADR-0204: kit vinculado leva a galeria da base. Variação do kit não tem foto própria (ml_picture_id nulo).
+describe('montarPayloadItem — galeriaExtra (ADR-0204)', () => {
+  const kit = [{ ...variacoes[0], ml_picture_id: null }];
+  it('ramo variations: galeria ao fim de pictures e de picture_ids, sem repetir capa/capa2', () => {
+    const p = montarPayloadItem(familia, kit, 'CAPA1', 'CAPA2', null, undefined, null, undefined, undefined, ['G1', 'CAPA2', 'G2', 'CAPA1']);
+    expect(p.pictures.map((x) => x.id)).toEqual(['CAPA1', 'CAPA2', 'G1', 'G2']);
+    expect(p.variations[0].picture_ids).toEqual(['CAPA1', 'CAPA2', 'G1', 'G2']);
+  });
+  it('ramo variations com foto própria: galeria vem depois da foto da cor', () => {
+    const p = montarPayloadItem(familia, [variacoes[0]], 'CAPA1', null, null, undefined, null, undefined, undefined, ['G1', 'PIC1']);
+    expect(p.pictures.map((x) => x.id)).toEqual(['CAPA1', 'PIC1', 'G1']);
+    expect(p.variations[0].picture_ids).toEqual(['CAPA1', 'PIC1', 'G1']);
+  });
+  it('ramo plano: galeria ao fim de pictures, sem repetir', () => {
+    const p = montarPayloadItem(familia, kit, 'CAPA1', null, null, undefined, null, undefined, 'plano', ['G1', 'CAPA1', 'G2']);
+    expect(p.pictures.map((x) => x.id)).toEqual(['CAPA1', 'G1', 'G2']);
+    expect(p.variations).toBeUndefined();
+  });
+});

@@ -151,12 +151,15 @@ export function montarPayloadItem(
   dimensoes?: DimensoesPacote | null,
   aceitaEmptyGtinOverride?: boolean,
   formato?: 'plano',
+  /** ADR-0204: galeria da base do kit vinculado (picture_ids já no ML). Entra ao fim de `pictures` e, no ramo
+   *  `variations`, ao fim dos `picture_ids` de cada variação, sem repetir. Ausente/vazia = payload de sempre. */
+  galeriaExtra: string[] = [],
 ): PayloadItem {
   // item.pictures lidera com uma foto principal (capa da família, ou a 1ª foto de cor
   // quando não há capa); capa2 e capa3 nunca assumem a 1ª posição.
   const fotosCor = variacoes.map((v) => v.ml_picture_id).filter((x): x is string => !!x);
   const lider = capaPictureId ?? fotosCor[0] ?? null;
-  const picIds = [lider, capa2PictureId, capa3PictureId, ...fotosCor].filter((x): x is string => !!x);
+  const picIds = [lider, capa2PictureId, capa3PictureId, ...fotosCor, ...galeriaExtra].filter((x): x is string => !!x);
   const pictures: PictureRef[] = [...new Set(picIds)].map((id) => ({ id }));
 
   // E4: categoria prevista passa o flag lido do schema; aviamento (override) usa o helper hard-coded.
@@ -253,7 +256,9 @@ export function montarPayloadItem(
       attribute_combinations: [{ id: 'COLOR', value_name: cor }],
       available_quantity: v.estoque,
       price: v.preco_publicacao ?? 0,
-      picture_ids: ordenarFotosVariacao(capaPictureId, capa2PictureId, capa3PictureId, v.ml_picture_id),
+      picture_ids: [...new Set([
+        ...ordenarFotosVariacao(capaPictureId, capa2PictureId, capa3PictureId, v.ml_picture_id), ...galeriaExtra,
+      ])],
       seller_custom_field: v.codigo,
     };
     if (gtinAusente(v.gtin)) {

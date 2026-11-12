@@ -8,6 +8,11 @@ vi.mock('../../_shared/queue.ts', () => ({
   enfileirarPublicacoes: vi.fn(async () => []),
 }));
 vi.mock('../../_shared/anuncios/espelhar.ts', () => ({ espelharAnuncioExterno: async () => {} }));
+// ADR-0204: revalidação da galeria do kit vinculado no ML — espiã; o padrão aprova tudo.
+const { revalidarSpy } = vi.hoisted(() => ({ revalidarSpy: vi.fn() }));
+vi.mock('../../_shared/kit-variacao/galeria-leitura.ts', async (importOriginal) => ({
+  ...(await importOriginal<object>()), revalidarGaleria: revalidarSpy,
+}));
 
 import { processarFamiliaML, type ProcessarDeps } from '../processar';
 import { fakeConnector } from '../../_shared/canais/fake';
@@ -701,5 +706,89 @@ describe('processarFamiliaML — retry do atacado em família já publicada', ()
     const { aplicados, status } = await rodar({});
     expect(aplicados).toEqual([]);
     expect(status).toMatchObject([{ atacado_status: 'erro' }]);
+  });
+});
+
+// ADR-0204: só o kit vinculado (kit_base_codigo_pai + kit_multiplicador) com a coluna cheia leva a galeria da base.
+describe('processarFamiliaML — galeria do kit vinculado (ADR-0204)', () => {
+  const KIT = { ...FAMILIA_BASE, kit_base_codigo_pai: '00000082', kit_multiplicador: 2 };
+  const COLUNA = [{ id: 'G1', item: 'MLB-BASE' }, { id: 'G2', item: 'MLB-BASE' }];
+  const VAR_KIT = { ...VAR_BASE, codigo: 'K1', ml_picture_id: null, galeria_ml_fotos: COLUNA };
+  const criado = () => fakeConnector.chamadas.find((c) => c.metodo === 'criarAnuncio')?.args as { galeriaFotoIds?: string[] };
+  beforeEach(() => {
+    fakeConnector.reset();
+    revalidarSpy.mockReset();
+    revalidarSpy.mockImplementation(async (_t: string, fotos: unknown[]) => ({ fotos, motivo: null }));
+  });
+
+  it('kit vinculado com a coluna cheia → revalida com o token da org e leva os ids aprovados', async () => {
+    const notificar = vi.fn(async () => {});
+    const { admin } = fakeAdmin({ familia: KIT, variacoes: [VAR_KIT] });
+    const r = await processarFamiliaML(baseDeps(admin, { notificar: notificar as never }), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(revalidarSpy).toHaveBeenCalledWith('fake-token', COLUNA);
+    expect(criado().galeriaFotoIds).toEqual(['G1', 'G2']);
+    expect(notificar).not.toHaveBeenCalled();
+  });
+
+  it('revalidação devolve subconjunto → só ele segue e avisa com a chave kit_galeria:<codigo>:reduzida', async () => {
+    revalidarSpy.mockResolvedValue({ fotos: [COLUNA[1]], motivo: 'MLB-BASE sem a foto G1' });
+    const notificar = vi.fn(async () => {});
+    const { admin } = fakeAdmin({ familia: KIT, variacoes: [VAR_KIT] });
+    await processarFamiliaML(baseDeps(admin, { notificar: notificar as never }), JOB, { tentativas: 0 });
+    expect(criado().galeriaFotoIds).toEqual(['G2']);
+    expect(notificar).toHaveBeenCalledWith(
+      admin, 'org-1', 'estoque', expect.stringContaining('K1'), { chave: 'kit_galeria:K1:reduzida' },
+    );
+  });
+
+  it('revalidação sem nenhuma foto aprovada → publica sem galeria, avisa', async () => {
+    revalidarSpy.mockResolvedValue({ fotos: [], motivo: 'Galeria das peças não conferida (HTTP 500).' });
+    const notificar = vi.fn(async () => {});
+    const { admin } = fakeAdmin({ familia: KIT, variacoes: [VAR_KIT] });
+    const r = await processarFamiliaML(baseDeps(admin, { notificar: notificar as never }), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(criado()).not.toHaveProperty('galeriaFotoIds');
+    expect(notificar).toHaveBeenCalledTimes(1);
+  });
+
+  it('revalidação que LANÇA e aviso que falha nunca derrubam a publicação', async () => {
+    revalidarSpy.mockRejectedValue(new Error('ECONNRESET'));
+    const notificar = vi.fn(async () => { throw new Error('notif fora'); });
+    const { admin } = fakeAdmin({ familia: KIT, variacoes: [VAR_KIT] });
+    const r = await processarFamiliaML(baseDeps(admin, { notificar: notificar as never }), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(criado()).not.toHaveProperty('galeriaFotoIds');
+  });
+
+  it('kit vinculado sem galeria (coluna vazia ou nula) → nada lido, anúncio idêntico ao atual', async () => {
+    for (const galeria of [[], null]) {
+      fakeConnector.reset();
+      const { admin } = fakeAdmin({ familia: KIT, variacoes: [{ ...VAR_KIT, galeria_ml_fotos: galeria }] });
+      await processarFamiliaML(baseDeps(admin), JOB, { tentativas: 0 });
+      expect(criado()).not.toHaveProperty('galeriaFotoIds');
+    }
+    expect(revalidarSpy).not.toHaveBeenCalled();
+  });
+
+  it('família comum e kit com variação (sem kit_base_codigo_pai) com a coluna cheia → sem galeria', async () => {
+    for (const familia of [FAMILIA_BASE, { ...FAMILIA_BASE, kit_multiplicador: 2 }, { ...FAMILIA_BASE, kit_base_codigo_pai: '00000082' }]) {
+      fakeConnector.reset();
+      const { admin } = fakeAdmin({ familia, variacoes: [VAR_KIT] });
+      await processarFamiliaML(baseDeps(admin), JOB, { tentativas: 0 });
+      expect(criado()).not.toHaveProperty('galeriaFotoIds');
+    }
+    expect(revalidarSpy).not.toHaveBeenCalled();
+  });
+
+  it('rota UP (SKU com tamanho) também recebe a galeria no anúncio', async () => {
+    let visto: string[] | undefined;
+    const { admin } = fakeAdmin({
+      familia: { ...KIT, genero: 'masculino', categoria_ml_id: 'MLB108803' },
+      variacoes: [{ ...VAR_KIT, tamanho: 'P' }],
+    });
+    const deps = baseDeps(admin, { publicarUP: async (a) => { visto = a.anuncio.galeriaFotoIds; return { estado: 'ativo', itemExternoId: 'X', permalink: null }; } });
+    await processarFamiliaML(deps, JOB, { tentativas: 0 });
+    expect(visto).toEqual(['G1', 'G2']);
   });
 });

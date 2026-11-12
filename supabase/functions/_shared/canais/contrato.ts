@@ -134,6 +134,9 @@ export interface AnuncioCanonico {
    *  categorias que exigem o código, o ML modela pack como GTIN da unidade + UNITS_PER_PACK
    *  (tag `pack_multiplier` no schema). Ausente em produto comum. */
   gtinPackFallback?: string | null;
+  /** ADR-0204: picture_ids da galeria da base, só para kit vinculado e só preenchido em `publish-familia-ml`
+   *  (já revalidados no ML). Vai ao fim das fotos no CREATE; nunca no UPDATE. Ausente em todo o resto. */
+  galeriaFotoIds?: string[];
 }
 
 /** Status do anúncio no modelo canônico (generaliza StatusParsed de ml/status). */

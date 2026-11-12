@@ -205,7 +205,7 @@ export async function prepararPayloadUP(args: {
         corValueId: resolverCorValueId(v.cor, valoresCor),
       }],
       anuncio.capaFotoId, anuncio.capa2FotoId, anuncio.capa3FotoId,
-      anuncio.listingTypeId, anuncio.dimensoes, args.aceitaEmptyGtin, 'plano',
+      anuncio.listingTypeId, anuncio.dimensoes, args.aceitaEmptyGtin, 'plano', anuncio.galeriaFotoIds,
     );
   };
 
