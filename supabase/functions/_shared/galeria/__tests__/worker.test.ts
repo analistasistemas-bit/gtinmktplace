@@ -348,6 +348,16 @@ describe('conferência inline e regeração (ADR-0203 item 6)', () => {
     expect(await rodar(msg(img(), 'alertar'))).toBe('ignorar')
     expect(v.create).toHaveBeenCalledTimes(1)
   })
+  it('imagem sem texto pedido (capa): não chama a visão, não regera e grava alertas = []', async () => {
+    // Teste real 12/11: a visão lia o rótulo do produto como texto a mais e toda capa regerava.
+    db.galeria_imagens = [linha({ missao: 1 })]
+    v.create.mockResolvedValue(respOR(IMG(), 0.05))
+    conferir!.mockResolvedValue([{ tipo: 'texto_extra', nota: 'AMIGURUMI' }])
+    expect(await rodar()).toBe('gerada')
+    expect(conferir).not.toHaveBeenCalled()
+    expect(img()).toMatchObject({ status: 'gerada', alertas: [], tentativa: 1 })
+    expect(chamadasProvedor()).toBe(1)
+  })
   it('visão indisponível na 1ª tentativa: conclui (não regera) e deixa a conferência para a fase alertar', async () => {
     v.create.mockResolvedValue(respOR(IMG(), 0.05))
     conferir!.mockResolvedValue(INDISP)

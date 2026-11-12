@@ -188,7 +188,9 @@ export async function executarImagem(admin: SupabaseClient, msg: MensagemWorker 
       const custoAcumulado = (linha.custo_usd ?? 0) + gerada.custo;
       // Imagem inútil não gasta a visão (caminho de sempre: falhou/cena_inutil).
       if (!util(gerada.bytes)) return falhar('cena_inutil');
-      const alertas = await (deps.conferir ?? conferirTexto)({ imagemUrl: gerada.url, esperados: posicao.textos });
+      // Imagem sem texto pedido (capa, Moda): não há o que comparar e a visão confunde o rótulo do produto com texto
+      // desenhado (teste real 12/11: toda capa regerava). Sem conferência; a aprovação humana cobre.
+      const alertas = posicao.textos.length === 0 ? [] : await (deps.conferir ?? conferirTexto)({ imagemUrl: gerada.url, esperados: posicao.textos });
       // `tentativa` local já é a do claim (1 na 1ª submissão, 2 na regeração): no máximo uma regeração.
       if (divergente(alertas) && tentativa < 2) {
         console.warn('[galeria-worker] texto divergente, regerando', linha.id, alertas);
@@ -288,6 +290,7 @@ async function alertar(admin: SupabaseClient, l: LinhaWorker, deps: DepsWorker):
     ? [{ tipo: 'verificacao_indisponivel', nota: 'imagem sem plano para conferir' }]
     : !cenaUrl
     ? [{ tipo: 'verificacao_indisponivel', nota: 'cena indisponível' }]
+    : posicao.textos.length === 0 ? []
     : await (deps.conferir ?? conferirTexto)({ imagemUrl: cenaUrl, esperados: posicao.textos });
   const { data, error: eF } = await admin.from('galeria_imagens').update({ alertas, posse: null, lease_ate: null })
     .eq('id', l.id).eq('posse', posse).select('id');
