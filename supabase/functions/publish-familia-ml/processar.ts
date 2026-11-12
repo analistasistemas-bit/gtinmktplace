@@ -14,7 +14,9 @@ import { montarAnuncioCanonico } from '../_shared/anuncios/montar-canonico.ts';
 import { aplicarEstoqueDerivado } from '../_shared/estoque/kit.ts';
 import { garantirPrecoUniforme } from '../_shared/preco/grupos.ts';
 import { exigirFiscalCompletoSePreciso } from '../_shared/fiscal/gate.ts';
-import { decidirErroCriarAnuncio, mensagemErroFotoRecuperavel, decidirRetryTransitorio } from '../_shared/publicacao/retry.ts';
+import {
+  decidirErroCriarAnuncio, mensagemErroFotoRecuperavel, decidirRetryTransitorio, MAX_RETRIES_TRANSIENTES,
+} from '../_shared/publicacao/retry.ts';
 import { exigirSemReajusteAtivo } from '../_shared/publicacao/guard-reajuste.ts';
 import {
   enfileirarVinculacaoCatalogo, enfileirarSincronizacaoFiscal, enfileirarPublicacoes,
@@ -33,6 +35,7 @@ import { EMBED_MODULOS, kitLigado, skusParticipantes } from '../_shared/kit-vari
 import { fotosDaColuna } from '../_shared/kit-variacao/galeria-coluna.ts';
 import { revalidarGaleria } from '../_shared/kit-variacao/galeria-leitura.ts';
 import { prepararGaleria } from '../_shared/kit-variacao/galeria-criar.ts';
+import { rebaixarGaleriaSeRecusada, type ErroFoto } from './galeria-recusa.ts';
 
 export interface Job {
   familia_id: string; lote_id: string; listing_type_id?: string;
@@ -153,9 +156,14 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
     return { tipo: 'ja_publicado' };
   }
 
-  // ADR-0204: o payload deste CREATE levou a galeria da base do kit vinculado (lido no catch da recusa de foto).
-  // deno-lint-ignore no-unused-vars -- lido pelo rebaixamento da recusa de foto (Task 5); remover o ignore lá.
+  // ADR-0204: o payload deste CREATE levou a galeria da base do kit vinculado. Fora do `try` porque o rebaixamento da
+  // recusa de foto (item 4) também roda no `catch`, onde `anuncio` não existe.
   let galeriaUsada = false;
+  let codigoGaleria = '';
+  const rebaixarGaleria = (erro: ErroFoto) => rebaixarGaleriaSeRecusada({
+    admin, orgId: familia.org_id as string, familiaId: job.familia_id, codigo: codigoGaleria, galeriaUsada, tentativas,
+    erro, notificar: deps.notificar,
+  });
   try {
     // Spec reajuste C2: reajuste de preço em massa ativo → 400 definitivo (erro de consulta retenta).
     await exigirSemReajusteAtivo(admin, familia.org_id as string, familia.codigo_pai as string);
@@ -217,6 +225,7 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
         if (prep.fotos.length > 0) {
           anuncio.galeriaFotoIds = prep.fotos.map((x) => x.id);
           galeriaUsada = true;
+          codigoGaleria = vk.codigo as string;
         }
       }
     }
@@ -311,7 +320,18 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
       throw err;
     }
 
-    const res = await conn.criarAnuncio(ctx, anuncio);
+    let res = await conn.criarAnuncio(ctx, anuncio);
+    // ADR-0204 item 4: foto recusada com a galeria no payload → zera a coluna e reenvia já, só com a capa (4xx = nada
+    // criado). FORMATO_INCOMPATIVEL fica fora: vai para a saga UP como sempre. Falha do 2º POST segue o caminho abaixo.
+    if (!res.ok && res.erro!.codigo !== 'FORMATO_INCOMPATIVEL' && await rebaixarGaleria({
+      status: res.erro!.status,
+      mlCauses: (res.erro!.raw as { mlCauses?: unknown } | undefined)?.mlCauses,
+      retentavel: res.erro!.codigo === 'FOTO',
+    })) {
+      delete anuncio.galeriaFotoIds;
+      galeriaUsada = false;
+      res = await conn.criarAnuncio(ctx, anuncio);
+    }
     if (!res.ok) {
       const e = res.erro!;
       // ADR-0088: o ML rejeitou o payload `variations` numa categoria UP multi-cor. Decisão:
@@ -479,6 +499,16 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     const retentavelFoto = (err as { retentavel?: boolean }).retentavel === true;
+    // ADR-0204 item 4 (rota UP: `criarPlano` lança cru com `mlCauses`): foto recusada com a galeria → coluna zerada; o
+    // QStash reentrega e o retry relê a coluna vazia. Na última tentativa vira erro. Nunca limpa o cache da capa.
+    if (await rebaixarGaleria({
+      status: (err as { status?: number }).status, mlCauses: (err as { mlCauses?: unknown }).mlCauses, retentavel: retentavelFoto,
+    })) {
+      if (tentativas < MAX_RETRIES_TRANSIENTES) return { tipo: 'retry', mensagem: msg };
+      await admin.from('familias').update({ status: 'erro', erro_mensagem: msg }).eq('id', job.familia_id);
+      await finalizarLote(job.lote_id);
+      return { tipo: 'erro', mensagem: msg };
+    }
     // Transitório enquanto houver tentativa do QStash: relança (mantém 'publicando'); ao esgotar
     // vira definitivo. Mesma decisão dos workers irmãos.
     if (decidirRetryTransitorio(err, tentativas) === 'retentar') {

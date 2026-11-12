@@ -792,3 +792,165 @@ describe('processarFamiliaML — galeria do kit vinculado (ADR-0204)', () => {
     expect(visto).toEqual(['G1', 'G2']);
   });
 });
+
+// ADR-0204 item 4: recusa de foto com a galeria no payload rebaixa para só a capa — zera a coluna, nunca limpa o
+// cache da capa e a família nunca fica presa em `publicando`.
+describe('processarFamiliaML — recusa de foto com a galeria do kit vinculado (ADR-0204 item 4)', () => {
+  const KIT = { ...FAMILIA_BASE, kit_base_codigo_pai: '00000082', kit_multiplicador: 2 };
+  const KIT_UP = { ...KIT, genero: 'masculino', categoria_ml_id: 'MLB108803' };
+  const COLUNA = [{ id: 'G1', item: 'MLB-BASE' }, { id: 'G2', item: 'MLB-BASE' }];
+  const VAR_KIT = { ...VAR_BASE, codigo: 'K1', ml_picture_id: null, galeria_ml_fotos: COLUNA };
+  const CAUSA_FOTO = [{ code: 'item.pictures.invalid', type: 'error' }];
+  const MSG_FOTO = 'Problema nas fotos do anúncio. Verifique as imagens das variações.';
+  type Escrita = { table: string; payload: Record<string, unknown>; filters: Record<string, unknown> };
+
+  beforeEach(() => {
+    fakeConnector.reset();
+    revalidarSpy.mockReset();
+    revalidarSpy.mockImplementation(async (_t: string, fotos: unknown[]) => ({ fotos, motivo: null }));
+  });
+
+  /** Conector cujos POSTs seguem `respostas` em ordem (sucesso quando acabam); guarda a galeria de cada chamada. */
+  function connRoteiro(respostas: Array<Record<string, unknown>>) {
+    const galerias: Array<string[] | undefined> = [];
+    const conn = {
+      ...fakeConnector,
+      criarAnuncio: async (_ctx: unknown, a: { galeriaFotoIds?: string[] }) => {
+        galerias.push(a.galeriaFotoIds ? [...a.galeriaFotoIds] : undefined);
+        const erro = respostas[galerias.length - 1];
+        return erro ? { ok: false, erro } : { ok: true, valor: { itemExternoId: 'MLB-KIT', variacoesExternas: { K1: 'MLB-KIT' } } };
+      },
+    } as never;
+    return { conn, galerias };
+  }
+  const erroFotoLegacy = { codigo: 'DESCONHECIDO', mensagemOperador: MSG_FOTO, retentavel: false, status: 400, raw: { mlCauses: CAUSA_FOTO } };
+  const zerou = (writes: Escrita[]) =>
+    writes.filter((w) => w.table === 'variacoes' && Array.isArray(w.payload.galeria_ml_fotos) && (w.payload.galeria_ml_fotos as unknown[]).length === 0);
+  const limpouCache = (writes: Escrita[]) =>
+    writes.some((w) => w.payload.ml_picture_id === null || w.payload.capa_ml_picture_id === null);
+  function erroUP(status: number, mlCauses: unknown, retentavel = false) {
+    const e = new Error(MSG_FOTO) as Error & { status?: number; mlCauses?: unknown; retentavel?: boolean };
+    e.status = status; e.mlCauses = mlCauses; e.retentavel = retentavel;
+    return e;
+  }
+
+  it('Legacy: recusa de foto com galeria → 2º POST sem galeria, coluna zerada, cache intacto, kit criado', async () => {
+    const notificar = vi.fn(async () => {});
+    const { admin, writes } = fakeAdmin({ familia: KIT, variacoes: [{ ...VAR_KIT }] });
+    const { conn, galerias } = connRoteiro([erroFotoLegacy]);
+    const r = await processarFamiliaML(baseDeps(admin, { conn, notificar: notificar as never }), JOB, { tentativas: 0 });
+    expect(r).toEqual({ tipo: 'ok', itemExternoId: 'MLB-KIT' });
+    expect(galerias).toEqual([['G1', 'G2'], undefined]);
+    const z = zerou(writes);
+    expect(z).toHaveLength(1);
+    expect(z[0].payload.galeria_ml_fotos).toEqual([]); // array, nunca a string '[]'
+    expect(z[0].filters).toEqual(expect.objectContaining({ org_id: 'org-1', familia_id: 'fam-1' }));
+    expect(limpouCache(writes)).toBe(false);
+    expect(notificar).toHaveBeenCalledWith(admin, 'org-1', 'estoque', expect.stringContaining('K1'), { chave: 'kit_galeria:K1:recusada' });
+  });
+
+  it('Legacy: 2º POST também recusado segue o caminho atual (já sem galeria)', async () => {
+    const { admin, writes } = fakeAdmin({ familia: KIT, variacoes: [{ ...VAR_KIT }] });
+    const { conn, galerias } = connRoteiro([erroFotoLegacy, erroFotoLegacy]);
+    const r = await processarFamiliaML(baseDeps(admin, { conn }), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('erro');
+    expect(galerias).toEqual([['G1', 'G2'], undefined]);
+    expect(limpouCache(writes)).toBe(true); // a culpada agora é a capa: comportamento de sempre
+  });
+
+  it('Legacy: unavailable com galeria e tentativas esgotadas → zera e reenvia sem galeria, cache intacto', async () => {
+    const { admin, writes } = fakeAdmin({ familia: KIT, variacoes: [{ ...VAR_KIT }] });
+    const { conn, galerias } = connRoteiro([{ codigo: 'FOTO', mensagemOperador: 'item.pictures.unavailable', retentavel: true, status: 400 }]);
+    const r = await processarFamiliaML(baseDeps(admin, { conn }), JOB, { tentativas: 10 });
+    expect(r.tipo).toBe('ok');
+    expect(galerias).toEqual([['G1', 'G2'], undefined]);
+    expect(zerou(writes)).toHaveLength(1);
+    expect(limpouCache(writes)).toBe(false);
+  });
+
+  it('Legacy: unavailable com galeria ainda na janela → retry de sempre, galeria mantida', async () => {
+    const { admin, writes } = fakeAdmin({ familia: KIT, variacoes: [{ ...VAR_KIT }] });
+    const { conn, galerias } = connRoteiro([{ codigo: 'FOTO', mensagemOperador: 'item.pictures.unavailable', retentavel: true, status: 400 }]);
+    const r = await processarFamiliaML(baseDeps(admin, { conn }), JOB, { tentativas: 3 });
+    expect(r).toEqual({ tipo: 'retry', mensagem: 'item.pictures.unavailable' });
+    expect(galerias).toHaveLength(1);
+    expect(zerou(writes)).toHaveLength(0);
+  });
+
+  it('Legacy: erro de foto SEM galeria → comportamento atual (um POST, cache limpo, erro)', async () => {
+    const { admin, writes } = fakeAdmin({ familia: KIT, variacoes: [{ ...VAR_KIT, galeria_ml_fotos: [] }] });
+    const { conn, galerias } = connRoteiro([erroFotoLegacy]);
+    const r = await processarFamiliaML(baseDeps(admin, { conn }), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('erro');
+    expect(galerias).toEqual([undefined]);
+    expect(zerou(writes)).toHaveLength(0);
+    expect(limpouCache(writes)).toBe(true);
+  });
+
+  it('Legacy: erro que não é de foto com galeria → intacto (um POST, sem zerar)', async () => {
+    const { admin, writes } = fakeAdmin({ familia: KIT, variacoes: [{ ...VAR_KIT }] });
+    const { conn, galerias } = connRoteiro([{ ...erroFotoLegacy, mensagemOperador: 'preço inválido', raw: { mlCauses: [{ code: 'item.price.invalid' }] } }]);
+    const r = await processarFamiliaML(baseDeps(admin, { conn }), JOB, { tentativas: 0 });
+    expect(r).toEqual({ tipo: 'erro', mensagem: 'preço inválido' });
+    expect(galerias).toHaveLength(1);
+    expect(zerou(writes)).toHaveLength(0);
+  });
+
+  it('UP: exceção com mlCauses de foto → zera, retry, sem marcar erro nem limpar cache', async () => {
+    const notificar = vi.fn(async () => {});
+    const { admin, writes } = fakeAdmin({ familia: KIT_UP, variacoes: [{ ...VAR_KIT, tamanho: 'P' }] });
+    const deps = baseDeps(admin, { notificar: notificar as never, publicarUP: async () => { throw erroUP(400, CAUSA_FOTO); } });
+    const r = await processarFamiliaML(deps, JOB, { tentativas: 3 });
+    expect(r).toEqual({ tipo: 'retry', mensagem: MSG_FOTO });
+    expect(zerou(writes)).toHaveLength(1);
+    expect(limpouCache(writes)).toBe(false);
+    expect(writes.some((w) => w.table === 'familias' && w.payload.status === 'erro')).toBe(false);
+    expect(notificar).toHaveBeenCalledWith(admin, 'org-1', 'estoque', expect.any(String), { chave: 'kit_galeria:K1:recusada' });
+  });
+
+  it('UP: na última tentativa → status erro com a mensagem do operador, sem limpar cache', async () => {
+    const { admin, writes } = fakeAdmin({ familia: KIT_UP, variacoes: [{ ...VAR_KIT, tamanho: 'P' }] });
+    const deps = baseDeps(admin, { publicarUP: async () => { throw erroUP(400, CAUSA_FOTO); } });
+    const r = await processarFamiliaML(deps, JOB, { tentativas: 10 });
+    expect(r).toEqual({ tipo: 'erro', mensagem: MSG_FOTO });
+    expect(zerou(writes)).toHaveLength(1);
+    expect(limpouCache(writes)).toBe(false);
+    expect(writes).toContainEqual(expect.objectContaining({ table: 'familias', payload: { status: 'erro', erro_mensagem: MSG_FOTO } }));
+  });
+
+  it('UP: unavailable com galeria e tentativas esgotadas → zera, erro, sem limpar cache', async () => {
+    const { admin, writes } = fakeAdmin({ familia: KIT_UP, variacoes: [{ ...VAR_KIT, tamanho: 'P' }] });
+    const deps = baseDeps(admin, { publicarUP: async () => { throw erroUP(400, [{ code: 'item.pictures.unavailable' }], true); } });
+    const r = await processarFamiliaML(deps, JOB, { tentativas: 10 });
+    expect(r.tipo).toBe('erro');
+    expect(zerou(writes)).toHaveLength(1);
+    expect(limpouCache(writes)).toBe(false);
+  });
+
+  it('UP: erro de foto SEM galeria → comportamento atual (erro + cache limpo)', async () => {
+    const { admin, writes } = fakeAdmin({ familia: KIT_UP, variacoes: [{ ...VAR_KIT, tamanho: 'P', galeria_ml_fotos: [] }] });
+    const deps = baseDeps(admin, { publicarUP: async () => { throw erroUP(400, CAUSA_FOTO); } });
+    const r = await processarFamiliaML(deps, JOB, { tentativas: 3 });
+    expect(r.tipo).toBe('erro');
+    expect(zerou(writes)).toHaveLength(0);
+    expect(limpouCache(writes)).toBe(true);
+  });
+
+  it('UP: retry posterior lê a coluna zerada e não reinsere a galeria', async () => {
+    const v = { ...VAR_KIT, tamanho: 'P' };
+    const { admin, writes } = fakeAdmin({ familia: KIT_UP, variacoes: [v] });
+    const vistos: Array<string[] | undefined> = [];
+    let chamada = 0;
+    const deps = baseDeps(admin, {
+      publicarUP: async (a) => {
+        vistos.push(a.anuncio.galeriaFotoIds);
+        if (chamada++ === 0) throw erroUP(400, CAUSA_FOTO);
+        return { estado: 'ativo', itemExternoId: 'MLB-KIT', permalink: null };
+      },
+    });
+    expect((await processarFamiliaML(deps, JOB, { tentativas: 0 })).tipo).toBe('retry');
+    Object.assign(v, zerou(writes)[0].payload); // o UPDATE chegou na linha
+    expect((await processarFamiliaML(deps, JOB, { tentativas: 1 })).tipo).toBe('ok');
+    expect(vistos).toEqual([['G1', 'G2'], undefined]);
+  });
+});
