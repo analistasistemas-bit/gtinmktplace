@@ -1510,6 +1510,7 @@ Lógica em `supabase/functions/_shared/galeria/`. Nenhuma edge desta família es
 - **galeria-worker** *(`verify_jwt=false` + assinatura)* — geração: uma fase por mensagem (Higgsfield/OpenRouter). Nunca cobra.
 - **galeria-aplicar-worker** *(`verify_jwt=false` + assinatura)* — saga de aplicar/reverter na fila serial
   `publish-ml-<user_id>` (`_shared/galeria/saga.ts`); único ponto da galeria que escreve no ML (PUT de fotos com compensação).
+  Envio das fotos em laço no mesmo lease (até 60 s por mensagem, uma gravação por foto); o PUT é mensagem própria (ADR-0201 (k)).
 - **galeria-retencao** *(`verify_jwt=false` + assinatura, 1×/dia 04:00 BRT)* — lista `<org>/galeria-ia/` com mais de 1 dia em
   lotes de 100 pelo cursor `galeria_cursores` (RPC `galeria_retencao_listar`, só lista) e apaga pela API do Storage somente
   cena órfã de posse perdida e final não citado em `final_path`/`final_upload_path`. Nunca apaga `referencias/`, arquivo

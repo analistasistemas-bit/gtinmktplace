@@ -1,10 +1,11 @@
 // Saga de aplicar e reverter da galeria (ADR-0201, Task 14; Global Constraints "Trava de escrita por MLB", "PUT
 // incerto", "Encerramento atômico", "Upload foto a foto", "Vigência", "Claim", "Posse"). O worker executa UMA fase por
-// mensagem, decidida pela linha (nunca por `msg.acao`): claim atômico dentro do ciclo (`galeria_assumir_item`), toda
+// mensagem, decidida pela linha (nunca por `msg.acao`); a fase de envio sobe todas as fotos pendentes no mesmo lease,
+// uma gravação por foto (ADR-0201 (k)): claim atômico dentro do ciclo (`galeria_assumir_item`), toda
 // gravação condicionada à posse, todo estado terminal por `galeria_concluir_item` (aborto, agregação e soltura da trava
 // na mesma transação). Nunca publica nada: o despachante encontra a próxima ação.
 //
-// Ida: fotos_antes (gravado no preparar) → uma foto por fase (marca `enviando` ANTES do POST: queda com a marca e sem
+// Ida: fotos_antes (gravado no preparar) → fotos em laço (marca `enviando` ANTES do POST: queda com a marca e sem
 // id = upload incerto → falhou, nunca re-sobe às cegas) → espera todas prontas → GET + plano (portão de avanço relido)
 // → grava corpo_planejado/base/destino/put_em → PUT → GET de conferência → aplicado com os ids lidos no GET.
 // PUT sem resposta, timeout ou 5xx → continua `aplicando` e a reconciliação por GET decide (destino → concluído; base →
@@ -22,6 +23,8 @@ export const LEASE_S = 150;
 export const ASSENTAMENTO_MS = 10 * 60_000;
 export const GET_INDISPONIVEL_MS = 30 * 60_000;
 export const COMPENSAR_MS = 60 * 60_000;
+/** Foto nova só começa com menos de 60 s de execução: sobram 90 s do lease (150 s) para o pior caso de uma foto (POST 30 s). */
+export const ORCAMENTO_SUBIDA_MS = 60_000;
 /** ponytail: limites fixos do ML (10 por variação, 12 por item sem variações); ler da categoria ao vivo se o ML mudar. */
 export const LIMITE_VAR = 10;
 export const LIMITE_ITEM = 12;
@@ -259,7 +262,7 @@ export async function executarItem(admin: SupabaseClient, msg: { id: string; fas
     return soltar('compensando', true);
   }
 
-  // ── Ida: upload foto a foto e consulta de prontas ─────────────────────────────────────────────────────────────
+  // ── Ida: upload das fotos em laço (ADR-0201 (k)) e consulta de prontas ─────────────────────────────────────────────────────────────
   const fotos = [...(item.fotos_novas ?? [])];
   if (passo === 'subir') {
     const i = fotos.findIndex((f) => !f.upload_id);
@@ -271,25 +274,37 @@ export async function executarItem(admin: SupabaseClient, msg: { id: string; fas
       if (!(await gravar({ fotos_novas: fotos, ...(todas ? { fase: item.fase + 1 } : {}) }, true))) return 'perdeu_posse';
       return todas ? 'pronta' : 'aguardando_pronta';
     }
-    const foto = fotos[i];
-    const { data: img, error: eI } = await admin.from('galeria_imagens').select('final_path, final_sha256')
-      .eq('id', foto.imagem_id).eq('org_id', item.org_id).maybeSingle();
-    if (eI) throw new Error(eI.message);
-    const { data: blob } = img?.final_path ? await admin.storage.from('imagens').download(img.final_path) : { data: null };
-    if (!blob) return concluir('falhou', { erro: 'final_indisponivel' });
-    const bytes = new Uint8Array(await blob.arrayBuffer());
-    if (sha256Hex(bytes) !== foto.final_sha256) return concluir('falhou', { erro: 'sha_divergente' });
-    fotos[i] = { ...foto, enviando: true };
-    if (!(await gravar({ fotos_novas: fotos, status: 'subindo' }, false))) return 'perdeu_posse';
-    let subida: { id: string; pronta: boolean };
-    try {
-      subida = await ml.subir(token, bytes, 'image/jpeg');
-    } catch (e) {
-      // Sem status (timeout/rede) = incerto: o ML pode ter criado a foto. Nunca re-sobe às cegas; com status, recusa.
-      return concluir('falhou', { erro: statusHttp(e) ? `upload_recusado_${statusHttp(e)}` : 'upload_incerto' });
+    // ADR-0201 (k): sobe as fotos pendentes em laço, no mesmo lease. Uma gravação por foto, sempre condicionada à posse
+    // (posse anulada por aborto ou lease perdido → `perdeu_posse`, o laço acaba); `fase` avança uma vez, ao soltar.
+    const inicio = agora.getTime();
+    let subidas = 0;
+    for (let j = fotos.findIndex((f) => !f.upload_id); j >= 0; j = fotos.findIndex((f) => !f.upload_id)) {
+      if (subidas > 0) {
+        const agoraLaco = deps.agora();
+        if (agoraLaco.getTime() - inicio >= ORCAMENTO_SUBIDA_MS || portaoFechado(aplicacao, { agora: agoraLaco, vigente })) break;
+      }
+      const foto = fotos[j];
+      const { data: img, error: eI } = await admin.from('galeria_imagens').select('final_path, final_sha256')
+        .eq('id', foto.imagem_id).eq('org_id', item.org_id).maybeSingle();
+      if (eI) throw new Error(eI.message);
+      const { data: blob } = img?.final_path ? await admin.storage.from('imagens').download(img.final_path) : { data: null };
+      if (!blob) return concluir('falhou', { erro: 'final_indisponivel' });
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      if (sha256Hex(bytes) !== foto.final_sha256) return concluir('falhou', { erro: 'sha_divergente' });
+      fotos[j] = { ...foto, enviando: true };
+      if (!(await gravar({ fotos_novas: fotos, status: 'subindo' }, false))) return 'perdeu_posse';
+      let subida: { id: string; pronta: boolean };
+      try {
+        subida = await ml.subir(token, bytes, 'image/jpeg');
+      } catch (e) {
+        // Sem status (timeout/rede) = incerto: o ML pode ter criado a foto. Nunca re-sobe às cegas; com status, recusa.
+        return concluir('falhou', { erro: statusHttp(e) ? `upload_recusado_${statusHttp(e)}` : 'upload_incerto' });
+      }
+      fotos[j] = { ...foto, upload_id: subida.id, pronta: subida.pronta, enviando: false };
+      if (!(await gravar({ fotos_novas: fotos }, false))) return 'perdeu_posse';
+      subidas++;
     }
-    fotos[i] = { ...foto, upload_id: subida.id, pronta: subida.pronta, enviando: false };
-    return (await gravar({ fotos_novas: fotos, fase: item.fase + 1 }, true)) ? 'subiu' : 'perdeu_posse';
+    return (await gravar({ fase: item.fase + 1 }, true)) ? 'subiu' : 'perdeu_posse';
   }
 
   // ── Ida: PUT (ou reconciliação de PUT incerto) ────────────────────────────────────────────────────────────────

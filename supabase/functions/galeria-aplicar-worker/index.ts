@@ -22,6 +22,7 @@ Deno.serve(async (req) => {
     return json({ error: 'mensagem_invalida' }, 400);
   }
   const admin = adminClient();
+  const t0 = Date.now();
   try {
     const resultado = await executarItem(admin, { id: m.id, fase: m.fase as number }, {
       agora: () => new Date(),
@@ -31,6 +32,8 @@ Deno.serve(async (req) => {
         return getValidAccessTokenConexao(cx);
       },
     });
+    // ADR-0201 (k): a mensagem de envio sobe várias fotos; o tempo vai ao log para medir no primeiro teste real.
+    console.log('[galeria-aplicar-worker]', m.id, resultado, `${Date.now() - t0}ms`);
     return json({ ok: true, resultado });
   } catch (e) {
     console.error('[galeria-aplicar-worker]', m.id, (e as Error).message);

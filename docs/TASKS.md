@@ -10,7 +10,7 @@
 - [x] Teste real em 12/11 (AVIL): 14 imagens geradas e cobradas uma vez cada, 7 aplicadas no MLB7168683146. Custo medido: US$ 0,071 por imagem exibida.
 - [x] Revisão geral (Fable 5.2) e pré-merge (Grok 4.7): pronta com correções, aplicadas.
 - [ ] Testar o "Desfazer" em anúncio real.
-- [ ] Acelerar o envio das fotos na aplicação (1 foto por minuto hoje; prazo de 30 min).
+- [x] Acelerar o envio das fotos na aplicação: laço de fotos no mesmo lease (ADR-0201 (k); 7 min → ~1–1,5 min por anúncio). Falta deploy do `galeria-aplicar-worker` e teste real (aplicar + desfazer) com OK do Diego; medir CPU/tempo por mensagem nos logs.
 - [ ] Pendências menores: `galeria_reservar_pedido` aceitar só roteiro aprovado; paginação do aviso; texto solto que repete valor de outro texto na conferência.
 
 ## Envio mais caro que a venda (etiqueta cancelada) — 2026-11-11

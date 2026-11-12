@@ -278,7 +278,7 @@ describe('despachar', () => {
   it('simulação por ticks de 1 min: Legacy 7 fotos e UP P/M/G 7 fotos cada → todos aplicado em ≤15 ticks', async () => {
     db.galeria_aplicacoes.push(aplicacao('leg'), aplicacao('up'))
     db.galeria_aplicacao_itens.push(item('L', 'leg'), item('P', 'up'), item('M', 'up'), item('G', 'up'))
-    // Worker de mentira (contrato das Global Constraints): uma foto por fase; cada fase concluída avança `fase` e zera
+    // Worker de mentira (modelo simplificado; o real sobe várias fotos por fase, ADR-0201 (k)): uma foto por fase; cada fase concluída avança `fase` e zera
     // `publicado_em`; foto fica pronta no tick seguinte ao upload; PUT e conferência são fases próprias.
     const fila: Array<{ id: string; fase: number }> = []
     aoPublicar = (ms) => { for (const m of ms) fila.push(m.body as never) }

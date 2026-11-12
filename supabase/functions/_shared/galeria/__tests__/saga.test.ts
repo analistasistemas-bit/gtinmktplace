@@ -205,7 +205,7 @@ const corRosa = (mlb: string) => ml.itens.get(mlb)!.variacoes.find((v) => v.id =
 beforeEach(() => montar(['P']))
 
 describe('saga — caminho feliz', () => {
-  it('UP P/M/G com 2 fotos: upload foto a foto, PUT com todas prontas, aplicado com fotos_depois do GET e travas soltas', async () => {
+  it('UP P/M/G com 2 fotos: upload, PUT com todas prontas, aplicado com fotos_depois do GET e travas soltas', async () => {
     montar(['P', 'M', 'G'], 2)
     await ticks(3)
     expect(db.galeria_aplicacao_itens.map((i) => i.status)).toEqual(['aplicado', 'aplicado', 'aplicado'])
@@ -539,6 +539,203 @@ describe('saga — PUT incerto e reconciliação', () => {
     await ticks(2)
     expect(itemDe('P')).toMatchObject({ status: 'reversao_incompleta', erro: 'get_indisponivel' })
     expect(db.ml_item_travas).toEqual([])
+  })
+})
+
+// ADR-0201 (k): a fase de envio sobe várias fotos por mensagem, no mesmo lease; o PUT segue em mensagem própria.
+describe('saga — envio das fotos em lote', () => {
+  const exec = (mlb = 'P') => executarItem(fake.admin as never, { id: `it-${mlb}`, fase: itemDe(mlb).fase as number }, deps())
+  /** Executa a mensagem vigente do item até ele sair de aberto (um "tick" por mensagem, sem esperar o minuto). */
+  async function ate(estado: string, mlb = 'P', max = 10) {
+    for (let k = 0; k < max && itemDe(mlb).status !== estado; k++) await exec(mlb)
+  }
+  /** Faz o fake de upload rodar `antes(n)` na n-ésima chamada (n começa em 1) antes de subir. */
+  function aoSubir(antes: (n: number) => void | Promise<void>) {
+    const original = ml.subir.bind(ml)
+    let n = 0
+    ml.subir = async () => { await antes(++n); return original() }
+  }
+  /** Queda do processo: a k-ésima gravação em galeria_aplicacao_itens lança (sai de executarItem como exceção). */
+  function cairNaGravacao(k: number) {
+    const from = fake.admin.from.bind(fake.admin)
+    let n = 0
+    fake.admin.from = ((t: string) => {
+      const q = from(t)
+      if (t === 'galeria_aplicacao_itens') {
+        const update = q.update.bind(q)
+        // structuredClone: o banco real serializa; o fake guardaria o array por referência e a mutação seguinte vazaria nele.
+        q.update = ((p: Linha) => { if (++n === k) throw new Error('queda'); return update(structuredClone(p)) }) as typeof q.update
+      }
+      return q
+    }) as typeof fake.admin.from
+  }
+
+  it('7 fotos em UMA mensagem (cenário de 12/11): 7 uploads, fase +1, nenhum PUT; a 2ª mensagem troca o anúncio', async () => {
+    montar(['P'], 7)
+    expect(await exec()).toBe('subiu')
+    expect(ml.uploads).toHaveLength(7)
+    expect(ml.puts).toEqual([])
+    expect(itemDe('P')).toMatchObject({ status: 'subindo', fase: 1, posse: null, lease_ate: null, publicado_em: null })
+    expect(await exec()).toBe('aplicado')
+    expect(putsDe('P')).toHaveLength(1)
+    expect(ml.uploads).toHaveLength(7)
+    expect(aplicacao().status).toBe('aplicada')
+    expect(db.ml_item_travas).toEqual([])
+  })
+
+  it('o progresso (fotos prontas no manifesto) sobe foto a foto dentro da mesma mensagem', async () => {
+    montar(['P'], 4)
+    const vistos: number[] = []
+    aoSubir(() => { vistos.push((itemDe('P').fotos_novas as Array<{ pronta: boolean }>).filter((f) => f.pronta).length) })
+    await exec()
+    expect(vistos).toEqual([0, 1, 2, 3])
+  })
+
+  it('queda no meio do envio (antes do 4º POST) → a retomada sobe só as 4 restantes, sem repetir nenhuma', async () => {
+    montar(['P'], 7)
+    cairNaGravacao(7)   // 2 gravações por foto: a 7ª é a marca `enviando` da 4ª foto
+    await expect(exec()).rejects.toThrow('queda')
+    expect(ml.uploads).toHaveLength(3)
+    expect((itemDe('P').fotos_novas as Array<{ upload_id: string | null }>).filter((f) => f.upload_id)).toHaveLength(3)
+    fake = fakeAdmin(db, new Map(fake.arquivos))   // processo novo, mesmo banco
+    instalarRpcs()
+    avancar(3)   // lease de 150 s vencido
+    expect(await exec()).toBe('subiu')
+    expect(ml.uploads).toHaveLength(7)
+    const ids = (itemDe('P').fotos_novas as Array<{ upload_id: string }>).map((f) => f.upload_id)
+    expect(new Set(ids).size).toBe(7)
+    await exec()
+    expect(itemDe('P').status).toBe('aplicado')
+    expect(putsDe('P')).toHaveLength(1)
+  })
+
+  it('queda DEPOIS do POST e antes de gravar o id → upload incerto: falhou, nenhum re-upload, nenhum PUT', async () => {
+    montar(['P'], 7)
+    cairNaGravacao(8)   // a 8ª gravação seria o `upload_id` da 4ª foto
+    await expect(exec()).rejects.toThrow('queda')
+    expect(ml.uploads).toHaveLength(4)
+    fake = fakeAdmin(db, new Map(fake.arquivos))
+    instalarRpcs()
+    avancar(3)
+    await exec()
+    expect(itemDe('P')).toMatchObject({ status: 'falhou', erro: 'upload_incerto' })
+    expect(ml.uploads).toHaveLength(4)
+    expect(ml.puts).toEqual([])
+  })
+
+  it('duas mensagens do mesmo item ao mesmo tempo: a 2ª fica ocupada e não sobe nada; repetição depois do fim = fase velha', async () => {
+    montar(['P'], 3)
+    const respostas: string[] = []
+    aoSubir(async (n) => { if (n === 2) respostas.push(await executarItem(fake.admin as never, { id: 'it-P', fase: 0 }, deps())) })
+    await exec()
+    expect(respostas).toEqual(['ocupado'])
+    expect(ml.uploads).toHaveLength(3)
+    expect(await executarItem(fake.admin as never, { id: 'it-P', fase: 0 }, deps())).toBe('ocupado')
+    expect(ml.uploads).toHaveLength(3)
+    expect(ml.puts).toEqual([])
+  })
+
+  it('prazo vence no meio do laço → para de subir, nenhum PUT; a mensagem seguinte pula o item, aborta e solta a trava', async () => {
+    montar(['P'], 7)
+    aplicacao().prazo_ate = iso(T0 + 17_000)   // só o prazo para o laço: 5 s por foto, muito abaixo do orçamento de 60 s
+    aoSubir(() => avancar(5 / 60))
+    expect(await exec()).toBe('subiu')
+    expect(ml.uploads).toHaveLength(4)
+    expect(ml.puts).toEqual([])
+    await exec()
+    expect(itemDe('P')).toMatchObject({ status: 'pulado', erro: 'prazo_vencido' })
+    expect(aplicacao().status).toBe('falhou')
+    expect(ml.puts).toEqual([])
+    expect(db.ml_item_travas).toEqual([])
+  })
+
+  it('orçamento de 60 s por mensagem: para com fotos restantes, continua na seguinte e só troca com TODAS enviadas', async () => {
+    montar(['P'], 7)
+    aoSubir(() => avancar(25 / 60))   // 25 s por foto
+    expect(await exec()).toBe('subiu')
+    expect(ml.uploads).toHaveLength(3)   // 25 s, 50 s (<60) → 3ª foto → 75 s ≥ 60: para
+    expect(itemDe('P')).toMatchObject({ status: 'subindo', fase: 1 })
+    await exec()
+    expect(ml.uploads).toHaveLength(6)
+    expect(ml.puts).toEqual([])
+    await exec()
+    expect(ml.uploads).toHaveLength(7)
+    expect(ml.puts).toEqual([])   // 7ª foto subiu; a troca é a mensagem seguinte
+    await exec()
+    expect(itemDe('P').status).toBe('aplicado')
+    expect(putsDe('P')).toHaveLength(1)
+    expect(new Set(putsDe('P')[0].corpo.variations?.find((v) => v.id === 1)?.picture_ids).size).toBe(7)
+  })
+
+  it('posse anulada por aborto no meio do laço → para na gravação seguinte (perdeu_posse), sem novo upload nem PUT', async () => {
+    montar(['P'], 7)
+    aoSubir((n) => {
+      // O que `galeria_concluir_item` faz com um irmão que falhou: item subindo → pulado, posse anulada.
+      if (n === 2) Object.assign(itemDe('P'), { status: 'pulado', erro: 'abortada', posse: null, lease_ate: null })
+    })
+    expect(await exec()).toBe('perdeu_posse')
+    expect(ml.uploads).toHaveLength(2)
+    expect(ml.puts).toEqual([])
+  })
+
+  it('lease vence durante o POST da 3ª foto e outra mensagem assume → a nova falha como upload incerto, a antiga perde a posse; nada é re-enviado', async () => {
+    montar(['P'], 7)
+    const outras: string[] = []
+    aoSubir(async (n) => { if (n === 3) { avancar(3); outras.push(await exec()) } })
+    expect(await exec()).toBe('perdeu_posse')
+    expect(outras).toEqual(['falhou'])
+    expect(itemDe('P')).toMatchObject({ status: 'falhou', erro: 'upload_incerto' })
+    expect(ml.uploads).toHaveLength(3)
+    expect(ml.puts).toEqual([])
+  })
+
+  it.each([
+    ['upload recusado (4xx)', (n: number) => { if (n === 2) ml.falhaUpload = '400' }, 'upload_recusado_400'],
+    ['upload sem resposta (timeout)', (n: number) => { if (n === 2) ml.falhaUpload = 'timeout' }, 'upload_incerto'],
+  ])('%s na 2ª foto de um item, com o irmão já aplicado → falhou, nenhum upload a mais, o irmão é compensado', async (_n, antes, erro) => {
+    montar(['P', 'M'], 3)
+    await ate('aplicado', 'P')
+    expect(ml.uploads).toHaveLength(3)
+    aoSubir(antes)
+    await exec('M')
+    expect(itemDe('M')).toMatchObject({ status: 'falhou', erro })
+    expect(ml.uploads).toHaveLength(4)   // a 1ª foto do M; a 2ª não chegou a existir
+    expect(putsDe('M')).toEqual([])
+    await tick()
+    expect(itemDe('P').status).toBe('compensado')
+    expect(corRosa('P')).toEqual(['R0-P'])
+  })
+
+  it('sha divergente ou arquivo ausente numa foto depois da 1ª → falhou, sem novo upload nem PUT', async () => {
+    montar(['P'], 3)
+    ;(itemDe('P').fotos_novas as Linha[])[1].final_sha256 = 'outro'
+    await exec()
+    expect(itemDe('P')).toMatchObject({ status: 'falhou', erro: 'sha_divergente' })
+    expect(ml.uploads).toHaveLength(1)
+    montar(['P'], 3)
+    fake.arquivos.delete('org/galeria-ia/fam/finais/img3.jpg')
+    await exec()
+    expect(itemDe('P')).toMatchObject({ status: 'falhou', erro: 'final_indisponivel' })
+    expect(ml.uploads).toHaveLength(2)
+    expect(ml.puts).toEqual([])
+  })
+
+  it('foto pronta:false no fim do laço → nenhuma troca até ficar pronta; aplicar e depois desfazer devolve as fotos originais', async () => {
+    montar(['P'], 7)
+    ml.prontaAoSubir = false
+    await exec()
+    await exec()
+    expect(ml.puts).toEqual([])
+    for (const id of ml.uploads) ml.prontas.add(id)
+    await ate('aplicado')
+    expect(aplicacao().status).toBe('aplicada')
+    expect(corRosa('P')).toHaveLength(7)
+    iniciarReversao()
+    await tick()
+    expect(itemDe('P').status).toBe('compensado')
+    expect(aplicacao().status).toBe('revertida')
+    expect(corRosa('P')).toEqual(['R0-P'])
+    expect(ml.puts).toHaveLength(2)   // um de ida, um de volta
   })
 })
 
