@@ -19,7 +19,7 @@ const hora = (iso: string) => {
   return m === '00' ? `${Number(h)}h` : `${Number(h)}h${m}`;
 };
 /** "15/11 a 20/11"; começa e termina no mesmo dia (Relâmpago): "15/11 12h às 23h59". Sem fim: "a partir de 15/11". */
-export function janela(inicio: string, fim: string | null): string {
+function janela(inicio: string, fim: string | null): string {
   if (!fim) return `a partir de ${diaMes(inicio)}`;
   return diaMes(inicio) === diaMes(fim) ? `${diaMes(inicio)} ${hora(inicio)} às ${hora(fim)}` : `${diaMes(inicio)} a ${diaMes(fim)}`;
 }

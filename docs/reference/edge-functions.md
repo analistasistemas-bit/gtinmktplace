@@ -1406,9 +1406,12 @@ um smoke test contra Postgres real antes do primeiro deploy.
   `so_em_kit_desligado`, `pedido_diferente`, `kit_nao_encontrado` (404), `modulo_desligado` (403).
 - **preco-avulso-kit** — preço avulso das peças da base do kit (adendo ADR-0200). Corpo `{familia_base_id}`; vínculo
   SKU→item de `anuncios_externos_itens` (raiz do PAI, `retirado=false`). Normal = `price` do `/items/bulk` (lotes de 20 ids
-  únicos); promoção = `amount` do `/sale_price` abaixo do normal; fim = `finish_date` da oferta vencedora
-  (`metadata.promotion_id`/`campaign_id`) em `/seller-promotions/items/{id}`. Timeout 5 s por chamada. Peça sem leitura volta
-  com tudo `null`; sem conexão ML → `indisponivel: true`. Nunca grava.
+  únicos); promoção = `amount` do `/sale_price` abaixo do normal. Promoções do item por `lerOfertas` do reajuste
+  (`_shared/operacoes/reajuste/ml.ts`: visão por item + visão da campanha para `candidate`, que atrasa), em paralelo ao
+  `/sale_price`, com uma repetição em 500/502/503: dão o fim da oferta vencedora (`metadata.promotion_id` antes do
+  `campaign_id`) e `futuras` (adendo 11/11: `pending`/`started` com início depois de agora e preço abaixo do normal; sem
+  preço legível vai com `preco: null`). Leitura inconclusiva → `futuras: []` e `futuras_indisponivel: true` no SKU. Timeout
+  5 s por chamada. Peça sem leitura volta sem preço; sem conexão ML → `indisponivel: true`. Nunca grava.
 - **gerar-texto-kit** — prévia de título e descrição (`copywriter-kit-prompt.ts`, modelo de texto da org, hoje `gpt-6-luna`).
   Parte da `descricao_ml` da base canônica (base sem descrição no padrão: gera antes pelo prompt do anúncio novo). A IA
   reescreve só a abertura "KIT N …" e a frase final; o resto é determinístico (Quantidade: Kit com N unidades; pergunta

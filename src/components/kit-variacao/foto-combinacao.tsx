@@ -6,7 +6,7 @@
 // Adendo 1 do ADR-0200: a edge confere a foto contra a peça original. Reprovada com tentativa sobrando (`proxima`)
 // repete sozinho o mesmo pedido; 3 reprovações mostram os motivos e nunca oferecem "Usar esta foto". "Ampliar"
 // abre a gerada em tamanho real ao lado das originais e da conferência.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Loader2, Maximize2, Sparkles } from 'lucide-react';
@@ -23,11 +23,22 @@ export interface FotoGerada { path: string; url: string | null }
 /** Arquivo enviado pelo operador ou foto gerada por IA já aprovada. */
 export type FotoKit = File | FotoGerada;
 
+/** Adendo 11/11 do ADR-0200: o diálogo comanda as fotos em lote (fila de 3) e a aprovação pela grade. */
+export interface CandidataFoto extends FotoGerada { conferencia: ConferenciaFoto }
+export interface ControleFoto {
+  /** A mesma geração do botão, sem toast por falha (o lote mostra um resumo). true = candidata nova pronta para revisar. */
+  gerar(): Promise<boolean>;
+  candidata(): CandidataFoto | null;
+  /** Vira a foto da combinação. Só a grade de aprovação chama, depois de mostrar a foto em tamanho real. */
+  aprovar(): void;
+}
+export interface EstadoFoto { gerando: boolean; temCandidata: boolean; pronta: boolean; naoFiel: boolean }
+
 const conferenciaDe = (r: RespostaFotoKit): ConferenciaFoto => ({
   itens: r.verificacao?.itens ?? [], motivos: r.motivos ?? r.verificacao?.motivos ?? [], originais: r.originais ?? [],
 });
 
-export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, temImagemIA, valor, onChange }: {
+export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, temImagemIA, valor, onChange, controle, onEstado }: {
   rotulo: string;
   titulo?: string;
   cores: string[];
@@ -35,6 +46,8 @@ export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, 
   temImagemIA: boolean;
   valor: FotoKit | undefined;
   onChange: (f: FotoKit) => void;
+  controle?: Ref<ControleFoto>;
+  onEstado?: (e: EstadoFoto) => void;
 }) {
   const [candidata, setCandidata] = useState<(FotoGerada & { requestId: string; conferencia: ConferenciaFoto }) | null>(null);
   /** 3 reprovações: a IA não conseguiu uma foto fiel (só a prévia da última, sem "Usar"). */
@@ -46,8 +59,9 @@ export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, 
   const requestId = useRef('');
   const gerar = useMutation({
     // `recarregar`: o mesmo pedido da candidata, só para obter a URL de novo (a edge devolve a geração existente).
-    mutationFn: async (recarregar?: string) => {
-      const id = recarregar ?? (requestId.current ||= crypto.randomUUID());
+    // `silencioso`: chamada do lote, que mostra um resumo no lugar de um toast por falha.
+    mutationFn: async (p?: { recarregar?: string; silencioso?: boolean }) => {
+      const id = p?.recarregar ?? (requestId.current ||= crypto.randomUUID());
       setTentativa(1);
       let r = await gerarFotoKitEdge({ requestId: id, familiaBaseId, cores });
       // Reprovada com tentativa sobrando: o mesmo pedido gera a próxima com os motivos (teto da edge: 3).
@@ -57,12 +71,12 @@ export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, 
       }
       return { id, r };
     },
-    onSuccess: ({ id, r }) => {
+    onSuccess: ({ id, r }, p) => {
       if (!r.ok) {
         // Só falha definitiva libera pedido novo. Desfecho incerto (rede, 5xx sem motivo, em andamento) repete o mesmo,
         // e a edge devolve a geração já registrada em vez de gerar e cobrar outra.
         if (r.motivo && DEFINITIVAS.has(r.motivo)) requestId.current = '';
-        toast.error('Não foi possível gerar a foto', { description: r.mensagem });
+        if (!p?.silencioso) toast.error('Não foi possível gerar a foto', { description: r.mensagem });
         return;
       }
       if (r.aprovado === false) {
@@ -72,13 +86,34 @@ export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, 
         setNaoFiel({ ...conferenciaDe(r), previaUrl: r.previa_url ?? null });
         return;
       }
-      if (!r.path) { toast.error('Não foi possível gerar a foto', { description: 'Resposta sem a foto. Tente de novo.' }); return; }
+      if (!r.path) {
+        if (!p?.silencioso) toast.error('Não foi possível gerar a foto', { description: 'Resposta sem a foto. Tente de novo.' });
+        return;
+      }
       if (id === requestId.current) requestId.current = '';
       setCarregada(false); setErroPrevia(false); setNaoFiel(null);
       setCandidata({ path: r.path, url: r.url ?? null, requestId: id, conferencia: conferenciaDe(r) });
     },
-    onError: (e) => toast.error('Não foi possível gerar a foto', { description: (e as Error).message }),
+    onError: (e, p) => { if (!p?.silencioso) toast.error('Não foi possível gerar a foto', { description: (e as Error).message }); },
   });
+
+  useImperativeHandle(controle, () => ({
+    async gerar() {
+      try {
+        const { r } = await gerar.mutateAsync({ silencioso: true });
+        return r.ok && r.aprovado !== false && !!r.path;
+      } catch { return false; }
+    },
+    candidata: () => (candidata ? { path: candidata.path, url: candidata.url, conferencia: candidata.conferencia } : null),
+    aprovar() {
+      if (!candidata) return;
+      onChange({ path: candidata.path, url: candidata.url });
+      setCandidata(null);
+    },
+  }), [gerar, candidata, onChange]);
+  useEffect(() => {
+    onEstado?.({ gerando: gerar.isPending, temCandidata: !!candidata, pronta: !!candidata && carregada, naoFiel: !!naoFiel });
+  }, [onEstado, gerar.isPending, candidata, carregada, naoFiel]);
 
   return (
     <div className={cn('grid gap-2 rounded-md border p-2 text-sm', !valor && 'border-dashed')}>
@@ -125,7 +160,7 @@ export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, 
                 {(!candidata.url || erroPrevia) && (
                   <Button
                     size="sm" variant="outline" aria-label={`Recarregar prévia ${rotulo}`} disabled={gerar.isPending}
-                    onClick={() => gerar.mutate(candidata.requestId)}
+                    onClick={() => gerar.mutate({ recarregar: candidata.requestId })}
                   >
                     Recarregar prévia
                   </Button>
