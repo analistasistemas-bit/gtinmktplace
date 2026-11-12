@@ -3,6 +3,7 @@
 // Identidade = `ml_item_id` da rota (linhas split dividem a família). Guarda própria (link direto): módulo `imagem_ia`;
 // anúncio da org (a edge recusa o resto). Aprovar: qualquer membro com o módulo; aplicar no anúncio: só admin.
 import { useCallback, useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AlertTriangle, ArrowLeft, ExternalLink, Images, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -14,6 +15,7 @@ import { usePublicados } from '@/hooks/usePublicados';
 import { fmtBRL } from '@/lib/formato';
 import { mensagemErro, type RespostaListar } from '@/lib/galeria/api';
 import { caminhoDeVolta } from '@/lib/galeria/retorno';
+import { linkMlDaCor, variacaoIdDaCor } from '@/lib/galeria/link-ml';
 import { PainelImagens } from '@/components/galeria/painel-imagens';
 import { PassoAplicar } from '@/components/galeria/passo-aplicar';
 
@@ -56,17 +58,22 @@ export default function GaleriaIA() {
 
   const aoFalha = useCallback((e: string) => { if (SEM_ACESSO.has(e)) setParada(e); }, []);
 
+  const cores = lista?.cores ?? [];
+  // Padrão: a primeira cor (todas as cores de uma vez é escolha do operador, pelo custo e pelo tamanho da tela).
+  const cor: string | null = escolha === TODAS ? null : escolha && cores.includes(escolha) ? escolha : cores[0] ?? null;
+  const titulo = lista?.titulo ?? anuncio?.titulo ?? 'Fotos com IA';
+  const formato = anuncio ? (anuncio.userProducts ? 'User Products' : 'Legacy') : 'Anúncio';
+  const familiaId = anuncio?.familiaId;
+  const variacao = useQuery({
+    queryKey: ['galeria-variacao-cor', familiaId, cor], enabled: !!familiaId && !!cor, staleTime: 5 * 60_000,
+    queryFn: () => variacaoIdDaCor(familiaId!, cor!),
+  });
   if (semModulo) return <TelaParada titulo="Galeria IA indisponível" texto={mensagemErro('modulo_desligado')} />;
   if (parada) {
     return <TelaParada titulo="Anúncio não encontrado"
       texto={parada === 'modulo_desligado' ? mensagemErro(parada) : 'Este anúncio não existe ou não é desta organização.'} />;
   }
 
-  const cores = lista?.cores ?? [];
-  // Padrão: a primeira cor (todas as cores de uma vez é escolha do operador, pelo custo e pelo tamanho da tela).
-  const cor: string | null = escolha === TODAS ? null : escolha && cores.includes(escolha) ? escolha : cores[0] ?? null;
-  const titulo = lista?.titulo ?? anuncio?.titulo ?? 'Fotos com IA';
-  const formato = anuncio ? (anuncio.userProducts ? 'User Products' : 'Legacy') : 'Anúncio';
   const aprovadas = lista && cor ? lista.imagens.filter((i) => i.status === 'aprovada' && i.cor === cor && i.roteiro_id === lista.plano_id).length : 0;
 
   return (
@@ -86,7 +93,7 @@ export default function GaleriaIA() {
               <span className="tabular-nums">{mlItemId}</span>
               <span>{formato}</span>
               {anuncio?.mlPermalink && (
-                <a href={anuncio.mlPermalink} target="_blank" rel="noreferrer"
+                <a href={linkMlDaCor(anuncio.mlPermalink, mlItemId, variacao.data)} target="_blank" rel="noreferrer"
                   className="inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline">
                   <ExternalLink aria-hidden className="size-3" />Ver no ML
                 </a>

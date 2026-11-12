@@ -4,6 +4,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { escolherNoSelect } from '@/test/select';
 import GaleriaIA from '../GaleriaIA';
@@ -19,12 +20,14 @@ const api = vi.hoisted(() => ({
 vi.mock('@/lib/galeria/api', async (orig) => ({ ...(await orig<typeof import('@/lib/galeria/api')>()), ...api }));
 vi.mock('@/lib/galeria/final', () => ({ montarArquivoFinal: vi.fn(async () => new Blob(['x'], { type: 'image/jpeg' })) }));
 vi.mock('@/lib/galeria/exibicao', async (orig) => ({ ...(await orig<typeof import('@/lib/galeria/exibicao')>()), imagemValida: () => true }));
+const variacaoId = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/galeria/link-ml', async (orig) => ({ ...(await orig<typeof import('@/lib/galeria/link-ml')>()), variacaoIdDaCor: variacaoId }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 const ctx = vi.hoisted(() => ({ modulos: ['imagem_ia'] as string[] | undefined, admin: true }));
 vi.mock('@/hooks/useModulosHabilitados', () => ({ useModulosHabilitados: () => ({ data: ctx.modulos }) }));
 vi.mock('@/hooks/useOperacoes', () => ({ usePodeExecutarOperacao: () => ctx.admin }));
 vi.mock('@/hooks/usePublicados', () => ({
-  usePublicados: () => ({ data: [{ mlItemId: 'MLB1', titulo: 'FITAS VELUDO 16MM 25M', precoPublicacao: 28.4, codigoPai: '0001', userProducts: false, mlPermalink: 'https://produto.mercadolivre.com.br/MLB-1' }] }),
+  usePublicados: () => ({ data: [{ familiaId: 'F1', mlItemId: 'MLB1', titulo: 'FITAS VELUDO 16MM 25M', precoPublicacao: 28.4, codigoPai: '0001', userProducts: false, mlPermalink: 'https://produto.mercadolivre.com.br/MLB-1' }] }),
 }));
 
 const ok = <T,>(dados: T): Res<T> => ({ ok: true, dados });
@@ -50,14 +53,15 @@ function Publicados() {
   return <p>Publicados{useLocation().search}</p>;
 }
 function abrir(ml = 'MLB1') {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <MemoryRouter initialEntries={[`/publicados/${ml}/galeria`]}>
+    <QueryClientProvider client={qc}><MemoryRouter initialEntries={[`/publicados/${ml}/galeria`]}>
       <Ir para="/publicados/MLB-B/galeria" />
       <Routes>
         <Route path="/publicados/:mlItemId/galeria" element={<GaleriaIA />} />
         <Route path="/publicados" element={<Publicados />} />
       </Routes>
-    </MemoryRouter>,
+    </MemoryRouter></QueryClientProvider>,
   );
 }
 
@@ -65,6 +69,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   sessionStorage.clear();
   ctx.modulos = ['imagem_ia']; ctx.admin = true;
+  variacaoId.mockResolvedValue('777');
   api.listarImagens.mockResolvedValue(ok(lista()));
   api.estadoAplicacoes.mockResolvedValue(ok({ aplicacoes: [] }));
   api.confirmarExibicao.mockResolvedValue(ok({ cobradas: 1 }));
@@ -119,12 +124,28 @@ describe('GaleriaIA: tela única', () => {
     expect(api.listarImagens).toHaveBeenCalledWith('MLB1');
   });
 
-  it('cabeçalho tem atalho para o anúncio no ML', async () => {
-    api.listarImagens.mockResolvedValue(ok(lista()));
+  it('enquanto a lista não chega: logo pulsando no lugar dos cartões', async () => {
+    api.listarImagens.mockReturnValue(new Promise(() => {}));
+    abrir();
+    expect(await screen.findByRole('status', { name: /carregando as imagens/i })).toBeInTheDocument();
+  });
+
+  it('atalho para o ML leva à variação da cor escolhida e muda ao trocar a cor', async () => {
+    variacaoId.mockImplementation(async (_f: string, cor: string) => (cor === 'Preto' ? '777' : '888'));
     abrir();
     const a = await screen.findByRole('link', { name: /ver no ml/i });
-    expect(a).toHaveAttribute('href', 'https://produto.mercadolivre.com.br/MLB-1');
+    await waitFor(() => expect(a).toHaveAttribute('href', 'https://produto.mercadolivre.com.br/MLB-1?variation=777'));
     expect(a).toHaveAttribute('target', '_blank');
+    await escolherNoSelect(userEvent.setup(), /cor das imagens/i, 'Rosa');
+    await waitFor(() => expect(screen.getByRole('link', { name: /ver no ml/i })).toHaveAttribute('href', expect.stringContaining('variation=888')));
+  });
+
+  it('sem variação da cor (User Products/sentinela): atalho abre o anúncio puro', async () => {
+    variacaoId.mockResolvedValue(null);
+    abrir();
+    const a = await screen.findByRole('link', { name: /ver no ml/i });
+    await waitFor(() => expect(variacaoId).toHaveBeenCalled());
+    expect(a).toHaveAttribute('href', 'https://produto.mercadolivre.com.br/MLB-1');
   });
 
   it('título do cache de Publicados enquanto a lista não chegou', async () => {
