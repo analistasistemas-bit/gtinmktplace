@@ -128,6 +128,7 @@ describe('contar', () => {
     ])).toEqual({
       convidados: 2, convidados_verde: 1, participando: 3, verde: 2, amarelo: 1, vermelho: 1, indisponivel: 1,
       participando_vermelho: 1, ml_pct_max: null,
+      convidados_semaforo: { verde: 1, amarelo: 0, vermelho: 0, indisponivel: 1 },
     });
   });
 

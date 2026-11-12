@@ -132,22 +132,28 @@ describe('executar — aderir', () => {
     expect(itens[0].status).toBe('aplicado');
   });
 
-  it('ainda candidate depois do 201 → espelha o status da promoção (ativa: started; futura: pending)', async () => {
+  // Black Friday 12/11: adesão com a campanha já ativa → 200, mas o ML segue `candidate` por horas. Sem prova do ML a
+  // Central não diz "no ar": espelha `pending` (aguardando o ML), em campanha ativa ou futura.
+  it('ainda candidate depois do 201 → espelha pending (aguardando o ML), nunca started', async () => {
     const a = montar([item('MLB1')]);
     await executar(DEAL_ADERIR, a.deps, OPTS);
-    expect(a.deps.espelharStatusCentral).toHaveBeenCalledWith('P-1', 'DEAL', 'MLB1', 'started');
+    expect(a.deps.espelharStatusCentral).toHaveBeenCalledWith('P-1', 'DEAL', 'MLB1', 'pending');
+    // Revisão Grok: SMART fica `started` em segundos no ML — segue o status da promoção.
+    const s = montar([item('MLB1', { preco: 30 })], { campanha: () => conv({ offer_id: 'C-1', preco: 30 }), post: () => ({ offer_id: 'O-1' }) });
+    await executar({ ...DEAL_ADERIR, promocao_tipo: 'SMART' }, s.deps, OPTS);
+    expect(s.deps.espelharStatusCentral).toHaveBeenCalledWith('P-1', 'SMART', 'MLB1', 'started');
     const b = montar([item('MLB1')]);
     await executar({ ...DEAL_ADERIR, promocao_status: 'pending' }, b.deps, OPTS);
     expect(b.deps.espelharStatusCentral).toHaveBeenCalledWith('P-1', 'DEAL', 'MLB1', 'pending');
   });
 
-  it('releitura falha depois do 201 → ainda aplicado, espelha pelo status da promoção', async () => {
+  it('releitura falha depois do 201 → ainda aplicado, espelha pending (sem prova do ML)', async () => {
     const itens = [item('MLB1')];
     const { deps, ml } = montar(itens);
     vi.mocked(ml.lerNaCampanha).mockResolvedValueOnce(conv()).mockRejectedValueOnce(new Error('ML 500'));
     await executar(DEAL_ADERIR, deps, OPTS);
     expect(itens[0].status).toBe('aplicado');
-    expect(deps.espelharStatusCentral).toHaveBeenCalledWith('P-1', 'DEAL', 'MLB1', 'started');
+    expect(deps.espelharStatusCentral).toHaveBeenCalledWith('P-1', 'DEAL', 'MLB1', 'pending');
   });
 
   it('SMART: grava o offer_id novo devolvido pelo POST', async () => {

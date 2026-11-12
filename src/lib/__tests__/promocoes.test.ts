@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   abaDa, ateQuantoDaLinha, corDeReferencia, descontoPct, ehCupom, emLeitura, filtrarItens, prazoUrgente,
   avisoAtualizacao, rotuloSemLiquido, rotuloTipo, sincronizandoAgora, type CorProjetada, type ItemPromocao,
-  agruparParticipacoes, rotuloMlb, type Participacao, type Promocao,
+  agruparParticipacoes, rotuloMlb, type Participacao, type Promocao, aguardandoMl,
 } from '../promocoes';
 
 const agora = Date.parse('2026-10-06T12:00:00Z');
@@ -161,5 +161,22 @@ describe('agruparParticipacoes', () => {
     ];
     const g = agruparParticipacoes([part('F', 'a'), part('V', 'b'), part('C', 'c'), part('X', 'd'), part('OK', 'e')], promos, agora);
     expect(g.map((x) => x.promocao.promocao_id)).toEqual(['OK']);
+  });
+});
+
+// Black Friday 12/11: adesão com a campanha já ativa fica `pending` até o ML ativar (horas) — não é "começa depois".
+describe('aguardandoMl', () => {
+  it('item pending em campanha ativa → aguardando o ML', () => {
+    expect(aguardandoMl({ status: 'pending' }, { status: 'started', tipo: 'DEAL' })).toBe(true);
+  });
+  it('item pending em campanha futura → não (começa depois)', () => {
+    expect(aguardandoMl({ status: 'pending' }, { status: 'pending', tipo: 'DEAL' })).toBe(false);
+  });
+  it('Relâmpago pending em campanha ativa → não (horário agendado)', () => {
+    expect(aguardandoMl({ status: 'pending' }, { status: 'started', tipo: 'SMART_LIGHTNING' })).toBe(false);
+    expect(aguardandoMl({ status: 'pending' }, { status: 'started', tipo: 'LIGHTNING' })).toBe(false);
+  });
+  it('item started → não', () => {
+    expect(aguardandoMl({ status: 'started' }, { status: 'started', tipo: 'DEAL' })).toBe(false);
   });
 });

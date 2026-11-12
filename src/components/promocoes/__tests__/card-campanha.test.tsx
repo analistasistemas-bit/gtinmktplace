@@ -51,6 +51,18 @@ describe('CardCampanha', () => {
     expect(screen.getByText('Anúncios ainda não lidos')).toBeTruthy();
   });
 
+  // Black Friday 12/11: card dizia 123 "vale a pena" (convidados + participando) e o detalhe abria com 72 (só convidados).
+  it('com o recorte por grupo: barra só dos convidados e linha própria de participando', () => {
+    renderCard({ ...base, status: 'started', contagem: {
+      convidados: 330, convidados_verde: 72, participando: 76, verde: 123, amarelo: 263, vermelho: 17, indisponivel: 3,
+      participando_vermelho: 0, ml_pct_max: null,
+      convidados_semaforo: { verde: 72, amarelo: 238, vermelho: 17, indisponivel: 3 },
+    } });
+    expect(screen.getByRole('img').getAttribute('aria-label')).toBe('72 vale a pena, 238 abaixo do piso, 17 prejuízo, 3 sem líquido');
+    expect(screen.queryByText('123')).toBeNull();
+    expect(screen.getByText('Participando: 51 vale a pena · 25 abaixo do piso')).toBeTruthy();
+  });
+
   it('nenhuma palavra proibida', () => {
     const { container } = renderCard(base);
     expect(container.textContent).not.toMatch(/margem|lucro|candidato/i);

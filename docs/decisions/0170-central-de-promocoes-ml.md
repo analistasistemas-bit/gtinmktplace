@@ -168,3 +168,10 @@ acha o cache frio (~1–1,5 mil chamadas ao ML por rodada, menos que as ~2,4 mil
 **Descartado — pular pares sem mudança** (preço/custo/status iguais reaproveitam o resultado gravado): cortaria
 ~80–95%, mas mudança de tarifa do ML (comissão, faixa de frete) não seria vista enquanto nada do nosso lado
 mudasse — semáforo verde em item que já dá prejuízo. Código + ADR para economizar ~US$ 1/mês a mais.
+
+## Emenda 2026-11-12 — card separa convidados de participando
+
+O card da Black Friday mostrava "123 vale a pena" (convidados + participando somados) e o detalhe abria com 72 (aba
+Convidados). `contar` passa a gravar `convidados_semaforo` (semáforo só dos convidados); o card desenha a barra com
+esse recorte e uma linha "Participando: N vale a pena · …" calculada por diferença (total − convidados). Contagem
+gravada antes da emenda não tem o campo e mantém o visual antigo até o próximo sync.
