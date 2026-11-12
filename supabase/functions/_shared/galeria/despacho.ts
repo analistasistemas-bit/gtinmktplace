@@ -113,7 +113,8 @@ export interface DepsDespacho {
   garantirFila(userId: string): Promise<void>;
   /** `enfileirarJobPublicacaoML` (queue.ts): fila `publish-ml-${userId}` com as mesmas opções de retry do job normal. */
   enfileirar(userId: string, url: string, body: unknown): Promise<unknown>;
-  /** APP_URL (link do aviso de imagens prontas, ADR-0203 item 11). Ausente = aviso pulado neste tick. */
+  /** APP_URL (link do aviso de imagens prontas, ADR-0203 item 11). Ausente ou vazia = aviso pulado neste tick (aviso
+   * gravado sem link ficaria assim para sempre: a chave do aviso não se repete). */
   appUrl?: string;
 }
 
@@ -242,7 +243,7 @@ export async function despachar(admin: SupabaseClient, deps: DepsDespacho) {
     catch (e) { console.error('[galeria-despacho] adiada', a.id, (e as Error).message); }
   }
 
-  if (deps.appUrl != null) {
+  if (deps.appUrl?.trim()) {
     try { await avisarPedidosProntos(admin, { agora: deps.agora, appUrl: deps.appUrl }); }
     catch (e) { console.error('[galeria-despacho] aviso', (e as Error).message); }
   }

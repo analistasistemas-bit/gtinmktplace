@@ -4,9 +4,11 @@ import { fakeAdmin } from '../../_shared/galeria/__tests__/fake-admin'
 const f = vi.hoisted(() => ({
   serve: vi.fn(), fake: null as unknown as ReturnType<typeof import('../../_shared/galeria/__tests__/fake-admin').fakeAdmin>,
   assinatura: true, batch: vi.fn(), enqueue: vi.fn(), filas: [] as string[],
+  env: {} as Record<string, string | undefined>, avisar: vi.fn(async () => 0),
 }))
 
 vi.mock('../../_shared/cors.ts', () => ({ corsHeaders: {} }))
+vi.mock('../../_shared/galeria/aviso-pronto.ts', () => ({ avisarPedidosProntos: f.avisar }))
 vi.mock('../../_shared/supabase.ts', () => ({ adminClient: () => f.fake.admin }))
 vi.mock('../../_shared/queue.ts', () => ({
   verificarAssinatura: vi.fn(async () => f.assinatura),
@@ -17,7 +19,7 @@ vi.mock('../../_shared/queue.ts', () => ({
 
 let handler: (req: Request) => Promise<Response>
 beforeAll(async () => {
-  vi.stubGlobal('Deno', { serve: f.serve, env: { get: (k: string) => (k === 'SUPABASE_URL' ? 'https://x.supabase.co' : undefined) } })
+  vi.stubGlobal('Deno', { serve: f.serve, env: { get: (k: string) => f.env[k] } })
   await import('../index.ts')
   handler = f.serve.mock.calls[0][0] as (req: Request) => Promise<Response>
 })
@@ -27,6 +29,8 @@ beforeEach(() => {
   f.fake = fakeAdmin({ galeria_imagens: [g1] })
   f.fake.respostasRpc.galeria_trabalho_pendente = () => [{ ...g1 }]
   f.assinatura = true
+  f.env = { SUPABASE_URL: 'https://x.supabase.co' }
+  f.avisar.mockClear()
   f.batch.mockReset()
   f.batch.mockImplementation(async (msgs: unknown[]) => msgs.map((_, i) => ({ messageId: `m${i}` })))
 })
@@ -47,5 +51,19 @@ describe('galeria-despachante', () => {
       ['galeria_trabalho_pendente', 50], ['galeria_visao_pendente', 20], ['galeria_trabalho_pendente_aplicacao', 20],
     ]))
     expect(f.batch.mock.calls[0][0]).toEqual([expect.objectContaining({ url: 'https://x.supabase.co/functions/v1/galeria-worker', deduplicationId: 'g1_1' })])
+  })
+
+  it('APP_URL ausente → aviso de imagens prontas pulado, com erro no log', async () => {
+    const erro = vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect((await chamar()).status).toBe(200)
+    expect(f.avisar).not.toHaveBeenCalled()
+    expect(erro).toHaveBeenCalledWith('[galeria-despachante] APP_URL ausente: aviso de imagens prontas pulado')
+    erro.mockRestore()
+  })
+
+  it('APP_URL presente → aviso chamado com ela', async () => {
+    f.env.APP_URL = 'https://app.exemplo'
+    expect((await chamar()).status).toBe(200)
+    expect(f.avisar).toHaveBeenCalledWith(f.fake.admin, expect.objectContaining({ appUrl: 'https://app.exemplo' }))
   })
 })

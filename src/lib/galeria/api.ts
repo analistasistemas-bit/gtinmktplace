@@ -101,7 +101,7 @@ const MENSAGENS: Record<string, string> = {
   conjunto_incompleto: 'Há tamanho desta cor ainda não publicado no anúncio.',
   sem_anuncio: 'O anúncio desta linha não foi encontrado.',
   variacao_nao_casa: 'A variação da cor não confere com o anúncio no Mercado Livre.',
-  roteiro_nao_aprovado: 'Os textos aprovados mudaram. Recarregue a galeria.',
+  roteiro_nao_aprovado: 'Estas imagens são de uma versão anterior. Gere e aprove de novo.',
   sem_vista: 'Falta a foto de referência (costas ou lateral) que esta imagem exige.',
   teto: 'Você já gerou esta imagem 3 vezes.',
   em_andamento: 'Esta imagem já está sendo gerada.',
@@ -113,10 +113,7 @@ const MENSAGENS: Record<string, string> = {
   pedido_invalido: 'Pedido inválido. Tente de novo.',
   familia_nao_vigente: 'O cadastro do anúncio mudou. Recarregamos os dados; confira e tente de novo.',
   anuncio_ambiguo: 'Não foi possível identificar este anúncio de forma única.',
-  conteudo_mudou: 'Os textos foram alterados em outra aba depois que você abriu. Recarregamos; confira e aprove de novo.',
   categoria_indisponivel: 'Não foi possível ler a categoria no Mercado Livre agora. Tente de novo em instantes.',
-  foto_invalida: 'Foto inválida ou grande demais (máx. 8 MB).',
-  nao_rascunho: 'Estes textos já foram aprovados. Edite para criar uma nova versão.',
   ja_aprovada: 'Esta imagem já está aprovada.',
   desatualizada: 'Os dados do anúncio mudaram. Gere as imagens de novo.',
   plano_ia_falhou: 'Não foi possível preparar as imagens agora. Tente de novo.',
@@ -125,6 +122,12 @@ const MENSAGENS: Record<string, string> = {
   plano_desatualizado: 'Os dados do anúncio mudaram.',
   sem_referencia: 'Falta a foto real desta cor no cadastro.',
   plano_antigo: 'Esta imagem é de uma versão anterior. Gere de novo.',
+  // Erros gravados pelo worker na imagem (`galeria_imagens.erro`).
+  roteiro_trocado: 'Os dados do anúncio mudaram enquanto a imagem era gerada. Gere de novo.',
+  queda_repetida: 'A geração caiu duas vezes. Tente de novo.',
+  cena_inutil: 'O gerador devolveu uma imagem inválida. Tente de novo.',
+  provedor_indisponivel: 'O gerador de imagens está fora do ar. Tente de novo em instantes.',
+  prazo_esgotado: 'A geração demorou demais. Tente de novo.',
   nao_aprovavel: 'Esta imagem não pode ser aprovada agora. Gere de novo ou recarregue a página.',
   nao_encontrada: 'Imagem não encontrada neste anúncio.',
   sem_upload: 'O arquivo final não foi preparado. Tente aprovar de novo.',
@@ -153,6 +156,8 @@ export const MENSAGEM_GENERICA = 'Não deu certo. Tente de novo; se repetir, avi
 export function mensagemErro(e: string): string {
   const m = MENSAGENS[e];
   if (m) return m;
+  // `provedor_<status>` / `provedor_<erro>` do worker: variam por provedor, o operador só precisa saber que caiu.
+  if (e.startsWith('provedor_')) return MENSAGENS.provedor_indisponivel;
   console.warn('[galeria] erro sem mensagem:', e);
   return MENSAGEM_GENERICA;
 }

@@ -130,7 +130,6 @@ Deno.serve(async (req) => {
     // GET que falhou (5xx/rede) não é catálogo nem conjunto incompleto: recusa retentável, sem pedido nem custo.
     // `catalogo_desconhecido` fica só para GET 200 sem o campo.
     const falhouGet = async () => (await Promise.all([...vistos].map(lerItem))).some((i) => i === null);
-    let itemFicha: string | null = null; // 1º alvo da 1ª cor: dele sai a ficha do anúncio para o plano
     for (const [n, cor] of cores.entries()) {
       const r = porCor[n];
       if ('falha' in r) throw r.falha;
@@ -138,7 +137,6 @@ Deno.serve(async (req) => {
       const alvos = r.alvos;
       if (await falhouGet()) return json({ error: 'ml_indisponivel' }, 503);
       if ('erro' in alvos) return json({ error: alvos.erro, cor, detalhe: alvos.detalhe }, 409);
-      itemFicha ??= alvos.alvos[0]?.itemId ?? null;
       for (const { itemId } of alvos.alvos) {
         vistos.add(itemId);
         const item = await lerItem(itemId);
@@ -164,6 +162,9 @@ Deno.serve(async (req) => {
 
     const { data: assinada, error: eUrl } = await admin.storage.from('imagens').createSignedUrl(frente(cores[0])!.path, 600);
     if (eUrl || !assinada?.signedUrl) throw new Error(eUrl?.message ?? 'URL da referência não assinada');
+    // Ficha do plano = MLB do menor SKU com item (`a.skus` vem ordenado), nunca da cor pedida: em UP cada SKU tem MLB
+    // próprio e pedir outra cor trocaria o `dados_hash`. Nenhum SKU com item → null → `ml_indisponivel` no garantirPlano.
+    const itemFicha = a.skus.map((s) => a.itemPorSku[s]).find(Boolean) ?? null;
     const g = await garantirPlano(admin, {
       orgId, userId, a, fatosHash: v.fatos_hash, refUrl: assinada.signedUrl, confirmarTroca,
       modelo: await resolverModeloTexto(admin, orgId),

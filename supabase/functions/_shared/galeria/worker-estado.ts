@@ -133,8 +133,9 @@ export async function executarImagem(admin: SupabaseClient, msg: MensagemWorker 
     return (data ?? []).length === 1;
   };
   const liberar = async (): Promise<ResultadoWorker> => ((await comPosse({ posse: null, lease_ate: null })) ? 'liberada' : 'perdeu_posse');
-  const falhar = async (erro: string): Promise<ResultadoWorker> =>
-    ((await comPosse({ status: 'falhou', erro, posse: null, lease_ate: null, fase: linha.fase + 1 })) ? 'falhou' : 'perdeu_posse');
+  // `extra` só para gravar junto, no mesmo update com posse (hoje: o custo da imagem paga e inútil).
+  const falhar = async (erro: string, extra: Record<string, unknown> = {}): Promise<ResultadoWorker> =>
+    ((await comPosse({ status: 'falhou', erro, posse: null, lease_ate: null, fase: linha.fase + 1, ...extra })) ? 'falhou' : 'perdeu_posse');
   const modelo = modeloGaleria(linha.modelo);
   const opHF = { fetchFn: deps.fetchFn, credenciais: deps.credenciaisHF, timeoutMs: TIMEOUT_GERACAO_MS };
 
@@ -186,8 +187,8 @@ export async function executarImagem(admin: SupabaseClient, msg: MensagemWorker 
         return erroPago(e as Erro);
       }
       const custoAcumulado = (linha.custo_usd ?? 0) + gerada.custo;
-      // Imagem inútil não gasta a visão (caminho de sempre: falhou/cena_inutil).
-      if (!util(gerada.bytes)) return falhar('cena_inutil');
+      // Imagem inútil não gasta a visão (falhou/cena_inutil); a chamada foi paga: o custo fica na linha.
+      if (!util(gerada.bytes)) return falhar('cena_inutil', { custo_usd: custoAcumulado });
       // Imagem sem texto pedido (capa, Moda): não há o que comparar e a visão confunde o rótulo do produto com texto
       // desenhado (teste real 12/11: toda capa regerava). Sem conferência; a aprovação humana cobre.
       const alertas = posicao.textos.length === 0 ? [] : await (deps.conferir ?? conferirTexto)({ imagemUrl: gerada.url, esperados: posicao.textos });

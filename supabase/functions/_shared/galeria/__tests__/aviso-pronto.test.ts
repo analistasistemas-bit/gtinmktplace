@@ -29,9 +29,9 @@ beforeEach(() => {
     galeria_pedidos: [], galeria_imagens: [], notificacoes: [], ml_notificacoes_enviadas: [],
     anuncios_externos: [{ id: 'an1', org_id: 'org', item_externo_id: 'MLB123' }],
     anuncios_externos_itens: [],
-    familias: [{ id: 'fam', titulo_ml: 'Fio Amigurumi 254 m', nome_pai: 'FIO AMIG' }],
+    familias: [{ id: 'fam', org_id: 'org', titulo_ml: 'Fio Amigurumi 254 m', nome_pai: 'FIO AMIG' }],
     configuracoes: [{ org_id: 'org', telegram_bot_token: 'tok', telegram_chat_id: null, telegram_ativo: true }],
-    profiles: [{ id: 'u1', telegram_chat_id: '111' }, { id: 'u2', telegram_chat_id: '222' }],
+    profiles: [{ id: 'u1', org_id: 'org', telegram_chat_id: '111' }, { id: 'u2', org_id: 'org', telegram_chat_id: '222' }],
     galeria_roteiros: [{ id: 'rot2', org_id: 'org', conteudo: PLANO2 }, { id: 'rot1', org_id: 'org', conteudo: ANTIGO }],
   }
   fake = fakeAdmin(db)
@@ -72,6 +72,16 @@ describe('avisarPedidosProntos', () => {
     expect(await rodar()).toBe(0)
     expect(avisos()).toHaveLength(1)
     expect(enviar).toHaveBeenCalledTimes(1)
+  })
+
+  it('família e perfil de outra org com o mesmo id não são usados (título genérico, sem Telegram)', async () => {
+    db.familias = [{ id: 'fam', org_id: 'outra', titulo_ml: 'Anúncio de outra org', nome_pai: 'OUTRA' }]
+    db.profiles = [{ id: 'u1', org_id: 'outra', telegram_chat_id: '999' }]
+    db.galeria_pedidos.push(pedido('p1'))
+    db.galeria_imagens.push(img('p1', 'gerada'))
+    expect(await rodar()).toBe(1)
+    expect(avisos()[0].texto).toBe(`Suas imagens ficaram prontas: seu anúncio. 1 para conferir. Abra para aprovar: ${LINK}`)
+    expect(enviar).not.toHaveBeenCalled()
   })
 
   it('singular e plural: "1 para conferir"; "2 não saíram"', async () => {

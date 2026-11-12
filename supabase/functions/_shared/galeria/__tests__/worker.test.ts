@@ -186,15 +186,22 @@ describe('OpenRouter', () => {
     await rodar()
     expect(img().custo_usd).toBe(0.06)
   })
-  it('cena quadrada (missão 2) ou < 40 KB → falhou sem cena_path, sem custo e sem gastar a conferência', async () => {
+  it('cena quadrada (missão 2) ou < 40 KB → falhou sem cena_path, com o custo da chamada e sem gastar a conferência', async () => {
     v.create.mockResolvedValue(respOR(jpeg(1024, 1024)))
     expect(await rodar()).toBe('falhou')
-    expect(img()).toMatchObject({ status: 'falhou', cena_path: null, custo_usd: null, erro: 'cena_inutil' })
+    expect(img()).toMatchObject({ status: 'falhou', cena_path: null, custo_usd: 0.041, erro: 'cena_inutil', posse: null, lease_ate: null, fase: 1 })
     db.galeria_imagens = [linha()]
     v.create.mockResolvedValue(respOR(jpeg(1856, 2304, 0, 30_000)))
     expect(await rodar()).toBe('falhou')
     expect(img().cena_path).toBeNull()
     expect(conferir).not.toHaveBeenCalled()
+  })
+  it('imagem inútil na regeração soma o custo da chamada ao que já havia na linha', async () => {
+    Object.assign(img(), { status: 'submetendo', tentativa: 1, custo_usd: 0.05, posse: null, lease_ate: null })
+    v.create.mockResolvedValue(respOR(jpeg(1024, 1024)))
+    expect(await rodar()).toBe('falhou')
+    expect(img()).toMatchObject({ status: 'falhou', erro: 'cena_inutil', tentativa: 2, cena_path: null })
+    expect(img().custo_usd).toBeCloseTo(0.091, 10)
   })
   // Conta só o create do mock (regra de tentativa). "Uma requisição HTTP" com o SDK real: worker-http.denotest.ts.
   it('502 → uma chamada, lease solto com tentativa 1; 2ª queda → falhou sem 3ª chamada', async () => {

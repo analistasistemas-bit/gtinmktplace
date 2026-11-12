@@ -296,6 +296,29 @@ describe('galeria-gerar', () => {
       expect(r.max).toBe(2)
     })
 
+    it('UP com fichas diferentes por MLB: a ficha do plano é a do menor SKU, qualquer que seja a cor pedida (plano reaproveitado)', async () => {
+      up('ativo') // 100A → MLB2 é o menor SKU; 100R → MLB1
+      vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+        fetchs.push(url)
+        const bf = url.match(/\/items\/(MLB\d)\?attributes=id,status/)
+        if (bf) return Response.json({ id: bf[1], seller_custom_field: bf[1] === 'MLB1' ? '100R' : '100A', variations: [] })
+        const el = url.match(/\/items\/(MLB\d)\?attributes=id,catalog_listing/)
+        if (el) return Response.json({ id: el[1], catalog_listing: false, variations: [] })
+        const ficha = url.match(/\/items\/(MLB\d)\?attributes=attributes$/)
+        if (ficha) return Response.json({ attributes: [{ id: 'MATERIAL', name: 'Material', value_name: ficha[1] === 'MLB1' ? 'Algodão' : 'Poliéster' }] })
+        if (url === 'https://api.mercadolibre.com/categories/MLB999') return Response.json({ path_from_root: categoria })
+        return new Response('{}', { status: 500 })
+      }))
+      expect((await chamar(pedido({ cores: ['Rosa'], missoes: [1] }))).status).toBe(200)
+      db.galeria_imagens.forEach((i) => { Object.assign(i, { status: 'gerada', entregue_em: '2026-11-10T10:00:00Z' }) })
+      expect((await chamar(pedido({ pedido_id: '7f1c2a3e-8b4d-4c5e-9f60-718293a4b5c6', cores: ['Azul'], missoes: [1] }))).status).toBe(200)
+      expect(fetchs.filter((u) => u.includes('attributes=attributes'))).toEqual([
+        'https://api.mercadolibre.com/items/MLB2?attributes=attributes', 'https://api.mercadolibre.com/items/MLB2?attributes=attributes',
+      ])
+      expect(f.planejar).toHaveBeenCalledTimes(1)
+      expect(f.planejar.mock.calls[0][0]).toMatchObject({ dados: { ficha_do_anuncio: { Material: 'Poliéster' } } })
+    })
+
     it('UP plano: o GET adiantado da cor seguinte não muda a resposta da 1ª (catálogo, não ml_indisponivel)', async () => {
       up('ativo')
       upPlano((id) => (id === 'MLB1' ? Response.json({ id, catalog_listing: true, variations: [] }) : new Response('{}', { status: 500 })))

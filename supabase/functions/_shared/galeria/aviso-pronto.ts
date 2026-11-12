@@ -56,7 +56,7 @@ async function avisarRodada(admin: SupabaseClient, recente: Pedido, imgs: Imagem
 
   const mlItem = await mlItemDoAnuncio(admin, orgId, recente.anuncio_externo_id);
   const fam = recente.familia_id
-    ? exigir(await admin.from('familias').select('titulo_ml, nome_pai').eq('id', recente.familia_id).maybeSingle(), 'ler família') as
+    ? exigir(await admin.from('familias').select('titulo_ml, nome_pai').eq('id', recente.familia_id).eq('org_id', orgId).maybeSingle(), 'ler família') as
       { titulo_ml: string | null; nome_pai: string | null } | null
     : null;
   const titulo = fam?.titulo_ml?.trim() || fam?.nome_pai?.trim() || 'seu anúncio';
@@ -73,7 +73,7 @@ async function avisarRodada(admin: SupabaseClient, recente: Pedido, imgs: Imagem
   try {
     const cfg = await lerConfigTelegram(admin, orgId);
     if (!cfg.ativo || !cfg.token) return true;
-    const perfil = exigir(await admin.from('profiles').select('telegram_chat_id').eq('id', userId).maybeSingle(), 'ler perfil') as
+    const perfil = exigir(await admin.from('profiles').select('telegram_chat_id').eq('id', userId).eq('org_id', orgId).maybeSingle(), 'ler perfil') as
       { telegram_chat_id: string | null } | null;
     const chatId = perfil?.telegram_chat_id?.trim();
     if (!chatId) return true;

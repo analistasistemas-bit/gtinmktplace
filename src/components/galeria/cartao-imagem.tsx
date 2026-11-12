@@ -138,7 +138,7 @@ export function CartaoImagem({ nome, cor, preco, imagem, indisponivel, antiga = 
             <RefreshCw aria-hidden />Tentar de novo
           </Button>
         )}
-        {estado === 'pronta' && !antiga && !!imagem?.url && onAprovar && (
+        {estado === 'pronta' && !antiga && !!imagem?.url && !quebrou && onAprovar && (
           <Button className="h-10 w-full px-3" disabled={aprovando || travado} onClick={() => void aprovar()}>
             {aprovando ? <><Loader2 aria-hidden className="motion-safe:animate-spin" />Aprovando…</> : <><Check aria-hidden />Aprovar</>}
           </Button>

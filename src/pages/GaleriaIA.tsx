@@ -1,7 +1,7 @@
 // ADR-0203: Galeria IA em tela única, `/#/publicados/:mlItemId/galeria`. Sem passos: escolhe a cor (ou todas), gera as
 // 7 imagens uma a uma ou todas, aprova e coloca no anúncio.
 // Identidade = `ml_item_id` da rota (linhas split dividem a família). Guarda própria (link direto): módulo `imagem_ia`;
-// anúncio da org (a edge recusa o resto). Aprovar/aplicar só admin (os demais leem).
+// anúncio da org (a edge recusa o resto). Aprovar: qualquer membro com o módulo; aplicar no anúncio: só admin.
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AlertTriangle, ArrowLeft, Images, X } from 'lucide-react';

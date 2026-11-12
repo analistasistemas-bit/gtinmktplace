@@ -314,6 +314,12 @@ describe('aviso de imagens prontas (ADR-0203 item 11)', () => {
     expect(avisar).not.toHaveBeenCalled()
   })
 
+  it('appUrl vazio ou só espaços → aviso pulado (nunca grava aviso sem link)', async () => {
+    await despachar(fake.admin as never, { ...deps(), appUrl: '' })
+    await despachar(fake.admin as never, { ...deps(), appUrl: '  ' })
+    expect(avisar).not.toHaveBeenCalled()
+  })
+
   it('com appUrl → tick chama o aviso com o relógio e a URL', async () => {
     await despachar(fake.admin as never, { ...deps(), appUrl: 'https://app' })
     expect(avisar).toHaveBeenCalledWith(fake.admin, { agora, appUrl: 'https://app' })

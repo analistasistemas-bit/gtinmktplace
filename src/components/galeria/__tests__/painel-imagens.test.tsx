@@ -503,25 +503,44 @@ describe('PainelImagens: aprovar', () => {
     await waitFor(() => expect(final.fn).toHaveBeenCalledWith('https://signed/i1.png', true));
   });
 
-  it('exibicao_pendente → confirma a exibição e repete só o aprovar (sem recortar nem novo upload)', async () => {
-    api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 2, exibida: true })])));
-    api.aprovarFinal.mockResolvedValueOnce(falha(409, 'exibicao_pendente'));
+  /** Imagem pronta cujo <img> carregou e passou em `imagemValida` nesta sessão (1ª confirmação já sai aqui). */
+  const validadaNaSessao = async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 2 })])));
     painel();
-    await userEvent.click(await screen.findByRole('button', { name: 'Aprovar' }));
+    fireEvent.load(await screen.findByAltText('Em uso · Preto'));
+    await waitFor(() => expect(api.confirmarExibicao).toHaveBeenCalledTimes(1));
+    // Depois da confirmação o servidor diz `exibida` (senão o polling confirmaria de novo).
+    api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 2, exibida: true })])));
+  };
+
+  it('exibicao_pendente com a imagem validada → confirma a exibição e repete só o aprovar (sem recortar nem novo upload)', async () => {
+    api.aprovarFinal.mockResolvedValueOnce(falha(409, 'exibicao_pendente'));
+    await validadaNaSessao();
+    await userEvent.click(screen.getByRole('button', { name: 'Aprovar' }));
     await waitFor(() => expect(api.aprovarFinal).toHaveBeenCalledTimes(2));
-    expect(api.confirmarExibicao).toHaveBeenCalledWith('MLB1', ['i1']);
+    expect(api.confirmarExibicao).toHaveBeenCalledTimes(2);
+    expect(api.confirmarExibicao).toHaveBeenLastCalledWith('MLB1', ['i1']);
     expect(final.fn).toHaveBeenCalledTimes(1);
     expect(api.prepararUploadFinal).toHaveBeenCalledTimes(1);
   });
 
   it('exibicao_pendente de novo após confirmar → motivo no cartão, sem laço', async () => {
+    api.aprovarFinal.mockResolvedValue(falha(409, 'exibicao_pendente'));
+    await validadaNaSessao();
+    await userEvent.click(screen.getByRole('button', { name: 'Aprovar' }));
+    expect(await screen.findByText(/sendo registrada/i)).toBeInTheDocument();
+    expect(api.aprovarFinal).toHaveBeenCalledTimes(2);
+    expect(api.confirmarExibicao).toHaveBeenCalledTimes(2);
+  });
+
+  it('exibicao_pendente com a imagem ainda não validada nesta sessão → não confirma (não cobra) e pede para aguardar', async () => {
     api.listarImagens.mockResolvedValue(ok(lista([imagem({ missao: 2, exibida: true })])));
     api.aprovarFinal.mockResolvedValue(falha(409, 'exibicao_pendente'));
     painel();
     await userEvent.click(await screen.findByRole('button', { name: 'Aprovar' }));
-    expect(await screen.findByText(/sendo registrada/i)).toBeInTheDocument();
-    expect(api.aprovarFinal).toHaveBeenCalledTimes(2);
-    expect(api.confirmarExibicao).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText('A imagem ainda não terminou de carregar. Aguarde ela aparecer e aprove de novo.')).toBeInTheDocument();
+    expect(api.confirmarExibicao).not.toHaveBeenCalled();
+    expect(api.aprovarFinal).toHaveBeenCalledTimes(1);
   });
 
   it('imagem que não cabe no formato: motivo claro no cartão e nada sobe', async () => {
@@ -656,6 +675,13 @@ describe('CartaoImagem', () => {
   ] as const)('%j → estado %s', (extra, estado) => {
     render(<CartaoImagem {...base} imagem={imagem(extra as Partial<ImagemGaleria>)} />);
     expect(document.querySelector('[data-estado]')).toHaveAttribute('data-estado', estado);
+  });
+  it('imagem que não carregou não tem botão Aprovar', () => {
+    render(<CartaoImagem {...base} imagem={imagem({ missao: 2, exibida: true })} onAprovar={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Aprovar' })).toBeInTheDocument();
+    fireEvent.error(screen.getByAltText('Capa · Preto'));
+    expect(screen.getByText(/Não foi possível exibir a imagem/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Aprovar' })).toBeNull();
   });
   it('sem imagem: vazio com o preço no botão; com motivo: indisponível', () => {
     const { unmount } = render(<CartaoImagem {...base} onGerar={vi.fn()} />);

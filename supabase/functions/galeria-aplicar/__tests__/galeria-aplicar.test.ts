@@ -36,6 +36,9 @@ beforeAll(async () => {
 const legacyML = (id: string) => ({ id, catalog_listing: false, tags: [], pictures: [{ id: 'R0' }, { id: 'A0' }],
   variations: [{ id: 11, seller_custom_field: '100R', picture_ids: ['R0'] }, { id: 12, seller_custom_field: '100A', picture_ids: ['A0'] }] })
 const planoML = (id: string, sku: string) => ({ id, catalog_listing: false, tags: [], seller_custom_field: sku, pictures: [{ id: `F-${sku}` }], variations: [] })
+/** Plano formato 2 (ADR-0203) mínimo: só o formato importa ao aplicar. */
+const PLANO = { formato: 2, dados_hash: 'd', conflitos: [], paleta: { cor1: { nome: 'Rosa', hex: '#D91F58' }, cor2: { nome: 'Amarelo', hex: '#F2D631' } },
+  imagens: [1, 2, 3, 4, 5, 6, 7].map((posicao) => ({ posicao, funcao: `f${posicao}`, textos: [], prompt: `p${posicao}` })) }
 const aprovada = (id: string, missao: number, extra: Linha = {}) => ({ id, org_id: 'org', anuncio_externo_id: 'an1', roteiro_id: 'rotB',
   cor: 'Rosa', missao, status: 'aprovada', final_sha256: `sha-${id}`, ...extra })
 
@@ -61,8 +64,8 @@ beforeEach(() => {
         variacoes: ['P', 'M', 'G'].map((t) => ({ codigo: `300${t}`, cor: 'Rosa' })) },
     ],
     galeria_roteiros: [
-      { id: 'rotB', org_id: 'org', anuncio_externo_id: 'an1', familia_id: 'famB', status: 'aprovado', fatos_hash: 'h' },
-      { id: 'rotU', org_id: 'org', anuncio_externo_id: 'an3', familia_id: 'famU', status: 'aprovado', fatos_hash: 'h' },
+      { id: 'rotB', org_id: 'org', anuncio_externo_id: 'an1', familia_id: 'famB', status: 'aprovado', fatos_hash: 'h', conteudo: PLANO },
+      { id: 'rotU', org_id: 'org', anuncio_externo_id: 'an3', familia_id: 'famU', status: 'aprovado', fatos_hash: 'h', conteudo: PLANO },
     ],
     galeria_imagens: [aprovada('g3', 3), aprovada('g1', 1), aprovada('gX', 2, { cor: 'Azul' }), aprovada('gU', 1, { anuncio_externo_id: 'an3', roteiro_id: 'rotU' })],
     galeria_aplicacoes: [], galeria_aplicacao_itens: [],
@@ -141,6 +144,14 @@ describe('galeria-aplicar — preparar', () => {
     db.galeria_imagens.push(aprovada('g7', 7))
     expect((db.galeria_aplicacoes[0].manifesto as Linha[]).map((m) => m.imagem_id)).toEqual(['g1', 'g3'])
     expect((db.galeria_aplicacao_itens[0].fotos_novas as Linha[]).map((m) => m.imagem_id)).toEqual(['g1', 'g3'])
+  })
+
+  it('roteiro aprovado em formato antigo (com aprovadas) → 409 roteiro_nao_aprovado, nada gravado nem lido no ML', async () => {
+    db.galeria_roteiros[0].conteudo = { versao: 1, missoes: [{ missao: 1, textos: [] }] }
+    expect(await preparar()).toEqual({ status: 409, body: { error: 'roteiro_nao_aprovado' } })
+    expect(db.galeria_aplicacoes).toEqual([])
+    expect(db.galeria_aplicacao_itens).toEqual([])
+    expect(metodos).toEqual([])
   })
 
   it('roteiro aprovado da família A com a B vigente → 409 familia_nao_vigente', async () => {

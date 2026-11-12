@@ -11,6 +11,9 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
   const body = await req.text();
   if (!(await verificarAssinatura(req, body))) return new Response('Invalid signature', { status: 401, headers: corsHeaders });
+  // Sem APP_URL o aviso seria gravado sem link para sempre: pula (o despacho segue) e avisa no log.
+  const appUrl = Deno.env.get('APP_URL')?.trim() || undefined;
+  if (!appUrl) console.error('[galeria-despachante] APP_URL ausente: aviso de imagens prontas pulado');
   try {
     const r = await despachar(adminClient(), {
       agora: new Date(),
@@ -18,7 +21,7 @@ Deno.serve(async (req) => {
       publicar: (msgs) => qstashClient().batchJSON(msgs as never) as never,
       garantirFila: garantirFilaSerial,
       enfileirar: enfileirarJobPublicacaoML,
-      appUrl: Deno.env.get('APP_URL') ?? '',
+      appUrl,
     });
     return new Response(JSON.stringify({ ok: true, ...r }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (e) {

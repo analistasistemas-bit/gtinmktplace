@@ -25,14 +25,21 @@ const estilo = (c1: CorPaleta, c2: CorPaleta) => `ESTILO VISUAL OBRIGATÓRIO (ar
 const MAX_TEXTOS = 8
 const MAX_CHARS = 60
 const HEX = /^#[0-9A-F]{6}$/i
+// Nome da cor da paleta entra no prompt da imagem: só nome de cor, nunca instrução.
+const NOME_COR = /^[\p{L}][\p{L} -]{0,39}$/u
+// Trechos entre aspas duplas (retas ou tipográficas) do prompt: o que o gerador escreve na imagem. Aspas simples e
+// apóstrofo ("d'água") ficam de fora.
+const ASPAS = /"([^"]*)"|“([^”]*)”/g
 
 const norm = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 // Números do texto como tokens inteiros (NUM casa "254", "1,5", "1.500"); comparação por valor via `numero`.
 const numeros = (s: string) => (s.match(new RegExp(NUM, 'g')) ?? []).map(numero)
+const posicaoInteira = (i: unknown) => isObj(i) && Number.isInteger(i.posicao)
 
 export function ehPlano(conteudo: unknown): conteudo is Plano {
   return isObj(conteudo) && conteudo.formato === 2 && Array.isArray(conteudo.imagens) && conteudo.imagens.length === 7
+    && conteudo.imagens.every(posicaoInteira)
 }
 
 export function validarPlano(
@@ -43,17 +50,19 @@ export function validarPlano(
   const erros: string[] = []
   const p = bruto as unknown as Plano
 
-  const paletaOk = (c: unknown) => isObj(c) && typeof c.nome === 'string' && c.nome.trim() !== '' && typeof c.hex === 'string' && HEX.test(c.hex)
+  const paletaOk = (c: unknown) => isObj(c) && typeof c.nome === 'string' && NOME_COR.test(c.nome.trim()) && typeof c.hex === 'string' && HEX.test(c.hex)
   if (!paletaOk(p.paleta.cor1) || !paletaOk(p.paleta.cor2)) erros.push('paleta')
 
   const imagens = p.imagens.filter(isObj) as unknown as ImagemPlano[]
   const posicoes = imagens.map((i) => i.posicao).sort()
-  if (imagens.length !== 7 || posicoes.join() !== '1,2,3,4,5,6,7') erros.push('posicoes')
+  if (imagens.length !== 7 || !imagens.every(posicaoInteira) || posicoes.join() !== '1,2,3,4,5,6,7') erros.push('posicoes')
 
   const dados = new Set(numeros(ctx.dadosTexto))
   // Cor cadastrada vem com código interno ("Carmim Und 3528"): compara o nome sem o código, por palavra inteira.
-  const cores = ctx.cores.map((c) => norm(c).split(/\s+/).filter((w) => w !== 'und' && !/^\d+$/.test(w)).join(' ')).filter((c) => c !== '')
-  const temCor = (nt: string) => cores.some((c) => ` ${nt.replace(/[^\p{L}\p{N}]+/gu, ' ')} `.includes(` ${c} `))
+  // Pontuação vira espaço nos dois lados ("Azul-Marinho" casa "AZUL-MARINHO" e "AZUL MARINHO").
+  const semPontuacao = (s: string) => s.replace(/[^\p{L}\p{N}]+/gu, ' ')
+  const cores = ctx.cores.map((c) => semPontuacao(norm(c)).split(/\s+/).filter((w) => w !== '' && w !== 'und' && !/^\d+$/.test(w)).join(' ')).filter((c) => c !== '')
+  const temCor = (nt: string) => cores.some((c) => ` ${semPontuacao(nt)} `.includes(` ${c} `))
   const limpas: ImagemPlano[] = []
   for (const i of imagens) {
     const n = i.posicao
@@ -71,9 +80,17 @@ export function validarPlano(
     for (const t of textos) {
       if (t.length > MAX_CHARS) erros.push(`texto_longo:${n}`)
       if (termosProibidos(t, 'geral').length > 0) erros.push(`termo_proibido:${n}`)
-      if (numeros(t.replace(/^\d\.\s/, '')).some((x) => !dados.has(x))) erros.push(`numero_fora_dos_dados:${n}`)
+      // Numeração de etapa ("1. MEÇA") só é ignorada de 1 até a quantidade de textos da imagem.
+      const etapa = /^(\d)\.\s/.exec(t)
+      const semEtapa = etapa && Number(etapa[1]) >= 1 && Number(etapa[1]) <= textos.length ? t.slice(etapa[0].length) : t
+      if (numeros(semEtapa).some((x) => !dados.has(x))) erros.push(`numero_fora_dos_dados:${n}`)
       if (t.includes('{{COR}}') || temCor(norm(t))) erros.push(`cor_no_texto:${n}`)
       if (!i.prompt.includes(t)) erros.push(`texto_fora_do_prompt:${n}`)
+    }
+    // Todo trecho entre aspas duplas tem de ser um dos `textos` (sem textos, como a capa e Moda: nenhum).
+    const pedidos = new Set(textos.map((t) => t.trim()))
+    for (const m of i.prompt.matchAll(ASPAS)) {
+      if (!pedidos.has((m[1] ?? m[2]).trim())) erros.push(`aspas_fora_dos_textos:${n}`)
     }
   }
   if (erros.length > 0) return { erros: [...new Set(erros)] }

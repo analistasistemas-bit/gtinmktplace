@@ -180,7 +180,9 @@ export function PainelImagens({ mlItemId, cor, aoLista, aoFalha }: {
     let a = await aprovarFinal(mlItemId, i.id);
     // Só aprova imagem já cobrada: confirma a exibição (idempotente) e repete UMA vez o aprovar: o arquivo final já
     // está no `final_upload_path`, sem recortar nem subir de novo.
+    // A confirmação COBRA: só para imagem que o <img> desta sessão mostrou e validou (`imagemValida`).
     if (!a.ok && a.erro === 'exibicao_pendente') {
+      if (!validadas.current.has(i.id)) return 'A imagem ainda não terminou de carregar. Aguarde ela aparecer e aprove de novo.';
       const c = await confirmarExibicao(mlItemId, [i.id]);
       if (c.ok) a = await aprovarFinal(mlItemId, i.id);
     }

@@ -19,6 +19,7 @@ import { requireUserOrg } from '../_shared/auth.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { carregarAnuncio, resolverAnuncio } from '../_shared/galeria/anuncio.ts';
 import { calcularVigencia } from '../_shared/galeria/referencias.ts';
+import { ehPlano } from '../_shared/galeria/plano.ts';
 import { alvosDaCor, lerElegibilidadeItemML, motivoElegibilidade, type ItemElegibilidade } from '../_shared/galeria/alvos.ts';
 import { CORPO_MINIMO, fotosDaCorNoItem, planejarFotosItem } from '../_shared/galeria/aplicar.ts';
 import { LIMITE_ITEM, LIMITE_VAR } from '../_shared/galeria/saga.ts';
@@ -143,10 +144,11 @@ Deno.serve(async (req) => {
     // preparar
     const a = await carregarAnuncio(admin, orgId, r.anuncioId);
     if ('erro' in a) return json({ error: a.erro }, 409);
-    const { data: rot, error: eR } = await admin.from('galeria_roteiros').select('id, familia_id, fatos_hash')
+    const { data: rot, error: eR } = await admin.from('galeria_roteiros').select('id, familia_id, fatos_hash, conteudo')
       .eq('org_id', orgId).eq('anuncio_externo_id', a.anuncioId).eq('status', 'aprovado').maybeSingle();
     if (eR) throw new Error(eR.message);
-    if (!rot) return json({ error: 'roteiro_nao_aprovado' }, 409);
+    // Roteiro do formato antigo (antes do ADR-0203): as imagens dele não vão ao anúncio; gera e aprova de novo.
+    if (!rot || !ehPlano(rot.conteudo)) return json({ error: 'roteiro_nao_aprovado' }, 409);
     if (rot.familia_id !== a.vigente.id) return json({ error: 'familia_nao_vigente', familia_id_vigente: a.vigente.id }, 409);
     const v = await calcularVigencia(admin, orgId, a);
     if (v.fatos_hash !== rot.fatos_hash) return json({ error: 'desatualizada' }, 409);
