@@ -42,6 +42,8 @@ import { filtrarPublicados, ordenarPublicados, rotuloTipo, fiscalPendente, agreg
 import { CanalTabs } from '@/components/canal-tabs';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ListaOperacoes } from '@/components/operacoes/lista-operacoes';
+import { ListaPendentesGaleria } from '@/components/galeria/lista-pendentes';
+import { useGaleriaPendentes } from '@/hooks/useGaleriaPendentes';
 import { CanalBadge } from '@/components/canal-badge';
 import { MovimentosEstoque } from '@/components/movimentos-estoque';
 import { CatalogoEmRisco } from '@/components/catalogo-em-risco';
@@ -86,7 +88,7 @@ import { DialogGerenciarKit } from '@/components/kit-variacao/dialog-gerenciar-k
 import { BotaoGaleria } from '@/components/galeria/botao-galeria';
 import { restaurarRolagem } from '@/lib/galeria/retorno';
 import { useKitsVariacao } from '@/hooks/useKitsVariacao';
-import { fetchBaseCanonicaId, type KitVariacaoResumo } from '@/lib/kit-variacao-edge';
+import { fetchBaseCanonicaId, type KitVariacaoResumo, type LinkCombinacaoKit } from '@/lib/kit-variacao-edge';
 import { AnunciosOrfaos } from '@/components/anuncios-orfaos';
 import { paginar } from '@/lib/paginacao';
 import { paramsParaEstado, estadoParaParams, type EstadoPublicados } from '@/lib/publicados-url';
@@ -251,6 +253,28 @@ const SUFIXO_KIT: Record<string, string> = {
   erro: ' (com erro)', publicando: ' (montando…)', encerrando: ' (encerrando…)', encerrado: ' · Encerrado',
 };
 
+/** Um link por anúncio do kit (combinação × tamanho): o ML só junta no seletor depois de minutos e o link único
+ *  levava a uma combinação só. */
+function LinksCombinacoes({ links }: { links: LinkCombinacaoKit[] }) {
+  const porCombinacao = new Map<string, LinkCombinacaoKit[]>();
+  for (const l of links) porCombinacao.set(l.rotulo, [...(porCombinacao.get(l.rotulo) ?? []), l]);
+  return (
+    <ul className="grid w-full gap-1" aria-label="Anúncios do kit no ML">
+      {[...porCombinacao].map(([rotulo, ls]) => (
+        <li key={rotulo} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="text-muted-foreground">{rotulo}:</span>
+          {ls.map((l) => (
+            <a key={l.url} href={l.url} target="_blank" rel="noreferrer" title={`Ver ${rotulo} ${l.tamanho} no ML`}
+              className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-primary hover:bg-muted">
+              <ExternalLink className="h-3 w-3" aria-hidden />{l.tamanho}
+            </a>
+          ))}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** ADR-0200: kits com variação feitos a partir do produto. Mostra também o kit ainda montando ou com erro, que
  *  pode nem ter linha própria na tabela. Transferência aberta (adendo 08/11): etapa ao vivo com aura + raio; travada
  *  em vermelho; sem transferência, o link do anúncio. `foco`: veio de criar/montar/desmontar, rola até aqui e destaca. */
@@ -308,6 +332,8 @@ function KitsComVariacao({ kits, onGerenciar, foco }: {
                 </button>
                 {t ? (
                   <EtapaTransferencia t={t} />
+                ) : k.status === 'publicado' && (k.links?.length ?? 0) > 0 ? (
+                  <LinksCombinacoes links={k.links!} />
                 ) : k.permalink && k.status === 'publicado' ? (
                   <a href={k.permalink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline">
                     <ExternalLink className="h-3 w-3" aria-hidden />Ver anúncio no ML
@@ -1160,10 +1186,16 @@ function ThOrdenavel({ coluna, label, ord, onOrdenar, className }: ThOrdenavelPr
 // próprio: a aba vive na URL (?aba=operacoes), como em Promoções. /operacoes redireciona para cá.
 export default function Publicados() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const aba = searchParams.get('aba') === 'operacoes' ? 'operacoes' : 'anuncios';
+  // Aba "Imagens IA" (galeria da cor): só com o módulo `imagem_ia`; mostra o que está pronto e ainda não foi aplicado.
+  const { data: modulos } = useModulosHabilitados();
+  const temImagemIA = !!modulos?.includes('imagem_ia');
+  const pendentes = useGaleriaPendentes(temImagemIA);
+  const prontas = (pendentes.data ?? []).reduce((s, p) => s + p.prontas, 0);
+  const param = searchParams.get('aba');
+  const aba = param === 'operacoes' ? 'operacoes' : param === 'imagens' && temImagemIA ? 'imagens' : 'anuncios';
   const setAba = (v: string) => setSearchParams((prev) => {
     const p = new URLSearchParams(prev);
-    if (v === 'operacoes') p.set('aba', v); else p.delete('aba');
+    if (v === 'operacoes' || v === 'imagens') p.set('aba', v); else p.delete('aba');
     return p;
   }, { replace: true });
   const abas = (
@@ -1171,9 +1203,23 @@ export default function Publicados() {
       <TabsList>
         <TabsTrigger value="anuncios">Anúncios</TabsTrigger>
         <TabsTrigger value="operacoes">Operações</TabsTrigger>
+        {temImagemIA && (
+          <TabsTrigger value="imagens">
+            Imagens IA{prontas > 0 && <span className="ml-1.5 rounded-full bg-primary/15 px-1.5 text-xs tabular-nums text-primary">{prontas}</span>}
+          </TabsTrigger>
+        )}
       </TabsList>
     </Tabs>
   );
+  if (aba === 'imagens') {
+    return (
+      <div className="p-4 sm:p-6">
+        <PageHeader title="Publicados" />
+        {abas}
+        <ListaPendentesGaleria />
+      </div>
+    );
+  }
   if (aba === 'operacoes') {
     return (
       <div className="p-4 sm:p-6">
@@ -1513,9 +1559,14 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
     [doCanal],
   );
 
+  // Base e kit de cada kit com variação ativo (encerrado já saiu de Publicados).
+  const codigosComKitVariacao = useMemo(
+    () => new Set((kitsVariacao ?? []).filter((k) => k.status !== 'encerrado').flatMap((k) => [k.codigoPaiBase, k.codigoPaiKit])),
+    [kitsVariacao],
+  );
   const itensExibidos = useMemo(
-    () => ordenarPublicados(filtrarPublicados(doCanal, filtro), ord),
-    [doCanal, filtro, ord],
+    () => ordenarPublicados(filtrarPublicados(doCanal, filtro, codigosComKitVariacao), ord),
+    [doCanal, filtro, ord, codigosComKitVariacao],
   );
   const pag = useMemo(() => paginar(itensExibidos, pagina, tamanho), [itensExibidos, pagina, tamanho]);
 
@@ -1912,6 +1963,18 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
                 </SelectContent>
               </Select>
             </div>
+            {temKitVariacao && (
+              <Button
+                type="button"
+                variant={filtro.somenteComKitVariacao ? 'default' : 'outline'}
+                size="sm"
+                className="h-8"
+                aria-pressed={!!filtro.somenteComKitVariacao}
+                onClick={() => setFiltro((f) => ({ ...f, somenteComKitVariacao: !f.somenteComKitVariacao }))}
+              >
+                <Layers className="h-3.5 w-3.5" aria-hidden />Com kit de variação
+              </Button>
+            )}
           </div>
 
           <FiltrosAtivos filtro={filtro} onRemover={removerFiltro} onLimpar={limparFiltros} />

@@ -152,6 +152,7 @@
 | galeria-roteiro | true | HTTP (frontend) | sim (aprovação por RPC condicional) |
 | galeria-gerar | true | HTTP (frontend) | sim (`pedido_id` repetido devolve o que já existe) |
 | galeria-imagens | true | HTTP (frontend) | sim (`confirmar_exibicao` idempotente) |
+| galeria-pendentes | true | HTTP (frontend) | sim (só leitura) |
 | galeria-aprovar | true | HTTP (frontend) | sim (RPC `galeria_aprovar_imagem`; caminho de upload novo a cada preparo) |
 | galeria-aplicar | true | HTTP (frontend, só admin) | sim (RPCs atômicas; queda retomável pelo despachante) |
 | galeria-despachante | false | QStash schedule `* * * * *` | sim (recomeça pela cabeça das consultas) |
@@ -1495,6 +1496,9 @@ Lógica em `supabase/functions/_shared/galeria/`. Nenhuma edge desta família es
 - **galeria-imagens** *(`verify_jwt=true`)* — ações `listar` (imagens que ainda importam, URL assinada, preço congelado,
   caixas/hash da lupa; nunca cobra nem grava), `confirmar_exibicao` (`galeria_confirmar_exibicao`: **a cobrança é da
   exibição**, idempotente) e `reportar_invalida` (`falhou` sem cobrança).
+- **galeria-pendentes** *(`verify_jwt=true`)* — só leitura: por anúncio e cor, imagens aprovadas do roteiro vigente que
+  nenhuma aplicação `aplicada`/`em_andamento` cobre (`prontas`), geradas à espera de aprovação e se há aplicação em curso.
+  Alimenta a aba "Imagens IA" de Publicados (módulo `imagem_ia`). Regra em `_shared/galeria/pendentes.ts`.
 - **galeria-aprovar** *(`verify_jwt=true`)* — ações `preparar_upload` (URL assinada `upsert:false` para caminho novo
   `<org>/galeria-ia/<familia>/finais/<imagem>-<nonce>.jpg`, gravado em `final_upload_path`) e `aprovar` (confere JPEG
   1200×1540 ≤ 1 MB não branco, sha da referência, e grava por `galeria_aprovar_imagem`). Recortes/lupa: `lupa_pendente`

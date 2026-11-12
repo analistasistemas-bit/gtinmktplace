@@ -196,6 +196,32 @@ describe('criarKitVariacao', () => {
     expect(f.atributos_ml).toEqual([{ id: 'BRAND', value_name: 'Daludi' }]);
   });
 
+  it('MODEL herdado da base perde as cores da base (mais longa primeiro); sem cor sobrando, usa o título do kit', async () => {
+    const c = cenario();
+    c.s.base!.variacoes.push(variacao('A-M', 'Azul', 'M'), variacao('AC-M', 'Azul Claro', 'M'));
+    c.s.base!.familia.atributos_ml = [
+      { id: 'BRAND', value_name: 'Daludi' }, { id: 'MODEL', value_name: 'Blusa Canelada Azul Claro Preto' },
+    ];
+    await criarKitVariacao(c.deps, pedido());
+    expect(c.s.familias[0].atributos_ml).toContainEqual({ id: 'MODEL', value_name: 'Blusa Canelada' });
+    const d = cenario();
+    d.s.base!.familia.atributos_ml = [{ id: 'MODEL', value_name: 'Preto' }];
+    await criarKitVariacao(d.deps, pedido());
+    expect(d.s.familias[0].atributos_ml).toContainEqual({ id: 'MODEL', value_name: 'Kit 2 Blusas Canelada' });
+  });
+
+  it('categoria com MAIN_COLOR recebe Multicolorido (kit tem 2+ cores); sem MAIN_COLOR no schema nada é enviado', async () => {
+    const c = cenario();
+    c.s.schema = [{ id: 'MAIN_COLOR', nome: 'Cor principal', required: false, conditionalRequired: false,
+      valueType: 'list', valores: [{ id: '1', nome: 'Preto' }, { id: '9', nome: 'Multicolorido' }], allowedUnits: [], tags: [] }];
+    c.s.base!.familia.atributos_ml = [{ id: 'MAIN_COLOR', value_id: '1' }];
+    await criarKitVariacao(c.deps, pedido());
+    expect(c.s.familias[0].atributos_ml).toEqual([{ id: 'MAIN_COLOR', value_id: '9' }]);
+    const d = cenario();
+    await criarKitVariacao(d.deps, pedido());
+    expect(d.s.familias[0].atributos_ml?.some((a: { id: string }) => a.id === 'MAIN_COLOR')).toBe(false);
+  });
+
   it('categoria com SALE_FORMAT recebe Kit e a quantidade de peças', async () => {
     const c = cenario();
     c.s.schema = [{ id: 'SALE_FORMAT', nome: 'Formato de venda', required: false, conditionalRequired: false,

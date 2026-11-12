@@ -129,7 +129,10 @@ export interface KitVariacaoResumo {
   transferencia?: TransferenciaAberta | null;
   /** Anúncio do kit no ML (família do kit). */
   permalink?: string | null;
+  /** Um anúncio por combinação × tamanho (cada um com link próprio no ML), na ordem combinação → tamanho. */
+  links?: LinkCombinacaoKit[];
 }
+export interface LinkCombinacaoKit { rotulo: string; tamanho: string; url: string }
 
 // Alvos embutidos: fim da quarentena (último passo 1) e se é a criação do anúncio do kit.
 const SEL_TRANSFERENCIA = 'id, kit_id, tipo, estado, passo, alerta, criado_em, kit_transferencia_alvos(passo1_em, criar)';
@@ -168,11 +171,39 @@ export async function fetchKitsVariacao(): Promise<KitVariacaoResumo[]> {
       if (!atual || f.criado_em > atual.em) permalink.set(f.codigo_pai, { url: f.ml_permalink as string, em: f.criado_em });
     }
   }
+  const links = await fetchLinksKits(kits.map((k) => k.id));
   return kits.map((k) => ({
+    links: links.get(k.id) ?? [],
     id: k.id, codigoPaiBase: k.codigo_pai_base, codigoPaiKit: k.codigo_pai_kit, pecasPorKit: k.pecas_por_kit,
     soEmKit: k.so_em_kit, reposicaoAuto: k.reposicao_auto, meta: k.meta, versao: k.versao, status: k.status, preco: Number(k.preco),
     transferencia: aberta.get(k.id) ?? null, permalink: permalink.get(k.codigo_pai_kit)?.url ?? null,
   }));
+}
+
+/** Link de cada SKU do kit (combinação × tamanho): o ML publica um item por SKU e só junta no seletor depois de
+ *  minutos; `familias.ml_permalink` guarda só o primeiro. Vínculo retirado não conta; vence o mais recente por SKU. */
+async function fetchLinksKits(kitIds: string[]): Promise<Map<string, LinkCombinacaoKit[]>> {
+  const porKit = new Map<string, LinkCombinacaoKit[]>();
+  if (kitIds.length === 0) return porKit;
+  const { data: skus, error } = await supabase.from('kit_variacao_skus')
+    .select('kit_id, codigo, tamanho, rotulo_cor').in('kit_id', kitIds);
+  if (error) throw error;
+  if (!skus?.length) return porKit;
+  const { data: itens, error: erroItens } = await supabase.from('anuncios_externos_itens')
+    .select('sku, permalink, atualizado_em').in('sku', skus.map((s) => s.codigo)).eq('retirado', false).not('permalink', 'is', null);
+  if (erroItens) throw erroItens;
+  const url = new Map<string, { url: string; em: string }>();
+  for (const i of itens ?? []) {
+    const atual = url.get(i.sku);
+    if (!atual || i.atualizado_em > atual.em) url.set(i.sku, { url: i.permalink as string, em: i.atualizado_em });
+  }
+  for (const s of skus) {
+    const u = url.get(s.codigo)?.url;
+    if (!u) continue;
+    porKit.set(s.kit_id, [...(porKit.get(s.kit_id) ?? []), { rotulo: s.rotulo_cor, tamanho: s.tamanho, url: u }]);
+  }
+  for (const l of porKit.values()) l.sort((a, b) => a.rotulo.localeCompare(b.rotulo) || a.tamanho.localeCompare(b.tamanho, 'pt-BR', { numeric: true }));
+  return porKit;
 }
 
 export interface SkuKitSaldo {

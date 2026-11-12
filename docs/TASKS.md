@@ -11,6 +11,7 @@
 - [x] Revisão geral (Fable 5.2) e pré-merge (Grok 4.7): pronta com correções, aplicadas.
 - [ ] Testar o "Desfazer" em anúncio real.
 - [x] Acelerar o envio das fotos na aplicação: laço de fotos no mesmo lease (ADR-0201 (k); 7 min → ~1–1,5 min por anúncio). Falta deploy do `galeria-aplicar-worker` e teste real (aplicar + desfazer) com OK do Diego; medir CPU/tempo por mensagem nos logs.
+- [x] Aba "Imagens IA" em Publicados: o que está pronto e ainda não foi aplicado, por anúncio e cor (edge `galeria-pendentes`, ADR-0201 (l)). Falta deploy da edge.
 - [ ] Pendências menores: `galeria_reservar_pedido` aceitar só roteiro aprovado; paginação do aviso; texto solto que repete valor de outro texto na conferência.
 
 ## Envio mais caro que a venda (etiqueta cancelada) — 2026-11-11
