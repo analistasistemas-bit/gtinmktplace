@@ -5,25 +5,12 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
-import { agruparPendentes, type AplicacaoLinha, type ImagemLinha } from '../_shared/galeria/pendentes.ts';
+import { agruparPendentes, blocos, paginar, type AplicacaoLinha, type ImagemLinha } from '../_shared/galeria/pendentes.ts';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
 type Admin = ReturnType<typeof adminClient>;
-const PAGINA = 1000;
-
-/** PostgREST corta em 1000 linhas: lê por páginas até esgotar. */
-async function paginar<T>(consulta: (de: number, ate: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>): Promise<T[]> {
-  const saida: T[] = [];
-  for (let de = 0; ; de += PAGINA) {
-    const { data, error } = await consulta(de, de + PAGINA - 1);
-    if (error) throw new Error(error.message);
-    saida.push(...(data ?? []));
-    if ((data ?? []).length < PAGINA) return saida;
-  }
-}
-const blocos = <T>(xs: T[], n = 100) => Array.from({ length: Math.ceil(xs.length / n) }, (_, k) => xs.slice(k * n, (k + 1) * n));
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -37,17 +24,22 @@ Deno.serve(async (req) => {
   if (!(await exigirModulo(admin, orgId, 'imagem_ia'))) return json({ error: 'modulo_desligado' }, 403);
 
   try {
+    // Toda leitura paginada ordena por `id` (ordem única): sem ela `range` repete ou pula linha entre páginas.
     const roteiros = await paginar<{ id: string; anuncio_externo_id: string }>((de, ate) =>
-      admin.from('galeria_roteiros').select('id, anuncio_externo_id').eq('org_id', orgId).eq('status', 'aprovado').range(de, ate));
+      admin.from('galeria_roteiros').select('id, anuncio_externo_id').eq('org_id', orgId).eq('status', 'aprovado').order('id').range(de, ate));
     const roteiroAprovado = new Map(roteiros.map((r) => [r.anuncio_externo_id, r.id]));
     if (roteiroAprovado.size === 0) return json({ pendentes: [] });
 
-    const [imagens, aplicacoes] = await Promise.all([
-      paginar<ImagemLinha>((de, ate) => admin.from('galeria_imagens').select('id, anuncio_externo_id, cor, status, roteiro_id, missao')
-        .eq('org_id', orgId).in('status', ['aprovada', 'gerada']).in('roteiro_id', roteiros.map((r) => r.id)).range(de, ate)),
-      paginar<AplicacaoLinha>((de, ate) => admin.from('galeria_aplicacoes').select('anuncio_externo_id, cor, status, manifesto')
-        .eq('org_id', orgId).in('status', ['aplicada', 'em_andamento']).range(de, ate)),
-    ]);
+    // `in()` vai na URL: roteiros em blocos de 100 (cada bloco paginado).
+    const imagens: ImagemLinha[] = [];
+    for (const b of blocos(roteiros.map((r) => r.id))) {
+      imagens.push(...await paginar<ImagemLinha>((de, ate) => admin.from('galeria_imagens')
+        .select('id, anuncio_externo_id, cor, status, roteiro_id, missao')
+        .eq('org_id', orgId).in('status', ['aprovada', 'gerada']).in('roteiro_id', b).order('id').range(de, ate)));
+    }
+    const aplicacoes = await paginar<AplicacaoLinha & { id: string }>((de, ate) =>
+      admin.from('galeria_aplicacoes').select('id, anuncio_externo_id, cor, status, manifesto')
+        .eq('org_id', orgId).in('status', ['aplicada', 'em_andamento']).order('id').range(de, ate));
     const grupos = agruparPendentes(imagens, aplicacoes, roteiroAprovado);
     if (grupos.length === 0) return json({ pendentes: [] });
 
@@ -56,20 +48,19 @@ Deno.serve(async (req) => {
     const anuncios: Array<{ id: string; codigo_pai: string; item_externo_id: string | null }> = [];
     const filhos: Array<{ anuncio_externo_id: string; item_externo_id: string | null }> = [];
     for (const b of blocos(ids)) {
-      const [{ data: a, error: eA }, { data: f, error: eF }] = await Promise.all([
-        admin.from('anuncios_externos').select('id, codigo_pai, item_externo_id').eq('org_id', orgId).in('id', b),
-        admin.from('anuncios_externos_itens').select('anuncio_externo_id, item_externo_id').eq('org_id', orgId).eq('retirado', false).in('anuncio_externo_id', b),
-      ]);
-      if (eA || eF) throw new Error((eA ?? eF)!.message);
-      anuncios.push(...(a ?? []));
-      filhos.push(...(f ?? []));
+      anuncios.push(...await paginar<{ id: string; codigo_pai: string; item_externo_id: string | null }>((de, ate) =>
+        admin.from('anuncios_externos').select('id, codigo_pai, item_externo_id').eq('org_id', orgId).in('id', b).order('id').range(de, ate)));
+      // Raiz UP tem item_externo_id nulo (ADR-0088): o MLB vem de um filho vivo COM item.
+      filhos.push(...await paginar<{ anuncio_externo_id: string; item_externo_id: string | null }>((de, ate) =>
+        admin.from('anuncios_externos_itens').select('anuncio_externo_id, item_externo_id').eq('org_id', orgId).eq('retirado', false)
+          .not('item_externo_id', 'is', null).in('anuncio_externo_id', b).order('id').range(de, ate)));
     }
     const titulos = new Map<string, string>();
     for (const b of blocos([...new Set(anuncios.map((a) => a.codigo_pai))])) {
-      const { data, error } = await admin.from('familias').select('codigo_pai, titulo_ml, nome_pai')
-        .eq('org_id', orgId).in('codigo_pai', b).not('publicado_em', 'is', null).order('publicado_em', { ascending: false });
-      if (error) throw new Error(error.message);
-      for (const f of (data ?? []) as Array<{ codigo_pai: string; titulo_ml: string | null; nome_pai: string | null }>) {
+      const familias = await paginar<{ codigo_pai: string; titulo_ml: string | null; nome_pai: string | null }>((de, ate) =>
+        admin.from('familias').select('codigo_pai, titulo_ml, nome_pai')
+          .eq('org_id', orgId).in('codigo_pai', b).not('publicado_em', 'is', null).order('publicado_em', { ascending: false }).order('id').range(de, ate));
+      for (const f of familias) {
         if (!titulos.has(f.codigo_pai)) titulos.set(f.codigo_pai, f.titulo_ml ?? f.nome_pai ?? f.codigo_pai);
       }
     }

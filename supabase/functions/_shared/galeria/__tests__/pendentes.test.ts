@@ -1,6 +1,25 @@
 // Lista "imagens prontas, não aplicadas" (aba Imagens IA de Publicados). Pura: sem banco, sem ML.
 import { describe, expect, it } from 'vitest'
-import { agruparPendentes } from '../pendentes'
+import { agruparPendentes, blocos, paginar } from '../pendentes'
+
+describe('paginar e blocos', () => {
+  const tabela = (n: number) => Array.from({ length: n }, (_, i) => ({ id: i }))
+  const consulta = (linhas: Array<{ id: number }>) => async (de: number, ate: number) => ({ data: linhas.slice(de, ate + 1), error: null })
+
+  it.each([0, 999, 1000, 1001, 2500])('lê as %i linhas, na ordem e sem repetir', async (n) => {
+    const r = await paginar(consulta(tabela(n)))
+    expect(r.map((x) => x.id)).toEqual(tabela(n).map((x) => x.id))
+  })
+
+  it('erro de uma página aborta a leitura (nunca devolve lista parcial)', async () => {
+    await expect(paginar(async (de) => (de === 0 ? { data: tabela(1000), error: null } : { data: null, error: { message: 'boom' } }))).rejects.toThrow('boom')
+  })
+
+  it('blocos de 100: 250 ids viram 3 pedaços; lista vazia, nenhum', () => {
+    expect(blocos(tabela(250)).map((b) => b.length)).toEqual([100, 100, 50])
+    expect(blocos([])).toEqual([])
+  })
+})
 
 const img = (id: string, anuncio: string, cor: string, status: string, roteiro = 'r1', missao = 1) =>
   ({ id, anuncio_externo_id: anuncio, cor, status, roteiro_id: roteiro, missao })

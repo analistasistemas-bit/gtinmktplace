@@ -16,6 +16,23 @@ export interface PendenteGaleria {
   aplicando: boolean;
 }
 
+const PAGINA = 1000;
+
+/** PostgREST corta em 1000 linhas: lê por páginas até esgotar. A consulta TEM de ordenar por coluna única. */
+export async function paginar<T>(
+  consulta: (de: number, ate: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+): Promise<T[]> {
+  const saida: T[] = [];
+  for (let de = 0; ; de += PAGINA) {
+    const { data, error } = await consulta(de, de + PAGINA - 1);
+    if (error) throw new Error(error.message);
+    saida.push(...(data ?? []));
+    if ((data ?? []).length < PAGINA) return saida;
+  }
+}
+/** `in()` vai na URL: listas grandes saem em blocos. */
+export const blocos = <T>(xs: T[], n = 100) => Array.from({ length: Math.ceil(xs.length / n) }, (_, k) => xs.slice(k * n, (k + 1) * n));
+
 // Cobre a imagem: aplicada, ou a caminho (em_andamento). Revertida, falha, preparada e reversão não cobrem.
 const COBRE = new Set(['aplicada', 'em_andamento']);
 
