@@ -37,9 +37,13 @@ const PASTA = raiz + 'docs/superpowers/specs/evidencias/galeria-kit/';
 interface Snap { mlb: string; sku: string | null; status: string; sub_status: string[]; price: number; available_quantity: number; pictures: string[] }
 const ml = (token: string) => async (path: string, init?: RequestInit) => {
   const r = await fetch(`https://api.mercadolibre.com${path}`, { ...init, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(init?.headers ?? {}) } });
-  return { status: r.status, json: await r.json().catch(() => ({})) as Record<string, any> };
+  return { status: r.status, json: await r.json().catch(() => ({})) as ItemML };
 };
-async function ler(f: ReturnType<typeof ml>, mlb: string): Promise<{ snap: Snap; bruto: Record<string, any> }> {
+interface ItemML {
+  seller_custom_field?: string | null; status: string; sub_status?: string[]; price: number; available_quantity: number;
+  pictures?: Array<{ id: string }>; variations?: unknown[]; tags?: string[]; catalog_listing?: boolean;
+}
+async function ler(f: ReturnType<typeof ml>, mlb: string): Promise<{ snap: Snap; bruto: ItemML }> {
   const r = await f(`/items/${mlb}`);
   if (r.status !== 200) throw new Error(`GET ${mlb} → ${r.status}`);
   const j = r.json;
@@ -47,7 +51,7 @@ async function ler(f: ReturnType<typeof ml>, mlb: string): Promise<{ snap: Snap;
     bruto: j,
     snap: {
       mlb, sku: j.seller_custom_field ?? null, status: j.status, sub_status: j.sub_status ?? [], price: j.price,
-      available_quantity: j.available_quantity, pictures: (j.pictures ?? []).map((p: { id: string }) => p.id),
+      available_quantity: j.available_quantity, pictures: (j.pictures ?? []).map((p) => p.id),
     },
   };
 }
