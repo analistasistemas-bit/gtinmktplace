@@ -210,6 +210,7 @@ function chain(table: string, state: {
   inserts: { familias: Record<string, unknown>[]; variacoes: Record<string, unknown>[] };
   participantes?: string[];
   lidasKit?: string[];
+  perfis?: string[] | 'erro';
 }) {
   type Filtro = { op: 'eq' | 'in' | 'not' | 'is'; val: unknown };
   const rec: { op?: string; filters: Record<string, Filtro>; payload?: unknown } = { filters: {} };
@@ -265,6 +266,10 @@ function chain(table: string, state: {
       if ('codigo' in f) return { data: [], error: null }; // codigosJaUsados
       return { data: [], error: null };
     }
+    if (table === 'profiles') {
+      if (state.perfis === 'erro') return { data: null, error: { message: 'profiles fora do ar' } } as never;
+      return { data: (state.perfis ?? []).filter(() => f.org_id?.val === 'org-1').map((id) => ({ id })), error: null };
+    }
     if (table === 'lotes') {
       if (rec.op === 'insert') { state.inserts.lotes.push(rec.payload as Record<string, unknown>); return { data: { id: 'lote-1' }, error: null }; }
       return { data: null, error: null };
@@ -292,6 +297,11 @@ function depsFake(opts: {
   // ADR-0200: módulo kit_variacao embutido na leitura da base e SKUs em composição.
   kitModulo?: boolean;
   participantes?: string[];
+  // ADR-0205 Task 5: perfis da org (dono do prefixo do storage) e a capa herdada da base.
+  perfis?: string[] | 'erro';
+  capaBase?: string | null;
+  imagemVariacaoBase?: string | null;
+  userId?: string;
 } = {}) {
   const {
     custo = 10, peso_gramas: pesoGramas = 100, mlItemId = null,
@@ -309,10 +319,12 @@ function depsFake(opts: {
     kit_base_codigo_pai: null, kit_multiplicador: null, ml_item_id: mlItemId, marca: marcaBase,
     ...(opts.faltantesBase ? { atributos_faltantes: opts.faltantesBase } : {}),
     organizations: { modulos_habilitados: opts.kitModulo ? ['estoque', 'kit_variacao'] : ['estoque'] },
+    ...('capaBase' in opts ? { capa_storage_path: opts.capaBase } : {}),
   });
   const baseVariacoes = Array.from({ length: qtdVariacoes }, (_, i) => linhaVariacaoCheia({
     id: `bv${i}`, familia_id: BASE_ID, org_id: 'org-1', user_id: 'user-1',
     codigo: `0000000${i + 1}`, custo, peso_gramas: pesoGramas,
+    ...('imagemVariacaoBase' in opts ? { imagem_path: opts.imagemVariacaoBase } : {}),
   }));
   const existentesFamilias = chavesJaUsadas.map((chave) => {
     const n = Number(chave.replace('uuid-k', ''));
@@ -335,6 +347,7 @@ function depsFake(opts: {
     inserts,
     participantes: opts.participantes ?? [],
     lidasKit: [] as string[],
+    perfis: opts.perfis ?? ['user-1'],
   };
   let proximoCodigo = 20;
 
@@ -366,7 +379,7 @@ function depsFake(opts: {
   const deps: CriarKitDeps = {
     admin: admin as never,
     orgId: 'org-1',
-    userId: 'user-1',
+    userId: opts.userId ?? 'user-1',
     resolverToken: async () => 'fake-token',
     lerSchema: async (_token: string, categoriaId: string) =>
       (schemaPorCategoria[categoriaId]
@@ -1112,5 +1125,93 @@ describe('parseKit / corpoSucesso (index.ts)', () => {
     expect(corpoSucesso({ ok: true, kits: [], publicacaoOk: true, loteId: 'l', avisos: ['a'] }))
       .toEqual({ ok: true, kits: [], publicacaoOk: true, loteId: 'l', avisos: ['a'] });
     expect(corpoSucesso({ ok: true, kits: [], publicacaoOk: true }).avisos).toEqual([]);
+  });
+});
+
+// ADR-0205 Task 5: `imagem_path` vem do cliente e a edge grava com service role — só foto da própria org
+// (mesma regra de `fotoDaOrg`/policy do bucket), exceto a capa herdada da base (nunca bloqueia o kit).
+describe('criarKitsVinculados — imagemPath do cliente (ADR-0205)', () => {
+  const kitCom = (imagemPath: string | null) => ({ ...kitPadrao(2), imagemPath });
+  const criar = (deps: CriarKitDeps, imagemPath: string | null) =>
+    criarKitsVinculados(deps, { familiaBaseId: BASE_ID, kits: [kitCom(imagemPath)] });
+
+  it.each([
+    ['prefixo da org (layout novo)', 'org-1/kit-uuid-k2/foto.jpg'],
+    ['capa gerada por IA', 'org-1/kit-variacao-ia/x.png'],
+    ['upload do operador (usuário da org)', 'user-1/kit-uuid-k2/foto.jpg'],
+  ])('%s passa', async (_nome, path) => {
+    const { deps, inserts } = depsFake();
+    const r = await criar(deps, path);
+    expect(r.ok).toEqual(true);
+    expect(inserts.familias[0].capa_storage_path).toEqual(path);
+  });
+
+  it('upload de outro membro da org passa', async () => {
+    const { deps, inserts } = depsFake({ perfis: ['user-1', 'user-2'] });
+    const r = await criar(deps, 'user-2/kit-uuid-k2/foto.jpg');
+    expect(r.ok).toEqual(true);
+    expect(inserts.familias[0].capa_storage_path).toEqual('user-2/kit-uuid-k2/foto.jpg');
+  });
+
+  it('suporte full (prefixo = org, usuário fora da org) passa', async () => {
+    const { deps, inserts } = depsFake({ userId: 'suporte-9' });
+    const r = await criar(deps, 'org-1/kit-uuid-k2/foto.jpg');
+    expect(r.ok).toEqual(true);
+    expect(inserts.familias[0].capa_storage_path).toEqual('org-1/kit-uuid-k2/foto.jpg');
+  });
+
+  it('capa herdada da base de ex-membro (igual à capa da família) passa', async () => {
+    const { deps, inserts } = depsFake({ capaBase: 'ex-user/lote-1/CAPA_001.jpg' });
+    const r = await criar(deps, 'ex-user/lote-1/CAPA_001.jpg');
+    expect(r.ok).toEqual(true);
+    expect(inserts.familias[0].capa_storage_path).toEqual('ex-user/lote-1/CAPA_001.jpg');
+  });
+
+  it('capa herdada da foto da variação-base (sem capa na família) passa', async () => {
+    const { deps, inserts } = depsFake({ capaBase: null, imagemVariacaoBase: 'ex-user/lote-1/001.jpg' });
+    const r = await criar(deps, 'ex-user/lote-1/001.jpg');
+    expect(r.ok).toEqual(true);
+    expect(inserts.familias[0].capa_storage_path).toEqual('ex-user/lote-1/001.jpg');
+  });
+
+  it.each([
+    ['de outra org', 'org-2/kit/x.jpg'],
+    ['de usuário fora da org', 'user-x/kit/x.jpg'],
+    ['com ..', 'user-1/../org-2/x.jpg'],
+    ['absoluto', '/user-1/kit/x.jpg'],
+    ['URL', 'https://evil.example/x.jpg'],
+    ['com segmento vazio', 'user-1//x.jpg'],
+    ['sem pasta', 'x.jpg'],
+  ])('path %s → recusado (foto_nao_autorizada), nada criado', async (_nome, path) => {
+    const { deps, inserts, admin } = depsFake();
+    const r = await criar(deps, path);
+    expect(r).toMatchObject({ ok: false, motivo: 'foto_nao_autorizada' });
+    expect(r.mensagem).toMatch(/não pertence a esta empresa/);
+    expect(inserts.familias).toHaveLength(0);
+    expect(inserts.lotes).toHaveLength(0);
+    expect(admin.rpc).not.toHaveBeenCalledWith('proximo_codigo_produto', expect.anything());
+  });
+
+  it('falha ao ler os usuários da org → falha_leitura (fail-closed), nada criado', async () => {
+    const { deps, inserts } = depsFake({ perfis: 'erro' });
+    const r = await criar(deps, 'user-1/kit/x.jpg');
+    expect(r).toMatchObject({ ok: false, motivo: 'falha_leitura' });
+    expect(inserts.familias).toHaveLength(0);
+  });
+
+  it.each([[null], ['']])('imagemPath %j segue como antes (sem checagem)', async (path) => {
+    const { deps, inserts } = depsFake({ perfis: 'erro' });
+    const r = await criar(deps, path);
+    expect(r.ok).toEqual(true);
+    expect(inserts.familias[0].capa_storage_path).toEqual(path);
+  });
+
+  it('um kit com foto alheia recusa a submissão inteira', async () => {
+    const { deps, inserts } = depsFake();
+    const r = await criarKitsVinculados(deps, {
+      familiaBaseId: BASE_ID, kits: [kitCom('user-1/k/a.jpg'), { ...kitPadrao(3), imagemPath: 'org-2/k/b.jpg' }],
+    });
+    expect(r).toMatchObject({ ok: false, motivo: 'foto_nao_autorizada' });
+    expect(inserts.familias).toHaveLength(0);
   });
 });

@@ -19,6 +19,8 @@ import { mensagemNcm, ncmsInvalidos } from '../_shared/fiscal/ncm-oficial.ts';
 import { forcarMarcaDoProduto, marcaParaCriacao } from '../_shared/categoria/marca-org.ts';
 import { itemIdDaBase, propostaGaleriaBase } from '../_shared/kit-variacao/galeria-base.ts';
 import type { FotoPeca } from '../_shared/kit-variacao/galeria-pecas.ts';
+// Ciclo de import com criar-kit-variacao (STRIP_*) é seguro: os dois lados só usam o outro dentro de funções.
+import { fotoDaOrg } from '../criar-kit-variacao/processar.ts';
 
 export interface KitSolicitado {
   multiplicador: number;
@@ -430,6 +432,21 @@ export async function criarKitsVinculados(
     // Decisão 10 (escopo v1): kit só a partir de produto sem cor.
     if (variacoesBase.length > 1) return { ok: false, motivo: 'base_multivariacao' };
     const baseVar = variacoesBase[0];
+
+    // ADR-0205: `imagem_path` vem do cliente e é gravado com service role — só foto da própria org (mesma regra
+    // da policy do bucket). A capa herdada da base (`fotoPath` do preview) não passa pela checagem: foto de
+    // quem já saiu da org nunca impede o kit. Vazio/nulo segue como antes.
+    const herdadas = new Set([base.capa_storage_path, baseVar.imagem_path].filter((p): p is string => typeof p === 'string'));
+    const aConferir = kitsFaltando.map((k) => k.imagemPath).filter((p): p is string => !!p && !herdadas.has(p));
+    if (aConferir.length > 0) {
+      const { data: perfis, error: perfisErr } = await admin.from('profiles').select('id').eq('org_id', orgId);
+      if (perfisErr) return { ok: false, motivo: 'falha_leitura', mensagem: `usuários da org: ${perfisErr.message}` };
+      const usuarios = new Set((perfis ?? []).map((p) => p.id as string));
+      const alheia = aConferir.find((p) => !fotoDaOrg(p, orgId, usuarios));
+      if (alheia) {
+        return { ok: false, motivo: 'foto_nao_autorizada', mensagem: `A foto ${alheia} não pertence a esta empresa.` };
+      }
+    }
 
     // Kit de kit não existe.
     if (base.kit_multiplicador != null) return { ok: false, motivo: 'base_e_kit' };
