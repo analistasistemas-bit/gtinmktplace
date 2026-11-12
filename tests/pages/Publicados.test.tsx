@@ -155,6 +155,10 @@ vi.mock('@/hooks/useKitsVariacao', () => ({
   QK_KITS_VARIACAO: ['kits-variacao'],
 }));
 
+const useGaleriaPendentesMock = vi.fn();
+vi.mock('@/hooks/useGaleriaPendentes', () => ({
+  useGaleriaPendentes: (...a: unknown[]) => useGaleriaPendentesMock(...a),
+}));
 vi.mock('@/hooks/useModulosHabilitados', () => ({
   useModulosHabilitados: () => useModulosHabilitadosMock(),
 }));
@@ -276,6 +280,7 @@ describe('Publicados', () => {
     sessionStorage.clear(); // expansão da linha agora persiste em sessionStorage; isolar entre casos
     HTMLElement.prototype.scrollIntoView = vi.fn();
     mockHooksPadrao();
+    useGaleriaPendentesMock.mockReturnValue({ data: [] });
   });
 
   it('abre com "Mês atual" selecionado', () => {

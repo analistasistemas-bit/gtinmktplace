@@ -276,6 +276,10 @@ verify_jwt = true
 [functions.galeria-imagens]
 verify_jwt = true
 
+# ADR-0201: imagens aprovadas ainda não aplicadas (aba "Imagens IA" de Publicados). Só leitura, JWT do operador.
+[functions.galeria-pendentes]
+verify_jwt = true
+
 # ADR-0201 (Galeria da cor por IA): preparar upload e aprovar o arquivo final composto no navegador. JWT do operador.
 [functions.galeria-aprovar]
 verify_jwt = true

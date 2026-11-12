@@ -42,6 +42,8 @@ import { filtrarPublicados, ordenarPublicados, rotuloTipo, fiscalPendente, agreg
 import { CanalTabs } from '@/components/canal-tabs';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ListaOperacoes } from '@/components/operacoes/lista-operacoes';
+import { ListaPendentesGaleria } from '@/components/galeria/lista-pendentes';
+import { useGaleriaPendentes } from '@/hooks/useGaleriaPendentes';
 import { CanalBadge } from '@/components/canal-badge';
 import { MovimentosEstoque } from '@/components/movimentos-estoque';
 import { CatalogoEmRisco } from '@/components/catalogo-em-risco';
@@ -1160,10 +1162,16 @@ function ThOrdenavel({ coluna, label, ord, onOrdenar, className }: ThOrdenavelPr
 // próprio: a aba vive na URL (?aba=operacoes), como em Promoções. /operacoes redireciona para cá.
 export default function Publicados() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const aba = searchParams.get('aba') === 'operacoes' ? 'operacoes' : 'anuncios';
+  // Aba "Imagens IA" (galeria da cor): só com o módulo `imagem_ia`; mostra o que está pronto e ainda não foi aplicado.
+  const { data: modulos } = useModulosHabilitados();
+  const temImagemIA = !!modulos?.includes('imagem_ia');
+  const pendentes = useGaleriaPendentes(temImagemIA);
+  const prontas = (pendentes.data ?? []).reduce((s, p) => s + p.prontas, 0);
+  const param = searchParams.get('aba');
+  const aba = param === 'operacoes' ? 'operacoes' : param === 'imagens' && temImagemIA ? 'imagens' : 'anuncios';
   const setAba = (v: string) => setSearchParams((prev) => {
     const p = new URLSearchParams(prev);
-    if (v === 'operacoes') p.set('aba', v); else p.delete('aba');
+    if (v === 'operacoes' || v === 'imagens') p.set('aba', v); else p.delete('aba');
     return p;
   }, { replace: true });
   const abas = (
@@ -1171,9 +1179,23 @@ export default function Publicados() {
       <TabsList>
         <TabsTrigger value="anuncios">Anúncios</TabsTrigger>
         <TabsTrigger value="operacoes">Operações</TabsTrigger>
+        {temImagemIA && (
+          <TabsTrigger value="imagens">
+            Imagens IA{prontas > 0 && <span className="ml-1.5 rounded-full bg-primary/15 px-1.5 text-xs tabular-nums text-primary">{prontas}</span>}
+          </TabsTrigger>
+        )}
       </TabsList>
     </Tabs>
   );
+  if (aba === 'imagens') {
+    return (
+      <div className="p-4 sm:p-6">
+        <PageHeader title="Publicados" />
+        {abas}
+        <ListaPendentesGaleria />
+      </div>
+    );
+  }
   if (aba === 'operacoes') {
     return (
       <div className="p-4 sm:p-6">

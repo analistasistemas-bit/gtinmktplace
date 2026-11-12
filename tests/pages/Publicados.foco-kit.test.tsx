@@ -143,6 +143,7 @@ vi.mock('@/hooks/useKitsVariacao', () => ({
   QK_KITS_VARIACAO: ['kits-variacao'],
 }));
 
+vi.mock('@/hooks/useGaleriaPendentes', () => ({ useGaleriaPendentes: () => ({ data: [] }) }));
 vi.mock('@/hooks/useModulosHabilitados', () => ({
   useModulosHabilitados: () => useModulosHabilitadosMock(),
 }));

@@ -49,6 +49,17 @@ export const gerarImagens = (mlItemId: string, p: { pedidoId: string; cores: str
     ...(p.confirmarTroca ? { confirmar_troca: true } : {}),
   });
 
+// Aba "Imagens IA" de Publicados: o que está pronto e ainda não foi aplicado (edge `galeria-pendentes`, só leitura).
+export interface PendenteGaleria {
+  ml_item_id: string; titulo: string; cor: string;
+  /** Aprovadas que nenhuma aplicação ativa cobre. */
+  prontas: number;
+  /** Geradas esperando aprovação. */
+  aguardando_aprovacao: number;
+  aplicando: boolean;
+}
+export const listarPendentes = () => chamar<{ pendentes: PendenteGaleria[] }>('galeria-pendentes', {});
+
 // Task 12: arquivo final composto no navegador → URL de upload assinada (upsert:false) → aprovar (`galeria-aprovar`).
 export const prepararUploadFinal = (mlItemId: string, imagemId: string) =>
   chamar<{ path: string; token: string; signed_url: string }>('galeria-aprovar', { acao: 'preparar_upload', ml_item_id: mlItemId, imagem_id: imagemId });

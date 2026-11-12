@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import Publicados from '@/pages/Publicados';
@@ -137,6 +137,10 @@ vi.mock('@/hooks/useKitsVariacao', () => ({
   QK_KITS_VARIACAO: ['kits-variacao'],
 }));
 
+const pendentesGaleria = vi.hoisted(() => ({ lista: [] as unknown[] }));
+vi.mock('@/hooks/useGaleriaPendentes', () => ({
+  useGaleriaPendentes: () => ({ data: pendentesGaleria.lista, isPending: false, isError: false, refetch: vi.fn() }),
+}));
 vi.mock('@/hooks/useModulosHabilitados', () => ({
   useModulosHabilitados: () => useModulosHabilitadosMock(),
 }));
@@ -430,5 +434,33 @@ describe('Publicados — aba Operações', () => {
     await user.click(screen.getByRole('tab', { name: 'Anúncios' }));
     expect(screen.getByTestId('location-search')).toBeEmptyDOMElement();
     expect(screen.queryByTestId('lista-operacoes')).not.toBeInTheDocument();
+  });
+
+  describe('aba Imagens IA (galeria da cor)', () => {
+    const pend = [
+      { ml_item_id: 'MLB1', titulo: 'Fita Velcro', cor: 'Branco', prontas: 7, aguardando_aprovacao: 0, aplicando: false },
+      { ml_item_id: 'MLB2', titulo: 'Fio Amigurumi', cor: 'Netuno', prontas: 3, aguardando_aprovacao: 1, aplicando: false },
+    ];
+    afterEach(() => { pendentesGaleria.lista = []; });
+
+    it('sem o módulo imagem_ia a aba não existe, nem por URL', () => {
+      useModulosHabilitadosMock.mockReturnValue({ data: ['estoque'] });
+      render(<MemoryRouter initialEntries={['/publicados?aba=imagens']}><Publicados /></MemoryRouter>);
+      expect(screen.queryByRole('tab', { name: /Imagens IA/ })).not.toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: 'Anúncios' })).toHaveAttribute('aria-selected', 'true');
+    });
+
+    it('com o módulo, a aba mostra o total de prontas e abre a lista do que falta aplicar', async () => {
+      useModulosHabilitadosMock.mockReturnValue({ data: ['imagem_ia'] });
+      pendentesGaleria.lista = pend;
+      const user = (await import('@testing-library/user-event')).default.setup();
+      render(<MemoryRouter initialEntries={['/publicados']}><Publicados /><Local /></MemoryRouter>);
+      const aba = screen.getByRole('tab', { name: /Imagens IA/ });
+      expect(aba).toHaveTextContent('10');   // 7 + 3 prontas
+      await user.click(aba);
+      expect(screen.getByTestId('location-search')).toHaveTextContent('?aba=imagens');
+      expect(screen.getByText('Fita Velcro')).toBeInTheDocument();
+      expect(screen.getByText('Fio Amigurumi')).toBeInTheDocument();
+    });
   });
 });
