@@ -18,6 +18,8 @@ import { removerCorDoSlot } from '../_shared/cor/sem-atributo.ts';
 import { kitLigado } from '../_shared/kit-variacao/politica.ts';
 import type { OfertaUP } from '../_shared/kit-variacao/ml-oferta.ts';
 import { normalizarCombinacao, rotuloCombinacao } from '../_shared/kit-variacao/combinacoes.ts';
+import type { FotoPeca } from '../_shared/kit-variacao/galeria-pecas.ts';
+import type { PecaOrigem } from '../_shared/kit-variacao/galeria-leitura.ts';
 import { STRIP_FAMILIA_KIT, STRIP_VARIACAO_KIT } from '../criar-kit-vinculado/processar.ts';
 
 export interface CriarKitVariacaoInput {
@@ -30,6 +32,11 @@ export interface CriarKitVariacaoInput {
   descricao: string;
   /** Caminho no storage por rótulo da combinação (`rotuloCombinacao`). */
   fotos: Record<string, string>;
+  /**
+   * ADR-0200 (adendo 12/11): ids das fotos das peças que o operador manteve, por rótulo. Ausente ou vazio = só a foto
+   * do kit. O servidor recalcula a proposta; isto só remove (reordenar ou id fora da proposta é descartado).
+   */
+  galeria?: Record<string, string[]>;
   soEmKit: boolean;
   meta: number;
   chaveCadastro: string;
@@ -66,7 +73,7 @@ export interface CadastroParcial {
   familiaId: string;
   loteId: string;
   codigoPai: string;
-  variacoes: Array<{ codigo: string; cor: string | null; tamanho: string | null }>;
+  variacoes: Array<{ codigo: string; cor: string | null; tamanho: string | null; galeria?: FotoPeca[] }>;
 }
 
 export interface DepsCriarKitVariacao {
@@ -89,6 +96,11 @@ export interface DepsCriarKitVariacao {
   reservarCodigos(qtd: number): Promise<{ codigoPai: string; codigos: string[] }>;
   /** Sobe a foto ao ML e devolve o `picture_id`; lança se o caminho não existe ou o ML recusa. */
   subirFoto(path: string): Promise<string>;
+  /**
+   * ADR-0200 (adendo 12/11): proposta de galeria da combinação (fotos das peças lidas no ML, só leitura; a categoria dá o
+   * limite). Ausente = a edge não lê fotos das peças e a galeria é ignorada. Lançar ou `indisponivel` nunca recusa o kit.
+   */
+  lerGaleria?(pecas: PecaOrigem[], categoriaId: string): Promise<{ fotos: FotoPeca[]; avisos: string[]; indisponivel: boolean }>;
   gravar: {
     lote(): Promise<string>;
     familia(linha: Linha): Promise<string>;
@@ -155,7 +167,7 @@ export interface DepsAdicao {
 export interface SkuKitCriado { codigo: string; rotulo: string; tamanho: string; quantidade: number }
 
 export type ResultadoCriarKitVariacao =
-  | { ok: true; kitId: string; transferenciaId: string; existente: boolean; codigoPai?: string; skus?: SkuKitCriado[]; versao?: number }
+  | { ok: true; kitId: string; transferenciaId: string; existente: boolean; codigoPai?: string; skus?: SkuKitCriado[]; versao?: number; avisos?: string[] }
   | { ok: false; motivo: string; mensagem?: string };
 
 const recusa = (motivo: string, mensagem?: string): ResultadoCriarKitVariacao => ({ ok: false, motivo, mensagem });
@@ -226,6 +238,13 @@ export function fotoDaOrg(path: string, orgId: string, usuariosDaOrg: Set<string
 export const MSG_PEDIDO_DIFERENTE = 'Pedido diferente para a mesma chave: este cadastro já foi iniciado com outros dados. '
   + 'Recarregue a tela e confira o kit antes de criar de novo.';
 
+/** Galeria no JSON canônico do hash: `[]` sem galeria (nada é acrescentado), senão `[[rótulo, ids…]…]` ordenado. */
+export function galeriaCanonica(galeria: Record<string, string[]> | undefined): Array<Array<[string, string[]]>> {
+  const itens = Object.entries(galeria ?? {}).filter(([, ids]) => Array.isArray(ids) && ids.length > 0)
+    .sort(([a], [b]) => a.localeCompare(b)) as Array<[string, string[]]>;
+  return itens.length > 0 ? [itens] : [];
+}
+
 /**
  * Hash do pedido (SHA-256 de JSON canônico): base, cores, peças, preço, combinações com quantidade (como conjunto),
  * título, descrição, fotos, meta, tipo de anúncio e "Vender só em kit".
@@ -238,6 +257,8 @@ export async function pedidoHash(
     combinacoes.map((c) => [c.rotulo, c.tamanho, c.quantidade]).sort((a, b) => String(a).localeCompare(String(b))),
     input.titulo.trim(), input.descricao, Object.entries(input.fotos ?? {}).sort(([a], [b]) => a.localeCompare(b)),
     input.meta, input.listingTypeId ?? 'gold_special', input.soEmKit,
+    // Só entra quando há galeria: pedido sem ela mantém o hash de antes (retomada pós-deploy não vira pedido_diferente).
+    ...galeriaCanonica(input.galeria),
   ]);
   const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonico)));
   return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -333,7 +354,7 @@ export function montarFamiliaKitVariacao(
 /** SKU de kit: custo e peso somados das peças, altura × N (ADR-0151), estoque 0 até o crédito da saga. */
 export function montarVariacaoKitVariacao(
   combinacao: Combinacao,
-  ctx: { familiaId: string; codigo: string; preco: number; foto: string; pictureId: string; pecas: number },
+  ctx: { familiaId: string; codigo: string; preco: number; foto: string; pictureId: string; pecas: number; galeria?: FotoPeca[] },
 ): Linha {
   const [primeira] = combinacao.componentes;
   const clone = Object.fromEntries(Object.entries(primeira).filter(([k]) => !(STRIP_VARIACAO_KIT as readonly string[]).includes(k)));
@@ -350,6 +371,7 @@ export function montarVariacaoKitVariacao(
     largura_cm: num(primeira.largura_cm), comprimento_cm: num(primeira.comprimento_cm),
     preco: ctx.preco, preco_publicacao: ctx.preco, preco_editado_pelo_operador: true, preco_publicado_ml: null,
     imagem_path: ctx.foto, ml_picture_id: ctx.pictureId, ml_variation_id: null,
+    galeria_ml_fotos: ctx.galeria ?? [],
     catalog_product_id: null, catalog_listing_id: null, catalog_status: 'pendente', catalog_erro: null,
     excluida_da_publicacao: false, atacado: null,
   };
@@ -539,6 +561,10 @@ export async function criarKitVariacao(
     if (sobra) return recusa('cadastro_parcial_divergente', `A tentativa anterior gravou ${sobra.codigo}, fora deste pedido. Use outra chave.`);
   }
   const existentes = new Map((parcial?.variacoes ?? []).map((v) => [`${v.cor}#${v.tamanho}`, v.codigo]));
+  // Retomada: combinação que já tem tamanho gravado mantém a lista dele (todos os tamanhos da combinação, mesma galeria).
+  const jaGravadas = new Map<string, FotoPeca[]>();
+  for (const v of parcial?.variacoes ?? []) if (v.cor && v.galeria && !jaGravadas.has(v.cor)) jaGravadas.set(v.cor, v.galeria);
+  const galerias = await resolverGalerias(deps, combinacoes, input.galeria, base, familia.categoria_ml_id as string, jaGravadas);
   const faltam = combinacoes.filter((c) => !existentes.has(`${c.rotulo}#${c.tamanho}`));
   const reserva = parcial && faltam.length === 0 ? null
     : await deps.reservarCodigos(faltam.length + 1);   // 1 PAI + N; na retomada o PAI reservado sobra
@@ -562,6 +588,7 @@ export async function criarKitVariacao(
       const finais = await deps.gravar.variacoes(familiaId, indices.map((i) => montarVariacaoKitVariacao(combinacoes[i], {
         familiaId: familiaId!, codigo: codigos[i], preco: input.preco, foto: input.fotos[combinacoes[i].rotulo],
         pictureId: pictureIds.get(input.fotos[combinacoes[i].rotulo])!, pecas: input.pecasPorKit,
+        galeria: galerias.porRotulo.get(combinacoes[i].rotulo),
       })));
       if (finais.length !== indices.length) throw new Error('variações do kit: resposta inesperada');
       indices.forEach((i, k) => { codigos[i] = finais[k]; });
@@ -612,7 +639,42 @@ export async function criarKitVariacao(
   return {
     ok: true, kitId: r.kit_id, transferenciaId: r.transferencia_id, existente: !!r.existente, codigoPai,
     skus: combinacoes.map((c, i) => ({ codigo: codigos[i], rotulo: c.rotulo, tamanho: c.tamanho, quantidade: c.quantidade })),
+    ...(galerias.avisos.length > 0 ? { avisos: galerias.avisos } : {}),
   };
+}
+
+/**
+ * ADR-0200 (adendo 12/11): galeria por rótulo. O servidor recalcula a proposta com a peça do 1º tamanho de cada cor e
+ * grava `proposta ∩ pedido` na ordem da proposta (o cliente só remove). Nunca recusa o kit: qualquer falha vira aviso e
+ * a combinação sai só com a foto do kit. Combinação com irmã já gravada (retomada, tamanho novo) reusa a lista dela.
+ */
+async function resolverGalerias(
+  deps: DepsCriarKitVariacao, combinacoes: Combinacao[], pedido: Record<string, string[]> | undefined, base: BaseKit,
+  categoriaId: string, jaGravadas: Map<string, FotoPeca[]>,
+): Promise<{ porRotulo: Map<string, FotoPeca[]>; avisos: string[] }> {
+  const porRotulo = new Map<string, FotoPeca[]>();
+  const avisos: string[] = [];
+  for (const rotulo of new Set(combinacoes.map((c) => c.rotulo))) {
+    const gravada = jaGravadas.get(rotulo);
+    if (gravada) { porRotulo.set(rotulo, gravada); continue; }
+    const ids = pedido?.[rotulo];
+    if (!Array.isArray(ids) || ids.length === 0 || !deps.lerGaleria) continue;
+    const c = combinacoes.find((x) => x.rotulo === rotulo)!;
+    const pecas = c.cores.map((cor, i) => ({
+      cor, itemId: base.vinculos.find((v) => v.sku === texto(c.componentes[i]?.codigo))?.item_externo_id ?? '',
+    }));
+    if (pecas.some((p) => !p.itemId)) { avisos.push(`${rotulo}: peça sem anúncio no Mercado Livre; só a foto do kit.`); continue; }
+    try {
+      const proposta = await deps.lerGaleria(pecas, categoriaId);
+      avisos.push(...proposta.avisos);
+      if (proposta.indisponivel) continue;
+      const mantidas = new Set(ids);
+      porRotulo.set(rotulo, proposta.fotos.filter((f) => mantidas.has(f.id)));
+    } catch (e) {
+      avisos.push(`${rotulo}: fotos das peças indisponíveis (${e instanceof Error ? e.message : String(e)}); só a foto do kit.`);
+    }
+  }
+  return { porRotulo, avisos };
 }
 
 const conjunto = (cores: string[]) => [...cores].map(texto).sort().join('|');

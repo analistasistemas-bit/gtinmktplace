@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  adicionarAoKit, criarKitVariacao, type AdicionarKitInput, type DepsAdicao, type BaseKit, type CriarKitVariacaoInput, type DepsCriarKitVariacao, type ResultadoRpcKit,
+  adicionarAoKit, criarKitVariacao, pedidoHash, type AdicionarKitInput, type DepsAdicao, type BaseKit, type CriarKitVariacaoInput, type DepsCriarKitVariacao, type ResultadoRpcKit,
 } from '../processar.ts';
 import type { OfertaUP } from '../../_shared/kit-variacao/ml-oferta.ts';
 import type { AtributoSchema } from '../../_shared/categoria/schema.ts';
@@ -75,7 +75,10 @@ function cenario() {
       return {
         pedidoHash: (f.kit_variacao_pedido as string | null) ?? null,
         familiaId: 'FAM-KIT', loteId: f.lote_id as string, codigoPai: f.codigo_pai as string,
-        variacoes: s.variacoesGravadas.map((v) => ({ codigo: v.codigo as string, cor: v.cor as string, tamanho: v.tamanho as string })),
+        variacoes: s.variacoesGravadas.map((v) => ({
+          codigo: v.codigo as string, cor: v.cor as string, tamanho: v.tamanho as string,
+          galeria: v.galeria_ml_fotos as Array<{ id: string; item: string }>,
+        })),
       };
     },
     async lerOferta(upId, itemIds) {
@@ -650,5 +653,101 @@ describe('adicionarAoKit (Montar mais com SKU novo)', () => {
     const c = cenarioAdicao();
     expect(await adicionarAoKit(c.deps, montarMais({ quantidades: [{ cores: ['Preto', 'Branco', 'Marrom'], tamanho: 'M', quantidade: 1 }] })))
       .toMatchObject({ ok: false, motivo: 'combinacao_invalida' });
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// ADR-0200 (adendo 12/11): galeria das peças no anúncio do kit. O servidor recalcula a proposta; o cliente só remove.
+
+const FG = (id: string, item: string) => ({ id, item });
+const PROPOSTA = [FG('P2', 'MLB-P-M'), FG('B3', 'MLB-B-M'), FG('P4', 'MLB-P-M')];
+function comGaleria(c: ReturnType<typeof cenario>, proposta = PROPOSTA) {
+  const chamadas: Array<{ pecas: Array<{ cor: string; itemId: string }>; categoria: string }> = [];
+  c.deps.lerGaleria = async (pecas, categoria) => { chamadas.push({ pecas, categoria }); return { fotos: proposta, avisos: [], indisponivel: false }; };
+  return chamadas;
+}
+const galeriaGravada = (c: ReturnType<typeof cenario>) => c.s.variacoesGravadas.map((v) => [v.tamanho, v.galeria_ml_fotos]);
+
+describe('criarKitVariacao com galeria das peças', () => {
+  it('sem galeria no pedido: não lê o ML, grava lista vazia e o hash é o de sempre', async () => {
+    const c = cenario();
+    const chamadas = comGaleria(c);
+    const r = await criarKitVariacao(c.deps, pedido());
+    expect(r).toMatchObject({ ok: true });
+    expect(chamadas).toEqual([]);
+    expect(galeriaGravada(c)).toEqual([['M', []], ['G', []]]);
+    const combos = [{ rotulo: 'Preto e Branco', tamanho: 'M', quantidade: 2 }, { rotulo: 'Preto e Branco', tamanho: 'G', quantidade: 1 }];
+    expect(await pedidoHash(pedido(), combos)).toBe('9bc14f63e9b7d0b1b1b132eea3141556d935cd5d3d1a4ac2ecba35261d2aae06');   // medido antes da galeria: retomada pós-deploy não vira pedido_diferente
+  });
+
+  it('galeria ligada: lê a peça de cada cor (1º tamanho) com a categoria e grava a mesma lista em todos os tamanhos', async () => {
+    const c = cenario();
+    const chamadas = comGaleria(c);
+    const r = await criarKitVariacao(c.deps, pedido({ galeria: { 'Preto e Branco': ['P2', 'B3', 'P4'] } }));
+    expect(r).toMatchObject({ ok: true });
+    expect(chamadas).toEqual([{ pecas: [{ cor: 'Preto', itemId: 'MLB-P-M' }, { cor: 'Branco', itemId: 'MLB-B-M' }], categoria: 'MLB3112' }]);
+    expect(galeriaGravada(c)).toEqual([['M', PROPOSTA], ['G', PROPOSTA]]);
+  });
+
+  it('o cliente só remove: reordenar, mandar id da imagem 1 ou id desconhecido é descartado, na ordem da proposta', async () => {
+    const c = cenario();
+    comGaleria(c);
+    const r = await criarKitVariacao(c.deps, pedido({ galeria: { 'Preto e Branco': ['P4', 'P1', 'X9', 'P2'] } }));
+    expect(r).toMatchObject({ ok: true });
+    expect(galeriaGravada(c)[0][1]).toEqual([FG('P2', 'MLB-P-M'), FG('P4', 'MLB-P-M')]);
+  });
+
+  it('operador removeu todas as fotos: lista vazia, sem erro', async () => {
+    const c = cenario();
+    comGaleria(c);
+    await criarKitVariacao(c.deps, pedido({ galeria: { 'Preto e Branco': [] } }));
+    expect(galeriaGravada(c)).toEqual([['M', []], ['G', []]]);
+  });
+
+  it('o hash do pedido muda com a galeria e é estável com a mesma galeria', async () => {
+    const combos = [{ rotulo: 'Preto e Branco', tamanho: 'M', quantidade: 2 }];
+    const a = await pedidoHash(pedido({ galeria: { 'Preto e Branco': ['P2', 'B3'] } }), combos);
+    expect(await pedidoHash(pedido({ galeria: { 'Preto e Branco': ['P2', 'B3'] } }), combos)).toBe(a);
+    expect(await pedidoHash(pedido({ galeria: { 'Preto e Branco': ['P2'] } }), combos)).not.toBe(a);
+    expect(a).not.toBe(await pedidoHash(pedido(), combos));
+  });
+
+  it('leitura das peças indisponível: o kit é criado só com a foto dele e volta o aviso', async () => {
+    const c = cenario();
+    c.deps.lerGaleria = async () => ({ fotos: [], avisos: ['Fotos das peças indisponíveis (ML /items/bulk 500).'], indisponivel: true });
+    const r = await criarKitVariacao(c.deps, pedido({ galeria: { 'Preto e Branco': ['P2'] } }));
+    expect(r).toMatchObject({ ok: true });
+    expect(galeriaGravada(c)).toEqual([['M', []], ['G', []]]);
+    expect((r as { avisos?: string[] }).avisos?.join(' ')).toMatch(/indisponíveis/);
+  });
+
+  it('a galeria nunca recusa o kit: a leitura lançando vira aviso', async () => {
+    const c = cenario();
+    c.deps.lerGaleria = async () => { throw new Error('boom'); };
+    const r = await criarKitVariacao(c.deps, pedido({ galeria: { 'Preto e Branco': ['P2'] } }));
+    expect(r).toMatchObject({ ok: true });
+    expect(galeriaGravada(c)[0][1]).toEqual([]);
+    expect((r as { avisos?: string[] }).avisos?.length).toBe(1);
+  });
+
+  it('sem a porta lerGaleria (edge sem a leitura) ignora a galeria sem lançar', async () => {
+    const c = cenario();
+    const r = await criarKitVariacao(c.deps, pedido({ galeria: { 'Preto e Branco': ['P2'] } }));
+    expect(r).toMatchObject({ ok: true });
+    expect(galeriaGravada(c)[0][1]).toEqual([]);
+  });
+
+  it('retomada: tamanho que falta reusa a lista da irmã já gravada, mesmo que a leitura agora devolva outra', async () => {
+    const c = cenario();
+    comGaleria(c);
+    const p = pedido({ galeria: { 'Preto e Branco': ['P2', 'B3', 'P4'] } });
+    await criarKitVariacao(c.deps, p);
+    const m = c.s.variacoesGravadas[0];
+    c.s.variacoesGravadas = [m];       // 1ª tentativa caiu: só o M ficou gravado, sem kit
+    c.s.kits = []; c.s.sagas = [];
+    comGaleria(c, [FG('P2', 'MLB-P-M'), FG('B3', 'MLB-B-M'), FG('P9', 'MLB-P-M')]);   // o ML mudou
+    await criarKitVariacao(c.deps, p);
+    const g = c.s.variacoesGravadas.find((v) => v.tamanho === 'G')!;
+    expect(g.galeria_ml_fotos).toEqual(m.galeria_ml_fotos);
   });
 });
