@@ -8,6 +8,7 @@ import { storageOwnerForUpload } from '@/hooks/useUploadLote';
 import { buildStoragePath, uploadFile } from '@/lib/storage';
 import { quarentenaAte } from '@/lib/kit-transferencia-etapa';
 import type { PrecoPeca, PromocaoFutura } from '@/lib/kit-preco-avulso';
+import type { GaleriaProposta } from '@/lib/kit-galeria';
 
 /** Preço avulso das peças da base, lido do ML na hora (edge `preco-avulso-kit`, só leitura). Lança em falha:
  *  a tela mostra "preço avulso indisponível" sem bloquear. */
@@ -40,10 +41,21 @@ async function invocar<T>(nome: string, body: Record<string, unknown>): Promise<
   return { ok: true, ...(data as T) };
 }
 
+/** Proposta de galeria com as fotos das peças, por rótulo de combinação (edge `fotos-pecas-kit`, só leitura). Lança em
+ *  falha de rede: a tela mostra "fotos das peças indisponíveis" e segue só com a foto do kit. */
+export async function fetchGaleriasPecasKit(
+  familiaBaseId: string, combinacoes: Array<{ rotulo: string; cores: string[] }>,
+): Promise<Record<string, GaleriaProposta>> {
+  const { data, error } = await supabase.functions.invoke('fotos-pecas-kit', { body: { familia_base_id: familiaBaseId, combinacoes } });
+  if (error) throw error;
+  return (data as { galerias?: Record<string, GaleriaProposta> } | null)?.galerias ?? {};
+}
+
 export function criarKitVariacaoEdge(i: CriarKitVariacaoInput) {
-  return invocar<{ kit_id?: string; aviso?: string }>('criar-kit-variacao', {
+  return invocar<{ kit_id?: string; aviso?: string; avisos?: string[] }>('criar-kit-variacao', {
     familia_base_id: i.familiaBaseId, cores: i.cores, pecas_por_kit: i.pecasPorKit, preco: i.preco,
     quantidades: i.quantidades, titulo: i.titulo, descricao: i.descricao, fotos: i.fotos,
+    ...(i.galeria ? { galeria: i.galeria } : {}),
     so_em_kit: i.soEmKit, meta: i.meta, chave_cadastro: i.chaveCadastro,
     ...(i.previaId ? { previa_id: i.previaId } : {}),
     ...(i.listingTypeId ? { listing_type_id: i.listingTypeId } : {}),
@@ -53,10 +65,11 @@ export function criarKitVariacaoEdge(i: CriarKitVariacaoInput) {
 /** Montar mais (Task 13, ajuste): o que já é SKU do kit só aumenta; combinação × tamanho novo vira SKU no mesmo kit. */
 export function adicionarAoKitEdge(p: {
   kitId: string; versao: number; quantidades: { cores: string[]; tamanho: string; quantidade: number }[];
-  fotos: Record<string, string>; chaveCadastro: string;
+  fotos: Record<string, string>; chaveCadastro: string; galeria?: Record<string, string[]>;
 }) {
-  return invocar<{ transferenciaId?: string; aviso?: string; versao?: number }>('criar-kit-variacao', {
+  return invocar<{ transferenciaId?: string; aviso?: string; avisos?: string[]; versao?: number }>('criar-kit-variacao', {
     kit_id: p.kitId, versao: p.versao, quantidades: p.quantidades, fotos: p.fotos, chave_cadastro: p.chaveCadastro,
+    ...(p.galeria ? { galeria: p.galeria } : {}),
   });
 }
 

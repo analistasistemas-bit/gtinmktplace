@@ -14,6 +14,8 @@ export interface CriarKitVariacaoInput {
   titulo: string;
   descricao: string;
   fotos: Record<string, string>;
+  /** Ids das fotos das peças mantidos por combinação (ADR-0200, adendo 12/11). Ausente ou vazio = só a foto do kit. */
+  galeria?: Record<string, string[]>;
   soEmKit: boolean;
   meta: number;
   /** Idempotência: o mesmo clique repetido devolve o kit já criado. */
