@@ -1231,9 +1231,9 @@ export type Database = {
         Relationships: []
       }
       kit_variacao_imagens: {
-        Row: { atualizado_em: string; cores: string[]; criado_em: string; criado_por: string | null; custo_usd: number | null; familia_base_id: string; id: string; modelo: string; org_id: string; request_id: string; rotulo: string; status: string; storage_path: string | null }
-        Insert: { atualizado_em?: string; cores: string[]; criado_em?: string; criado_por?: string | null; custo_usd?: number | null; familia_base_id: string; id?: string; modelo: string; org_id: string; request_id: string; rotulo: string; status?: string; storage_path?: string | null }
-        Update: { atualizado_em?: string; cores?: string[]; criado_em?: string; criado_por?: string | null; custo_usd?: number | null; familia_base_id?: string; id?: string; modelo?: string; org_id?: string; request_id?: string; rotulo?: string; status?: string; storage_path?: string | null }
+        Row: { atualizado_em: string; cores: string[] | null; criado_em: string; criado_por: string | null; custo_usd: number | null; familia_base_id: string; id: string; modelo: string; n: number | null; org_id: string; request_id: string; rotulo: string | null; status: string; storage_path: string | null }
+        Insert: { atualizado_em?: string; cores?: string[] | null; criado_em?: string; criado_por?: string | null; custo_usd?: number | null; familia_base_id: string; id?: string; modelo: string; n?: number | null; org_id: string; request_id: string; rotulo?: string | null; status?: string; storage_path?: string | null }
+        Update: { atualizado_em?: string; cores?: string[] | null; criado_em?: string; criado_por?: string | null; custo_usd?: number | null; familia_base_id?: string; id?: string; modelo?: string; n?: number | null; org_id?: string; request_id?: string; rotulo?: string | null; status?: string; storage_path?: string | null }
         Relationships: []
       }
       platform_image_deliveries: {
