@@ -44,21 +44,9 @@ Após mudança estrutural relevante, atualizar o Graphify (ver skill `graphify-u
 
 ---
 
-# Roteamento de modelos (economia de tokens)
+# Roteamento de modelos
 
-A sessão principal roda no Opus. Delegar execução a subagents com `model` explícito conforme a demanda:
-
-| Demanda | Modelo | Exemplos |
-|---|---|---|
-| Planejamento, arquitetura, ADR, debug difícil, revisão de segurança | opus | novo épico, decisão de schema, incidente em produção |
-| Implementação padrão, refactor, testes, edge functions | sonnet | feature já planejada, correção com causa conhecida |
-| Tarefa mecânica auto-verificável (a entrada determina a saída) | haiku | localizar arquivo/call sites, extrair lista, rename, reformatar, transcrever texto já verificado |
-
-Regras:
-- Nunca rebaixar modelo em: migrations, RLS, publicação em marketplace, código financeiro.
-- Tarefa "simples" que revelar complexidade → escalar para o modelo acima e avisar.
-- Planejamento fica no loop principal (Opus); só a execução desce de modelo.
-- Haiku só quando a saída é auto-verificável e você não vai reconferir. NUNCA para conteúdo factual (números, IDs, caminhos, ADR/docs) — ele preenche lacunas com dado plausível-porém-errado. Doc factual → Sonnet, ou entregue o texto já verificado para o Haiku só transcrever.
+Regras em `~/.claude/CLAUDE.md` §0.1 (fonte única). Específico do PubliAI: publicação em marketplace também é caminho crítico.
 
 ---
 
