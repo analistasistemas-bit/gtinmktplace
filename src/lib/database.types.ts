@@ -5192,6 +5192,7 @@ export type Database = {
           excluida_da_publicacao: boolean
           exibir_com_desconto: boolean | null
           familia_id: string
+          galeria_ml_fotos: Json
           gtin: string | null
           id: string
           imagem_path: string | null
@@ -5230,6 +5231,7 @@ export type Database = {
           excluida_da_publicacao?: boolean
           exibir_com_desconto?: boolean | null
           familia_id: string
+          galeria_ml_fotos?: Json
           gtin?: string | null
           id?: string
           imagem_path?: string | null
@@ -5268,6 +5270,7 @@ export type Database = {
           excluida_da_publicacao?: boolean
           exibir_com_desconto?: boolean | null
           familia_id?: string
+          galeria_ml_fotos?: Json
           gtin?: string | null
           id?: string
           imagem_path?: string | null
