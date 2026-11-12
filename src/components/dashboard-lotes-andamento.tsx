@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { BotaoExcluirLote } from '@/components/botao-excluir-lote';
 import { JornadaLote } from '@/components/jornada-lote';
 import { destinoDoLote } from '@/lib/jornada';
 import type { Lote, LoteStatus } from '@/lib/tipos-dominio';
@@ -35,11 +36,14 @@ export function LotesEmAndamento({ lotes }: { lotes: Lote[] }) {
                 resultado={{ publicadas: lote.totalPublicadas, erros: lote.totalErros }}
               />
             </div>
-            <Button asChild size="sm" className="self-start sm:self-auto">
-              <Link to={destinoDoLote(lote.status, lote.id)}>
-                {ctaLabel(lote.status)} <ArrowRight className="ml-1 h-4 w-4" />
-              </Link>
-            </Button>
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <Button asChild size="sm">
+                <Link to={destinoDoLote(lote.status, lote.id)}>
+                  {ctaLabel(lote.status)} <ArrowRight className="ml-1 h-4 w-4" />
+                </Link>
+              </Button>
+              <BotaoExcluirLote lote={lote} />
+            </div>
           </Card>
         ))}
       </div>
