@@ -17,14 +17,20 @@ export async function rebaixarGaleriaSeRecusada(p: {
   erro: ErroFoto; notificar?: typeof notificarCategoria;
 }): Promise<boolean> {
   if (!p.galeriaUsada) return false;
-  const esgotado = p.erro.retentavel && p.tentativas >= MAX_RETRIES_TRANSIENTES;
-  if (!esgotado && !erroDeFoto(p.erro.status ?? 0, { cause: p.erro.mlCauses })) return false;
+  // Erro retentável (unavailable, ou `item.pictures.error` marcado pela mensagem) dentro da janela do QStash: a foto
+  // ainda pode propagar, a galeria fica. Só cai com recusa definitiva ou com as tentativas esgotadas.
+  if (p.erro.retentavel && p.tentativas < MAX_RETRIES_TRANSIENTES) return false;
+  if (!p.erro.retentavel && !erroDeFoto(p.erro.status ?? 0, { cause: p.erro.mlCauses })) return false;
   try {
     // Array, nunca a string '[]' (jsonb viraria string).
     const { error } = await p.admin.from('variacoes').update({ galeria_ml_fotos: [] })
       .eq('org_id', p.orgId).eq('familia_id', p.familiaId);
     if (error) throw new Error(error.message);
-  } catch (e) { console.warn('kit_galeria_zerar_falhou', String(e)); }
+  } catch (e) {
+    // Coluna não zerada: um retry releria a galeria cheia. Cai no caminho atual.
+    console.warn('kit_galeria_zerar_falhou', String(e));
+    return false;
+  }
   try {
     await (p.notificar ?? notificarCategoria)(p.admin, p.orgId, 'estoque',
       `Kit ${p.codigo}: o Mercado Livre recusou uma foto da galeria das peças ao criar o anúncio. `

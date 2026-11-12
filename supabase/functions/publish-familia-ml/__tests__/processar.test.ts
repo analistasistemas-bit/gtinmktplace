@@ -15,6 +15,7 @@ vi.mock('../../_shared/kit-variacao/galeria-leitura.ts', async (importOriginal) 
 }));
 
 import { processarFamiliaML, type ProcessarDeps } from '../processar';
+import { rebaixarGaleriaSeRecusada } from '../galeria-recusa';
 import { fakeConnector } from '../../_shared/canais/fake';
 import type { FormatoRepo, FormatoPublicacaoML } from '../../_shared/ml/formato-publicacao';
 import type { ResultadoUP } from '../../_shared/user-products/publicar-familia-up';
@@ -934,6 +935,52 @@ describe('processarFamiliaML — recusa de foto com a galeria do kit vinculado (
     expect(r.tipo).toBe('erro');
     expect(zerou(writes)).toHaveLength(0);
     expect(limpouCache(writes)).toBe(true);
+  });
+
+  // Fix round 1: `item.pictures.error` vem marcado retentável pela mensagem ("try again") e vira codigo 'FOTO'.
+  const erroFotoTransitorio = {
+    codigo: 'FOTO', mensagemOperador: 'item.pictures.error', retentavel: true, status: 400,
+    raw: { mlCauses: [{ code: 'item.pictures.error' }] },
+  };
+
+  it('Legacy: item.pictures.error retentável na tentativa 0 → NÃO zera, sem 2º POST, retry de sempre', async () => {
+    const { admin, writes } = fakeAdmin({ familia: KIT, variacoes: [{ ...VAR_KIT }] });
+    const { conn, galerias } = connRoteiro([erroFotoTransitorio]);
+    const r = await processarFamiliaML(baseDeps(admin, { conn }), JOB, { tentativas: 0 });
+    expect(r).toEqual({ tipo: 'retry', mensagem: 'item.pictures.error' });
+    expect(galerias).toEqual([['G1', 'G2']]);
+    expect(zerou(writes)).toHaveLength(0);
+    expect(limpouCache(writes)).toBe(false);
+  });
+
+  it('Legacy: item.pictures.error retentável com tentativas esgotadas → zera e reenvia sem galeria', async () => {
+    const { admin, writes } = fakeAdmin({ familia: KIT, variacoes: [{ ...VAR_KIT }] });
+    const { conn, galerias } = connRoteiro([erroFotoTransitorio]);
+    const r = await processarFamiliaML(baseDeps(admin, { conn }), JOB, { tentativas: 10 });
+    expect(r.tipo).toBe('ok');
+    expect(galerias).toEqual([['G1', 'G2'], undefined]);
+    expect(zerou(writes)).toHaveLength(1);
+    expect(limpouCache(writes)).toBe(false);
+  });
+
+  it('UP: item.pictures.error retentável na tentativa 0 → retry sem zerar', async () => {
+    const { admin, writes } = fakeAdmin({ familia: KIT_UP, variacoes: [{ ...VAR_KIT, tamanho: 'P' }] });
+    const deps = baseDeps(admin, { publicarUP: async () => { throw erroUP(400, [{ code: 'item.pictures.error' }], true); } });
+    const r = await processarFamiliaML(deps, JOB, { tentativas: 0 });
+    expect(r).toEqual({ tipo: 'retry', mensagem: MSG_FOTO });
+    expect(zerou(writes)).toHaveLength(0);
+  });
+
+  it('helper: UPDATE da coluna falhou → devolve false e não avisa (cai no caminho atual)', async () => {
+    const notificar = vi.fn(async () => 0);
+    const update = () => ({ eq: () => ({ eq: async () => ({ error: { message: 'rls' } }) }) });
+    const ok = await rebaixarGaleriaSeRecusada({
+      admin: { from: () => ({ update }) } as never, orgId: 'org-1', familiaId: 'fam-1', codigo: 'K1',
+      galeriaUsada: true, tentativas: 0, erro: { status: 400, mlCauses: CAUSA_FOTO, retentavel: false },
+      notificar: notificar as never,
+    });
+    expect(ok).toBe(false);
+    expect(notificar).not.toHaveBeenCalled();
   });
 
   it('UP: retry posterior lê a coluna zerada e não reinsere a galeria', async () => {
