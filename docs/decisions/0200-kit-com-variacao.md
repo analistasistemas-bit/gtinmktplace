@@ -407,7 +407,15 @@ ficam fora do escopo de `bolsos` e `etiquetas`, e a ausência deles nunca é dif
 continua reprovando. O gerador é instruído a não mostrar na frente o que só existe nas costas ou por dentro. A ficha
 não muda. A aprovação humana segue obrigatória.
 
-**Medição (12/11, modelo real, só a conferência sobre as 13 prévias guardadas da Zaven, US$ 0,15).** Antes: 3
-aprovadas e 10 reprovadas. Depois: 12 aprovadas e 1 reprovada, a única com etiqueta inventada no cós (conferida a
-olho). Duas das reprovadas antigas foram abertas e estavam fiéis. Limite: um produto só; a geração com o pedido novo
-não foi medida (cada foto custa ~US$ 0,05).
+**Medição (12/11, modelo real, só a conferência sobre as 13 prévias guardadas da Zaven; 5 rodadas, US$ 0,70 no
+total).** Antes: 3 aprovadas e 10 reprovadas. Redação final: 11 aprovadas e 2 reprovadas. Uma tem etiqueta inventada
+no cós (conferida a olho: reprovação correta). A outra é reprovada pelas ponteiras do cordão, parecidas com as da peça
+(reprovação duvidosa, do item `cordao`, fora desta correção). Redações testadas e descartadas: sem a regra junto da
+definição de `bolsos` o bolso traseiro continuava reprovando (9 de 13, repetido em duas rodadas); com "nunca reportar
+como diferente" passavam 12 de 13, mas um bolso traseiro desenhado na frente ficaria isento (revisão Grok). Três das
+reprovadas antigas foram abertas e estavam fiéis. Limites: um produto só; a geração com o pedido novo não foi medida
+(cada foto custa ~US$ 0,05).
+
+**Em aberto (proposta, não decidido).** Conferir por visão só o que o código decide com segurança (quantidade, cor e
+proporção), deixando bolsos, etiquetas e cordão para a aprovação humana, e reduzir de 3 para 1 a regeração automática,
+como a galeria fez (ADR-0203).

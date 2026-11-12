@@ -92,12 +92,14 @@ describe('montarPedidoFiel', () => {
 describe('foto de frente: detalhe das costas ou de dentro da peça', () => {
   it('inspetor: ausência de detalhe das costas ou interno não é diferença; inventado na frente continua sendo', () => {
     expect(SISTEMA_VERIFICACAO).toMatch(/FRONT view/);
-    expect(SISTEMA_VERIFICACAO).toMatch(/BACK or INSIDE[^.]*\(back pockets?, inner[^)]*labels?\)[^.]*NOT a difference/);
-    expect(SISTEMA_VERIFICACAO).toMatch(/not visible in the originals[^.]*is a difference/);
+    expect(SISTEMA_VERIFICACAO).toMatch(/BACK or INSIDE[^.]*\(back pockets?, inner[^)]*labels?\): \(1\) NOT being shown[^;]*NOT a difference, keep ok=true/);
+    expect(SISTEMA_VERIFICACAO).toMatch(/\(2\) being DRAWN on the generated front view[^.]*IS a difference, ok=false/);
+    // Sem a contradição da revisão: nada manda ignorar "diferente" nem cobra etiqueta "inside the neck or waistband".
+    expect(SISTEMA_VERIFICACAO).not.toMatch(/absent or different|including inside the neck or waistband/);
   });
 
   it('gerador: não mostra na frente o que só existe nas costas ou por dentro', () => {
     const [instr] = montarPedidoFiel({ ficha, grupos: [{ cor: 'Bege Cru', urls: ['data:a'] }, { cor: 'Cinza Escuro', urls: ['data:b'] }] });
-    expect(instr).toMatch(/only on the back or inside[^.]*must NOT appear/);
+    expect(instr).toMatch(/only on the back or inside[^.]*must NOT appear in the image/);
   });
 });
