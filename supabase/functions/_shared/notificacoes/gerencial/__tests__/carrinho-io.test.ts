@@ -237,10 +237,11 @@ describe('processarCarrinho', () => {
       { desde: '2026-10-24T00:00:00-03:00', ate: '2026-10-25T00:00:00-03:00' },
       { desde: '2026-10-01T00:00:00-03:00', ate: '2026-10-24T17:00:20.000Z' },
       { desde: '2026-09-01T00:00:00-03:00', ate: '2026-09-25T00:00:00-03:00' },
+      { desde: '2026-10-23T00:00:00-03:00', ate: '2026-10-23T17:00:20.000Z' },
     ]);
     expect(m.montarMensagemCarrinho).toHaveBeenCalledWith(
       { venda: 100 },
-      { hoje: KPI, mes: KPI, anterior: KPI, rotuloMes: 'Outubro', rotuloAnterior: '1–24/set' },
+      { hoje: KPI, mes: KPI, anterior: KPI, rotuloMes: 'Outubro', rotuloAnterior: '1–24/set', ontem: { kpis: KPI, rotulo: 'ontem até 14:00' } },
       9000, { parcial: null, composicaoIncerta: false },
     );
     expect(m.notificarCategoria).toHaveBeenCalledWith(admin, ORG, 'vendas_gerencial', 'TEXTO', { chave: 'vendas_gerencial:9000' });

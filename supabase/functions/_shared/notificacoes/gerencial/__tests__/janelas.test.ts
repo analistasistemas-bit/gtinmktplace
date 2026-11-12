@@ -1,10 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { diaBrt, janela30Dias, janelaDia, janelasMesCorrente, janelasMesFechado } from '../janelas.ts';
+import { diaBrt, janela30Dias, janelaDia, janelaOntemAteAgora, janelasMesCorrente, janelasMesFechado } from '../janelas.ts';
 import { janelaAnterior, MES_ATUAL, resolverJanela } from '../../../../../../src/lib/metricas';
 
 afterEach(() => vi.useRealTimers());
 
 describe('janelas BRT', () => {
+  it('ontem até a mesma hora (BRT), com virada de mês', () => {
+    expect(janelaOntemAteAgora(new Date('2026-11-13T01:28:00Z'))).toEqual({
+      janela: { desde: '2026-11-11T00:00:00-03:00', ate: '2026-11-12T01:28:00.000Z' }, rotulo: 'ontem até 22:28',
+    });
+    expect(janelaOntemAteAgora(new Date('2026-11-01T03:00:00Z')).janela)
+      .toEqual({ desde: '2026-10-31T00:00:00-03:00', ate: '2026-10-31T03:00:00.000Z' });
+  });
+
   it('mês corrente do meio do mês', () => {
     const j = janelasMesCorrente(new Date('2026-10-24T17:00:00Z'));
     expect(j.mes).toEqual({ desde: '2026-10-01T00:00:00-03:00', ate: '2026-10-24T17:00:00.000Z' });

@@ -14,7 +14,7 @@ import { resolverConexao } from '../../canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../../ml/token.ts';
 import type { PedidoML } from '../../faturamento/venda.ts';
 import { decidirEnvioCarrinho, PRAZO_CARRINHO_SEG, type EstadoCarrinho } from './carrinho.ts';
-import { diaBrt, janelaDia, janelasMesCorrente } from './janelas.ts';
+import { diaBrt, janelaDia, janelaOntemAteAgora, janelasMesCorrente } from './janelas.ts';
 import { lerKpis } from './kpis.ts';
 import { montarMensagemCarrinho } from './mensagens.ts';
 import { resultadoCarrinho, resultadoPorItem } from './resultado.ts';
@@ -170,11 +170,13 @@ export async function processarCarrinho(
   const ctx = await carregarContexto(db, orgId, janelaDia(diaBrt(maisAntiga ? new Date(maisAntiga) : agora)).desde);
   const carrinho = resultadoCarrinho(resultadoPorItem(vendas, ctx), ctx.configOk);
   const jm = janelasMesCorrente(agora);
-  const [hoje, mes, anterior] = await Promise.all([
+  const o = janelaOntemAteAgora(agora);
+  const [hoje, mes, anterior, ontem] = await Promise.all([
     lerKpis(admin, orgId, janelaDia(diaBrt(agora))), lerKpis(admin, orgId, jm.mes), lerKpis(admin, orgId, jm.anterior),
+    lerKpis(admin, orgId, o.janela),
   ]);
   const texto = montarMensagemCarrinho(
-    carrinho, { hoje, mes, anterior, rotuloMes: jm.rotuloMes, rotuloAnterior: jm.rotuloAnterior }, Number(chave),
+    carrinho, { hoje, mes, anterior, rotuloMes: jm.rotuloMes, rotuloAnterior: jm.rotuloAnterior, ontem: { kpis: ontem, rotulo: o.rotulo } }, Number(chave),
     { parcial: decisao.parcial, composicaoIncerta: decisao.composicaoIncerta },
   );
 
