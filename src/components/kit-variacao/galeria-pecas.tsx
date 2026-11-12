@@ -1,5 +1,6 @@
 // ADR-0200 (adendo 12/11): prévia da galeria com as fotos das peças, abaixo da foto do kit. A foto 1 é a do kit; as outras
 // vêm das peças da combinação (proposta do servidor). O operador só remove (restaurável) ou liga "Só a foto do kit".
+import { useId } from 'react';
 import { RotateCcw, X } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
@@ -19,6 +20,7 @@ interface Props {
 const MOLDURA = 'grid gap-1.5 rounded-md border bg-muted/30 px-2 py-1.5 text-xs';
 
 export function GaleriaPecas({ proposta, escolha, onChange, carregando, erro, desabilitado }: Props) {
+  const idChave = useId();
   if (carregando) {
     return (
       <div className={MOLDURA} aria-busy="true">
@@ -61,9 +63,9 @@ export function GaleriaPecas({ proposta, escolha, onChange, carregando, erro, de
             </span>
           )}
         </p>
-        <label className="flex cursor-pointer items-center gap-1.5 text-muted-foreground">
+        <label htmlFor={idChave} className="flex cursor-pointer items-center gap-1.5 text-muted-foreground">
           <Switch
-            size="sm" checked={!ligada} disabled={desabilitado} aria-label="Só a foto do kit"
+            id={idChave} size="sm" checked={!ligada} disabled={desabilitado} aria-label="Só a foto do kit"
             onCheckedChange={(c) => onChange({ ligada: !c, removidas: escolha?.removidas ?? [] })}
           />
           Só a foto do kit
