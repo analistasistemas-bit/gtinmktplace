@@ -1,9 +1,24 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { useState } from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PreviewKit, valorInicialPreview, type KitPreviewValue } from '../preview-kit';
 import { tituloDoKit, descricaoDoKit, type BaseParaKit } from '@/lib/kit';
+
+vi.mock('@/lib/tarifa', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/tarifa')>('@/lib/tarifa');
+  const tipo = (preco: number, pct: number) => {
+    const comissao = Math.round(preco * pct) / 100;
+    return { comissao, percentual: pct, fixa: 0, imposto: 0, recebe: Math.round((preco - comissao - 10) * 100) / 100 };
+  };
+  return {
+    ...actual,
+    calcularTarifaML: vi.fn(async (preco: number) => ({ classico: tipo(preco, 12), premium: tipo(preco, 17), frete: 10, proveniencia: 'official' })),
+  };
+});
+vi.mock('@/hooks/useConfiguracoes', () => ({
+  useAliquotas: () => ({ data: { nacional: 8, importado: 16, confirmada: true }, isLoading: false, isError: false, isFetched: true }),
+}));
 
 const BASE: BaseParaKit = {
   codigoPai: '00000010',
@@ -31,6 +46,8 @@ function Wrapper({ n, inicial }: { n: number; inicial: Partial<KitPreviewValue> 
     <PreviewKit
       n={n}
       base={BASE}
+      categoriaMlId={BASE.categoriaMlId}
+      onPodeSeguir={() => {}}
       value={value}
       onChange={(patch) => setValue((v) => ({ ...v, ...patch }))}
     />

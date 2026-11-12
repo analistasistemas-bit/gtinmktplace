@@ -1,7 +1,7 @@
 // ADR-0151 D-2/D-4: gatilho de criação de kit vinculado a partir da tela Publicados.
 // Etapa 1 escolhe os tamanhos; etapa 2 é o preview editável — a revisão inteira do kit,
 // sem passar por process-familia nem por card na Revisão.
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -68,6 +68,12 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
   const [queryCategoria, setQueryCategoria] = useState('');
   const [candidatosCategoria, setCandidatosCategoria] = useState<CategoriaCandidata[]>([]);
   const [buscandoCategoria, setBuscandoCategoria] = useState(false);
+  // "Você recebe" de cada kit: o gate nasce fechado e só abre quando o preview informa que a conta
+  // está pronta (ou confirmada). Setter estável e sem troca quando o valor não muda (sem loop de render).
+  const [podeSeguir, setPodeSeguir] = useState<Record<number, boolean>>({});
+  const aoMudarPodeSeguir = useCallback((n: number, pode: boolean) => {
+    setPodeSeguir((prev) => (prev[n] === pode ? prev : { ...prev, [n]: pode }));
+  }, []);
 
   // Reset ao abrir: chaves e valores novos por sessão de diálogo (as chaves só trocam
   // depois de sucesso confirmado, nunca durante a edição).
@@ -77,6 +83,7 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
     setMarcados(new Set());
     setChaves({});
     setValores({});
+    setPodeSeguir({});
     setCategoriaOverride(null);
     setBuscaCategoriaAberta(false);
     setQueryCategoria('');
@@ -102,6 +109,7 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
       if (marcar) novo.add(n); else novo.delete(n);
       return novo;
     });
+    if (!marcar) setPodeSeguir((prev) => { const { [n]: _, ...resto } = prev; return resto; });
     if (marcar) {
       setChaves((prev) => (prev[n] ? prev : { ...prev, [n]: crypto.randomUUID() }));
       setValores((prev) => (prev[n]
@@ -126,7 +134,9 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
   // Sem foto (nem a da base, nem uma nova escolhida) o anúncio vai ao ML sem capa — mesmo
   // requisito de LinhaVariacaoForm.fotoObrigatoria (ADR-0129 D-4).
   const semFotoInvalido = tamanhosMarcados.some((n) => !(valores[n]?.imagemPath || valores[n]?.fotoFile));
-  const podeCriar = tamanhosMarcados.length > 0 && !tituloInvalido && !precoInvalido && !semFotoInvalido;
+  const contaPronta = tamanhosMarcados.every((n) => podeSeguir[n] === true);
+  const podeCriar = tamanhosMarcados.length > 0 && !tituloInvalido && !precoInvalido && !semFotoInvalido && contaPronta;
+  const categoriaMlIdEfetiva = categoriaOverride?.categoriaMlId ?? base.categoriaMlId;
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -360,6 +370,8 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
                 total={tamanhosMarcados.length}
                 base={base}
                 value={valores[n]}
+                categoriaMlId={categoriaMlIdEfetiva}
+                onPodeSeguir={aoMudarPodeSeguir}
                 onChange={(patch) => setValores((prev) => ({ ...prev, [n]: { ...prev[n], ...patch } }))}
               />
             ))}

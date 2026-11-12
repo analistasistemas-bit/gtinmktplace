@@ -29,6 +29,22 @@ vi.mock('@/lib/kit', async (importOriginal) => {
   return { ...actual, criarKitVinculado: (...args: unknown[]) => criarKitVinculadoMock(...args) };
 });
 
+// "Você recebe" do preview: tarifa oficial e alíquota confirmada (sem rede).
+const tarifaOficial = (preco: number, aliquotaPct: number) => {
+  const imposto = Math.round(preco * aliquotaPct) / 100;
+  const tipo = (pct: number) => {
+    const comissao = Math.round(preco * pct) / 100;
+    return { comissao, percentual: pct, fixa: 0, imposto, recebe: Math.round((preco - comissao - 10 - imposto) * 100) / 100 };
+  };
+  return { classico: tipo(12), premium: tipo(17), frete: 10, proveniencia: 'official' as const };
+};
+vi.mock('@/lib/tarifa', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/tarifa')>('@/lib/tarifa');
+  return { ...actual, calcularTarifaML: vi.fn(async (preco: number, _c: string, _d: unknown, aliq = 0) => tarifaOficial(preco, aliq)) };
+});
+const aliquotasMock = { data: { nacional: 8, importado: 16, confirmada: true }, isLoading: false, isError: false, isFetched: true };
+vi.mock('@/hooks/useConfiguracoes', () => ({ useAliquotas: () => aliquotasMock }));
+
 const navigateMock = vi.fn();
 vi.mock('react-router-dom', () => ({ useNavigate: () => navigateMock }));
 
@@ -120,6 +136,8 @@ const BASE_COM_FOTO: BaseParaKit = { ...BASE, fotoPath: 'org-1/produtos/foto.jpg
 async function avancarECriar() {
   await userEvent.click(screen.getByLabelText('Kit de 2 unidades'));
   await userEvent.click(screen.getByRole('button', { name: 'Avançar' }));
+  // O botão só habilita depois que o "Você recebe" de cada kit fica pronto.
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Criar e publicar' })).toBeEnabled());
   await userEvent.click(screen.getByRole('button', { name: 'Criar e publicar' }));
 }
 
@@ -193,6 +211,26 @@ describe('DialogCriarKit — etapa de preview deixa explícito que publica diret
   it('etapa de tamanhos não mostra o aviso de publicação direta', () => {
     renderDialog([]);
     expect(screen.queryByText('O kit vai direto para o Mercado Livre — esta tela é a revisão.')).not.toBeInTheDocument();
+  });
+});
+
+describe('DialogCriarKit — conta do "Você recebe" trava a criação', () => {
+  it('com 2 tamanhos e um em prejuízo não confirmado, "Criar e publicar" fica desabilitado até confirmar', async () => {
+    renderDialog([], BASE_COM_FOTO);
+    await userEvent.click(screen.getByLabelText('Kit de 2 unidades'));
+    await userEvent.click(screen.getByLabelText('Kit de 3 unidades'));
+    await userEvent.click(screen.getByRole('button', { name: 'Avançar' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Criar e publicar' })).toBeEnabled());
+
+    // Kit de 3: custo 16,50; preço 20 -> recebe ~6 -> prejuízo.
+    const preco3 = screen.getByLabelText('Preço do kit 3');
+    await userEvent.clear(preco3);
+    await userEvent.type(preco3, '20');
+    await waitFor(() => expect(screen.getByLabelText('Seguir mesmo assim, kit de 3 unidades')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Criar e publicar' })).toBeDisabled();
+
+    await userEvent.click(screen.getByLabelText('Seguir mesmo assim, kit de 3 unidades'));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Criar e publicar' })).toBeEnabled());
   });
 });
 

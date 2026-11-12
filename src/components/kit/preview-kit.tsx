@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import type { FaixaAtacado } from '@/lib/atacado';
 import { precoSugeridoDoKit, TITULO_MAX_KIT, type BaseParaKit } from '@/lib/kit';
 import { PISO_MEDIDA_CM } from '@/lib/publicavel';
+import { RecebeKit } from '@/components/kit/recebe-kit';
 
 /** ui-ux-pro-max: form-labels + content-jumping — reserva 2 linhas p/ rótulos de grid. */
 const LABEL_CAMPO_GRID = 'min-h-10 text-xs leading-snug text-muted-foreground';
@@ -51,7 +52,7 @@ export function valorInicialPreview(base: BaseParaKit, titulo: string, descricao
   };
 }
 
-export function PreviewKit({ n, indice, total, base, value, onChange }: {
+export function PreviewKit({ n, indice, total, base, value, onChange, categoriaMlId, onPodeSeguir }: {
   n: number;
   /** Posição na lista quando há vários kits (1-based). Omitir se kit único. */
   indice?: number;
@@ -59,6 +60,10 @@ export function PreviewKit({ n, indice, total, base, value, onChange }: {
   base: BaseParaKit;
   value: KitPreviewValue;
   onChange: (patch: Partial<KitPreviewValue>) => void;
+  /** Categoria efetiva do kit (a trocada no dialog, se houver): a tarifa segue ela. */
+  categoriaMlId: string | null;
+  /** Callback único e estável do dialog; o preview informa se a conta deste kit está pronta. */
+  onPodeSeguir: (n: number, pode: boolean) => void;
 }) {
   const { data: fotoAtualUrl } = useImageUrl(value.fotoFile ? null : value.imagemPath);
   const tituloExcedeu = value.titulo.length > TITULO_MAX_KIT;
@@ -209,6 +214,7 @@ export function PreviewKit({ n, indice, total, base, value, onChange }: {
               />
             </div>
           </div>
+          <RecebeKit n={n} base={base} value={value} categoriaMlId={categoriaMlId} onPodeSeguir={onPodeSeguir} />
         </div>
       </div>
 
