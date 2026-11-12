@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { galeriaDasPecas, lerLimiteFotos, revalidarGaleria } from '../galeria-leitura.ts';
 
-type Item = { id: string; status: string; sub_status?: string[]; pictures?: Array<{ id: string }> };
+type Item = { id: string; status: string; sub_status?: string[]; pictures?: Array<{ id: string; secure_url?: string }> };
 const item = (id: string, fotos: string[], status = 'active', sub: string[] = []): Item => ({
   id, status, sub_status: sub, pictures: fotos.map((p) => ({ id: p })),
 });
@@ -29,6 +29,17 @@ describe('galeriaDasPecas', () => {
     expect(r.fotos[0]).toEqual({ id: 'P2', item: 'MLB-P' });
     expect(r.avisos).toEqual([]);
     expect(chamadas).toHaveLength(1);
+  });
+
+  it('devolve a secure_url de cada foto escolhida (miniatura da prévia), sem pôr url na foto que será gravada', async () => {
+    const comUrl = (id: string, fotos: string[]): Item => ({
+      id, status: 'active', sub_status: [], pictures: fotos.map((p) => ({ id: p, secure_url: `https://x/${p}.jpg` })),
+    } as Item);
+    const { f } = fakeBulk([comUrl('MLB-P', nove('P')), comUrl('MLB-C', nove('C'))]);
+    const r = await galeriaDasPecas('tok', [{ cor: 'Preto', itemId: 'MLB-P' }, { cor: 'Caqui', itemId: 'MLB-C' }], 12, f);
+    expect(r.urls).toMatchObject({ P2: 'https://x/P2.jpg', C3: 'https://x/C3.jpg' });
+    expect(Object.keys(r.urls)).toEqual(r.fotos.map((x) => x.id));
+    expect(r.fotos[0]).toEqual({ id: 'P2', item: 'MLB-P' });
   });
 
   it('item moderado tira a cor da galeria (com aviso) e não quebra a outra', async () => {

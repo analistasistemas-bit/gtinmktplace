@@ -8,7 +8,7 @@ const CAMPOS = 'id,status,sub_status,pictures';
 const LOTE = 20;
 
 export interface PecaOrigem { cor: string; itemId: string }
-interface ItemLido { fotos: string[]; limpo: boolean; motivo: string | null }
+interface ItemLido { fotos: string[]; urls: Record<string, string>; limpo: boolean; motivo: string | null }
 type Leitura = { ok: true; itens: Map<string, ItemLido> } | { ok: false; erro: string };
 
 /** Só `ativo`/`pausado` sem marcador de moderação serve de fonte de foto. */
@@ -29,13 +29,14 @@ async function lerItens(token: string, ids: string[], f: typeof fetch): Promise<
       if (!resp.ok) return { ok: false, erro: `ML /items/bulk ${resp.status}` };
       const lista = comoEnvelopeAntigo(await resp.json(), bloco);
       if (!Array.isArray(lista)) return { ok: false, erro: 'ML /items/bulk: resposta inesperada' };
-      for (const e of lista as Array<{ code?: number; body?: { id?: string; status?: string; sub_status?: string[]; pictures?: Array<{ id?: unknown }> } }>) {
+      for (const e of lista as Array<{ code?: number; body?: { id?: string; status?: string; sub_status?: string[]; pictures?: Array<{ id?: unknown; secure_url?: unknown }> } }>) {
         const b = e?.body;
         if (e?.code !== 200 || !b?.id) continue;   // item não lido: fica fora do mapa
         const { limpo, motivo } = avaliar({ id: b.id, status: b.status, sub_status: b.sub_status });
+        const pics = (b.pictures ?? []).filter((p): p is { id: string; secure_url?: unknown } => typeof p?.id === 'string' && p.id !== '');
         itens.set(b.id, {
-          limpo, motivo,
-          fotos: (b.pictures ?? []).map((p) => p?.id).filter((p): p is string => typeof p === 'string' && p !== ''),
+          limpo, motivo, fotos: pics.map((p) => p.id),
+          urls: Object.fromEntries(pics.flatMap((p) => (typeof p.secure_url === 'string' && p.secure_url ? [[p.id, p.secure_url]] : []))),
         });
       }
     }
@@ -63,9 +64,9 @@ export async function lerLimiteFotos(categoriaId: string, f: typeof fetch = fetc
  */
 export async function galeriaDasPecas(
   token: string, pecas: PecaOrigem[], limite: number, f: typeof fetch = fetch,
-): Promise<{ fotos: FotoPeca[]; avisos: string[]; indisponivel: boolean }> {
+): Promise<{ fotos: FotoPeca[]; avisos: string[]; indisponivel: boolean; urls: Record<string, string> }> {
   const lida = await lerItens(token, pecas.map((p) => p.itemId), f);
-  if (!lida.ok) return { fotos: [], avisos: [`Fotos das peças indisponíveis (${lida.erro}).`], indisponivel: true };
+  if (!lida.ok) return { fotos: [], avisos: [`Fotos das peças indisponíveis (${lida.erro}).`], indisponivel: true, urls: {} };
   const avisos: string[] = [];
   const cores = pecas.map((p) => {
     const it = lida.itens.get(p.itemId);
@@ -73,7 +74,12 @@ export async function galeriaDasPecas(
     if (!it.limpo) { avisos.push(`${p.cor}: ${it.motivo}.`); return { cor: p.cor, fotos: [] }; }
     return { cor: p.cor, fotos: it.fotos.map((id) => ({ id, item: p.itemId })) };
   });
-  return { fotos: montarGaleriaKit({ cores, limite }), avisos, indisponivel: false };
+  const fotos = montarGaleriaKit({ cores, limite });
+  const urls = Object.fromEntries(fotos.flatMap((x) => {
+    const u = lida.itens.get(x.item)?.urls[x.id];
+    return u ? [[x.id, u]] : [];
+  }));
+  return { fotos, avisos, indisponivel: false, urls };
 }
 
 /**
