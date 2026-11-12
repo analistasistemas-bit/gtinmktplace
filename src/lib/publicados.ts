@@ -305,7 +305,8 @@ export function filtrarPublicados(
   /** Códigos PAI da base e do kit de cada kit com variação ativo; só lido com `somenteComKitVariacao`. */
   codigosComKitVariacao?: ReadonlySet<string>,
 ): PublicadoItem[] {
-  const queryStr = normalizarParaBusca(f.busca);
+  // "MLB-7168683146" (como o ML exibe) → "MLB7168683146" (como guardamos).
+  const queryStr = normalizarParaBusca(f.busca).replace(/\b(mlbu?)-(?=\d)/g, '$1');
   const termosBusca = queryStr ? queryStr.split(/\s+/) : [];
 
   return itens.filter((i) => {
@@ -324,6 +325,8 @@ export function filtrarPublicados(
         i.codigoPai,
         i.fornecedor ?? '',
         i.gtin ?? '',
+        i.mlItemId,
+        ...(i.mlItemIdsUP ?? []),
         ...(i.identificadores ?? []),
       ].join(' '));
 
