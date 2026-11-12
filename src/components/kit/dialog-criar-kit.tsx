@@ -29,8 +29,11 @@ import { EtapasKit } from '@/components/kit/etapas-kit';
 import { PromocaoBaseKit } from '@/components/kit/promocao-base-kit';
 import { GaleriaBaseKit } from '@/components/kit/galeria-base-kit';
 import { useGaleriaBaseKit } from '@/hooks/useGaleriaBaseKit';
-import { idsDaGaleria, type EscolhaGaleria } from '@/lib/kit-galeria';
+import { idsDaGaleria, type EscolhaGaleria, type GaleriaProposta } from '@/lib/kit-galeria';
 import { PreviewKit, valorInicialPreview, type KitPreviewValue } from '@/components/kit/preview-kit';
+
+// Base fora do ML: sem leitura (a edge não é chamada); só a nota de que o kit leva a capa.
+const BASE_NAO_PUBLICADA: GaleriaProposta = { fotos: [], avisos: ['base_nao_publicada'], indisponivel: false };
 
 const MENSAGEM_POR_MOTIVO: Record<string, string> = {
   base_multivariacao: 'Kit vinculado só existe para produto sem variação de cor.',
@@ -397,13 +400,14 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
                 value={valores[n]}
                 categoriaMlId={categoriaMlIdEfetiva}
                 onPodeSeguir={aoMudarPodeSeguir}
-                galeria={baseNoMl ? (
+                galeria={(
                   <GaleriaBaseKit
-                    proposta={galeriaBase.data} carregando={lendoGaleria} erro={galeriaBase.isError}
+                    n={n}
+                    proposta={baseNoMl ? galeriaBase.data : BASE_NAO_PUBLICADA} carregando={baseNoMl && lendoGaleria} erro={baseNoMl && galeriaBase.isError}
                     escolha={escolhasGaleria[n]} desabilitado={mutation.isPending}
                     onChange={(e) => setEscolhasGaleria((prev) => ({ ...prev, [n]: e }))}
                   />
-                ) : undefined}
+                )}
                 onChange={(patch) => setValores((prev) => ({ ...prev, [n]: { ...prev[n], ...patch } }))}
               />
             ))}

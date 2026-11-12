@@ -61,4 +61,16 @@ describe('GaleriaBaseKit', () => {
     montar({ proposta: { fotos: [], avisos: [], indisponivel: false } });
     expect(screen.getByText('A base não tem fotos além da capa')).toBeInTheDocument();
   });
+
+  it('sem fotos mas com aviso: mostra o aviso, não "sem fotos além da capa"', () => {
+    montar({ proposta: { fotos: [], avisos: ['Limite de fotos da categoria ilegível; kit sem galeria.'], indisponivel: false } });
+    expect(screen.getByText('Limite de fotos da categoria ilegível; kit sem galeria.')).toBeInTheDocument();
+    expect(screen.queryByText('A base não tem fotos além da capa')).not.toBeInTheDocument();
+  });
+
+  it('com n, os controles levam o tamanho no nome acessível', () => {
+    montar({ n: 4 });
+    expect(screen.getByRole('switch', { name: 'Só a foto do kit (kit de 4 unidades)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remover foto 2 (Base) (kit de 4 unidades)' })).toBeInTheDocument();
+  });
 });

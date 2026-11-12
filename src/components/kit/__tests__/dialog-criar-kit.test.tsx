@@ -442,7 +442,7 @@ describe('DialogCriarKit — galeria da base (ADR-0204)', () => {
     criarKitVinculadoMock.mockResolvedValue({ ok: true, kits: [], publicacaoOk: true });
     renderDialog([], BASE_COM_FOTO, true);
     await irAoPreview();
-    await userEvent.click(await screen.findByRole('switch', { name: 'Só a foto do kit' }));
+    await userEvent.click(await screen.findByRole('switch', { name: 'Só a foto do kit (kit de 2 unidades)' }));
     await criar();
     expect(kitsEnviados()[0].galeria).toEqual([]);
   });
@@ -482,11 +482,23 @@ describe('DialogCriarKit — galeria da base (ADR-0204)', () => {
     expect(invokeMock).toHaveBeenCalledWith('fotos-base-kit', { body: { familia_base_id: 'familia-base-1', categoria_ml_id: 'MLB999' } });
   });
 
+  it('nome acessível dos controles inclui o tamanho do kit', async () => {
+    invokeMock.mockResolvedValue({ data: FOTOS, error: null });
+    renderDialog([], BASE_COM_FOTO, true);
+    await userEvent.click(screen.getByLabelText('Kit de 2 unidades'));
+    await userEvent.click(screen.getByLabelText('Kit de 3 unidades'));
+    await userEvent.click(screen.getByRole('button', { name: 'Avançar' }));
+    expect(await screen.findByRole('switch', { name: 'Só a foto do kit (kit de 3 unidades)' })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Só a foto do kit (kit de 2 unidades)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remover foto 2 (Base) (kit de 3 unidades)' })).toBeInTheDocument();
+  });
+
   it('base não publicada: não chama a edge', async () => {
     renderDialog([], BASE_COM_FOTO, false);
     await irAoPreview();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Criar e publicar' })).toBeEnabled());
     expect(invokeMock).not.toHaveBeenCalled();
+    expect(screen.getByText('A base ainda não foi publicada: o kit sai só com a capa')).toBeInTheDocument();
     expect(screen.queryByText(/Fotos 2 a 7/)).not.toBeInTheDocument();
   });
 });

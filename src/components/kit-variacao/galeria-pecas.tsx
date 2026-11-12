@@ -17,6 +17,8 @@ interface Props {
   desabilitado?: boolean;
   /** Textos da tela; o padrão é o do kit com variação (fotos das peças). O kit vinculado passa os seus. */
   rotulos?: Partial<RotulosGaleria>;
+  /** Complemento do nome acessível dos controles (ex.: " (kit de 2 unidades)"), p/ distinguir blocos repetidos. */
+  sufixoAria?: string;
 }
 
 export interface RotulosGaleria {
@@ -35,7 +37,7 @@ const ROTULOS_PECAS: RotulosGaleria = {
 
 const MOLDURA = 'grid gap-1.5 rounded-md border bg-muted/30 px-2 py-1.5 text-xs';
 
-export function GaleriaPecas({ proposta, escolha, onChange, carregando, erro, desabilitado, rotulos }: Props) {
+export function GaleriaPecas({ proposta, escolha, onChange, carregando, erro, desabilitado, rotulos, sufixoAria = '' }: Props) {
   const r = { ...ROTULOS_PECAS, ...rotulos };
   const idChave = useId();
   if (carregando) {
@@ -82,7 +84,7 @@ export function GaleriaPecas({ proposta, escolha, onChange, carregando, erro, de
         </p>
         <label htmlFor={idChave} className="flex cursor-pointer items-center gap-1.5 text-muted-foreground">
           <Switch
-            id={idChave} size="sm" checked={!ligada} disabled={desabilitado} aria-label="Só a foto do kit"
+            id={idChave} size="sm" checked={!ligada} disabled={desabilitado} aria-label={`Só a foto do kit${sufixoAria}`}
             onCheckedChange={(c) => onChange({ ligada: !c, removidas: escolha?.removidas ?? [] })}
           />
           Só a foto do kit
@@ -104,7 +106,7 @@ export function GaleriaPecas({ proposta, escolha, onChange, carregando, erro, de
                 <span className="absolute inset-x-0 bottom-0 truncate bg-background/90 px-1 text-[10px] text-muted-foreground">{f.cor}</span>
                 <button
                   type="button" disabled={desabilitado}
-                  aria-label={fora ? `Restaurar foto removida ${i + 1} da lista (${f.cor})` : `Remover foto ${numero} (${f.cor})`}
+                  aria-label={fora ? `Restaurar foto removida ${i + 1} da lista (${f.cor})${sufixoAria}` : `Remover foto ${numero} (${f.cor})${sufixoAria}`}
                   onClick={() => onChange(alternarFoto(escolha, f.id))}
                   className="absolute right-0 top-0 flex h-6 w-6 items-center justify-center rounded-bl-md bg-background/90 text-muted-foreground hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50"
                 >
