@@ -394,3 +394,20 @@ Falha nessa leitura é por SKU e só aparece se a peça estiver no kit.
 **Rótulos.** "Pior combinação" vira "Menor lucro" (simulador) e "Avulso mais barato" (comparação); quando todas as
 linhas têm o mesmo valor (lucro; ou soma normal e em promoção, sem linha indisponível), a tela diz que é igual em todas
 e não marca nenhuma.
+
+## Adendo (2026-11-12): conferência da foto julga só a vista de frente
+
+**Problema.** No Short Bermuda 00000140 da Zaven a conferência reprovou 9 de 9 gerações em 12/11 por "bolso traseiro
+ausente" e "etiqueta interna não visível". A foto do kit é de frente (peças estendidas); a foto original é uma colagem
+com frente e costas, e a ficha lista o bolso traseiro e a etiqueta interna. O motivo falso ainda voltava ao gerador
+como "corrigir", que então inventava uma etiqueta na frente.
+
+**Decisão.** O inspetor julga só o que uma vista de frente mostra: bolso traseiro e etiqueta interna (cós ou gola)
+ficam fora do escopo de `bolsos` e `etiquetas`, e a ausência deles nunca é diferença. Detalhe inventado na frente
+continua reprovando. O gerador é instruído a não mostrar na frente o que só existe nas costas ou por dentro. A ficha
+não muda. A aprovação humana segue obrigatória.
+
+**Medição (12/11, modelo real, só a conferência sobre as 13 prévias guardadas da Zaven, US$ 0,15).** Antes: 3
+aprovadas e 10 reprovadas. Depois: 12 aprovadas e 1 reprovada, a única com etiqueta inventada no cós (conferida a
+olho). Duas das reprovadas antigas foram abertas e estavam fiéis. Limite: um produto só; a geração com o pedido novo
+não foi medida (cada foto custa ~US$ 0,05).

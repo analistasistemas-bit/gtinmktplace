@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../client.ts', () => ({ openrouterClient: () => { throw new Error('IA real proibida em teste'); } }));
-import { avaliar, montarPedidoFiel, type Ficha } from '../foto-kit-fiel.ts';
+import { avaliar, montarPedidoFiel, SISTEMA_VERIFICACAO, type Ficha } from '../foto-kit-fiel.ts';
 
 const ficha: Ficha = {
   tipo_peca: 'short', comprimento: 'meio_da_coxa', comprimento_descricao: 'short curto, termina no meio da coxa',
@@ -84,5 +84,20 @@ describe('montarPedidoFiel', () => {
     const [instr, dados] = montarPedidoFiel({ ficha, grupos, motivos: ['Comprimento: Bege Cru: termina no joelho'] });
     expect(instr).toMatch(/DATA\.corrigir/);
     expect(JSON.parse(dados.slice(dados.indexOf('{'))).corrigir).toEqual(['Comprimento: Bege Cru: termina no joelho']);
+  });
+});
+
+// Zaven 12/11: short com bolso traseiro e etiqueta interna. A foto é de frente; o inspetor reprovava "bolso traseiro sem
+// aba" e "etiqueta interna não visível", e o motivo falso voltava ao gerador, que inventava a etiqueta na frente.
+describe('foto de frente: detalhe das costas ou de dentro da peça', () => {
+  it('inspetor: ausência de detalhe das costas ou interno não é diferença; inventado na frente continua sendo', () => {
+    expect(SISTEMA_VERIFICACAO).toMatch(/FRONT view/);
+    expect(SISTEMA_VERIFICACAO).toMatch(/BACK or INSIDE[^.]*\(back pockets?, inner[^)]*labels?\)[^.]*NOT a difference/);
+    expect(SISTEMA_VERIFICACAO).toMatch(/not visible in the originals[^.]*is a difference/);
+  });
+
+  it('gerador: não mostra na frente o que só existe nas costas ou por dentro', () => {
+    const [instr] = montarPedidoFiel({ ficha, grupos: [{ cor: 'Bege Cru', urls: ['data:a'] }, { cor: 'Cinza Escuro', urls: ['data:b'] }] });
+    expect(instr).toMatch(/only on the back or inside[^.]*must NOT appear/);
   });
 });
