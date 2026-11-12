@@ -18,6 +18,7 @@ import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
 import { planejarGeracoes, precoDoMes, type LinhaVaga } from '../_shared/galeria/pedido.ts';
 import { alvosDaCor, lerElegibilidadeItemML, motivoElegibilidade, type ItemElegibilidade } from '../_shared/galeria/alvos.ts';
 import { publicarJobs } from '../_shared/galeria/despacho.ts';
+import { CORES_POR_VEZ, emParalelo } from '../_shared/galeria/paralelo.ts';
 import { resolverConexaoEstrita } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { buscarItemBackfill } from '../_shared/ml/buscar-item.ts';
@@ -113,16 +114,33 @@ Deno.serve(async (req) => {
       return lidos.get(id)!;
     };
     const leitor = { lerItem, lerBackfill: (id: string) => buscarItemBackfill(fetch, { accessToken: token }, id) };
+    // Leituras das cores em paralelo (até CORES_POR_VEZ); a resposta é decidida depois, na ordem pedida, como no laço
+    // sequencial: a cor só enxerga os GETs dela e das anteriores, e uma exceção só conta quando a vez da cor chega.
+    const porCor = await emParalelo(cores, CORES_POR_VEZ, async (cor) => {
+      const pedidos = new Set<string>();
+      const leitorCor = { ...leitor, lerItem: (id: string) => { pedidos.add(id); return lerItem(id); } };
+      try {
+        const alvos = await alvosDaCor(admin, orgId, a.anuncioId, cor, leitorCor);
+        // UP plano só é lido no laço abaixo: adianta o GET (memo; nunca rejeita) sem entrar em `pedidos`.
+        if (!('erro' in alvos)) await Promise.all(alvos.alvos.map(({ itemId }) => lerItem(itemId)));
+        return { pedidos, alvos };
+      } catch (e) { return { pedidos, falha: e }; }
+    });
+    const vistos = new Set<string>();
     // GET que falhou (5xx/rede) não é catálogo nem conjunto incompleto: recusa retentável, sem pedido nem custo.
     // `catalogo_desconhecido` fica só para GET 200 sem o campo.
-    const falhouGet = async () => (await Promise.all(lidos.values())).some((i) => i === null);
+    const falhouGet = async () => (await Promise.all([...vistos].map(lerItem))).some((i) => i === null);
     let itemFicha: string | null = null; // 1º alvo da 1ª cor: dele sai a ficha do anúncio para o plano
-    for (const cor of cores) {
-      const alvos = await alvosDaCor(admin, orgId, a.anuncioId, cor, leitor);
+    for (const [n, cor] of cores.entries()) {
+      const r = porCor[n];
+      if ('falha' in r) throw r.falha;
+      r.pedidos.forEach((id) => vistos.add(id));
+      const alvos = r.alvos;
       if (await falhouGet()) return json({ error: 'ml_indisponivel' }, 503);
       if ('erro' in alvos) return json({ error: alvos.erro, cor, detalhe: alvos.detalhe }, 409);
       itemFicha ??= alvos.alvos[0]?.itemId ?? null;
       for (const { itemId } of alvos.alvos) {
+        vistos.add(itemId);
         const item = await lerItem(itemId);
         if (!item) return json({ error: 'ml_indisponivel' }, 503);
         const motivo = motivoElegibilidade(item);

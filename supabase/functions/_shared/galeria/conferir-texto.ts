@@ -32,7 +32,59 @@ export function compararTextos(esperados: string[], lidos: string[]): AlertaText
     const n = norm(l);
     if (n && n.split(' ').some((p) => !palavras.has(p))) alertas.push({ tipo: 'texto_extra', nota: l });
   }
+  for (const nota of repetidos(esperados, lidos)) {
+    if (!alertas.some((a) => a.nota === nota)) alertas.push({ tipo: 'texto_extra', nota });
+  }
   return alertas;
+}
+
+const tokens = (s: string) => norm(s).split(' ').filter(Boolean);
+// Número de etapa no texto cru (norm transformaria "1,5" em "1 5"): "1. TEXTO" ou o "1." / "1" lido sozinho.
+const ETAPA = /^\s*(\d{1,2})[.)]\s/;
+const SOLTO = /^\s*(\d{1,2})\s*[.)]?\s*$/;
+const numeroEtapa = (s: string) => (ETAPA.exec(s) ?? SOLTO.exec(s))?.[1];
+
+/**
+ * Esperado que aparece mais vezes nos lidos do que foi pedido → `"<texto> (repetido)"`. Conta por sequência de
+ * palavras na concatenação dos lidos (o modelo quebra e junta blocos), ocorrências não sobrepostas, do esperado mais
+ * longo ao mais curto, consumindo o trecho casado: o curto contido no longo não conta de novo. Número de etapa
+ * ("1." lido mais vezes que nos esperados) conta à parte, só para número que algum esperado traz.
+ * Fora de escopo: valor solto que existe dentro de outro texto pedido ("16 mm" ao lado de uma seta).
+ */
+function repetidos(esperados: string[], lidos: string[]): string[] {
+  const seq: Array<string | null> = lidos.flatMap(tokens);
+  const grupos = new Map<string, { texto: string; toks: string[]; pedidos: number }>();
+  for (const e of esperados) {
+    const toks = tokens(e);
+    const g = grupos.get(toks.join(' '));
+    if (g) g.pedidos++;
+    else if (toks.length > 0) grupos.set(toks.join(' '), { texto: e, toks, pedidos: 1 });
+  }
+  const notas: string[] = [];
+  for (const g of [...grupos.values()].sort((a, b) => b.toks.length - a.toks.length)) {
+    let achados = 0;
+    for (let i = 0; i + g.toks.length <= seq.length;) {
+      if (g.toks.every((t, j) => seq[i + j] === t)) {
+        seq.fill(null, i, i + g.toks.length); // consumido: null nunca casa nem junta os vizinhos
+        achados++;
+        i += g.toks.length;
+      } else i++;
+    }
+    if (achados > g.pedidos) notas.push(`${g.texto} (repetido)`);
+  }
+  const contar = (xs: string[]) => {
+    const m = new Map<number, number>();
+    for (const x of xs) {
+      const n = numeroEtapa(x);
+      if (n !== undefined) m.set(Number(n), (m.get(Number(n)) ?? 0) + 1);
+    }
+    return m;
+  };
+  const pedidos = contar(esperados);
+  for (const [n, vezes] of contar(lidos)) {
+    if ((pedidos.get(n) ?? 0) > 0 && vezes > pedidos.get(n)!) notas.push(`${n}. (repetido)`);
+  }
+  return notas;
 }
 
 const SISTEMA = `You read the text drawn in a marketing image of a product.

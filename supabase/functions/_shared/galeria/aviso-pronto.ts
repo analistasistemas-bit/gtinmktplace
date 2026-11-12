@@ -6,14 +6,16 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { lerConfigTelegram } from '../notificacoes/config.ts';
 import { enviarTelegram } from '../notificacoes/telegram.ts';
 import { reservarNotificacao } from '../faturamento/notificacoes-dedupe.ts';
+import { ehPlano } from './plano.ts';
 
 const JANELA_MS = 3 * 60 * 60_000;
 const ABERTOS = new Set(['pendente', 'submetendo', 'gerando']);
+const FORA = new Set(['desatualizada', 'descartada']);
 
 interface Pedido {
   id: string; org_id: string; anuncio_externo_id: string | null; familia_id: string | null; criado_por: string; criado_em: string;
 }
-interface Imagem { pedido_id: string; status: string; alertas: unknown; cena_path: string | null }
+interface Imagem { pedido_id: string; status: string; alertas: unknown; cena_path: string | null; roteiro_id: string | null }
 interface Deps { agora: Date; appUrl: string; enviar?: typeof enviarTelegram }
 
 function exigir<T>(r: { data: T; error: { message: string } | null }, onde: string): T {
@@ -92,11 +94,20 @@ export async function avisarPedidosProntos(admin: SupabaseClient, deps: Deps): P
     .gte('criado_em', desde).not('criado_por', 'is', null), 'ler pedidos') ?? []) as Pedido[];
   if (pedidos.length === 0) return 0;
 
-  const imagens = (exigir(await admin.from('galeria_imagens').select('pedido_id, status, alertas, cena_path')
+  const todas = (exigir(await admin.from('galeria_imagens').select('pedido_id, status, alertas, cena_path, roteiro_id')
     .in('pedido_id', pedidos.map((p) => p.id)), 'ler imagens') ?? []) as Imagem[];
+  // Só imagens do plano formato 2 (ADR-0203) contam: pedido de roteiro antigo na janela nunca avisa nem segura a
+  // rodada, e pedido sem imagem do formato 2 nunca define a chave. Desatualizada/descartada não contam.
+  const idsRoteiro = [...new Set(todas.map((i) => i.roteiro_id).filter((r): r is string => !!r))];
+  const roteiros = idsRoteiro.length === 0 ? [] : (exigir(await admin.from('galeria_roteiros').select('id, conteudo')
+    .in('id', idsRoteiro), 'ler roteiros') ?? []) as Array<{ id: string; conteudo: unknown }>;
+  const formato2 = new Set(roteiros.filter((r) => ehPlano(r.conteudo)).map((r) => r.id));
+  const doPlano = todas.filter((i) => i.roteiro_id !== null && formato2.has(i.roteiro_id));
+  const comPlano = new Set(doPlano.map((i) => i.pedido_id));
+  const imagens = doPlano.filter((i) => !FORA.has(i.status));
 
   const rodadas = new Map<string, Pedido[]>();
-  for (const p of pedidos) {
+  for (const p of pedidos.filter((x) => comPlano.has(x.id))) {
     const k = `${p.org_id}|${p.anuncio_externo_id ?? ''}|${p.criado_por}`;
     rodadas.set(k, [...(rodadas.get(k) ?? []), p]);
   }

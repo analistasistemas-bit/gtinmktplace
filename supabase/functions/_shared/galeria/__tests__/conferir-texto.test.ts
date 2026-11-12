@@ -50,6 +50,52 @@ describe('compararTextos', () => {
 
   it('lido sem texto útil (só pontuação) é ignorado', () =>
     expect(compararTextos(['FIO'], ['FIO', ' • '])).toEqual([]))
+
+  describe('repetição', () => {
+    const ETAPAS = ['1. PUXE A FITA', '2. AMARRE O LAÇO']
+
+    it('"1." lido duas vezes com um só nos esperados → extra repetido', () =>
+      expect(compararTextos(ETAPAS, ['1.', 'PUXE A FITA', '1.', '2.', 'AMARRE O LAÇO'])).toEqual([
+        { tipo: 'texto_extra', nota: '1. (repetido)' },
+      ]))
+
+    it('etapa lida inteira uma vez e o número de novo solto → repetido', () =>
+      expect(compararTextos(ETAPAS, ['1. PUXE A FITA', '1', '2. AMARRE O LAÇO'])).toEqual([
+        { tipo: 'texto_extra', nota: '1. (repetido)' },
+      ]))
+
+    it('etapas lidas certas (número separado ou junto) → []', () => {
+      expect(compararTextos(ETAPAS, ['1.', 'PUXE A FITA', '2.', 'AMARRE O LAÇO'])).toEqual([])
+      expect(compararTextos(ETAPAS, ['1. PUXE A FITA', '2. AMARRE O LAÇO'])).toEqual([])
+    })
+
+    it('número que não está nos esperados não vira repetição (já é extra pela palavra)', () =>
+      expect(compararTextos(['PUXE A FITA'], ['PUXE A FITA', '3.', '3.'])).toEqual([
+        { tipo: 'texto_extra', nota: '3.' },
+        { tipo: 'texto_extra', nota: '3.' },
+      ]))
+
+    it('headline lida duas vezes → extra repetido', () =>
+      expect(compararTextos(['FIO PARA CRIAR', '254 METROS'], ['FIO PARA CRIAR', '254 metros', 'Fio para criar'])).toEqual([
+        { tipo: 'texto_extra', nota: 'FIO PARA CRIAR (repetido)' },
+      ]))
+
+    it('texto pedido duas vezes e lido duas vezes → []; lido três vezes → repetido', () => {
+      expect(compararTextos(['MACIO', 'MACIO'], ['MACIO', 'MACIO'])).toEqual([])
+      expect(compararTextos(['MACIO', 'MACIO'], ['MACIO', 'MACIO', 'MACIO'])).toEqual([{ tipo: 'texto_extra', nota: 'MACIO (repetido)' }])
+    })
+
+    it('esperado curto dentro de esperado longo → []', () => {
+      expect(compararTextos(['PARA CRIAR', 'FIO PARA CRIAR AMIGURUMIS'], ['FIO PARA CRIAR AMIGURUMIS', 'PARA CRIAR'])).toEqual([])
+      expect(compararTextos(['FIO PARA CRIAR', 'PARA CRIAR AMIGURUMIS'], ['FIO PARA CRIAR', 'PARA CRIAR AMIGURUMIS'])).toEqual([])
+    })
+
+    it('quebra de linha e junção de blocos não geram repetição falsa', () => {
+      expect(compararTextos(['254 METROS POR UNIDADE'], ['254', 'METROS POR', 'UNIDADE'])).toEqual([])
+      expect(compararTextos(['FIO', 'ALGODÃO', '254 M'], ['FIO ALGODÃO 254 M'])).toEqual([])
+      expect(compararTextos(['FIO DE ALGODÃO', 'ALGODÃO 254 M'], ['FIO DE ALGODÃO ALGODÃO 254 M'])).toEqual([])
+    })
+  })
 })
 
 describe('divergente', () => {

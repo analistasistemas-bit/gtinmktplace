@@ -230,6 +230,80 @@ describe('galeria-gerar', () => {
     semCusto()
   })
 
+  describe('elegibilidade das cores em paralelo (UP: um MLB por SKU)', () => {
+    const up = (statusRosa: string) => {
+      db.anuncios_externos_itens.push(
+        { anuncio_externo_id: 'an1', org_id: 'org', sku: '100R', item_externo_id: 'MLB1', status: statusRosa, retirado: false },
+        { anuncio_externo_id: 'an1', org_id: 'org', sku: '100A', item_externo_id: 'MLB2', status: 'ativo', retirado: false },
+      )
+    }
+
+    it('a 1ª cor pedida com problema define o erro, mesmo que um GET só da cor seguinte falhe antes', async () => {
+      up('encerrado') // Rosa recusa sem GET; Azul lê MLB2, que falha
+      vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+        fetchs.push(url)
+        if (url.includes('/items/MLB2?attributes=id,status')) return Response.json({ id: 'MLB2', variations: [{ id: 1 }] })
+        return new Response('{}', { status: 500 })
+      }))
+      const r = await chamar(pedido())
+      expect(r).toEqual({ status: 409, body: { error: 'conjunto_incompleto', cor: 'Rosa', detalhe: '100R:encerrado' } })
+      semCusto()
+    })
+
+    it('as leituras do ML das cores correm ao mesmo tempo', async () => {
+      up('ativo')
+      let ativos = 0
+      let max = 0
+      vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+        fetchs.push(url)
+        const m = url.match(/\/items\/(MLB\d)\?attributes=id,status/)
+        if (!m) return new Response('{}', { status: 500 })
+        ativos++
+        max = Math.max(max, ativos)
+        await new Promise((res) => setTimeout(res, 10))
+        ativos--
+        return Response.json({ id: m[1], seller_custom_field: m[1] === 'MLB1' ? '100R' : '100A', variations: [] })
+      }))
+      await chamar(pedido())
+      expect(fetchs.filter((u) => u.includes('attributes=id,status'))).toHaveLength(2)
+      expect(max).toBe(2)
+    })
+
+    // UP plano: backfill casa o SKU e não há lerItem dentro de alvosDaCor; o GET de elegibilidade também corre junto.
+    const upPlano = (eleg: (id: string) => Response) => {
+      let ativos = 0
+      const r = { max: 0 }
+      vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+        fetchs.push(url)
+        const bf = url.match(/\/items\/(MLB\d)\?attributes=id,status/)
+        if (bf) return Response.json({ id: bf[1], seller_custom_field: bf[1] === 'MLB1' ? '100R' : '100A', variations: [] })
+        const el = url.match(/\/items\/(MLB\d)\?attributes=id,catalog_listing/)
+        if (!el) return new Response('{}', { status: 500 })
+        ativos++
+        r.max = Math.max(r.max, ativos)
+        await new Promise((res) => setTimeout(res, 10))
+        ativos--
+        return eleg(el[1])
+      }))
+      return r
+    }
+
+    it('UP plano: GETs de elegibilidade das cores ao mesmo tempo', async () => {
+      up('ativo')
+      const r = upPlano((id) => Response.json({ id, catalog_listing: false, variations: [] }))
+      await chamar(pedido())
+      expect(fetchs.filter((u) => u.includes('attributes=id,catalog_listing'))).toHaveLength(2)
+      expect(r.max).toBe(2)
+    })
+
+    it('UP plano: o GET adiantado da cor seguinte não muda a resposta da 1ª (catálogo, não ml_indisponivel)', async () => {
+      up('ativo')
+      upPlano((id) => (id === 'MLB1' ? Response.json({ id, catalog_listing: true, variations: [] }) : new Response('{}', { status: 500 })))
+      expect(await chamar(pedido())).toEqual({ status: 409, body: { error: 'catalogo', cor: 'Rosa', item_id: 'MLB1' } })
+      semCusto()
+    })
+  })
+
   it('cor sem foto de referência → 409 { error: "sem_referencia", cores: [...] }', async () => {
     // Costas existe, frente não: o gerador só usa a frente.
     f.vigencia.referencias = { Rosa: { frente: SEM, costas: ref('refRc'), lateral: SEM }, Azul: { frente: SEM, costas: SEM, lateral: SEM } }

@@ -16,9 +16,12 @@ let agora: Date
 const pedido = (id: string, extra: Linha = {}): Linha => ({
   id, org_id: 'org', anuncio_externo_id: 'an1', familia_id: 'fam', criado_por: 'u1', criado_em: min(-10), ...extra,
 })
+// Imagem do plano formato 2 (rot2) por padrão; rot1 = roteiro do formato antigo.
 const img = (pedido_id: string, status: string, extra: Linha = {}): Linha => ({
-  pedido_id, status, alertas: status === 'gerada' || status === 'aprovada' ? [] : null, cena_path: 'c.jpg', ...extra,
+  pedido_id, status, alertas: status === 'gerada' || status === 'aprovada' ? [] : null, cena_path: 'c.jpg', roteiro_id: 'rot2', ...extra,
 })
+const PLANO2 = { formato: 2, imagens: [1, 2, 3, 4, 5, 6, 7].map((posicao) => ({ posicao, textos: [], prompt: 'p' })) }
+const ANTIGO = { versao: 1, imagens: [{ missao: 1, texto: 'x' }] }
 
 beforeEach(() => {
   agora = new Date(T0)
@@ -29,6 +32,7 @@ beforeEach(() => {
     familias: [{ id: 'fam', titulo_ml: 'Fio Amigurumi 254 m', nome_pai: 'FIO AMIG' }],
     configuracoes: [{ org_id: 'org', telegram_bot_token: 'tok', telegram_chat_id: null, telegram_ativo: true }],
     profiles: [{ id: 'u1', telegram_chat_id: '111' }, { id: 'u2', telegram_chat_id: '222' }],
+    galeria_roteiros: [{ id: 'rot2', org_id: 'org', conteudo: PLANO2 }, { id: 'rot1', org_id: 'org', conteudo: ANTIGO }],
   }
   fake = fakeAdmin(db)
   enviar = vi.fn(async () => true)
@@ -130,6 +134,41 @@ describe('avisarPedidosProntos', () => {
     db.galeria_imagens.push(img('p1', 'gerada'))
     expect(await rodar()).toBe(1)
     expect(avisos()).toHaveLength(1)
+  })
+
+  it('pedido antigo (roteiro fora do formato 2) dentro da janela → não avisa', async () => {
+    db.galeria_pedidos.push(pedido('p1'))
+    db.galeria_imagens.push(img('p1', 'gerada', { roteiro_id: 'rot1' }), img('p1', 'aprovada', { roteiro_id: 'rot1' }))
+    expect(await rodar()).toBe(0)
+    expect(avisos()).toEqual([])
+  })
+
+  it('pedido antigo aberto não segura a rodada', async () => {
+    db.galeria_pedidos.push(pedido('p1'), pedido('p2', { criado_em: min(-5) }))
+    db.galeria_imagens.push(img('p1', 'gerando', { roteiro_id: 'rot1' }), img('p2', 'gerada'))
+    expect(await rodar()).toBe(1)
+    expect(avisos()[0]).toMatchObject({ chave: 'galeria_pronta:p2' })
+  })
+
+  it('rodada mista: avisa uma vez, conta só o formato 2 e a chave nunca é do pedido antigo (mesmo sendo o mais novo)', async () => {
+    db.galeria_pedidos.push(pedido('pNovo', { criado_em: min(-30) }), pedido('pVelho', { criado_em: min(-5) }))
+    db.galeria_imagens.push(
+      img('pVelho', 'gerada', { roteiro_id: 'rot1' }), img('pVelho', 'gerada', { roteiro_id: 'rot1' }), img('pVelho', 'falhou', { roteiro_id: 'rot1' }),
+      img('pNovo', 'gerada'), img('pNovo', 'falhou'), img('pNovo', 'desatualizada'),
+    )
+    expect(await rodar()).toBe(1)
+    expect(avisos()).toEqual([expect.objectContaining({
+      chave: 'galeria_pronta:pNovo',
+      texto: `Suas imagens ficaram prontas: Fio Amigurumi 254 m. 1 para conferir, 1 não saiu. Abra para aprovar: ${LINK}`,
+    })])
+    expect(await rodar()).toBe(0)
+  })
+
+  it('rodada só com imagens desatualizadas/descartadas do formato 2 → não avisa', async () => {
+    db.galeria_pedidos.push(pedido('p1'))
+    db.galeria_imagens.push(img('p1', 'desatualizada'), img('p1', 'descartada'))
+    expect(await rodar()).toBe(0)
+    expect(avisos()).toEqual([])
   })
 
   it('pedido com mais de 3 h não é lido', async () => {

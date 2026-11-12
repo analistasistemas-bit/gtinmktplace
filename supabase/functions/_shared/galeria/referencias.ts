@@ -11,6 +11,7 @@ import { fotoDaOrg } from '../../criar-kit-variacao/processar.ts';
 import { carregarAnuncio, coresDoAnuncio, skusDaCor, type AnuncioGaleria } from './anuncio.ts';
 import { aplicarEtiqueta, hashFatos, montarFicha, type Fato, type FatoGravado } from './fatos.ts';
 import { lerLeituraEtiqueta } from './etiqueta.ts';
+import { CORES_POR_VEZ, emParalelo } from './paralelo.ts';
 import type { Vista } from './regras.ts';
 
 export interface Referencia { id: string; path: string; sha256: string }
@@ -76,13 +77,23 @@ export async function gravarReferencia(
 }
 
 /**
+ * Leituras repetidas entre as cores de uma mesma `calcularVigencia` (só leitura; preenchidas sob demanda, para
+ * cada uma acontecer só onde já acontecia). Um token só por chamada: as cores em paralelo nunca disputam o refresh.
+ */
+export interface CacheReferencia {
+  usuarios?: Promise<Set<string>>;
+  token?: Promise<string>;
+  itens?: Map<string, Promise<ItemMLAtual>>;
+}
+
+/**
  * Ordem: (1) imagem_path da variação mais nova da cor; (2) referência real já gravada do anúncio, cor e vista;
  * (3) 1ª foto da variação no ML que não seja imagem aplicada pela galeria nem foto de outra cor (capa).
  * Costas/lateral: só (2) — a referência daquela vista que o operador enviou.
  */
 export async function prepararReferencia(
   admin: SupabaseClient, orgId: string, anuncioId: string, cor: string, vista: Vista,
-  fotosAplicadas: Set<string>, ctx?: AnuncioGaleria,
+  fotosAplicadas: Set<string>, ctx?: AnuncioGaleria, cache: CacheReferencia = {},
 ): Promise<Referencia | { erro: 'sem_referencia' }> {
   const carregado = ctx ?? await carregarAnuncio(admin, orgId, anuncioId);
   if ('erro' in carregado) return { erro: 'sem_referencia' };
@@ -95,9 +106,12 @@ export async function prepararReferencia(
       .sort((x, y) => (x.publicado_em !== y.publicado_em ? (x.publicado_em < y.publicado_em ? 1 : -1) : (x.sku < y.sku ? -1 : 1)))
       .map((v) => v.imagem_path).filter((p): p is string => !!p))];
     if (paths.length > 0) {
-      const { data: perfis, error } = await admin.from('profiles').select('id').eq('org_id', orgId);
-      if (error) throw new Error(error.message);
-      const usuarios = new Set((perfis ?? []).map((p: { id: string }) => p.id));
+      cache.usuarios ??= (async () => {
+        const { data: perfis, error } = await admin.from('profiles').select('id').eq('org_id', orgId);
+        if (error) throw new Error(error.message);
+        return new Set((perfis ?? []).map((p: { id: string }) => p.id));
+      })();
+      const usuarios = await cache.usuarios;
       for (const p of paths.filter((x) => fotoDaOrg(x, orgId, usuarios))) {
         const { data: blob } = await admin.storage.from('imagens').download(p);
         if (!blob) continue; // arquivo sumiu: segue para a referência já gravada
@@ -111,10 +125,13 @@ export async function prepararReferencia(
   const gravada = await referenciaGravada(admin, orgId, a.anuncioId, cor, vista);
   if (gravada || vista !== 'frente' || skus.length === 0) return gravada ?? { erro: 'sem_referencia' };
 
-  const cx = await resolverConexaoEstrita(admin, orgId, 'mercado_livre');
-  if (!cx) throw new Error('Organização sem conexão com o Mercado Livre');
-  const token = await getValidAccessTokenConexao(cx);
-  const itens = new Map<string, Promise<ItemMLAtual>>();
+  cache.token ??= (async () => {
+    const cx = await resolverConexaoEstrita(admin, orgId, 'mercado_livre');
+    if (!cx) throw new Error('Organização sem conexão com o Mercado Livre');
+    return await getValidAccessTokenConexao(cx);
+  })();
+  const token = await cache.token;
+  const itens = cache.itens ??= new Map<string, Promise<ItemMLAtual>>();
   const item = (id: string) => {
     if (!itens.has(id)) itens.set(id, buscarItemML(token, id));
     return itens.get(id)!;
@@ -174,12 +191,29 @@ export async function lerFicha(admin: SupabaseClient, orgId: string, a: AnuncioG
  */
 export async function calcularVigencia(admin: SupabaseClient, orgId: string, a: AnuncioGaleria) {
   const aplicadas = await carregarFotosAplicadas(admin, orgId, a.anuncioId);
+  const cache: CacheReferencia = {};
+  // Até CORES_POR_VEZ cores ao mesmo tempo; dentro da cor as vistas seguem em sequência. Cor diferente = linha
+  // diferente em galeria_referencias. Cores com o mesmo slug (mesmo caminho no Storage) ficam na mesma vaga, em
+  // sequência, como antes.
+  const cores = coresDoAnuncio(a);
+  const porSlug = new Map<string, string[]>();
+  for (const cor of cores) porSlug.set(corSlug(cor), [...(porSlug.get(corSlug(cor)) ?? []), cor]);
+  const grupos = [...porSlug.values()];
+  const porCor = new Map<string, Record<string, Referencia | { erro: 'sem_referencia' }>>();
+  await emParalelo(grupos, CORES_POR_VEZ, async (grupo) => {
+    for (const cor of grupo) {
+      const vs: Record<string, Referencia | { erro: 'sem_referencia' }> = {};
+      for (const vista of VISTAS) vs[vista] = await prepararReferencia(admin, orgId, a.anuncioId, cor, vista, aplicadas, a, cache);
+      porCor.set(cor, vs);
+    }
+  });
+  // Montagem na ordem de antes (cores do anúncio × VISTAS): mesmas chaves, na mesma ordem. O hash ordena as chaves.
   const referencias: Record<string, Record<string, Referencia | { erro: 'sem_referencia' }>> = {};
   const shas: Record<string, string> = {};
-  for (const cor of coresDoAnuncio(a)) {
+  for (const cor of cores) {
     referencias[cor] = {};
     for (const vista of VISTAS) {
-      const r = await prepararReferencia(admin, orgId, a.anuncioId, cor, vista, aplicadas, a);
+      const r = porCor.get(cor)![vista];
       referencias[cor][vista] = r;
       if (!('erro' in r)) shas[`${cor}:${vista}`] = r.sha256;
     }
