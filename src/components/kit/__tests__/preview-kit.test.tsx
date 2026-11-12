@@ -18,6 +18,7 @@ const BASE: BaseParaKit = {
   fotoPath: null, // sem network no teste: useImageUrl(null) fica `enabled: false`
   estoque: 30,
   categoriaMlId: 'MLB1000',
+  origem: 'nacional',
   categoriaNome: 'Fitas Adesivas',
 };
 

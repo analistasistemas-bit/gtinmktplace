@@ -79,6 +79,7 @@ const BASE: BaseParaKit = {
   fotoPath: null,
   estoque: 30,
   categoriaMlId: 'MLB1000',
+  origem: 'nacional',
   categoriaNome: 'Fitas Adesivas',
 };
 

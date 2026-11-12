@@ -203,6 +203,7 @@ function baseParaKit(f: Familia, precoAtual: number): BaseParaKit {
     estoque: v?.estoque ?? null,
     categoriaMlId: f.categoriaMlId,
     categoriaNome: f.categoriaNome,
+    origem: f.origem ?? null,
   };
 }
 

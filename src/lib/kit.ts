@@ -158,6 +158,8 @@ export interface BaseParaKit {
   /** Categoria em que o produto-base está hoje — é a que o kit herda quando não há override. */
   categoriaMlId: string | null;
   categoriaNome: string | null;
+  /** Origem do produto-base (ADR-0055) — o kit herda a alíquota de imposto. */
+  origem: 'nacional' | 'importado' | null;
 }
 
 export interface KitFormValues {

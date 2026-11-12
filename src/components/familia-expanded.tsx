@@ -71,6 +71,7 @@ function baseParaKit(f: Familia): BaseParaKit {
     estoque: v?.estoque ?? null,
     categoriaMlId: f.categoriaMlId,
     categoriaNome: f.categoriaNome,
+    origem: f.origem ?? null,
   };
 }
 
