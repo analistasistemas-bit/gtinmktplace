@@ -19,7 +19,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useFamilia } from '@/hooks/useFamilia';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
-import { QK_KITS_VARIACAO, usePrecoAvulsoKit } from '@/hooks/useKitsVariacao';
+import { QK_KITS_VARIACAO, useGaleriaPecasKit, usePrecoAvulsoKit } from '@/hooks/useKitsVariacao';
+import { GaleriaPecas } from '@/components/kit-variacao/galeria-pecas';
+import { idsDaGaleria, type EscolhaGaleria } from '@/lib/kit-galeria';
 import { QK } from '@/lib/queries';
 import { fmtBRL } from '@/lib/formato';
 import { cn } from '@/lib/utils';
@@ -75,6 +77,8 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
   // Prévia do texto com as peças em que foi gerada: a criação recusa prévia de outra quantidade (previa_divergente).
   const [previa, setPrevia] = useState<{ id: string; pecas: number } | undefined>();
   const [fotos, setFotos] = useState<Record<string, FotoKit>>({});
+  // Galeria das peças (ADR-0200, adendo 12/11): o operador só remove fotos ou liga "Só a foto do kit", por combinação.
+  const [escolhaGaleria, setEscolhaGaleria] = useState<Record<string, EscolhaGaleria>>({});
   const [soEmKit, setSoEmKit] = useState(false);
   const [meta, setMeta] = useState('3');
   const [podeSeguir, setPodeSeguir] = useState(false);
@@ -100,7 +104,7 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
     chave.current = crypto.randomUUID();
     enviadas.current.clear();
     setEtapa('montagem'); setCores([]); setPecas(2); setQtd({}); setPreco(''); setTipo('gold_special');
-    setTitulo(''); setDescricao(''); setPrevia(undefined); setFotos({}); setSoEmKit(false); setMeta('3');
+    setTitulo(''); setDescricao(''); setPrevia(undefined); setFotos({}); setEscolhaGaleria({}); setSoEmKit(false); setMeta('3');
     setTextoDe(null); setEditado(false); setErroTexto(null); setConfirmarTexto(false); falhouEm.current = ''; geracoes.current.clear();
   }, [open]);
 
@@ -188,6 +192,11 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
   const [gradeAprovar, setGradeAprovar] = useState<string[] | null>(null);
   const [descartarPara, setDescartarPara] = useState<null | 'montagem' | 'conferir' | 'fechar'>(null);
   const rotulosFoto = etapa === 'anuncio' ? combinacoesPublicadas.map(rotuloCombinacao) : [];
+  // Lida ao entrar na etapa 2; a prévia é o que o servidor propõe. Falha não bloqueia: só a foto do kit.
+  const galeriaQ = useGaleriaPecasKit(
+    open && etapa !== 'montagem' ? familiaBaseId : null, abertura,
+    combinacoesPublicadas.map((c) => ({ rotulo: rotuloCombinacao(c), cores: c })),
+  );
   const ef = (r: string) => estadosFoto[r];
   const paraGerar = rotulosFoto.filter((r) => !fotos[r] && !ef(r)?.temCandidata && !ef(r)?.gerando && !ef(r)?.naoFiel);
   const paraRegerar = rotulosFoto.filter((r) => !fotos[r] && !ef(r)?.gerando && (ef(r)?.temCandidata || ef(r)?.naoFiel));
@@ -283,9 +292,16 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
         enviadas.current.set(rotulo, { file, path });
         caminhos[rotulo] = path;
       }
+      // Só o que o operador viu na prévia e manteve; o servidor recalcula a proposta e descarta o que não confere.
+      const galeria: Record<string, string[]> = {};
+      for (const c of combinacoesPublicadas) {
+        const r = rotuloCombinacao(c);
+        const ids = idsDaGaleria(galeriaQ.data?.[r], escolhaGaleria[r]);
+        if (ids.length > 0) galeria[r] = ids;
+      }
       return criarKitVariacaoEdge({
         familiaBaseId, cores: marcadas, pecasPorKit: pecas, preco: precoNum, quantidades, titulo, descricao,
-        fotos: caminhos, soEmKit: isAdmin && soEmKit, meta: soEmKit ? metaNum : 0, chaveCadastro: chave.current,
+        fotos: caminhos, ...(Object.keys(galeria).length > 0 ? { galeria } : {}), soEmKit: isAdmin && soEmKit, meta: soEmKit ? metaNum : 0, chaveCadastro: chave.current,
         listingTypeId: tipo, previaId: previa?.pecas === pecas ? previa.id : undefined,
       });
     },
@@ -298,6 +314,8 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
         description: `Os anúncios individuais ficam pausados alguns minutos enquanto as peças vão para o kit. ${AVISO_SELETOR_ML}`,
         duration: 12_000,
       });
+      // A galeria nunca recusa o kit: o que não deu para ler vem como aviso (anúncio só com a foto do kit).
+      if (r.avisos?.length) toast.warning('Galeria das peças', { description: r.avisos.join(' '), duration: 12_000 });
       qc.invalidateQueries({ queryKey: QK_KITS_VARIACAO });
       qc.invalidateQueries({ queryKey: QK.publicados });
       onOpenChange(false);
@@ -669,12 +687,19 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
                   {combinacoesPublicadas.map((c) => {
                     const rotulo = rotuloCombinacao(c);
                     return (
-                      <FotoCombinacao
-                        key={rotulo} rotulo={rotulo} cores={c} familiaBaseId={familiaBaseId} temImagemIA={temImagemIA}
-                        valor={fotos[rotulo]} onChange={(f) => setFotos((p) => ({ ...p, [rotulo]: f }))}
-                        controle={(c) => { if (c) controlesFoto.current.set(rotulo, c); else controlesFoto.current.delete(rotulo); }}
-                        onEstado={(e) => atualizarEstadoFoto(rotulo, e)} travado={loteAtivo > 0}
-                      />
+                      <div key={rotulo} className="grid content-start gap-1.5">
+                        <FotoCombinacao
+                          rotulo={rotulo} cores={c} familiaBaseId={familiaBaseId} temImagemIA={temImagemIA}
+                          valor={fotos[rotulo]} onChange={(f) => setFotos((p) => ({ ...p, [rotulo]: f }))}
+                          controle={(c) => { if (c) controlesFoto.current.set(rotulo, c); else controlesFoto.current.delete(rotulo); }}
+                          onEstado={(e) => atualizarEstadoFoto(rotulo, e)} travado={loteAtivo > 0}
+                        />
+                        <GaleriaPecas
+                          proposta={galeriaQ.data?.[rotulo]} carregando={galeriaQ.isPending && galeriaQ.fetchStatus !== 'idle'}
+                          erro={galeriaQ.isError} escolha={escolhaGaleria[rotulo]} desabilitado={criar.isPending}
+                          onChange={(e) => setEscolhaGaleria((p) => ({ ...p, [rotulo]: e }))}
+                        />
+                      </div>
                     );
                   })}
                 </div>

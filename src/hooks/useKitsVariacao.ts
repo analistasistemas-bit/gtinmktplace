@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { fetchDetalheKitVariacao, fetchKitsVariacao, fetchPrecoAvulsoKit } from '@/lib/kit-variacao-edge';
+import { fetchDetalheKitVariacao, fetchGaleriasPecasKit, fetchKitsVariacao, fetchPrecoAvulsoKit } from '@/lib/kit-variacao-edge';
 
 export const QK_KITS_VARIACAO = ['kits-variacao'] as const;
 
@@ -25,6 +25,20 @@ export function usePrecoAvulsoKit(familiaBaseId: string | null, abertura: string
     queryKey: [...QK_KITS_VARIACAO, 'preco-avulso', familiaBaseId, abertura],
     queryFn: () => fetchPrecoAvulsoKit(familiaBaseId as string),
     enabled: !!familiaBaseId && !!abertura,
+    staleTime: Infinity, gcTime: 0, retry: false, refetchOnWindowFocus: false,
+  });
+}
+
+/** Proposta de galeria com as fotos das peças (ADR-0200, adendo 12/11), lida do ML ao entrar na etapa 2. Uma leitura por
+ *  abertura e por conjunto de combinações; falha não bloqueia (a tela segue só com a foto do kit). */
+export function useGaleriaPecasKit(
+  familiaBaseId: string | null, abertura: string | null, combinacoes: Array<{ rotulo: string; cores: string[] }>,
+) {
+  const chaveCombinacoes = combinacoes.map((c) => c.rotulo).join('|');
+  return useQuery({
+    queryKey: [...QK_KITS_VARIACAO, 'galeria-pecas', familiaBaseId, abertura, chaveCombinacoes],
+    queryFn: () => fetchGaleriasPecasKit(familiaBaseId as string, combinacoes),
+    enabled: !!familiaBaseId && !!abertura && combinacoes.length > 0,
     staleTime: Infinity, gcTime: 0, retry: false, refetchOnWindowFocus: false,
   });
 }
