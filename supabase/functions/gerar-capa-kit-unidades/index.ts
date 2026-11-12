@@ -5,7 +5,7 @@
 // própria org e fora de item moderado no ML. Cada tentativa é uma linha de `kit_variacao_imagens` (`cores`/`rotulo`
 // nulos, `n` preenchido), idempotente por `request_id`, com a mesma cobrança do kit com variação (status `gerada`).
 // Máquina de estados COPIADA de `gerar-foto-kit/index.ts` (closures sobre org/pedido/início; o original não muda).
-// Teto (decisão do Diego, 12/11): 6 tentativas por (org, base, n) a cada 24 h, conferido antes de reservar.
+// Teto (decisão do Diego, 12/11): 6 tentativas por (org, base, n) a cada 24 h, atômico na reserva (RPC).
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
@@ -31,9 +31,6 @@ const LIMITE_RESPOSTA_MS = 145_000;
 const MINIMO_IA_MS = 90_000;
 const VERIFICACAO_MS = 35_000;
 const UPLOAD_VENCIDO_MS = LIMITE_RESPOSTA_MS + 30_000;
-// ADR-0205 §8: tentativas por (org, base, n) numa janela de 24 h.
-const TETO_DIARIO = 6;
-const JANELA_TETO_MS = 24 * 60 * 60_000;
 const centavos = (usd: number) => Math.ceil(Number((usd * 100).toFixed(6)));
 
 // Log de erro externo por lista de permissão (cópia do `gerar-foto-kit`): nenhum texto do provedor, banco ou storage.
@@ -41,7 +38,6 @@ const CODIGOS_LOG = new Set(['23505', '23514', '40001', '57014', 'PGRST116', 'Ab
 const MSG_LOG: Record<string, string> = {
   moderacao: 'moderação ilegível', ia: 'falha da IA', upload: 'falha no upload', registro: 'falha ao registrar',
   auditoria: 'falha na auditoria', prazo: 'prazo esgotado', interno: 'erro interno', verificacao: 'falha na verificação',
-  teto: 'falha ao contar tentativas',
 };
 function logErro(onde: string, e: unknown) {
   const x = (e ?? {}) as { status?: unknown; statusCode?: unknown; code?: unknown; name?: unknown };
@@ -229,20 +225,6 @@ async function atender(req: Request, inicio: number): Promise<Response> {
   const anterior = [...todas].reverse().find((l) => l.status === 'recusada' && l.verificacao?.aprovado === false && Number(l.tentativa) < tentativa);
   const motivos = anterior?.verificacao?.motivos ?? [];
 
-  // Teto diário (só aqui: daqui em diante há geração). Toda tentativa conta (pendente, recusada, gerada). Erro de
-  // leitura recusa (fail-closed). ponytail: dois pedidos paralelos podem passar juntos do 5 ao 7; teto atômico
-  // (RPC com lock) se o abuso aparecer.
-  const { count, error: errTeto } = await tabela().select('request_id', { count: 'exact', head: true })
-    .eq('org_id', orgId).eq('familia_base_id', familiaBaseId).eq('n', n)
-    .gte('criado_em', new Date(Date.now() - JANELA_TETO_MS).toISOString());
-  if (errTeto || typeof count !== 'number') {
-    logErro('teto', errTeto);
-    return json({ error: 'Falha ao conferir o limite diário. Tente novamente.' }, 500);
-  }
-  if (count >= TETO_DIARIO) {
-    return json({ error: 'Limite diário de gerações deste kit atingido. Envie a foto manualmente.', motivo: 'teto_diario' }, 429);
-  }
-
   // Foto de origem: capa da base ou, sem ela, a da única variação (como o front); da própria org e fora de moderado.
   const { data: base, error } = await admin.from('familias').select('capa_storage_path, variacoes(imagem_path)')
     .eq('id', familiaBaseId).eq('org_id', orgId).maybeSingle();
@@ -275,14 +257,21 @@ async function atender(req: Request, inicio: number): Promise<Response> {
   }
 
   const modelo = await resolverModeloImagem(admin, orgId);
-  const { error: errReserva } = await tabela().insert({
-    org_id: orgId, request_id: requestId, tentativa, status: 'pendente', familia_base_id: familiaBaseId,
-    cores: null, rotulo: null, n, modelo, criado_por: userId,
+  // Teto diário + reserva na MESMA transação (RPC com lock por org/base/n): pedidos paralelos nunca passam juntos
+  // das 6 tentativas em 24 h. Toda tentativa conta (pendente, recusada, gerada). 429 antes de qualquer gasto de IA.
+  const { data: reserva, error: errReserva } = await admin.rpc('kit_capa_unidades_reservar', {
+    p_org_id: orgId, p_request_id: requestId, p_tentativa: tentativa, p_familia_base_id: familiaBaseId, p_n: n,
+    p_modelo: modelo, p_criado_por: userId,
   });
   if (errReserva) {
     if (errReserva.code === '23505') return json({ error: 'Esta foto ainda está sendo gerada.', motivo: 'em_andamento' }, 409);
+    logErro('registro', errReserva);
     return json({ error: 'Falha ao registrar a geração. Tente novamente.' }, 500);
   }
+  if (reserva === 'teto') {
+    return json({ error: 'Limite diário de gerações deste kit atingido. Envie a foto manualmente.', motivo: 'teto_diario' }, 429);
+  }
+  if (reserva !== 'ok') return json({ error: 'Falha ao registrar a geração. Tente novamente.' }, 500);
   const liberar = () => tabela().delete().eq('org_id', orgId).eq('request_id', requestId).eq('tentativa', tentativa).eq('status', 'pendente');
 
   let gerada: Awaited<ReturnType<typeof gerarImagem>>;

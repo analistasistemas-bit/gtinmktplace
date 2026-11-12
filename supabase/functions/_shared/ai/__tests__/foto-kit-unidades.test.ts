@@ -18,6 +18,12 @@ describe('avaliarUnidades (veredito em código, fail-closed)', () => {
     expect(v.motivos).toEqual(['contei 5 produtos, esperava 6']);
   });
 
+  it('quantidade a MAIOR também reprova (7 em vez de 6)', () => {
+    const v = avaliarUnidades({ ...ok, quantidade_produtos: 7 }, 6);
+    expect(v.aprovado).toBe(false);
+    expect(v.motivos).toEqual(['contei 7 produtos, esperava 6']);
+  });
+
   it('texto novo, fundo não neutro e produto diferente reprovam cada um com o seu motivo', () => {
     expect(avaliarUnidades({ ...ok, texto_novo: true }, 6).motivos).toEqual([expect.stringMatching(/texto/)]);
     expect(avaliarUnidades({ ...ok, fundo_neutro: false }, 6).motivos).toEqual([expect.stringMatching(/fundo/)]);

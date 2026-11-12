@@ -10,6 +10,9 @@ const PNG_VERTICAL = png(896, 1200);
 const f = vi.hoisted(() => ({
   serve: vi.fn(),
   admin: true,
+  support: undefined as unknown,
+  consultas: [] as Array<{ t: string; filtros: Record<string, unknown> }>,
+  rpcs: [] as Array<Record<string, unknown>>,
   modulos: ['imagem_ia'] as string[],
   base: null as unknown,
   moderadas: [] as string[],
@@ -19,7 +22,6 @@ const f = vi.hoisted(() => ({
   codigoErro: undefined as unknown,
   objetos: new Set<string>(),
   insertErro: '' as string,
-  tetoErro: false,
   imagemB64: '',
   custo: 0.041 as number | undefined,
   chamadasImagem: [] as Array<Record<string, unknown>>,
@@ -34,7 +36,7 @@ const f = vi.hoisted(() => ({
 
 vi.mock('../../_shared/cors.ts', () => ({ corsHeaders: {}, handleOptions: () => new Response() }));
 vi.mock('../../_shared/auth.ts', () => ({
-  requireUserOrg: vi.fn(async () => ({ userId: 'u1', orgId: 'org-1', isAdmin: f.admin })),
+  requireUserOrg: vi.fn(async () => ({ userId: 'u1', orgId: 'org-1', isAdmin: f.admin, support: f.support })),
 }));
 vi.mock('../../_shared/support-audit.ts', () => ({ auditarOperacaoSuporte: vi.fn(async () => {}) }));
 vi.mock('../../_shared/canais/conexao.ts', () => ({ resolverConexaoEstrita: vi.fn(async () => ({ id: 'cx' })) }));
@@ -77,17 +79,15 @@ vi.mock('../../_shared/ai/client.ts', () => ({
 function tabela(t: string) {
   const filtros: Record<string, unknown> = {};
   let op: 'select' | 'insert' | 'update' | 'delete' = 'select';
-  let contar = false;
   let payload: Record<string, unknown> = {};
   const casam = () => f.linhas.filter((l) => l.org_id === filtros.org_id && l.request_id === filtros.request_id
     && (filtros.tentativa === undefined || Number(l.tentativa ?? 1) === filtros.tentativa));
   const achar = () => casam()[0];
   const q: Record<string, unknown> = {
-    select: (_c?: string, o?: { count?: string }) => { if (o?.count) contar = true; return q; },
+    select: () => q,
     order: () => q,
     eq: (c: string, v: unknown) => { filtros[c] = v; return q; },
     lt: (c: string, v: unknown) => { filtros[`${c}<`] = v; return q; },
-    gte: (c: string, v: unknown) => { filtros[`${c}>=`] = v; return q; },
     insert: (row: Record<string, unknown>) => {
       if (t !== 'kit_variacao_imagens') f.escritasProibidas.push(t);
       op = 'insert'; payload = row; return q;
@@ -100,29 +100,18 @@ function tabela(t: string) {
     maybeSingle: async () => {
       if (t === 'organizations') return { data: { modulos_habilitados: f.modulos }, error: null };
       if (t === 'configuracoes') return { data: { ai_model_imagem: null }, error: null };
-      if (t === 'familias') return { data: f.base, error: null };
+      if (t === 'familias') { f.consultas.push({ t, filtros: { ...filtros } }); return { data: f.base, error: null }; }
       if (t === 'kit_variacao_imagens') { const l = achar(); return { data: l ? { ...l } : null, error: null }; }
       return { data: null, error: null };
     },
     then: (res: (v: unknown) => void) => {
-      if (t === 'profiles') return res({ data: [{ id: 'u1' }], error: null });
+      if (t === 'profiles') { f.consultas.push({ t, filtros: { ...filtros } }); return res({ data: [{ id: 'u1' }], error: null }); }
       if (t === 'kit_variacao_imagens') {
-        if (op === 'select' && contar) {
-          if (f.tetoErro) return res({ data: null, count: null, error: { message: 'x' } });
-          const count = f.linhas.filter((l) => l.org_id === filtros.org_id && l.familia_base_id === filtros.familia_base_id
-            && l.n === filtros.n && String(l.criado_em) >= String(filtros['criado_em>='])).length;
-          return res({ data: null, count, error: null });
-        }
         if (op === 'select') {
           return res({ data: casam().map((l) => ({ ...l })).sort((a, b) => Number(a.tentativa ?? 1) - Number(b.tentativa ?? 1)), error: null });
         }
         if (op === 'insert') {
-          if (f.insertErro) return res({ data: null, error: { code: f.insertErro, message: 'duplicate' } });
-          const mesmo = f.linhas.filter((l) => l.org_id === payload.org_id && l.request_id === payload.request_id);
-          if (mesmo.some((l) => Number(l.tentativa ?? 1) === Number(payload.tentativa ?? 1) || l.status !== 'recusada')) {
-            return res({ data: null, error: { code: '23505', message: 'duplicate' } });
-          }
-          f.linhas.push({ tentativa: 1, criado_em: new Date(Date.now()).toISOString(), ...payload });
+          f.escritasProibidas.push('insert direto (a reserva é pela RPC)');
         } else if (op === 'update') {
           const l = achar();
           const casa = l && (filtros.status === undefined || l.status === filtros.status);
@@ -141,9 +130,31 @@ function tabela(t: string) {
   return q;
 }
 
+// RPC `kit_capa_unidades_reservar` (migration 20261112222227): conta (org, base, n) nas últimas 24 h e insere a
+// reserva na mesma transação; unique (org, request, tentativa) + uma viva por pedido → 23505.
+async function rpc(nome: string, a: Record<string, unknown>) {
+  if (nome !== 'kit_capa_unidades_reservar') throw new Error(`rpc inesperada: ${nome}`);
+  f.rpcs.push(a);
+  if (f.insertErro) return { data: null, error: { code: f.insertErro, message: 'x' } };
+  const desde = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
+  const usadas = f.linhas.filter((l) => l.org_id === a.p_org_id && l.familia_base_id === a.p_familia_base_id
+    && l.n === a.p_n && String(l.criado_em) >= desde).length;
+  if (usadas >= 6) return { data: 'teto', error: null };
+  const mesmo = f.linhas.filter((l) => l.org_id === a.p_org_id && l.request_id === a.p_request_id);
+  if (mesmo.some((l) => Number(l.tentativa) === a.p_tentativa || l.status !== 'recusada')) {
+    return { data: null, error: { code: '23505', message: 'duplicate' } };
+  }
+  f.linhas.push({
+    org_id: a.p_org_id, request_id: a.p_request_id, tentativa: a.p_tentativa, status: 'pendente', familia_base_id: a.p_familia_base_id,
+    cores: null, rotulo: null, n: a.p_n, modelo: a.p_modelo, criado_por: a.p_criado_por, criado_em: new Date(Date.now()).toISOString(),
+  });
+  return { data: 'ok', error: null };
+}
+
 vi.mock('../../_shared/supabase.ts', () => ({
   adminClient: () => ({
     from: tabela,
+    rpc,
     storage: {
       from: () => ({
         download: async (p: string) => {
@@ -175,7 +186,7 @@ const PATH = `org-1/kit-variacao-ia/${REQ}.png`;
 beforeEach(() => {
   f.admin = true; f.modulos = ['imagem_ia']; f.moderadas = []; f.moderacaoPedida = [];
   f.imagemFalha = false; f.erroImagem = 'provedor caiu'; f.codigoErro = undefined; f.objetos = new Set();
-  f.insertErro = ''; f.tetoErro = false; f.imagemB64 = PNG_VERTICAL; f.custo = 0.041; f.chamadasImagem = []; f.chamadasVisao = 0;
+  f.insertErro = ''; f.support = undefined; f.consultas = []; f.rpcs = []; f.imagemB64 = PNG_VERTICAL; f.custo = 0.041; f.chamadasImagem = []; f.chamadasVisao = 0;
   f.verificacoes = []; f.pedidosVerificacao = []; f.linhas = []; f.uploads = []; f.downloads = []; f.escritasProibidas = [];
   f.base = { capa_storage_path: CAPA, variacoes: [{ imagem_path: 'org-1/lote/var.jpg' }] };
 });
@@ -245,6 +256,26 @@ describe('gerar-capa-kit-unidades', () => {
     expect(Number(f.linhas[0].custo_usd)).toBeCloseTo(0.046, 6);
     expect(f.objetos.has(PATH)).toBe(true);
     expect(f.escritasProibidas).toEqual([]);
+    expect(f.rpcs).toEqual([{
+      p_org_id: 'org-1', p_request_id: REQ, p_tentativa: 1, p_familia_base_id: FAM, p_n: N,
+      p_modelo: 'google/gemini-nano-banana-2.1', p_criado_por: 'u1',
+    }]);
+  });
+
+  it('base e perfis lidos sempre filtrados pela org do chamador', async () => {
+    expect((await post(ok)).status).toBe(200);
+    expect(f.consultas.find((c) => c.t === 'familias')?.filtros).toMatchObject({ id: FAM, org_id: 'org-1' });
+    expect(f.consultas.find((c) => c.t === 'profiles')?.filtros).toMatchObject({ org_id: 'org-1' });
+  });
+
+  it('suporte com escopo full gera; suporte sem escopo full → 403, sem IA', async () => {
+    f.admin = false;
+    f.support = { scope: 'full' };
+    expect((await post(ok)).status).toBe(200);
+    f.support = { scope: 'read' };
+    f.chamadasImagem = [];
+    expect((await post({ ...ok, request_id: '44444444-4444-4444-8444-444444444444' })).status).toBe(403);
+    expect(f.chamadasImagem).toHaveLength(0);
   });
 
   it('base sem capa usa a foto da única variação', async () => {
@@ -283,7 +314,6 @@ describe('gerar-capa-kit-unidades', () => {
     expect(r.status).toBe(429);
     expect((await r.json()).motivo).toBe('teto_diario');
     expect(f.linhas).toHaveLength(6);
-    expect(f.moderacaoPedida).toHaveLength(0);
     semIA();
   });
 
@@ -295,8 +325,8 @@ describe('gerar-capa-kit-unidades', () => {
     expect(f.chamadasImagem).toHaveLength(1);
   });
 
-  it('teto ilegível → 500, sem reservar nem IA (fail-closed)', async () => {
-    f.tetoErro = true;
+  it('erro da RPC de reserva (fora do 23505) → 500, sem reservar nem IA (fail-closed)', async () => {
+    f.insertErro = '40001';
     expect((await post(ok)).status).toBe(500);
     expect(f.linhas).toHaveLength(0);
     semIA();
