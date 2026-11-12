@@ -4,7 +4,7 @@
 // anúncio da org (a edge recusa o resto). Aprovar: qualquer membro com o módulo; aplicar no anúncio: só admin.
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, Images, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ExternalLink, Images, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CarregandoMarca } from '@/components/ui/carregando-marca';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -85,6 +85,12 @@ export default function GaleriaIA() {
             <p className="flex flex-wrap gap-x-2.5 gap-y-0.5 text-xs text-muted-foreground">
               <span className="tabular-nums">{mlItemId}</span>
               <span>{formato}</span>
+              {anuncio?.mlPermalink && (
+                <a href={anuncio.mlPermalink} target="_blank" rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline">
+                  <ExternalLink aria-hidden className="size-3" />Ver no ML
+                </a>
+              )}
               {lista && <span className="tabular-nums">{fmtBRL(lista.unit_cents / 100)} por imagem</span>}
             </p>
           </div>
