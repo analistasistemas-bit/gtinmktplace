@@ -26,8 +26,14 @@ const avulso = {
   ]) as Map<string, { normal: number | null; promocao: number | null; fimPromocao: string | null }> | undefined,
   isFetching: false, isError: false,
 };
+// Proposta de galeria das peças (ADR-0200, adendo 12/11); mutável por teste.
+const galeria = {
+  data: undefined as Record<string, { fotos: Array<{ id: string; item: string; url: string | null; cor: string }>; avisos: string[]; indisponivel: boolean }> | undefined,
+  isPending: false, isError: false, fetchStatus: 'idle',
+};
 vi.mock('@/hooks/useKitsVariacao', () => ({
   useDetalheKitVariacao: () => detalhe, QK_KITS_VARIACAO: ['kits-variacao'], usePrecoAvulsoKit: () => avulso,
+  useGaleriaPecasKit: () => galeria,
 }));
 vi.mock('@/lib/kit-variacao-edge', () => ({
   gerenciarKitEdge: vi.fn(async () => ({ ok: true })),
@@ -225,6 +231,43 @@ describe('DialogGerenciarKit', () => {
       });
       expect(chamada.chaveCadastro).toBeTruthy();
       expect(gerenciarKitEdge).not.toHaveBeenCalled();
+    });
+
+    it('combinação nova com galeria das peças: prévia, remover e o pedido leva só o que foi mantido', async () => {
+      galeria.data = {
+        'Preto e Marrom': {
+          fotos: [
+            { id: 'P2', item: 'MLB-P', url: 'https://x/P2.jpg', cor: 'Preto' },
+            { id: 'M3', item: 'MLB-M', url: 'https://x/M3.jpg', cor: 'Marrom' },
+          ],
+          avisos: [], indisponivel: false,
+        },
+      };
+      try {
+        const user = userEvent.setup();
+        await abrirNovo(user);
+        await user.type(screen.getByLabelText('Nova Preto e Marrom M'), '2');
+        await user.upload(screen.getByLabelText('Foto Preto e Marrom'), new File(['x'], 'pm.jpg', { type: 'image/jpeg' }));
+        expect(await screen.findByRole('list', { name: 'Fotos das peças no anúncio' })).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Remover foto 3 (Marrom)' }));
+        await user.click(screen.getByRole('button', { name: 'Montar mais' }));
+        await user.click(screen.getByRole('button', { name: 'Montar' }));
+        await waitFor(() => expect(adicionarAoKitEdge).toHaveBeenCalledTimes(1));
+        expect(vi.mocked(adicionarAoKitEdge).mock.calls[0][0].galeria).toEqual({ 'Preto e Marrom': ['P2'] });
+      } finally {
+        galeria.data = undefined;
+      }
+    });
+
+    it('sem proposta de galeria (leitura indisponível) o pedido segue sem galeria', async () => {
+      const user = userEvent.setup();
+      await abrirNovo(user);
+      await user.type(screen.getByLabelText('Nova Preto e Marrom M'), '1');
+      await user.upload(screen.getByLabelText('Foto Preto e Marrom'), new File(['x'], 'pm.jpg', { type: 'image/jpeg' }));
+      await user.click(screen.getByRole('button', { name: 'Montar mais' }));
+      await user.click(screen.getByRole('button', { name: 'Montar' }));
+      await waitFor(() => expect(adicionarAoKitEdge).toHaveBeenCalledTimes(1));
+      expect(vi.mocked(adicionarAoKitEdge).mock.calls[0][0].galeria).toBeUndefined();
     });
 
     it('com imagem_ia, a combinação nova pode usar foto gerada, só depois de aprovada', async () => {

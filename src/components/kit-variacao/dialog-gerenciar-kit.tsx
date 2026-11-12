@@ -18,7 +18,9 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { QK_KITS_VARIACAO, useDetalheKitVariacao, usePrecoAvulsoKit } from '@/hooks/useKitsVariacao';
+import { QK_KITS_VARIACAO, useDetalheKitVariacao, useGaleriaPecasKit, usePrecoAvulsoKit } from '@/hooks/useKitsVariacao';
+import { GaleriaPecas } from '@/components/kit-variacao/galeria-pecas';
+import { idsDaGaleria, type EscolhaGaleria } from '@/lib/kit-galeria';
 import { useFamilia } from '@/hooks/useFamilia';
 import { QK } from '@/lib/queries';
 import { AVISO_SELETOR_ML, gerarCombinacoes, maximoPorCelula, rotuloCombinacao } from '@/lib/kit-variacao';
@@ -72,6 +74,9 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin: ehAdmin }
   useEffect(() => { setMeta(String(kit.meta)); }, [kit.meta]);
   // Montar mais com combinação × tamanho nunca publicado (vira SKU novo no mesmo kit).
   const [novoAberto, setNovoAberto] = useState(false);
+  // Galeria das peças da combinação nova (ADR-0200, adendo 12/11): o operador só remove ou liga "Só a foto do kit".
+  // Tamanho novo de combinação publicada copia a galeria da irmã no servidor, sem prévia aqui.
+  const [escolhaGaleria, setEscolhaGaleria] = useState<Record<string, EscolhaGaleria>>({});
   const [novaQtd, setNovaQtd] = useState<Record<string, string>>({});
   const [fotos, setFotos] = useState<Record<string, FotoKit>>({});
   const { data: modulos } = useModulosHabilitados();
@@ -92,7 +97,7 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin: ehAdmin }
   if (open !== abertoVisto) { setAbertoVisto(open); setAbertura(open ? crypto.randomUUID() : null); }
   useEffect(() => {
     if (!open) return;
-    setQtd({}); setConfirmar(null); setDesligarJunto(false); setNovaQtd({}); setFotos({}); setNovoAberto(false);
+    setQtd({}); setConfirmar(null); setDesligarJunto(false); setNovaQtd({}); setFotos({}); setEscolhaGaleria({}); setNovoAberto(false);
     operacao.current = null;
     enviadas.current.clear();
   }, [open]);
@@ -132,6 +137,16 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin: ehAdmin }
     ...novos.map((n) => ({ cores: n.cores, tamanho: n.tamanho, quantidade: n.quantidade })),
   ];
   const maximo = (cores: string[], tamanho: string) => maximoPorCelula(pecasBase, { cores, tamanho }, pedidos);
+  const galeriaQ = useGaleriaPecasKit(
+    open && novoAberto && baseId && rotulosNovos.length > 0 ? baseId : null, abertura,
+    rotulosNovos.map((rotulo) => ({ rotulo, cores: novos.find((n) => n.rotulo === rotulo)!.cores })),
+  );
+  // Só o que o operador viu na prévia e manteve; o servidor recalcula a proposta e descarta o que não confere.
+  const galeria: Record<string, string[]> = {};
+  for (const rotulo of rotulosNovos) {
+    const ids = idsDaGaleria(galeriaQ.data?.[rotulo], escolhaGaleria[rotulo]);
+    if (ids.length > 0) galeria[rotulo] = ids;
+  }
   // Combinação ou tamanho novo sai com o preço do kit: a mesma referência do avulso da criação (só informativa).
   const precosQ = usePrecoAvulsoKit(open && novoAberto && baseId ? baseId : null, abertura);
   const linhasAvulso = novos.map((n) => ({ rotulo: n.rotulo, tamanho: n.tamanho, soma: somaAvulsa(pecasBase, precosQ.isError ? undefined : precosQ.data, n.cores, n.tamanho) }));
@@ -189,7 +204,7 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin: ehAdmin }
     if (novos.length === 0) {
       ok = (await acao('montar', { itens, chave: chaveDe(JSON.stringify(['montar', itens])) })).ok;
     } else {
-      const chave = chaveDe(JSON.stringify(['adicionar', itens, novos, rotulosNovos.map((r) => { const f = fotos[r]; return [r, f instanceof File ? [f.name, f.size] : f?.path]; })]));
+      const chave = chaveDe(JSON.stringify(['adicionar', itens, novos, rotulosNovos.map((r) => { const f = fotos[r]; return [r, f instanceof File ? [f.name, f.size] : f?.path]; }), galeria]));
       // Foto já enviada nesta abertura reaproveita o caminho: a repetição mantém o pedido (hash) da chave.
       const caminhos: Record<string, string> = {};
       for (const rotulo of rotulosNovos) {
@@ -204,7 +219,7 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin: ehAdmin }
       }
       const r = await adicionarAoKitEdge({
         kitId: kit.id, versao, chaveCadastro: chave, fotos: caminhos,
-        quantidades: pedidos,
+        quantidades: pedidos, ...(Object.keys(galeria).length > 0 ? { galeria } : {}),
       });
       ok = r.ok;
       if (!r.ok) toast.error('Não foi possível concluir', { description: r.mensagem });
@@ -463,12 +478,19 @@ export function DialogGerenciarKit({ kit, open, onOpenChange, isAdmin: ehAdmin }
                       {rotulosNovos.length > 0 && (
                         <div className="grid gap-2 sm:grid-cols-2">
                           {rotulosNovos.map((rotulo) => (
-                            <FotoCombinacao
-                              key={rotulo} rotulo={rotulo} titulo={`Foto de ${rotulo}`}
-                              cores={novos.find((n) => n.rotulo === rotulo)!.cores} familiaBaseId={baseId}
-                              temImagemIA={temImagemIA} valor={fotos[rotulo]}
-                              onChange={(f) => setFotos((p) => ({ ...p, [rotulo]: f }))}
-                            />
+                            <div key={rotulo} className="grid content-start gap-1.5">
+                              <FotoCombinacao
+                                rotulo={rotulo} titulo={`Foto de ${rotulo}`}
+                                cores={novos.find((n) => n.rotulo === rotulo)!.cores} familiaBaseId={baseId}
+                                temImagemIA={temImagemIA} valor={fotos[rotulo]}
+                                onChange={(f) => setFotos((p) => ({ ...p, [rotulo]: f }))}
+                              />
+                              <GaleriaPecas
+                                proposta={galeriaQ.data?.[rotulo]} carregando={galeriaQ.isPending && galeriaQ.fetchStatus !== 'idle'}
+                                erro={galeriaQ.isError} escolha={escolhaGaleria[rotulo]} desabilitado={enviando}
+                                onChange={(e) => setEscolhaGaleria((p) => ({ ...p, [rotulo]: e }))}
+                              />
+                            </div>
                           ))}
                         </div>
                       )}

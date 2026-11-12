@@ -24,6 +24,7 @@ const detalhe = {
 vi.mock('@/hooks/useKitsVariacao', () => ({
   useDetalheKitVariacao: () => detalhe, QK_KITS_VARIACAO: ['kits-variacao'],
   usePrecoAvulsoKit: () => ({ data: undefined, isFetching: false, isError: true }),
+  useGaleriaPecasKit: () => ({ data: undefined, isPending: false, isError: false, fetchStatus: 'idle' }),
 }));
 vi.mock('@/lib/kit-variacao-edge', () => ({
   gerenciarKitEdge: vi.fn(async () => ({ ok: true })),
