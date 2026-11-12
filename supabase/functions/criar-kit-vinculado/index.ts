@@ -14,7 +14,7 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { lerSchemaAtributos, ehCategoriaMlValida } from '../_shared/categoria/schema.ts';
 import { desempatarAtributosLLM } from '../_shared/ai/atributos-llm.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
-import { criarKitsVinculados, type CriarKitInput, type KitSolicitado } from './processar.ts';
+import { criarKitsVinculados, corpoSucesso, parseKit, type CriarKitInput, type KitSolicitado } from './processar.ts';
 import { lerMarcaOrg } from '../_shared/categoria/marca-org.ts';
 
 function json(body: unknown, status = 200): Response {
@@ -62,30 +62,6 @@ async function encadearPublicacao(authorization: string, familiaIds: string[]): 
     console.error('criar_kit_vinculado_publicar_falhou', { familiaIds, erro: String(e) });
     return false;
   }
-}
-
-function parseKit(raw: unknown): KitSolicitado | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const r = raw as Record<string, unknown>;
-  if (
-    typeof r.multiplicador !== 'number' || typeof r.chave_cadastro !== 'string' || !r.chave_cadastro
-    || typeof r.titulo !== 'string' || typeof r.descricao !== 'string' || typeof r.preco !== 'number'
-  ) {
-    return null;
-  }
-  return {
-    multiplicador: r.multiplicador,
-    chaveCadastro: r.chave_cadastro,
-    titulo: r.titulo,
-    descricao: r.descricao,
-    preco: r.preco,
-    gtin: typeof r.gtin === 'string' ? r.gtin : null,
-    imagemPath: typeof r.imagem_path === 'string' ? r.imagem_path : null,
-    alturaCm: typeof r.altura_cm === 'number' ? r.altura_cm : 0,
-    larguraCm: typeof r.largura_cm === 'number' ? r.largura_cm : 0,
-    comprimentoCm: typeof r.comprimento_cm === 'number' ? r.comprimento_cm : 0,
-    atacado: Array.isArray(r.atacado) ? r.atacado : null,
-  };
 }
 
 Deno.serve(async (req) => {
@@ -176,5 +152,5 @@ Deno.serve(async (req) => {
   }
 
   await auditarOperacaoSuporte(admin, context, target, 'succeeded');
-  return json({ ok: true, kits: resultado.kits, publicacaoOk: resultado.publicacaoOk, loteId: resultado.loteId });
+  return json(corpoSucesso(resultado));
 });

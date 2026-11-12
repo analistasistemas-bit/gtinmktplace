@@ -179,6 +179,8 @@ export interface KitFormValues {
   larguraCm: number;
   comprimentoCm: number;
   atacado: unknown[] | null;
+  /** ADR-0204: ids da proposta (fotos 2 a 7 da base) que o operador manteve. */
+  galeria?: string[];
 }
 
 export interface ResultadoCriarKit {
@@ -193,6 +195,8 @@ export interface ResultadoCriarKit {
   /** Id do lote técnico desta chamada — leva o operador ao relatório para acompanhar a
    *  publicação. Ausente quando todos os kits pedidos já existiam (reenvio puro). */
   loteId?: string;
+  /** ADR-0204: galeria da base não lida (kit só com a capa). Nunca é erro de criação. */
+  avisos?: string[];
 }
 
 /** M-0: badge "kits aguardando" da Revisão (BadgeKitsAguardando) — quantos kits, por
@@ -221,6 +225,7 @@ export async function criarKitVinculado(p: {
         preco: k.preco, gtin: k.gtin, imagem_path: k.imagemPath,
         altura_cm: k.alturaCm, largura_cm: k.larguraCm, comprimento_cm: k.comprimentoCm,
         atacado: k.atacado,
+        ...(k.galeria ? { galeria: k.galeria } : {}),
       })),
       categoria_override: p.categoriaOverride
         ? { categoria_ml_id: p.categoriaOverride.categoriaMlId, categoria_nome: p.categoriaOverride.categoriaNome }

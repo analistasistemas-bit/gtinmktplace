@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
 import {
-  criarKitsVinculados, montarFamiliaKit, mensagemFaltantes,
+  criarKitsVinculados, montarFamiliaKit, mensagemFaltantes, parseKit, corpoSucesso,
   type CriarKitDeps, type CriarKitInput, type KitSolicitado,
 } from '../processar.ts';
 import { aplicarKitNosAtributos } from '../../_shared/categoria/atributos.ts';
@@ -987,5 +987,130 @@ describe('marca do produto no kit vinculado (ADR-0188)', () => {
     expect(r.ok).toBe(true);
     const atributos = inserts.familias[0].atributos_ml as { id: string; value_name?: string }[];
     expect(atributos.find((a) => a.id === 'BRAND')?.value_name).toBe('Zaven');
+  });
+});
+
+// ADR-0204: fotos 2 a 7 do anúncio da base gravadas na variação do kit (proposta ∩ pedido).
+describe('galeria da base no kit vinculado (ADR-0204)', () => {
+  const PROPOSTA = [
+    { id: 'p1', item: 'MLB1', url: 'u1' }, { id: 'p2', item: 'MLB1', url: 'u2' }, { id: 'p3', item: 'MLB1', url: 'u3' },
+  ];
+  function comProposta(opts: Parameters<typeof depsFake>[0] = {}, proposta: () => Promise<unknown> = async () => ({
+    fotos: PROPOSTA, avisos: [], indisponivel: false, limite: 10,
+  })) {
+    const fake = depsFake({ mlItemId: 'MLB1', ...opts });
+    const spy = vi.fn(proposta);
+    fake.deps.propostaGaleria = spy as never;
+    return { ...fake, spy };
+  }
+
+  it('sem galeria no pedido: grava [] e não lê o ML; só a coluna da galeria difere do pedido com galeria', async () => {
+    const sem = comProposta();
+    expect((await criarKitsVinculados(sem.deps, { familiaBaseId: BASE_ID, kits: [kitPadrao(2)] })).ok).toBe(true);
+    expect(sem.inserts.variacoes[0].galeria_ml_fotos).toEqual([]);
+    expect(sem.spy).not.toHaveBeenCalled();
+
+    const com = comProposta();
+    await criarKitsVinculados(com.deps, { familiaBaseId: BASE_ID, kits: [{ ...kitPadrao(2), galeria: ['p1'] }] });
+    const { galeria_ml_fotos: g1, ...restoSem } = sem.inserts.variacoes[0];
+    const { galeria_ml_fotos: g2, ...restoCom } = com.inserts.variacoes[0];
+    expect(g1).toEqual([]);
+    expect(g2).toEqual([{ id: 'p1', item: 'MLB1' }]);
+    expect(restoCom).toEqual(restoSem);
+    expect(com.inserts.familias[0]).toEqual(sem.inserts.familias[0]);
+  });
+
+  it('grava proposta ∩ pedido na ordem da proposta; ids fora da proposta são ignorados', async () => {
+    const { deps, inserts, spy } = comProposta();
+    const r = await criarKitsVinculados(deps, {
+      familiaBaseId: BASE_ID, kits: [{ ...kitPadrao(2), galeria: ['p3', 'intruso', 'p1'] }],
+    });
+    expect(r.ok).toBe(true);
+    expect(inserts.variacoes[0].galeria_ml_fotos).toEqual([{ id: 'p1', item: 'MLB1' }, { id: 'p3', item: 'MLB1' }]);
+    expect(spy).toHaveBeenCalledWith({ token: 'fake-token', itemIdBase: 'MLB1', categoriaKitId: 'MLB123' });
+  });
+
+  it('pedido [] → [] sem ler o ML', async () => {
+    const { deps, inserts, spy } = comProposta();
+    await criarKitsVinculados(deps, { familiaBaseId: BASE_ID, kits: [{ ...kitPadrao(2), galeria: [] }] });
+    expect(inserts.variacoes[0].galeria_ml_fotos).toEqual([]);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('base sem ml_item_id → [] sem erro e sem ler o ML', async () => {
+    const { deps, inserts, spy } = comProposta({ mlItemId: null });
+    const r = await criarKitsVinculados(deps, { familiaBaseId: BASE_ID, kits: [{ ...kitPadrao(2), galeria: ['p1'] }] });
+    expect(r.ok).toBe(true);
+    expect(inserts.variacoes[0].galeria_ml_fotos).toEqual([]);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('kit não herda galeria_ml_fotos da variação da base', async () => {
+    const { deps, inserts, state } = comProposta();
+    state.baseVariacoes[0].galeria_ml_fotos = [{ id: 'velha', item: 'MLB9' }];
+    await criarKitsVinculados(deps, { familiaBaseId: BASE_ID, kits: [kitPadrao(2)] });
+    expect(inserts.variacoes[0].galeria_ml_fotos).toEqual([]);
+  });
+
+  it('falha de leitura do ML → [], a criação segue e o aviso volta em avisos', async () => {
+    const { deps, inserts } = comProposta({}, async () => { throw new Error('ML fora'); });
+    const r = await criarKitsVinculados(deps, { familiaBaseId: BASE_ID, kits: [{ ...kitPadrao(2), galeria: ['p1'] }] });
+    expect(r.ok).toBe(true);
+    expect(inserts.variacoes[0].galeria_ml_fotos).toEqual([]);
+    expect(r.avisos?.[0]).toContain('ML fora');
+  });
+
+  it('leitura indisponível (avisos da proposta) → [] e avisos repassados', async () => {
+    const { deps, inserts } = comProposta({}, async () => ({
+      fotos: [], avisos: ['Fotos das peças indisponíveis (ML /items/bulk 500).'], indisponivel: true, limite: 10,
+    }));
+    const r = await criarKitsVinculados(deps, { familiaBaseId: BASE_ID, kits: [{ ...kitPadrao(2), galeria: ['p1'] }] });
+    expect(r.ok).toBe(true);
+    expect(inserts.variacoes[0].galeria_ml_fotos).toEqual([]);
+    expect(r.avisos).toEqual(['Fotos das peças indisponíveis (ML /items/bulk 500).']);
+  });
+
+  it('categoria efetiva do kit (override) define o limite da proposta', async () => {
+    const { deps, spy } = comProposta({ schemaPorCategoria: { 'MLB-OVERRIDE': SCHEMA_OVERRIDE_COM_KIT } });
+    const r = await criarKitsVinculados(deps, {
+      familiaBaseId: BASE_ID, kits: [{ ...kitPadrao(2), galeria: ['p1'] }],
+      categoriaOverride: { categoriaMlId: 'MLB-OVERRIDE', categoriaNome: 'Outra' },
+    });
+    expect(r.ok).toBe(true);
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ categoriaKitId: 'MLB-OVERRIDE' }));
+  });
+
+  it('dois kits, um pede galeria: uma leitura só; o outro grava []', async () => {
+    const { deps, inserts, spy } = comProposta();
+    await criarKitsVinculados(deps, {
+      familiaBaseId: BASE_ID, kits: [{ ...kitPadrao(2), galeria: ['p2'] }, kitPadrao(3)],
+    });
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(inserts.variacoes[0].galeria_ml_fotos).toEqual([{ id: 'p2', item: 'MLB1' }]);
+    expect(inserts.variacoes[1].galeria_ml_fotos).toEqual([]);
+  });
+});
+
+describe('parseKit / corpoSucesso (index.ts)', () => {
+  const RAW = { multiplicador: 2, chave_cadastro: 'uuid-k2', titulo: 'Kit', descricao: 'd', preco: 10 };
+
+  it('preserva galeria (só ids texto não vazios)', () => {
+    expect(parseKit({ ...RAW, galeria: ['p1', 7, '', 'p2'] })?.galeria).toEqual(['p1', 'p2']);
+  });
+
+  it('sem galeria ou galeria fora do formato → undefined', () => {
+    expect(parseKit(RAW)?.galeria).toBeUndefined();
+    expect(parseKit({ ...RAW, galeria: 'p1' })?.galeria).toBeUndefined();
+  });
+
+  it('galeria é limitada em tamanho', () => {
+    const muitos = Array.from({ length: 500 }, (_, i) => `p${i}`);
+    expect(parseKit({ ...RAW, galeria: muitos })!.galeria!.length).toBeLessThanOrEqual(20);
+  });
+
+  it('resposta de sucesso inclui avisos', () => {
+    expect(corpoSucesso({ ok: true, kits: [], publicacaoOk: true, loteId: 'l', avisos: ['a'] }))
+      .toEqual({ ok: true, kits: [], publicacaoOk: true, loteId: 'l', avisos: ['a'] });
+    expect(corpoSucesso({ ok: true, kits: [], publicacaoOk: true }).avisos).toEqual([]);
   });
 });

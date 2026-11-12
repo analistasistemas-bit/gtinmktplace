@@ -17,6 +17,8 @@ import { listarKitsVivos } from '../_shared/estoque/kit.ts';
 import { EMBED_MODULOS, kitLigado, skusParticipantes } from '../_shared/kit-variacao/politica.ts';
 import { mensagemNcm, ncmsInvalidos } from '../_shared/fiscal/ncm-oficial.ts';
 import { forcarMarcaDoProduto, marcaParaCriacao } from '../_shared/categoria/marca-org.ts';
+import { itemIdDaBase, propostaGaleriaBase } from '../_shared/kit-variacao/galeria-base.ts';
+import type { FotoPeca } from '../_shared/kit-variacao/galeria-pecas.ts';
 
 export interface KitSolicitado {
   multiplicador: number;
@@ -30,6 +32,44 @@ export interface KitSolicitado {
   larguraCm: number;
   comprimentoCm: number;
   atacado: unknown[] | null;
+  /** ADR-0204: ids da proposta (fotos 2 a 7 da base) que o operador manteve. Ausente/[] → sem galeria. */
+  galeria?: string[];
+}
+
+// ponytail: teto anti-abuso do corpo; a proposta tem no máximo MAX_FOTOS_BASE_KIT (6) ids.
+const MAX_IDS_GALERIA_PEDIDO = 20;
+
+/** Corpo HTTP → KitSolicitado (index.ts). `galeria` fora do formato vira ausente: nunca bloqueia a criação. */
+export function parseKit(raw: unknown): KitSolicitado | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (
+    typeof r.multiplicador !== 'number' || typeof r.chave_cadastro !== 'string' || !r.chave_cadastro
+    || typeof r.titulo !== 'string' || typeof r.descricao !== 'string' || typeof r.preco !== 'number'
+  ) {
+    return null;
+  }
+  return {
+    multiplicador: r.multiplicador,
+    chaveCadastro: r.chave_cadastro,
+    titulo: r.titulo,
+    descricao: r.descricao,
+    preco: r.preco,
+    gtin: typeof r.gtin === 'string' ? r.gtin : null,
+    imagemPath: typeof r.imagem_path === 'string' ? r.imagem_path : null,
+    alturaCm: typeof r.altura_cm === 'number' ? r.altura_cm : 0,
+    larguraCm: typeof r.largura_cm === 'number' ? r.largura_cm : 0,
+    comprimentoCm: typeof r.comprimento_cm === 'number' ? r.comprimento_cm : 0,
+    atacado: Array.isArray(r.atacado) ? r.atacado : null,
+    galeria: Array.isArray(r.galeria)
+      ? r.galeria.filter((i): i is string => typeof i === 'string' && i !== '').slice(0, MAX_IDS_GALERIA_PEDIDO)
+      : undefined,
+  };
+}
+
+/** Corpo da resposta de sucesso do index.ts. */
+export function corpoSucesso(r: ResultadoCriarKits) {
+  return { ok: true, kits: r.kits, publicacaoOk: r.publicacaoOk, loteId: r.loteId, avisos: r.avisos ?? [] };
 }
 
 export interface CriarKitInput {
@@ -62,6 +102,8 @@ export interface ResultadoCriarKits {
    *  pra acompanhar a publicação. Ausente quando todos os kits pedidos já existiam
    *  (kitsFaltando vazio: nenhum lote novo nasce). */
   loteId?: string;
+  /** ADR-0204: galeria da base não lida (o kit nasce só com a capa). Nunca impede a criação. */
+  avisos?: string[];
 }
 
 export interface CriarKitDeps {
@@ -83,6 +125,8 @@ export interface CriarKitDeps {
   /** Marca da org (ADR-0186): fallback de BRAND/MANUFACTURER e, com marca própria, a marca imposta. */
   /** Marca padrão da org (fallback da criação). ADR-0188: a marca do produto vem de `base.marca`. */
   marcaPadrao?: string;
+  /** ADR-0204: injetável em teste (sem rede); produção usa `propostaGaleriaBase`. */
+  propostaGaleria?: (p: Parameters<typeof propostaGaleriaBase>[0]) => ReturnType<typeof propostaGaleriaBase>;
 }
 
 // O que NÃO se copia da base: identidade, lifecycle, rastros de execução e resultado.
@@ -166,7 +210,7 @@ export function montarFamiliaKit(
 export function montarVariacaoKit(
   baseVar: Record<string, unknown>,
   kit: KitSolicitado,
-  ctx: { familiaId: string; codigo: string },
+  ctx: { familiaId: string; codigo: string; galeria?: FotoPeca[] },
 ): Record<string, unknown> {
   const clone = clonarSem(baseVar, STRIP_VARIACAO_KIT);
   return {
@@ -206,7 +250,16 @@ export function montarVariacaoKit(
     cor_editada_pelo_operador: false,
     excluida_da_publicacao: false,
     atacado: null,
+    // ADR-0204: explícita, NUNCA herdada da base. Array (jsonb), nunca string.
+    galeria_ml_fotos: ctx.galeria ?? [],
   };
+}
+
+/** ADR-0204: proposta ∩ pedido, na ordem da proposta (o servidor é a autoridade; o cliente só remove). */
+function galeriaDoKit(proposta: FotoPeca[], pedido: string[] | undefined): FotoPeca[] {
+  if (!pedido?.length) return [];
+  const manter = new Set(pedido);
+  return proposta.filter((f) => manter.has(f.id)).map(({ id, item }) => ({ id, item }));
 }
 
 /**
@@ -368,6 +421,7 @@ export async function criarKitsVinculados(
   // Só existe quando kitsFaltando não é vazio (lote novo nasce dentro do bloco abaixo);
   // reenvio puro (todos os kits pedidos já existiam) não cria lote e devolve undefined.
   let loteId: string | undefined;
+  const avisos: string[] = [];
 
   if (kitsFaltando.length > 0) {
     const { data: variacoesBase } = await admin.from('variacoes')
@@ -545,6 +599,20 @@ export async function criarKitsVinculados(
       }
     }
 
+    // ── Galeria da base (ADR-0204): só lê o ML se algum kit pediu e a base está publicada. Uma
+    //    leitura para todos (mesma base, mesma categoria efetiva). Falha nunca impede a criação. ─
+    let proposta: FotoPeca[] = [];
+    const itemIdBase = itemIdDaBase(base as { ml_item_id?: string | null });
+    if (itemIdBase && kitsFaltando.some((k) => (k.galeria?.length ?? 0) > 0)) {
+      try {
+        const g = await (deps.propostaGaleria ?? propostaGaleriaBase)({ token, itemIdBase, categoriaKitId: categoriaAlvo });
+        proposta = g.fotos;
+        avisos.push(...g.avisos);
+      } catch (e) {
+        avisos.push(`Fotos da base não lidas (${e instanceof Error ? e.message : String(e)}); kit só com a capa.`);
+      }
+    }
+
     // ── Códigos (1 PAI + 1 SKU por kit) ──────────────────────────────────────────────────
     const reserva = await reservarCodigos(admin, orgId, kitsFaltando.length);
     if ('erro' in reserva) return { ok: false, motivo: 'falha_numeracao', mensagem: reserva.erro };
@@ -592,7 +660,7 @@ export async function criarKitsVinculados(
       const familiaId = familiaCriada.id as string;
 
       const variacaoObj = montarVariacaoKit(baseVar as Record<string, unknown>, kit, {
-        familiaId, codigo: par.codigo,
+        familiaId, codigo: par.codigo, galeria: galeriaDoKit(proposta, kit.galeria),
       });
       const { error: varErr } = await admin.from('variacoes').insert(variacaoObj);
       if (varErr) {
@@ -627,5 +695,5 @@ export async function criarKitsVinculados(
     }
   }
 
-  return { ok: true, kits: [...kitsExistentes, ...kitsCriados], publicacaoOk, loteId };
+  return { ok: true, kits: [...kitsExistentes, ...kitsCriados], publicacaoOk, loteId, avisos };
 }
