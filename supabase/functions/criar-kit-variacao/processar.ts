@@ -14,6 +14,7 @@ import { aplicarKitNosAtributos } from '../_shared/categoria/atributos.ts';
 import type { AtributoSchema } from '../_shared/categoria/schema.ts';
 import { gradeDaFamilia } from '../_shared/produto/tipos-produto-valores.ts';
 import { parseStatusML } from '../_shared/ml/status.ts';
+import { removerCorDoSlot } from '../_shared/cor/sem-atributo.ts';
 import { kitLigado } from '../_shared/kit-variacao/politica.ts';
 import type { OfertaUP } from '../_shared/kit-variacao/ml-oferta.ts';
 import { normalizarCombinacao, rotuloCombinacao } from '../_shared/kit-variacao/combinacoes.ts';
@@ -240,6 +241,24 @@ export async function pedidoHash(
   ]);
   const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonico)));
   return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Cor no nível família do kit. `MODEL` é um valor só para o anúncio inteiro e vem da base (nome da planilha, que pode
+ * trazer a cor da base): tira as cores da base, da mais longa à mais curta ("Azul Claro" antes de "Azul"), e cai no
+ * título se nada sobrar. `MAIN_COLOR` vai "Multicolorido" (toda combinação tem 2+ cores distintas), só se o dicionário
+ * da categoria tiver o valor; o `COLOR` livre ("Preto e Azul Claro") não deriva cor principal sozinho no ML.
+ */
+export function ajustarCorDoKit(
+  atributos: AtributoML[], schema: AtributoSchema[], coresBase: string[], titulo: string,
+): AtributoML[] {
+  const cores = [...new Set(coresBase.filter(Boolean))].sort((a, b) => b.length - a.length);
+  const saida = atributos.map((a) => {
+    if (a.id !== 'MODEL' || typeof a.value_name !== 'string') return a;
+    return { ...a, value_name: removerCorDoSlot(a.value_name, cores) || titulo };
+  });
+  const multi = schema.find((s) => s.id === 'MAIN_COLOR')?.valores.find((v) => v.nome.toLowerCase() === 'multicolorido');
+  return multi ? [...saida, { id: 'MAIN_COLOR', value_id: multi.id }] : saida;
 }
 
 interface Combinacao { cores: string[]; rotulo: string; tamanho: string; quantidade: number; componentes: Linha[] }
@@ -498,7 +517,10 @@ export async function criarKitVariacao(
   // Categoria e atributos da base, sem IA. COLOR vai por SKU (o rótulo da combinação). Formato "Kit" e
   // quantidade só em categoria que tem SALE_FORMAT (MLB3112 não tem; ADR-0071).
   const schema = await deps.lerSchema(familia.categoria_ml_id as string);
-  let atributos = ((familia.atributos_ml as AtributoML[] | null) ?? []).filter((a) => a.id !== 'COLOR' && a.id !== 'MAIN_COLOR');
+  let atributos = ajustarCorDoKit(
+    ((familia.atributos_ml as AtributoML[] | null) ?? []).filter((a) => a.id !== 'COLOR' && a.id !== 'MAIN_COLOR'),
+    schema, base.variacoes.map((v) => texto(v.cor)), input.titulo.trim(),
+  );
   if (schema.some((s) => s.id === 'SALE_FORMAT')) {
     try {
       atributos = aplicarKitNosAtributos(schema, atributos, input.pecasPorKit);

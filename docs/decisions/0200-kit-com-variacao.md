@@ -419,3 +419,22 @@ reprovadas antigas foram abertas e estavam fiéis. Limites: um produto só; a ge
 **Em aberto (proposta, não decidido).** Conferir por visão só o que o código decide com segurança (quantidade, cor e
 proporção), deixando bolsos, etiquetas e cordão para a aprovação humana, e reduzir de 3 para 1 a regeração automática,
 como a galeria fez (ADR-0203).
+
+## Emenda 2026-11-12 — `MODEL` sem cor e `MAIN_COLOR` Multicolorido no nível família
+
+**Achado (kit `00000250`, MLB188064, conferido no ML):** o item do kit saía só com `MODEL` herdado da base
+("… Masculino Preto") e `COLOR` livre ("Preto e Azul Claro"); o item normal da mesma categoria tem `MAIN_COLOR=Preto`,
+derivado pelo ML do `value_id` de `COLOR`. O rótulo da combinação não casa com o dicionário, então o kit ficava fora do
+filtro de cor, e todo kit sem preto herdava "Preto" no modelo. `MODEL` é valor único do anúncio (não está em `POR_SKU`).
+
+**Decisão (revisão Fable 5.2):**
+1. `MODEL` do kit perde as cores das variações da base (da mais longa à mais curta); se nada sobrar, usa o título do kit.
+2. `MAIN_COLOR = Multicolorido` no nível família, só se o dicionário da categoria tiver o valor. Toda combinação tem 2+
+   cores distintas, então é verdadeiro; "primeira cor" exigiria mapear tom → cor principal (dado inventado).
+3. `UNITS_PER_PACK`/`SALE_FORMAT` seguem só onde a categoria os expõe (MLB188064 não expõe; a quantidade fica no
+   título). `IS_KIT` (hidden) não é forçado: sem prova de que persiste.
+
+**Prova:** `POST /items/validate` real (MLB188064) com `MAIN_COLOR=Multicolorido` e com `IS_KIT=Sim` devolveu só o aviso
+de frete `lost_me1_by_user` (normal). Kits já publicados precisam de correção no banco **e** PUT no ML juntos (senão o
+próximo "Montar mais" cria SKU com `MODEL` diferente dos irmãos): fica para um kit piloto, com OK do Diego. Fora do
+escopo: a base tem o mesmo `MODEL` com cor (`resolver-atributos-genericos.ts:82`).
