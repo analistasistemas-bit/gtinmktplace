@@ -551,3 +551,7 @@ custo subestimado — fora da regra da operação.
 ## Emenda 2026-11-07 — Kit com variação
 
 O kit com variação (ADR-0200) gera título e descrição por IA, em etapa própria que diz que é kit e quantas peças. Isso difere da Decisão 3 deste ADR, que vale só para o kit vinculado. O kit vinculado não muda.
+
+## Adendo 2026-11-12 — Promoção da base no kit vinculado
+
+O dialog do kit vinculado mostra a promoção ativa/futura do produto-base, lida pela edge `preco-avulso-kit` (ADR-0200), cujo gate passou a aceitar o módulo `kit_variacao` **ou** `estoque` (leitura somente, escopo por `org_id`). A promoção da base é **informativa**: não altera o preço do kit nem bloqueia a criação. Aprovado pelo Diego em 2026-11-12.

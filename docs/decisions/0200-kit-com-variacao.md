@@ -460,3 +460,7 @@ escopo: a base tem o mesmo `MODEL` com cor (`resolver-atributos-genericos.ts:82`
 **Medido em 12/11 depois do deploy (escrita autorizada pelo Diego, kit 00000250 da Zaven, criado antes da feature).** `PUT /items/{id}` só com `pictures` em 9 itens UP planos, cada um com a foto do kit mais 8 fotos de outros anúncios da conta (`scripts/aplicar-galeria-kit-publicado.ts`, 1 anúncio primeiro, snapshot antes de escrever): 9 de 9 com HTTP 200, fotos iguais às enviadas e preço, estoque, status e SKU iguais ao snapshot; os itens seguiram ativos e sem `sub_status` na releitura. Prova que o ML aceita reutilizar `picture_id` hospedado em outro anúncio da mesma conta no PUT. Snapshots em `docs/superpowers/specs/evidencias/galeria-kit/` (desfazer: `--desfazer <arquivo>`).
 
 **Ainda a medir.** O 1º CREATE real com galeria (o PUT acima já prova o reuso do id; o CREATE usa o mesmo `pictures`); e uma família publicada pelo app, cujo item sai como `[capa, capa2, capa3, foto da cor]` e para a qual a regra literal rende menos (a decisão da regra nesse caso é do Diego).
+
+## Adendo 2026-11-12 — Gate da edge `preco-avulso-kit`
+
+A edge `preco-avulso-kit` (só leitura, escopada por `org_id`) passa a aceitar o módulo `kit_variacao` **ou** `estoque`, para o kit vinculado (ADR-0151) mostrar a promoção ativa/futura do produto-base sem duplicar a edge. A promoção da base é **informativa**: falha do ML mostra "promoção da base indisponível" e nunca bloqueia o kit. Aprovado pelo Diego em 2026-11-12.
