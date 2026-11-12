@@ -85,4 +85,29 @@ describe('DialogCriarKitVariacao: preço na etapa Conferir', () => {
     expect(screen.getByText(/em relação a/)).toHaveTextContent('lucro R$ 41,00 (+R$ 16,00 em relação a R$ 100,00)');
     await vi.waitFor(() => expect(screen.getByRole('button', { name: 'Criar kit' })).toBeEnabled());
   });
+
+  it('etapa 2 mostra "Você recebe por venda" e recalcula ao mudar o preço, sem o "Seguir mesmo assim"', async () => {
+    vi.mocked(calcularTarifaML).mockImplementation(async (preco) => tarifa(preco));
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter>
+          <DialogCriarKitVariacao familiaBaseId="FAM" open onOpenChange={() => {}} isAdmin={false} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    for (const c of ['Preto', 'Branco']) await user.click(screen.getByRole('checkbox', { name: `Cor ${c}` }));
+    await user.type(screen.getByLabelText('Quantidade Preto e Branco M'), '1');
+    await user.click(screen.getByRole('button', { name: 'Próximo' }));
+    await user.clear(screen.getByLabelText('Preço do kit'));
+    await user.type(screen.getByLabelText('Preço do kit'), '100');
+    // 100 − 12 − 10 − 8 = 70; custo 45 → lucro 25
+    expect(await screen.findByText('R$ 25,00')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Simulador de lucro do kit' })).toBeInTheDocument();
+    await user.clear(screen.getByLabelText('Preço do kit'));
+    await user.type(screen.getByLabelText('Preço do kit'), '50');
+    // 50 − 6 − 10 − 4 = 30; custo 45 → prejuízo −15: avisa, mas a confirmação fica só na etapa 3.
+    expect(await screen.findByText('Este preço dá prejuízo em pelo menos uma combinação.')).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: 'Seguir mesmo assim' })).toBeNull();
+  });
 });

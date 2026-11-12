@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -221,7 +221,7 @@ describe('Calculadora ML', () => {
 
     expect(screen.getByRole('heading', { name: /^clássico$/i })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /^premium$/i })).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /ver premium/i }))
+    await user.click(screen.getByRole('tab', { name: /premium/i }))
     expect(screen.getByText('R$ 22,00')).toBeInTheDocument()
   })
 
@@ -231,7 +231,7 @@ describe('Calculadora ML', () => {
 
     expect(screen.getByText(/se o preço de venda cair 5%/i)).toBeInTheDocument()
     expect(screen.getByText(/3,93/)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /ver premium/i }))
+    await user.click(screen.getByRole('tab', { name: /premium/i }))
     expect(screen.getByText(/3,68/)).toBeInTheDocument()
   })
 
@@ -274,7 +274,7 @@ describe('Calculadora ML', () => {
     render(<FormularioCalculadoraML {...props} />)
 
     fireEvent.change(screen.getByLabelText('Custo de compra (R$)'), { target: { value: '-5' } })
-    fireEvent.change(screen.getByLabelText('Margem (%)'), { target: { value: '100' } })
+    fireEvent.change(screen.getByLabelText('Margem desejada (%)'), { target: { value: '100' } })
     fireEvent.change(screen.getByLabelText('Comissão (%)'), { target: { value: '140' } })
 
     expect(props.onEntrada).not.toHaveBeenCalled()
@@ -299,9 +299,9 @@ describe('Calculadora ML', () => {
     const props = propsForm()
     render(<FormularioCalculadoraML {...props} />)
 
-    fireEvent.change(screen.getByLabelText('Margem (%)'), { target: { value: '-12,5' } })
+    fireEvent.change(screen.getByLabelText('Margem desejada (%)'), { target: { value: '-12,5' } })
     expect(props.onMargem).toHaveBeenLastCalledWith(-12.5)
-    fireEvent.change(screen.getByLabelText('Margem (%)'), { target: { value: '' } })
+    fireEvent.change(screen.getByLabelText('Margem desejada (%)'), { target: { value: '' } })
     expect(props.onMargem).toHaveBeenCalledTimes(1)
 
     fireEvent.change(screen.getByLabelText('Impostos (%)'), { target: { value: '' } })
@@ -329,6 +329,140 @@ describe('Calculadora ML', () => {
 
     expect(view.container.querySelector('main')).toBeNull()
     expect(view.container.querySelectorAll('[aria-live="polite"]')).toHaveLength(2)
+  })
+
+  it('barra-resumo mostra lucro, margem e veredito da modalidade de decisão, não da visão', async () => {
+    const user = userEvent.setup()
+    estado = { ...estadoBase, modalidadeAtiva: 'premium' }
+    render(<CalculadoraML />)
+
+    const barra = screen.getByTestId('barra-resumo-ml')
+    expect(barra).toHaveAttribute('aria-hidden', 'true')
+    expect(within(barra).getByText('R$ 18,00')).toBeInTheDocument()
+    expect(within(barra).getByText('18%')).toBeInTheDocument()
+    expect(within(barra).getByText('Comprar')).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: /clássico/i }))
+    expect(within(barra).getByText('R$ 18,00')).toBeInTheDocument()
+  })
+
+  it('sem meta: veredito "Margem atual" orienta a definir a margem desejada; com meta, a dica some', () => {
+    estado = { ...estadoBase, metaSolicitada: null, resultado: { ...estadoBase.resultado, veredito: { tipo: 'Margem atual' as const, fatores: ['Margem de 23% no preço atual.'] } } }
+    const { unmount } = render(<CalculadoraML />)
+    expect(screen.getByText(/defina a/i)).toHaveTextContent(/margem desejada/i)
+    expect(screen.getByText(/mostra a margem atual/i)).toBeInTheDocument()
+    unmount()
+
+    estado = estadoBase
+    render(<CalculadoraML />)
+    expect(screen.queryByText(/defina a/i)).toBeNull()
+    expect(screen.queryByText(/mostra a margem atual/i)).toBeNull()
+  })
+
+  it('composição oculta custos fixos/variáveis/rebate zerados, mantém as linhas essenciais e nunca mostra -R$ 0,00', () => {
+    const { container } = render(<CalculadoraML />)
+    const card = within(screen.getByRole('region', { name: 'Clássico' }))
+
+    expect(card.queryByText('Custos fixos')).toBeNull()
+    expect(card.queryByText('Custos variáveis')).toBeNull()
+    expect(card.queryByText('Rebate')).toBeNull()
+    expect(card.getByText('Impostos')).toBeInTheDocument()
+    expect(card.getByText('Frete')).toBeInTheDocument()
+    expect(card.getByText(/sem custos fixos, custos variáveis nem rebate/i)).toBeInTheDocument()
+    expect(container.textContent).not.toMatch(/[-−]R\$\s0,00/)
+  })
+
+  it('custo fixo e rebate preenchidos aparecem; a nota lista só o que falta', () => {
+    const classico = estadoBase.resultado.modalidades.classico
+    estado = { ...estadoBase, resultado: { ...estadoBase.resultado, modalidades: { ...estadoBase.resultado.modalidades, classico: { ...classico, custos: { ...classico.custos, custosFixos: 2, rebate: 5 } } } } }
+    render(<CalculadoraML />)
+    const card = within(screen.getByRole('region', { name: 'Clássico' }))
+
+    expect(card.getByText('Custos fixos')).toBeInTheDocument()
+    expect(card.getByText('Rebate')).toBeInTheDocument()
+    expect(card.getByText('−R$ 5,00')).toBeInTheDocument()
+    expect(card.getByText(/sem custos variáveis\./i)).toBeInTheDocument()
+  })
+
+  it('consultando a cotação: números antigos ficam esmaecidos com aria-busy, sem sumir', () => {
+    estado = { ...estadoBase, statusCotacao: 'loading' }
+    const { unmount } = render(<CalculadoraML />)
+
+    expect(screen.getByRole('heading', { name: /comprar/i })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Clássico' })).toHaveAttribute('aria-busy', 'true')
+    expect(screen.getByRole('region', { name: 'Status da cotação' })).not.toHaveAttribute('aria-busy', 'true')
+    unmount()
+
+    estado = { ...estadoBase, statusCotacao: 'estimated' }
+    const outra = render(<CalculadoraML />)
+    expect(outra.container.querySelector('[aria-busy="true"]')).toBeNull()
+  })
+
+  it('carregando produto mostra o esqueleto no lugar do resultado (sem pular o layout)', () => {
+    estado = { ...estadoBase, carregandoProduto: true }
+    render(<CalculadoraML />)
+
+    expect(screen.getByTestId('resultado-skeleton')).toHaveAttribute('aria-hidden', 'true')
+    expect(screen.queryByRole('heading', { name: /comprar/i })).toBeNull()
+  })
+
+  it('taxas manuais: recolhidas com cotação oficial, abertas nos demais, e respeitam a escolha do operador', async () => {
+    const user = userEvent.setup()
+    const resumo = () => screen.getByText(/taxas manuais \(usadas quando não há cotação oficial\)/i)
+    const detalhes = (c: HTMLElement) => c.querySelector('details') as HTMLDetailsElement
+
+    const oficial = render(<FormularioCalculadoraML {...propsForm()} statusCotacao="official" />)
+    expect(detalhes(oficial.container).open).toBe(false)
+    oficial.unmount()
+
+    for (const status of ['loading', 'partial', 'estimated', 'idle'] as const) {
+      const v = render(<FormularioCalculadoraML {...propsForm()} statusCotacao={status} />)
+      expect(detalhes(v.container).open).toBe(true)
+      v.unmount()
+    }
+
+    // sem interação, segue o status nos dois sentidos
+    const seguindo = render(<FormularioCalculadoraML {...propsForm()} statusCotacao="estimated" />)
+    seguindo.rerender(<FormularioCalculadoraML {...propsForm()} statusCotacao="official" />)
+    expect(detalhes(seguindo.container).open).toBe(false)
+    seguindo.rerender(<FormularioCalculadoraML {...propsForm()} statusCotacao="estimated" />)
+    expect(detalhes(seguindo.container).open).toBe(true)
+    seguindo.unmount()
+
+    // o operador abre em "oficial": a escolha dele vale mesmo se a cotação mudar e voltar
+    const aberta = render(<FormularioCalculadoraML {...propsForm()} statusCotacao="official" />)
+    await user.click(resumo())
+    expect(detalhes(aberta.container).open).toBe(true)
+    aberta.rerender(<FormularioCalculadoraML {...propsForm()} statusCotacao="loading" />)
+    aberta.rerender(<FormularioCalculadoraML {...propsForm()} statusCotacao="official" />)
+    expect(detalhes(aberta.container).open).toBe(true)
+    aberta.unmount()
+
+    // o operador fecha em "estimated": continua fechada quando vira "partial"
+    const fechada = render(<FormularioCalculadoraML {...propsForm()} statusCotacao="estimated" />)
+    await user.click(resumo())
+    expect(detalhes(fechada.container).open).toBe(false)
+    fechada.rerender(<FormularioCalculadoraML {...propsForm()} statusCotacao="partial" />)
+    expect(detalhes(fechada.container).open).toBe(false)
+  })
+
+  it('status da cotação some com taxas oficiais e aparece nos demais', () => {
+    estado = { ...estadoBase, statusCotacao: 'official' }
+    const { unmount } = render(<CalculadoraML />)
+    expect(screen.queryByRole('region', { name: 'Status da cotação' })).toBeNull()
+    unmount()
+
+    estado = { ...estadoBase, statusCotacao: 'estimated' }
+    render(<CalculadoraML />)
+    expect(screen.getByRole('region', { name: 'Status da cotação' })).toBeInTheDocument()
+  })
+
+  it('cards não têm botão "Ver …"; a troca no mobile é pelas abas', async () => {
+    const user = userEvent.setup()
+    render(<CalculadoraML />)
+
+    expect(screen.queryByRole('button', { name: /^ver (clássico|premium)$/i })).toBeNull()
+    await user.click(screen.getByRole('tab', { name: /premium/i }))
+    expect(screen.getByRole('tab', { name: /premium/i })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('requires an explicit confirmation before accepting manual zero freight', () => {
@@ -375,7 +509,7 @@ describe('Calculadora ML', () => {
       const user = userEvent.setup()
       render(<CalculadoraML />)
 
-      await user.click(screen.getByLabelText('Margem (%)'))
+      await user.click(screen.getByLabelText('Margem desejada (%)'))
       await user.tab()
       await user.click(screen.getByLabelText('Preço de venda (R$)'))
       await user.tab()
@@ -386,7 +520,7 @@ describe('Calculadora ML', () => {
 
     it('digitar na margem chama editarMargem; no preço, editarPreco', () => {
       render(<CalculadoraML />)
-      fireEvent.change(screen.getByLabelText('Margem (%)'), { target: { value: '38' } })
+      fireEvent.change(screen.getByLabelText('Margem desejada (%)'), { target: { value: '38' } })
       fireEvent.change(screen.getByLabelText('Preço de venda (R$)'), { target: { value: '120,5' } })
 
       expect(editarMargem).toHaveBeenCalledWith(38)
@@ -394,10 +528,10 @@ describe('Calculadora ML', () => {
       expect(atualizarEntrada).not.toHaveBeenCalledWith(expect.objectContaining({ margemAlvoPct: expect.anything() }))
     })
 
-    it('"Margem (%)" mostra margemExibida com 2 casas; imposto null aparece vazio', () => {
+    it('"Margem desejada (%)" mostra margemExibida com 2 casas; imposto null aparece vazio', () => {
       estado = { ...estadoBase, margemExibida: 23, entrada: { ...estadoBase.entrada, aliquotaImpostoPct: null } }
       render(<CalculadoraML />)
-      expect(screen.getByLabelText('Margem (%)')).toHaveValue('23,00')
+      expect(screen.getByLabelText('Margem desejada (%)')).toHaveValue('23,00')
       expect(screen.getByLabelText('Impostos (%)')).toHaveValue('')
     })
 
@@ -462,7 +596,7 @@ describe('Calculadora ML', () => {
     it('a alternância de visão no mobile não altera a modalidade ativa', async () => {
       const user = userEvent.setup()
       render(<CalculadoraML />)
-      await user.click(screen.getByRole('button', { name: /ver premium/i }))
+      await user.click(screen.getByRole('tab', { name: /premium/i }))
       await user.click(screen.getByRole('tab', { name: /premium/i }))
 
       expect(screen.getByRole('button', { name: /^clássico$/i })).toHaveAttribute('aria-pressed', 'true')
@@ -481,7 +615,7 @@ describe('Calculadora ML', () => {
       render(<CalculadoraML />)
 
       expect(screen.getAllByText('Carregando produto…').length).toBeGreaterThan(0)
-      for (const rotulo of ['Custo de compra (R$)', 'Preço de venda (R$)', 'Margem (%)', 'Impostos (%)', 'Altura (cm)', 'Frete (R$)']) {
+      for (const rotulo of ['Custo de compra (R$)', 'Preço de venda (R$)', 'Margem desejada (%)', 'Impostos (%)', 'Altura (cm)', 'Frete (R$)']) {
         expect(screen.getByLabelText(rotulo)).toBeDisabled()
       }
       expect(screen.getByRole('button', { name: /^premium$/i })).toBeDisabled()

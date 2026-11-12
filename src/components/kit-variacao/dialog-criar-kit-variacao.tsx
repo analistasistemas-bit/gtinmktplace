@@ -1,7 +1,7 @@
 // ADR-0200 (Task 13): Criar kit com variação, a partir de Publicados. Rascunho aprovado em 06/11: cores e peças por
 // kit → combinações geradas → quantidade por combinação × tamanho (só > 0 vira anúncio) com o saldo de peças ao lado
 // → preço, texto por IA e foto por combinação → simulador → confirmar. Nada vai ao ML sem passar por esta revisão.
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Loader2, Sparkles } from 'lucide-react';
@@ -29,9 +29,10 @@ import {
 import { criarKitVariacaoEdge, enviarFotoKit, gerarTextoKitEdge } from '@/lib/kit-variacao-edge';
 import { SimuladorKit } from '@/components/kit-variacao/simulador-kit';
 import { ExplicacaoReposicao } from '@/components/kit-variacao/explicacao-reposicao';
-import { FotoCombinacao, type FotoKit } from '@/components/kit-variacao/foto-combinacao';
-import { CelulaAvulso, ComparacaoAvulso } from '@/components/kit-variacao/referencia-avulso';
-import { compararKit, somaAvulsa } from '@/lib/kit-preco-avulso';
+import { FotoCombinacao, type ControleFoto, type EstadoFoto, type FotoKit } from '@/components/kit-variacao/foto-combinacao';
+import { AprovarFotosLote } from '@/components/kit-variacao/aprovar-fotos-lote';
+import { CelulaAvulso, ComparacaoAvulso, PromocoesFuturas } from '@/components/kit-variacao/referencia-avulso';
+import { compararKit, somaAvulsa, type PrecoPeca } from '@/lib/kit-preco-avulso';
 import { useFocoKitStore } from '@/stores/foco-kit-store';
 
 const PECAS = [2, 3, 4, 5, 6];
@@ -150,6 +151,18 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
   const somaDe = (cs: string[], t: string) => somaAvulsa(variacoes, precosAvulsos, cs, t);
   const linhasAvulso = quantidades.map((q) => ({ rotulo: rotuloCombinacao(q.cores), tamanho: q.tamanho, soma: somaDe(q.cores, q.tamanho) }));
   const comparacao = compararKit(precoNum, linhasAvulso);
+  // Peças (cor · tamanho) dos anúncios do kit, uma vez cada: as promoções programadas são por peça.
+  const pecasDoKit = useMemo(() => {
+    const vistas = new Map<string, { rotulo: string; normal: number | null; futuras: NonNullable<PrecoPeca['futuras']>; indisponivel: boolean }>();
+    for (const q of quantidades) for (const cor of q.cores) {
+      const v = variacoes.find((x) => x.cor === cor && x.tamanho === q.tamanho);
+      const p = v && precosAvulsos?.get(v.codigo);
+      const rotulo = `${cor} · ${q.tamanho}`;
+      if (!p || vistas.has(rotulo)) continue;
+      vistas.set(rotulo, { rotulo, normal: p.normal, futuras: p.futuras ?? [], indisponivel: p.futurasIndisponivel === true });
+    }
+    return [...vistas.values()];
+  }, [quantidades, variacoes, precosAvulsos]);
   // "Criar mesmo assim" vale só para o preço e as combinações vistos: mudou um deles, confirma de novo (no render,
   // como no simulador: um effect deixaria um frame com a confirmação antiga).
   const chaveAvulso = [Math.round(precoNum * 100), ...linhasAvulso.map((l) => `${l.rotulo}#${l.tamanho}:${Math.round(l.soma.promocao * 100)}`)].join('|');
@@ -159,6 +172,57 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
   const avulsoOk = !lendoAvulso && (!comparacao.maisCaro || avulsoConfirmadoEm === chaveAvulso);
   const metaNum = inteiro(meta);
   const semFoto = combinacoesPublicadas.filter((c) => !fotos[rotuloCombinacao(c)]);
+
+  // Fotos em lote (adendo 11/11 do ADR-0200). O diálogo comanda cada FotoCombinacao pelo controle e lê o estado dela só
+  // para as contagens. A candidata vive na etapa 2: sair com geração em curso ou com foto gerada não aprovada perde uma
+  // foto já cobrada.
+  const controlesFoto = useRef(new Map<string, ControleFoto>());
+  const [estadosFoto, setEstadosFoto] = useState<Record<string, EstadoFoto>>({});
+  const atualizarEstadoFoto = useCallback((rotulo: string, e: EstadoFoto) => setEstadosFoto((p) => {
+    const a = p[rotulo];
+    return a && a.gerando === e.gerando && a.temCandidata === e.temCandidata && a.pronta === e.pronta && a.naoFiel === e.naoFiel
+      ? p : { ...p, [rotulo]: e };
+  }), []);
+  const [loteAtivo, setLoteAtivo] = useState(0);
+  const [confirmarRegerar, setConfirmarRegerar] = useState(false);
+  const [gradeAprovar, setGradeAprovar] = useState<string[] | null>(null);
+  const [descartarPara, setDescartarPara] = useState<null | 'montagem' | 'conferir' | 'fechar'>(null);
+  const rotulosFoto = etapa === 'anuncio' ? combinacoesPublicadas.map(rotuloCombinacao) : [];
+  const ef = (r: string) => estadosFoto[r];
+  const paraGerar = rotulosFoto.filter((r) => !fotos[r] && !ef(r)?.temCandidata && !ef(r)?.gerando && !ef(r)?.naoFiel);
+  const paraRegerar = rotulosFoto.filter((r) => !fotos[r] && !ef(r)?.gerando && (ef(r)?.temCandidata || ef(r)?.naoFiel));
+  // Combinação com foto escolhida (arquivo do operador ou IA já aprovada) nunca entra na grade: aprovar trocaria a foto.
+  const prontas = rotulosFoto.filter((r) => ef(r)?.pronta && !fotos[r]);
+  const candidatasAbertas = rotulosFoto.filter((r) => ef(r)?.temCandidata).length;
+  const gerandoFoto = loteAtivo > 0 || rotulosFoto.some((r) => ef(r)?.gerando);
+  async function gerarLote(rotulos: string[]) {
+    setLoteAtivo(rotulos.length);
+    const fila = [...rotulos];
+    let falhas = 0; let reprovadas = 0;
+    const trabalhar = async () => {
+      for (let r = fila.shift(); r; r = fila.shift()) {
+        const res = await controlesFoto.current.get(r)?.gerar() ?? 'falhou';
+        if (res === 'falhou') falhas++; else if (res === 'naoFiel') reprovadas++;
+      }
+    };
+    // ponytail: teto de 3 gerações simultâneas (cada uma leva até ~145 s com a conferência).
+    await Promise.all(Array.from({ length: Math.min(3, fila.length) }, trabalhar));
+    setLoteAtivo(0);
+    if (falhas + reprovadas > 0) {
+      const partes = [
+        reprovadas > 0 && `${reprovadas} não ${reprovadas === 1 ? 'passou' : 'passaram'} na conferência com a peça original (não cobrada)`,
+        falhas > 0 && `${falhas} não ${falhas === 1 ? 'foi gerada' : 'foram geradas'}`,
+      ].filter(Boolean);
+      toast.error(`${partes.join('; ')}, de ${rotulos.length} ${rotulos.length === 1 ? 'foto' : 'fotos'}`, {
+        description: 'Gere de novo ou envie a foto dessas combinações.',
+      });
+    }
+  }
+  /** Sair da etapa 2 (voltar, seguir ou fechar) com foto gerada e não aprovada pede confirmação. */
+  function sairDasFotos(para: 'montagem' | 'conferir' | 'fechar') {
+    if (candidatasAbertas > 0) { setDescartarPara(para); return; }
+    if (para === 'fechar') onOpenChange(false); else setEtapa(para);
+  }
   const tituloOk = titulo.trim().length > 0 && titulo.length <= TITULO_MAX;
   const podeMontagem = marcadas.length >= pecas && totalKits > 0 && !excesso;
 
@@ -262,7 +326,57 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
-    <Dialog open={open} onOpenChange={(v) => !criar.isPending && onOpenChange(v)}>
+    <AlertDialog open={confirmarRegerar} onOpenChange={setConfirmarRegerar}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Gerar de novo {paraRegerar.length === 1 ? 'a foto' : 'as fotos'}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {paraRegerar.length === 1 ? '1 foto nova será cobrada' : `${paraRegerar.length} fotos novas serão cobradas`}. As fotos
+            geradas que ainda não foram aprovadas são substituídas.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          <AlertDialogAction onClick={() => gerarLote(paraRegerar)}>
+            Gerar {paraRegerar.length} {paraRegerar.length === 1 ? 'foto' : 'fotos'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    <AlertDialog open={descartarPara !== null} onOpenChange={(o) => { if (!o) setDescartarPara(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Descartar as fotos geradas?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {candidatasAbertas === 1 ? '1 foto gerada será descartada' : `${candidatasAbertas} fotos geradas serão descartadas`} sem
+            ser aprovada. Elas já foram cobradas, e gerar de novo cobra outra vez.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Ficar e revisar</AlertDialogCancel>
+          <AlertDialogAction onClick={() => {
+            const para = descartarPara; setDescartarPara(null);
+            if (para === 'fechar') onOpenChange(false); else if (para) setEtapa(para);
+          }}>
+            Descartar e continuar
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    {gradeAprovar && (
+      <AprovarFotosLote
+        itens={gradeAprovar.flatMap((rotulo) => {
+          const candidata = controlesFoto.current.get(rotulo)?.candidata();
+          return candidata ? [{ rotulo, candidata }] : [];
+        })}
+        onConfirmar={() => gradeAprovar.forEach((r) => controlesFoto.current.get(r)?.aprovar())}
+        onFechar={() => setGradeAprovar(null)}
+      />
+    )}
+    <Dialog open={open} onOpenChange={(v) => {
+      if (v || criar.isPending || gerandoFoto) { if (v) onOpenChange(v); return; }
+      sairDasFotos('fechar');
+    }}>
       <DialogContent
         processando={criar.isPending}
         rotuloProcessando="Criando o kit"
@@ -450,6 +564,11 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
                       <SelectItem value="gold_pro">Premium</SelectItem>
                     </SelectContent>
                   </Select>
+                  {/* Lucro ao vivo enquanto o preço é digitado (mesmo simulador da etapa 3, sem a confirmação). */}
+                  <SimuladorKit
+                    familiaBaseId={familiaBaseId} cores={marcadas} pecas={pecas} quantidades={quantidades}
+                    preco={precoNum} tipo={tipo}
+                  />
                 </div>
               </section>
 
@@ -513,7 +632,35 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
               </section>
 
               <section className="grid gap-2" aria-label="Fotos">
-                <span className="text-sm font-medium">Foto de cada combinação</span>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm font-medium">Foto de cada combinação</span>
+                  {loteAtivo > 0 && (
+                    <span role="status" className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Gerando {loteAtivo} {loteAtivo === 1 ? 'foto' : 'fotos'}, até 3 por vez…
+                    </span>
+                  )}
+                  {temImagemIA && rotulosFoto.length > 1 && loteAtivo === 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {paraGerar.length > 0 && (
+                        <Button type="button" size="sm" variant="outline" disabled={loteAtivo > 0} onClick={() => gerarLote(paraGerar)}>
+                          <Sparkles className="mr-1 h-3 w-3" />
+                          Gerar todas ({paraGerar.length})
+                        </Button>
+                      )}
+                      {paraRegerar.length > 0 && (
+                        <Button type="button" size="sm" variant="outline" disabled={loteAtivo > 0} onClick={() => setConfirmarRegerar(true)}>
+                          Gerar de novo todas ({paraRegerar.length})
+                        </Button>
+                      )}
+                      {prontas.length > 0 && (
+                        <Button type="button" size="sm" disabled={loteAtivo > 0} onClick={() => setGradeAprovar(prontas)}>
+                          Aprovar todas ({prontas.length})
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
                 <p className="text-xs text-muted-foreground">
                   No Mercado Livre a cor define a foto: cada combinação precisa da sua.
                   {temImagemIA && ' Gere por IA a partir das fotos das cores ou envie a sua. A foto gerada só vale depois de aprovada.'}
@@ -525,6 +672,8 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
                       <FotoCombinacao
                         key={rotulo} rotulo={rotulo} cores={c} familiaBaseId={familiaBaseId} temImagemIA={temImagemIA}
                         valor={fotos[rotulo]} onChange={(f) => setFotos((p) => ({ ...p, [rotulo]: f }))}
+                        controle={(c) => { if (c) controlesFoto.current.set(rotulo, c); else controlesFoto.current.delete(rotulo); }}
+                        onEstado={(e) => atualizarEstadoFoto(rotulo, e)} travado={loteAtivo > 0}
                       />
                     );
                   })}
@@ -564,6 +713,7 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
                     </label>
                   )}
                 />
+                {!lendoAvulso && <PromocoesFuturas pecas={pecasDoKit} />}
               </section>
               <SimuladorKit
                 familiaBaseId={familiaBaseId} cores={marcadas} pecas={pecas} quantidades={quantidades}
@@ -583,8 +733,8 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
               </>
             ) : etapa === 'anuncio' ? (
               <>
-                <Button variant="outline" disabled={texto.isPending} onClick={() => setEtapa('montagem')}>Voltar</Button>
-                <Button disabled={!podeAnuncio} onClick={() => setEtapa('conferir')}>Próximo</Button>
+                <Button variant="outline" disabled={texto.isPending || gerandoFoto} onClick={() => sairDasFotos('montagem')}>Voltar</Button>
+                <Button disabled={!podeAnuncio || gerandoFoto} onClick={() => sairDasFotos('conferir')}>Próximo</Button>
               </>
             ) : (
               <>

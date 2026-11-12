@@ -1193,7 +1193,7 @@ describe('DialogCadastroProduto — origemNota (ADR-0181)', () => {
     expect(payload.origem).toBe('nacional');
     expect(payload.variacoes[0]).not.toHaveProperty('estoqueInicial');
     expect(payload.variacoes[0].custo).toBe(10);
-    expect(onCadastrado).toHaveBeenCalledWith({ codigoPai: '00000010' });
+    await waitFor(() => expect(onCadastrado).toHaveBeenCalledWith({ codigoPai: '00000010' }));
     // Etapa de fotos: só "Fechar" — "Ir para a Revisão" sairia do assistente da nota.
     expect(await screen.findByRole('button', { name: 'Fechar' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Ir para a Revisão' })).not.toBeInTheDocument();

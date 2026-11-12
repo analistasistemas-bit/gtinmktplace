@@ -6,6 +6,9 @@ import type { MetaStatus, ProdutoCalculadoraML, TaxasManuaisML } from '@/hooks/u
 import type { AnuncioCalculadora } from '@/lib/anuncio-calculadora'
 import type { DimensoesProduto, EntradaCalculadoraML, ModalidadeML } from '@/lib/calculadora-ml'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { tabsListVariants, tabsTriggerClassName } from '@/components/ui/tabs'
+import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { formatarNomeProduto } from '@/lib/texto'
@@ -37,6 +40,8 @@ interface FormularioCalculadoraMLProps {
   categoriaNome?: string
   variacaoUsada?: { codigo: string; cor: string | null } | null
   anuncio?: AnuncioCalculadora | null
+  /** Só decide se "Taxas manuais" nasce recolhida (oficial) ou aberta (demais). Ausente = aberta. */
+  statusCotacao?: 'idle' | 'loading' | 'official' | 'partial' | 'estimated'
 }
 
 /**
@@ -133,8 +138,11 @@ const pct2 = (valor: number) => `${valor.toLocaleString('pt-BR', { minimumFracti
 export function FormularioCalculadoraML({
   entrada, taxas, produtos, produtoSelecionado, produtosCarregando, carregando = false, onEntrada, onTaxas, onProduto,
   onPreco, onMargem, margemExibida, metaStatus, metaSolicitada, modalidade, modalidadeDoAnuncio = null, onModalidade,
-  avisosProduto = [], categoriaNome, variacaoUsada = null, anuncio = null,
+  avisosProduto = [], categoriaNome, variacaoUsada = null, anuncio = null, statusCotacao,
 }: FormularioCalculadoraMLProps) {
+  // Taxas manuais: o default segue a cotação; depois que o operador abre/fecha, a escolha dele vale.
+  const [escolhaTaxasManuais, setEscolhaTaxasManuais] = useState<boolean | null>(null)
+  const taxasManuaisAbertas = escolhaTaxasManuais ?? statusCotacao !== 'official'
   const [dimensoesRascunho, setDimensoesRascunho] = useState<Partial<DimensoesProduto>>(entrada.dimensoes ?? {})
   const dimensoesExternasKey = chaveDimensoes(entrada.dimensoes)
   const atualizacaoEsperadaRef = useRef(dimensoesExternasKey)
@@ -162,7 +170,9 @@ export function FormularioCalculadoraML({
     ? <span role="status">Calculando o preço para a meta…</span>
     : metaStatus === 'nao_confirmada' && metaSolicitada !== null
       ? <span role="status">Preço calculado, mas meta de {pct2(metaSolicitada)} não confirmada.</span>
-      : undefined
+      : metaSolicitada === null
+        ? <span>Mostra a margem atual. Digite a margem que você quer para ver o preço e a recomendação.</span>
+        : undefined
   return (
     <div className="space-y-6">
       <section className="space-y-4" aria-labelledby="contexto-heading">
@@ -204,18 +214,23 @@ export function FormularioCalculadoraML({
         <section className="space-y-4" aria-labelledby="comercial-heading">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 id="comercial-heading" className="font-heading text-lg font-semibold">Compra e venda</h2>
-            <div className="flex gap-1 rounded-lg border border-border/70 bg-muted/40 p-1" role="group" aria-label="Modalidade do anúncio">
-              {(['classico', 'premium'] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  aria-pressed={modalidade === m}
-                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${modalidade === m ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}
-                  onClick={() => onModalidade(m)}
-                >
-                  {ROTULO_MODALIDADE[m]}{modalidadeDoAnuncio === m ? ' · do anúncio' : ''}
-                </button>
-              ))}
+            {/* Grupo de botões aria-pressed com a aparência de Tabs (não há painel por modalidade: Tabs do Radix emitiria aria-controls órfão). */}
+            <div className="group/tabs" data-orientation="horizontal">
+              <div className={cn(tabsListVariants(), 'group-data-horizontal/tabs:h-auto')} data-variant="default" role="group" aria-label="Modalidade do anúncio">
+                {(['classico', 'premium'] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    aria-pressed={modalidade === m}
+                    data-state={modalidade === m ? 'active' : 'inactive'}
+                    data-active={modalidade === m ? '' : undefined}
+                    className={cn(tabsTriggerClassName, 'h-8 px-3 max-sm:h-11 max-sm:flex-1 pointer-coarse:h-11')}
+                    onClick={() => onModalidade(m)}
+                  >
+                    {ROTULO_MODALIDADE[m]}{modalidadeDoAnuncio === m ? ' · do anúncio' : ''}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -227,7 +242,7 @@ export function FormularioCalculadoraML({
               onChange={onPreco}
               hint={emPromocao ? <>Em promoção no ML: <s>{moeda(anuncio!.precoOriginal!)}</s> por {moeda(anuncio!.preco!)}</> : undefined}
             />
-            <CampoNumero id="margem" label="Margem (%)" value={margemExibida} onChange={onMargem} vazio="ignorar" permiteNegativo maxExclusivo={100} hint={dicaMargem} />
+            <CampoNumero id="margem" label="Margem desejada (%)" value={margemExibida} onChange={onMargem} vazio="ignorar" permiteNegativo maxExclusivo={100} hint={dicaMargem} />
             <CampoNumero id="imposto" label="Impostos (%)" value={entrada.aliquotaImpostoPct} onChange={(value) => onEntrada({ aliquotaImpostoPct: value })} vazio="null" onVazio={() => onEntrada({ aliquotaImpostoPct: null })} max={100} casas={[0, 2]} />
           </div>
         </section>
@@ -242,29 +257,30 @@ export function FormularioCalculadoraML({
         </section>
 
         <section className="space-y-4" aria-labelledby="logistica-heading">
-          <div><h2 id="logistica-heading" className="font-heading text-lg font-semibold">Logística e taxas manuais</h2><p className="mt-1 text-sm text-muted-foreground">Use o frete manual somente quando a cotação oficial não estiver disponível.</p></div>
+          <h2 id="logistica-heading" className="font-heading text-lg font-semibold">Medidas e peso</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <CampoNumero id="altura" label="Altura (cm)" value={dimensoesRascunho.alturaCm ?? 0} onChange={(value) => setDimensao('alturaCm', value)} casas={[0, 3]} />
             <CampoNumero id="largura" label="Largura (cm)" value={dimensoesRascunho.larguraCm ?? 0} onChange={(value) => setDimensao('larguraCm', value)} casas={[0, 3]} />
             <CampoNumero id="comprimento" label="Comprimento (cm)" value={dimensoesRascunho.comprimentoCm ?? 0} onChange={(value) => setDimensao('comprimentoCm', value)} casas={[0, 3]} />
             <CampoNumero id="peso" label="Peso real (kg)" value={dimensoesRascunho.pesoKg ?? 0} onChange={(value) => setDimensao('pesoKg', value)} casas={[0, 3]} />
           </div>
-          <div className="rounded-lg border border-border/70 bg-muted/30 p-3">
-            <p className="mb-3 text-sm font-medium">Fallback manual (estimativa)</p>
+          <details
+            className="rounded-lg border border-border/70 bg-muted/30 p-3"
+            open={taxasManuaisAbertas}
+            onToggle={(event) => { if (event.currentTarget.open !== taxasManuaisAbertas) setEscolhaTaxasManuais(event.currentTarget.open) }}
+          >
+            <summary className="flex min-h-11 cursor-pointer items-center text-sm font-medium">Taxas manuais (usadas quando não há cotação oficial)</summary>
+            <p className="mb-3 text-sm text-muted-foreground">Use o frete manual somente quando a cotação oficial não estiver disponível.</p>
             <div className="grid gap-4 sm:grid-cols-3">
               <CampoNumero id="comissao-manual" label="Comissão (%)" value={taxas.percentualComissaoPct} onChange={(value) => onTaxas({ percentualComissaoPct: value })} max={95} casas={[0, 2]} />
               <CampoNumero id="taxa-fixa-manual" label="Taxa fixa (R$)" value={taxas.taxaFixa} onChange={(value) => onTaxas({ taxaFixa: value })} />
               <CampoNumero id="frete-manual" label="Frete (R$)" value={taxas.frete ?? 0} onChange={(value) => onTaxas({ frete: value, freteRealmenteZero: value === 0 ? taxas.freteRealmenteZero : false })} hint="Informe 0 apenas se o frete for realmente zero." />
             </div>
-            <label className="mt-3 flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={taxas.freteRealmenteZero}
-                onChange={(event) => onTaxas({ freteRealmenteZero: event.target.checked })}
-              />
-              Frete realmente zero
-            </label>
-          </div>
+            <div className="mt-3 flex items-center gap-2 text-sm">
+              <Checkbox id="frete-realmente-zero" checked={taxas.freteRealmenteZero} onCheckedChange={(valor) => onTaxas({ freteRealmenteZero: valor === true })} />
+              <label htmlFor="frete-realmente-zero">Frete realmente zero</label>
+            </div>
+          </details>
         </section>
       </fieldset>
       <Button type="button" variant="ghost" size="sm" onClick={() => onProduto(null)} disabled={!produtoSelecionado}>Limpar produto cadastrado</Button>

@@ -232,6 +232,16 @@ beforeEach(() => {
 });
 const post = (b: unknown) => handler(new Request('http://localhost', { method: 'POST', body: JSON.stringify(b) }));
 const ok = { request_id: REQ, familia_base_id: 'fam-1', cores: ['Preto', 'Branco'] };
+// Com relógio falso: o hash das originais (dedupe) é assíncrono REAL, então a fila precisa andar sem gastar o relógio
+// falso até o upload começar. O limite é em tempo real, não em nº de voltas: quanto mais lento o runner, mais voltas do
+// event loop o hash leva, e contar voltas vira flake de CI (reproduz atrasando `crypto.subtle.digest` com `setImmediate`).
+const ateUploadComecar = async (parar: () => boolean = () => false) => {
+  const limite = performance.now() + 10_000;
+  while (f.uploads.length === 0 && !parar() && performance.now() < limite) {
+    await vi.advanceTimersByTimeAsync(5);
+    await new Promise((r) => setImmediate(r));
+  }
+};
 
 describe('gerar-foto-kit', () => {
   it('org sem o módulo imagem_ia → 403, sem IA', async () => {
@@ -431,9 +441,14 @@ describe('gerar-foto-kit', () => {
       const inicio = Date.now();
       let resposta: Response | undefined;
       void post(ok).then((r) => { resposta = r; });
+      // Sem esta espera, em runner lento as 40 voltas abaixo acabavam antes de o handler armar os timers: a resposta
+      // nunca chegava e o pedido órfão ainda vazava para o teste seguinte (mesmo `f`, mesmo request_id).
+      await ateUploadComecar(() => resposta !== undefined);
+      expect(f.uploads.length).toBeGreaterThan(0);
       for (let i = 0; i < 40 && !resposta; i++) {
         await vi.advanceTimersByTimeAsync(1_000);
         f.deslocamento += 1_000;
+        await new Promise((r) => setImmediate(r));
       }
       expect(resposta).toBeDefined();
       expect(Date.now() - inicio).toBeLessThan(150_000);
@@ -449,7 +464,7 @@ describe('gerar-foto-kit', () => {
     try {
       f.uploadAtrasoMs = 7_000;
       void post(ok).then((r) => { primeira = r; });
-      for (let i = 0; i < 500 && f.uploads.length === 0; i++) { await vi.advanceTimersByTimeAsync(5); await new Promise((r) => setImmediate(r)); }
+      await ateUploadComecar();
       for (let i = 0; i < 10; i++) { await vi.advanceTimersByTimeAsync(1_000); f.deslocamento += 1_000; }
     } finally {
       vi.useRealTimers();
@@ -492,7 +507,7 @@ describe('gerar-foto-kit', () => {
       f.uploadAtrasoMs = 3_000;   // dentro da fatia de 6 s do original
       void post(ok).then((r) => { original = r; });
       // O hash das originais (dedupe) é assíncrono real: deixa a fila andar sem gastar o relógio falso.
-      for (let i = 0; i < 500 && f.uploads.length === 0; i++) { await vi.advanceTimersByTimeAsync(5); await new Promise((r) => setImmediate(r)); }
+      await ateUploadComecar();
       expect(f.uploads.length).toBeGreaterThan(0);
       expect(f.linhas[0]).toMatchObject({ status: 'pendente_upload' });
       void post(ok).then((r) => { repeticao = r; });
@@ -517,7 +532,7 @@ describe('gerar-foto-kit', () => {
       f.uploadAtrasoMs = 3_000;
       void post(ok).then((r) => { original = r; });
       // O hash das originais (dedupe) é assíncrono real: deixa a fila andar sem gastar o relógio falso.
-      for (let i = 0; i < 500 && f.uploads.length === 0; i++) { await vi.advanceTimersByTimeAsync(5); await new Promise((r) => setImmediate(r)); }
+      await ateUploadComecar();
       expect(f.uploads.length).toBeGreaterThan(0);
       f.linhas[0].status = 'recusada';   // decidido por outra execução enquanto o upload corria
       await vi.advanceTimersByTimeAsync(4_000);

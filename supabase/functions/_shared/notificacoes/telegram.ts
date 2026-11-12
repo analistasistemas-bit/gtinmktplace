@@ -159,6 +159,22 @@ export function montarMensagemAltaFrete(a: {
   );
 }
 
+export function montarMensagemEnvioCaro(a: {
+  orderId: number; packId: number | null; titulo: string | null; total: number; frete: number;
+}): string {
+  const id = a.packId ?? a.orderId;
+  return blocos(
+    ['⚠️ Envio mais caro que a venda'],
+    [
+      `Produto: ${a.titulo ?? 'item'}`,
+      `Venda: ${fmtBRL(a.total, 'BRL')}`,
+      `Frete cotado pelo ML: ${fmtBRL(a.frete, 'BRL')}`,
+    ],
+    ['Etiqueta cancelada pelo ML. Combine a entrega com o comprador ou cancele a venda.'],
+    [`🔗 Pedido ${id}`, urlVendaML(id)],
+  );
+}
+
 export interface NovaPerguntaAlerta {
   question_id: number;
   texto: string;

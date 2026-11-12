@@ -86,7 +86,7 @@ import { DialogGerenciarKit } from '@/components/kit-variacao/dialog-gerenciar-k
 import { BotaoGaleria } from '@/components/galeria/botao-galeria';
 import { restaurarRolagem } from '@/lib/galeria/retorno';
 import { useKitsVariacao } from '@/hooks/useKitsVariacao';
-import type { KitVariacaoResumo } from '@/lib/kit-variacao-edge';
+import { fetchBaseCanonicaId, type KitVariacaoResumo } from '@/lib/kit-variacao-edge';
 import { AnunciosOrfaos } from '@/components/anuncios-orfaos';
 import { paginar } from '@/lib/paginacao';
 import { paramsParaEstado, estadoParaParams, type EstadoPublicados } from '@/lib/publicados-url';
@@ -349,7 +349,8 @@ interface LinhaProps {
   temImagemIA: boolean;
   /** Kits com variação feitos a partir deste produto. */
   kitsVariacaoDaBase: KitVariacaoResumo[];
-  onCriarKitVariacao: (familiaId: string) => void;
+  /** Recebe o PAI: a base do kit é a família canônica dele, não a família da linha. */
+  onCriarKitVariacao: (codigoPai: string) => void;
   onGerenciarKit: (kit: KitVariacaoResumo) => void;
   /** Foco pedido depois de criar/montar/desmontar (seq): expande a linha e destaca "Kits com variação". */
   focoKit?: number | null;
@@ -575,7 +576,7 @@ function LinhaTabela({
               title={motivoKitVariacaoDesabilitado ?? 'Criar kit com variação (cores combinadas)'}
               className="h-7 px-2 text-xs"
               disabled={!!motivoKitVariacaoDesabilitado}
-              onClick={(e) => { e.stopPropagation(); onCriarKitVariacao(item.familiaId); }}
+              onClick={(e) => { e.stopPropagation(); onCriarKitVariacao(item.codigoPai); }}
             >
               <Layers className="h-3 w-3" />
             </Button>
@@ -1225,6 +1226,19 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
     [publicadosTodos, kitPorCodigo],
   );
   const [criarKitVariacaoDe, setCriarKitVariacaoDe] = useState<string | null>(null);
+  // A linha guarda a família mais antiga do anúncio (dedupe): cores incluídas depois só existem na canônica, que é
+  // também a única que a edge aceita como base (`base_desatualizada`).
+  // Só a resposta do último clique vale (fechar também invalida): uma leitura atrasada não troca a base nem reabre.
+  const pedidoKitVariacao = useRef(0);
+  async function abrirKitVariacao(codigoPai: string) {
+    const pedido = ++pedidoKitVariacao.current;
+    try {
+      const id = await fetchBaseCanonicaId(codigoPai);
+      if (pedido === pedidoKitVariacao.current) setCriarKitVariacaoDe(id);
+    } catch (e) {
+      if (pedido === pedidoKitVariacao.current) toast.error('Não foi possível abrir o kit', { description: (e as Error).message });
+    }
+  }
   const [kitGerenciado, setKitGerenciado] = useState<KitVariacaoResumo | null>(null);
   // id da família aberta no DialogFiscalProduto (T13) — null = fechado. Fila vazia: edição
   // single a partir do badge, sem "salvar e próximo" (isso é o fluxo em lote do Estoque).
@@ -1974,7 +1988,7 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
                         temKitVariacao={temKitVariacao}
                         kitVariacao={kitPorCodigo.get(item.codigoPai) ?? null}
                         kitsVariacaoDaBase={(kitsVariacao ?? []).filter((k) => k.codigoPaiBase === item.codigoPai)}
-                        onCriarKitVariacao={setCriarKitVariacaoDe}
+                        onCriarKitVariacao={abrirKitVariacao}
                         onGerenciarKit={setKitGerenciado}
                         focoKit={focoLinha?.mlItemId === item.mlItemId ? focoLinha.seq : null}
                         temImagemIA={temImagemIA}
@@ -2082,7 +2096,7 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
         <DialogCriarKitVariacao
           familiaBaseId={criarKitVariacaoDe}
           open
-          onOpenChange={(v) => { if (!v) setCriarKitVariacaoDe(null); }}
+          onOpenChange={(v) => { if (!v) { pedidoKitVariacao.current++; setCriarKitVariacaoDe(null); } }}
           isAdmin={isAdmin}
         />
       )}

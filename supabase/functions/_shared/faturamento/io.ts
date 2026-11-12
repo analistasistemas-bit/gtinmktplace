@@ -2,7 +2,7 @@
 // Usa Deno/supabase-js; a lógica pura fica em venda.ts. Só `upsertVenda` tem teste de vitest
 // (io.test.ts, com um fake do client) — é o caminho que grava estorno/liberação.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { ehVendaDaConta, mapearPedidoParaVenda, normGtin, extrairGeo, extrairReceiverNome, escolherCompradorNome, preservarDadosMP, ratearCupomNosItens, calcularLiquido, type PedidoML, type VendaItemRow, type DadosPagamentoMP } from './venda.ts';
+import { ehVendaDaConta, mapearPedidoParaVenda, normGtin, extrairGeo, extrairReceiverNome, escolherCompradorNome, preservarDadosMP, ratearCupomNosItens, calcularLiquido, freteEfetivo, type PedidoML, type VendaItemRow, type DadosPagamentoMP } from './venda.ts';
 import { round2 } from '../dinheiro.ts';
 import { MLApiError } from '../ml/erro-ml.ts';
 import { fundirItensUP } from './catalogo-up.ts';
@@ -458,7 +458,7 @@ export async function upsertVenda(
   const { venda, itens } = mapearPedidoParaVenda(pedido, {
     idsPubliai: opts.idsPubliai, codigoResolver: opts.codigoResolver, eanResolver: opts.eanResolver,
     infoPorGtin: opts.infoPorGtin, gtinPorItem: opts.gtinPorItem, liquidoPorPayment: opts.liquidoPorPayment,
-    freteVendedor: opts.freteVendedor,
+    freteVendedor: freteEfetivo(opts.freteVendedor ?? null, opts.shipment?.substatus),
   });
   // Estado anterior (para detectar "nova venda paga" e não realertar, não perder um comprador_nome
   // real já capturado — o ML é inconsistente e às vezes some com o buyer — e não apagar

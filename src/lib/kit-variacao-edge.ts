@@ -7,16 +7,22 @@ import { effectiveOrgId, useSupportStore } from '@/stores/support-store';
 import { storageOwnerForUpload } from '@/hooks/useUploadLote';
 import { buildStoragePath, uploadFile } from '@/lib/storage';
 import { quarentenaAte } from '@/lib/kit-transferencia-etapa';
-import type { PrecoPeca } from '@/lib/kit-preco-avulso';
+import type { PrecoPeca, PromocaoFutura } from '@/lib/kit-preco-avulso';
 
 /** Preço avulso das peças da base, lido do ML na hora (edge `preco-avulso-kit`, só leitura). Lança em falha:
  *  a tela mostra "preço avulso indisponível" sem bloquear. */
 export async function fetchPrecoAvulsoKit(familiaBaseId: string): Promise<Map<string, PrecoPeca>> {
   const { data, error } = await supabase.functions.invoke('preco-avulso-kit', { body: { familia_base_id: familiaBaseId } });
   if (error) throw error;
-  type Bruto = Record<string, { normal: number | null; promocao: number | null; fim_promocao: string | null }>;
+  type Bruto = Record<string, {
+    normal: number | null; promocao: number | null; fim_promocao: string | null;
+    futuras?: PromocaoFutura[]; futuras_indisponivel?: boolean;
+  }>;
   const pecas = (data as { pecas?: Bruto } | null)?.pecas ?? {};
-  return new Map(Object.entries(pecas).map(([sku, p]) => [sku, { normal: p.normal, promocao: p.promocao, fimPromocao: p.fim_promocao }]));
+  return new Map(Object.entries(pecas).map(([sku, p]) => [sku, {
+    normal: p.normal, promocao: p.promocao, fimPromocao: p.fim_promocao,
+    futuras: p.futuras ?? [], futurasIndisponivel: p.futuras_indisponivel === true,
+  }]));
 }
 
 export type Resultado<T> = ({ ok: true } & T) | { ok: false; motivo?: string; mensagem: string };
@@ -179,6 +185,18 @@ export interface TransferenciaAberta {
   quarentenaAte?: string | null; criacao?: boolean;
 }
 
+/** Base canônica do PAI: a família mais recente (criado_em desc, id desc), a mesma âncora das edges do kit. A linha de
+ *  Publicados guarda a família MAIS ANTIGA do anúncio (dedupe), que pode não ter as cores incluídas em UPDATE. */
+const consultaBaseCanonica = (codigoPai: string) => supabase.from('familias').select('id').eq('codigo_pai', codigoPai)
+  .order('criado_em', { ascending: false }).order('id', { ascending: false }).limit(1);
+
+export async function fetchBaseCanonicaId(codigoPai: string): Promise<string> {
+  const { data, error } = await consultaBaseCanonica(codigoPai);
+  if (error) throw error;
+  if (!data?.[0]?.id) throw new Error('Produto não encontrado.');
+  return data[0].id;
+}
+
 export async function fetchDetalheKitVariacao(kitId: string, codigoPaiBase: string): Promise<{
   skus: SkuKitSaldo[]; abertas: TransferenciaAberta[]; baseFamiliaId: string | null;
 }> {
@@ -188,7 +206,7 @@ export async function fetchDetalheKitVariacao(kitId: string, codigoPaiBase: stri
     supabase.from('kit_transferencias').select(SEL_TRANSFERENCIA)
       .eq('kit_id', kitId).in('estado', ['ativa', 'travada']).order('criado_em', { ascending: true }),
     // Base canônica (a mais recente do PAI): cores, tamanhos e saldo das peças para Montar mais.
-    supabase.from('familias').select('id').eq('codigo_pai', codigoPaiBase).order('criado_em', { ascending: false }).order('id', { ascending: false }).limit(1),
+    consultaBaseCanonica(codigoPaiBase),
   ]);
   if (baseR.error) throw baseR.error;
   if (skusR.error) throw skusR.error;

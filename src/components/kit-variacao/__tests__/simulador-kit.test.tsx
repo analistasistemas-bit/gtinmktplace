@@ -60,7 +60,7 @@ describe('SimuladorKit', () => {
 
   it('custo vem da própria base, a mesma fonte da edge (sem custo recente de outra família)', async () => {
     renderSim(100);
-    await screen.findByText(/Pior combinação/);
+    await screen.findByText(/Menor lucro:/);
     expect(useFamiliaMock).toHaveBeenCalledWith('fam-1', true, false);
   });
 
@@ -68,15 +68,15 @@ describe('SimuladorKit', () => {
     familiaBase.data.variacoes = [peca('Preto', 20), { ...peca('Branco', 25), custo: null as unknown as number }, peca('Marrom', 40)];
     const { onPodeSeguir } = renderSim(100);
     expect(await screen.findByText(/sem custo na base/)).toBeInTheDocument();
-    expect(screen.queryByText(/Pior combinação/)).toBeNull();
+    expect(screen.queryByText(/Menor lucro:/)).toBeNull();
     expect(screen.queryByLabelText('Seguir mesmo assim')).toBeNull();
     expect(onPodeSeguir).toHaveBeenLastCalledWith(false);
   });
 
-  it('mostra a pior combinação com o card de Promoções e libera sem confirmação', async () => {
+  it('mostra a combinação de menor lucro com o card de Promoções e libera sem confirmação', async () => {
     const { onPodeSeguir } = renderSim(100);
     // recebe 100 − 12 − 10 − 8 = 70; Preto+Marrom custa 60 → lucro 10
-    expect(await screen.findByText(/Pior combinação/)).toHaveTextContent('Preto e Marrom · M');
+    expect(await screen.findByText(/Menor lucro:/)).toHaveTextContent('Preto e Marrom · M');
     expect(screen.getByText(/preço do kit/)).toBeInTheDocument();
     expect(screen.getByText('R$ 10,00')).toBeInTheDocument();
     expect(screen.queryByText('Seguir mesmo assim')).toBeNull();
@@ -184,11 +184,20 @@ describe('SimuladorKit', () => {
     expect(onPodeSeguir.mock.calls.slice(antes).some(([v]) => v === true)).toBe(false);
   });
 
+  it('todas as combinações com o mesmo lucro: diz que é igual em todas e não marca nenhuma', async () => {
+    familiaBase.data.variacoes = [peca('Preto', 20), peca('Branco', 20), peca('Marrom', 20)];
+    renderSim(100);
+    expect(await screen.findByText('Mesmo lucro em todas as combinações')).toBeInTheDocument();
+    expect(screen.queryByText(/Menor lucro:/)).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: /Ver lucro de cada combinação/ }));
+    expect(screen.queryByText('(menor lucro)')).toBeNull();
+  });
+
   it('peça excluída da publicação bloqueia como sku_inexistente, sem "Seguir mesmo assim"', async () => {
     familiaBase.data.variacoes = [peca('Preto', 20), { ...peca('Branco', 25), excluidaDaPublicacao: true } as ReturnType<typeof peca>, peca('Marrom', 40)];
     const { onPodeSeguir } = renderSim(100);
     expect(await screen.findByText(/não tem uma das peças/)).toBeInTheDocument();
-    expect(screen.queryByText(/Pior combinação/)).toBeNull();
+    expect(screen.queryByText(/Menor lucro:/)).toBeNull();
     expect(screen.queryByLabelText('Seguir mesmo assim')).toBeNull();
     expect(onPodeSeguir).toHaveBeenLastCalledWith(false);
   });
@@ -201,6 +210,6 @@ describe('SimuladorKit', () => {
     mudarPreco(100);
     expect(await screen.findByText(/Não foi possível ler custos/)).toBeInTheDocument();
     expect(screen.queryByText(/R\$/)).toBeNull();
-    expect(screen.queryByText('(pior)')).toBeNull();
+    expect(screen.queryByText('(menor lucro)')).toBeNull();
   });
 });

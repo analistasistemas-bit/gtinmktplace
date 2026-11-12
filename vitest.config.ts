@@ -15,6 +15,9 @@ export default mergeConfig(
       // e não pega o caso que quebrou o "Personalizado".
       env: { TZ: 'America/Sao_Paulo' },
       setupFiles: ['./src/test/setup.ts'],
+      // Testes de formulário com userEvent levam ~1,5 s sozinhos e passam de 5 s (o padrão) quando a
+      // CPU está disputada (suíte completa local, runner lento): flake de timeout, não bug.
+      testTimeout: 20_000,
       include: [
         './tests/**/*.test.{ts,tsx}',
         './src/**/__tests__/**/*.test.{ts,tsx}',

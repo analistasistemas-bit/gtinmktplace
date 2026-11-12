@@ -373,3 +373,24 @@ separadas, o que derruba a conversão e queima o anúncio.
   assim", invalidado quando preço ou combinações mudam. Gerenciar kit mostra a mesma referência para
   combinação ou tamanho novo (informativo).
 - Nenhuma fórmula de tarifa nova: a comparação é só entre preços de venda; o lucro segue no simulador.
+
+## Adendo (2026-11-11): fotos em lote, promoções futuras das peças e rótulos da conferência
+
+**Fotos em lote (etapa 2).** "Gerar todas" gera a foto das combinações sem foto, sem candidata e sem geração em curso;
+"Gerar de novo todas" refaz candidatas e "não fiel" (nunca toca foto enviada pelo operador nem foto de IA já aprovada) e
+pede confirmação com a contagem, porque cada geração é cobrada (decisão 9). A fila tem no máximo 3 gerações
+simultâneas; enquanto houver geração, "Voltar" e fechar ficam bloqueados (a candidata vive na etapa 2 e uma foto já
+cobrada seria perdida). **A trava humana continua:** "Aprovar todas" não aprova direto, abre uma grade com cada foto
+gerada em tamanho real ao lado das originais da peça e só "Confirmar K fotos" vira a foto das combinações. Foto da
+grade sem prévia carregada não entra.
+
+**Promoções futuras das peças (etapa 3).** `preco-avulso-kit` lê `/seller-promotions/items/{id}` de todo item (uma
+leitura por item, em paralelo ao `/sale_price`, com repetição curta em 500/502/503) e devolve por SKU as promoções
+`pending`/`started` com início depois de agora e `price` abaixo do normal em centavos (o critério é a data: Relâmpago
+participante fica `pending` mesmo ativo, ADR-0174). Convite não aceito (`candidate`) fica de fora. A tela lista, por
+peça do kit, valor, % abaixo do normal, tipo e janela (com hora quando começa e termina no mesmo dia). Só informativo.
+Falha nessa leitura é por SKU e só aparece se a peça estiver no kit.
+
+**Rótulos.** "Pior combinação" vira "Menor lucro" (simulador) e "Avulso mais barato" (comparação); quando todas as
+linhas têm o mesmo valor (lucro; ou soma normal e em promoção, sem linha indisponível), a tela diz que é igual em todas
+e não marca nenhuma.

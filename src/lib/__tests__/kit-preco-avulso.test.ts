@@ -89,6 +89,25 @@ describe('compararKit', () => {
     expect(compararKit(95, l)).toMatchObject({ maisCaro: true, referencia: 89, fimPromocao: null });
   });
 
+  it('igualEmTodas: só com soma normal e em promoção iguais em todas e nenhuma indisponível', () => {
+    const iguais = new Map([
+      ['P-M', { normal: 70, promocao: 40, fimPromocao: null }],
+      ['A-M', { normal: 70, promocao: 40, fimPromocao: null }],
+      ['B-M', { normal: 70, promocao: 40, fimPromocao: null }],
+    ]);
+    const l = (m: Map<string, PrecoPeca>) => [
+      { rotulo: 'Preto e Azul', tamanho: 'M', soma: somaAvulsa(pecas, m, ['Preto', 'Azul'], 'M') },
+      { rotulo: 'Preto e Branco', tamanho: 'M', soma: somaAvulsa(pecas, m, ['Preto', 'Branco'], 'M') },
+    ];
+    expect(compararKit(60, l(iguais)).igualEmTodas).toBe(true);
+    // Promoção empatada, normal diferente: não é igual em todas (a linha mostra os dois valores).
+    const normalDif = new Map(iguais); normalDif.set('B-M', { normal: 60, promocao: 40, fimPromocao: null });
+    expect(compararKit(60, l(normalDif)).igualEmTodas).toBe(false);
+    // Linha indisponível: não afirma igualdade.
+    expect(compararKit(60, [...l(iguais), { rotulo: 'Preto e Azul', tamanho: 'G', soma: somaAvulsa(pecas, precos, ['Preto', 'Azul'], 'G') }]).igualEmTodas).toBe(false);
+    expect(compararKit(60, [l(iguais)[0]]).igualEmTodas).toBe(false); // uma linha só: nada a comparar
+  });
+
   it('alguma soma indisponível: semComparacao, e as comparáveis continuam valendo', () => {
     const l = [...linhas, { rotulo: 'Preto e Azul', tamanho: 'G', soma: somaAvulsa(pecas, precos, ['Preto', 'Azul'], 'G') }];
     expect(compararKit(50, l)).toMatchObject({ semComparacao: true, maisCaro: false });

@@ -1,16 +1,23 @@
 # PubliAI — Tasks
 
-## Galeria da cor por IA (ADR-0201) — 2026-11-11
+## Galeria da cor por IA: imagem inteira do gerador (ADR-0203, altera o ADR-0201) — 2026-11-12
 
-**Estado:** implementada na branch `worktree-imagens-anuncio-ia`, **aguardando validação real com o Diego**. Nada implantado: sem `db push`, sem deploy, sem agendamento, sem escrita no ML. Procedimento: `docs/superpowers/specs/2026-11-08-galeria-da-cor-entrega.md`.
+- [x] Plano de IA por anúncio (paleta da marca + 7 imagens com textos exatos), com guardas em código (número fora dos dados, termo proibido, cor no texto, aspas do prompt).
+- [x] Worker gera a imagem inteira (Nano Banana 2.1, 4:5 em 2K), confere o texto por visão e regenera uma vez; custo da descartada somado na linha.
+- [x] Tela única: gerar foto a foto ou todas, por cor ou todas as cores, Aprovar e Aprovar todas, ampliar, e "Colocar no anúncio" com evolução por foto.
+- [x] Aviso de imagens prontas no app e no Telegram, só para quem pediu (migration `20261111235456`).
+- [x] Pipeline antigo removido (roteiro editável, conferência de dados em tela, lupa, composição em canvas; edges `galeria-fatos` e `galeria-roteiro`).
+- [x] Teste real em 12/11 (AVIL): 14 imagens geradas e cobradas uma vez cada, 7 aplicadas no MLB7168683146. Custo medido: US$ 0,071 por imagem exibida.
+- [x] Revisão geral (Fable 5.2) e pré-merge (Grok 4.7): pronta com correções, aplicadas.
+- [ ] Testar o "Desfazer" em anúncio real.
+- [ ] Acelerar o envio das fotos na aplicação (1 foto por minuto hoje; prazo de 30 min).
+- [ ] Pendências menores: `galeria_reservar_pedido` aceitar só roteiro aprovado; paginação do aviso; texto solto que repete valor de outro texto na conferência.
 
-- [x] Tasks 0–15 (ensaio no ML, schema, fatos, roteiro, geração, exibição/cobrança, aprovação do final, aplicar/reverter com trava por MLB, UI) e lupa pela caixa do produto, todas com revisão externa.
-- [x] Task 16, parte código: edge `galeria-retencao` (só apaga órfãs não citadas, > 1 dia), RPC `galeria_retencao_listar` e agendamento diário em `scripts/qstash-agendar-galeria.ts`. A regra dos 30 dias do plano ficou de fora até decisão do Diego.
-- [x] Documentação (edges, modelo de dados, procedimento de entrega).
-- [ ] Task 16 Step 2 (Diego): `supabase db push` das 10 migrations, `HF_CREDENTIALS`, deploy das edges, `qstash-agendar-galeria.ts`, conferir `cron.job`.
-- [ ] Portão da lupa: 10 referências reais, >= 7/10 com lupa e nenhuma com fundo; só então esvaziar `MISSOES_LUPA_PENDENTE`.
-- [ ] Medições: saída do Qwen com referência sem marca; CPU da `galeria-aprovar` (<= 800 ms); PUT duplo e CORS; missão 6 com cena real.
-- [ ] Task 16 Step 3 (Diego): validação real em Legacy e UP (gerar, aprovar, aplicar, conferir, reverter).
+## Envio mais caro que a venda (etiqueta cancelada) — 2026-11-11
+
+- [x] `freteEfetivo` (`_shared/faturamento/venda.ts`): envio com substatus `cost_exceeded` → `frete_vendedor = 0` (o ML cancela a etiqueta; `/shipments/{id}/costs` ainda devolve a cotação, o vendedor não paga). Aplicado em `upsertVenda` (sync, reconciliação, backfill, devolução).
+- [x] `sync-venda`: alerta Telegram (categoria `financeiro`, dedup `envio_caro` por pedido) "Envio mais caro que a venda".
+- [x] Deploy 11/11: `sync-venda` v130, `sync-devolucao` v90, `backfill-faturamento` v113, `reconciliar-faturamento` v121. Pedido 2000019473934850 reprocessado (frete 57 → 0, líquido −21,75 → 35,25); alerta chegou no Telegram.
 
 ## Calculadora ML: ajustes (preço vivo, margem, kits, frete) — 2026-11-10
 
@@ -18,6 +25,10 @@
 - [x] `tabela-frete-ml`: célula sem cotação `null`, cache v2, TTL 300 s se incompleta. `calcular-tarifa-ml`: TTL 300 s para tarifa `estimated`.
 - [x] Calculadora: campos sem setas, modalidade e margem viva, preço por margem (centavos, tarifa relida), quadro de kits com frete e margem por quantidade, tabela de frete.
 - [ ] Validação visual, push, CI verde e deploy (`ler-anuncio-calculadora`, `tabela-frete-ml`, `calcular-tarifa-ml`) antes do merge; smoke 200 (org) / 404 (outra org).
+- [x] 2026-11-11 (só frontend, `63bee81f` e `35e8ca15`): sensibilidade vira "E se piorar?" com lucro atual e "Sobra R$ X"/"Prejuízo de R$ X" + delta por cenário; quadro de kits mostra `(−x,x%)` ao lado do preço por unidade (N>1, confirmado, só se houver economia) contra 1 unidade, com `title` (hover) e popover (toque/teclado). Sem validação visual no navegador/celular.
+- [x] 2026-11-11 UI P1 (só apresentação, plano Fable 5.2): barra-resumo fixa no celular (`lg:hidden`) com lucro, margem e veredito da modalidade de decisão; lucro/margem dos cards em `text-2xl tabular-nums`; ícone do veredito com tom semântico; removidos cards de dica, "Resultado transparente…" e botão "Ver {nome}"; "Status da cotação" só quando a cotação não é oficial; campo vira "Margem desejada (%)" com dica e o veredito "Margem atual" orienta a definir a meta. Pendente: validar em celular real (teclado iOS cobre a barra; `text-2xl` pode apertar os cards perto de 1024px).
+- [x] 2026-11-11 UI P2 (só apresentação, plano Fable 5.2): composição do custo oculta fixos/variáveis/rebate zerados (nota "Sem …") e não mostra "−R$ 0,00"; esqueleto no lugar do "Carregando produto…" e resultado esmaecido com `aria-busy` durante a cotação; seletores de modalidade com aparência de Tabs e alvo de toque maior; "Medidas e peso" separado de "Taxas manuais" (recolhida quando a cotação é oficial, aberta nos demais; a escolha do operador vale) com `Checkbox` do sistema. Fora: tabela única Clássico × Premium (item 5, PR à parte).
+- [x] 2026-11-11 Testes instáveis sob carga (só teste/config, sem deploy): `vitest.config.ts` com `testTimeout` de 20 s (testes de formulário passavam de 5 s com a CPU disputada; reproduzido com carga artificial) e `onCadastrado` aguardado com `waitFor` em `dialog-cadastro-grade`/`dialog-cadastro-produto`; `gerar-foto-kit/handler.test.ts` espera o upload começar em tempo real (`ateUploadComecar`) em vez de contar voltas, porque o hash das originais é assíncrono real e quebrava só no runner lento da CI. Pendente: 7 falhas de `Estoque.test.tsx` vistas uma vez no preflight sem causa explicada.
 
 ## CREATE divergente em categoria User Products (emenda ADR-0160) — 2026-11-09
 
@@ -73,6 +84,9 @@ verde em 2026-11-08: os 4 scripts `supabase/tests/kit_*_concorrencia.sh` e `plat
 - [x] Foto fiel (`f9a462d5`): ficha por visão, geração ancorada, verificação automática, até 3 tentativas por `request_id` sem cobrar reprovada, botão Ampliar. Migration `20261108173535`. Medição: 7/12 aprovados de primeira; na conferência humana, 3 fiéis, 7 em dúvida e 2 não fiéis (a aprovação humana no Ampliar é a trava). Deploy: `gerar-foto-kit`.
 - [x] Tela Gerenciar kit: base canônica desempata por id desc (`879bcd85`).
 - [x] Preço avulso das peças (`70dd137b`, adendo ADR-0200, 08/11): edge nova `preco-avulso-kit` (só leitura: `/items/bulk` para o normal, `/sale_price` para a promoção, fim da oferta vencedora em `/seller-promotions/items`). Criar kit mostra a soma avulsa por célula (etapa 1), a pior combinação e o desconto do kit (etapa 2) e a comparação por combinação (etapa 3); kit ≥ soma em promoção pede "Criar mesmo assim" (invalidado ao mudar preço ou combinações). Leitura falha = "indisponível", não bloqueia. Gerenciar kit mostra a referência para combinação nova. Revisões: Gemini Argon (Codex sem cota) e Grok 4.7 xhigh (aprovado na 2ª rodada). Deploy: `preco-avulso-kit` v1.
+- [x] Fix base canônica no Criar kit com variação (`2bdc36cc`, 11/11, só front): a linha de Publicados guarda a família mais antiga do anúncio (dedupe), e produto que ganhou cores num UPDATE abria só com as cores da 1ª versão (Short Bermuda 00000140 da Zaven: só Preto). O clique resolve a família mais recente do PAI (`fetchBaseCanonicaId`, a mesma consulta do Gerenciar kit e a âncora da edge `criar-kit-variacao`) e só a resposta do último clique abre o diálogo. Kit vinculado já usava `familiaIdVigente` (ADR-0185) e não muda.
+- [x] "Você recebe por venda" ao vivo na etapa 2 (`0078742d`, 11/11, só front): mesmo simulador da etapa 3, sem a confirmação.
+- [x] Fotos em lote, promoções futuras e rótulos (adendo 11/11 do ADR-0200): "Gerar todas" (fila de 3), "Gerar de novo todas" (confirma o custo) e "Aprovar todas" (grade em tamanho real com as originais, só "Confirmar K fotos" aprova); sair da etapa com foto gerada não aprovada pede confirmação. Etapa 3 lista as promoções programadas das peças (valor, % abaixo do normal, tipo, janela). "Pior combinação" virou "Menor lucro" / "Avulso mais barato", e "igual em todas" quando não há diferença. Deploy: `preco-avulso-kit`.
 
 **Pendências conhecidas (08/11):**
 - [ ] Inspetor da foto cobra etiqueta não visível: ajustar e medir de novo (~US$ 1–2).

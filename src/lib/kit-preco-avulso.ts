@@ -1,8 +1,14 @@
 // ADR-0200 (adendo 08/11): referência do preço avulso das peças no kit com variação. Só compara preços de venda
 // (soma das N peças avulsas × preço do kit); lucro e tarifa continuam no simulador (calcularTarifaML).
 
-/** Preço vivo de uma peça no ML. `normal` null = não lida. `promocao` null = sem promoção vigente. */
-export interface PrecoPeca { normal: number | null; promocao: number | null; fimPromocao: string | null }
+/** Promoção da peça com início depois de agora (aceita no ML). `preco` null = ainda sem preço legível. */
+export interface PromocaoFutura { tipo: string; preco: number | null; inicio: string; fim: string | null }
+/** Preço vivo de uma peça no ML. `normal` null = não lida. `promocao` null = sem promoção vigente. `futuras` ausente =
+ *  resposta de uma edge anterior (sem a leitura): tratada como lista vazia, sem aviso. */
+export interface PrecoPeca {
+  normal: number | null; promocao: number | null; fimPromocao: string | null;
+  futuras?: PromocaoFutura[]; futurasIndisponivel?: boolean;
+}
 
 export interface SomaAvulsa {
   normal: number;
@@ -53,6 +59,8 @@ export interface ComparacaoKit {
   fimPromocao: string | null;
   /** Alguma combinação sem leitura de preço: não foi possível comparar todas. */
   semComparacao: boolean;
+  /** 2+ combinações, todas lidas, com a mesma soma normal e em promoção: a tela não marca nenhuma como "mais barata". */
+  igualEmTodas: boolean;
 }
 
 const desconto = (preco: number, soma: number) => (soma > 0 ? Math.round((1 - preco / soma) * 100) : null);
@@ -60,7 +68,9 @@ const desconto = (preco: number, soma: number) => (soma > 0 ? Math.round((1 - pr
 export function compararKit(preco: number, linhas: LinhaAvulsa[]): ComparacaoKit {
   const ok = linhas.filter((l) => l.soma.disponivel);
   const semComparacao = ok.length < linhas.length;
-  const vazio = { pior: null, descontoNormal: null, descontoPromocao: null, maisCaro: false, referencia: null, fimPromocao: null, semComparacao };
+  const igualEmTodas = !semComparacao && ok.length > 1 && ok.every((l) =>
+    centavos(l.soma.normal) === centavos(ok[0].soma.normal) && centavos(l.soma.promocao) === centavos(ok[0].soma.promocao));
+  const vazio = { pior: null, descontoNormal: null, descontoPromocao: null, maisCaro: false, referencia: null, fimPromocao: null, semComparacao, igualEmTodas };
   if (ok.length === 0) return vazio;
   // Empate em centavos: a combinação em promoção (a que pode mudar quando a promoção acabar).
   const pior = ok.reduce((a, b) => {
@@ -81,5 +91,6 @@ export function compararKit(preco: number, linhas: LinhaAvulsa[]): ComparacaoKit
     // O aviso cita a soma da pior: só a data da promoção dela (a de outra combinação não muda o que o aviso diz).
     fimPromocao: maisCaro && pior.soma.temPromocao ? pior.soma.fimPromocao : null,
     semComparacao,
+    igualEmTodas,
   };
 }
