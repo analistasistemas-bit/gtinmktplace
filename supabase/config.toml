@@ -68,6 +68,9 @@ verify_jwt = true
 # ADR-0200 (adendo 12/11): proposta de galeria com as fotos das peças da combinação (só leitura no ML). APP com o JWT do usuário.
 [functions.fotos-pecas-kit]
 verify_jwt = true
+# ADR-0204: fotos 2 a 7 da base para o kit vinculado (só leitura no ML). APP com o JWT do usuário.
+[functions.fotos-base-kit]
+verify_jwt = true
 # ADR-0200 (Task 15): foto da combinação do kit por IA (módulo imagem_ia), prévia para aprovação. APP com o JWT do admin.
 [functions.gerar-foto-kit]
 verify_jwt = true

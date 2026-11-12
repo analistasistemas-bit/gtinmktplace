@@ -15,16 +15,33 @@ interface Props {
   /** Falha de rede ao ler a proposta. */
   erro?: boolean;
   desabilitado?: boolean;
+  /** Textos da tela; o padrão é o do kit com variação (fotos das peças). O kit vinculado passa os seus. */
+  rotulos?: Partial<RotulosGaleria>;
 }
+
+export interface RotulosGaleria {
+  carregando: string; titulo: string; indisponivelRodape: string; vazio: string; listaAria: string;
+  sufixoNoAnuncio: (total: number) => string; alt: (i: number, cor: string) => string;
+}
+const ROTULOS_PECAS: RotulosGaleria = {
+  carregando: 'Lendo as fotos das peças no Mercado Livre…',
+  titulo: 'Fotos das peças',
+  indisponivelRodape: 'O anúncio sai só com a foto do kit.',
+  vazio: 'Nenhuma foto de peça disponível para esta combinação. O anúncio leva só a foto do kit.',
+  listaAria: 'Fotos das peças no anúncio',
+  sufixoNoAnuncio: (t) => ` · no anúncio: ${t} ${t === 1 ? 'foto' : 'fotos'} das peças`,
+  alt: (i, cor) => `Foto ${i + 1} da lista, peça ${cor}`,
+};
 
 const MOLDURA = 'grid gap-1.5 rounded-md border bg-muted/30 px-2 py-1.5 text-xs';
 
-export function GaleriaPecas({ proposta, escolha, onChange, carregando, erro, desabilitado }: Props) {
+export function GaleriaPecas({ proposta, escolha, onChange, carregando, erro, desabilitado, rotulos }: Props) {
+  const r = { ...ROTULOS_PECAS, ...rotulos };
   const idChave = useId();
   if (carregando) {
     return (
       <div className={MOLDURA} aria-busy="true">
-        <p className="text-muted-foreground">Lendo as fotos das peças no Mercado Livre…</p>
+        <p className="text-muted-foreground">{r.carregando}</p>
         <div className="flex gap-1.5">{[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-14" />)}</div>
       </div>
     );
@@ -32,17 +49,17 @@ export function GaleriaPecas({ proposta, escolha, onChange, carregando, erro, de
   if (erro || !proposta || proposta.indisponivel) {
     return (
       <div className={MOLDURA}>
-        <p className="font-medium">Fotos das peças indisponíveis</p>
+        <p className="font-medium">{r.titulo} indisponíveis</p>
         {(proposta?.avisos ?? []).map((a) => <p key={a} className="text-muted-foreground">{a}</p>)}
-        <p className="text-muted-foreground">O anúncio sai só com a foto do kit.</p>
+        <p className="text-muted-foreground">{r.indisponivelRodape}</p>
       </div>
     );
   }
   if (proposta.fotos.length === 0) {
     return (
       <div className={MOLDURA}>
-        <p className="font-medium">Fotos das peças</p>
-        <p className="text-muted-foreground">Nenhuma foto de peça disponível para esta combinação. O anúncio leva só a foto do kit.</p>
+        <p className="font-medium">{r.titulo}</p>
+        <p className="text-muted-foreground">{r.vazio}</p>
         {proposta.avisos.map((a) => <p key={a} className="text-muted-foreground">{a}</p>)}
       </div>
     );
@@ -56,10 +73,10 @@ export function GaleriaPecas({ proposta, escolha, onChange, carregando, erro, de
     <div className={MOLDURA}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="font-medium">
-          Fotos das peças
+          {r.titulo}
           {ligada && (
             <span className="font-normal text-muted-foreground tabular-nums">
-              {` · no anúncio: ${total} ${total === 1 ? 'foto' : 'fotos'} das peças`}
+              {r.sufixoNoAnuncio(total)}
             </span>
           )}
         </p>
@@ -72,14 +89,14 @@ export function GaleriaPecas({ proposta, escolha, onChange, carregando, erro, de
         </label>
       </div>
       {ligada ? (
-        <ol className="flex flex-wrap gap-1.5" aria-label="Fotos das peças no anúncio">
+        <ol className="flex flex-wrap gap-1.5" aria-label={r.listaAria}>
           {proposta.fotos.map((f, i) => {
             const fora = !mantidas.has(f.id);
             const numero = fora ? null : ++posicao;
             return (
               <li key={f.id} className={cn('relative h-14 w-14 shrink-0 overflow-hidden rounded-md border bg-background', fora && 'opacity-45')}>
                 {f.url
-                  ? <img src={f.url} alt={`Foto ${i + 1} da lista, peça ${f.cor}`} loading="lazy" className="h-full w-full object-cover" />
+                  ? <img src={f.url} alt={r.alt(i, f.cor)} loading="lazy" className="h-full w-full object-cover" />
                   : <div className="flex h-full w-full items-center justify-center text-[10px] text-muted-foreground">sem prévia</div>}
                 <span className="absolute left-0 top-0 rounded-br-md bg-background/90 px-1 text-[10px] font-medium tabular-nums">
                   {numero ?? '–'}

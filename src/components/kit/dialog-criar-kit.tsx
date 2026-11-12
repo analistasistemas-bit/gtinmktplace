@@ -27,6 +27,9 @@ import {
 } from '@/lib/kit';
 import { EtapasKit } from '@/components/kit/etapas-kit';
 import { PromocaoBaseKit } from '@/components/kit/promocao-base-kit';
+import { GaleriaBaseKit } from '@/components/kit/galeria-base-kit';
+import { useGaleriaBaseKit } from '@/hooks/useGaleriaBaseKit';
+import { idsDaGaleria, type EscolhaGaleria } from '@/lib/kit-galeria';
 import { PreviewKit, valorInicialPreview, type KitPreviewValue } from '@/components/kit/preview-kit';
 
 const MENSAGEM_POR_MOTIVO: Record<string, string> = {
@@ -79,6 +82,9 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
     setPodeSeguir((prev) => (prev[n] === pode ? prev : { ...prev, [n]: pode }));
   }, []);
 
+  // ADR-0204: escolha da galeria por tamanho (a leitura é uma por categoria, compartilhada entre os tamanhos).
+  const [escolhasGaleria, setEscolhasGaleria] = useState<Record<number, EscolhaGaleria>>({});
+
   // Reset ao abrir: chaves e valores novos por sessão de diálogo (as chaves só trocam
   // depois de sucesso confirmado, nunca durante a edição).
   useEffect(() => {
@@ -88,6 +94,7 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
     setChaves({});
     setValores({});
     setPodeSeguir({});
+    setEscolhasGaleria({});
     setCategoriaOverride(null);
     setBuscaCategoriaAberta(false);
     setQueryCategoria('');
@@ -142,6 +149,10 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
   const podeCriar = tamanhosMarcados.length > 0 && !tituloInvalido && !precoInvalido && !semFotoInvalido && contaPronta;
   const categoriaMlIdEfetiva = categoriaOverride?.categoriaMlId ?? base.categoriaMlId;
 
+  // Só com a base publicada no ML (senão não há galeria a ler) e na etapa 2; falha da leitura não bloqueia.
+  const galeriaBase = useGaleriaBaseKit(familiaBaseId, categoriaMlIdEfetiva, baseNoMl && open && etapa === 'preview' && tamanhosMarcados.length > 0);
+  const lendoGaleria = galeriaBase.isFetching;
+
   const mutation = useMutation({
     mutationFn: async () => {
       const { data: ud } = await supabase.auth.getUser();
@@ -170,6 +181,8 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
           larguraCm: v.larguraCm,
           comprimentoCm: v.comprimentoCm,
           atacado: v.atacado.length > 0 ? v.atacado : null,
+          // Falha da leitura = sem a chave (o servidor mantém só a capa).
+          ...(galeriaBase.data ? { galeria: idsDaGaleria(galeriaBase.data, escolhasGaleria[n]) } : {}),
         };
       }));
 
@@ -384,6 +397,13 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
                 value={valores[n]}
                 categoriaMlId={categoriaMlIdEfetiva}
                 onPodeSeguir={aoMudarPodeSeguir}
+                galeria={baseNoMl ? (
+                  <GaleriaBaseKit
+                    proposta={galeriaBase.data} carregando={lendoGaleria} erro={galeriaBase.isError}
+                    escolha={escolhasGaleria[n]} desabilitado={mutation.isPending}
+                    onChange={(e) => setEscolhasGaleria((prev) => ({ ...prev, [n]: e }))}
+                  />
+                ) : undefined}
                 onChange={(patch) => setValores((prev) => ({ ...prev, [n]: { ...prev[n], ...patch } }))}
               />
             ))}
@@ -409,7 +429,7 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
               <Button variant="outline" onClick={() => setEtapa('tamanhos')} disabled={mutation.isPending}>
                 Voltar
               </Button>
-              <Button disabled={!podeCriar || mutation.isPending} onClick={() => mutation.mutate()}>
+              <Button disabled={!podeCriar || lendoGaleria || mutation.isPending} onClick={() => mutation.mutate()}>
                 {mutation.isPending ? 'Criando…' : 'Criar e publicar'}
               </Button>
             </>

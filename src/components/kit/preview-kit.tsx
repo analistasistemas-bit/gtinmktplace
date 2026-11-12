@@ -1,5 +1,6 @@
 // ADR-0151 D-4: um bloco de preview por tamanho de kit, com todos os campos editáveis. É a
 // revisão inteira do kit — não passa por process-familia nem por card na tela Revisão.
+import type { ReactNode } from 'react';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { CampoFoto } from '@/components/estoque/campo-foto';
@@ -52,7 +53,7 @@ export function valorInicialPreview(base: BaseParaKit, titulo: string, descricao
   };
 }
 
-export function PreviewKit({ n, indice, total, base, value, onChange, categoriaMlId, onPodeSeguir }: {
+export function PreviewKit({ n, indice, total, base, value, onChange, categoriaMlId, onPodeSeguir, galeria }: {
   n: number;
   /** Posição na lista quando há vários kits (1-based). Omitir se kit único. */
   indice?: number;
@@ -64,6 +65,8 @@ export function PreviewKit({ n, indice, total, base, value, onChange, categoriaM
   categoriaMlId: string | null;
   /** Callback único e estável do dialog; o preview informa se a conta deste kit está pronta. */
   onPodeSeguir: (n: number, pode: boolean) => void;
+  /** ADR-0204: prévia da galeria da base, abaixo da foto do kit (só com a base publicada no ML). */
+  galeria?: ReactNode;
 }) {
   const { data: fotoAtualUrl } = useImageUrl(value.fotoFile ? null : value.imagemPath);
   const tituloExcedeu = value.titulo.length > TITULO_MAX_KIT;
@@ -154,6 +157,7 @@ export function PreviewKit({ n, indice, total, base, value, onChange, categoriaM
               </span>
             )}
           </div>
+          {galeria}
 
           <div className="grid gap-2 sm:grid-cols-3 sm:items-end">
             <div className="flex flex-col gap-1">

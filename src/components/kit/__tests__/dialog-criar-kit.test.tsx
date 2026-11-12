@@ -63,8 +63,10 @@ vi.mock('@/lib/caminho-categoria-ml', () => ({
 
 // subirFoto (via uploadFile/@/lib/storage) e useImageUrl chamam supabase direto — sem mockar,
 // o teste do fluxo de criação bateria na rede real.
+const invokeMock = vi.fn();
 vi.mock('@/lib/supabase', () => ({
   supabase: {
+    functions: { invoke: (...args: unknown[]) => invokeMock(...args) },
     auth: { getUser: () => Promise.resolve({ data: { user: { id: 'user-1' } } }) },
     storage: { from: () => ({ createSignedUrl: () => Promise.resolve({ data: { signedUrl: 'https://x.test/foto.jpg' }, error: null }) }) },
   },
@@ -112,7 +114,7 @@ function kit(multiplicador: number, status: KitVinculado['status'], criadoEm: st
   };
 }
 
-function renderDialog(kitsExistentes: KitVinculado[], base: BaseParaKit = BASE) {
+function renderDialog(kitsExistentes: KitVinculado[], base: BaseParaKit = BASE, baseNoMl = false) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const onOpenChange = vi.fn();
   render(
@@ -122,6 +124,7 @@ function renderDialog(kitsExistentes: KitVinculado[], base: BaseParaKit = BASE) 
         base={base}
         kitsExistentes={kitsExistentes}
         open
+        baseNoMl={baseNoMl}
         onOpenChange={onOpenChange}
       />
     </QueryClientProvider>,
@@ -389,5 +392,101 @@ describe('DialogCriarKit — sinal de que está processando', () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
     expect(dialogo()).not.toHaveClass('glow-effect-sombra');
     expect(dialogo()).toHaveAttribute('aria-busy', 'false');
+  });
+});
+
+// ADR-0204: galeria da base (fotos 2 a 7) no preview. Lida uma vez por categoria; escolha por tamanho.
+describe('DialogCriarKit — galeria da base (ADR-0204)', () => {
+  const FOTOS = {
+    fotos: [
+      { id: 'f2', item: 'MLB1', url: 'https://x.test/2.jpg' },
+      { id: 'f3', item: 'MLB1', url: 'https://x.test/3.jpg' },
+    ],
+    avisos: [], indisponivel: false, limite: 7,
+  };
+  const kitsEnviados = () => (criarKitVinculadoMock.mock.calls[0][0] as { kits: Array<{ galeria?: string[] }> }).kits;
+
+  async function irAoPreview() {
+    await userEvent.click(screen.getByLabelText('Kit de 2 unidades'));
+    await userEvent.click(screen.getByRole('button', { name: 'Avançar' }));
+  }
+  async function criar() {
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Criar e publicar' })).toBeEnabled());
+    await userEvent.click(screen.getByRole('button', { name: 'Criar e publicar' }));
+    await waitFor(() => expect(criarKitVinculadoMock).toHaveBeenCalled());
+  }
+
+  it('lista as fotos numeradas e envia os ids no pedido', async () => {
+    invokeMock.mockResolvedValue({ data: FOTOS, error: null });
+    criarKitVinculadoMock.mockResolvedValue({ ok: true, kits: [], publicacaoOk: true });
+    renderDialog([], BASE_COM_FOTO, true);
+    await irAoPreview();
+    await screen.findByText(/Fotos 2 a 7 do anúncio principal/);
+    expect(invokeMock).toHaveBeenCalledWith('fotos-base-kit', { body: { familia_base_id: 'familia-base-1', categoria_ml_id: 'MLB1000' } });
+    await criar();
+    expect(kitsEnviados()[0].galeria).toEqual(['f2', 'f3']);
+  });
+
+  it('remover foto tira o id do pedido', async () => {
+    invokeMock.mockResolvedValue({ data: FOTOS, error: null });
+    criarKitVinculadoMock.mockResolvedValue({ ok: true, kits: [], publicacaoOk: true });
+    renderDialog([], BASE_COM_FOTO, true);
+    await irAoPreview();
+    await userEvent.click(await screen.findByRole('button', { name: /Remover foto 2/ }));
+    await criar();
+    expect(kitsEnviados()[0].galeria).toEqual(['f3']);
+  });
+
+  it('"Só a foto do kit" envia lista vazia', async () => {
+    invokeMock.mockResolvedValue({ data: FOTOS, error: null });
+    criarKitVinculadoMock.mockResolvedValue({ ok: true, kits: [], publicacaoOk: true });
+    renderDialog([], BASE_COM_FOTO, true);
+    await irAoPreview();
+    await userEvent.click(await screen.findByRole('switch', { name: 'Só a foto do kit' }));
+    await criar();
+    expect(kitsEnviados()[0].galeria).toEqual([]);
+  });
+
+  it('falha na leitura segue só com a capa', async () => {
+    invokeMock.mockResolvedValue({ data: null, error: new Error('boom') });
+    criarKitVinculadoMock.mockResolvedValue({ ok: true, kits: [], publicacaoOk: true });
+    renderDialog([], BASE_COM_FOTO, true);
+    await irAoPreview();
+    await screen.findByText(/sai só com a capa/);
+    await criar();
+    expect(kitsEnviados()[0].galeria).toBeUndefined();
+  });
+
+  it('bloqueia "Criar e publicar" durante a leitura', async () => {
+    let resolver: (v: unknown) => void = () => {};
+    invokeMock.mockReturnValue(new Promise((r) => { resolver = r; }));
+    renderDialog([], BASE_COM_FOTO, true);
+    await irAoPreview();
+    await screen.findByText(/Lendo as fotos/);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.getByRole('button', { name: 'Criar e publicar' })).toBeDisabled();
+    resolver({ data: FOTOS, error: null });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Criar e publicar' })).toBeEnabled());
+  });
+
+  it('trocar a categoria refaz a leitura', async () => {
+    invokeMock.mockResolvedValue({ data: FOTOS, error: null });
+    buscarCategoriaMLMock.mockResolvedValue({ candidatos: [{ categoriaId: 'MLB999', categoriaNome: 'Leite Infantil', domainName: '' }], sugestaoConcorrente: null });
+    renderDialog([], BASE_COM_FOTO, true);
+    await userEvent.click(screen.getByRole('button', { name: 'Trocar categoria' }));
+    await userEvent.type(screen.getByPlaceholderText(/buscar categoria/i), 'leite');
+    await userEvent.click(screen.getByRole('button', { name: 'Buscar' }));
+    await userEvent.click(await screen.findByText('Leite Infantil'));
+    await irAoPreview();
+    await screen.findByText(/Fotos 2 a 7 do anúncio principal/);
+    expect(invokeMock).toHaveBeenCalledWith('fotos-base-kit', { body: { familia_base_id: 'familia-base-1', categoria_ml_id: 'MLB999' } });
+  });
+
+  it('base não publicada: não chama a edge', async () => {
+    renderDialog([], BASE_COM_FOTO, false);
+    await irAoPreview();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Criar e publicar' })).toBeEnabled());
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Fotos 2 a 7/)).not.toBeInTheDocument();
   });
 });
