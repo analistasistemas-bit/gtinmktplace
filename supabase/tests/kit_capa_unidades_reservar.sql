@@ -16,6 +16,11 @@ insert into public.organizations (id, nome, slug, modulos_habilitados, is_test) 
 create or replace function pg_temp.afirmar(c boolean, msg text) returns void language plpgsql as $$
 begin if not coalesce(c, false) then raise exception 'FALHA: %', msg; end if; end $$;
 
+-- security invoker (sem elevação), e o resto roda COMO service_role (o papel da edge).
+select pg_temp.afirmar(not prosecdef, 'RPC é security definer')
+  from pg_proc where oid = 'public.kit_capa_unidades_reservar(uuid, uuid, smallint, uuid, smallint, text, uuid)'::regprocedure;
+set local role service_role;
+
 do $$
 declare
   o uuid := '97960000-0000-0000-0000-000000000001';

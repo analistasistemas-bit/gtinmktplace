@@ -438,6 +438,9 @@ export async function criarKitsVinculados(
     // quem já saiu da org nunca impede o kit. Vazio/nulo segue como antes.
     const herdadas = new Set([base.capa_storage_path, baseVar.imagem_path].filter((p): p is string => typeof p === 'string'));
     const aConferir = kitsFaltando.map((k) => k.imagemPath).filter((p): p is string => !!p && !herdadas.has(p));
+    // Prévia de tentativa reprovada pela verificação (`…/kit-variacao-ia/<request>-tN.ext`, não cobrada) nunca vira capa.
+    const previa = aConferir.find((p) => /\/kit-variacao-ia\/.+-t\d+\./.test(p));
+    if (previa) return { ok: false, motivo: 'foto_nao_autorizada', mensagem: 'A foto reprovada na conferência não pode ser usada no kit.' };
     if (aConferir.length > 0) {
       const { data: perfis, error: perfisErr } = await admin.from('profiles').select('id').eq('org_id', orgId);
       if (perfisErr) return { ok: false, motivo: 'falha_leitura', mensagem: `usuários da org: ${perfisErr.message}` };

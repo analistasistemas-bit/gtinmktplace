@@ -6,7 +6,7 @@
 -- NÃO mudam: trigger de cobrança `kit_variacao_imagens_cobranca` (usa só org_id, request_id e custo_usd), índices
 -- únicos (org, request_id, tentativa) e (org, request_id) vivo, RLS sem policy e revoke de anon/authenticated.
 -- Índice novo para o teto de 6 tentativas por (org, base, n) a cada 24 h (ADR-0205 §8).
--- Re-executável (`db push` não roda em transação).
+-- Re-executável (`if exists`/`if not exists`); sem begin/commit: o db push já envolve a migration numa transação.
 
 alter table public.kit_variacao_imagens alter column cores drop not null;
 alter table public.kit_variacao_imagens alter column rotulo drop not null;

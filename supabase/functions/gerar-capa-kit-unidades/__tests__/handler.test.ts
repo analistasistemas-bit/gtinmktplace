@@ -22,6 +22,8 @@ const f = vi.hoisted(() => ({
   codigoErro: undefined as unknown,
   objetos: new Set<string>(),
   insertErro: '' as string,
+  semUsage: false,
+  listaErro: false,
   imagemB64: '',
   custo: 0.041 as number | undefined,
   chamadasImagem: [] as Array<Record<string, unknown>>,
@@ -62,7 +64,7 @@ vi.mock('../../_shared/ai/client.ts', () => ({
         }
         return {
           choices: [{ message: { images: [{ image_url: { url: `data:image/png;base64,${f.imagemB64}` } }] } }],
-          usage: { prompt_tokens: 3000, completion_tokens: 1290, ...(f.custo !== undefined ? { cost: f.custo } : {}) },
+          ...(f.semUsage ? {} : { usage: { prompt_tokens: 3000, completion_tokens: 1290, ...(f.custo !== undefined ? { cost: f.custo } : {}) } }),
         };
       }
       f.chamadasVisao++;
@@ -162,7 +164,7 @@ vi.mock('../../_shared/supabase.ts', () => ({
           return { data: new Blob([`foto ${p}`], { type: 'image/jpeg' }), error: null };
         },
         upload: async (p: string) => { f.uploads.push(p); f.objetos.add(p); return { data: { path: p }, error: null }; },
-        list: async (pasta: string, o: { search: string }) => ({
+        list: async (pasta: string, o: { search: string }) => (f.listaErro ? { data: null, error: { message: 'x' } } : {
           data: [...f.objetos].filter((x) => x.startsWith(`${pasta}/${o.search}`)).map((x) => ({ name: x.slice(pasta.length + 1) })),
           error: null,
         }),
@@ -186,7 +188,7 @@ const PATH = `org-1/kit-variacao-ia/${REQ}.png`;
 beforeEach(() => {
   f.admin = true; f.modulos = ['imagem_ia']; f.moderadas = []; f.moderacaoPedida = [];
   f.imagemFalha = false; f.erroImagem = 'provedor caiu'; f.codigoErro = undefined; f.objetos = new Set();
-  f.insertErro = ''; f.support = undefined; f.consultas = []; f.rpcs = []; f.imagemB64 = PNG_VERTICAL; f.custo = 0.041; f.chamadasImagem = []; f.chamadasVisao = 0;
+  f.insertErro = ''; f.semUsage = false; f.listaErro = false; f.support = undefined; f.consultas = []; f.rpcs = []; f.imagemB64 = PNG_VERTICAL; f.custo = 0.041; f.chamadasImagem = []; f.chamadasVisao = 0;
   f.verificacoes = []; f.pedidosVerificacao = []; f.linhas = []; f.uploads = []; f.downloads = []; f.escritasProibidas = [];
   f.base = { capa_storage_path: CAPA, variacoes: [{ imagem_path: 'org-1/lote/var.jpg' }] };
 });
@@ -398,19 +400,76 @@ describe('gerar-capa-kit-unidades', () => {
     expect(f.uploads).not.toContain(PATH);
   });
 
-  it('falha da IA libera a reserva (não cobra) e o mesmo pedido pode gerar depois', async () => {
+  it('falha da IA: tentativa fica recusada sem custo (fora da cobrança), consome a tentativa e a próxima gera', async () => {
     f.imagemFalha = true;
-    expect((await post(ok)).status).toBe(502);
-    expect(f.linhas).toHaveLength(0);
+    const r = await post(ok);
+    expect(r.status).toBe(200);
+    const j = await r.json();
+    expect(j).toMatchObject({ aprovado: false, proxima: true, tentativa: 1 });
+    expect(j.path).toBeUndefined();
+    expect(j.motivos.join(' ')).toMatch(/Falha técnica/);
+    expect(j.verificacao).toEqual({ aprovado: false, itens: [], motivos: j.motivos });
+    expect(f.linhas).toHaveLength(1);
+    expect(f.linhas[0]).toMatchObject({ tentativa: 1, status: 'recusada', custo_usd: null });
     f.imagemFalha = false;
-    expect((await post(ok)).status).toBe(200);
+    expect(await (await post(ok)).json()).toMatchObject({ aprovado: true, tentativa: 2 });
+    // Falha técnica não vira "corrigir" no pedido seguinte.
+    expect(JSON.stringify(f.chamadasImagem[1].messages)).not.toContain('corrigir');
+    expect(f.linhas.map((l) => [l.tentativa, l.status])).toEqual([[1, 'recusada'], [2, 'gerada']]);
   });
 
-  it('reserva pendente abandonada é refeita', async () => {
-    f.linhas.push(linhaUnidades({ request_id: REQ, status: 'pendente', verificacao: null, criado_em: agoraMenos(10 * 60_000) }));
-    expect((await post(ok)).status).toBe(200);
-    expect(f.linhas).toHaveLength(1);
+  it('3 falhas da IA no mesmo pedido: proxima false; repetir não chama a IA', async () => {
+    f.imagemFalha = true;
+    const js = [];
+    for (let i = 0; i < 3; i++) js.push(await (await post(ok)).json());
+    expect(js.map((j) => [j.tentativa, j.proxima])).toEqual([[1, true], [2, true], [3, false]]);
+    expect(await (await post(ok)).json()).toMatchObject({ tentativa: 3, proxima: false, existente: true });
+    expect(f.chamadasImagem).toHaveLength(3);
+  });
+
+  it('falhas da IA contam no teto: 6 falhas (2 pedidos) → a 7ª tentativa recebe 429 sem IA', async () => {
+    f.imagemFalha = true;
+    const outro = '55555555-5555-4555-8555-555555555555';
+    for (const rid of [REQ, outro]) for (let i = 0; i < 3; i++) await post({ ...ok, request_id: rid });
+    expect(f.chamadasImagem).toHaveLength(6);
+    const r = await post({ ...ok, request_id: '66666666-6666-4666-8666-666666666666' });
+    expect(r.status).toBe(429);
+    expect((await r.json()).motivo).toBe('teto_diario');
+    expect(f.chamadasImagem).toHaveLength(6);
+  });
+
+  it('reserva pendente abandonada vira recusada (sem custo) e a próxima tentativa gera', async () => {
+    f.linhas.push(linhaUnidades({ request_id: REQ, status: 'pendente', custo_usd: null, verificacao: null, criado_em: agoraMenos(10 * 60_000) }));
+    expect(await (await post(ok)).json()).toMatchObject({ aprovado: true, tentativa: 2 });
+    expect(f.linhas.map((l) => [l.tentativa, l.status, l.custo_usd ?? null])).toEqual([[1, 'recusada', null], [2, 'gerada', expect.any(Number)]]);
+  });
+
+  it('reserva pendente abandonada conta no teto: 5 tentativas + a abandonada → 429 sem IA', async () => {
+    for (let i = 0; i < 5; i++) f.linhas.push(linhaUnidades({}));
+    f.linhas.push(linhaUnidades({ request_id: REQ, status: 'pendente', custo_usd: null, verificacao: null, criado_em: agoraMenos(10 * 60_000) }));
+    const r = await post(ok);
+    expect(r.status).toBe(429);
+    expect(f.linhas.find((l) => l.request_id === REQ)).toMatchObject({ status: 'recusada' });
+    semIA();
+  });
+
+  it('sem usage do provedor: custo da geração estimado (> 0), nunca 23514/estado incerto', async () => {
+    f.semUsage = true;
+    const r = await post(ok);
+    expect(r.status).toBe(200);
     expect(f.linhas[0]).toMatchObject({ status: 'gerada' });
+    expect(Number(f.linhas[0].custo_usd)).toBeCloseTo(0.055, 6);
+  });
+
+  it('pendente_upload: erro ao listar o storage → 500 sem mudar estado nem IA', async () => {
+    f.listaErro = true;
+    f.linhas.push(linhaUnidades({
+      request_id: REQ, status: 'pendente_upload', storage_path: PATH, custo_usd: 0.046,
+      verificacao: { aprovado: true, itens: [], motivos: [] }, criado_em: agoraMenos(10 * 60_000), atualizado_em: agoraMenos(10 * 60_000),
+    }));
+    expect((await post(ok)).status).toBe(500);
+    expect(f.linhas[0]).toMatchObject({ status: 'pendente_upload' });
+    semIA();
   });
 
   it('reserva pendente recente → 409 em_andamento, sem IA', async () => {

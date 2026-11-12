@@ -1192,6 +1192,23 @@ describe('criarKitsVinculados — imagemPath do cliente (ADR-0205)', () => {
     expect(admin.rpc).not.toHaveBeenCalledWith('proximo_codigo_produto', expect.anything());
   });
 
+  it.each([
+    ['travessia codificada', 'user-1/%2e%2e/org-2/x.jpg'],
+    ['barra invertida', 'user-1/..\\org-2\\x.jpg'],
+  ])('path %s → recusado (foto_nao_autorizada)', async (_nome, path) => {
+    const { deps, inserts } = depsFake();
+    expect(await criar(deps, path)).toMatchObject({ ok: false, motivo: 'foto_nao_autorizada' });
+    expect(inserts.familias).toHaveLength(0);
+  });
+
+  it('prévia de tentativa reprovada (kit-variacao-ia/…-tN) não vira capa, nada criado', async () => {
+    const { deps, inserts } = depsFake();
+    const r = await criar(deps, 'org-1/kit-variacao-ia/11111111-1111-4111-8111-111111111111-t2.png');
+    expect(r).toMatchObject({ ok: false, motivo: 'foto_nao_autorizada' });
+    expect(r.mensagem).toMatch(/reprovada/);
+    expect(inserts.familias).toHaveLength(0);
+  });
+
   it('falha ao ler os usuários da org → falha_leitura (fail-closed), nada criado', async () => {
     const { deps, inserts } = depsFake({ perfis: 'erro' });
     const r = await criar(deps, 'user-1/kit/x.jpg');

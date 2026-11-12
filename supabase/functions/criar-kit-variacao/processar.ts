@@ -230,10 +230,14 @@ export function moderadosDoBulk(ids: string[], entradas: unknown): Set<string> {
 /**
  * Foto da org: primeira pasta = org (layout novo) ou um usuário da org (legado), sem `..` nem caminho absoluto. Mesma
  * regra da policy de leitura do bucket `imagens`; sem dono comprovado, recusa.
+ * Cada segmento só com letras ASCII, dígitos, `_ . ( ) -` e espaço, nunca `.`/`..`: o storage-js monta a URL sem
+ * codificar o path e a WHATWG URL trata `%2e%2e` como `..` e `\` como `/` (leitura de outra org pela service role).
+ * Medido em 12/11: os 5.636 caminhos gravados (variações, capas e objetos do bucket) passam nesta lista.
  */
+const SEGMENTO_FOTO = /^[\w.() -]+$/;
 export function fotoDaOrg(path: string, orgId: string, usuariosDaOrg: Set<string>): boolean {
   const partes = path.split('/');
-  if (path.startsWith('/') || partes.length < 2 || partes.some((p) => p === '' || p === '.' || p === '..')) return false;
+  if (path.startsWith('/') || partes.length < 2 || partes.some((p) => !SEGMENTO_FOTO.test(p) || p === '.' || p === '..')) return false;
   return partes[0] === orgId || usuariosDaOrg.has(partes[0]);
 }
 

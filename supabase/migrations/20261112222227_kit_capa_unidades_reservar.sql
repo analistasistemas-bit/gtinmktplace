@@ -4,13 +4,14 @@
 -- Lock transacional sobre (org, base, n) → conta as linhas das últimas 24 h (qualquer status: pendente,
 -- pendente_upload, gerada, recusada) → >= 6 devolve 'teto' sem inserir; senão insere a reserva `pendente` e devolve
 -- 'ok'. Unique (org, request_id, tentativa) e o índice de tentativa viva continuam valendo: 23505 sobe para a edge
--- (o mesmo `em_andamento` de antes). Só service_role executa. Re-executável.
+-- (o mesmo `em_andamento` de antes). Só service_role executa (security invoker: roda com os privilégios dela, sem
+-- elevação). Falhas da IA e reservas abandonadas ficam `recusada` (a edge não apaga), então também contam. Re-executável.
 
 create or replace function public.kit_capa_unidades_reservar(
   p_org_id uuid, p_request_id uuid, p_tentativa smallint, p_familia_base_id uuid, p_n smallint, p_modelo text,
   p_criado_por uuid
 ) returns text
-language plpgsql security definer set search_path = '' as $$
+language plpgsql security invoker set search_path = '' as $$
 begin
   perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(
     'kit_capa_unidades:' || p_org_id::text || ':' || p_familia_base_id::text || ':' || p_n::text, 0));

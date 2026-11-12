@@ -31,6 +31,9 @@ const LIMITE_RESPOSTA_MS = 145_000;
 const MINIMO_IA_MS = 90_000;
 const VERIFICACAO_MS = 35_000;
 const UPLOAD_VENCIDO_MS = LIMITE_RESPOSTA_MS + 30_000;
+// Custo da geração sem `usage` do provedor (nem estimativa por PRECOS): medição de ~US$ 0,05 por tentativa (ADR-0205).
+// Só registro de gasto (a cobrança é `image_unit_cents`); evita `custo_usd = 0`, que o check recusa (23514).
+const CUSTO_GERACAO_ESTIMADO_USD = 0.05;
 const centavos = (usd: number) => Math.ceil(Number((usd * 100).toFixed(6)));
 
 // Log de erro externo por lista de permissão (cópia do `gerar-foto-kit`): nenhum texto do provedor, banco ou storage.
@@ -80,7 +83,7 @@ Deno.serve(async (req) => {
 });
 
 /** Verificação gravada: a do contrato + a foto de origem e a prévia da reprovada (só internas, nunca na resposta). */
-type Registro = Verificacao & { origem_path?: string; previa_path?: string };
+type Registro = Verificacao & { origem_path?: string; previa_path?: string; falha_tecnica?: boolean };
 
 async function atender(req: Request, inicio: number): Promise<Response> {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -188,16 +191,27 @@ async function atender(req: Request, inicio: number): Promise<Response> {
     const t = Number(ja.tentativa);
     const limiteAbandono = new Date(Date.now() - ABANDONO_MS).toISOString();
     if (ja.status === 'pendente' && String(ja.criado_em) < limiteAbandono) {
-      await tabela().delete().eq('org_id', orgId).eq('request_id', requestId).eq('tentativa', t).eq('status', 'pendente').lt('criado_em', limiteAbandono);
-      tentativa = t;
+      // Execução que morreu (passou do limite da edge): fica `recusada` sem custo (fora da cobrança), consome a
+      // tentativa e segue contando no teto diário (nunca apagada: o provedor pode ter cobrado a chamada abortada).
+      const registro: Registro = { ...reprovacao('Geração interrompida antes de terminar (sem cobrança).'), falha_tecnica: true };
+      let final: string | null;
+      try { final = await transicionar(t, 'pendente', { status: 'recusada', custo_usd: null, verificacao: registro }); }
+      catch (e) { logErro('registro', e); return incerto(); }
+      if (final !== 'recusada') return incerto();
+      if (t >= MAX_TENTATIVAS) return await responderReprovada({ tentativa: t, verificacao: registro }, true);
+      tentativa = t + 1;
     } else if (ja.status === 'pendente') {
       return json({ error: 'Esta foto ainda está sendo gerada.', motivo: 'em_andamento' }, 409);
     } else if (ja.status === 'pendente_upload') {
       const caminho = String(ja.storage_path);
       const corte = caminho.lastIndexOf('/');
       const nome = caminho.slice(corte + 1);
-      const { data: lista, error: errLista } = await admin.storage.from('imagens').list(caminho.slice(0, corte), { search: nome });
-      if (errLista) { logErro('upload', errLista); return json({ error: 'Falha ao conferir a foto gerada. Tente novamente.' }, 500); }
+      let lista: Array<{ name: string }> | null = null;
+      try {
+        const r = await comPrazo(admin.storage.from('imagens').list(caminho.slice(0, corte), { search: nome }), fatiaFinal(3_000));
+        if (r.error) throw r.error;
+        lista = r.data;
+      } catch (e) { logErro('upload', e); return json({ error: 'Falha ao conferir a foto gerada. Tente novamente.' }, 500); }
       const existe = (lista ?? []).some((o: { name: string }) => o.name === nome);
       const limiteUpload = new Date(Date.now() - UPLOAD_VENCIDO_MS).toISOString();
       if (!existe && String(ja.atualizado_em ?? ja.criado_em) >= limiteUpload) {
@@ -222,7 +236,9 @@ async function atender(req: Request, inicio: number): Promise<Response> {
       tentativa = t + 1;
     }
   }
-  const anterior = [...todas].reverse().find((l) => l.status === 'recusada' && l.verificacao?.aprovado === false && Number(l.tentativa) < tentativa);
+  // Motivos a corrigir: só da última reprovada pela verificação (falha técnica não é defeito da imagem).
+  const anterior = [...todas].reverse().find((l) => l.status === 'recusada' && l.verificacao?.aprovado === false
+    && !l.verificacao?.falha_tecnica && Number(l.tentativa) < tentativa);
   const motivos = anterior?.verificacao?.motivos ?? [];
 
   // Foto de origem: capa da base ou, sem ela, a da única variação (como o front); da própria org e fora de moderado.
@@ -272,7 +288,6 @@ async function atender(req: Request, inicio: number): Promise<Response> {
     return json({ error: 'Limite diário de gerações deste kit atingido. Envie a foto manualmente.', motivo: 'teto_diario' }, 429);
   }
   if (reserva !== 'ok') return json({ error: 'Falha ao registrar a geração. Tente novamente.' }, 500);
-  const liberar = () => tabela().delete().eq('org_id', orgId).eq('request_id', requestId).eq('tentativa', tentativa).eq('status', 'pendente');
 
   let gerada: Awaited<ReturnType<typeof gerarImagem>>;
   let original: string;
@@ -286,12 +301,18 @@ async function atender(req: Request, inicio: number): Promise<Response> {
     original = await paraDataUrl(blob);
     gerada = await gerarImagem(modelo, montarPedidoUnidades({ n, motivosAnteriores: motivos }).textos, [original],
       fatia(90_000, VERIFICACAO_MS + RESERVA_FINAL_MS));
-    custoUsd += gerada.custoUsd;
+    custoUsd += gerada.custoUsd > 0 ? gerada.custoUsd : CUSTO_GERACAO_ESTIMADO_USD;
   } catch (e) {
+    // Falha da IA (ou da leitura da origem): a tentativa fica `recusada` sem custo (fora da cobrança) e CONTA no teto
+    // diário; nunca é apagada (timeout recorrente do provedor, que pode cobrar a chamada abortada, não fica sem limite).
     logErro('ia', e);
-    await liberar();
     await auditar(target, 'failed');
-    return json({ error: 'Não foi possível gerar a foto. Tente novamente.' }, 502);
+    const registro: Registro = { ...reprovacao('Falha técnica na geração da foto (sem cobrança).'), falha_tecnica: true, origem_path: origemPath };
+    let final: string | null;
+    try { final = await transicionar(tentativa, 'pendente', { status: 'recusada', custo_usd: null, verificacao: registro }); }
+    catch (e2) { logErro('registro', e2); return incerto(); }
+    if (final !== 'recusada') return incerto();
+    return await responderReprovada({ tentativa, verificacao: registro }, false);
   }
 
   // Imprópria ao ML reprova sem chamar a visão; erro ou resposta ilegível reprova (fail-closed).
