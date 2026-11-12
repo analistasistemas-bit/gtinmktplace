@@ -7,16 +7,22 @@ import { effectiveOrgId, useSupportStore } from '@/stores/support-store';
 import { storageOwnerForUpload } from '@/hooks/useUploadLote';
 import { buildStoragePath, uploadFile } from '@/lib/storage';
 import { quarentenaAte } from '@/lib/kit-transferencia-etapa';
-import type { PrecoPeca } from '@/lib/kit-preco-avulso';
+import type { PrecoPeca, PromocaoFutura } from '@/lib/kit-preco-avulso';
 
 /** Preço avulso das peças da base, lido do ML na hora (edge `preco-avulso-kit`, só leitura). Lança em falha:
  *  a tela mostra "preço avulso indisponível" sem bloquear. */
 export async function fetchPrecoAvulsoKit(familiaBaseId: string): Promise<Map<string, PrecoPeca>> {
   const { data, error } = await supabase.functions.invoke('preco-avulso-kit', { body: { familia_base_id: familiaBaseId } });
   if (error) throw error;
-  type Bruto = Record<string, { normal: number | null; promocao: number | null; fim_promocao: string | null }>;
+  type Bruto = Record<string, {
+    normal: number | null; promocao: number | null; fim_promocao: string | null;
+    futuras?: PromocaoFutura[]; futuras_indisponivel?: boolean;
+  }>;
   const pecas = (data as { pecas?: Bruto } | null)?.pecas ?? {};
-  return new Map(Object.entries(pecas).map(([sku, p]) => [sku, { normal: p.normal, promocao: p.promocao, fimPromocao: p.fim_promocao }]));
+  return new Map(Object.entries(pecas).map(([sku, p]) => [sku, {
+    normal: p.normal, promocao: p.promocao, fimPromocao: p.fim_promocao,
+    futuras: p.futuras ?? [], futurasIndisponivel: p.futuras_indisponivel === true,
+  }]));
 }
 
 export type Resultado<T> = ({ ok: true } & T) | { ok: false; motivo?: string; mensagem: string };

@@ -7,6 +7,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { DialogCriarKitVariacao } from '../dialog-criar-kit-variacao';
 import { calcularTarifaML, type Tarifa } from '@/lib/tarifa';
 import { fetchPrecoAvulsoKit } from '@/lib/kit-variacao-edge';
+import type { PrecoPeca } from '@/lib/kit-preco-avulso';
 
 const v = (codigo: string, cor: string, custo: number) => ({
   codigo, cor, tamanho: 'M', estoque: 5, preco: 49.9, precoPublicacao: 49.9, excluidaDaPublicacao: false,
@@ -44,7 +45,7 @@ function tarifa(preco: number): Tarifa {
 }
 
 // Preto em promoção (71,90 → 41,90, até 20/11); Branco sem promoção (59,90). Avulso: 131,80 normal · 101,80 em promoção.
-const PRECOS = new Map([
+const PRECOS = new Map<string, PrecoPeca>([
   ['P-M', { normal: 71.9, promocao: 41.9, fimPromocao: '2026-11-20T02:59:00Z' }],
   ['B-M', { normal: 59.9, promocao: null, fimPromocao: null }],
 ]);
@@ -119,8 +120,52 @@ describe('DialogCriarKitVariacao: preço avulso das peças', () => {
     expect(screen.getByRole('button', { name: 'Criar kit' })).toBeDisabled();
   });
 
+  it('rótulo da referência: com uma combinação só, "Avulso" sem "mais barato"', async () => {
+    const user = userEvent.setup();
+    abrir();
+    await montar(user);
+    await user.click(screen.getByRole('button', { name: 'Próximo' }));
+    // Etapa 2 sem lista e uma combinação só: "Avulso", sem "mais barato".
+    expect(await screen.findByText(/^Avulso \(2 peças, Preto e Branco · M\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/mais barato/)).toBeNull();
+  });
+
+  it('etapa 3: promoções programadas das peças do kit, com valor, % abaixo do normal, tipo e janela', async () => {
+    vi.mocked(fetchPrecoAvulsoKit).mockResolvedValue(new Map<string, PrecoPeca>([
+      ['P-M', { ...PRECOS.get('P-M')!, futuras: [
+        { tipo: 'LIGHTNING', preco: 39.9, inicio: '2026-11-15T15:00:00Z', fim: '2026-11-16T02:59:00Z' },
+      ] }],
+      ['B-M', { ...PRECOS.get('B-M')!, futuras: [
+        { tipo: 'DEAL', preco: 44.9, inicio: '2026-11-20T03:00:00Z', fim: '2026-11-25T02:59:00Z' },
+        { tipo: 'SMART', preco: null, inicio: '2026-11-26T03:00:00Z', fim: '2026-11-30T02:59:00Z' },
+      ] }],
+    ]));
+    const user = userEvent.setup();
+    abrir();
+    await montar(user);
+    await irParaConferir(user, '80');
+    const lista = await screen.findByRole('list', { name: 'Promoções programadas das peças' });
+    // Relâmpago no mesmo dia (horário de Brasília): mostra a hora.
+    expect(lista).toHaveTextContent('Preto · M: R$ 39,90 (45% abaixo de R$ 71,90) · Relâmpago · 15/11 12h às 23h59');
+    expect(lista).toHaveTextContent('Branco · M: R$ 44,90 (25% abaixo de R$ 59,90) · Campanha · 20/11 a 24/11');
+    expect(lista).toHaveTextContent('Branco · M: Co-participação · 26/11 a 29/11 · preço ainda não definido');
+  });
+
+  it('etapa 3: leitura das promoções falhou numa peça do kit avisa; resposta antiga sem "futuras" não quebra nem avisa', async () => {
+    vi.mocked(fetchPrecoAvulsoKit).mockResolvedValue(new Map<string, PrecoPeca>([
+      ['P-M', { ...PRECOS.get('P-M')!, futuras: [], futurasIndisponivel: true }],
+      ['B-M', PRECOS.get('B-M')!], // edge antiga: sem os campos novos
+    ]));
+    const user = userEvent.setup();
+    abrir();
+    await montar(user);
+    await irParaConferir(user, '80');
+    expect(await screen.findByText('Não foi possível ler as promoções programadas de Preto · M.')).toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'Promoções programadas das peças' })).toBeNull();
+  });
+
   it('sem promoção: compara com a soma no preço normal', async () => {
-    vi.mocked(fetchPrecoAvulsoKit).mockResolvedValue(new Map([
+    vi.mocked(fetchPrecoAvulsoKit).mockResolvedValue(new Map<string, PrecoPeca>([
       ['P-M', { normal: 71.9, promocao: null, fimPromocao: null }],
       ['B-M', { normal: 59.9, promocao: null, fimPromocao: null }],
     ]));

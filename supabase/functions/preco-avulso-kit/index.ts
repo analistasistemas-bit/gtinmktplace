@@ -1,4 +1,4 @@
-// ADR-0200 (adendo 08/11): preço avulso (normal, em promoção e fim da promoção) das peças da base do kit com
+// ADR-0200 (adendos 08/11 e 11/11): preço avulso (normal, em promoção, fim da promoção e promoções futuras) das peças da base do kit com
 // variação, lido do ML na hora com o token da org. SÓ leitura: nada é gravado, nem no banco nem no ML.
 // Falha de conexão ou de leitura não é erro da tela: volta 200 com a peça sem preço ("indisponível").
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
@@ -7,6 +7,7 @@ import { requireUserOrg } from '../_shared/auth.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
+import { criarClienteReajusteML } from '../_shared/operacoes/reajuste/ml.ts';
 import { lerPrecosAvulsos, type GetML, type PrecoAvulso } from './processar.ts';
 
 /** 5 s por chamada: uma leitura pendurada não segura a tela (mesma espera de lerSalePriceML). */
@@ -16,6 +17,14 @@ const getML = (token: string): GetML => async (path) => {
   });
   if (!r.ok) throw new Error(`ML ${r.status} em ${path.split('?')[0]}`);
   return r.json();
+};
+
+/** fetch das promoções: 5 s por chamada e uma repetição em 500/502/503 (/seller-promotions oscila; o 409 a leitura
+ *  do reajuste já repete). Só GET passa por aqui: `lerOfertas` não escreve. */
+const fetchPromocoes: typeof fetch = async (url, init) => {
+  const uma = () => fetch(url, { ...init, signal: AbortSignal.timeout(5_000) });
+  const r = await uma();
+  return [500, 502, 503].includes(r.status) ? uma() : r;
 };
 
 function json(body: unknown, status = 200): Response {
@@ -53,7 +62,7 @@ Deno.serve(async (req) => {
   const itemDe = new Map((vinculos ?? []).map((v) => [v.sku as string, v.item_externo_id as string | null]));
   const pedidos = skus.map((sku) => ({ sku, item_id: itemDe.get(sku) ?? null }));
 
-  const vazio = () => Object.fromEntries(skus.map((s) => [s, { normal: null, promocao: null, fim_promocao: null } as PrecoAvulso]));
+  const vazio = () => Object.fromEntries(skus.map((s) => [s, { normal: null, promocao: null, fim_promocao: null, futuras: [], futuras_indisponivel: true } as PrecoAvulso]));
   let token: string;
   try {
     const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
@@ -63,6 +72,7 @@ Deno.serve(async (req) => {
     console.warn('preco_avulso_token_falhou', orgId, String(e));
     return json({ pecas: vazio(), indisponivel: true });
   }
-  const pecas = await lerPrecosAvulsos(getML(token), pedidos);
+  const { lerOfertas } = criarClienteReajusteML(token, fetchPromocoes);
+  const pecas = await lerPrecosAvulsos({ get: getML(token), lerOfertas, agora: Date.now() }, pedidos);
   return json({ pecas });
 });

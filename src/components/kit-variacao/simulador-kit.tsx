@@ -102,6 +102,9 @@ export function SimuladorKit({ familiaBaseId, cores, pecas, quantidades, preco, 
 
   const [expandido, setExpandido] = useState(false);
   const varias = sim.linhas.length > 1;
+  // Todas com o mesmo lucro (centavos): não há uma combinação "de menor lucro" para destacar.
+  const mesmoLucro = varias && sim.pior?.resumo != null
+    && sim.linhas.every((l) => l.resumo != null && centavos(l.resumo.lucro) === centavos(sim.pior!.resumo!.lucro));
 
   // Variação do lucro da pior combinação em relação ao último preço já calculado (mesma combinação).
   const contaAgora = (estado === 'ok' || estado === 'prejuizo') && sim.pior?.resumo
@@ -148,7 +151,8 @@ export function SimuladorKit({ familiaBaseId, cores, pecas, quantidades, preco, 
         <div className="flex flex-col gap-1">
           {varias && (
             <p className="text-xs font-medium text-muted-foreground">
-              Pior combinação: <span className="text-foreground">{sim.pior.rotulo} · {sim.pior.tamanho}</span>
+              {mesmoLucro ? 'Mesmo lucro em todas as combinações'
+                : <>Menor lucro: <span className="text-foreground">{sim.pior.rotulo} · {sim.pior.tamanho}</span></>}
             </p>
           )}
           {anterior && contaAgora && (
@@ -169,7 +173,7 @@ export function SimuladorKit({ familiaBaseId, cores, pecas, quantidades, preco, 
           </Button>
           {expandido && (
             <ul className="mt-1 divide-y divide-border rounded-md border text-xs">
-              {sim.linhas.map((l) => <LinhaCombinacao key={`${l.rotulo}#${l.tamanho}`} l={l} pior={l === sim.pior} />)}
+              {sim.linhas.map((l) => <LinhaCombinacao key={`${l.rotulo}#${l.tamanho}`} l={l} pior={l === sim.pior && !mesmoLucro} />)}
             </ul>
           )}
         </div>
@@ -198,7 +202,7 @@ export function SimuladorKit({ familiaBaseId, cores, pecas, quantidades, preco, 
 function LinhaCombinacao({ l, pior }: { l: LinhaSimulada; pior: boolean }) {
   return (
     <li className={cn('flex items-center justify-between gap-2 px-2 py-1.5 tabular-nums', pior && 'bg-muted/50')}>
-      <span className="min-w-0 truncate">{l.rotulo} · {l.tamanho}{pior && <span className="ml-1 text-muted-foreground">(pior)</span>}</span>
+      <span className="min-w-0 truncate">{l.rotulo} · {l.tamanho}{pior && <span className="ml-1 text-muted-foreground">(menor lucro)</span>}</span>
       {l.resumo ? (
         <span className={l.resumo.lucro < 0 ? 'text-destructive' : 'text-success'}>
           {l.resumo.lucro < 0 ? 'prejuízo ' : 'lucro '}{fmtBRL(l.resumo.lucro)}

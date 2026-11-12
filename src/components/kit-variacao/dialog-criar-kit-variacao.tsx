@@ -30,8 +30,8 @@ import { criarKitVariacaoEdge, enviarFotoKit, gerarTextoKitEdge } from '@/lib/ki
 import { SimuladorKit } from '@/components/kit-variacao/simulador-kit';
 import { ExplicacaoReposicao } from '@/components/kit-variacao/explicacao-reposicao';
 import { FotoCombinacao, type FotoKit } from '@/components/kit-variacao/foto-combinacao';
-import { CelulaAvulso, ComparacaoAvulso } from '@/components/kit-variacao/referencia-avulso';
-import { compararKit, somaAvulsa } from '@/lib/kit-preco-avulso';
+import { CelulaAvulso, ComparacaoAvulso, PromocoesFuturas } from '@/components/kit-variacao/referencia-avulso';
+import { compararKit, somaAvulsa, type PrecoPeca } from '@/lib/kit-preco-avulso';
 import { useFocoKitStore } from '@/stores/foco-kit-store';
 
 const PECAS = [2, 3, 4, 5, 6];
@@ -150,6 +150,18 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
   const somaDe = (cs: string[], t: string) => somaAvulsa(variacoes, precosAvulsos, cs, t);
   const linhasAvulso = quantidades.map((q) => ({ rotulo: rotuloCombinacao(q.cores), tamanho: q.tamanho, soma: somaDe(q.cores, q.tamanho) }));
   const comparacao = compararKit(precoNum, linhasAvulso);
+  // Peças (cor · tamanho) dos anúncios do kit, uma vez cada: as promoções programadas são por peça.
+  const pecasDoKit = useMemo(() => {
+    const vistas = new Map<string, { rotulo: string; normal: number | null; futuras: NonNullable<PrecoPeca['futuras']>; indisponivel: boolean }>();
+    for (const q of quantidades) for (const cor of q.cores) {
+      const v = variacoes.find((x) => x.cor === cor && x.tamanho === q.tamanho);
+      const p = v && precosAvulsos?.get(v.codigo);
+      const rotulo = `${cor} · ${q.tamanho}`;
+      if (!p || vistas.has(rotulo)) continue;
+      vistas.set(rotulo, { rotulo, normal: p.normal, futuras: p.futuras ?? [], indisponivel: p.futurasIndisponivel === true });
+    }
+    return [...vistas.values()];
+  }, [quantidades, variacoes, precosAvulsos]);
   // "Criar mesmo assim" vale só para o preço e as combinações vistos: mudou um deles, confirma de novo (no render,
   // como no simulador: um effect deixaria um frame com a confirmação antiga).
   const chaveAvulso = [Math.round(precoNum * 100), ...linhasAvulso.map((l) => `${l.rotulo}#${l.tamanho}:${Math.round(l.soma.promocao * 100)}`)].join('|');
@@ -569,6 +581,7 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
                     </label>
                   )}
                 />
+                {!lendoAvulso && <PromocoesFuturas pecas={pecasDoKit} />}
               </section>
               <SimuladorKit
                 familiaBaseId={familiaBaseId} cores={marcadas} pecas={pecas} quantidades={quantidades}
