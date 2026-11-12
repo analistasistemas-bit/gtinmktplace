@@ -24,6 +24,9 @@ const f = vi.hoisted(() => ({
   insertErro: '' as string,
   semUsage: false,
   downloadFalha: false,
+  downloadTimeout: false,
+  atrasoModeracaoMs: 0,
+  deslocamento: 0,
   auditorias: [] as string[],
   listaErro: false,
   imagemB64: '',
@@ -50,6 +53,7 @@ vi.mock('../../_shared/ml/token.ts', () => ({ getValidAccessTokenConexao: vi.fn(
 vi.mock('../../criar-kit-variacao/fotos-moderadas.ts', () => ({
   fotosEmItemModerado: vi.fn(async (_a: unknown, _o: unknown, _t: unknown, paths: string[]) => {
     f.moderacaoPedida.push(paths);
+    f.deslocamento += f.atrasoModeracaoMs;
     return f.moderadas;
   }),
 }));
@@ -166,6 +170,7 @@ vi.mock('../../_shared/supabase.ts', () => ({
         download: async (p: string) => {
           f.downloads.push(p);
           if (f.downloadFalha) return { data: null, error: { message: 'Object not found' } };
+          if (f.downloadTimeout) throw Object.assign(new Error('prazo esgotado'), { name: 'TimeoutError' });
           return { data: new Blob([`foto ${p}`], { type: 'image/jpeg' }), error: null };
         },
         upload: async (p: string) => { f.uploads.push(p); f.objetos.add(p); return { data: { path: p }, error: null }; },
@@ -180,7 +185,9 @@ vi.mock('../../_shared/supabase.ts', () => ({
 }));
 
 let handler: (req: Request) => Promise<Response>;
+const agoraReal = Date.now.bind(Date);
 beforeAll(async () => {
+  vi.spyOn(Date, 'now').mockImplementation(() => agoraReal() + f.deslocamento);
   vi.stubGlobal('Deno', { serve: f.serve, env: { get: () => undefined } });
   await import('../index.ts');
   handler = f.serve.mock.calls[0][0] as (req: Request) => Promise<Response>;
@@ -193,7 +200,7 @@ const PATH = `org-1/kit-variacao-ia/${REQ}.png`;
 beforeEach(() => {
   f.admin = true; f.modulos = ['imagem_ia']; f.moderadas = []; f.moderacaoPedida = [];
   f.imagemFalha = false; f.erroImagem = 'provedor caiu'; f.codigoErro = undefined; f.objetos = new Set();
-  f.insertErro = ''; f.semUsage = false; f.downloadFalha = false; f.auditorias = []; f.listaErro = false; f.support = undefined; f.consultas = []; f.rpcs = []; f.imagemB64 = PNG_VERTICAL; f.custo = 0.041; f.chamadasImagem = []; f.chamadasVisao = 0;
+  f.insertErro = ''; f.semUsage = false; f.downloadFalha = false; f.downloadTimeout = false; f.atrasoModeracaoMs = 0; f.deslocamento = 0; f.auditorias = []; f.listaErro = false; f.support = undefined; f.consultas = []; f.rpcs = []; f.imagemB64 = PNG_VERTICAL; f.custo = 0.041; f.chamadasImagem = []; f.chamadasVisao = 0;
   f.verificacoes = []; f.pedidosVerificacao = []; f.linhas = []; f.uploads = []; f.downloads = []; f.escritasProibidas = [];
   f.base = { capa_storage_path: CAPA, variacoes: [{ imagem_path: 'org-1/lote/var.jpg' }] };
 });
@@ -466,6 +473,26 @@ describe('gerar-capa-kit-unidades', () => {
     const r = await post(ok);
     expect(r.status).toBe(409);
     expect((await r.json()).motivo).toBe('sem_foto_origem');
+    expect(f.rpcs).toHaveLength(0);
+    expect(f.linhas).toHaveLength(0);
+    semIA();
+  });
+
+  it('moderação consome o orçamento → 503 prazo antes do download, sem reservar nem IA', async () => {
+    f.atrasoModeracaoMs = 50_000;
+    const r = await post(ok);
+    expect(r.status).toBe(503);
+    expect((await r.json()).motivo).toBe('prazo');
+    expect(f.downloads).toHaveLength(0);
+    expect(f.rpcs).toHaveLength(0);
+    semIA();
+  });
+
+  it('download com TimeoutError → 503 prazo (não sem_foto_origem), sem reservar nem IA', async () => {
+    f.downloadTimeout = true;
+    const r = await post(ok);
+    expect(r.status).toBe(503);
+    expect((await r.json()).motivo).toBe('prazo');
     expect(f.rpcs).toHaveLength(0);
     expect(f.linhas).toHaveLength(0);
     semIA();

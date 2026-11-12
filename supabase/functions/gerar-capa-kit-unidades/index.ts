@@ -272,6 +272,8 @@ async function atender(req: Request, inicio: number): Promise<Response> {
   const origemPath = candidata;
   // Foto de origem lida ANTES da reserva: falha de leitura não consome o teto diário (o operador corrige a capa e
   // tenta de novo). Só a chamada ao provedor (e a verificação) gasta tentativa.
+  const semTempo = () => json({ error: 'Sem tempo para gerar a foto agora. Tente novamente.', motivo: 'prazo' }, 503);
+  if (resta() < MINIMO_IA_MS + 1_000) return semTempo();
   let original: string;
   try {
     const blob = await comPrazo((async () => {
@@ -282,12 +284,13 @@ async function atender(req: Request, inicio: number): Promise<Response> {
     original = await paraDataUrl(blob);
   } catch (e) {
     logErro('origem', e);
+    // Prazo (da fatia ou do download) não é defeito da capa: 503 `prazo`, sem reservar nem tocar o teto.
+    const x = e as { name?: unknown; message?: unknown };
+    if (x?.name === 'TimeoutError' || x?.message === 'prazo esgotado') return semTempo();
     return json({ error: 'Não foi possível ler a foto da base. Confira a capa (ou envie a foto) e tente de novo.', motivo: 'sem_foto_origem' }, 409);
   }
 
-  if (resta() < MINIMO_IA_MS) {
-    return json({ error: 'Sem tempo para gerar a foto agora. Tente novamente.', motivo: 'prazo' }, 503);
-  }
+  if (resta() < MINIMO_IA_MS) return semTempo();
 
   const modelo = await resolverModeloImagem(admin, orgId);
   // Teto diário + reserva na MESMA transação (RPC com lock por org/base/n): pedidos paralelos nunca passam juntos

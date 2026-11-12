@@ -233,6 +233,7 @@ export function moderadosDoBulk(ids: string[], entradas: unknown): Set<string> {
  * Cada segmento só com letras ASCII, dígitos, `_ . ( ) -` e espaço, nunca `.`/`..`: o storage-js monta a URL sem
  * codificar o path e a WHATWG URL trata `%2e%2e` como `..` e `\` como `/` (leitura de outra org pela service role).
  * Sem espaço no início/fim do segmento (a URL apaga o espaço final: `.. ` viraria `..`).
+ * Segmento só de pontos/espaços (`.`, `..`, `...`, `. .`) também recusa.
  * Medido em 12/11: os 5.636 caminhos gravados (variações, capas e objetos do bucket) passam nesta lista.
  */
 const SEGMENTO_FOTO = /^[\w.()-](?:[\w.() -]*[\w.()-])?$/;
@@ -241,7 +242,7 @@ const SEGMENTO_FOTO = /^[\w.()-](?:[\w.() -]*[\w.()-])?$/;
 export const ehPreviaReprovada = (path: string) => /\/kit-variacao-ia\/.+-t\d+\./.test(path);
 export function fotoDaOrg(path: string, orgId: string, usuariosDaOrg: Set<string>): boolean {
   const partes = path.split('/');
-  if (path.startsWith('/') || partes.length < 2 || partes.some((p) => !SEGMENTO_FOTO.test(p) || p === '.' || p === '..')) return false;
+  if (path.startsWith('/') || partes.length < 2 || partes.some((p) => !SEGMENTO_FOTO.test(p) || /^[. ]+$/.test(p))) return false;
   return partes[0] === orgId || usuariosDaOrg.has(partes[0]);
 }
 

@@ -19,6 +19,7 @@ describe('fotoDaOrg', () => {
       'org-1/..\\org-2\\x.jpg', 'org-1/a\\b.jpg', 'org-1/x%00.jpg', 'org-1/x\u0000.jpg', 'org-1/x\n.jpg', 'org-1/x\t.jpg',
       'org-1/%2F../x.jpg', 'org-1/x.jpg?y=1', 'org-1/x.jpg#z', 'org-1//x.jpg', '/org-1/x.jpg', 'org-1', 'org-2/lote/x.jpg',
       'org-1/lote/çã.jpg', 'org-1/lote/.. ', 'org-1/lote/ ..', 'org-1/a/.. ', 'org-1/ x.jpg', 'org-1/x.jpg ',
+      'org-1/.../x.jpg', 'org-1/. ./x.jpg', 'org-1/lote/...',
     ]) expect(fotoDaOrg(p, 'org-1', usuarios), JSON.stringify(p)).toBe(false);
   });
 
