@@ -58,7 +58,8 @@ describe('ListaPendentesGaleria', () => {
   it('sem pendências: diz que está tudo aplicado', async () => {
     api.listarPendentes.mockResolvedValue(ok({ pendentes: [] }));
     montar();
-    expect(await screen.findByText(/Nada pendente/)).toBeTruthy();
+    expect(await screen.findByText('Nenhuma imagem pendente nesta organização')).toBeTruthy();
+    expect(screen.queryByText(/já foram aplicadas/)).toBeNull();
   });
 
   it('falha ao carregar: mostra o erro e o botão de tentar de novo', async () => {

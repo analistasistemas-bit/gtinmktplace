@@ -23,7 +23,7 @@ export function ListaPendentesGaleria() {
     );
   }
   if (data.length === 0) {
-    return <EmptyState icon={Images} title="Nada pendente" description="Todas as imagens aprovadas já foram aplicadas nos anúncios." />;
+    return <EmptyState icon={Images} title="Nenhuma imagem pendente nesta organização" description="Não há imagens prontas, nem à espera de aprovação, para aplicar. Se você esperava ver alguma, confira se está na organização certa." />;
   }
   return (
     <ul className="divide-y rounded-lg border">
