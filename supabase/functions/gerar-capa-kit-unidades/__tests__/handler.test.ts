@@ -23,6 +23,8 @@ const f = vi.hoisted(() => ({
   objetos: new Set<string>(),
   insertErro: '' as string,
   semUsage: false,
+  downloadFalha: false,
+  auditorias: [] as string[],
   listaErro: false,
   imagemB64: '',
   custo: 0.041 as number | undefined,
@@ -40,7 +42,9 @@ vi.mock('../../_shared/cors.ts', () => ({ corsHeaders: {}, handleOptions: () => 
 vi.mock('../../_shared/auth.ts', () => ({
   requireUserOrg: vi.fn(async () => ({ userId: 'u1', orgId: 'org-1', isAdmin: f.admin, support: f.support })),
 }));
-vi.mock('../../_shared/support-audit.ts', () => ({ auditarOperacaoSuporte: vi.fn(async () => {}) }));
+vi.mock('../../_shared/support-audit.ts', () => ({
+  auditarOperacaoSuporte: vi.fn(async (_a: unknown, _c: unknown, _t: unknown, r: string) => { f.auditorias.push(r); }),
+}));
 vi.mock('../../_shared/canais/conexao.ts', () => ({ resolverConexaoEstrita: vi.fn(async () => ({ id: 'cx' })) }));
 vi.mock('../../_shared/ml/token.ts', () => ({ getValidAccessTokenConexao: vi.fn(async () => 'tok') }));
 vi.mock('../../criar-kit-variacao/fotos-moderadas.ts', () => ({
@@ -161,6 +165,7 @@ vi.mock('../../_shared/supabase.ts', () => ({
       from: () => ({
         download: async (p: string) => {
           f.downloads.push(p);
+          if (f.downloadFalha) return { data: null, error: { message: 'Object not found' } };
           return { data: new Blob([`foto ${p}`], { type: 'image/jpeg' }), error: null };
         },
         upload: async (p: string) => { f.uploads.push(p); f.objetos.add(p); return { data: { path: p }, error: null }; },
@@ -188,7 +193,7 @@ const PATH = `org-1/kit-variacao-ia/${REQ}.png`;
 beforeEach(() => {
   f.admin = true; f.modulos = ['imagem_ia']; f.moderadas = []; f.moderacaoPedida = [];
   f.imagemFalha = false; f.erroImagem = 'provedor caiu'; f.codigoErro = undefined; f.objetos = new Set();
-  f.insertErro = ''; f.semUsage = false; f.listaErro = false; f.support = undefined; f.consultas = []; f.rpcs = []; f.imagemB64 = PNG_VERTICAL; f.custo = 0.041; f.chamadasImagem = []; f.chamadasVisao = 0;
+  f.insertErro = ''; f.semUsage = false; f.downloadFalha = false; f.auditorias = []; f.listaErro = false; f.support = undefined; f.consultas = []; f.rpcs = []; f.imagemB64 = PNG_VERTICAL; f.custo = 0.041; f.chamadasImagem = []; f.chamadasVisao = 0;
   f.verificacoes = []; f.pedidosVerificacao = []; f.linhas = []; f.uploads = []; f.downloads = []; f.escritasProibidas = [];
   f.base = { capa_storage_path: CAPA, variacoes: [{ imagem_path: 'org-1/lote/var.jpg' }] };
 });
@@ -409,6 +414,7 @@ describe('gerar-capa-kit-unidades', () => {
     expect(j).toMatchObject({ aprovado: false, proxima: false, tentativa: 1 });
     expect(j.path).toBeUndefined();
     expect(j.motivos).toEqual(['Falha técnica na geração da foto (sem cobrança).']);
+    expect(j.falha_tecnica).toBe(true);
     expect(j.verificacao).toEqual({ aprovado: false, itens: [], motivos: j.motivos });
     expect(f.linhas).toHaveLength(1);
     expect(f.linhas[0]).toMatchObject({ tentativa: 1, status: 'recusada', custo_usd: null });
@@ -439,9 +445,10 @@ describe('gerar-capa-kit-unidades', () => {
     expect(f.chamadasImagem).toHaveLength(6);
   });
 
-  it('reserva pendente abandonada vira recusada (sem custo) e a próxima tentativa gera', async () => {
+  it('reserva pendente abandonada vira recusada (sem custo, auditada como falha) e a próxima tentativa gera', async () => {
     f.linhas.push(linhaUnidades({ request_id: REQ, status: 'pendente', custo_usd: null, verificacao: null, criado_em: agoraMenos(10 * 60_000) }));
     expect(await (await post(ok)).json()).toMatchObject({ aprovado: true, tentativa: 2 });
+    expect(f.auditorias).toEqual(['failed', 'succeeded']);
     expect(f.linhas.map((l) => [l.tentativa, l.status, l.custo_usd ?? null])).toEqual([[1, 'recusada', null], [2, 'gerada', expect.any(Number)]]);
   });
 
@@ -452,6 +459,24 @@ describe('gerar-capa-kit-unidades', () => {
     expect(r.status).toBe(429);
     expect(f.linhas.find((l) => l.request_id === REQ)).toMatchObject({ status: 'recusada' });
     semIA();
+  });
+
+  it('foto de origem ilegível → 409 sem_foto_origem ANTES de reservar: nada gravado, teto intacto, sem IA', async () => {
+    f.downloadFalha = true;
+    const r = await post(ok);
+    expect(r.status).toBe(409);
+    expect((await r.json()).motivo).toBe('sem_foto_origem');
+    expect(f.rpcs).toHaveLength(0);
+    expect(f.linhas).toHaveLength(0);
+    semIA();
+  });
+
+  it('6 falhas de leitura da origem não travam a base: a 7ª (com a capa corrigida) gera', async () => {
+    f.downloadFalha = true;
+    for (let i = 0; i < 6; i++) expect((await post({ ...ok, request_id: crypto.randomUUID() })).status).toBe(409);
+    f.downloadFalha = false;
+    expect((await post(ok)).status).toBe(200);
+    expect(f.linhas).toHaveLength(1);
   });
 
   it('sem usage do provedor: custo da geração estimado (> 0), nunca 23514/estado incerto', async () => {

@@ -13,7 +13,7 @@ export type EstadoCapa =
   | { fase: 'gerando'; tentativa: number }
   | { fase: 'candidata'; path: string; url: string | null }
   /** 3 reprovações (ou desfecho definitivo reprovado): só os motivos e "Gerar de novo". */
-  | { fase: 'reprovada'; motivos: string[]; url: string | null }
+  | { fase: 'reprovada'; motivos: string[]; url: string | null; falhaTecnica?: boolean }
   | { fase: 'erro'; motivo?: string; mensagem: string };
 
 const IDLE: EstadoCapa = { fase: 'idle' };
@@ -67,7 +67,10 @@ export function useCapasUnidades(familiaBaseId: string, open: boolean) {
         set({ fase: 'erro', motivo: r.motivo, mensagem: r.motivo === 'teto_diario' ? MSG_TETO : r.mensagem });
       } else if (r.aprovado === false) {
         definitivo();
-        set({ fase: 'reprovada', motivos: r.motivos ?? r.verificacao?.motivos ?? [], url: r.previa_url ?? null });
+        set({
+          fase: 'reprovada', motivos: r.motivos ?? r.verificacao?.motivos ?? [], url: r.previa_url ?? null,
+          falhaTecnica: r.falha_tecnica === true,
+        });
       } else if (!r.path) {
         set({ fase: 'erro', mensagem: 'Resposta sem a foto. Tente de novo.' });
       } else {
@@ -117,7 +120,11 @@ export function GerarCapaUnidades({ n, temCapa, estado = IDLE, onGerar, onUsar }
     <div id={`kit-${n}-capa-unidades-acao`} className="grid gap-2">
       {estado.fase === 'reprovada' ? (
         <div role="alert" className="grid gap-2 rounded-md border border-danger/30 bg-danger/5 p-2 text-xs">
-          <span className="font-medium">A IA não conseguiu uma capa fiel com {n} unidades. Envie a foto manualmente ou tente de novo.</span>
+          <span className="font-medium">
+            {estado.falhaTecnica
+              ? 'Falha técnica na geração, tente de novo (ou envie a foto manualmente).'
+              : `A IA não conseguiu uma capa fiel com ${n} unidades. Envie a foto manualmente ou tente de novo.`}
+          </span>
           <PreviaCapaUnidades n={n} url={estado.url} aprovada={false} motivos={estado.motivos} gerando={false} onGerarDeNovo={onGerar} />
         </div>
       ) : (

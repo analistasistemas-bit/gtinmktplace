@@ -20,7 +20,7 @@ import { forcarMarcaDoProduto, marcaParaCriacao } from '../_shared/categoria/mar
 import { itemIdDaBase, propostaGaleriaBase } from '../_shared/kit-variacao/galeria-base.ts';
 import type { FotoPeca } from '../_shared/kit-variacao/galeria-pecas.ts';
 // Ciclo de import com criar-kit-variacao (STRIP_*) é seguro: os dois lados só usam o outro dentro de funções.
-import { fotoDaOrg } from '../criar-kit-variacao/processar.ts';
+import { ehPreviaReprovada, fotoDaOrg } from '../criar-kit-variacao/processar.ts';
 
 export interface KitSolicitado {
   multiplicador: number;
@@ -438,8 +438,8 @@ export async function criarKitsVinculados(
     // quem já saiu da org nunca impede o kit. Vazio/nulo segue como antes.
     const herdadas = new Set([base.capa_storage_path, baseVar.imagem_path].filter((p): p is string => typeof p === 'string'));
     const aConferir = kitsFaltando.map((k) => k.imagemPath).filter((p): p is string => !!p && !herdadas.has(p));
-    // Prévia de tentativa reprovada pela verificação (`…/kit-variacao-ia/<request>-tN.ext`, não cobrada) nunca vira capa.
-    const previa = aConferir.find((p) => /\/kit-variacao-ia\/.+-t\d+\./.test(p));
+    // Prévia de tentativa reprovada pela verificação (não cobrada) nunca vira capa.
+    const previa = aConferir.find(ehPreviaReprovada);
     if (previa) return { ok: false, motivo: 'foto_nao_autorizada', mensagem: 'A foto reprovada na conferência não pode ser usada no kit.' };
     if (aConferir.length > 0) {
       const { data: perfis, error: perfisErr } = await admin.from('profiles').select('id').eq('org_id', orgId);

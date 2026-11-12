@@ -291,4 +291,6 @@ export interface RespostaFotoKit {
   motivos?: string[];
   previa_url?: string | null;
   originais?: Array<{ cor: string; urls: string[] }>;
+  /** ADR-0205 (`gerar-capa-kit-unidades`): reprovada por falha técnica (provedor, timeout), não pela conferência. */
+  falha_tecnica?: boolean;
 }

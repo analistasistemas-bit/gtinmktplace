@@ -232,9 +232,13 @@ export function moderadosDoBulk(ids: string[], entradas: unknown): Set<string> {
  * regra da policy de leitura do bucket `imagens`; sem dono comprovado, recusa.
  * Cada segmento só com letras ASCII, dígitos, `_ . ( ) -` e espaço, nunca `.`/`..`: o storage-js monta a URL sem
  * codificar o path e a WHATWG URL trata `%2e%2e` como `..` e `\` como `/` (leitura de outra org pela service role).
+ * Sem espaço no início/fim do segmento (a URL apaga o espaço final: `.. ` viraria `..`).
  * Medido em 12/11: os 5.636 caminhos gravados (variações, capas e objetos do bucket) passam nesta lista.
  */
-const SEGMENTO_FOTO = /^[\w.() -]+$/;
+const SEGMENTO_FOTO = /^[\w.()-](?:[\w.() -]*[\w.()-])?$/;
+
+/** Prévia de tentativa reprovada pela verificação (`…/kit-variacao-ia/<request>-tN.ext`, não cobrada): nunca vira foto. */
+export const ehPreviaReprovada = (path: string) => /\/kit-variacao-ia\/.+-t\d+\./.test(path);
 export function fotoDaOrg(path: string, orgId: string, usuariosDaOrg: Set<string>): boolean {
   const partes = path.split('/');
   if (path.startsWith('/') || partes.length < 2 || partes.some((p) => !SEGMENTO_FOTO.test(p) || p === '.' || p === '..')) return false;
@@ -434,6 +438,7 @@ async function conferirFotos(
   const usuarios = new Set(await deps.usuariosDaOrg());
   const alheia = paths.find((path) => !fotoDaOrg(path, deps.orgId, usuarios));
   if (alheia) return recusa('foto_nao_autorizada', `A foto ${alheia} não pertence a esta empresa.`);
+  if (paths.some(ehPreviaReprovada)) return recusa('foto_nao_autorizada', 'A foto reprovada na conferência não pode ser usada no kit.');
   let moderadas: string[];
   try {
     moderadas = await deps.fotosEmItemModerado(paths);

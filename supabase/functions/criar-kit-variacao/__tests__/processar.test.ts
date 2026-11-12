@@ -287,6 +287,16 @@ describe('criarKitVariacao', () => {
     expect(await criarKitVariacao(d.deps, pedido({ fotos: { 'Preto e Branco': 'U1/pb.jpg' } }))).toMatchObject({ ok: true });
   });
 
+  it('prévia de tentativa reprovada (kit-variacao-ia/…-tN) recusa; a foto aprovada da IA passa', async () => {
+    const c = cenario();
+    const previa = 'ORG/kit-variacao-ia/11111111-1111-4111-8111-111111111111-t2.png';
+    expect(await criarKitVariacao(c.deps, pedido({ fotos: { 'Preto e Branco': previa } }))).toMatchObject({ motivo: 'foto_nao_autorizada' });
+    expect(semGravacao(c)).toBe(0);
+    const d = cenario();
+    const aprovada = 'ORG/kit-variacao-ia/11111111-1111-4111-8111-111111111111.png';
+    expect(await criarKitVariacao(d.deps, pedido({ fotos: { 'Preto e Branco': aprovada } }))).toMatchObject({ ok: true });
+  });
+
   it('leitura das fotos no ML que falha recusa (sem prova de que não estão em anúncio moderado)', async () => {
     const c = cenario();
     c.s.erroModeracao = 'ML /items/bulk 500';

@@ -39,7 +39,7 @@ const centavos = (usd: number) => Math.ceil(Number((usd * 100).toFixed(6)));
 // Log de erro externo por lista de permissão (cópia do `gerar-foto-kit`): nenhum texto do provedor, banco ou storage.
 const CODIGOS_LOG = new Set(['23505', '23514', '40001', '57014', 'PGRST116', 'AbortError', 'TimeoutError', 'ETIMEDOUT', 'ECONNRESET']);
 const MSG_LOG: Record<string, string> = {
-  moderacao: 'moderação ilegível', ia: 'falha da IA', upload: 'falha no upload', registro: 'falha ao registrar',
+  moderacao: 'moderação ilegível', origem: 'falha ao ler a foto de origem', ia: 'falha da IA', upload: 'falha no upload', registro: 'falha ao registrar',
   auditoria: 'falha na auditoria', prazo: 'prazo esgotado', interno: 'erro interno', verificacao: 'falha na verificação',
 };
 function logErro(onde: string, e: unknown) {
@@ -170,6 +170,7 @@ async function atender(req: Request, inicio: number): Promise<Response> {
       request_id: requestId, tentativa: t, aprovado: false, proxima: t < MAX_TENTATIVAS && !v.falha_tecnica,
       verificacao: publica(v), motivos: v.motivos ?? [],
       previa_url: v.previa_path ? await assinar(v.previa_path) : null, originais: await originais(v),
+      ...(v.falha_tecnica ? { falha_tecnica: true } : {}),
       ...(existente ? { existente: true } : {}),
     });
   };
@@ -199,6 +200,7 @@ async function atender(req: Request, inicio: number): Promise<Response> {
       try { final = await transicionar(t, 'pendente', { status: 'recusada', custo_usd: null, verificacao: registro }); }
       catch (e) { logErro('registro', e); return incerto(); }
       if (final !== 'recusada') return incerto();
+      await auditar(target, 'failed');
       if (t >= MAX_TENTATIVAS) return await responderReprovada({ tentativa: t, verificacao: registro }, true);
       tentativa = t + 1;
     } else if (ja.status === 'pendente') {
@@ -268,6 +270,20 @@ async function atender(req: Request, inicio: number): Promise<Response> {
     return json({ error: 'Não foi possível conferir as fotos no Mercado Livre. Tente novamente.', motivo: 'foto_moderacao_ilegivel' }, 502);
   }
   const origemPath = candidata;
+  // Foto de origem lida ANTES da reserva: falha de leitura não consome o teto diário (o operador corrige a capa e
+  // tenta de novo). Só a chamada ao provedor (e a verificação) gasta tentativa.
+  let original: string;
+  try {
+    const blob = await comPrazo((async () => {
+      const { data, error: e } = await admin.storage.from('imagens').download(origemPath);
+      if (e || !data) throw new Error('foto de origem não encontrada');
+      return data as Blob;
+    })(), fatia(15_000, MINIMO_IA_MS));
+    original = await paraDataUrl(blob);
+  } catch (e) {
+    logErro('origem', e);
+    return json({ error: 'Não foi possível ler a foto da base. Confira a capa (ou envie a foto) e tente de novo.', motivo: 'sem_foto_origem' }, 409);
+  }
 
   if (resta() < MINIMO_IA_MS) {
     return json({ error: 'Sem tempo para gerar a foto agora. Tente novamente.', motivo: 'prazo' }, 503);
@@ -291,20 +307,13 @@ async function atender(req: Request, inicio: number): Promise<Response> {
   if (reserva !== 'ok') return json({ error: 'Falha ao registrar a geração. Tente novamente.' }, 500);
 
   let gerada: Awaited<ReturnType<typeof gerarImagem>>;
-  let original: string;
   let custoUsd = 0;
   try {
-    const blob = await comPrazo((async () => {
-      const { data, error: e } = await admin.storage.from('imagens').download(origemPath);
-      if (e || !data) throw new Error('foto de origem não encontrada');
-      return data as Blob;
-    })(), fatia(15_000, 70_000));
-    original = await paraDataUrl(blob);
     gerada = await gerarImagem(modelo, montarPedidoUnidades({ n, motivosAnteriores: motivos }).textos, [original],
       fatia(90_000, VERIFICACAO_MS + RESERVA_FINAL_MS));
     custoUsd += gerada.custoUsd > 0 ? gerada.custoUsd : CUSTO_GERACAO_ESTIMADO_USD;
   } catch (e) {
-    // Falha da IA (ou da leitura da origem): a tentativa fica `recusada` sem custo (fora da cobrança) e CONTA no teto
+    // Falha da IA (provedor, timeout): a tentativa fica `recusada` sem custo (fora da cobrança) e CONTA no teto
     // diário; nunca é apagada (timeout recorrente do provedor, que pode cobrar a chamada abortada, não fica sem limite).
     logErro('ia', e);
     await auditar(target, 'failed');

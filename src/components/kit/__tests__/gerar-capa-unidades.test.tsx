@@ -89,6 +89,19 @@ describe('GerarCapaUnidades', () => {
     expect(new Set(ids()).size).toBe(2);
   });
 
+  it('falha técnica: título de falha técnica (não "capa fiel"), sem repetir sozinho', async () => {
+    edge.mockResolvedValueOnce({
+      ok: true as const, tentativa: 1, aprovado: false, proxima: false, falha_tecnica: true,
+      verificacao: { aprovado: false, itens: [], motivos: ['Falha técnica na geração da foto (sem cobrança).'] },
+      motivos: ['Falha técnica na geração da foto (sem cobrança).'], previa_url: null,
+    });
+    render(<Harness />);
+    await userEvent.click(botao()!);
+    expect(await screen.findByText(/Falha técnica na geração, tente de novo/)).toBeInTheDocument();
+    expect(screen.queryByText(/não conseguiu uma capa fiel/)).toBeNull();
+    expect(edge).toHaveBeenCalledTimes(1);
+  });
+
   it('botão fica travado durante a geração', async () => {
     let fim!: (v: ReturnType<typeof aprovada>) => void;
     edge.mockReturnValue(new Promise((r) => { fim = r; }) as never);
