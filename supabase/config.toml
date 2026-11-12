@@ -74,6 +74,9 @@ verify_jwt = true
 # ADR-0200 (Task 15): foto da combinação do kit por IA (módulo imagem_ia), prévia para aprovação. APP com o JWT do admin.
 [functions.gerar-foto-kit]
 verify_jwt = true
+# ADR-0205: capa do kit vinculado com N unidades por IA (módulo imagem_ia), prévia para aprovação. APP com o JWT do admin.
+[functions.gerar-capa-kit-unidades]
+verify_jwt = true
 # ADR-0200: tela Gerenciar kit (montar, desmontar, meta, reposição, "Vender só em kit"). APP com o JWT do admin.
 [functions.gerenciar-kit-variacao]
 verify_jwt = true

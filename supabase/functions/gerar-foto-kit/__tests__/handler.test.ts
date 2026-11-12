@@ -398,6 +398,14 @@ describe('gerar-foto-kit', () => {
     expect(f.chamadasImagem).toHaveLength(1);
   });
 
+  it('request_id de uma capa por unidades (ADR-0205: cores/rotulo nulos, n) → 409 pedido_diferente, sem IA', async () => {
+    f.linhas.push({ org_id: 'org-1', request_id: REQ, tentativa: 1, status: 'gerada', familia_base_id: 'fam-1', cores: null, rotulo: null, n: 2, storage_path: `org-1/kit-variacao-ia/${REQ}.png`, custo_usd: 0.05, criado_em: new Date().toISOString() });
+    const r = await post(ok);
+    expect(r.status).toBe(409);
+    expect((await r.json()).motivo).toBe('pedido_diferente');
+    expect(f.chamadasImagem).toHaveLength(0);
+  });
+
   it('repetição com as mesmas cores em outra ordem → 409 pedido_diferente', async () => {
     expect((await post(ok)).status).toBe(200);
     expect((await post({ ...ok, cores: ['Branco', 'Preto'] })).status).toBe(409);
