@@ -1,6 +1,6 @@
 # ADR-0204 — Kit vinculado leva as fotos 2 a 7 do anúncio da base
 
-Status: PROPOSTO (2026-11-12) · Relaciona: ADR-0151 (kit vinculado), ADR-0200 (adendo 12/11, galeria das peças), ADR-0203 (§14, bug MLB7585283770)
+Status: ACEITO (2026-11-12) · Relaciona: ADR-0151 (kit vinculado), ADR-0200 (adendo 12/11, galeria das peças), ADR-0203 (§14, bug MLB7585283770)
 
 ## Contexto
 O kit vinculado nasce só com a capa (`STRIP_FAMILIA_KIT` descarta `capa2/capa3`). O anúncio da base tem até 7+ fotos. O Diego quer as fotos 2 a 7 da base no kit.

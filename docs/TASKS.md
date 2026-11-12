@@ -12,7 +12,20 @@ Branch `worktree-kit-vinculado-evolucao` (commits `29ee34b5`..`103a84b8`). Spec 
 - [ ] Fatia 2: ver seção abaixo (ADR-0204, em branch).
 - [ ] Fatia 3: capa por IA com N unidades.
 
-## Kit vinculado: evolução, Fatia 2, galeria da base (ADR-0204, proposto) — 2026-11-12
+## Kit vinculado: evolução, Fatia 3, capa por IA com N unidades (ADR-0205, proposto) — 2026-11-12
+
+Branch `worktree-kit-vinculado-fatia3` (commits `ec691b3d`..`217066a2`), ainda NÃO mergeada; migrations não aplicadas; edges não deployadas.
+
+- [x] Migrations `20261112193715_kit_variacao_imagens_unidades.sql` (`cores`/`rotulo` nullable, coluna `n`, check estrito, índice do teto) e `20261112222227_kit_capa_unidades_reservar.sql` (RPC atômica com advisory lock).
+- [x] Edge `gerar-capa-kit-unidades` (`{ request_id, familia_base_id, n 2..6 }`; admin + módulo `imagem_ia`; foto da base lida no servidor; teto 6 tentativas por (org, base, n) em 24 h, 429 `teto_diario`; verificação por visão fail-closed) e `_shared/ai/foto-kit-unidades.ts`; `visaoJson` exportada.
+- [x] UI: botão "Gerar capa com N unidades" no preview do kit, candidata e "Usar esta foto" (aprovação humana).
+- [x] Segurança: `criar-kit-vinculado` recusa `imagemPath` de fora da org (400 `foto_nao_autorizada`, `fotoDaOrg`, só quando difere da capa herdada).
+- [x] Decisões do Diego (12/11): cobrança igual ao kit com variação; teto de 6 tentativas/dia por produto e tamanho.
+- [ ] `supabase db push` das 2 migrations ANTES do deploy das edges; regenerar `src/lib/database.types.ts` com a RPC.
+- [ ] Deploy: `gerar-capa-kit-unidades`, `gerar-foto-kit`, `criar-kit-vinculado`, `criar-kit-variacao` (+ fecho de `_shared/galeria/referencias.ts` e `foto-kit-fiel.ts`); conferir a versão ativa.
+- [ ] Medição real com o Diego (N=2, 3, 6, com e sem rótulo): qualidade de N cópias NUNCA medida. ADR-0205 segue PROPOSTO até lá.
+
+## Kit vinculado: evolução, Fatia 2, galeria da base (ADR-0204, aceito) — 2026-11-12
 
 Branch `worktree-kit-vinculado-fatia2` (commits `8f46377c`..`c0171f5c`), ainda NÃO mergeada nem deployada. O kit vinculado leva as fotos 2 a 7 do anúncio publicado da base (reuso de `picture_id`).
 
