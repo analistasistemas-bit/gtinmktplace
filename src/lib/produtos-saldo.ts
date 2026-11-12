@@ -193,6 +193,20 @@ interface ResumoRpcRaw {
   produtos: ProdutoResumoRpc[];
 }
 
+/**
+ * Item do ML que o botão "Ver anúncio" abre. Kit com variação (UP) tem um item por combinação e
+ * o `ml_item_id` do produto é o primeiro criado — que pode estar pausado por falta de estoque.
+ * Prefere o padrão se ainda tem saldo; senão o primeiro item com saldo; sem variações lidas, o padrão.
+ */
+export function itemParaVerAnuncio(
+  padrao: string | null,
+  variacoes: ReadonlyArray<{ estoque: number; mlItemId: string | null }> | undefined,
+): string | null {
+  const comSaldo = (variacoes ?? []).filter((v) => v.mlItemId && v.estoque > 0).map((v) => v.mlItemId);
+  if (comSaldo.length === 0 || (padrao && comSaldo.includes(padrao))) return padrao;
+  return comSaldo[0];
+}
+
 function mapVariacaoRpc(l: LinhaVariacaoRpc): VariacaoComSaldo {
   return {
     codigo: l.codigo, nome: l.nome, cor: l.cor, gtin: l.gtin, estoque: l.estoque,

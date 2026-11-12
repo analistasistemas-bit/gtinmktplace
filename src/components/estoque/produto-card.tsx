@@ -34,7 +34,7 @@ import { urlAnuncioML } from '@/lib/ml-status';
 import { cn } from '@/lib/utils';
 import { QK } from '@/lib/queries';
 import {
-  fetchVariacoesProduto, mergeProdutoComVariacoes,
+  fetchVariacoesProduto, itemParaVerAnuncio, mergeProdutoComVariacoes,
   urlFotoMl, type ProdutoComSaldo, type ProdutoEstoqueResumo, type VariacaoComSaldo,
 } from '@/lib/produtos-saldo';
 import { formatarNomeProduto } from '@/lib/texto';
@@ -212,6 +212,16 @@ export function ProdutoCard({
     enabled: aberto,
     staleTime: 30_000,
   });
+
+  const itemVerAnuncio = itemParaVerAnuncio(produto.mlItemId, variacoes);
+  // Variações só carregam com o card aberto: lê ao passar o mouse para o link já sair certo.
+  const prefetchVariacoes = () => {
+    void qc.prefetchQuery({
+      queryKey: QK.variacoesEstoque(produto.codigoPai),
+      queryFn: () => fetchVariacoesProduto(produto.codigoPai),
+      staleTime: 30_000,
+    });
+  };
 
   // Pedido do Diego (2026-08-21): badge por linha (Publicado/Erro/Publicando) nas variações da
   // última submissão de "Adicionar variação". `queryFn` nunca roda de verdade — o marcador só
@@ -433,7 +443,7 @@ export function ProdutoCard({
               <span className="hidden truncate md:inline">Fiscal</span>
             </Button>
           )}
-          {produto.mlItemId && (
+          {itemVerAnuncio && (
             // Ícone só (sem rótulo "ML"): mesmo com o track de ação alargado pra 21rem (comentário
             // em GRID_LINHA_PRODUTO acima), um 5º botão com texto force-trunca Entrada/Ajustar/
             // Fiscal pra "E…"/"Aj…"/"Fi…" (medido via playwright-cli no harness real). Shrink-0
@@ -445,7 +455,9 @@ export function ProdutoCard({
               className="h-9 w-9 shrink-0 px-0 md:h-7 md:w-7"
             >
               <a
-                href={urlAnuncioML(produto.mlItemId)}
+                href={urlAnuncioML(itemVerAnuncio)}
+                onPointerEnter={prefetchVariacoes}
+                onFocus={prefetchVariacoes}
                 target="_blank"
                 rel="noreferrer"
                 aria-label={`Ver ${nomePai} no Mercado Livre`}
