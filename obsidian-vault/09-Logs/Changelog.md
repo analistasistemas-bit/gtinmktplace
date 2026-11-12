@@ -9,6 +9,12 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
 
+## 2026-11-12
+
+- **Kit com variação: galeria das peças** (branch `worktree-kit-galeria-pecas`, aguardando "atualizar"). O anúncio do kit leva a foto
+  do kit e, depois dela, fotos intercaladas dos anúncios das peças da combinação, lidas do ML (nada copiado). Prévia na etapa 2
+  do Criar kit e no Montar mais, com remover e "Só a foto do kit". Ver ADR-0200 (adendo 12/11).
+
 ## 2026-11-11
 - **Envio mais caro que a venda:** etiqueta cancelada pelo ML (`cost_exceeded`) não gera mais frete no PubliAI (era R$ 57 numa venda de R$ 40,99, lucro −R$ 44 falso no Telegram). Frete zera em `upsertVenda` e `sync-venda` avisa a categoria `financeiro`. Ver `docs/reference/edge-functions.md`.
 

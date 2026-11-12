@@ -1,5 +1,16 @@
 # PubliAI — Tasks
 
+## Kit com variação: galeria das fotos das peças no anúncio do kit (adendo 12/11 do ADR-0200) — 2026-11-12
+
+- [x] Plano revisado (Fable 5.2: aprovado com ajustes, incorporados) em `docs/superpowers/plans/2026-11-12-kit-galeria-pecas.md`; ensaio sem escrita (`/items/validate` aceitou fotos de outros anúncios publicados; limite 12 confirmado).
+- [x] Regra pura `montarGaleriaKit` (foto k = imagem k+2 da peça da cor k mod n) + leitura no ML (`galeria-leitura`) + peça por cor de menor código (`pecaDaCor`). Medida na Zaven (00000140): bate com o exemplo do Diego (script `scripts/medir-galeria-pecas.ts`, só leitura).
+- [x] Edge `fotos-pecas-kit` (proposta, só leitura); `criar-kit-variacao` grava a galeria (cliente só remove, hash estável sem galeria, retomada e tamanho novo reusam a lista da irmã); worker revalida no ML antes do CREATE e desliga a galeria se o ML recusar foto.
+- [x] Etapa 2 do Criar kit e Montar mais: prévia numerada, remover/restaurar, "Só a foto do kit"; leitura falhou ⇒ "fotos das peças indisponíveis" e segue só com a foto do kit.
+- [x] Migration `20261112110118_kit_variacao_galeria_fotos` (coluna `variacoes.galeria_ml_fotos`).
+- [ ] Deploy (só com "atualizar"): `supabase db push`; edges `fotos-pecas-kit`, `criar-kit-variacao`, `kit-transferencia`; conferir versão.
+- [ ] 1º CREATE real com galeria (prova final do reuso de `picture_id` entre anúncios); se o ML recusar, plano B = baixar a foto e subir de novo.
+- [ ] Decisão do Diego: família publicada pelo app tem `[capa, capa2, capa3, foto da cor]`; medido em 1 família (5–6 fotos por peça) sem capas comuns repetidas.
+
 ## Galeria da cor por IA: imagem inteira do gerador (ADR-0203, altera o ADR-0201) — 2026-11-12
 
 - [x] Plano de IA por anúncio (paleta da marca + 7 imagens com textos exatos), com guardas em código (número fora dos dados, termo proibido, cor no texto, aspas do prompt).

@@ -74,6 +74,7 @@
 | gerenciar-kit-variacao | **true** | HTTP (frontend, **admin**, módulo `kit_variacao`) | sim (`chave_cadastro` + `pedido_hash` + CAS de `kits_variacao.versao`) |
 | gerar-texto-kit | **true** | HTTP (frontend, **admin**, módulo `kit_variacao`) | não (cada chamada consome IA e grava uma prévia) |
 | preco-avulso-kit | **true** | HTTP (frontend, módulo `kit_variacao`) | sim (só leitura no ML, nada gravado) |
+| fotos-pecas-kit | **true** | HTTP (frontend, módulo `kit_variacao`) | sim (só leitura no ML, nada gravado) |
 | gerar-foto-kit | **true** | HTTP (frontend, **admin**, módulos `kit_variacao` e `imagem_ia`) | sim (por `request_id` em `kit_variacao_imagens`) |
 | kit-transferencia | false | QStash worker | sim (claim por `execucao_token`; um passo por invocação) |
 | kit-reposicao | false | QStash worker | sim (decisões versionadas por `sku_politica_kit.versao`) |
@@ -1416,6 +1417,19 @@ um smoke test contra Postgres real antes do primeiro deploy.
   0 e sem transferência aberta (recusa `transferencia_aberta`; com saldo, a tela pede "Desmonte antes"); marca o kit
   `encerrando` e enfileira a saga `encerrar`. Enfileira a saga ou a reposição. Recusas: `versao`, `up_ocupado`, `alvos_invalidos`, `sku_sem_anuncio`,
   `so_em_kit_desligado`, `pedido_diferente`, `kit_nao_encontrado` (404), `modulo_desligado` (403).
+- **fotos-pecas-kit** — proposta de galeria com as fotos das peças da combinação (adendo 12/11 do ADR-0200). `verify_jwt=true`,
+  módulo `kit_variacao`, token da org. Corpo `{familia_base_id, combinacoes:[{rotulo, cores}]}`; os itens das peças saem dos
+  vínculos da org (nunca do corpo): por cor, a variação da base de menor código com item (`pecaDaCor`). Lê `/items/bulk`
+  (`id,status,sub_status,pictures`, lotes de 20 ids únicos) e `settings.max_pictures_per_item` da categoria; aplica
+  `montarGaleriaKit` (foto k = imagem k+2 da peça da cor k mod n; capa da peça fora; slot sem foto pula a vez; sem repetição;
+  total ≤ limite). Resposta `{galerias:{rotulo:{fotos:[{id,item,url,cor}],avisos,indisponivel}}}`. Peça moderada, fechada ou
+  não lida tira só a cor; leitura/limite ilegível ⇒ combinação `indisponivel` (200, nunca erro). Só leitura.
+- **criar-kit-variacao (galeria)** — o pedido (criar e Montar mais) aceita `galeria:{rotulo:[picture_id]}` (ids mantidos); a
+  edge recalcula a proposta com `lerGaleria` e grava `proposta ∩ pedido` (cliente só remove) em `variacoes.galeria_ml_fotos`;
+  nunca recusa o kit por causa da galeria (falha ⇒ aviso em `avisos`). `galeria` só entra no `pedidoHash` quando não vazia.
+  **kit-transferencia (galeria)**: `prepararItem` revalida a galeria no ML (item de origem limpo e foto ainda nele) e
+  acrescenta os ids a `payload.pictures`; 4xx `item.pictures.*` zera a lista da variação, avisa (chave idempotente) e relança,
+  e a saga recria só com a foto do kit.
 - **preco-avulso-kit** — preço avulso das peças da base do kit (adendo ADR-0200). Corpo `{familia_base_id}`; vínculo
   SKU→item de `anuncios_externos_itens` (raiz do PAI, `retirado=false`). Normal = `price` do `/items/bulk` (lotes de 20 ids
   únicos); promoção = `amount` do `/sale_price` abaixo do normal. Promoções do item por `lerOfertas` do reajuste

@@ -6420,6 +6420,7 @@
         "npm:eslint@^9.39.4",
         "npm:fflate@0.8.3",
         "npm:globals@^17.6.0",
+        "npm:jpeg-js@0.4.4",
         "npm:jsdom@^29.1.1",
         "npm:jspdf-autotable@^5.0.8",
         "npm:jspdf@^4.2.1",

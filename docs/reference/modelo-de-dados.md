@@ -392,6 +392,10 @@ Grupos:
   `tipo_produto` definido, o SKU real passa a ser a combinação `(cor, tamanho)`.
 - **Cor (ADR-0004/0029):** `cor`, `cor_hex`, `cor_origem`, `cor_editada_pelo_operador`.
 - **Foto:** `imagem_path`, `ml_picture_id`.
+- **Galeria das peças no kit (ADR-0200, adendo 12/11):** `galeria_ml_fotos jsonb not null default '[]'` (array, check
+  `jsonb_typeof`), `[{ "id": picture_id no ML, "item": MLB da peça de origem }]` na ordem do anúncio. Só SKU de kit com
+  variação; vazio = só a foto do kit. Referência, não cópia (nada vai ao storage). Todos os tamanhos de uma combinação
+  gravam a mesma lista. Zerada pelo worker quando o ML recusa uma foto no CREATE. Migration `20261112110118`.
 - **Catálogo (ADR-0021):** `catalog_product_id`, `catalog_listing_id`,
   `catalog_status` (`pendente`/`vinculado`/`sem_produto`/`family_diff`/`nao_elegivel`/`erro`),
   `catalog_erro`.
