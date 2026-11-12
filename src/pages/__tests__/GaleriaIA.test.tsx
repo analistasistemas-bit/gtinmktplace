@@ -24,7 +24,7 @@ const ctx = vi.hoisted(() => ({ modulos: ['imagem_ia'] as string[] | undefined, 
 vi.mock('@/hooks/useModulosHabilitados', () => ({ useModulosHabilitados: () => ({ data: ctx.modulos }) }));
 vi.mock('@/hooks/useOperacoes', () => ({ usePodeExecutarOperacao: () => ctx.admin }));
 vi.mock('@/hooks/usePublicados', () => ({
-  usePublicados: () => ({ data: [{ mlItemId: 'MLB1', titulo: 'FITAS VELUDO 16MM 25M', precoPublicacao: 28.4, codigoPai: '0001', userProducts: false }] }),
+  usePublicados: () => ({ data: [{ mlItemId: 'MLB1', titulo: 'FITAS VELUDO 16MM 25M', precoPublicacao: 28.4, codigoPai: '0001', userProducts: false, mlPermalink: 'https://produto.mercadolivre.com.br/MLB-1' }] }),
 }));
 
 const ok = <T,>(dados: T): Res<T> => ({ ok: true, dados });
@@ -117,6 +117,14 @@ describe('GaleriaIA: tela única', () => {
     expect(api.montarFicha).not.toHaveBeenCalled();
     expect(api.lerRoteiro).not.toHaveBeenCalled();
     expect(api.listarImagens).toHaveBeenCalledWith('MLB1');
+  });
+
+  it('cabeçalho tem atalho para o anúncio no ML', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista()));
+    abrir();
+    const a = await screen.findByRole('link', { name: /ver no ml/i });
+    expect(a).toHaveAttribute('href', 'https://produto.mercadolivre.com.br/MLB-1');
+    expect(a).toHaveAttribute('target', '_blank');
   });
 
   it('título do cache de Publicados enquanto a lista não chegou', async () => {
