@@ -1015,6 +1015,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
         base={baseParaKit(familia)}
         kitsExistentes={kitsExistentes}
         open={kitDialogAberto}
+        baseNoMl={publicado}
         onOpenChange={setKitDialogAberto}
       />
     </div>

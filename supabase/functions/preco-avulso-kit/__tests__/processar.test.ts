@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { lerPrecosAvulsos, type DepsPrecoAvulso } from '../processar';
+import { lerPrecosAvulsos, moduloPermitido, type DepsPrecoAvulso } from '../processar';
 import { oferta } from '../../_shared/operacoes/reajuste/ofertas';
 import type { OfertaVigente } from '../../_shared/operacoes/reajuste/tipos';
 
@@ -107,5 +107,16 @@ describe('lerPrecosAvulsos', () => {
     expect(d.chamadas.filter((c) => c.includes('sale_price'))).toHaveLength(1);
     expect(d.lerOfertas).toHaveBeenCalledTimes(1);
     expect(r.A2).toEqual(r.A);
+  });
+});
+
+describe('moduloPermitido (gate da edge, ADR-0200 adendo 12/11)', () => {
+  it('aceita kit_variacao ou estoque', () => {
+    expect(moduloPermitido(['kit_variacao'])).toBe(true);
+    expect(moduloPermitido(['estoque'])).toBe(true);
+  });
+  it('recusa sem nenhum dos dois', () => {
+    expect(moduloPermitido([])).toBe(false);
+    expect(moduloPermitido(['outro'])).toBe(false);
   });
 });

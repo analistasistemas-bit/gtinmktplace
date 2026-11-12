@@ -10,6 +10,9 @@ import { parseSalePrice } from '../_shared/trafego/parsers.ts';
 import { pool } from '../_shared/concorrencia/pool.ts';
 import type { OfertaVigente } from '../_shared/operacoes/reajuste/tipos.ts';
 
+/** Gate da edge (adendo 12/11): leitura só, vale para kit com variação e para o kit vinculado (módulo estoque). */
+export const moduloPermitido = (modulos: string[]): boolean => modulos.includes('kit_variacao') || modulos.includes('estoque');
+
 /** GET relativo à API do ML com o token da org e timeout; lança em não-2xx. */
 export type GetML = (path: string) => Promise<unknown>;
 export interface DepsPrecoAvulso {

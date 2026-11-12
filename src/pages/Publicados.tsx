@@ -2152,6 +2152,7 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
           base={baseParaKit(familiaKitAlvo, kitAlvo.precoAtual)}
           kitsExistentes={kitsExistentesRows ?? []}
           open
+          baseNoMl
           onOpenChange={(v) => { if (!v) setKitAlvo(null); }}
         />
       )}

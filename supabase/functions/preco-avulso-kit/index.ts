@@ -39,8 +39,9 @@ Deno.serve(async (req) => {
   try { ({ orgId } = await requireUserOrg(req)); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
   const admin = adminClient();
-  if (!(await exigirModulo(admin, orgId, 'kit_variacao'))) {
-    return json({ error: 'Kit com variação não habilitado para esta organização.' }, 403);
+  // ADR-0200 (adendo 12/11): kit com variação OU estoque (kit vinculado, ADR-0151). Só leitura, escopada por org_id.
+  if (!(await exigirModulo(admin, orgId, 'kit_variacao')) && !(await exigirModulo(admin, orgId, 'estoque'))) {
+    return json({ error: 'Kit não habilitado para esta organização.' }, 403);
   }
 
   let familiaBaseId: unknown;

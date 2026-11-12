@@ -25,6 +25,7 @@ import {
   TAMANHOS_KIT, TITULO_MAX_KIT, tituloDoKit, descricaoDoKit, criarKitVinculado,
   type BaseParaKit, type KitFormValues,
 } from '@/lib/kit';
+import { PromocaoBaseKit } from '@/components/kit/promocao-base-kit';
 import { PreviewKit, valorInicialPreview, type KitPreviewValue } from '@/components/kit/preview-kit';
 
 const MENSAGEM_POR_MOTIVO: Record<string, string> = {
@@ -49,8 +50,10 @@ function CaminhoCategoria({ categoriaId, nome }: { categoriaId: string | null; n
   );
 }
 
-export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOpenChange }: {
+export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOpenChange, baseNoMl = false }: {
   familiaBaseId: string;
+  /** Base já publicada no ML (tem promoção a ler). Em Revisão: false, a edge nem é chamada. */
+  baseNoMl?: boolean;
   base: BaseParaKit;
   /** Todos os status (não só vivos) — precisa do 'erro' pra oferecer "Reenviar" (I-1). */
   kitsExistentes: KitVinculado[];
@@ -323,6 +326,8 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
             </div>
           ) : null}
         </div>
+
+        {baseNoMl && <PromocaoBaseKit familiaBaseId={familiaBaseId} ativo />}
 
         {etapa === 'tamanhos' ? (
           <div className="flex flex-col gap-2">

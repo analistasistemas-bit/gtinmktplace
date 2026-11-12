@@ -25,8 +25,9 @@ function janela(inicio: string, fim: string | null): string {
 }
 
 /** Etapa 3: promoções programadas (aceitas, início futuro) das peças do kit. Só informativo. */
-export function PromocoesFuturas({ pecas }: {
+export function PromocoesFuturas({ pecas, rotuloTitulo = 'das peças' }: {
   pecas: { rotulo: string; normal: number | null; futuras: PromocaoFutura[]; indisponivel: boolean }[];
+  rotuloTitulo?: string;
 }) {
   const com = pecas.filter((p) => p.futuras.length > 0);
   const falhas = pecas.filter((p) => p.indisponivel).map((p) => p.rotulo);
@@ -35,8 +36,8 @@ export function PromocoesFuturas({ pecas }: {
     <div className="grid gap-1 text-xs">
       {com.length > 0 && (
         <>
-          <p className="font-medium text-muted-foreground">Promoções programadas das peças</p>
-          <ul aria-label="Promoções programadas das peças" className="grid gap-0.5 tabular-nums">
+          <p className="font-medium text-muted-foreground">Promoções programadas {rotuloTitulo}</p>
+          <ul aria-label={`Promoções programadas ${rotuloTitulo}`}className="grid gap-0.5 tabular-nums">
             {com.flatMap((p) => p.futuras.map((f) => (
               <li key={`${p.rotulo}#${f.tipo}#${f.inicio}`}>
                 {p.rotulo}: {f.preco != null && p.normal != null
