@@ -438,3 +438,23 @@ filtro de cor, e todo kit sem preto herdava "Preto" no modelo. `MODEL` é valor 
 de frete `lost_me1_by_user` (normal). Kits já publicados precisam de correção no banco **e** PUT no ML juntos (senão o
 próximo "Montar mais" cria SKU com `MODEL` diferente dos irmãos): fica para um kit piloto, com OK do Diego. Fora do
 escopo: a base tem o mesmo `MODEL` com cor (`resolver-atributos-genericos.ts:82`).
+
+## Adendo (2026-11-12): galeria de fotos das peças no anúncio do kit
+
+**Pedido.** No anúncio de cada combinação × tamanho, a foto 1 continua sendo a foto do kit; as seguintes vêm intercaladas das galerias dos anúncios individuais das peças da combinação (kit Preto + Caqui: foto 2 = imagem 2 do Preto, foto 3 = imagem 3 do Caqui, foto 4 = imagem 4 do Preto…). Plano: `docs/superpowers/plans/2026-11-12-kit-galeria-pecas.md` (revisado pelo Fable 5.2).
+
+**Medido em 12/11 (Zaven, produto 00000140, só leitura, nada escrito em anúncio).** 9 itens UP planos, 9 fotos cada; os 3 tamanhos de uma cor têm as mesmas imagens (mesmo `hash` do ML em toda posição) com ids iguais só nas posições 2 e 3. Limite da categoria `MLB188064`: 12 fotos (`settings.max_pictures_per_item`; o `/items/validate` recusa a 13ª). `POST /items/validate` aceitou fotos de outros anúncios publicados da mesma conta (12 fotos misturando Preto e Caqui) e recusou id inexistente (`picture_not_found`). Isso não é o CREATE real.
+
+**Decisão.**
+
+1. **Fonte = ML.** Nada é copiado para o storage. O banco guarda só referências: `variacoes.galeria_ml_fotos jsonb` com `[{id, item}]` (o id da foto e o item de onde veio; o id muda por tamanho). Uma migration, sem outra tabela.
+2. **Regra** (`_shared/kit-variacao/galeria-pecas.ts`, pura): foto k da galeria = imagem k+2 da peça da cor `cores[k mod n]`; a imagem 1 da peça (capa) fica de fora; peça sem a imagem do slot pula a vez sem mudar a das outras; sem repetição por id; total com a foto do kit ≤ limite da categoria, lido do ML (leitura ilegível ⇒ sem galeria, nunca presume 12).
+3. **Uma peça por cor** (a do 1º tamanho com item vivo), pelo medido: tamanhos da mesma cor têm as mesmas imagens. Todos os tamanhos de uma combinação gravam a mesma lista; retomada e tamanho novo reusam a lista da irmã já gravada.
+4. **Edge `fotos-pecas-kit` (só leitura)** propõe a galeria por combinação; itens de origem saem dos vínculos da org, nunca do corpo. Peça `under_review`/`forbidden`/`waiting_for_patch`, fora de `active`/`paused` ou com leitura falha ⇒ aquela cor sai da galeria com o motivo.
+5. **O cliente só remove.** `criar-kit-variacao` recalcula a proposta e grava `proposta ∩ pedido` na ordem da proposta; id fora da combinação, a imagem 1 da peça ou reordenação são descartados. A galeria nunca recusa o kit: o que não confere vira aviso. O `pedidoHash` só inclui a galeria quando não vazia (pedidos antigos mantêm o hash).
+6. **Revalidação no worker.** Em `prepararItem`, antes do POST, um `/items/bulk` dos itens de origem: só fica o id ainda presente em `pictures` de item limpo. Leitura falhou ou item moderado ⇒ CREATE só com a foto do kit e aviso. O worker acrescenta `{id}` ao `payload.pictures`; nada muda em `montar-canonico`, `publicar.ts` nem `publicar-familia-up` (a publicação comum da família do kit não leva galeria).
+7. **Rebaixamento.** Sem 2º POST. 4xx do CREATE com galeria no payload (`item.pictures.*` ou `picture_not_found`) ⇒ zera a lista da variação, avisa com chave idempotente por `notificarCategoria` e relança o 4xx; o reagendamento normal da saga recria só com a foto do kit. O kit nunca fica sem oferta nem trava a montagem.
+8. **Revisão humana.** A tela (etapa 2 do Criar kit e Gerenciar kit) mostra a prévia numerada, com remover por foto e "Só a foto do kit" (padrão: intercalado ligado). Falha de leitura: "fotos das peças indisponíveis", segue só com a foto do kit.
+9. **Sem custo novo** de IA nem de Apify; sem upload (reuso de id). Se o 1º CREATE real recusar o id reaproveitado, o plano B é baixar a foto original e subir por `/pictures/items/upload` (contrato do ensaio (e) da Galeria da cor).
+
+**Ainda a medir.** O 1º CREATE real com galeria; e uma família publicada pelo app, cujo item sai como `[capa, capa2, capa3, foto da cor]` e para a qual a regra literal rende menos (a decisão da regra nesse caso é do Diego).
