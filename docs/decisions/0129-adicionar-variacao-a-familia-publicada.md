@@ -258,8 +258,10 @@ ML. Editar o preço na Revisão depois não adiantou: o item já existia e o ree
 não reenvia preço. Além disso, em família User Products (`ml_variation_id` sempre null) as 10 cores
 mostraram "Erro" por causa de 1.
 
-**Decisão (Diego, 12/11/2026).** Ao criar variação, a cor nova sobe com o **preço base vivo do
-anúncio no ML, independente de promoção**.
+**Decisão (Diego, 12/11/2026).** Ao criar variação em família **User Products**, a cor nova sobe
+com o **preço base vivo do anúncio no ML, independente de promoção**. Família **Legacy** (1 item,
+N variações) fica como estava — o worker exige preço uniforme (`garantirPrecoUniforme`) e gravar
+o preço vivo só na cor nova travaria com 400 (achado da revisão pré-merge).
 1. `adicionar-variacoes-familia` lê as irmãs via `/items/bulk` (`_shared/preco/preco-base-vivo.ts`):
    `original_price` quando em promoção, senão `price`; usa o menor entre os itens vivos. O preço
    digitado no diálogo deixa de definir `preco_publicacao`.

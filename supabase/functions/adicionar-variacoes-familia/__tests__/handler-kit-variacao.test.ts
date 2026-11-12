@@ -12,6 +12,7 @@ const f = vi.hoisted(() => ({
   errosVariacoes: [] as Array<{ code: string; message: string }>,
   escritas: [] as Array<{ tabela: string; op: string }>,
   variacoesInseridas: [] as Array<Record<string, unknown>>,
+  up: false,
 }));
 
 const ANTERIOR = {
@@ -41,6 +42,9 @@ function builder(tabela: string) {
     if (tabela === 'variacoes') {
       return { data: [{ codigo: '00000001', cor: 'Preto', tamanho: null, excluida_da_publicacao: false, imagem_path: null, ml_picture_id: null, estoque: 3 }], error: null };
     }
+    // Família User Products: raiz + 1 item filho vivo (f.up). Sem isso é Legacy.
+    if (f.up && tabela === 'anuncios_externos') return { data: { id: 'raiz-1' }, error: null };
+    if (f.up && tabela === 'anuncios_externos_itens') return { data: [{ item_externo_id: 'MLB1' }], error: null };
     if (tabela === 'lotes' || tabela === 'anuncios_externos' || tabela === 'anuncios_externos_itens') return { data: [], error: null };
     return { data: null, error: null };
   };
@@ -93,7 +97,8 @@ beforeAll(async () => {
 });
 let fetchSpy: ReturnType<typeof vi.fn>;
 beforeEach(() => {
-  f.erroVariacoes = null; f.errosVariacoes = []; f.escritas = []; f.variacoesInseridas = [];
+  f.erroVariacoes = null; f.errosVariacoes = []; f.escritas = []; f.variacoesInseridas = []; f.up = false;
+  vi.mocked(lerPrecoBaseVivo).mockClear();
   fetchSpy = vi.fn(async () => new Response('{}'));
   vi.stubGlobal('fetch', fetchSpy);
 });
@@ -107,7 +112,8 @@ const post = () => handler(new Request('http://localhost', {
 }));
 
 describe('adicionar-variacoes-familia — preço base vivo das irmãs (12/11/2026)', () => {
-  it('sem leitura confiável do ML → 503 e NADA é criado (nunca cai no preço local defasado)', async () => {
+  it('User Products sem leitura confiável do ML → 503 e NADA é criado (nunca cai no preço local defasado)', async () => {
+    f.up = true;
     vi.mocked(lerPrecoBaseVivo).mockResolvedValueOnce(null);
     const r = await post();
     expect(r.status).toBe(503);
@@ -115,10 +121,17 @@ describe('adicionar-variacoes-familia — preço base vivo das irmãs (12/11/202
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('a cor nova é gravada com o preço base lido no ML, não com o digitado (10)', async () => {
+  it('User Products: a cor nova é gravada com o preço base lido no ML, não com o digitado (10)', async () => {
+    f.up = true;
     await post();
-    expect(f.variacoesInseridas.map((v) => v.preco_publicacao)).toContain(69.9);
+    expect(lerPrecoBaseVivo).toHaveBeenCalledWith('tok', ['MLB1']);
     expect(f.variacoesInseridas.find((v) => v.codigo === '00000002')?.preco_publicacao).toBe(69.9);
+  });
+
+  it('Legacy (sem itens filhos): não lê o ML; a cor nova segue o preço uniforme das irmãs', async () => {
+    await post();
+    expect(lerPrecoBaseVivo).not.toHaveBeenCalled();
+    expect(f.variacoesInseridas.find((v) => v.codigo === '00000002')?.preco_publicacao).toBe(10);
   });
 });
 
