@@ -59,6 +59,7 @@
 | desfazer-nota-compra | **true** | HTTP (frontend, **admin**) | sim (repetir devolve `jaEstava: true`) |
 | inventario | **true** | HTTP (frontend; leituras membro, `salvar`/`confirmar` **admin**) | sim (`salvar` por versão; `confirmar` por movimento com ref do inventário) |
 | criar-kit-vinculado | **true** | HTTP (frontend, **admin**) | sim (idempotência por `chave_cadastro`, 1 por kit) |
+| fotos-base-kit | **true** | HTTP (frontend, **admin**) | sim (só leitura) |
 | varrer-anuncios-orfaos | **true** | HTTP (frontend, **admin**) | sim (só leitura: ML + banco, nada escrito) |
 | **Preço por Variação (ADR-0161)** ||||
 | migrar-preco-por-variacao | **true** | HTTP (frontend) | sim (dispara migração UPtin no ML) |
@@ -1283,6 +1284,10 @@ falha ao ler `organizations` não libera.
   `processar.ts` (testada); `index.ts` só HTTP. Suporte em modo somente leitura não exporta.
   Plano 2b-1 (em produção desde 2026-10-16, v2): o alvo da auditoria passa a ser `{ type: 'pacote_contador_mes', id: mes }`
   (audita o pacote inteiro, vendas + compras) e a falha de auditoria responde 502 `{ error, codigo: 'auditoria' }`, que o navegador trata como erro fatal. As compras do pacote não passam por esta edge (leitura direta por RLS no navegador).
+
+- **fotos-base-kit** (ADR-0204, em branch, não deployada) — leitura da proposta de galeria da base para o kit vinculado: fotos 2–7 de `item.pictures` do anúncio publicado da base (ML `/items/bulk`), limitadas pela categoria do kit. Admin + módulo `estoque` (`verify_jwt=true`, entrada em `supabase/config.toml`). Não escreve. Sem base publicada: sem galeria, sem erro.
+- **criar-kit-vinculado** (ADR-0204) — passa a aceitar `kits[i].galeria` (ids); grava `proposta ∩ pedido` (recalculada no servidor) em `variacoes.galeria_ml_fotos` do kit.
+- **publish-familia-ml** (ADR-0204) — para kit vinculado com `galeria_ml_fotos` não vazia, `AnuncioCanonico.galeriaFotoIds` leva os ids ao fim de `pictures` via `montarPayloadItem(galeriaExtra)`, após `revalidarGaleria`. Se o ML recusar foto, `galeria-recusa.ts` zera a coluna (sem limpar o cache da capa): Legacy faz 2º POST sem galeria; UP faz retry com tentativas < 10, senão `status:'erro'`. `_shared/publicacao/retry.ts` exporta `MAX_RETRIES_TRANSIENTES`. Sem galeria o payload não muda. Deploy pendente: também o fecho dos importadores de `_shared/ml/publicar.ts`, `_shared/canais/*`, `_shared/user-products/publicar-familia-up.ts`, `_shared/publicacao/retry.ts`.
 
 ### Kit Virtual (ADR-0154)
 

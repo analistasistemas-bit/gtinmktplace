@@ -9,8 +9,21 @@ Branch `worktree-kit-vinculado-evolucao` (commits `29ee34b5`..`103a84b8`). Spec 
 - [x] Promoção ativa/futura da base, informativa (`src/components/kit/promocao-base-kit.tsx`), via edge `preco-avulso-kit`; gate agora `kit_variacao` ou `estoque` (leitura).
 - [x] Pílulas de etapa compartilhadas (`src/components/kit/etapas-kit.tsx`) no kit vinculado e no kit com variação.
 - [ ] Deploy após o merge: `supabase functions deploy preco-avulso-kit`; conferir a versão ativa.
-- [ ] Fatia 2: fotos 2–7 do anúncio principal (reusar `picture_id` do ML); exige ADR e mexe na publicação comum.
+- [ ] Fatia 2: ver seção abaixo (ADR-0204, em branch).
 - [ ] Fatia 3: capa por IA com N unidades.
+
+## Kit vinculado: evolução, Fatia 2, galeria da base (ADR-0204, proposto) — 2026-11-12
+
+Branch `worktree-kit-vinculado-fatia2` (commits `8f46377c`..`c0171f5c`), ainda NÃO mergeada nem deployada. O kit vinculado leva as fotos 2 a 7 do anúncio publicado da base (reuso de `picture_id`).
+
+- [x] Edge `fotos-base-kit` (só leitura): proposta de galeria da base, fotos 2–7 lidas do ML (`_shared/kit-variacao/galeria-base.ts`); admin + módulo `estoque`.
+- [x] `criar-kit-vinculado` aceita `kits[i].galeria` (ids) e grava `proposta ∩ pedido` em `variacoes.galeria_ml_fotos` do kit (servidor-autoritativo).
+- [x] Publicação comum: `montarPayloadItem` ganhou `galeriaExtra`; `AnuncioCanonico.galeriaFotoIds` preenchido só em `publish-familia-ml` para kit vinculado, com `revalidarGaleria` antes do POST.
+- [x] Rebaixamento ao recusar foto (`publish-familia-ml/galeria-recusa.ts`): zera a coluna sem limpar o cache da capa; Legacy faz 2º POST sem galeria; UP faz retry com tentativas < 10, senão erro. `_shared/publicacao/retry.ts` exporta `MAX_RETRIES_TRANSIENTES`.
+- [x] UI: prévia da galeria no preview do Criar kit (`galeria-base-kit.tsx`, `useGaleriaBaseKit`); `GaleriaPecas` com prop `rotulos`.
+- [ ] Merge e ADR-0204 passar de PROPOSTO para ACEITO.
+- [ ] Deploy após o merge: `fotos-base-kit`, `criar-kit-vinculado`, `publish-familia-ml` e o fecho transitivo dos importadores de `_shared/ml/publicar.ts`, `_shared/canais/*`, `_shared/user-products/publicar-familia-up.ts` e `_shared/publicacao/retry.ts`; conferir a versão ativa.
+- [ ] Diego valida o 1º CREATE real com galeria (só `PUT`/`validate` foram medidos).
 
 ## Kit com variação: galeria das fotos das peças no anúncio do kit (adendo 12/11 do ADR-0200) — 2026-11-12
 
