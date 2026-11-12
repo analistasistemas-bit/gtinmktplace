@@ -555,3 +555,7 @@ O kit com variação (ADR-0200) gera título e descrição por IA, em etapa pró
 ## Adendo 2026-11-12 — Promoção da base no kit vinculado
 
 O dialog do kit vinculado mostra a promoção ativa/futura do produto-base, lida pela edge `preco-avulso-kit` (ADR-0200), cujo gate passou a aceitar o módulo `kit_variacao` **ou** `estoque` (leitura somente, escopo por `org_id`). A promoção da base é **informativa**: não altera o preço do kit nem bloqueia a criação. Aprovado pelo Diego em 2026-11-12.
+
+## Adendo 2026-11-12 — Fotos 2 a 7 da base
+
+O kit vinculado deixa de nascer só com a capa: leva também as fotos 2 a 7 do anúncio publicado da base, conforme o ADR-0204 (reuso de `picture_id`, só com a base publicada, sem galeria quando a base está em Revisão). A decisão 6 do adendo de 12/11 do ADR-0200 ("a publicação comum não leva galeria") segue valendo para o kit com variação; o kit vinculado é a exceção, só em `publish-familia-ml`.

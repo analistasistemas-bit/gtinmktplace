@@ -464,3 +464,7 @@ escopo: a base tem o mesmo `MODEL` com cor (`resolver-atributos-genericos.ts:82`
 ## Adendo 2026-11-12 — Gate da edge `preco-avulso-kit`
 
 A edge `preco-avulso-kit` (só leitura, escopada por `org_id`) passa a aceitar o módulo `kit_variacao` **ou** `estoque`, para o kit vinculado (ADR-0151) mostrar a promoção ativa/futura do produto-base sem duplicar a edge. A promoção da base é **informativa**: falha do ML mostra "promoção da base indisponível" e nunca bloqueia o kit. Aprovado pelo Diego em 2026-11-12.
+
+## Adendo 2026-11-12 — Fotos 2 a 7 da base no kit vinculado
+
+O kit vinculado passa a levar as fotos 2 a 7 do anúncio publicado da base, conforme o ADR-0204 (reuso de `picture_id`, lidos por edge de leitura e gravados em `galeria_ml_fotos`; só `publish-familia-ml` as lê, só para kit vinculado). A decisão 6 do adendo de 12/11 do ADR-0200 ("a publicação comum não leva galeria") **continua valendo para o kit com variação**; o kit vinculado é a exceção, restrita a `publish-familia-ml`. `montar-canonico` e o worker `kit-transferencia` não mudam (ADR-0204, decisão 3).

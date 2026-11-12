@@ -62,3 +62,4 @@ Veja o [README principal](../README.md#onde-encontrar-o-quê) para a tabela comp
 - [ADR-0200](0200-kit-com-variacao.md) — Kit com variação: página única no ML, estoque separado e escrita de quantidade só com anúncio pausado (aceito, em implementação).
 - [ADR-0202](0202-atributos-visuais-pela-foto.md) — Atributos visuais de roupa (Tipo de manga, caimento, gola, capuz) preenchidos pela foto, só closed-set, marcados "confira" na Revisão.
 - [ADR-0203](0203-galeria-imagem-inteira-do-gerador.md) — Galeria da cor: imagem inteira do gerador, planejada por IA (plano com paleta e 7 imagens), conferência de texto por visão e aviso de imagens prontas; substitui roteiro editável, fatos em tela, texto em canvas e lupa do ADR-0201.
+- [ADR-0204](0204-kit-vinculado-galeria-da-base.md) — Kit vinculado leva as fotos 2 a 7 do anúncio da base: reuso de `picture_id` lidos do ML, só `publish-familia-ml`, rebaixamento para só a capa se o ML recusar foto (proposto).
