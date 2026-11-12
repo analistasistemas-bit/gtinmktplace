@@ -2,6 +2,7 @@
 
 - **Status:** proposto (desenho fechado em sessão de perguntas; falta medição de modelos; plano escrito e aprovado em `docs/superpowers/plans/2026-11-08-galeria-da-cor.md`, v23)
 - **Data:** 2026-11-08
+- **Alterado por:** ADR-0203 (itens §2, §3, §9, §10 e §12 substituídos; o restante segue valendo)
 - **Decisores:** Diego
 - **Refina:** ADR-0200 (gerador de imagem e modelo por organização), ADR-0074 (modelo de IA por organização), ADR-0060 (ação em anúncio no ar restrita a admin)
 - **Glossário:** `CONTEXT.md`, seção "Imagens do anúncio por IA"

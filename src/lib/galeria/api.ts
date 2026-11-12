@@ -1,74 +1,8 @@
-// ADR-0201 (Galeria da cor por IA), Task 7b: uma função por ação das edges `galeria-fatos` e `galeria-roteiro`.
+// ADR-0203: uma função por ação das edges `galeria-gerar`, `galeria-imagens`, `galeria-aprovar` e `galeria-aplicar`.
 // Identidade = a linha de Publicados (`ml_item_id`); nunca `familia_id` sozinho (linhas split dividem a família).
 // `functions.invoke` não popula `data` em não-2xx: status e corpo vêm de `corpoDoErroDaEdge`.
 import { supabase } from '@/lib/supabase';
 import { corpoDoErroDaEdge } from '@/lib/edge-erro';
-import { lupaPendente } from '../../../supabase/functions/_shared/galeria/regras';
-import { comLupa } from '../../../supabase/functions/_shared/galeria/lupa';
-
-export type EstadoFato = 'CONFIRMADO' | 'SUGERIDO' | 'DIVERGENTE' | 'NAO_CONFERIDO' | 'VARIA_POR_TAMANHO';
-export interface Caixa { x: number; y: number; w: number; h: number }
-export interface LeituraEtiqueta {
-  legivel: boolean;
-  valor?: string | null;
-  /** `url` vem resolvida da edge (assinada ou secure_url do ML); a tela nunca monta URL de CDN. */
-  foto?: { origem: 'referencia' | 'ml'; ref: string; url?: string } | null;
-  caixa?: Caixa | null;
-}
-export interface Fato {
-  campo: string; valor: string; estado: EstadoFato; origem: string;
-  evidencia?: Record<string, unknown>; etiqueta?: LeituraEtiqueta;
-}
-export type Vista = 'frente' | 'costas' | 'lateral';
-export interface Ficha {
-  anuncio_externo_id: string; familia_id: string; codigo_pai: string; cores: string[];
-  fatos: Fato[]; fatos_hash: string; roteiro_desatualizado: boolean;
-  referencias: Record<string, Partial<Record<Vista, { path?: string; erro?: string }>>>;
-  /** Lupa pela caixa do produto, por cor: situação de cada missão com lupa (geral 3/7, Moda 5/7). */
-  lupa?: Record<string, Record<'geral' | 'moda', Record<number, SituacaoLupa>>>;
-  /** Só na ação `montar` (cabeçalho, Fase C2): capa atual no ML (null/ausente = ícone), título e preço no ML e formato. */
-  capa_url?: string | null;
-  titulo_anuncio?: string | null;
-  preco_anuncio?: number | null;
-  formato?: 'legacy' | 'user_products';
-}
-export type SituacaoLupa = 'ok' | 'lendo' | 'indisponivel';
-
-/**
- * Por que a missão não pode ser pedida para estas cores (null = pode): travada até o portão da Task 16, foto de
- * referência ainda sendo lida, ou sem detalhe do produto na foto. Missão sem lupa → null.
- */
-export function motivoLupa(ficha: Ficha, cores: string[], missao: number, moda: boolean): string | null {
-  if (lupaPendente(missao, moda)) return 'Em breve';
-  // Sem `lupa` na ficha (resposta sem a leitura): não há o que mostrar; o galeria-gerar recusa com 409 se faltar.
-  if (!comLupa(missao, moda) || !ficha.lupa) return null;
-  const de = (s: SituacaoLupa) => cores.filter((c) => (ficha.lupa?.[c]?.[moda ? 'moda' : 'geral']?.[missao] ?? 'lendo') === s);
-  const sem = de('indisponivel');
-  if (sem.length > 0) return `sem detalhe do produto na foto: ${sem.join(', ')}`;
-  const lendo = de('lendo');
-  return lendo.length > 0 ? `preparando esta imagem, aguarde: ${lendo.join(', ')}` : null;
-}
-
-export interface MissaoRoteiro {
-  missao: number; ativa: boolean; cena: string;
-  headline?: string; subheadline?: string; beneficios?: string[];
-  specs?: Array<{ campo: string; rotulo: string; valor: string }>;
-  etapas?: string[]; legendas?: string[]; fatosUsados: string[];
-  /** Por que nasceu desligada (Fase A): lupa travada, sem dado, erro que a poda não resolve. Só em missão desligada. */
-  motivoDesligada?: string;
-}
-export interface Roteiro {
-  categoria: string; contrato: string; missoes: MissaoRoteiro[];
-  ciencia_nao_conferido?: { campos: string[]; por: string; em: string };
-}
-export interface LinhaRoteiro { id: string; familia_id: string; versao: number; status: string; moda: boolean; conteudo: Roteiro }
-export interface RespostaRoteiro {
-  roteiro: LinhaRoteiro; erros: string[]; erros_por_missao: Record<string, string[]>; ciencia_pendente: string[]; fatos: Fato[];
-}
-
-/** Resposta de `ler`: roteiro vigente da família (ou null) e Moda ao vivo (null = categoria ilegível, com `aviso`). */
-export type RespostaLer = { roteiro: null; moda: boolean | null; familia_id: string; aviso?: string }
-  | (RespostaRoteiro & { moda: boolean | null; familia_id: string; aviso?: string });
 
 export type Res<T> = { ok: true; dados: T } | { ok: false; status: number; erro: string; corpo: Record<string, unknown> };
 
@@ -78,31 +12,6 @@ async function chamar<T>(edge: string, body: Record<string, unknown>): Promise<R
   const d = await corpoDoErroDaEdge(error);
   return { ok: false, status: d?.status ?? 0, erro: typeof d?.corpo.error === 'string' ? d.corpo.error : 'rede', corpo: d?.corpo ?? {} };
 }
-
-const fatos = (acao: string, mlItemId: string, extra: Record<string, unknown> = {}) =>
-  chamar<Ficha>('galeria-fatos', { acao, ml_item_id: mlItemId, ...extra });
-
-export const montarFicha = (mlItemId: string) => fatos('montar', mlItemId);
-export const confirmarFato = (mlItemId: string, familiaId: string, campo: string) => fatos('confirmar', mlItemId, { familia_id: familiaId, campo });
-export const descartarFato = (mlItemId: string, familiaId: string, campo: string) => fatos('descartar', mlItemId, { familia_id: familiaId, campo });
-export const manterCadastro = (mlItemId: string, familiaId: string, campo: string) => fatos('manter_cadastro', mlItemId, { familia_id: familiaId, campo });
-export const corrigirCadastro = (mlItemId: string, familiaId: string, campo: string, valor: string) =>
-  fatos('corrigir_cadastro', mlItemId, { familia_id: familiaId, campo, valor });
-export const enviarVista = (mlItemId: string, familiaId: string, cor: string, vista: 'costas' | 'lateral', imagemBase64: string) =>
-  fatos('enviar_vista', mlItemId, { familia_id: familiaId, cor, vista, imagem_base64: imagemBase64 });
-
-export const lerRoteiro = (mlItemId: string) => chamar<RespostaLer>('galeria-roteiro', { acao: 'ler', ml_item_id: mlItemId });
-
-const roteiro = (acao: string, mlItemId: string, familiaId: string, extra: Record<string, unknown> = {}) =>
-  chamar<RespostaRoteiro>('galeria-roteiro', { acao, ml_item_id: mlItemId, familia_id: familiaId, ...extra });
-
-export const criarRoteiro = (mlItemId: string, familiaId: string) => roteiro('criar', mlItemId, familiaId);
-export const salvarRoteiro = (mlItemId: string, familiaId: string, roteiroId: string, conteudo: Roteiro) =>
-  roteiro('salvar', mlItemId, familiaId, { roteiro_id: roteiroId, conteudo });
-export const aprovarRoteiro = (mlItemId: string, familiaId: string, roteiroId: string, cienciaNaoConferido: string[]) =>
-  chamar<{ roteiro_id: string; status: 'aprovado'; fatos_hash: string }>('galeria-roteiro', {
-    acao: 'aprovar', ml_item_id: mlItemId, familia_id: familiaId, roteiro_id: roteiroId, ciencia_nao_conferido: cienciaNaoConferido,
-  });
 
 // ADR-0203 (tela única): geração (`galeria-gerar`) e imagens (`galeria-imagens`). O preço vem sempre do servidor.
 export interface AlertaImagem { tipo: string; nota: string }
@@ -189,11 +98,9 @@ const MENSAGENS: Record<string, string> = {
   sem_anuncio: 'O anúncio desta linha não foi encontrado.',
   variacao_nao_casa: 'A variação da cor não confere com o anúncio no Mercado Livre.',
   roteiro_nao_aprovado: 'Os textos aprovados mudaram. Recarregue a galeria.',
-  'conteudo.ciencia_nao_conferido': 'Há dados sem etiqueta usados nos textos. Volte ao passo 2 e marque "usar mesmo assim".',
   sem_vista: 'Falta a foto de referência (costas ou lateral) que esta imagem exige.',
   teto: 'Você já gerou esta imagem 3 vezes.',
   em_andamento: 'Esta imagem já está sendo gerada.',
-  missao_inativa: 'Há imagem desligada nos textos aprovados. Aprove os textos de novo no passo 2.',
   cor_invalida: 'Cor fora deste anúncio.',
   sem_conexao_ml: 'Conecte a conta do Mercado Livre para gerar imagens.',
   modulo_desligado: 'O módulo de imagens por IA não está ligado nesta organização.',
@@ -202,16 +109,9 @@ const MENSAGENS: Record<string, string> = {
   pedido_invalido: 'Pedido inválido. Tente de novo.',
   familia_nao_vigente: 'O cadastro do anúncio mudou. Recarregamos os dados; confira e tente de novo.',
   anuncio_ambiguo: 'Não foi possível identificar este anúncio de forma única.',
-  categoria_mudou: 'A categoria do anúncio mudou. Os textos não valem mais: crie novos no passo 2.',
   conteudo_mudou: 'Os textos foram alterados em outra aba depois que você abriu. Recarregamos; confira e aprove de novo.',
   categoria_indisponivel: 'Não foi possível ler a categoria no Mercado Livre agora. Tente de novo em instantes.',
-  fato_divergente: 'Há dados diferentes da etiqueta. Resolva no passo 1 antes de criar os textos.',
-  ciencia_pendente: 'Marque "usar mesmo assim" para os dados sem etiqueta usados nos textos.',
-  roteiro_invalido: 'Os textos têm erros. Corrija nas imagens indicadas.',
-  roteiro_ia_falhou: 'A IA não conseguiu escrever os textos. Tente de novo.',
-  foto_nao_jpeg: 'Envie a foto em JPEG.',
   foto_invalida: 'Foto inválida ou grande demais (máx. 8 MB).',
-  valor_invalido: 'O valor da etiqueta não é aceito para este atributo.',
   nao_rascunho: 'Estes textos já foram aprovados. Edite para criar uma nova versão.',
   ja_aprovada: 'Esta imagem já está aprovada.',
   desatualizada: 'Os dados do anúncio mudaram. Gere as imagens de novo.',
@@ -229,10 +129,6 @@ const MENSAGENS: Record<string, string> = {
   referencia_trocada: 'A foto de referência da cor mudou depois desta imagem. Gere de novo.',
   verificacao_pendente: 'A verificação da imagem ainda não terminou. Aguarde alguns segundos.',
   exibicao_pendente: 'A imagem ainda está sendo registrada. Aguarde alguns segundos e aprove de novo.',
-  lupa_pendente: 'Esta imagem ainda não está disponível.',
-  lupa_lendo: 'A foto de referência ainda está sendo preparada. Tente de novo em instantes.',
-  lupa_indisponivel: 'Sem detalhe do produto na foto de referência desta cor: esta imagem fica indisponível.',
-  lupa_desatualizada: 'O recorte mudou depois que a imagem foi montada (ou a página está desatualizada). Recarregue e aprove de novo.',
   aprovacao_concorrente: 'Outra versão desta imagem foi aprovada ao mesmo tempo. Recarregue e confira.',
   somente_admin: 'Somente administradores podem aplicar ou reverter fotos no Mercado Livre.',
   sem_aprovadas: 'Esta cor não tem imagem aprovada.',
@@ -256,5 +152,3 @@ export function mensagemErro(e: string): string {
   console.warn('[galeria] erro sem mensagem:', e);
   return MENSAGEM_GENERICA;
 }
-/** Erros que mudam o chão do operador: recarregar a ficha e descartar o roteiro em tela. */
-export const ERROS_DE_RECARGA = new Set(['familia_nao_vigente', 'categoria_mudou', 'conteudo_mudou']);

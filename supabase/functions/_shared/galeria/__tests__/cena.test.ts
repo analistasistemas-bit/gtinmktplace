@@ -1,14 +1,10 @@
-// Task 9: corte (R9.1), prompt da cena (R3, R5.2, R5.4, R6.3, ADR §11) e alertas da visão (R8.5). Sem rede.
+// Corte (R9.1) e corpo das chamadas ao gerador. Sem rede.
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../ai/client.ts', () => ({ openrouterClient: () => { throw new Error('sem rede') } }))
 import { cenaUtil, planejarCorte } from '../corte'
-import { corpoOpenRouter, montarPromptCena } from '../prompt'
-import { interpretarAlertas } from '../alertas'
-import { BLOCO_TECNICO } from '../regras'
+import { corpoOpenRouter } from '../prompt'
 import { corpoHF, MODELOS_GALERIA } from '../provedores'
-import { layoutCena } from '../layout-area'
-import type { MissaoRoteiro, Roteiro } from '../roteiro'
 
 describe('corte', () => {
   it('quadrada: missão interna corta >15% → inútil; capa preenche com branco', () => {
@@ -38,46 +34,6 @@ describe('corte', () => {
   })
 })
 
-const roteiro: Roteiro = { categoria: 'Rendas', contrato: 'Renda de algodão; sem flores; não vira cetim.', missoes: [] }
-const missao = (n: number, extra: Partial<MissaoRoteiro> = {}): MissaoRoteiro =>
-  ({ missao: n as MissaoRoteiro['missao'], ativa: true, cena: `cena da missão ${n}`, fatosUsados: [], ...extra })
-
-describe('montarPromptCena', () => {
-  const layout = { areaTexto: 'o terço superior' }
-  it('missões com texto citam a área reservada de layout-area (Task 11/12)', () => {
-    for (const n of [2, 3, 4, 5, 6]) {
-      expect(montarPromptCena(missao(n), roteiro, false, 'Preto', layoutCena(n))).toContain(layoutCena(n)!.areaTexto)
-    }
-  })
-  it('termina literalmente com o BLOCO_TECNICO e repete o contrato e a cor', () => {
-    for (const n of [1, 2, 3, 4, 5, 6]) {
-      const p = montarPromptCena(missao(n), roteiro, false, 'Rosa Bebê', layout)
-      expect(p.endsWith(BLOCO_TECNICO)).toBe(true)
-      expect(p).toContain(roteiro.contrato)
-      expect(p).toContain('Rosa Bebê')
-      expect(p).toContain('3:4')
-    }
-  })
-  it('nunca leva o texto do roteiro; fora de Moda reserva a área do layout', () => {
-    const m = missao(2, { headline: 'Renda que encanta', beneficios: ['Toque macio'], etapas: ['Corte a peça'] })
-    const p = montarPromptCena(m, roteiro, false, 'Preto', layout)
-    for (const t of ['Renda que encanta', 'Toque macio', 'Corte a peça']) expect(p).not.toContain(t)
-    expect(p).toContain('o terço superior')
-  })
-  it('Moda: sem "headline", sem área de texto', () => {
-    const p = montarPromptCena(missao(2, { headline: 'Vestido lindo' }), roteiro, true, 'Preto', layout)
-    expect(p.toLowerCase()).not.toContain('headline')
-    expect(p).not.toContain('Vestido lindo')
-    expect(p).not.toContain('o terço superior')
-    expect(p.endsWith(BLOCO_TECNICO)).toBe(true)
-  })
-  it('capa: fundo branco, sem área de texto', () => {
-    const p = montarPromptCena(missao(1), roteiro, false, 'Preto', layout)
-    expect(p).toContain('#FFFFFF')
-    expect(p).not.toContain('o terço superior')
-  })
-})
-
 describe('corpo das chamadas pede 3:4', () => {
   it('OpenRouter: image_config.aspect_ratio 3:4 e referência como image_url', () => {
     const c = corpoOpenRouter('google/gemini-nano-banana-2.1', 'P', ['https://signed/ref.jpg']) as Record<string, any>
@@ -93,30 +49,5 @@ describe('corpo das chamadas pede 3:4', () => {
     const medidos = Object.values(MODELOS_GALERIA).filter((m) => m.provedor === 'higgsfield' && m.campoProporcao)
     expect(medidos.map((m) => m.slug)).toContain('xai/grok-imagine-image-2.0')
     for (const m of medidos) expect(corpoHF(m, 'P', ['https://signed/ref.jpg'])[m.campoProporcao!]).toBe('3:4')
-  })
-})
-
-const resp = (content: unknown) => ({ choices: [{ message: { content: typeof content === 'string' ? content : JSON.stringify(content) } }] })
-
-describe('interpretarAlertas', () => {
-  it('mapeia os tipos', () => {
-    expect(interpretarAlertas(resp({ alertas: [
-      { tipo: 'cor', nota: 'cor pode estar diferente' }, { tipo: 'produto', nota: 'produto ausente' },
-      { tipo: 'texto_na_cena', nota: 'texto na cena' }, { tipo: 'rotulo_alterado', nota: 'rótulo distorcido' },
-    ] }))).toEqual([
-      { tipo: 'cor', nota: 'cor pode estar diferente' }, { tipo: 'produto', nota: 'produto ausente' },
-      { tipo: 'texto_na_cena', nota: 'texto na cena' }, { tipo: 'rotulo_alterado', nota: 'rótulo distorcido' },
-    ])
-  })
-  it('resposta válida sem alertas → []', () => {
-    expect(interpretarAlertas(resp({ alertas: [] }))).toEqual([])
-  })
-  it('ilegível ou fora do formato → verificacao_indisponivel', () => {
-    for (const r of [resp('não sei'), resp({}), resp({ alertas: [{ tipo: 'outro', nota: 'x' }] }),
-      resp({ alertas: [{ tipo: 'cor' }] }), resp({ alertas: 'cor' }), null, {}]) {
-      const a = interpretarAlertas(r)
-      expect(a).toHaveLength(1)
-      expect(a[0].tipo).toBe('verificacao_indisponivel')
-    }
   })
 })

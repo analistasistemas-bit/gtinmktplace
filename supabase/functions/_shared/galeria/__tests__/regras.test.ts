@@ -4,11 +4,7 @@ import {
   CATEGORIAS_MODA,
   contarPalavras,
   ehModa,
-  LIMITES,
-  lupaPendente,
-  MISSOES_LUPA_PENDENTE,
   missoesDisponiveis,
-  missoesSugeridas,
   termosProibidos,
 } from '../regras'
 
@@ -17,21 +13,6 @@ describe('BLOCO_TECNICO', () => {
     expect(BLOCO_TECNICO).toBe(
       'photorealistic, ultra detailed, commercial product photography, studio lighting, realistic shadows, sharp focus, clean composition, high resolution, professional catalog, no distortion, no blur, no watermark, premium marketplace standard',
     )
-  })
-})
-
-describe('LIMITES', () => {
-  it('segue a R6.1', () => {
-    expect(LIMITES).toEqual({ headline: 5, subheadline: 10, beneficio: 6, etapa: 7, legenda: 5 })
-  })
-})
-
-describe('missoesSugeridas', () => {
-  it('até 3 cores sugere as sete; 4 ou mais, as quatro primeiras', () => {
-    expect(missoesSugeridas(1)).toEqual([1, 2, 3, 4, 5, 6, 7])
-    expect(missoesSugeridas(3)).toEqual([1, 2, 3, 4, 5, 6, 7])
-    expect(missoesSugeridas(4)).toEqual([1, 2, 3, 4])
-    expect(missoesSugeridas(10)).toEqual([1, 2, 3, 4])
   })
 })
 
@@ -82,15 +63,6 @@ const PATH_CALCADO = [
   { id: 'MLB23262', name: 'Calçados' },
   { id: 'MLB275584', name: 'Alpargata' },
 ]
-
-describe('lupaPendente', () => {
-  it('trava geral 3/7 e Moda 5/7 até o portão da Task 16; travas injetadas por parâmetro liberam', () => {
-    expect(MISSOES_LUPA_PENDENTE).toEqual({ geral: [3, 7], moda: [5, 7] })
-    expect([1, 2, 3, 4, 5, 6, 7].filter((m) => lupaPendente(m, false))).toEqual([3, 7])
-    expect([1, 2, 3, 4, 5, 6, 7].filter((m) => lupaPendente(m, true))).toEqual([5, 7])
-    expect(lupaPendente(3, false, { geral: [], moda: [] })).toBe(false)
-  })
-})
 
 describe('ehModa', () => {
   it('verdadeiro para o path real de uma regata', () => {

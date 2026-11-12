@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { escolherNoSelect } from '@/test/select';
 import { PassoAplicar } from '../passo-aplicar';
-import type { EstadoAplicacao, Ficha, Res } from '@/lib/galeria/api';
+import type { EstadoAplicacao, Res } from '@/lib/galeria/api';
 
 const api = vi.hoisted(() => ({
   prepararAplicacao: vi.fn(), confirmarAplicacao: vi.fn(), reverterAplicacao: vi.fn(), estadoAplicacoes: vi.fn(),
@@ -13,8 +13,8 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const ok = <T,>(dados: T): Res<T> => ({ ok: true, dados });
 const falha = (status: number, erro: string, corpo: Record<string, unknown> = {}): Res<never> => ({ ok: false, status, erro, corpo });
-const ficha = { anuncio_externo_id: 'A1', familia_id: 'F1', codigo_pai: '0001', cores: ['Rosa', 'Azul'], fatos: [], fatos_hash: 'h',
-  roteiro_desatualizado: false, referencias: {} } as Ficha;
+const cores = ['Rosa', 'Azul'];
+const nomes = { 1: 'Capa', 2: 'Onde usar', 3: 'Textura' };
 const manifesto = [1, 2, 3].map((m) => ({ imagem_id: `g${m}`, missao: m, final_sha256: `s${m}` }));
 const preparada = { aplicacao_id: 'APL1', status: 'preparada' as const, itens: ['MLB3P', 'MLB3M'], manifesto };
 const aplicacao = (extra: Partial<EstadoAplicacao> = {}): EstadoAplicacao => ({
@@ -25,7 +25,7 @@ const aplicacao = (extra: Partial<EstadoAplicacao> = {}): EstadoAplicacao => ({
 function montar(isAdmin = true, mlItemId = 'MLB3M', aprovadasPorCor: Record<string, number> | null = { Rosa: 3, Azul: 1 }) {
   const aoFamiliaMudou = vi.fn();
   const aoIrParaGerar = vi.fn();
-  const r = render(<PassoAplicar mlItemId={mlItemId} cores={ficha.cores} isAdmin={isAdmin} aprovadasPorCor={aprovadasPorCor} formato="Legacy"
+  const r = render(<PassoAplicar mlItemId={mlItemId} cores={cores} nomes={nomes} isAdmin={isAdmin} aprovadasPorCor={aprovadasPorCor} formato="Legacy"
     aoFamiliaMudou={aoFamiliaMudou} aoIrParaGerar={aoIrParaGerar} aoVoltar={vi.fn()} />);
   return { ...r, aoFamiliaMudou, aoIrParaGerar };
 }
@@ -88,7 +88,7 @@ describe('PassoAplicar: preparar e confirmar', () => {
     const itens = within(await screen.findByRole('list', { name: 'Anúncios afetados' })).getAllByRole('listitem');
     expect(itens.map((i) => i.textContent)).toEqual([expect.stringContaining('MLB3P'), expect.stringContaining('MLB3M')]);
     const imgs = within(screen.getByRole('list', { name: 'Imagens na ordem' })).getAllByRole('listitem');
-    expect(imgs.map((i) => i.textContent)).toEqual([expect.stringContaining('Capa'), expect.stringContaining('Onde usar'), expect.stringContaining('lupa')]);
+    expect(imgs.map((i) => i.textContent)).toEqual([expect.stringContaining('Capa'), expect.stringContaining('Onde usar'), expect.stringContaining('Textura')]);
     expect(api.confirmarAplicacao).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: /^Aplicar na cor Rosa/ }));
     const dlg = await screen.findByRole('alertdialog');

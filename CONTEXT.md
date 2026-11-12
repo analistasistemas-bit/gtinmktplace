@@ -192,20 +192,19 @@ _Evitar_: dinheiro parado, potencial garantido.
 Conjunto de até sete imagens de anúncio geradas por IA para uma cor de uma família, cada uma com uma missão própria na jornada de compra (capa, contexto de uso, quebra de objeção, benefícios, especificações, como usar, detalhes). Cada variação daquela cor mostra a sua galeria no marketplace; cores diferentes têm galerias diferentes. O operador escolhe quais missões gerar, a mesma escolha para todas as cores da família. Aplicada, a galeria entra nas fotos daquela cor no anúncio, só com as imagens aprovadas e na ordem das missões, substituindo as fotos atuais (padrão) ou depois delas; cor sem galeria segue com as fotos de sempre. A galeria nasce para anúncios já publicados.
 _Evitar_: fotos comuns da família (capa, capa2 e capa3, que são as mesmas para todas as cores).
 
-**Fato do produto**:
-Informação técnica que uma imagem pode afirmar como verdade (medida, metragem, composição, marca, conteúdo da embalagem). Só vale o que uma pessoa afirmou: a planilha, um atributo editado pelo operador ou um texto escrito por IA que o operador confirmou para aquela família. O que a IA escreveu e ninguém confirmou é apenas sugestão; o que a IA lê na foto serve apenas para conferir, nunca como fonte.
-_Evitar_: informação da embalagem como fonte.
-
-**Divergência de fato**:
-Diferença entre um fato do produto e o que a embalagem ou a foto mostra (ex.: anúncio diz poliéster, etiqueta diz poliamida). Bloqueia a geração da galeria até o operador decidir qual vale, vendo o recorte da etiqueta, com o valor da etiqueta como sugestão; a decisão corrige os dados da família, não só a imagem.
-
 **Imagem de galeria faturável**:
 Imagem da galeria da cor gerada com sucesso e exibida ao operador, cobrada ao preço por imagem da organização, independentemente de ser aprovada ou publicada. Cada nova geração pedida pelo operador é outra imagem faturável; falha técnica do provedor, sem imagem entregue, não é cobrada.
 _Evitar_: cobrança só da imagem aprovada (regra da foto do kit com variação, que tem verificação automática).
 
-**Roteiro da galeria**:
-Plano textual das sete imagens, escrito pela IA a partir dos fatos do produto: para cada imagem, a missão, o cenário, a headline, a subheadline e os fatos que ela afirma. Há um roteiro por família, comum a todas as cores: cada galeria da cor sai dele, com a foto da própria cor como referência e o nome da cor nos textos. O operador revisa e edita o roteiro antes de qualquer imagem ser gerada; o roteiro não é cobrado do cliente.
-_Evitar_: prompt (termo do provedor de imagem, não do operador).
+**Plano da galeria**:
+Escrito pela IA a partir dos dados do anúncio: uma paleta e as sete imagens planejadas (cenário e textos de cada uma). Há um plano por anúncio, comum a todas as cores: cada galeria da cor sai dele, com a foto da própria cor como referência. Cada imagem sai inteira do gerador, texto incluído; o operador não edita o plano, só gera, regera e aprova as imagens. O plano não é cobrado do cliente.
+_Evitar_: roteiro (nome do fluxo anterior, com texto editável e composto pelo sistema); prompt (termo do provedor de imagem, não do operador).
+
+**Conferência de texto**:
+Leitura por visão do texto de cada imagem gerada, comparado com os textos do plano. Texto faltando, errado ou a mais vira alerta no cartão da imagem; a aprovação continua humana.
+
+**Aviso de imagens prontas**:
+Notificação (app e, se cadastrado, Telegram) enviada só ao operador que pediu a geração, quando todas as imagens pedidas para um anúncio terminam.
 
 **Aprovar imagem da galeria**:
 Decisão do operador de que uma imagem gerada serve. Só guarda a imagem na galeria; não muda nada no marketplace.

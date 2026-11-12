@@ -20,7 +20,6 @@ import {
   reverterAplicacao, type AplicacaoPreparada, type EstadoAplicacao, type ItemAplicacao, type ModoAplicar,
   type PreviaItem, type Res,
 } from '@/lib/galeria/api';
-import { nomeImagem } from '@/lib/galeria/rotulos';
 import { cn } from '@/lib/utils';
 import { MioloPasso, Rodape } from './rodape';
 
@@ -86,7 +85,7 @@ function Mini({ url, rotulo, sai = false, nova = false }: { url: string | null; 
 }
 
 /** "Hoje no anúncio" × "Depois" de um MLB. */
-function Comparacao({ p, moda }: { p: PreviaItem; moda: boolean }) {
+function Comparacao({ p, nomes }: { p: PreviaItem; nomes: Record<number, string> }) {
   return (
     <div className="space-y-3">
     {(p.variacoes ?? 0) > 1 && <p className="text-xs text-muted-foreground">A prévia mostra uma variação. Vale para as <span className="tabular-nums">{p.variacoes}</span> variações desta cor.</p>}
@@ -104,7 +103,7 @@ function Comparacao({ p, moda }: { p: PreviaItem; moda: boolean }) {
         <div className="flex flex-wrap gap-2">
           {p.depois.map((f, i) => (
             <Mini key={f.id} url={f.url} nova={f.nova}
-              rotulo={f.nova ? `Nova: ${nomeImagem(f.missao ?? 0, moda)}` : `Foto atual ${p.antes.findIndex((a) => a.id === f.id) + 1 || i + 1}, continua`} />
+              rotulo={f.nova ? `Nova: ${nomes[f.missao ?? 0] ?? `Imagem ${f.missao ?? 0}`}` : `Foto atual ${p.antes.findIndex((a) => a.id === f.id) + 1 || i + 1}, continua`} />
           ))}
         </div>
       </div>
@@ -137,8 +136,10 @@ function LinhaMLB({ itemId, cor, formato, item }: { itemId: string; cor: string;
   );
 }
 
-export function PassoAplicar({ mlItemId, cores: coresDoAnuncio, isAdmin, moda = false, formato = 'Anúncio', aprovadasPorCor, corFixa, aoFamiliaMudou, aoIrParaGerar, aoVoltar }: {
-  mlItemId: string; /** Cores do anúncio (a tela única as lê do `listar`). */ cores: string[]; isAdmin: boolean; moda?: boolean;
+export function PassoAplicar({ mlItemId, cores: coresDoAnuncio, isAdmin, nomes = {}, formato = 'Anúncio', aprovadasPorCor, corFixa, aoFamiliaMudou, aoIrParaGerar, aoVoltar }: {
+  mlItemId: string; /** Cores do anúncio (a tela única as lê do `listar`). */ cores: string[]; isAdmin: boolean;
+  /** Nome de cada posição (1..7), vindo do servidor (`posicoes` do `listar`). */
+  nomes?: Record<number, string>;
   /** "Legacy" ou "User Products" (linha de Publicados). */
   formato?: string;
   /** Aprovadas do roteiro aprovado, por cor; null = lista indisponível (a edge decide). */
@@ -312,7 +313,7 @@ export function PassoAplicar({ mlItemId, cores: coresDoAnuncio, isAdmin, moda = 
                       const p = atual.previa?.find((x) => x.item_id === id);
                       return (
                         <li key={id} data-problema={PROBLEMA.has(estadoAtual?.itens.find((i) => i.item_id === id)?.status ?? '')} className="space-y-3 px-4 py-3">
-                          {p && <Comparacao p={p} moda={moda} />}
+                          {p && <Comparacao p={p} nomes={nomes} />}
                           <LinhaMLB itemId={id} cor={atual.cor} formato={formato}
                             item={atual.confirmada ? estadoAtual?.itens.find((i) => i.item_id === id) ?? { item_id: id, status: 'pendente', erro: null } : undefined} />
                         </li>
@@ -325,7 +326,7 @@ export function PassoAplicar({ mlItemId, cores: coresDoAnuncio, isAdmin, moda = 
                         {atual.modo === 'substituir' ? 'Entram no lugar das fotos da cor' : 'Entram depois das fotos da cor'}, nesta ordem:
                       </p>
                       <ol aria-label="Imagens na ordem" className="flex flex-wrap gap-x-3 font-medium">
-                        {atual.manifesto.map((m, i) => <li key={m.imagem_id}><span className="tabular-nums text-muted-foreground">{i + 1}.</span> {nomeImagem(m.missao, moda)}</li>)}
+                        {atual.manifesto.map((m, i) => <li key={m.imagem_id}><span className="tabular-nums text-muted-foreground">{i + 1}.</span> {nomes[m.missao] ?? `Imagem ${m.missao}`}</li>)}
                       </ol>
                     </div>
                     {estadoAtual?.status === 'aplicada' && (

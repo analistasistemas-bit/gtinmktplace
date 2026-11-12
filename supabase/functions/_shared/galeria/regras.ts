@@ -5,26 +5,8 @@
 export const BLOCO_TECNICO =
   'photorealistic, ultra detailed, commercial product photography, studio lighting, realistic shadows, sharp focus, clean composition, high resolution, professional catalog, no distortion, no blur, no watermark, premium marketplace standard'
 
-/** R6.1: tetos de palavras por tipo de texto (contados em código). */
-export const LIMITES = { headline: 5, subheadline: 10, beneficio: 6, etapa: 7, legenda: 5 } as const
-
 export type Missao = 1 | 2 | 3 | 4 | 5 | 6 | 7
 
-export type CampoLista = 'beneficios' | 'specs' | 'etapas' | 'legendas'
-export type CampoTexto = 'subheadline' | CampoLista
-
-/**
- * Campos que o layout de cada missão mostra além do título (fora de Moda; a capa não leva texto). Fonte única do
- * prompt e da poda do roteiro (servidor) e da composição/`motivosDeTexto` (front): o resto recusa, nunca some em silêncio.
- */
-export const CAMPOS_DA_MISSAO: Readonly<Record<number, readonly CampoTexto[]>> = {
-  2: ['subheadline'], 3: ['subheadline', 'legendas'], 4: ['beneficios'], 5: ['specs'], 6: ['etapas'], 7: ['legendas'],
-}
-
-/** Itens que cabem no layout (= caixas de `layoutMissao`): a missão 3 tem um chip; a 7, duas legendas sob as lupas. */
-export const CAPACIDADE: Readonly<Record<number, Readonly<Partial<Record<CampoLista, number>>>>> = {
-  3: { legendas: 1 }, 4: { beneficios: 3 }, 5: { specs: 4 }, 6: { etapas: 4 }, 7: { legendas: 2 },
-}
 export type Vista = 'frente' | 'costas' | 'lateral'
 
 export interface MissaoDisponivel {
@@ -66,20 +48,6 @@ export function missoesDisponiveis(moda: boolean, vistas: Vista[]): MissaoDispon
   }
   return GERAL.map((m) => ({ ...m, vista: 'frente' as Vista }))
 }
-
-/** ADR-0201: as sete até 3 cores; acima disso, as quatro primeiras. */
-export function missoesSugeridas(nCores: number): Missao[] {
-  return nCores <= 3 ? [1, 2, 3, 4, 5, 6, 7] : [1, 2, 3, 4]
-}
-
-/**
- * Task 12, fix 1 + adendo 11/11 (lupa pela caixa do produto, `lupa.ts`): as missões com lupa/recorte ficam travadas
- * até o Diego aprovar a amostra real (portão da Task 16) — `galeria-gerar` recusa (nunca cobra), `galeria-aprovar`
- * recusa e a tela desabilita. Para liberar, esvazie as listas (commit próprio). Testes do ramo liberado injetam `travas`.
- */
-export const MISSOES_LUPA_PENDENTE: { geral: readonly number[]; moda: readonly number[] } = { geral: [3, 7], moda: [5, 7] }
-export const lupaPendente = (missao: number, moda: boolean, travas = MISSOES_LUPA_PENDENTE): boolean =>
-  (moda ? travas.moda : travas.geral).includes(missao)
 
 // Categorias de Moda — GET https://api.mercadolibre.com/categories/{id} (público, sem token),
 // consultado em 2026-11-09. Raiz: MLB1430 "Calçados, Roupas e Bolsas" (22 filhas diretas).

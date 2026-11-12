@@ -114,7 +114,7 @@ export default function GaleriaIA() {
       </div>
 
       {lista && cor && aprovadas > 0 && (
-        <PassoAplicar key={cor} mlItemId={mlItemId} cores={[cor]} isAdmin={isAdmin} moda={lista.moda ?? false}
+        <PassoAplicar key={cor} mlItemId={mlItemId} cores={[cor]} isAdmin={isAdmin} nomes={Object.fromEntries(lista.posicoes.map((x) => [x.posicao, x.nome]))}
           aprovadasPorCor={{ [cor]: aprovadas }} corFixa={cor} formato={formato}
           aoFamiliaMudou={(m) => { setErro(m); setLista(null); setRecarga((n) => n + 1); }}
           aoIrParaGerar={() => document.querySelector('main')?.scrollTo({ top: 0 })} aoVoltar={() => navigate(caminhoDeVolta())} />
