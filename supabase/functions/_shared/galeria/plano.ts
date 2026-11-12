@@ -26,6 +26,7 @@ const MAX_TEXTOS = 8
 const MAX_CHARS = 60
 const HEX = /^#[0-9A-F]{6}$/i
 // Nome da cor da paleta entra no prompt da imagem: só nome de cor, nunca instrução.
+// Nome de cor da paleta vai para o prompt do gerador: curto (até 4 palavras), só letras, espaço e hífen.
 const NOME_COR = /^[\p{L}][\p{L} -]{0,39}$/u
 // Trechos entre aspas duplas (retas ou tipográficas) do prompt: o que o gerador escreve na imagem. Aspas simples e
 // apóstrofo ("d'água") ficam de fora.
@@ -50,7 +51,7 @@ export function validarPlano(
   const erros: string[] = []
   const p = bruto as unknown as Plano
 
-  const paletaOk = (c: unknown) => isObj(c) && typeof c.nome === 'string' && NOME_COR.test(c.nome.trim()) && typeof c.hex === 'string' && HEX.test(c.hex)
+  const paletaOk = (c: unknown) => isObj(c) && typeof c.nome === 'string' && NOME_COR.test(c.nome.trim()) && c.nome.trim().split(/\s+/).length <= 4 && typeof c.hex === 'string' && HEX.test(c.hex)
   if (!paletaOk(p.paleta.cor1) || !paletaOk(p.paleta.cor2)) erros.push('paleta')
 
   const imagens = p.imagens.filter(isObj) as unknown as ImagemPlano[]

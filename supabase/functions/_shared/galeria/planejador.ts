@@ -55,7 +55,7 @@ export function montarMensagens(dados: DadosPlanejador, refUrl: string, moda: bo
 // Código de `validarPlano` → instrução que o modelo entende (":N" = número da imagem).
 const EXPLICA: Record<string, string> = {
   formato: 'JSON fora do formato pedido',
-  paleta: 'paleta com nome e hex #RRGGBB nas duas cores',
+  paleta: 'paleta: nome curto da cor (até 4 palavras, só letras) e hex #RRGGBB nas duas cores',
   posicoes: 'exatamente 7 imagens, posições 1 a 7, sem repetir',
   capa_com_texto: 'a imagem 1 (capa) não leva texto: "textos": []',
   moda_com_texto: 'em Moda nenhuma imagem leva texto: "textos": [] em todas',
