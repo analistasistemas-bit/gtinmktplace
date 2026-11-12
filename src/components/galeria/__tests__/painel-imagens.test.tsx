@@ -540,6 +540,105 @@ describe('PainelImagens: aprovar', () => {
   });
 });
 
+describe('PainelImagens: aprovar todas', () => {
+  const pronta = (n: number, extra: Partial<ImagemGaleria> = {}) =>
+    imagem({ id: `g${n}`, missao: n, exibida: true, url: `https://signed/g${n}.png`, ...extra });
+  const sete = (extras: Record<number, Partial<ImagemGaleria>> = {}) => [1, 2, 3, 4, 5, 6, 7].map((n) => pronta(n, extras[n]));
+  const AVISO = [{ tipo: 'texto_extra' as const, nota: '"Oferta"' }];
+  const botaoTodas = (n: number) => screen.findByRole('button', { name: `Aprovar todas (${n})` });
+  const idsAprovados = () => api.aprovarFinal.mock.calls.map((c) => c[1]);
+  const confirmarAprovacao = () => userEvent.click(within(dialogo()).getByRole('button', { name: 'Aprovar' }));
+
+  it('conta só as aprováveis: com alerta e já aprovada ficam de fora', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista(sete({ 2: { alertas: AVISO }, 3: { status: 'aprovada' } }))));
+    painel();
+    expect(await botaoTodas(5)).toBeEnabled();
+  });
+
+  it('não conta imagem ainda não exibida nem de versão anterior', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista(sete({ 1: { exibida: false }, 2: { roteiro_id: 'P0' }, 3: { alertas: [{ tipo: 'verificacao_indisponivel', nota: '' }] } }))));
+    painel();
+    expect(await botaoTodas(4)).toBeInTheDocument();
+  });
+
+  it('sem aprováveis não há botão de aprovar todas', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([pronta(1, { exibida: false }), pronta(2, { alertas: AVISO })])));
+    painel();
+    await screen.findByText('Capa');
+    expect(screen.queryByRole('button', { name: /^Aprovar todas/ })).toBeNull();
+  });
+
+  it('o diálogo mostra a quantidade e as imagens com aviso; cancelar não aprova', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista(sete({ 2: { alertas: AVISO } }))));
+    painel();
+    await userEvent.click(await botaoTodas(6));
+    expect(within(dialogo()).getByText('Aprovar 6 imagens?')).toBeInTheDocument();
+    expect(within(dialogo()).getByText('1 com aviso de texto ficam para você conferir uma a uma.')).toBeInTheDocument();
+    await userEvent.click(within(dialogo()).getByRole('button', { name: 'Cancelar' }));
+    expect(api.aprovarFinal).not.toHaveBeenCalled();
+  });
+
+  it('confirmar aprova em sequência (a 2ª só começa depois de a 1ª terminar) e nunca a que tem alerta', async () => {
+    let liberar!: (r: Res<unknown>) => void;
+    api.aprovarFinal.mockImplementation((_ml: string, id: string) => (id === 'g1' ? new Promise((r) => { liberar = r; }) : Promise.resolve(ok({ status: 'aprovada' }))));
+    api.listarImagens.mockResolvedValue(ok(lista(sete({ 2: { alertas: AVISO }, 3: { status: 'aprovada' } }))));
+    painel();
+    await userEvent.click(await botaoTodas(5));
+    await confirmarAprovacao();
+    await waitFor(() => expect(idsAprovados()).toEqual(['g1']));
+    expect(await screen.findByRole('button', { name: 'Aprovando 1 de 5…' })).toBeDisabled();
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+    expect(idsAprovados()).toEqual(['g1']);
+    await act(async () => { liberar(ok({ status: 'aprovada' })); });
+    await waitFor(() => expect(idsAprovados()).toEqual(['g1', 'g4', 'g5', 'g6', 'g7']));
+    expect(idsAprovados()).not.toContain('g2');
+    const { toast } = await import('sonner');
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('5 imagens aprovadas'));
+  });
+
+  it('"Todas as cores": aprova as aprováveis das duas cores', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([
+      pronta(1), pronta(2, { alertas: AVISO }),
+      pronta(1, { id: 'r1', cor: 'Rosa' }), pronta(2, { id: 'r2', cor: 'Rosa' }),
+    ], { cores: ['Preto', 'Rosa'] })));
+    painel(null);
+    await userEvent.click(await botaoTodas(3));
+    await confirmarAprovacao();
+    await waitFor(() => expect(idsAprovados()).toEqual(['g1', 'r1', 'r2']));
+  });
+
+  it('falha na 2ª de 3: as outras são aprovadas, o aviso lista a que falhou e o toast conta 2', async () => {
+    api.aprovarFinal.mockImplementation((_ml: string, id: string) =>
+      Promise.resolve(id === 'g2' ? falha(422, 'arquivo_invalido', { erros: ['branca'] }) : ok({ status: 'aprovada' })));
+    api.listarImagens.mockResolvedValue(ok(lista([pronta(1), pronta(2), pronta(3)])));
+    painel();
+    await userEvent.click(await botaoTodas(3));
+    await confirmarAprovacao();
+    expect(await screen.findByText(/Não foi possível aprovar: Em uso \(Preto\): .*em branco/)).toBeInTheDocument();
+    expect(idsAprovados()).toEqual(['g1', 'g2', 'g3']);
+    const { toast } = await import('sonner');
+    expect(toast.success).toHaveBeenCalledWith('2 imagens aprovadas');
+    await userEvent.click(screen.getByRole('button', { name: 'Fechar' }));
+    expect(screen.queryByText(/Não foi possível aprovar/)).toBeNull();
+  });
+
+  it('durante o processo, Gerar e Aprovar individuais ficam desabilitados', async () => {
+    let liberar!: (r: Res<unknown>) => void;
+    api.aprovarFinal.mockImplementation(() => new Promise((r) => { liberar = r; }));
+    api.listarImagens.mockResolvedValue(ok(lista([pronta(1), pronta(2)])));
+    painel();
+    await userEvent.click(await botaoTodas(2));
+    await confirmarAprovacao();
+    await waitFor(() => expect(api.aprovarFinal).toHaveBeenCalled());
+    const botoes = screen.getAllByRole('button', { name: /^(Gerar( |$)|Aprovar$)/, hidden: true });
+    expect(botoes.length).toBeGreaterThan(5);
+    botoes.forEach((b) => expect(b).toBeDisabled());
+    api.aprovarFinal.mockResolvedValue(ok({ status: 'aprovada' }));
+    await act(async () => { liberar(ok({ status: 'aprovada' })); });
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^Aprovando/ })).toBeNull());
+  });
+});
+
 describe('CartaoImagem', () => {
   const base = { nome: 'Capa', cor: 'Preto', preco: 'R$ 0,50' };
   it.each([

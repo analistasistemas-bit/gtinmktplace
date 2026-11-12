@@ -83,6 +83,12 @@ export function PainelImagens({ mlItemId, cor, aoLista, aoFalha }: {
   const [erroLista, setErroLista] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [rodada, setRodada] = useState(0);
+  // "Aprovar todas": confirmação aberta, andamento da fila e falhas (a fila nunca para numa falha).
+  const [confirmaTodas, setConfirmaTodas] = useState<{ itens: ImagemGaleria[]; comAviso: number } | null>(null);
+  const [progresso, setProgresso] = useState<{ n: number; total: number } | null>(null);
+  const [falhas, setFalhas] = useState<Array<{ cor: string; nome: string; motivo: string }>>([]);
+  const montado = useRef(true);
+  useEffect(() => { montado.current = true; return () => { montado.current = false; }; }, []);
   // Um pedido_id por pedido da fila: a repetição (ml_indisponivel) reusa; nova confirmação gera outros.
   const ids = useRef<string[]>([]);
   const trocaConfirmada = useRef(false);
@@ -188,6 +194,26 @@ export function PainelImagens({ mlItemId, cor, aoLista, aoFalha }: {
 
   const nomeDe = (p: number) => lista?.posicoes.find((x) => x.posicao === p)?.nome ?? `Imagem ${p}`;
 
+  /** Aprova em sequência, uma por vez, pela mesma `aprovar` do cartão; falha numa imagem não para a fila. */
+  async function aprovarTodas() {
+    if (!confirmaTodas) return;
+    const { itens } = confirmaTodas;
+    setConfirmaTodas(null); setFalhas([]); setProgresso({ n: 1, total: itens.length });
+    const erros: Array<{ cor: string; nome: string; motivo: string }> = [];
+    let feitas = 0;
+    for (const [k, img] of itens.entries()) {
+      if (!montado.current) return;
+      setProgresso({ n: k + 1, total: itens.length });
+      let motivo: string | null;
+      try { motivo = await aprovar(img); } catch { motivo = FALHA_FINAL; }
+      if (motivo === null) feitas += 1; else erros.push({ cor: img.cor, nome: nomeDe(img.missao), motivo });
+    }
+    if (!montado.current) return;
+    setProgresso(null); setFalhas(erros);
+    if (feitas > 0) toast.success(`${feitas} ${feitas === 1 ? 'imagem aprovada' : 'imagens aprovadas'}`);
+    setRodada((n) => n + 1);
+  }
+
   function fechar() {
     ids.current = []; trocaConfirmada.current = false;
     setConfirmando(null); setTroca(null); setAviso(null);
@@ -287,18 +313,43 @@ export function PainelImagens({ mlItemId, cor, aoLista, aoFalha }: {
   const nConfirmar = confirmando ? quantidade(confirmando.pedidos) : 0;
   const gerarUma = (c: string, p: number) => abrir([{ cores: [c], missoes: [p] }]);
 
+  // Aprovar em massa: só a imagem à mostra, pronta, sem nenhum aviso, já exibida (cobrada) e da versão vigente.
+  const prontas = coresEscopo.flatMap((c) => lista.posicoes.flatMap((p) => {
+    const atual = maisRecente(lista.imagens.filter((i) => i.cor === c && i.missao === p.posicao), lista.plano_id);
+    return atual && atual.status === 'gerada' && !!lista.plano_id && atual.roteiro_id === lista.plano_id ? [atual] : [];
+  }));
+  const aprovaveis = prontas.filter((i) => i.alertas !== null && i.alertas.length === 0 && i.exibida);
+  const nComAviso = prontas.filter((i) => (i.alertas?.length ?? 0) > 0).length;
+  const trabalhando = ocupado || progresso !== null;
+
   return (
     <div className="space-y-4">
       <section aria-label="Gerar todas" className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-card p-3 text-sm text-card-foreground shadow-sm ring-1 ring-foreground/5">
         <p className="min-w-0 flex-1 text-muted-foreground">
           {imagens(1)} custa <span className="font-medium tabular-nums text-foreground">{precoTxt}</span>. Cerca de 30 s por imagem. Cobrada quando aparece na tela.
         </p>
-        <Button className="h-10 px-4 max-sm:w-full" disabled={ocupado || nTodas === 0} onClick={() => abrir(todas)}>
-          {nTodas === 0 ? 'Gerar todas' : `Gerar todas (${imagens(nTodas)} · ${fmtBRL((nTodas * preco) / 100)})`}
-        </Button>
+        <div className="flex flex-col gap-2 max-sm:w-full sm:flex-row">
+          {(aprovaveis.length > 0 || progresso) && (
+            <Button variant="outline" className="h-10 px-4" disabled={trabalhando}
+              onClick={() => setConfirmaTodas({ itens: aprovaveis, comAviso: nComAviso })}>
+              {progresso ? <><Loader2 aria-hidden className="motion-safe:animate-spin" />{`Aprovando ${progresso.n} de ${progresso.total}…`}</> : `Aprovar todas (${aprovaveis.length})`}
+            </Button>
+          )}
+          <Button className="h-10 px-4" disabled={trabalhando || nTodas === 0} onClick={() => abrir(todas)}>
+            {nTodas === 0 ? 'Gerar todas' : `Gerar todas (${imagens(nTodas)} · ${fmtBRL((nTodas * preco) / 100)})`}
+          </Button>
+        </div>
       </section>
 
       {banner && <p role="alert" className="rounded-lg bg-warning/10 p-3 text-sm ring-1 ring-warning/25">{banner}</p>}
+      {falhas.length > 0 && (
+        <div role="alert" className="flex items-start justify-between gap-3 rounded-lg bg-destructive/10 p-3 text-sm ring-1 ring-destructive/25">
+          <ul className="min-w-0 space-y-1">
+            {falhas.map((f, k) => <li key={k}>Não foi possível aprovar: {f.nome} ({f.cor}): {f.motivo}</li>)}
+          </ul>
+          <Button variant="outline" size="sm" onClick={() => setFalhas([])}>Fechar</Button>
+        </div>
+      )}
       {erroLista && <p role="alert" className="text-sm text-destructive">{erroLista}</p>}
 
       {coresEscopo.map((c) => (
@@ -312,13 +363,29 @@ export function PainelImagens({ mlItemId, cor, aoLista, aoFalha }: {
                 <CartaoImagem key={p.posicao} nome={p.nome} cor={c} preco={precoTxt} imagem={atual} indisponivel={p.indisponivel}
                   antiga={!!atual && atual.roteiro_id !== lista.plano_id}
                   temAprovada={!!atual && gs.some((i) => i.status === 'aprovada' && i.id !== atual.id)}
-                  travado={ocupado} onGerar={p.indisponivel && !atual ? undefined : () => gerarUma(c, p.posicao)}
+                  travado={trabalhando} onGerar={p.indisponivel && !atual ? undefined : () => gerarUma(c, p.posicao)}
                   onAprovar={aprovar} onExibida={exibida} onInvalida={invalida} onFalhaCarga={falhaCarga} />
               );
             })}
           </div>
         </section>
       ))}
+
+      <Dialog open={!!confirmaTodas} onOpenChange={(o) => { if (!o) setConfirmaTodas(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Aprovar {confirmaTodas ? imagens(confirmaTodas.itens.length) : ''}?</DialogTitle>
+            <DialogDescription>Cada imagem é preparada e enviada uma por vez.</DialogDescription>
+          </DialogHeader>
+          {!!confirmaTodas?.comAviso && (
+            <p className="text-sm">{confirmaTodas.comAviso} com aviso de texto ficam para você conferir uma a uma.</p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" className="h-10 px-4" onClick={() => setConfirmaTodas(null)}>Cancelar</Button>
+            <Button className="h-10 px-4" onClick={() => void aprovarTodas()}>Aprovar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!confirmando && troca === null} onOpenChange={(o) => { if (!o && !ocupado) fechar(); }}>
         <DialogContent processando={ocupado} rotuloProcessando="Enviando o pedido">

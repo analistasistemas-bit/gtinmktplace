@@ -136,7 +136,7 @@ export function CartaoImagem({ nome, cor, preco, imagem, indisponivel, antiga = 
           </Button>
         )}
         {estado === 'pronta' && !antiga && !!imagem?.url && onAprovar && (
-          <Button className="h-10 w-full px-3" disabled={aprovando} onClick={() => void aprovar()}>
+          <Button className="h-10 w-full px-3" disabled={aprovando || travado} onClick={() => void aprovar()}>
             {aprovando ? <><Loader2 aria-hidden className="motion-safe:animate-spin" />Aprovando…</> : <><Check aria-hidden />Aprovar</>}
           </Button>
         )}
