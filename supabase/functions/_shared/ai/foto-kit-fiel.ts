@@ -139,7 +139,7 @@ function imagensRotuladas(grupos: FotosDaCor[]) {
 }
 
 // deno-lint-ignore no-explicit-any
-async function visaoJson(nome: string, schema: unknown, sistema: string, dados: unknown, urls: string[], timeoutMs: number, maxTokens: number): Promise<{ json: any; custoUsd: number }> {
+export async function visaoJson(nome: string, schema: unknown, sistema: string, dados: unknown, urls: string[], timeoutMs: number, maxTokens: number): Promise<{ json: any; custoUsd: number }> {
   const resp = await openrouterClient().chat.completions.create({
     model: MODELO_VISION,
     messages: [
