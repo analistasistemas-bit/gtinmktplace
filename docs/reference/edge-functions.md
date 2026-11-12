@@ -1404,7 +1404,7 @@ um smoke test contra Postgres real antes do primeiro deploy.
 
 - **criar-kit-variacao** — cria o kit (cores combinadas × tamanho numa família User Products). Admin (ADR-0060), módulo
   `kit_variacao`, `requireUserOrg`. Valida a base, lê a oferta no ML (baseline por SKU), grava tudo pela RPC
-  `kit_variacao_criar` numa transação e enfileira a saga `montar`; **nada é publicado aqui**. Associa a prévia de texto
+  `kit_variacao_criar` numa transação e enfileira a saga `montar`; **nada é publicado aqui**. `MODEL` herdado da base perde as cores da base e a família recebe `MAIN_COLOR=Multicolorido` quando a categoria tem o valor (emenda 12/11 do ADR-0200). Associa a prévia de texto
   (`kit_variacao_consumir_previa`) e confere que as fotos são da própria org e fora de item moderado. Recusas por `motivo`
   (409 salvo indicação): `base_em_kit`, `base_legacy`, `base_full`, `base_multi_origem`, `base_moderada`, `foto_moderada`,
   `peca_insuficiente`, `baseline_divergente`, `up_ocupado`, `pedido_diferente`, `cadastro_parcial_divergente`,
