@@ -6,6 +6,7 @@
 // `fase` + `despacho_seq`. Sem import de Deno/npm: QStash e relógio entram por `deps`.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { talvezFinalizarLote } from '../lote/finalizar.ts';
+import { avisarPedidosProntos } from './aviso-pronto.ts';
 
 export const LIMITES = { imagens: 50, visao: 20, aplicacao: 20 } as const;
 export type Limites = { imagens: number; visao: number; aplicacao: number };
@@ -112,6 +113,8 @@ export interface DepsDespacho {
   garantirFila(userId: string): Promise<void>;
   /** `enfileirarJobPublicacaoML` (queue.ts): fila `publish-ml-${userId}` com as mesmas opções de retry do job normal. */
   enfileirar(userId: string, url: string, body: unknown): Promise<unknown>;
+  /** APP_URL (link do aviso de imagens prontas, ADR-0203 item 11). Ausente = aviso pulado neste tick. */
+  appUrl?: string;
 }
 
 function mensagem(t: Trabalho, base: string): MensagemQStash {
@@ -237,6 +240,11 @@ export async function despachar(admin: SupabaseClient, deps: DepsDespacho) {
   for (const a of adiadas) {
     try { await processarAdiada(admin, a, deps); adiadasOk++; }
     catch (e) { console.error('[galeria-despacho] adiada', a.id, (e as Error).message); }
+  }
+
+  if (deps.appUrl != null) {
+    try { await avisarPedidosProntos(admin, { agora: deps.agora, appUrl: deps.appUrl }); }
+    catch (e) { console.error('[galeria-despacho] aviso', (e as Error).message); }
   }
   return { trabalho: trabalho.length, publicados, adiadas: adiadasOk };
 }

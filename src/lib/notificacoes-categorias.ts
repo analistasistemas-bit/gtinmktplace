@@ -6,7 +6,12 @@ export type CategoriaNotificacao = (typeof CATEGORIAS_NOTIFICACAO)[number];
 // Gerenciais (ADR-0190): só admin assina e o Telegram exige chat privado (chat_id positivo).
 export const CATEGORIAS_SO_ADMIN = ['vendas_gerencial', 'resumo_diario'] as const satisfies readonly CategoriaNotificacao[];
 
-export const CATEGORIA_LABEL: Record<CategoriaNotificacao, string> = {
+// Categorias só de exibição (sino), fora da assinatura da tela Usuários: 'imagem_ia' vai só para quem pediu as
+// imagens (ADR-0203 item 11) e não entra em CATEGORIAS_NOTIFICACAO nem em profiles.telegram_categorias.
+export type CategoriaExibicao = CategoriaNotificacao | 'imagem_ia';
+
+export const CATEGORIA_LABEL: Record<CategoriaExibicao, string> = {
+  imagem_ia: 'Imagens por IA',
   vendas: 'Vendas',
   perguntas: 'Perguntas',
   pos_venda: 'Pós-venda',

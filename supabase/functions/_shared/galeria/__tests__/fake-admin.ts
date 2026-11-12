@@ -71,6 +71,7 @@ export function fakeAdmin(db: Record<string, Linha[]>, arquivos: Map<string, Uin
       in: (c: string, vs: unknown[]) => { preds.push((l) => vs.includes(l[c])); return q; },
       is: (c: string, v: unknown) => { preds.push((l) => (l[c] ?? null) === v); return q; },
       lt: (c: string, v: unknown) => { preds.push((l) => l[c] != null && String(l[c]) < String(v)); return q; },
+      gte: (c: string, v: unknown) => { preds.push((l) => l[c] != null && String(l[c]) >= String(v)); return q; },
       // Só o formato usado pelos claims: `col.is.null,col.lt.<valor>` (qualquer termo casa).
       or: (expr: string) => {
         const termos = expr.split(',').map((t) => {

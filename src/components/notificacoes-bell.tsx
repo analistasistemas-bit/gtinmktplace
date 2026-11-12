@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useListaNotificacoes, useMarcarNotificacoesLidas, useNotificacoesNaoLidas } from '@/hooks/useNotificacoes';
 import { CATEGORIA_LABEL } from '@/lib/notificacoes-categorias';
+import type { Notificacao } from '@/lib/notificacoes';
 
 const URL_PATTERN = /(https?:\/\/[^\s]+)/g;
 const IS_URL = /^https?:\/\//;
@@ -19,23 +20,37 @@ const IS_URL = /^https?:\/\//;
  * Telegram — ver montarMensagem* em _shared/notificacoes/telegram.ts) por um link compacto —
  * mesmo padrão "Ver no Mercado Livre ↗" já usado em detalhe-pedido-itens.tsx/aba-devolucoes.tsx.
  * Evita que a URL, sem espaços para quebrar linha, estoure a largura do card. */
-function linkify(texto: string) {
+function linkify(texto: string, interno: boolean) {
   return texto.split(URL_PATTERN).map((parte, i) =>
     IS_URL.test(parte) ? (
-      <a
-        key={i}
-        href={parte}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex items-center gap-1 text-info hover:underline"
-        onClick={(e) => e.stopPropagation()}
-      >
-        Ver no Mercado Livre <ExternalLink className="h-3 w-3" />
-      </a>
+      interno ? (
+        // Link do próprio app: só rótulo; o clique sobe até o item, que navega pela rota interna e fecha o menu.
+        <span key={i} className="text-info hover:underline">Abrir imagens</span>
+      ) : (
+        <a
+          key={i}
+          href={parte}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-info hover:underline"
+          onClick={(e) => e.stopPropagation()}
+        >
+          Ver no Mercado Livre <ExternalLink className="h-3 w-3" />
+        </a>
+      )
     ) : (
       <span key={i}>{parte}</span>
     ),
   );
+}
+
+const GALERIA = /\/#(\/publicados\/[^/\s]+\/galeria)/;
+
+/** Rota interna aberta ao clicar: integração → suporte; imagens por IA → galeria do anúncio (ADR-0203 item 11). */
+function rotaInterna(n: Notificacao): string | null {
+  if (n.categoria === 'integracao') return '/suporte';
+  if (n.categoria === 'imagem_ia') return GALERIA.exec(n.texto)?.[1] ?? null;
+  return null;
 }
 
 function formatarQuando(iso: string): string {
@@ -76,12 +91,14 @@ export function NotificacoesBell() {
           <div className="px-2 py-4 text-center text-sm text-muted-foreground">Nenhuma notificação</div>
         ) : (
           <div className="max-h-96 overflow-y-auto">
-            {notificacoes.map((n) => (
+            {notificacoes.map((n) => {
+              const rota = rotaInterna(n);
+              return (
               <DropdownMenuItem
                 key={n.id}
-                className={`w-full flex-col items-start gap-0.5 whitespace-normal py-2 ${n.categoria === 'integracao' ? 'cursor-pointer' : ''}`}
+                className={`w-full flex-col items-start gap-0.5 whitespace-normal py-2 ${rota ? 'cursor-pointer' : ''}`}
                 onSelect={(e) => {
-                  if (n.categoria === 'integracao') navigate('/suporte');
+                  if (rota) navigate(rota);
                   else e.preventDefault();
                 }}
               >
@@ -89,10 +106,11 @@ export function NotificacoesBell() {
                   {CATEGORIA_LABEL[n.categoria] ?? n.categoria}
                 </span>
                 {/* pre-line: as mensagens vêm em blocos (título, linha em branco, uma informação por linha). */}
-                <span className="w-full min-w-0 whitespace-pre-line break-words text-sm leading-snug">{linkify(n.texto)}</span>
+                <span className="w-full min-w-0 whitespace-pre-line break-words text-sm leading-snug">{linkify(n.texto, n.categoria === 'imagem_ia')}</span>
                 <span className="text-[10px] text-muted-foreground">{formatarQuando(n.criada_em)}</span>
               </DropdownMenuItem>
-            ))}
+              );
+            })}
           </div>
         )}
       </DropdownMenuContent>

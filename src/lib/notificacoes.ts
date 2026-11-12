@@ -1,9 +1,9 @@
 import { supabase } from './supabase';
-import type { CategoriaNotificacao } from './notificacoes-categorias';
+import type { CategoriaExibicao } from './notificacoes-categorias';
 
 export interface Notificacao {
   id: string;
-  categoria: CategoriaNotificacao;
+  categoria: CategoriaExibicao;
   texto: string;
   lida: boolean;
   criada_em: string;

@@ -20,6 +20,12 @@ vi.mock('@/hooks/useNotificacoes', () => ({
       texto: '💼 Venda R$ 63,90 — 1 item\n💵 Lucro: R$ 14,75\n\n📅 Hoje',
       lida: false,
       criada_em: '2026-10-25T15:47:00Z',
+    }, {
+      id: 'notification-3',
+      categoria: 'imagem_ia',
+      texto: 'Suas imagens ficaram prontas: Fio Amigurumi. 7 para conferir. Abra para aprovar: https://app.publiai.com.br/#/publicados/MLB123/galeria',
+      lida: false,
+      criada_em: '2026-11-12T10:00:00Z',
     }],
   }),
 }));
@@ -41,6 +47,24 @@ describe('NotificacoesBell', () => {
     await user.click(screen.getByText('Nova solicitação de suporte aguardando decisão.'));
 
     expect(screen.getByText('Solicitações de suporte')).toBeInTheDocument();
+  });
+
+  it('imagens por IA: rótulo "Abrir imagens" e clique abre a galeria pela rota interna', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <NotificacoesBell />
+        <Routes>
+          <Route path="/" element={null} />
+          <Route path="/publicados/:mlItemId/galeria" element={<span>Galeria aberta</span>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await user.click(screen.getByRole('button', { name: /notificações/i }));
+    expect(screen.getByText('Imagens por IA')).toBeInTheDocument();
+    expect(screen.queryAllByRole('link', { name: /ver no mercado livre/i })).toHaveLength(0);
+    await user.click(screen.getByText('Abrir imagens'));
+    expect(screen.getByText('Galeria aberta')).toBeInTheDocument();
   });
 
   it('preserva as quebras de linha das mensagens em blocos', async () => {

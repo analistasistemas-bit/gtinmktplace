@@ -18,6 +18,7 @@ Deno.serve(async (req) => {
       publicar: (msgs) => qstashClient().batchJSON(msgs as never) as never,
       garantirFila: garantirFilaSerial,
       enfileirar: enfileirarJobPublicacaoML,
+      appUrl: Deno.env.get('APP_URL') ?? '',
     });
     return new Response(JSON.stringify({ ok: true, ...r }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (e) {

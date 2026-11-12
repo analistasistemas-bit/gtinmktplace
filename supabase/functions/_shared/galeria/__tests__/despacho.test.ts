@@ -4,6 +4,9 @@ import {
   decidirAdiada, despachar, imagemAcionavel, itemAcionavel, LIMITES, selecionarTrabalho, visaoAcionavel, acaoDaAplicacao,
   type LinhaDespacho, type MensagemQStash,
 } from '../despacho'
+import { avisarPedidosProntos } from '../aviso-pronto'
+
+vi.mock('../aviso-pronto', () => ({ avisarPedidosProntos: vi.fn(async () => 0) }))
 
 type Linha = Record<string, unknown>
 const T0 = Date.parse('2026-11-10T12:00:00Z')
@@ -299,6 +302,29 @@ describe('despachar', () => {
     }
     expect(todosAplicados()).toBe(true)
     expect(tick).toBeLessThanOrEqual(15)
+  })
+})
+
+describe('aviso de imagens prontas (ADR-0203 item 11)', () => {
+  const avisar = vi.mocked(avisarPedidosProntos)
+  beforeEach(() => { avisar.mockReset(); avisar.mockResolvedValue(0) })
+
+  it('sem appUrl nas deps → aviso pulado', async () => {
+    await rodar()
+    expect(avisar).not.toHaveBeenCalled()
+  })
+
+  it('com appUrl → tick chama o aviso com o relógio e a URL', async () => {
+    await despachar(fake.admin as never, { ...deps(), appUrl: 'https://app' })
+    expect(avisar).toHaveBeenCalledWith(fake.admin, { agora, appUrl: 'https://app' })
+  })
+
+  it('falha do aviso não muda o resultado do tick', async () => {
+    db.galeria_imagens.push(imagem('p1'))
+    const esperado = await despachar(fake.admin as never, { ...deps(), appUrl: 'https://app' })
+    db.galeria_imagens[0].despacho_seq = 0
+    avisar.mockRejectedValueOnce(new Error('aviso fora'))
+    expect(await despachar(fake.admin as never, { ...deps(), appUrl: 'https://app' })).toEqual(esperado)
   })
 })
 
