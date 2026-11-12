@@ -10,6 +10,8 @@ export interface ContagemPromo {
   vermelho: number; indisponivel: number; participando_vermelho: number;
   /** Maior parte do desconto bancada pelo ML entre os anúncios (meli_percentage); `benefits` da promoção vem nulo (Task 0). */
   ml_pct_max: number | null;
+  /** Semáforo só dos convidados; ausente em contagem gravada antes de 12/11 (até o próximo sync). */
+  convidados_semaforo?: Record<SemaforoPromo, number>;
 }
 export interface Promocao {
   promocao_id: string; tipo: string; nome: string | null; status: string;
@@ -174,6 +176,10 @@ export const PRECO_MIN_PROMOCAO = 19;
 /** Convidado com preço de campanha abaixo do piso não aparece; participante fica, para poder sair. */
 export const convidadoAbaixoDoPiso = (i: Pick<ItemPromocao, 'status' | 'preco_avaliado'>) =>
   i.status === 'candidate' && i.preco_avaliado != null && i.preco_avaliado < PRECO_MIN_PROMOCAO;
+
+/** Inscrito com a campanha já ativa: o ML ainda não ativou (adesão depois do início fica horas assim, 12/11). */
+export const aguardandoMl = (i: Pick<ItemPromocao, 'status'>, p: Pick<Promocao, 'status'>) =>
+  i.status === 'pending' && p.status === 'started';
 
 /** Convidado = `candidate` (ou participando com convite de outro horário); participando = `started` ou `pending`
  *  (inscrito em campanha futura); outro status não aparece. */

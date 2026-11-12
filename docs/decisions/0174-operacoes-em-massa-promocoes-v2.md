@@ -378,6 +378,19 @@ oferta participando e o convite sumia da aba Convidados; a execução, lendo o p
    horários participando não é confirmado pela conferência.
 9. Migration aditiva: `ml_promocao_itens.convite_aberto boolean not null default false`.
 
+## Emenda 2026-11-12 — adesão sem prova do ML espelha `pending` ("aguardando o ML")
+
+Black Friday 2026 (P-MLB17911004, Avil): 10 adesões DEAL feitas com a campanha já `started` receberam 200 no POST, mas
+o ML seguiu devolvendo `candidate` por mais de 90 min. O espelho caía no status da campanha (`started`) e a Central
+mostrava os 10 como "participando" sem o ML ter ativado (76 participando no app × 67 no ML). Na "11.11 da Black" as
+adesões pós-início apareceram `started` no sync do dia seguinte: é atraso do ML, não descarte.
+
+1. **Espelho depois de aderir:** o status lido no ML; ainda `candidate` ou releitura falha → o do tipo (ofertas fixas,
+   como antes), senão **`pending`**. Nunca `started` sem prova. O item da operação segue `aplicado` (o ML aceitou).
+2. **Rótulo:** item `pending` em campanha `started` = "Aguardando o ML ativar" (detalhe) / "aguardando o ML" (Em
+   promoção); em campanha futura segue "começa depois". Vale também para os `pending` reais do ML em campanha ativa.
+3. O sync seguinte grava o estado real do ML (pode voltar a convidado enquanto o ML não ativa).
+
 ## Alternativas descartadas
 
 - **V2 unitária antes, I5 depois:** retrabalho e inútil para 504 convidados.

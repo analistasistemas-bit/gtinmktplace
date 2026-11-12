@@ -12,7 +12,7 @@ export const SEMAFORO_UI: Record<SemaforoPromo, { tone: StatusTone; label: strin
   vermelho: { tone: 'danger', label: 'Prejuízo', Icon: CircleX, dot: 'bg-danger', text: 'text-danger' },
   indisponivel: { tone: 'neutral', label: 'Sem líquido', Icon: CircleHelp, dot: 'bg-muted-foreground/40', text: 'text-muted-foreground' },
 };
-const ORDEM: SemaforoPromo[] = ['verde', 'amarelo', 'vermelho', 'indisponivel'];
+export const ORDEM: SemaforoPromo[] = ['verde', 'amarelo', 'vermelho', 'indisponivel'];
 
 const CHIP_CLASS = 'min-h-11 inline-flex items-center gap-2 rounded-lg border bg-card px-3 text-sm shadow-xs transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-pressed:border-primary/60 aria-pressed:bg-primary/5 aria-pressed:ring-1 aria-pressed:ring-primary/40 disabled:opacity-50';
 
@@ -30,7 +30,7 @@ export function ChipFiltro({ ativo, onClick, disabled, title, ariaLabel, childre
 }
 
 /** Barra + legenda somente leitura da distribuição de semáforos (card de campanha). */
-export function DistribuicaoSemaforo({ contagem }: { contagem: ContagemPromo }) {
+export function DistribuicaoSemaforo({ contagem }: { contagem: Record<SemaforoPromo, number> }) {
   const total = ORDEM.reduce((soma, s) => soma + contagem[s], 0);
   if (total === 0) return <p className="text-xs text-muted-foreground">Nenhum anúncio convidado.</p>;
   const presentes = ORDEM.filter((s) => contagem[s] > 0);

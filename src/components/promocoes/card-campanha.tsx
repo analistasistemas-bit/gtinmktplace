@@ -5,7 +5,7 @@ import { StatusPill } from '@/components/ui/status-pill';
 import { cn } from '@/lib/utils';
 import { fmtInt, fmtPct } from '@/lib/formato';
 import { ehCupom, emLeitura, prazoUrgente, rotuloTipo, STATUS_CAMPANHA as STATUS, STATUS_CAMPANHA_DOT as STATUS_DOT, type Promocao } from '@/lib/promocoes';
-import { DistribuicaoSemaforo } from './contagem-semaforo';
+import { DistribuicaoSemaforo, ORDEM, SEMAFORO_UI } from './contagem-semaforo';
 const ICONE_TIPO: Record<string, typeof Zap> = {
   LIGHTNING: Zap, SELLER_COUPON_CAMPAIGN: Ticket, PRICE_MATCHING: Scale, SMART: Handshake, VOLUME: Layers,
 };
@@ -21,6 +21,14 @@ export function CardCampanha({ promocao: p, agoraMs }: { promocao: Promocao; ago
       ? [{ label: 'Participando', valor: p.contagem.participando }, { label: 'Convidados', valor: p.contagem.convidados }]
       : [{ label: 'Convidados', valor: p.contagem.convidados }, { label: 'Vale a pena', valor: p.contagem.convidados_verde }]
   );
+
+  // Barra = só convidados (o mesmo recorte da aba Convidados do detalhe); participando sai por diferença.
+  const conv = p.contagem?.convidados_semaforo;
+  const part = conv && p.contagem && p.contagem.participando > 0
+    ? ORDEM.filter((s) => p.contagem![s] - conv[s] > 0)
+      .map((s) => `${fmtInt(p.contagem![s] - conv[s])} ${SEMAFORO_UI[s].label.toLowerCase()}`)
+    : [];
+  const linhaParticipando = part.length ? `Participando: ${part.join(' · ')}` : null;
 
   const corpo = (
     <Card className="h-full gap-0 p-0 transition-[transform,box-shadow] duration-200 motion-safe:group-hover:-translate-y-0.5 group-hover:shadow-md group-hover:ring-primary/30">
@@ -56,7 +64,8 @@ export function CardCampanha({ promocao: p, agoraMs }: { promocao: Promocao; ago
                 </div>
               ))}
             </dl>
-            <DistribuicaoSemaforo contagem={p.contagem} />
+            <DistribuicaoSemaforo contagem={conv ?? p.contagem} />
+            {linhaParticipando && <p className="text-xs text-muted-foreground">{linhaParticipando}</p>}
             {p.contagem.participando_vermelho > 0 && (
               <p className="flex items-center gap-2 rounded-md bg-danger/10 px-3 py-2 text-xs font-medium text-danger">
                 <CircleX className="size-3.5" aria-hidden />{fmtInt(p.contagem.participando_vermelho)} participando com líquido abaixo do custo

@@ -77,4 +77,6 @@ export interface Contagem {
   vermelho: number; indisponivel: number; participando_vermelho: number;
   /** Maior parte do desconto bancada pelo ML entre os anúncios (meli_percentage); `benefits` da promoção vem nulo (Task 0). */
   ml_pct_max: number | null;
+  /** Semáforo só dos convidados (o card mostra o mesmo recorte da aba Convidados); participando = total − isto. */
+  convidados_semaforo: Record<Semaforo, number>;
 }

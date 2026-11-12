@@ -25,8 +25,8 @@ import { fmtBRL, fmtMarkup, fmtPct } from '@/lib/formato';
 import { formatarNomeProduto } from '@/lib/texto';
 import { ehTipoOperavel, type AcaoPromocao } from '@/lib/operacoes';
 import {
-  URL_PROMOCOES_ML, ehOfertaFixa, ehTipoSoSellerCenter, ateQuantoDaLinha, convidadoAbaixoDoPiso, corDeReferencia, descontoPct, emLeitura, filtrarItens, mlbExibido, rotuloMlb, rotuloSemLiquido, rotuloTipo,
-  type ItemPromocao, type PaiDoItem, type SemaforoPromo,
+  URL_PROMOCOES_ML, aguardandoMl, ehOfertaFixa, ehTipoSoSellerCenter, ateQuantoDaLinha, convidadoAbaixoDoPiso, corDeReferencia, descontoPct, emLeitura, filtrarItens, mlbExibido, rotuloMlb, rotuloSemLiquido, rotuloTipo,
+  type ItemPromocao, type PaiDoItem, type Promocao, type SemaforoPromo,
 } from '@/lib/promocoes';
 import { ChipFiltro, ContagemSemaforo, SEMAFORO_UI } from '@/components/promocoes/contagem-semaforo';
 import { SheetCores } from '@/components/promocoes/sheet-cores';
@@ -263,6 +263,7 @@ export default function PromocaoDetalhe() {
             <p className="truncate" title={formatarNomeProduto(r.titulo) || r.ml_item_id}>{formatarNomeProduto(r.titulo) || r.ml_item_id}</p>
             <p className="text-xs text-muted-foreground">{rotuloMlb(r)}{r.estoque_min != null ? ` · Estoque mín. ${r.estoque_min}` : ''}</p>
             {r.convite_aberto && <p className="text-xs text-info">{participando ? 'Convite aberto para outro horário' : 'Já participa em outro horário'}</p>}
+            {promo && aguardandoMl(r, promo) && <p className="text-xs text-warning">Aguardando o ML ativar</p>}
           </div>
         </div>
       ),
@@ -441,7 +442,7 @@ export default function PromocaoDetalhe() {
           <ListaMobile
             linhas={linhasMobile} onAbrir={setAberto} simInfo={simInfo}
             podeSelecionar={podeSelecionar} selecionados={selecionados} onToggle={alternarItem}
-            participando={participando}
+            participando={participando} campanha={promo}
           />
         </div>
         </>)}
@@ -474,8 +475,8 @@ export default function PromocaoDetalhe() {
 }
 
 /** Cartões abaixo de `md` — a DataTable estoura a largura e some preço/líquido/markup no scroll horizontal. */
-function ListaMobile({ linhas, onAbrir, podeSelecionar, selecionados, onToggle, simInfo, participando }: {
-  participando: boolean;
+function ListaMobile({ linhas, onAbrir, podeSelecionar, selecionados, onToggle, simInfo, participando, campanha }: {
+  participando: boolean; campanha: Pick<Promocao, 'status'> | null;
   linhas: ItemPromocao[]; onAbrir: (r: ItemPromocao) => void;
   simInfo: (r: ItemPromocao) => { aviso: string | null } | undefined;
   podeSelecionar: boolean; selecionados: Set<string>; onToggle: (id: string) => void;
@@ -511,6 +512,7 @@ function ListaMobile({ linhas, onAbrir, podeSelecionar, selecionados, onToggle, 
                   <p className="truncate text-sm font-medium">{formatarNomeProduto(r.titulo) || r.ml_item_id}</p>
                   <p className="text-xs text-muted-foreground">{rotuloMlb(r)}{r.estoque_min != null ? ` · Estoque mín. ${r.estoque_min}` : ''}</p>
             {r.convite_aberto && <p className="text-xs text-info">{participando ? 'Convite aberto para outro horário' : 'Já participa em outro horário'}</p>}
+            {campanha && aguardandoMl(r, campanha) && <p className="text-xs text-warning">Aguardando o ML ativar</p>}
                 </div>
               </div>
               <dl className="mt-3 grid grid-cols-3 gap-2">

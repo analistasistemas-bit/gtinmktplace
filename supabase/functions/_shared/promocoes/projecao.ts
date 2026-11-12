@@ -78,7 +78,8 @@ export async function ateQuantoDescer(
 /** Só convidado e participando contam — outro status do ML não é presumido. Convidado abaixo do piso não aparece
  *  na Central, então não conta; sem preço avaliado conta (espelha `convidadoAbaixoDoPiso` do front). */
 export function contar(linhas: Pick<LinhaItem, 'status' | 'pior_semaforo' | 'ml_pct' | 'preco_avaliado'>[]): Contagem {
-  const c: Contagem = { convidados: 0, convidados_verde: 0, participando: 0, verde: 0, amarelo: 0, vermelho: 0, indisponivel: 0, participando_vermelho: 0, ml_pct_max: null };
+  const c: Contagem = { convidados: 0, convidados_verde: 0, participando: 0, verde: 0, amarelo: 0, vermelho: 0, indisponivel: 0, participando_vermelho: 0, ml_pct_max: null,
+    convidados_semaforo: { verde: 0, amarelo: 0, vermelho: 0, indisponivel: 0 } };
   for (const l of linhas) {
     const participa = ehParticipando(l.status);
     if (!participa && l.status !== 'candidate') continue;
@@ -87,6 +88,7 @@ export function contar(linhas: Pick<LinhaItem, 'status' | 'pior_semaforo' | 'ml_
     c[l.pior_semaforo]++;
     if (participa && l.pior_semaforo === 'vermelho') c.participando_vermelho++;
     if (!participa && l.pior_semaforo === 'verde') c.convidados_verde++;
+    if (!participa) c.convidados_semaforo[l.pior_semaforo]++;
     if (l.ml_pct != null && l.ml_pct > 0) c.ml_pct_max = Math.max(c.ml_pct_max ?? 0, l.ml_pct);
   }
   return c;
