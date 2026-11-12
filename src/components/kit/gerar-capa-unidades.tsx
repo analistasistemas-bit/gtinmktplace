@@ -17,13 +17,17 @@ export type EstadoCapa =
   | { fase: 'erro'; motivo?: string; mensagem: string };
 
 const IDLE: EstadoCapa = { fase: 'idle' };
+/** Falha definitiva: o mesmo pedido falharia de novo (mesmo critério de `foto-combinacao.tsx`). */
+const DEFINITIVAS = new Set(['imagem_inadequada', 'pedido_diferente', 'falha_storage']);
 const MSG_TETO = 'Limite diário de gerações atingido: envie a foto manualmente.';
 
 /** Estado por tamanho `n`, no dialog. `open` novo zera tudo; resultado de geração de uma sessão antiga é descartado. */
 export function useCapasUnidades(familiaBaseId: string, open: boolean) {
   const [estados, setEstados] = useState<Record<number, EstadoCapa>>({});
   const ids = useRef<Record<number, string>>({});
-  const emVoo = useRef(new Set<number>());
+  /** Cadeado por n: guarda a geração vigente (token). Geração abandonada não solta o cadeado da nova. */
+  const emVoo = useRef(new Map<number, number>());
+  const seq = useRef(0);
   const epoca = useRef(0);
   /** Sobe quando o operador descarta (arquivo manual): o resultado em voo é ignorado. */
   const descartes = useRef<Record<number, number>>({});
@@ -39,7 +43,8 @@ export function useCapasUnidades(familiaBaseId: string, open: boolean) {
 
   const gerar = useCallback(async (n: number) => {
     if (emVoo.current.has(n)) return;
-    emVoo.current.add(n);
+    const token = ++seq.current;
+    emVoo.current.set(n, token);
     const e = epoca.current;
     const d = descartes.current[n] ?? 0;
     const vivo = () => e === epoca.current && (descartes.current[n] ?? 0) === d;
@@ -50,12 +55,14 @@ export function useCapasUnidades(familiaBaseId: string, open: boolean) {
     try {
       let r = await gerarCapaUnidadesEdge({ requestId: id, familiaBaseId, n });
       // Reprovada com tentativa sobrando: o mesmo pedido gera a próxima com os motivos (teto da edge: 3).
-      for (let i = 0; i < 3 && r.ok && r.aprovado === false && r.proxima; i++) {
+      // Abandonada (arquivo manual, dialog reaberto): não chama a edge de novo (gastaria o teto).
+      for (let i = 0; i < 3 && vivo() && r.ok && r.aprovado === false && r.proxima; i++) {
         set({ fase: 'gerando', tentativa: (r.tentativa ?? 1) + 1 });
         r = await gerarCapaUnidadesEdge({ requestId: id, familiaBaseId, n });
       }
       if (!r.ok) {
-        if (r.motivo === 'pedido_diferente') definitivo();
+        // Falha definitiva: a edge repetiria o mesmo desfecho para este request_id; o próximo clique é pedido novo.
+        if (r.motivo && DEFINITIVAS.has(r.motivo)) definitivo();
         set({ fase: 'erro', motivo: r.motivo, mensagem: r.motivo === 'teto_diario' ? MSG_TETO : r.mensagem });
       } else if (r.aprovado === false) {
         definitivo();
@@ -69,7 +76,7 @@ export function useCapasUnidades(familiaBaseId: string, open: boolean) {
     } catch (err) {
       set({ fase: 'erro', mensagem: (err as Error).message });
     } finally {
-      emVoo.current.delete(n);
+      if (emVoo.current.get(n) === token) emVoo.current.delete(n);
     }
   }, [familiaBaseId]);
 
@@ -77,6 +84,7 @@ export function useCapasUnidades(familiaBaseId: string, open: boolean) {
   const descartar = useCallback((n: number) => {
     descartes.current[n] = (descartes.current[n] ?? 0) + 1;
     delete ids.current[n];
+    emVoo.current.delete(n); // a geração abandonada não segura mais o botão
     setEstados((p) => (p[n] && p[n].fase !== 'idle' ? { ...p, [n]: IDLE } : p));
   }, []);
 
@@ -105,7 +113,7 @@ export function GerarCapaUnidades({ n, temCapa, estado = IDLE, onGerar, onUsar }
     );
   }
   return (
-    <div id={`kit-${n}-capa-unidades`} className="grid gap-2">
+    <div id={`kit-${n}-capa-unidades-acao`} className="grid gap-2">
       {estado.fase === 'reprovada' ? (
         <div role="alert" className="grid gap-2 rounded-md border border-danger/30 bg-danger/5 p-2 text-xs">
           <span className="font-medium">A IA não conseguiu uma capa fiel com {n} unidades. Envie a foto manualmente ou tente de novo.</span>

@@ -75,11 +75,12 @@ vi.mock('@/lib/caminho-categoria-ml', () => ({
 // subirFoto (via uploadFile/@/lib/storage) e useImageUrl chamam supabase direto — sem mockar,
 // o teste do fluxo de criação bateria na rede real.
 const invokeMock = vi.fn();
+const signedPaths: string[] = [];
 vi.mock('@/lib/supabase', () => ({
   supabase: {
     functions: { invoke: (...args: unknown[]) => invokeMock(...args) },
     auth: { getUser: () => Promise.resolve({ data: { user: { id: 'user-1' } } }) },
-    storage: { from: () => ({ createSignedUrl: () => Promise.resolve({ data: { signedUrl: 'https://x.test/foto.jpg' }, error: null }) }) },
+    storage: { from: () => ({ createSignedUrl: (path: string) => { signedPaths.push(path); return Promise.resolve({ data: { signedUrl: 'https://x.test/foto.jpg' }, error: null }); } }) },
   },
 }));
 vi.mock('@/stores/support-store', () => ({
@@ -604,7 +605,23 @@ describe('DialogCriarKit — capa com N unidades (ADR-0205)', () => {
     expect(imagemPathEnviado()).toBe(BASE_COM_FOTO.fotoPath);
   });
 
-  it('arquivo manual descarta a candidata; ao remover o arquivo volta a foto da base', async () => {
+  it('arquivo manual descarta a candidata e repõe a foto da base (mesmo depois de "Usar")', async () => {
+    gerarCapaMock.mockResolvedValue(aprovada('r1'));
+    await abrirPreview();
+    await userEvent.click(botaoGerar()!);
+    const usar = await screen.findByRole('button', { name: 'Usar capa com 2 unidades' });
+    fireEvent.load(screen.getByAltText('Capa gerada com 2 unidades'));
+    await userEvent.click(usar);
+    // imagemPath virou o path gerado: o preview passa a ler a foto dele.
+    await waitFor(() => expect(signedPaths).toContain('ORG/kit-variacao-ia/r1.png'));
+    await userEvent.upload(screen.getByLabelText('Foto do kit 2'), new File(['x'], 'manual.png', { type: 'image/png' }));
+    // Remover o arquivo deixa só o imagemPath: tem de ser o da base, não o gerado.
+    await userEvent.click(await screen.findByRole('button', { name: 'Remover Foto do kit 2' }));
+    await criar();
+    expect(imagemPathEnviado()).toBe(BASE_COM_FOTO.fotoPath);
+  });
+
+  it('arquivo manual com candidata pendente a descarta', async () => {
     gerarCapaMock.mockResolvedValue(aprovada('r1'));
     await abrirPreview();
     await userEvent.click(botaoGerar()!);
@@ -612,9 +629,6 @@ describe('DialogCriarKit — capa com N unidades (ADR-0205)', () => {
     await userEvent.upload(screen.getByLabelText('Foto do kit 2'), new File(['x'], 'manual.png', { type: 'image/png' }));
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Usar capa com 2 unidades' })).toBeNull());
     expect(botaoGerar()).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Remover Foto do kit 2' }));
-    await criar();
-    expect(imagemPathEnviado()).toBe(BASE_COM_FOTO.fotoPath);
   });
 
   it('Voltar durante a geração não perde a candidata ao reabrir a etapa', async () => {

@@ -24,10 +24,10 @@ const reprovada = (id: string, tentativa: number) => ({
 const falha = (motivo: string, mensagem: string) => ({ ok: false as const, motivo, mensagem });
 const ids = () => edge.mock.calls.map((c) => c[0].requestId);
 
-function Harness({ tamanhos = [3], temCapa = true, onUsar = vi.fn(), mostrar = true }: {
-  tamanhos?: number[]; temCapa?: boolean; onUsar?: (n: number, p: string) => void; mostrar?: boolean;
+function Harness({ tamanhos = [3], temCapa = true, onUsar = vi.fn(), mostrar = true, aberto = true }: {
+  tamanhos?: number[]; temCapa?: boolean; onUsar?: (n: number, p: string) => void; mostrar?: boolean; aberto?: boolean;
 }) {
-  const capas = useCapasUnidades('FAM', true);
+  const capas = useCapasUnidades('FAM', aberto);
   return (
     <div>
       {mostrar && tamanhos.map((n) => (
@@ -163,5 +163,50 @@ describe('GerarCapaUnidades', () => {
     await act(async () => { fim(aprovada('r')); });
     expect(screen.queryByRole('button', { name: /Usar capa/ })).toBeNull();
     expect(botao()).toBeEnabled();
+  });
+
+  it.each(['imagem_inadequada', 'falha_storage', 'pedido_diferente'])('502/409 definitivo %s gira o request_id', async (motivo) => {
+    edge.mockResolvedValueOnce(falha(motivo, 'definitiva')).mockResolvedValueOnce(aprovada('b'));
+    render(<Harness />);
+    await userEvent.click(botao()!);
+    await screen.findByText('definitiva');
+    await userEvent.click(botao()!);
+    await screen.findByRole('button', { name: 'Usar capa com 3 unidades' });
+    expect(ids()[0]).not.toBe(ids()[1]);
+  });
+
+  it('descartar no meio da geração: não chama a edge de novo e não solta o cadeado da geração vigente', async () => {
+    let fimA!: (v: unknown) => void;
+    let fimB!: (v: unknown) => void;
+    edge.mockReturnValueOnce(new Promise((r) => { fimA = r; }) as never).mockReturnValueOnce(new Promise((r) => { fimB = r; }) as never);
+    render(<Harness />);
+    await userEvent.click(botao()!);
+    await userEvent.click(screen.getByText('descartar'));
+    await userEvent.click(botao()!);
+    expect(edge).toHaveBeenCalledTimes(2);
+    await act(async () => { fimA(reprovada('a', 1)); });
+    expect(edge).toHaveBeenCalledTimes(2); // a geração abandonada não repete
+    expect(botao()).toBeDisabled();
+    await userEvent.click(botao()!);
+    expect(edge).toHaveBeenCalledTimes(2); // o cadeado da vigente segue
+    await act(async () => { fimB(aprovada('b')); });
+    expect(await screen.findByRole('button', { name: 'Usar capa com 3 unidades' })).toBeInTheDocument();
+  });
+
+  it('reabrir o dialog no meio da geração: a velha não repete nem solta o cadeado da nova', async () => {
+    let fimA!: (v: unknown) => void;
+    let fimB!: (v: unknown) => void;
+    edge.mockReturnValueOnce(new Promise((r) => { fimA = r; }) as never).mockReturnValueOnce(new Promise((r) => { fimB = r; }) as never);
+    const { rerender } = render(<Harness />);
+    await userEvent.click(botao()!);
+    rerender(<Harness aberto={false} />);
+    rerender(<Harness aberto />);
+    await userEvent.click(botao()!);
+    expect(edge).toHaveBeenCalledTimes(2);
+    await act(async () => { fimA(reprovada('a', 1)); });
+    expect(edge).toHaveBeenCalledTimes(2);
+    expect(botao()).toBeDisabled();
+    await act(async () => { fimB(aprovada('b')); });
+    expect(await screen.findByRole('button', { name: 'Usar capa com 3 unidades' })).toBeInTheDocument();
   });
 });
