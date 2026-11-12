@@ -177,9 +177,10 @@ export const PRECO_MIN_PROMOCAO = 19;
 export const convidadoAbaixoDoPiso = (i: Pick<ItemPromocao, 'status' | 'preco_avaliado'>) =>
   i.status === 'candidate' && i.preco_avaliado != null && i.preco_avaliado < PRECO_MIN_PROMOCAO;
 
-/** Inscrito com a campanha já ativa: o ML ainda não ativou (adesão depois do início fica horas assim, 12/11). */
-export const aguardandoMl = (i: Pick<ItemPromocao, 'status'>, p: Pick<Promocao, 'status'>) =>
-  i.status === 'pending' && p.status === 'started';
+/** DEAL inscrito com a campanha já ativa: o ML ainda não ativou (adesão depois do início fica horas assim, 12/11).
+ *  Relâmpago e afins têm janela própria: `pending` em campanha ativa é o horário agendado ("começa depois"). */
+export const aguardandoMl = (i: Pick<ItemPromocao, 'status'>, p: Pick<Promocao, 'status' | 'tipo'>) =>
+  i.status === 'pending' && p.status === 'started' && p.tipo === 'DEAL';
 
 /** Convidado = `candidate` (ou participando com convite de outro horário); participando = `started` ou `pending`
  *  (inscrito em campanha futura); outro status não aparece. */

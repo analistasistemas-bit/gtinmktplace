@@ -386,9 +386,11 @@ mostrava os 10 como "participando" sem o ML ter ativado (76 participando no app 
 adesões pós-início apareceram `started` no sync do dia seguinte: é atraso do ML, não descarte.
 
 1. **Espelho depois de aderir:** o status lido no ML; ainda `candidate` ou releitura falha → o do tipo (ofertas fixas,
-   como antes), senão **`pending`**. Nunca `started` sem prova. O item da operação segue `aplicado` (o ML aceitou).
-2. **Rótulo:** item `pending` em campanha `started` = "Aguardando o ML ativar" (detalhe) / "aguardando o ML" (Em
-   promoção); em campanha futura segue "começa depois". Vale também para os `pending` reais do ML em campanha ativa.
+   como antes); **DEAL → `pending`**, nunca `started` sem prova; SMART e Relâmpago seguem o status da promoção (no
+   SMART o ML vira `started` em segundos — revisão Grok). O item da operação segue `aplicado` (o ML aceitou).
+2. **Rótulo (só DEAL):** item `pending` em campanha `started` = "Aguardando o ML ativar" (detalhe) / "aguardando o
+   ML" (Em promoção); em campanha futura segue "começa depois". Vale também para os `pending` reais do ML em campanha
+   ativa. Relâmpago/SMART_LIGHTNING `pending` em campanha ativa é o horário agendado: segue "começa depois".
 3. O sync seguinte grava o estado real do ML (pode voltar a convidado enquanto o ML não ativa).
 
 ## Alternativas descartadas

@@ -138,6 +138,10 @@ describe('executar — aderir', () => {
     const a = montar([item('MLB1')]);
     await executar(DEAL_ADERIR, a.deps, OPTS);
     expect(a.deps.espelharStatusCentral).toHaveBeenCalledWith('P-1', 'DEAL', 'MLB1', 'pending');
+    // Revisão Grok: SMART fica `started` em segundos no ML — segue o status da promoção.
+    const s = montar([item('MLB1', { preco: 30 })], { campanha: () => conv({ offer_id: 'C-1', preco: 30 }), post: () => ({ offer_id: 'O-1' }) });
+    await executar({ ...DEAL_ADERIR, promocao_tipo: 'SMART' }, s.deps, OPTS);
+    expect(s.deps.espelharStatusCentral).toHaveBeenCalledWith('P-1', 'SMART', 'MLB1', 'started');
     const b = montar([item('MLB1')]);
     await executar({ ...DEAL_ADERIR, promocao_status: 'pending' }, b.deps, OPTS);
     expect(b.deps.espelharStatusCentral).toHaveBeenCalledWith('P-1', 'DEAL', 'MLB1', 'pending');

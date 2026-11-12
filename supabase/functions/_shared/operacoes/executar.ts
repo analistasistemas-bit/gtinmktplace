@@ -77,10 +77,11 @@ export function mensagemJanela(inicio: string | null, fim: string | null): strin
 }
 /** Ofertas fixas ainda em candidate (atraso de ~2 min): o status do item é o do tipo, não o da campanha (spike). */
 const ESPELHO_OFERTA: Partial<Record<TipoPromocao, Espelho>> = { SMART_LIGHTNING: 'pending', PRICE_MATCHING: 'started' };
-/** Status real na Central depois de aderir: o lido no ML; ainda candidate (atraso do ML) → o do tipo, senão `pending`
- *  (aguardando o ML). Nunca `started` sem prova: na Black Friday 12/11 o ML ficou horas em candidate após o 200. */
+/** Status real na Central depois de aderir: o lido no ML; ainda candidate (atraso do ML) → o do tipo; DEAL → `pending`
+ *  (aguardando o ML: na Black Friday 12/11 ficou horas em candidate após o 200); demais → o da promoção. */
 const espelhoAderido = (op: OperacaoRow, f: ItemNaCampanha | null): Espelho =>
-  f?.status === 'pending' || f?.status === 'started' ? f.status : ESPELHO_OFERTA[op.promocao_tipo] ?? 'pending';
+  f?.status === 'pending' || f?.status === 'started' ? f.status
+    : ESPELHO_OFERTA[op.promocao_tipo] ?? (op.promocao_tipo === 'DEAL' ? 'pending' : op.promocao_status);
 // Espelho é best-effort: o item já está gravado; o sync da Central corrige depois.
 const espelhar = (deps: DepsExecutar, op: OperacaoRow, id: string, e: Espelho) =>
   deps.espelharStatusCentral(op.promocao_id, op.promocao_tipo, id, e).catch(() => {});

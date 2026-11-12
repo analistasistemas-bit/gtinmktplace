@@ -16,7 +16,7 @@ import { fmtBRL } from '@/lib/formato';
 import { formatarNomeProduto } from '@/lib/texto';
 import { cn } from '@/lib/utils';
 import {
-  URL_PROMOCOES_ML, agruparParticipacoes, aguardandoMl, descontoPct, mlbExibido, rotuloMlb, rotuloTipo, type GrupoParticipacao, type Participacao,
+  URL_PROMOCOES_ML, agruparParticipacoes, aguardandoMl, descontoPct, mlbExibido, rotuloMlb, rotuloTipo, type GrupoParticipacao, type Participacao, type Promocao,
 } from '@/lib/promocoes';
 import { SEMAFORO_UI } from './contagem-semaforo';
 import { PreviewOperacao } from './preview-operacao';
@@ -139,7 +139,7 @@ function BlocoCampanha({ grupo, visiveis, busca, selecionados, onSelecao }: {
         )}
       </header>
       <ul className="divide-y">
-        {pag.itensPagina.map((r) => <LinhaParticipacao key={r.ml_item_id} r={r} campanhaAtiva={p.status === 'started'} operavel={operavel} marcado={selecionados.has(r.ml_item_id)} onToggle={alternar} />)}
+        {pag.itensPagina.map((r) => <LinhaParticipacao key={r.ml_item_id} r={r} campanha={p} operavel={operavel} marcado={selecionados.has(r.ml_item_id)} onToggle={alternar} />)}
       </ul>
       {pag.total > TAMANHOS[0] && (
         <Pagination className="border-t px-4" rotuloItem="anúncio" tamanhos={TAMANHOS} paginaAtual={pag.paginaAtual}
@@ -156,8 +156,8 @@ function BlocoCampanha({ grupo, visiveis, busca, selecionados, onSelecao }: {
   );
 }
 
-function LinhaParticipacao({ r, campanhaAtiva, operavel, marcado, onToggle }: {
-  r: Participacao; campanhaAtiva: boolean; operavel: boolean; marcado: boolean; onToggle: (id: string) => void;
+function LinhaParticipacao({ r, campanha, operavel, marcado, onToggle }: {
+  r: Participacao; campanha: Pick<Promocao, 'status' | 'tipo'>; operavel: boolean; marcado: boolean; onToggle: (id: string) => void;
 }) {
   const ui = SEMAFORO_UI[r.pior_semaforo];
   const d = descontoPct(r.preco_original, r.preco_avaliado);
@@ -168,7 +168,7 @@ function LinhaParticipacao({ r, campanhaAtiva, operavel, marcado, onToggle }: {
       {r.thumbnail && <img src={r.thumbnail} alt="" className="size-10 shrink-0 rounded object-cover" loading="lazy" />}
       <div className={cn('min-w-0 flex-1', r.pior_semaforo === 'indisponivel' && 'text-muted-foreground')}>
         <p className="truncate text-sm" title={formatarNomeProduto(r.titulo) || r.ml_item_id}>{formatarNomeProduto(r.titulo) || r.ml_item_id}</p>
-        <p className="truncate text-xs text-muted-foreground">{rotuloMlb(r)}{r.status !== 'pending' ? '' : aguardandoMl(r, { status: campanhaAtiva ? 'started' : 'pending' }) ? ' · aguardando o ML' : ' · começa depois'}</p>
+        <p className="truncate text-xs text-muted-foreground">{rotuloMlb(r)}{r.status !== 'pending' ? '' : aguardandoMl(r, campanha) ? ' · aguardando o ML' : ' · começa depois'}</p>
       </div>
       <div className="shrink-0 text-right text-sm tabular-nums leading-tight">
         <span className="block font-medium">{r.preco_avaliado != null ? fmtBRL(r.preco_avaliado) : '—'}</span>

@@ -476,7 +476,7 @@ export default function PromocaoDetalhe() {
 
 /** Cartões abaixo de `md` — a DataTable estoura a largura e some preço/líquido/markup no scroll horizontal. */
 function ListaMobile({ linhas, onAbrir, podeSelecionar, selecionados, onToggle, simInfo, participando, campanha }: {
-  participando: boolean; campanha: Pick<Promocao, 'status'> | null;
+  participando: boolean; campanha: Pick<Promocao, 'status' | 'tipo'> | null;
   linhas: ItemPromocao[]; onAbrir: (r: ItemPromocao) => void;
   simInfo: (r: ItemPromocao) => { aviso: string | null } | undefined;
   podeSelecionar: boolean; selecionados: Set<string>; onToggle: (id: string) => void;

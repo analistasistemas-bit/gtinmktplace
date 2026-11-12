@@ -167,12 +167,16 @@ describe('agruparParticipacoes', () => {
 // Black Friday 12/11: adesão com a campanha já ativa fica `pending` até o ML ativar (horas) — não é "começa depois".
 describe('aguardandoMl', () => {
   it('item pending em campanha ativa → aguardando o ML', () => {
-    expect(aguardandoMl({ status: 'pending' }, { status: 'started' })).toBe(true);
+    expect(aguardandoMl({ status: 'pending' }, { status: 'started', tipo: 'DEAL' })).toBe(true);
   });
   it('item pending em campanha futura → não (começa depois)', () => {
-    expect(aguardandoMl({ status: 'pending' }, { status: 'pending' })).toBe(false);
+    expect(aguardandoMl({ status: 'pending' }, { status: 'pending', tipo: 'DEAL' })).toBe(false);
+  });
+  it('Relâmpago pending em campanha ativa → não (horário agendado)', () => {
+    expect(aguardandoMl({ status: 'pending' }, { status: 'started', tipo: 'SMART_LIGHTNING' })).toBe(false);
+    expect(aguardandoMl({ status: 'pending' }, { status: 'started', tipo: 'LIGHTNING' })).toBe(false);
   });
   it('item started → não', () => {
-    expect(aguardandoMl({ status: 'started' }, { status: 'started' })).toBe(false);
+    expect(aguardandoMl({ status: 'started' }, { status: 'started', tipo: 'DEAL' })).toBe(false);
   });
 });
