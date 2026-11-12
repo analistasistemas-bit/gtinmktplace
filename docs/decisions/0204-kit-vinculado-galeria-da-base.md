@@ -21,3 +21,4 @@ O ADR-0200 (adendo 12/11, decisão 6) diz que a publicação comum "não leva ga
 - `_shared/` muda (`ml/publicar.ts`, `canais/contrato.ts`, `canais/mercado-livre.ts`, `user-products/publicar-familia-up.ts`; `montar-canonico` não): redeploy de todas as edges que os importam e conferir a versão.
 - UPDATE nunca reenvia galeria (o PUT com `pictures` reescreve o anúncio).
 - Resultado incerto do POST (timeout) segue o retry atual da publicação comum; a galeria nova não agrava o risco de duplicar.
+- `unavailable` esgotado na rota UP zera a galeria sem limpar o cache; se a culpada for a capa, o operador precisa de dois Reenviar até recuperar (aceito).
