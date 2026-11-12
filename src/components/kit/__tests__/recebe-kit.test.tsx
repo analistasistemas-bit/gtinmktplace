@@ -32,15 +32,15 @@ function tarifa(preco: number, frete: number, aliquotaPct: number): Tarifa {
 const valor = (n: number, patch: Partial<KitPreviewValue> = {}): KitPreviewValue =>
   ({ ...valorInicialPreview(BASE, 't', 'd', n), preco: 100, ...patch });
 
-function renderRecebe(n: number, value: KitPreviewValue, base: BaseParaKit = BASE, onPodeSeguir = vi.fn()) {
+function renderRecebe(n: number, value: KitPreviewValue, base: BaseParaKit = BASE, onPodeSeguir = vi.fn(), categoria: string | null = base.categoriaMlId) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const ui = (v: KitPreviewValue, nn = n) => (
+  const ui = (v: KitPreviewValue, cat: string | null = categoria) => (
     <QueryClientProvider client={qc}>
-      <RecebeKit n={nn} base={base} value={v} categoriaMlId="MLB1" onPodeSeguir={onPodeSeguir} />
+      <RecebeKit n={n} base={base} value={v} categoriaMlId={cat} onPodeSeguir={onPodeSeguir} />
     </QueryClientProvider>
   );
   const r = render(ui(value));
-  return { ...r, mudar: (v: KitPreviewValue) => r.rerender(ui(v)), onPodeSeguir };
+  return { ...r, mudar: (v: KitPreviewValue, cat?: string | null) => r.rerender(ui(v, cat)), onPodeSeguir };
 }
 
 describe('RecebeKit', () => {
@@ -83,16 +83,56 @@ describe('RecebeKit', () => {
     );
   });
 
-  it('(d) prejuízo exige "Seguir mesmo assim"; mudar o preço desmarca', async () => {
-    // custo 5×2 = 10; recebe com preço 25: 25 - 3 - 10 - 2 = 10 -> lucro 0; preço 20: 20-2.4-10-1.6=6 -> prejuízo
+  it('(d) prejuízo exige "Seguir mesmo assim"; mudar o preço (após 500 ms) desmarca', async () => {
+    // custo 5×2 = 10; preço 20: 20-2.4-10-1.6 = 6 -> prejuízo
     const { onPodeSeguir, mudar } = renderRecebe(2, valor(2, { preco: 20 }));
     const check = await screen.findByLabelText('Seguir mesmo assim, kit de 2 unidades');
     expect(onPodeSeguir).toHaveBeenLastCalledWith(2, false);
     await userEvent.click(check);
     await waitFor(() => expect(onPodeSeguir).toHaveBeenLastCalledWith(2, true));
+    vi.useFakeTimers();
     mudar(valor(2, { preco: 21 }));
-    await waitFor(() => expect(onPodeSeguir).toHaveBeenLastCalledWith(2, false));
     expect(onPodeSeguir).toHaveBeenLastCalledWith(2, false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+    expect(onPodeSeguir).toHaveBeenLastCalledWith(2, false);
+    expect(screen.getByLabelText('Seguir mesmo assim, kit de 2 unidades')).not.toBeChecked();
+  });
+
+  it('(d3) mudar dimensão ou categoria invalida a confirmação', async () => {
+    const { onPodeSeguir, mudar } = renderRecebe(2, valor(2, { preco: 20 }));
+    const marcar = async () => {
+      await userEvent.click(await screen.findByLabelText('Seguir mesmo assim, kit de 2 unidades'));
+      await waitFor(() => expect(onPodeSeguir).toHaveBeenLastCalledWith(2, true));
+    };
+    await marcar();
+    mudar(valor(2, { preco: 20, alturaCm: 30 }));
+    await waitFor(() => expect(onPodeSeguir).toHaveBeenLastCalledWith(2, false));
+    await waitFor(() => expect(screen.getByLabelText('Seguir mesmo assim, kit de 2 unidades')).not.toBeChecked());
+    await marcar();
+    mudar(valor(2, { preco: 20, alturaCm: 30 }), 'MLB2');
+    await waitFor(() => expect(onPodeSeguir).toHaveBeenLastCalledWith(2, false));
+    await waitFor(() => expect(screen.getByLabelText('Seguir mesmo assim, kit de 2 unidades')).not.toBeChecked());
+  });
+
+  it('(e2) custo 0, peso 0 e base sem categoria bloqueiam sem checkbox e sem cotar', async () => {
+    const casos: [Partial<BaseParaKit>, RegExp][] = [
+      [{ custo: 0 }, /cadastre custo\/peso na base/],
+      [{ pesoGramas: 0 }, /cadastre custo\/peso na base/],
+      [{ categoriaMlId: null }, /não tem categoria/],
+    ];
+    for (const [patch, texto] of casos) {
+      const r = renderRecebe(2, valor(2), { ...BASE, ...patch });
+      expect(await screen.findByText(texto)).toBeInTheDocument();
+      expect(screen.queryByLabelText(/Seguir mesmo assim/)).toBeNull();
+      expect(r.onPodeSeguir).toHaveBeenLastCalledWith(2, false);
+      cleanup();
+    }
+    // override de categoria não destrava base sem categoria
+    const r = renderRecebe(2, valor(2), { ...BASE, categoriaMlId: null }, vi.fn(), 'MLB9');
+    expect(await screen.findByText(/não tem categoria/)).toBeInTheDocument();
+    expect(r.onPodeSeguir).toHaveBeenLastCalledWith(2, false);
+    expect(calcularTarifaML).not.toHaveBeenCalled();
   });
 
   it('(d2) sem alíquota confirmada exige confirmação e avisa', async () => {

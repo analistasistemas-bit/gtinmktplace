@@ -39,7 +39,10 @@ export function RecebeKit({ n, base, value, categoriaMlId, onPodeSeguir }: {
   const emDia = centavos(cotado.preco) === centavos(preco) && cotado.alturaCm === alturaCm
     && cotado.larguraCm === larguraCm && cotado.comprimentoCm === comprimentoCm;
 
-  const semBase = base.custo == null || base.pesoGramas == null;
+  // Mesma recusa da edge (base_sem_custo / base_sem_peso): null ou <= 0 não tem conta.
+  const semBase = !(base.custo != null && base.custo > 0) || !(base.pesoGramas != null && base.pesoGramas > 0);
+  // A edge recusa base_sem_categoria antes de aplicar o override: a categoria trocada não destrava.
+  const semCategoriaBase = !base.categoriaMlId;
   const custo = semBase ? null : base.custo! * n;
   const peso = base.pesoGramas != null ? base.pesoGramas * n : null;
   const dimsOk = [alturaCm, larguraCm, comprimentoCm].every(medidaOk);
@@ -54,7 +57,7 @@ export function RecebeKit({ n, base, value, categoriaMlId, onPodeSeguir }: {
       { alturaCm: cotado.alturaCm, larguraCm: cotado.larguraCm, comprimentoCm: cotado.comprimentoCm, pesoGramas: peso },
       aliquotaPct ?? 0,
     ),
-    enabled: !!categoria && cotado.preco > 0 && dimsCotadasOk && !semBase && aliquotasQ.isFetched,
+    enabled: !!categoria && !semCategoriaBase && cotado.preco > 0 && dimsCotadasOk && !semBase && aliquotasQ.isFetched,
     staleTime: 6 * 60 * 60 * 1000,
     retry: false,
   });
@@ -67,7 +70,7 @@ export function RecebeKit({ n, base, value, categoriaMlId, onPodeSeguir }: {
   });
 
   const erroLeitura = aliquotasQ.isError;
-  const estado = erroLeitura && sim.estado !== 'sem_preco' && sim.estado !== 'sem_custo' ? 'indisponivel'
+  const estado = semCategoriaBase ? 'sem_categoria' : erroLeitura && sim.estado !== 'sem_preco' && sim.estado !== 'sem_custo' ? 'indisponivel'
     : aliquotasQ.isLoading && sim.estado !== 'sem_preco' && sim.estado !== 'sem_custo' ? 'calculando' : sim.estado;
   const precisaConfirmar = (erroLeitura && estado === 'indisponivel') || sim.precisaConfirmar;
   const semAliquota = sim.semAliquota && (estado === 'ok' || estado === 'prejuizo' || estado === 'indisponivel') && !erroLeitura;
@@ -75,14 +78,14 @@ export function RecebeKit({ n, base, value, categoriaMlId, onPodeSeguir }: {
   // A confirmação vale só para a conta exibida: mudou preço, medidas, estado ou lucro, vale de novo no
   // mesmo render (um effect de reset deixaria um onPodeSeguir(true) escapar com a conta nova).
   const chaveConta = [
-    centavos(preco), alturaCm, larguraCm, comprimentoCm, estado, sim.semAliquota, erroLeitura,
+    centavos(preco), alturaCm, larguraCm, comprimentoCm, categoria, estado, sim.semAliquota, erroLeitura,
     sim.resumo ? centavos(sim.resumo.lucro) : '-',
   ].join('|');
   const [confirmadoEm, setConfirmadoEm] = useState<string | null>(null);
   const [chaveVista, setChaveVista] = useState(chaveConta);
   if (chaveVista !== chaveConta) { setChaveVista(chaveConta); setConfirmadoEm(null); }
   const confirmado = confirmadoEm === chaveConta;
-  const bloqueado = estado === 'sem_custo' || estado === 'sem_preco';
+  const bloqueado = estado === 'sem_custo' || estado === 'sem_preco' || estado === 'sem_categoria';
   const pode = estado !== 'calculando' && !bloqueado && (!precisaConfirmar || confirmado);
   useEffect(() => { onPodeSeguir(n, pode); }, [n, pode, onPodeSeguir]);
 
@@ -95,6 +98,9 @@ export function RecebeKit({ n, base, value, categoriaMlId, onPodeSeguir }: {
         <p className="text-xs text-danger">
           Falta custo ou peso no produto-base: cadastre custo/peso na base antes de criar o kit. O lucro não é calculado.
         </p>
+      )}
+      {estado === 'sem_categoria' && (
+        <p className="text-xs text-danger">O produto-base não tem categoria: defina antes de criar o kit.</p>
       )}
       {estado === 'indisponivel' && (
         <p className="text-xs text-danger">
