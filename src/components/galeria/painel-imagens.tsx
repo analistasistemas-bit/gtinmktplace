@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import { BorderTrail } from '@/components/ui/border-trail';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Skeleton } from '@/components/ui/skeleton';
+import { CarregandoMarca } from '@/components/ui/carregando-marca';
 import { fmtBRL } from '@/lib/formato';
 import {
   aprovarFinal, confirmarExibicao, enviarFinal, gerarImagens, listarImagens, mensagemErro, prepararUploadFinal, reportarInvalida,
@@ -298,9 +298,7 @@ export function PainelImagens({ mlItemId, cor, aoLista, aoFalha }: {
       <div className="space-y-3">
         {erroLista && <p role="alert" className="text-sm text-destructive">{erroLista}</p>}
         {!erroLista && (
-          <div aria-busy="true" aria-label="Carregando as imagens" className="grid grid-cols-2 gap-3 md:grid-cols-4 2xl:grid-cols-7">
-            {Array.from({ length: 7 }, (_, k) => <Skeleton key={k} className="aspect-[1200/1540] h-auto w-full rounded-xl" />)}
-          </div>
+          <CarregandoMarca rotulo="Carregando as imagens" mensagem="Abrindo a galeria…" atrasoMs={0} />
         )}
       </div>
     );

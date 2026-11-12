@@ -119,6 +119,12 @@ describe('GaleriaIA: tela única', () => {
     expect(api.listarImagens).toHaveBeenCalledWith('MLB1');
   });
 
+  it('enquanto a lista não chega: logo pulsando no lugar dos cartões', async () => {
+    api.listarImagens.mockReturnValue(new Promise(() => {}));
+    abrir();
+    expect(await screen.findByRole('status', { name: /carregando as imagens/i })).toBeInTheDocument();
+  });
+
   it('cabeçalho tem atalho para o anúncio no ML', async () => {
     api.listarImagens.mockResolvedValue(ok(lista()));
     abrir();
