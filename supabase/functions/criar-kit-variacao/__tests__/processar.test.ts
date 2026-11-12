@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  adicionarAoKit, criarKitVariacao, pedidoHash, type AdicionarKitInput, type DepsAdicao, type BaseKit, type CriarKitVariacaoInput, type DepsCriarKitVariacao, type ResultadoRpcKit,
+  adicionarAoKit, criarKitVariacao, galeriaCanonica, pedidoHash, type AdicionarKitInput, type DepsAdicao, type BaseKit, type CriarKitVariacaoInput, type DepsCriarKitVariacao, type ResultadoRpcKit,
 } from '../processar.ts';
 import type { OfertaUP } from '../../_shared/kit-variacao/ml-oferta.ts';
 import type { AtributoSchema } from '../../_shared/categoria/schema.ts';
@@ -509,7 +509,7 @@ function cenarioAdicao() {
     existente: null as { kitId: string; transferenciaId: string; pedidoHash: string } | null,
     variacoesKit: [
       { codigo: 'K-PB-M', cor: 'Preto e Branco', tamanho: 'M', imagemPath: 'ORG/kits/pb-antiga.jpg', pictureId: 'PIC-OLD' },
-    ],
+    ] as Array<{ codigo: string; cor: string; tamanho: string; imagemPath: string | null; pictureId: string | null; galeria?: Array<{ id: string; item: string }> }>,
     vinculosKit: [{ sku: 'K-PB-M', item_externo_id: 'MLB-K-PB-M', user_product_id: 'UP-K-PB-M', catalog_listing_id: null }] as
       Array<{ sku: string; item_externo_id: string | null; user_product_id: string | null; catalog_listing_id: string | null }>,
     rpc: { ok: true, kit_id: 'KIT1', transferencia_id: 'T9' } as ResultadoRpcKit,
@@ -667,6 +667,60 @@ function comGaleria(c: ReturnType<typeof cenario>, proposta = PROPOSTA) {
   return chamadas;
 }
 const galeriaGravada = (c: ReturnType<typeof cenario>) => c.s.variacoesGravadas.map((v) => [v.tamanho, v.galeria_ml_fotos]);
+
+describe('adicionarAoKit com galeria das peças', () => {
+  it('tamanho novo de combinação publicada copia a galeria da variação irmã, sem ler o ML', async () => {
+    const c = cenarioAdicao();
+    const chamadas = comGaleria(c);
+    (c.a.variacoesKit[0] as Record<string, unknown>).galeria = [FG('P2', 'MLB-P-M'), FG('B3', 'MLB-B-M')];
+    const r = await adicionarAoKit(c.deps, montarMais({
+      quantidades: [{ cores: ['Branco', 'Preto'], tamanho: 'G', quantidade: 1 }], galeria: { 'Preto e Branco': ['P2', 'B3', 'P4'] },
+    }));
+    expect(r).toMatchObject({ ok: true });
+    expect(chamadas).toEqual([]);
+    expect((c.a.gravacoes[0].novos[0] as Record<string, unknown>).variacao).toMatchObject({
+      galeria_ml_fotos: [FG('P2', 'MLB-P-M'), FG('B3', 'MLB-B-M')],
+    });
+  });
+
+  it('combinação nova: proposta ∩ pedido, na ordem da proposta, com a peça do tamanho pedido', async () => {
+    const c = cenarioAdicao();
+    const chamadas = comGaleria(c, [FG('P2', 'MLB-P-M'), FG('M3', 'MLB-M-M'), FG('P4', 'MLB-P-M')]);
+    const r = await adicionarAoKit(c.deps, montarMais({
+      quantidades: [{ cores: ['Preto', 'Marrom'], tamanho: 'M', quantidade: 1 }],
+      fotos: { 'Preto e Marrom': 'ORG/kits/pm.jpg' }, galeria: { 'Preto e Marrom': ['P4', 'P2', 'ZZ'] },
+    }));
+    expect(r).toMatchObject({ ok: true });
+    expect(chamadas[0].pecas).toEqual([{ cor: 'Preto', itemId: 'MLB-P-M' }, { cor: 'Marrom', itemId: 'MLB-M-M' }]);
+    expect((c.a.gravacoes[0].novos[0] as Record<string, unknown>).variacao).toMatchObject({
+      galeria_ml_fotos: [FG('P2', 'MLB-P-M'), FG('P4', 'MLB-P-M')],
+    });
+  });
+
+  it('leitura indisponível: a combinação nova entra só com a foto do kit e o aviso volta', async () => {
+    const c = cenarioAdicao();
+    c.deps.lerGaleria = async () => ({ fotos: [], avisos: ['Fotos das peças indisponíveis (rede).'], indisponivel: true });
+    const r = await adicionarAoKit(c.deps, montarMais({
+      quantidades: [{ cores: ['Preto', 'Marrom'], tamanho: 'M', quantidade: 1 }],
+      fotos: { 'Preto e Marrom': 'ORG/kits/pm.jpg' }, galeria: { 'Preto e Marrom': ['P2'] },
+    }));
+    expect(r).toMatchObject({ ok: true });
+    expect((c.a.gravacoes[0].novos[0] as Record<string, unknown>).variacao).toMatchObject({ galeria_ml_fotos: [] });
+    expect((r as { avisos?: string[] }).avisos?.join(' ')).toMatch(/indisponíveis/);
+  });
+
+  it('a galeria entra no hash do pedido (outra galeria na mesma chave recusa) e pedido sem galeria não muda', async () => {
+    const c = cenarioAdicao();
+    comGaleria(c);
+    const base = montarMais({ quantidades: [{ cores: ['Preto', 'Marrom'], tamanho: 'M', quantidade: 1 }], fotos: { 'Preto e Marrom': 'ORG/kits/pm.jpg' } });
+    await adicionarAoKit(c.deps, { ...base, galeria: { 'Preto e Marrom': ['P2'] } });
+    c.a.existente = { kitId: 'KIT1', transferenciaId: 'T9', pedidoHash: c.a.gravacoes[0].hash };
+    expect(await adicionarAoKit(c.deps, { ...base, galeria: { 'Preto e Marrom': ['P2'] } })).toMatchObject({ ok: true, existente: true });
+    expect(await adicionarAoKit(c.deps, { ...base, galeria: { 'Preto e Marrom': ['P2', 'P4'] } })).toMatchObject({ ok: false, motivo: 'pedido_diferente' });
+    expect(galeriaCanonica(undefined)).toEqual([]);
+    expect(galeriaCanonica({ 'Preto e Marrom': [] })).toEqual([]);
+  });
+});
 
 describe('criarKitVariacao com galeria das peças', () => {
   it('sem galeria no pedido: não lê o ML, grava lista vazia e o hash é o de sempre', async () => {

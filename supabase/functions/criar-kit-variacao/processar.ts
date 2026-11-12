@@ -131,6 +131,8 @@ export interface AdicionarKitInput {
   quantidades: { cores: string[]; tamanho: string; quantidade: number }[];
   /** Foto por rótulo da combinação nova. Tamanho novo de combinação publicada reaproveita a foto dela. */
   fotos: Record<string, string>;
+  /** Galeria das peças (ids mantidos) da combinação nova; tamanho novo de combinação publicada copia a lista da irmã. */
+  galeria?: Record<string, string[]>;
   chaveCadastro: string;
 }
 
@@ -144,7 +146,7 @@ export interface KitParaAdicionar {
   preco: number;
   skus: Array<{ codigo: string; cores: string[]; tamanho: string; rotulo: string }>;
   /** Variações da família do kit (a foto de combinação publicada vale para um tamanho novo dela). */
-  variacoes: Array<{ codigo: string; cor: string; tamanho: string; imagemPath: string | null; pictureId: string | null }>;
+  variacoes: Array<{ codigo: string; cor: string; tamanho: string; imagemPath: string | null; pictureId: string | null; galeria?: FotoPeca[] }>;
   /** Vínculo ML dos SKUs do kit (raiz do PAI do kit). */
   vinculos: Array<{ sku: string; item_externo_id: string | null; user_product_id: string | null; catalog_listing_id: string | null }>;
 }
@@ -711,6 +713,7 @@ export async function adicionarAoKit(deps: DepsCriarKitVariacao, input: Adiciona
     input.kitId,
     pedidos.map((p) => [conjunto(p.cores), p.tamanho, p.quantidade]).sort((a, b) => String(a).localeCompare(String(b))),
     Object.entries(input.fotos ?? {}).sort(([a], [b]) => a.localeCompare(b)),
+    ...galeriaCanonica(input.galeria),
   ]);
   const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonico)))]
     .map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -798,6 +801,11 @@ export async function adicionarAoKit(deps: DepsCriarKitVariacao, input: Adiciona
 
   // Códigos novos (o PAI reservado sobra). A linha da variação vai para a RPC: variação, SKU de kit, composição e
   // transferência nascem juntos, sem janela de variação na família publicada sem SKU de kit.
+  // Galeria: tamanho novo de combinação publicada copia a lista da irmã; combinação nova recalcula (cliente só remove).
+  const irmas = new Map<string, FotoPeca[]>();
+  for (const v of kit.variacoes) if (v.galeria && kit.skus.some((s) => s.codigo === v.codigo) && !irmas.has(v.cor)) irmas.set(v.cor, v.galeria);
+  const galerias = await resolverGalerias(deps, novas, input.galeria, base, familia.categoria_ml_id as string, irmas);
+
   const reserva = novas.length > 0 ? await deps.reservarCodigos(novas.length + 1) : null;
   const codigos = [...(reserva?.codigos ?? [])];
   const novos = novas.map((c, i) => {
@@ -808,6 +816,7 @@ export async function adicionarAoKit(deps: DepsCriarKitVariacao, input: Adiciona
       variacao: montarVariacaoKitVariacao(c, {
         familiaId: kit.familiaKitId, codigo: codigos[i], preco: kit.preco, foto: f.path,
         pictureId: f.pictureId ?? pictureIds.get(f.path)!, pecas: kit.pecasPorKit,
+        galeria: galerias.porRotulo.get(c.rotulo),
       }),
     };
   });
@@ -831,5 +840,6 @@ export async function adicionarAoKit(deps: DepsCriarKitVariacao, input: Adiciona
   return {
     ok: true, kitId: kit.kitId, transferenciaId: r.transferencia_id, existente: !!r.existente, versao: r.versao,
     skus: novas.map((c, i) => ({ codigo: codigos[i], rotulo: c.rotulo, tamanho: c.tamanho, quantidade: c.quantidade })),
+    ...(galerias.avisos.length > 0 ? { avisos: galerias.avisos } : {}),
   };
 }
