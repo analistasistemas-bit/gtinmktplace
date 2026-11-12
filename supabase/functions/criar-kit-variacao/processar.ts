@@ -18,7 +18,7 @@ import { removerCorDoSlot } from '../_shared/cor/sem-atributo.ts';
 import { kitLigado } from '../_shared/kit-variacao/politica.ts';
 import type { OfertaUP } from '../_shared/kit-variacao/ml-oferta.ts';
 import { normalizarCombinacao, rotuloCombinacao } from '../_shared/kit-variacao/combinacoes.ts';
-import type { FotoPeca } from '../_shared/kit-variacao/galeria-pecas.ts';
+import { pecaDaCor, type FotoPeca } from '../_shared/kit-variacao/galeria-pecas.ts';
 import type { PecaOrigem } from '../_shared/kit-variacao/galeria-leitura.ts';
 import { STRIP_FAMILIA_KIT, STRIP_VARIACAO_KIT } from '../criar-kit-vinculado/processar.ts';
 
@@ -662,9 +662,8 @@ async function resolverGalerias(
     const ids = pedido?.[rotulo];
     if (!Array.isArray(ids) || ids.length === 0 || !deps.lerGaleria) continue;
     const c = combinacoes.find((x) => x.rotulo === rotulo)!;
-    const pecas = c.cores.map((cor, i) => ({
-      cor, itemId: base.vinculos.find((v) => v.sku === texto(c.componentes[i]?.codigo))?.item_externo_id ?? '',
-    }));
+    const doBase = base.variacoes.map((v) => ({ codigo: texto(v.codigo), cor: texto(v.cor) }));
+    const pecas = c.cores.map((cor) => ({ cor, itemId: pecaDaCor(doBase, base.vinculos, texto(cor)) ?? '' }));
     if (pecas.some((p) => !p.itemId)) { avisos.push(`${rotulo}: peça sem anúncio no Mercado Livre; só a foto do kit.`); continue; }
     try {
       const proposta = await deps.lerGaleria(pecas, categoriaId);

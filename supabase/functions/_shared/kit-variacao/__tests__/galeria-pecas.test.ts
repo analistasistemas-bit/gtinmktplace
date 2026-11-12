@@ -1,5 +1,21 @@
 import { describe, it, expect } from 'vitest';
-import { montarGaleriaKit, type CorFotos } from '../galeria-pecas.ts';
+import { montarGaleriaKit, pecaDaCor, type CorFotos } from '../galeria-pecas.ts';
+
+describe('pecaDaCor', () => {
+  const vs = [{ codigo: '00000143', cor: 'Preto' }, { codigo: '00000141', cor: 'Preto' }, { codigo: '00000147', cor: 'Caqui' }];
+  const vinc = [
+    { sku: '00000143', item_externo_id: 'MLB-G' }, { sku: '00000141', item_externo_id: 'MLB-P' }, { sku: '00000147', item_externo_id: 'MLB-C' },
+  ];
+  it('escolhe o menor código da cor que tenha item no ML (só depende da base, não do tamanho pedido)', () => {
+    expect(pecaDaCor(vs, vinc, 'Preto')).toBe('MLB-P');
+    expect(pecaDaCor(vs, vinc, 'Caqui')).toBe('MLB-C');
+  });
+  it('pula SKU sem item e devolve null se nenhum tem', () => {
+    expect(pecaDaCor(vs, [{ sku: '00000143', item_externo_id: 'MLB-G' }, { sku: '00000141', item_externo_id: null }], 'Preto')).toBe('MLB-G');
+    expect(pecaDaCor(vs, [], 'Preto')).toBeNull();
+    expect(pecaDaCor(vs, vinc, 'Azul')).toBeNull();
+  });
+});
 
 // Peça com n fotos: `<cor><i>` do item `MLB-<cor>`; a posição 0 é a capa da peça.
 const peca = (cor: string, n: number): CorFotos => ({

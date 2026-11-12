@@ -683,7 +683,7 @@ describe('adicionarAoKit com galeria das peças', () => {
     });
   });
 
-  it('combinação nova: proposta ∩ pedido, na ordem da proposta, com a peça do tamanho pedido', async () => {
+  it('combinação nova: proposta ∩ pedido, na ordem da proposta, com a peça de menor código de cada cor', async () => {
     const c = cenarioAdicao();
     const chamadas = comGaleria(c, [FG('P2', 'MLB-P-M'), FG('M3', 'MLB-M-M'), FG('P4', 'MLB-P-M')]);
     const r = await adicionarAoKit(c.deps, montarMais({
@@ -691,7 +691,7 @@ describe('adicionarAoKit com galeria das peças', () => {
       fotos: { 'Preto e Marrom': 'ORG/kits/pm.jpg' }, galeria: { 'Preto e Marrom': ['P4', 'P2', 'ZZ'] },
     }));
     expect(r).toMatchObject({ ok: true });
-    expect(chamadas[0].pecas).toEqual([{ cor: 'Preto', itemId: 'MLB-P-M' }, { cor: 'Marrom', itemId: 'MLB-M-M' }]);
+    expect(chamadas[0].pecas).toEqual([{ cor: 'Preto', itemId: 'MLB-P-G' }, { cor: 'Marrom', itemId: 'MLB-M-M' }]);
     expect((c.a.gravacoes[0].novos[0] as Record<string, unknown>).variacao).toMatchObject({
       galeria_ml_fotos: [FG('P2', 'MLB-P-M'), FG('P4', 'MLB-P-M')],
     });
@@ -734,12 +734,12 @@ describe('criarKitVariacao com galeria das peças', () => {
     expect(await pedidoHash(pedido(), combos)).toBe('9bc14f63e9b7d0b1b1b132eea3141556d935cd5d3d1a4ac2ecba35261d2aae06');   // medido antes da galeria: retomada pós-deploy não vira pedido_diferente
   });
 
-  it('galeria ligada: lê a peça de cada cor (1º tamanho) com a categoria e grava a mesma lista em todos os tamanhos', async () => {
+  it('galeria ligada: lê a peça de menor código de cada cor com a categoria e grava a mesma lista em todos os tamanhos', async () => {
     const c = cenario();
     const chamadas = comGaleria(c);
     const r = await criarKitVariacao(c.deps, pedido({ galeria: { 'Preto e Branco': ['P2', 'B3', 'P4'] } }));
     expect(r).toMatchObject({ ok: true });
-    expect(chamadas).toEqual([{ pecas: [{ cor: 'Preto', itemId: 'MLB-P-M' }, { cor: 'Branco', itemId: 'MLB-B-M' }], categoria: 'MLB3112' }]);
+    expect(chamadas).toEqual([{ pecas: [{ cor: 'Preto', itemId: 'MLB-P-G' }, { cor: 'Branco', itemId: 'MLB-B-G' }], categoria: 'MLB3112' }]);
     expect(galeriaGravada(c)).toEqual([['M', PROPOSTA], ['G', PROPOSTA]]);
   });
 

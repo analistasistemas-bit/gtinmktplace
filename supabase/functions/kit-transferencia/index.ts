@@ -22,6 +22,9 @@ import { enfileirarSincronizacaoFiscal } from '../_shared/queue.ts';
 import { talvezFinalizarLote } from '../_shared/lote/finalizar.ts';
 import { alertarZeradosConfirmados } from '../sincronizar-estoque/processar.ts';
 import { avisarFimTransferencia, comLinkDoKit } from '../_shared/kit-variacao/aviso-fim.ts';
+import { revalidarGaleria } from '../_shared/kit-variacao/galeria-leitura.ts';
+import { comGaleria, prepararGaleria, tratarRecusaDeFoto } from '../_shared/kit-variacao/galeria-criar.ts';
+import { fotosDaColuna } from '../_shared/kit-variacao/galeria-coluna.ts';
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -146,7 +149,14 @@ function deps(orgId: string, transferenciaId: string): DepsSaga {
         const { montar } = await prepararPayloadUP({
           admin, ctx: ctxCanal, conexao: cx, familia: familia as never, anuncio, categoriaId, aceitaEmptyGtin,
         });
-        const payload = montar({ ...anuncio.variacoes[0], estoque: quantidade });
+        // ADR-0200 (adendo 12/11): galeria das peças. Relida no ML agora (moderação entre o cadastro e o CREATE); o que não
+        // confere sai e o item nasce só com a foto do kit. Nunca trava a criação.
+        const preparada = await prepararGaleria(fotosDaColuna(variacao.galeria_ml_fotos) ?? [], (fs) => revalidarGaleria(token, fs, f));
+        if (preparada.aviso) {
+          await notificarCategoria(admin, orgId, 'estoque', `Kit ${codigo}: ${preparada.aviso}`, { chave: `kit_galeria:${codigo}:reduzida` })
+            .catch((e: unknown) => console.warn('kit_galeria_aviso_falhou', String(e)));
+        }
+        const payload = comGaleria(montar({ ...anuncio.variacoes[0], estoque: quantidade }), preparada.fotos);
         return async () => {
           const resp = await f('https://api.mercadolibre.com/items', {
             method: 'POST',
@@ -154,7 +164,18 @@ function deps(orgId: string, transferenciaId: string): DepsSaga {
             body: JSON.stringify(payload),
           });
           const corpo = await resp.json().catch(() => ({}));
-          if (!resp.ok) throw new MLApiError(resp.status, humanizarErroML(resp.status, corpo));
+          if (!resp.ok) {
+            // Recusa de foto da galeria: zera a lista deste SKU e sobe o 4xx; a saga recria só com a foto do kit.
+            await tratarRecusaDeFoto({ status: resp.status, corpo, galeriaUsada: preparada.fotos.length > 0 }, {
+              zerar: async () => {
+                const { error } = await admin.from('variacoes').update({ galeria_ml_fotos: [] })
+                  .eq('id', variacao.id as string).eq('org_id', orgId);
+                if (error) throw new Error(error.message);
+              },
+              avisar: async (texto) => { await notificarCategoria(admin, orgId, 'estoque', `Kit ${codigo}: ${texto}`, { chave: `kit_galeria:${codigo}:recusada` }); },
+            });
+            throw new MLApiError(resp.status, humanizarErroML(resp.status, corpo));
+          }
           // Sem o UP lido, lança sem status: a saga trata como incerto e a retomada adota pela busca.
           const item = await buscarItemUP(fetchLike, { accessToken: token }, corpo.id);
           if (!item?.userProductId) throw new Error(`item ${corpo.id} criado, user_product_id ainda não lido`);

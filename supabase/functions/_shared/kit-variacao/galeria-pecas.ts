@@ -6,6 +6,21 @@ export interface FotoPeca { id: string; item: string }
 export interface CorFotos { cor: string; fotos: FotoPeca[] }
 
 /**
+ * Anúncio da peça que serve de fonte para a cor: a variação da base com menor código que tenha item no ML. Depende só da
+ * base (não do tamanho pedido), então a prévia e a criação escolhem a mesma peça e os ids batem.
+ */
+export function pecaDaCor(
+  variacoes: Array<{ codigo: string; cor: string }>, vinculos: Array<{ sku: string; item_externo_id: string | null }>, cor: string,
+): string | null {
+  const codigos = variacoes.filter((v) => v.cor === cor).map((v) => v.codigo).sort();
+  for (const codigo of codigos) {
+    const item = vinculos.find((x) => x.sku === codigo)?.item_externo_id;
+    if (item) return item;
+  }
+  return null;
+}
+
+/**
  * Foto k da galeria (k = 0, 1, 2…) = imagem k+2 da peça da cor `cores[k % n]` (a imagem 1 é a capa da peça). Peça sem
  * a imagem daquele slot, ou foto já usada, pula a vez; a vez das outras cores não muda. O total com a foto do kit
  * (posição 1 do anúncio) não passa de `limite`, que vem da categoria no ML: `limite` ilegível ou menor que 2 não

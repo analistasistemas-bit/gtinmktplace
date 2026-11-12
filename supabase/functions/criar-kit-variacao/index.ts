@@ -19,6 +19,8 @@ import { enfileirarSaga } from '../_shared/queue.ts';
 import { EMBED_MODULOS } from '../_shared/kit-variacao/politica.ts';
 import { lerOferta } from '../_shared/kit-variacao/ml-oferta.ts';
 import { AVISO_SELETOR_ML } from '../_shared/kit-variacao/combinacoes.ts';
+import { galeriaDasPecas, lerLimiteFotos } from '../_shared/kit-variacao/galeria-leitura.ts';
+import { fotosDaColuna, parseGaleria } from '../_shared/kit-variacao/galeria-coluna.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import {
   adicionarAoKit, criarKitVariacao, type AdicionarKitInput, type CriarKitVariacaoInput,
@@ -74,11 +76,14 @@ function portas(admin: SupabaseClient, orgId: string, userId: string): DepsCriar
       const f = await ler(admin.from('familias').select('id, lote_id, codigo_pai, kit_variacao_pedido').eq('org_id', orgId)
         .eq('chave_cadastro', chave).maybeSingle(), 'cadastro parcial');
       if (!f) return null;
-      const vs = await ler(admin.from('variacoes').select('codigo, cor, tamanho').eq('familia_id', f.id), 'variações do parcial') ?? [];
+      const vs = await ler(admin.from('variacoes').select('codigo, cor, tamanho, galeria_ml_fotos').eq('familia_id', f.id), 'variações do parcial') ?? [];
       return {
         pedidoHash: (f.kit_variacao_pedido as string | null) ?? null,
         familiaId: f.id as string, loteId: f.lote_id as string, codigoPai: f.codigo_pai as string,
-        variacoes: vs.map((v) => ({ codigo: v.codigo as string, cor: v.cor as string | null, tamanho: v.tamanho as string | null })),
+        variacoes: vs.map((v) => ({
+          codigo: v.codigo as string, cor: v.cor as string | null, tamanho: v.tamanho as string | null,
+          galeria: fotosDaColuna(v.galeria_ml_fotos),
+        })),
       };
     },
 
@@ -133,6 +138,13 @@ function portas(admin: SupabaseClient, orgId: string, userId: string): DepsCriar
       const { data, error } = await admin.storage.from('imagens').createSignedUrl(path, 60 * 60 * 2);
       if (error || !data) throw new Error(error?.message ?? 'foto não encontrada');
       return await getConnector('mercado_livre').subirFoto({ getToken: async () => (await ml()).token }, data.signedUrl);
+    },
+
+    // ADR-0200 (adendo 12/11): só leitura no ML, com o token da org. Limite ilegível ⇒ sem galeria (nunca presume 12).
+    async lerGaleria(pecas, categoriaId) {
+      const limite = await lerLimiteFotos(categoriaId);
+      if (limite === null) return { fotos: [], avisos: ['Fotos das peças indisponíveis (limite de fotos da categoria não lido).'], indisponivel: true };
+      return await galeriaDasPecas((await ml()).token, pecas, limite);
     },
 
     async reservarCodigos(qtd) {
@@ -206,7 +218,7 @@ function portas(admin: SupabaseClient, orgId: string, userId: string): DepsCriar
         if (!baseId || !familiaKitId) return null;
         const skus = await ler(admin.from('kit_variacao_skus').select('codigo, cores, tamanho, rotulo_cor')
           .eq('kit_id', kitId).eq('org_id', orgId), 'SKUs do kit') ?? [];
-        const vs = await ler(admin.from('variacoes').select('codigo, cor, tamanho, imagem_path, ml_picture_id')
+        const vs = await ler(admin.from('variacoes').select('codigo, cor, tamanho, imagem_path, ml_picture_id, galeria_ml_fotos')
           .eq('familia_id', familiaKitId), 'variações do kit') ?? [];
         const vinculos = await ler(admin.from('anuncios_externos_itens')
           .select('sku, item_externo_id, user_product_id, catalog_listing_id, anuncios_externos!inner(codigo_pai)')
@@ -217,6 +229,7 @@ function portas(admin: SupabaseClient, orgId: string, userId: string): DepsCriar
           variacoes: vs.map((v) => ({
             codigo: v.codigo as string, cor: String(v.cor ?? ''), tamanho: String(v.tamanho ?? ''),
             imagemPath: (v.imagem_path as string | null) ?? null, pictureId: (v.ml_picture_id as string | null) ?? null,
+            galeria: fotosDaColuna(v.galeria_ml_fotos),
           })),
           vinculos: vinculos.map((v) => ({
             sku: v.sku as string, item_externo_id: v.item_externo_id as string | null,
@@ -243,6 +256,7 @@ function parseAdicionar(body: Linha): AdicionarKitInput | null {
     || (body.fotos != null && typeof body.fotos !== 'object')) return null;
   return {
     kitId: body.kit_id, chaveCadastro: body.chave_cadastro, fotos: (body.fotos ?? {}) as Record<string, string>,
+    galeria: parseGaleria(body.galeria),
     ...(typeof body.versao === 'number' ? { versao: body.versao } : {}),
     quantidades: quantidades.map((q) => ({
       cores: Array.isArray(q.cores) ? q.cores.map(String) : [], tamanho: String(q.tamanho ?? ''), quantidade: Number(q.quantidade),
@@ -263,6 +277,7 @@ function parse(body: Linha): CriarKitVariacaoInput | null {
       cores: Array.isArray(q.cores) ? q.cores.map(String) : [], tamanho: String(q.tamanho ?? ''), quantidade: Number(q.quantidade),
     })),
     titulo: body.titulo, descricao: body.descricao, fotos: body.fotos as Record<string, string>,
+    galeria: parseGaleria(body.galeria),
     soEmKit: body.so_em_kit === true, meta: typeof body.meta === 'number' ? body.meta : 0, chaveCadastro: body.chave_cadastro,
     ...(typeof body.previa_id === 'string' && body.previa_id ? { previaId: body.previa_id } : {}),
     ...(body.listing_type_id != null ? { listingTypeId: body.listing_type_id as CriarKitVariacaoInput['listingTypeId'] } : {}),
