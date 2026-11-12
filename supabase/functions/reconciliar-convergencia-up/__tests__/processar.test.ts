@@ -20,7 +20,12 @@ vi.mock('../../_shared/publicacao/trava-oferta.ts', async (original) => ({
   recusasPorOferta: recusasPorOfertaMock,
 }));
 
+// Fechamento do lote lê e grava `lotes`/`familias`; aqui só importa que a recusa terminal o chame.
+const talvezFinalizarLoteMock = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock('../../_shared/lote/finalizar.ts', () => ({ talvezFinalizarLote: talvezFinalizarLoteMock }));
+
 import { criarPortasConvergencia, listarRaizesTravadas } from '../processar';
+import { reconciliarConvergencia } from '../../_shared/user-products/reconciliar-convergencia';
 
 // Fake admin: fila FIFO por tabela + interceptação de rpc(). Cobre os 2 achados críticos da
 // revisão adversarial (2ª rodada): (1) guard de SKU sem dado fonte falha ANTES de qualquer
@@ -350,16 +355,107 @@ describe('criarPortasConvergencia — resumirComposicao (preservarPublicadas, Co
   });
 
   // Incidente 12/11/2026: a retomada também chama a saga com preservarPublicadas — mesma recusa do worker.
-  it('lote manual com cor desmarcada viva no ML → lança antes da saga (nada é pausado)', async () => {
-    atualizarFamiliaUPMock.mockReset();
-    const { admin } = fakeAdmin({
-      ...filas({ origem: 'manual' }),
-      variacoes: [VARIACOES_OK, [{ codigo: 'X', ml_variation_id: null }]], // 2ª leitura: as desmarcadas
-      anuncios_externos_itens: [[{ sku: 'X', item_externo_id: 'MLB9', retirado: false }]],
+  describe('lote manual com cor desmarcada viva no ML', () => {
+    const MENSAGEM = "UPDATE bloqueado: 1 cor(es) desmarcada(s) já publicada(s) no Mercado Livre (X). Em 'Adicionar variação' "
+      + 'nenhuma cor pode ser desmarcada. Nada foi enviado. Marque todas as cores e reenvie.';
+    const X_DESMARCADA = { codigo: 'X', ml_variation_id: null, excluida_da_publicacao: true };
+    const X_VIVA = [{ sku: 'X', item_externo_id: 'MLB9', retirado: false }];
+    const LIMPA = { mudando_composicao: false, reconciliacao_tentativas: 0, mudando_composicao_familia_id: null };
+    const filasRecusa = (variacoes: unknown[]) => ({
+      ...filas({ origem: 'manual' }), variacoes, anuncios_externos_itens: [X_VIVA],
     });
-    await expect(criarPortasConvergencia(admin, '2026-01-01T00:00:00Z').resumirComposicao(CLAIM_OK))
-      .rejects.toThrow(/^UPDATE bloqueado: 1 cor\(es\) desmarcada\(s\).*\(X\)/);
-    expect(atualizarFamiliaUPMock).not.toHaveBeenCalled();
+    const resumir = (admin: unknown) => criarPortasConvergencia(admin as never, '2026-01-01T00:00:00Z').resumirComposicao(CLAIM_OK);
+
+    it('recusa com estado terminal: família em erro com a mensagem do worker, lote finalizado, saga não chamada', async () => {
+      atualizarFamiliaUPMock.mockReset();
+      talvezFinalizarLoteMock.mockClear();
+      const { admin, updates } = fakeAdmin(filasRecusa([[...VARIACOES_OK, X_DESMARCADA]]));
+      await expect(resumir(admin)).resolves.toEqual({ estado: 'erro' });
+      expect(atualizarFamiliaUPMock).not.toHaveBeenCalled();
+      // Mesmo desfecho do `incompleto` esgotado: erro visível na família e a raiz fora da seleção do reconciliador.
+      expect(updates).toEqual([
+        { tabela: 'familias', payload: { status: 'erro', erro_mensagem: MENSAGEM } },
+        { tabela: 'anuncios_externos', payload: LIMPA },
+      ]);
+      expect(talvezFinalizarLoteMock).toHaveBeenCalledWith(admin, 'lote-1');
+    });
+
+    // Revisão do 6d15890f: incluídas e desmarcadas saem da MESMA leitura. Se a cor é remarcada depois, a
+    // decisão continua sendo a da fotografia que a saga receberia.
+    it('cor remarcada entre duas leituras: decide pela 1ª fotografia e não relê as variações', async () => {
+      atualizarFamiliaUPMock.mockReset();
+      const filasDuas = filasRecusa([[...VARIACOES_OK, X_DESMARCADA], [...VARIACOES_OK, { ...X_DESMARCADA, excluida_da_publicacao: false }]]);
+      const { admin } = fakeAdmin(filasDuas);
+      await expect(resumir(admin)).resolves.toEqual({ estado: 'erro' });
+      expect(atualizarFamiliaUPMock).not.toHaveBeenCalled();
+      expect(filasDuas.variacoes).toHaveLength(1); // a 2ª fotografia nunca foi lida
+    });
+
+    // A cor desmarcada que ESTAVA no snapshot esperado também fica "sem dado fonte". Essa checagem lança e
+    // deixaria a raiz presa para sempre; a recusa terminal tem que vir antes.
+    it('desmarcada que também era esperada pela composição: recusa terminal, não o throw de "sem dado fonte"', async () => {
+      atualizarFamiliaUPMock.mockReset();
+      const { admin, updates } = fakeAdmin(filasRecusa([[...VARIACOES_OK, X_DESMARCADA]]));
+      const claim = { ...CLAIM_OK, skusEsperados: ['A', 'B', 'X'] };
+      await expect(criarPortasConvergencia(admin, '2026-01-01T00:00:00Z').resumirComposicao(claim)).resolves.toEqual({ estado: 'erro' });
+      expect(updates).toContainEqual({ tabela: 'anuncios_externos', payload: LIMPA });
+    });
+
+    it('a cor desmarcada nunca entra nas variações entregues à saga (controle: desmarcada fora do ar)', async () => {
+      atualizarFamiliaUPMock.mockReset().mockResolvedValueOnce({ estado: 'retry' });
+      const { admin } = fakeAdmin({ ...filasRecusa([[...VARIACOES_OK, X_DESMARCADA]]), anuncios_externos_itens: [[], []] });
+      await expect(resumir(admin)).resolves.toEqual({ estado: 'retry' });
+      expect(atualizarFamiliaUPMock.mock.calls[0]![0].variacoes).toEqual(VARIACOES_OK);
+    });
+
+    it('falha ao gravar o erro da família → lança e NÃO solta a raiz (a próxima rodada recusa de novo)', async () => {
+      atualizarFamiliaUPMock.mockReset();
+      const { admin, updates } = fakeAdmin(filasRecusa([[...VARIACOES_OK, X_DESMARCADA]]), {}, { familias: 'timeout' });
+      await expect(resumir(admin)).rejects.toThrow(/gravar erro da família.*timeout/);
+      expect(updates.some((u) => u.tabela === 'anuncios_externos')).toBe(false);
+    });
+
+    it('falha ao soltar a raiz → lança (nunca reporta desfecho terminal com a raiz ainda travada)', async () => {
+      atualizarFamiliaUPMock.mockReset();
+      const { admin } = fakeAdmin(filasRecusa([[...VARIACOES_OK, X_DESMARCADA]]), {}, { anuncios_externos: 'timeout' });
+      await expect(resumir(admin)).rejects.toThrow(/soltar a raiz.*timeout/);
+    });
+
+    it('rodada seguinte: a raiz recusada não é mais reclamada, e as outras raízes seguem', async () => {
+      // Raiz presa = `mudando_composicao=true`, a mesma condição da listagem e da RPC de claim.
+      const presas = new Set(['root-recusada', 'root-ok']);
+      const claimRpc = (a: { p_root_id: string }) => (presas.has(a.p_root_id) ? [{ ...CLAIM_ROW, reconciliacao_tentativas: 1 }] : []);
+      const rodada = async (filasDaRodada: Record<string, unknown[]>) => {
+        const { admin, updates } = fakeAdmin(filasDaRodada, { reconciliar_convergencia_claim: claimRpc as never });
+        const portas = criarPortasConvergencia(admin, '2026-01-01T00:00:00Z');
+        const resultados = [];
+        for (const id of [...presas]) {
+          const antes = updates.length;
+          resultados.push(...await reconciliarConvergencia(portas, [id]));
+          // Aplica no "banco" o que a rodada gravou nesta raiz.
+          if (updates.slice(antes).some((u) => u.tabela === 'anuncios_externos' && u.payload.mudando_composicao === false)) presas.delete(id);
+        }
+        return resultados;
+      };
+      atualizarFamiliaUPMock.mockReset().mockResolvedValue({ estado: 'retry' });
+
+      const primeira = await rodada({
+        familias: [FAMILIA_OK, FAMILIA_OK], marketplace_connections: [CONEXAO_OK],
+        lotes: [{ origem: 'manual' }, LOTE_PLANILHA],
+        variacoes: [[...VARIACOES_OK, X_DESMARCADA], VARIACOES_OK],
+        anuncios_externos_itens: [X_VIVA, []],
+      });
+      expect(primeira.map((r) => r.tipo)).toEqual(['erro', 'retry']);
+      expect([...presas]).toEqual(['root-ok']);
+
+      atualizarFamiliaUPMock.mockClear();
+      const segunda = await rodada({
+        familias: [FAMILIA_OK], marketplace_connections: [CONEXAO_OK], lotes: [LOTE_PLANILHA],
+        variacoes: [VARIACOES_OK], anuncios_externos_itens: [[]],
+      });
+      expect(segunda).toEqual([{ rootId: 'root-ok', tipo: 'retry' }]);
+      expect(atualizarFamiliaUPMock).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('lote de planilha → preservarPublicadas: false', async () => {

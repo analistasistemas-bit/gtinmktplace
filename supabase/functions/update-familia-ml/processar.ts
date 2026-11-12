@@ -187,15 +187,19 @@ async function executarAtualizacaoFamilia(
 
     // Cores incluídas: casadas (têm ml_variation_id) repõem estoque; novas (sem
     // ml_variation_id) são criadas como variação. Excluídas ficam de fora.
-    const { data: variacoesDoSelect } = await admin.from('variacoes')
+    // Uma leitura só, com incluídas E desmarcadas (incidente 12/11/2026): a recusa do Adicionar variação decide
+    // sobre a mesma fotografia que a saga recebe. O filtro saiu da consulta e é aplicado logo abaixo.
+    const { data: variacoesTodas, error: variacoesErr } = await admin.from('variacoes')
       // ADR-0160: `atacado` por variação entra no select — o caminho UP precisa DETECTAR config
       // por cor para recusar (I7), já que aplica só a config família-level. Sem lê-la, a
       // divergência passaria despercebida.
       // ADR-0166 2026-09-24c: `tamanho` — o SKU novo de grade monta SIZE/SIZE_GRID_ROW_ID próprios.
-      .select('codigo, cor, tamanho, estoque, preco_publicacao, gtin, imagem_path, ml_picture_id, ml_variation_id, peso_gramas, altura_cm, largura_cm, comprimento_cm, atacado')
-      .eq('familia_id', job.familia_id)
-      .eq('excluida_da_publicacao', false);
-    if (!variacoesDoSelect || variacoesDoSelect.length === 0) {
+      .select('codigo, cor, tamanho, estoque, preco_publicacao, gtin, imagem_path, ml_picture_id, ml_variation_id, peso_gramas, altura_cm, largura_cm, comprimento_cm, atacado, excluida_da_publicacao')
+      .eq('familia_id', job.familia_id);
+    // Falha de leitura nunca vira "nenhuma cor": lança com a causa (o catch retenta; nada é enviado).
+    if (variacoesErr) throw new Error(`ler variações da família ${job.familia_id}: ${variacoesErr.message}`);
+    const variacoesDoSelect = (variacoesTodas ?? []).filter((v) => !v.excluida_da_publicacao);
+    if (variacoesDoSelect.length === 0) {
       const err = new Error('Nenhuma cor incluída para atualizar (400)') as Error & { status?: number };
       err.status = 400;
       throw err;
@@ -240,7 +244,7 @@ async function executarAtualizacaoFamilia(
     // conjunto como retirada e a pausaria. Recusa aqui, antes de qualquer upload, GET ou PUT. Leitura que falha
     // lança (o catch retenta ou grava erro; nada é enviado). "Somente estoque" fica de fora: nunca muda composição.
     if (preservarPublicadas && !job.somenteEstoque) {
-      const desmarcadas = await coresDesmarcadasPublicadas(admin, job.familia_id, (raizUP as { id: string } | null)?.id ?? null);
+      const desmarcadas = await coresDesmarcadasPublicadas(admin, variacoesTodas ?? [], (raizUP as { id: string } | null)?.id ?? null);
       if (desmarcadas.length > 0) {
         const mensagem = mensagemCoresDesmarcadas(desmarcadas);
         const { error: errGravar } = await admin.from('familias')

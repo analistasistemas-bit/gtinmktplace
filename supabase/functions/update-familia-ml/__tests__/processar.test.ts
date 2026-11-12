@@ -63,9 +63,12 @@ function fakeAdmin(over: {
   ncm?: 'vigente' | 'vencido' | 'inexistente' | 'erro'; // rpc ncm_consultar (ADR-0187)
   kitComponentes?: string[]; // ADR-0200: SKUs usados em kit com variação
   estender?: boolean; // ADR-0201: ml_estender_trava (default true)
-  excluidas?: Record<string, unknown>[]; // variações com excluida_da_publicacao=true (desmarcadas na Revisão)
-  excluidasErr?: boolean;                // a leitura das desmarcadas falha
+  /** Uma fotografia de `variacoes` por leitura, em ordem (a última se repete): simula o operador mexendo na
+   *  Revisão entre duas leituras do worker. Linha com `excluida_da_publicacao: true` = cor desmarcada. */
+  variacoesLeituras?: Record<string, unknown>[][];
+  variacoesErr?: boolean; // a leitura das variações falha
 } = {}) {
+  const leituras = [...(over.variacoesLeituras ?? [])];
   const rpcs: Array<{ fn: string; args: unknown }> = [];
   const writes: Array<{ table: string; payload: Record<string, unknown>; filters: Record<string, unknown> }> = [];
   const familia = over.familia === undefined ? { ...FAMILIA_BASE } : over.familia;
@@ -80,7 +83,12 @@ function fakeAdmin(over: {
     const rec = { table, op: '', filters: {} as Record<string, unknown>, payload: {} as Record<string, unknown> };
     const ler = () => {
       if (table === 'familias') return familia;
-      if (table === 'variacoes') return rec.filters.excluida_da_publicacao === true ? (over.excluidas ?? []) : variacoes;
+      if (table === 'variacoes') {
+        const foto = leituras.length > 1 ? leituras.shift()! : (leituras[0] ?? variacoes);
+        // Honra o filtro da consulta, quando há: sem o campo, a linha conta como incluída.
+        const filtro = rec.filters.excluida_da_publicacao;
+        return filtro === undefined ? foto : foto.filter((v) => !!v.excluida_da_publicacao === filtro);
+      }
       if (table === 'marketplace_connections') return conexao;
       if (table === 'organizations') return { modulos_habilitados: modulosHabilitados, ...(over.org ?? { marca_padrao: 'Avil', marca_propria: false }) };
       if (table === 'empresa_fiscal') return { regime_tributario: 'simples' };
@@ -106,8 +114,8 @@ function fakeAdmin(over: {
         if (rec.op === 'update' && table === 'familias' && over.familiaUpdateErr) {
           return Promise.resolve({ data: null, error: { message: 'boom-familia' } }).then(resolve);
         }
-        if (table === 'variacoes' && over.excluidasErr && rec.filters.excluida_da_publicacao === true) {
-          return Promise.resolve({ data: null, error: { message: 'boom-excluidas' } }).then(resolve);
+        if (table === 'variacoes' && over.variacoesErr && rec.op !== 'update') {
+          return Promise.resolve({ data: null, error: { message: 'boom-variacoes' } }).then(resolve);
         }
         if (table === 'anuncios_externos_itens' && over.itensErr) return Promise.resolve({ data: null, error: { message: 'boom-itens' } }).then(resolve);
         return Promise.resolve({ data: rec.op === 'update' ? null : ler(), error: null }).then(resolve);
@@ -254,8 +262,11 @@ describe('processarAtualizacaoFamilia — Adicionar variação recusa cor desmar
   const RAIZ = { id: 'root-1', titulo: 'T', criado_em: null };
   const vivos = OITO.map((sku, i) => ({ id: `it-${i}`, sku, item_externo_id: `MLB${i + 1}`, retirado: false, status: 'ativo' }));
   const marcada = (codigo: string) => ({ ...VAR_CASADA, codigo, ml_variation_id: null });
-  const desmarcada = (codigo: string, ml_variation_id: string | null = null) => ({ codigo, ml_variation_id });
+  const desmarcada = (codigo: string, ml_variation_id: string | null = null) => (
+    { ...VAR_CASADA, codigo, ml_variation_id, excluida_da_publicacao: true }
+  );
   const SETE = OITO.slice(1).map((c) => desmarcada(c));
+  const codigosNaSaga = (upArgs: unknown[]) => (upArgs[0] as { variacoes: { codigo: string }[] }).variacoes.map((v) => v.codigo);
 
   async function rodar(over: Parameters<typeof fakeAdmin>[0], job: Record<string, unknown> = {}) {
     const { admin, writes } = fakeAdmin(over);
@@ -272,7 +283,7 @@ describe('processarAtualizacaoFamilia — Adicionar variação recusa cor desmar
 
   it('8 cores no ar, 7 desmarcadas: família em erro com a mensagem; saga e ML intocados', async () => {
     const { r, upArgs, familia, finalizou, escritasML } = await rodar({
-      lote: MANUAL, raizUP: RAIZ, itensUP: vivos, variacoes: [marcada('C1')], excluidas: SETE,
+      lote: MANUAL, raizUP: RAIZ, itensUP: vivos, variacoes: [marcada('C1'), ...SETE],
     });
     const mensagem = 'UPDATE bloqueado: 7 cor(es) desmarcada(s) já publicada(s) no Mercado Livre '
       + "(C2, C3, C4, C5, C6, C7, C8). Em 'Adicionar variação' nenhuma cor pode ser desmarcada. "
@@ -286,7 +297,7 @@ describe('processarAtualizacaoFamilia — Adicionar variação recusa cor desmar
 
   it('controle: todas as cores marcadas → segue para a saga normalmente', async () => {
     const { r, upArgs, familia } = await rodar({
-      lote: MANUAL, raizUP: RAIZ, itensUP: vivos, variacoes: OITO.map(marcada), excluidas: [],
+      lote: MANUAL, raizUP: RAIZ, itensUP: vivos, variacoes: OITO.map(marcada),
     });
     expect(r.tipo).toBe('ok');
     expect(upArgs).toHaveLength(1);
@@ -297,34 +308,51 @@ describe('processarAtualizacaoFamilia — Adicionar variação recusa cor desmar
   it('desmarcada que não está no ar (cor nova, ou já retirada) não bloqueia', async () => {
     const itens = [...vivos.slice(0, 7), { ...vivos[7], retirado: true, status: 'pausado' }];
     const { r, upArgs } = await rodar({
-      lote: MANUAL, raizUP: RAIZ, itensUP: itens, variacoes: OITO.slice(0, 7).map(marcada),
-      excluidas: [desmarcada('C8'), desmarcada('NOVA')],
+      lote: MANUAL, raizUP: RAIZ, itensUP: itens,
+      variacoes: [...OITO.slice(0, 7).map(marcada), desmarcada('C8'), desmarcada('NOVA')],
     });
     expect(r.tipo).toBe('ok');
     expect(upArgs).toHaveLength(1);
+    // A desmarcada continua fora do que a saga recebe.
+    expect(codigosNaSaga(upArgs)).toEqual(OITO.slice(0, 7));
+  });
+
+  // Revisão do 6d15890f: o guard relia as desmarcadas DEPOIS de carregar as incluídas. Se o operador remarca a
+  // cor entre as duas leituras, o guard via zero desmarcadas e a saga recebia a lista antiga, sem a cor.
+  it('cor remarcada entre duas leituras: a decisão sai da MESMA fotografia que a saga receberia', async () => {
+    const antes = [marcada('C1'), ...SETE];           // 1ª leitura: C2..C8 desmarcadas
+    const depois = OITO.map(marcada);                  // qualquer leitura seguinte: todas marcadas
+    const { r, upArgs, escritasML, familia } = await rodar({
+      lote: MANUAL, raizUP: RAIZ, itensUP: vivos, variacoesLeituras: [antes, depois],
+    });
+    expect(r.tipo).toBe('erro');
+    expect((r as { mensagem: string }).mensagem).toMatch(/^UPDATE bloqueado: 7 cor/);
+    expect(upArgs).toHaveLength(0);
+    expect(escritasML).toEqual([]);
+    expect(familia).toContainEqual(expect.objectContaining({ status: 'erro' }));
   });
 
   it('Legacy: desmarcada com ml_variation_id → mesma recusa, nenhum PUT', async () => {
-    const { r, escritasML, familia } = await rodar({ lote: MANUAL, excluidas: [desmarcada('V2', 'MLV2')] });
+    const { r, escritasML, familia } = await rodar({ lote: MANUAL, variacoes: [{ ...VAR_CASADA }, desmarcada('V2', 'MLV2')] });
     expect(r.tipo).toBe('erro');
     expect((r as { mensagem: string }).mensagem).toMatch(/^UPDATE bloqueado: 1 cor\(es\) desmarcada\(s\).*\(V2\)/);
     expect(escritasML).toEqual([]);
     expect(familia).toContainEqual(expect.objectContaining({ status: 'erro' }));
   });
 
-  it('falha ao ler as desmarcadas → aborta sem escrever (erro de leitura nunca vira "sem desmarcadas")', async () => {
+  it('falha ao ler as variações → aborta sem escrever (erro de leitura nunca vira "sem desmarcadas")', async () => {
     const { r, upArgs, escritasML } = await rodar({
-      lote: MANUAL, raizUP: RAIZ, itensUP: vivos, variacoes: [marcada('C1')], excluidasErr: true,
+      lote: MANUAL, raizUP: RAIZ, itensUP: vivos, variacoes: [marcada('C1'), ...SETE], variacoesErr: true,
     });
     expect(r.tipo).not.toBe('ok');
-    expect((r as { mensagem: string }).mensagem).toContain('boom-excluidas');
+    expect((r as { mensagem: string }).mensagem).toContain('boom-variacoes');
     expect(upArgs).toHaveLength(0);
     expect(escritasML).toEqual([]);
   });
 
   it('falha ao ler os itens do anúncio → aborta sem escrever', async () => {
     const { r, upArgs, escritasML } = await rodar({
-      lote: MANUAL, raizUP: RAIZ, itensUP: vivos, variacoes: [marcada('C1')], excluidas: SETE, itensErr: true,
+      lote: MANUAL, raizUP: RAIZ, itensUP: vivos, variacoes: [marcada('C1'), ...SETE], itensErr: true,
     });
     expect(r.tipo).not.toBe('ok');
     expect(upArgs).toHaveLength(0);
@@ -332,19 +360,21 @@ describe('processarAtualizacaoFamilia — Adicionar variação recusa cor desmar
   });
 
   it('UPDATE de planilha com as mesmas 7 desmarcadas: nada muda, segue para a saga', async () => {
-    const { r, upArgs } = await rodar({ raizUP: RAIZ, itensUP: vivos, variacoes: [marcada('C1')], excluidas: SETE });
+    const { r, upArgs } = await rodar({ raizUP: RAIZ, itensUP: vivos, variacoes: [marcada('C1'), ...SETE] });
     expect(r.tipo).toBe('ok');
     expect(upArgs).toHaveLength(1);
+    expect(codigosNaSaga(upArgs)).toEqual(['C1']);
     expect((upArgs[0] as { preservarPublicadas?: boolean }).preservarPublicadas).toBe(false);
   });
 
   it('somente estoque em lote manual: nada muda (esse modo nunca mexe na composição)', async () => {
     const { r, upArgs } = await rodar(
-      { lote: MANUAL, raizUP: RAIZ, itensUP: vivos, variacoes: [marcada('C1')], excluidas: SETE },
+      { lote: MANUAL, raizUP: RAIZ, itensUP: vivos, variacoes: [marcada('C1'), ...SETE] },
       { somenteEstoque: true },
     );
     expect(r.tipo).toBe('ok');
     expect(upArgs).toHaveLength(1);
+    expect(codigosNaSaga(upArgs)).toEqual(['C1']);
   });
 });
 

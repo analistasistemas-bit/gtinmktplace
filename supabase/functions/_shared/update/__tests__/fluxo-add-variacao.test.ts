@@ -41,36 +41,44 @@ describe('coresDesmarcadasPublicadas', () => {
   }
   const ok = (data: unknown): Resposta => ({ data, error: null });
   const falha = (message: string): Resposta => ({ data: null, error: { message } });
-  const excl = (codigo: string, ml_variation_id: string | null = null) => ({ codigo, ml_variation_id });
+  const excl = (codigo: string, ml_variation_id: string | null = null) => ({ codigo, ml_variation_id, excluida_da_publicacao: true });
+  const incl = (codigo: string, ml_variation_id: string | null = null) => ({ codigo, ml_variation_id, excluida_da_publicacao: false });
   const item = (sku: string, item_externo_id: string | null, retirado = false) => ({ sku, item_externo_id, retirado });
 
   it('User Products: devolve só a desmarcada com filho vivo (não retirado, com item), em ordem', async () => {
     const { admin } = adminTabelas({
-      variacoes: ok([excl('C3'), excl('C2'), excl('RETIRADA'), excl('SEM_ITEM'), excl('NOVA')]),
-      anuncios_externos_itens: ok([item('C2', 'MLB2'), item('C3', 'MLB3'), item('RETIRADA', 'MLB4', true), item('SEM_ITEM', null)]),
+      anuncios_externos_itens: ok([
+        item('C1', 'MLB1'), item('C2', 'MLB2'), item('C3', 'MLB3'), item('RETIRADA', 'MLB4', true), item('SEM_ITEM', null),
+      ]),
     });
-    expect(await coresDesmarcadasPublicadas(admin, 'fam-1', 'root-1')).toEqual(['C2', 'C3']);
+    const fotografia = [incl('C1'), excl('C3'), excl('C2'), excl('RETIRADA'), excl('SEM_ITEM'), excl('NOVA')];
+    expect(await coresDesmarcadasPublicadas(admin, fotografia, 'root-1')).toEqual(['C2', 'C3']);
   });
 
   it('anúncio com variações: desmarcada casada (ml_variation_id) conta, mesmo sem raiz', async () => {
-    const { admin, lidas } = adminTabelas({ variacoes: ok([excl('V2', 'MLV2'), excl('NOVA')]) });
-    expect(await coresDesmarcadasPublicadas(admin, 'fam-1', null)).toEqual(['V2']);
-    expect(lidas).toEqual(['variacoes']);
+    const { admin, lidas } = adminTabelas({});
+    expect(await coresDesmarcadasPublicadas(admin, [incl('V1', 'MLV1'), excl('V2', 'MLV2'), excl('NOVA')], null)).toEqual(['V2']);
+    expect(lidas).toEqual([]);
   });
 
-  it('nenhuma desmarcada → vazio, sem ler os itens', async () => {
-    const { admin, lidas } = adminTabelas({ variacoes: ok([]) });
-    expect(await coresDesmarcadasPublicadas(admin, 'fam-1', 'root-1')).toEqual([]);
-    expect(lidas).toEqual(['variacoes']);
+  it('nenhuma desmarcada → vazio, sem ler nada', async () => {
+    const { admin, lidas } = adminTabelas({});
+    expect(await coresDesmarcadasPublicadas(admin, [incl('C1'), incl('C2')], 'root-1')).toEqual([]);
+    expect(lidas).toEqual([]);
+  });
+
+  // A regra decide sobre a fotografia recebida: não relê `variacoes`, então não há segunda leitura para divergir.
+  it('nunca lê a tabela de variações', async () => {
+    const { admin, lidas } = adminTabelas({ anuncios_externos_itens: ok([item('C2', 'MLB2')]) });
+    await coresDesmarcadasPublicadas(admin, [excl('C2')], 'root-1');
+    expect(lidas).toEqual(['anuncios_externos_itens']);
   });
 
   it.each([
-    ['erro ao ler as desmarcadas', { variacoes: falha('timeout') }, /cores desmarcadas.*timeout/],
-    ['desmarcadas sem resposta', { variacoes: ok(null) }, /cores desmarcadas.*sem resposta/],
-    ['erro ao ler os itens', { variacoes: ok([excl('C2')]), anuncios_externos_itens: falha('timeout') }, /itens do anúncio.*timeout/],
-    ['itens sem resposta', { variacoes: ok([excl('C2')]), anuncios_externos_itens: ok(null) }, /itens do anúncio.*sem resposta/],
+    ['erro ao ler os itens', { anuncios_externos_itens: falha('timeout') }, /itens do anúncio.*timeout/],
+    ['itens sem resposta', { anuncios_externos_itens: ok(null) }, /itens do anúncio.*sem resposta/],
   ])('%s → lança (nunca vira "sem desmarcadas")', async (_nome, tabelas, erro) => {
-    await expect(coresDesmarcadasPublicadas(adminTabelas(tabelas).admin, 'fam-1', 'root-1')).rejects.toThrow(erro);
+    await expect(coresDesmarcadasPublicadas(adminTabelas(tabelas).admin, [excl('C2')], 'root-1')).rejects.toThrow(erro);
   });
 
   it('mensagem no padrão do reposicao_sem_item, com teto de 10 SKUs', () => {

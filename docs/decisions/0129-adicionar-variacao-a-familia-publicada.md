@@ -284,14 +284,26 @@ vivas restantes como retiradas: pausou no ML e marcou `retirado=true`.
 **Invariante.** Este fluxo só adiciona cor. Em lote `origem='manual'` com família UPDATE, cor que já
 está no ar nunca pode estar desmarcada.
 
-1. **Worker recusa antes de qualquer escrita** (`update-familia-ml`, e a retomada em
-   `reconciliar-convergencia-up`): havendo variação desmarcada cujo SKU está vivo no canal (filho em
-   `anuncios_externos_itens` com `retirado=false` e item; ou, em anúncio com variações,
+1. **Worker recusa antes de qualquer escrita no Mercado Livre** (`update-familia-ml`, e a retomada
+   em `reconciliar-convergencia-up`): havendo variação desmarcada cujo SKU está vivo no canal (filho
+   em `anuncios_externos_itens` com `retirado=false` e item; ou, em anúncio com variações,
    `ml_variation_id`), a família vai a `erro` com mensagem terminal no padrão do ADR-0195 e nada é
    enviado. Regra em `_shared/update/fluxo-add-variacao.ts` (`coresDesmarcadasPublicadas`).
-2. **Fail-closed:** falha na leitura que decide isso aborta. Erro de SELECT nunca vira "sem
+   "Antes de qualquer escrita" vale para os efeitos **no ML** (upload de foto, GET, PUT, POST). O
+   que acontece antes do worker em `publicar-familias` já ocorreu e é esperado: claim da família
+   (`pronto`/`erro` → `publicando`), enfileiramento no QStash e trava de oferta.
+2. **Uma leitura só.** Incluídas e desmarcadas saem da **mesma** fotografia de `variacoes`: a
+   recusa decide sobre exatamente o conjunto que a saga receberia. Reler as desmarcadas depois
+   abria uma corrida — cor remarcada no intervalo sumia das duas listas e a saga a retirava.
+3. **Fail-closed:** falha na leitura que decide isso aborta. Erro de SELECT nunca vira "sem
    desmarcadas".
-3. **Revisão:** o checkbox da cor já publicada fica travado quando marcado, com o texto "Em Adicionar
+4. **Na retomada, o desfecho é terminal:** além da família em `erro` e do lote finalizado, a raiz é
+   solta (`mudando_composicao=false`), o mesmo desfecho do `incompleto` esgotado em
+   `atualizarFamiliaUP`. É a única forma que o código tem de tirar uma raiz da seleção do
+   reconciliador (listagem e RPC de claim filtram só por essa flag); um `throw` a deixaria ser
+   reclamada a cada rodada, para sempre e sem erro visível. O que a composição interrompida já
+   tinha criado fica como está: o operador marca as cores e reenvia, e a saga retoma das linhas.
+5. **Revisão:** o checkbox da cor já publicada fica travado quando marcado, com o texto "Em Adicionar
    variação, todas as cores seguem." A cor que já veio desmarcada pode ser marcada de volta.
 
 **Fora do escopo, de propósito.** UPDATE de planilha e "somente estoque" não mudam. A saga, o

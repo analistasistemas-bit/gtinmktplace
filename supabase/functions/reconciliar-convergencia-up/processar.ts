@@ -6,7 +6,10 @@ import { filtroNotIn, listarOrgsArquivadas } from '../_shared/orgs-arquivadas.ts
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
-import { coresDesmarcadasPublicadas, ehFluxoAddVariacao, mensagemCoresDesmarcadas } from '../_shared/update/fluxo-add-variacao.ts';
+import {
+  coresDesmarcadasPublicadas, ehFluxoAddVariacao, mensagemCoresDesmarcadas, type VariacaoMarcacao,
+} from '../_shared/update/fluxo-add-variacao.ts';
+import { talvezFinalizarLote } from '../_shared/lote/finalizar.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { EMBED_MODULOS } from '../_shared/kit-variacao/politica.ts';
 import {
@@ -80,11 +83,14 @@ export function criarPortasConvergencia(
         organizations?: { modulos_habilitados: string[] | null } | null;
       };
 
+      // Uma leitura só, com incluídas E desmarcadas (incidente 12/11/2026): a recusa do Adicionar variação, mais
+      // abaixo, decide sobre a mesma fotografia que a saga recebe. O filtro saiu da consulta e é aplicado aqui.
       const { data: variacoesRaw, error: varErr } = await admin.from('variacoes')
-        .select('codigo, cor, tamanho, estoque, preco_publicacao, gtin, imagem_path, ml_picture_id, peso_gramas, altura_cm, largura_cm, comprimento_cm')
-        .eq('familia_id', familia.id).eq('excluida_da_publicacao', false);
+        .select('codigo, cor, tamanho, estoque, preco_publicacao, gtin, imagem_path, ml_picture_id, ml_variation_id, peso_gramas, altura_cm, largura_cm, comprimento_cm, excluida_da_publicacao')
+        .eq('familia_id', familia.id);
       if (varErr) throw new Error(`consultar variações (${familia.id}): ${varErr.message}`);
-      const variacoes = (variacoesRaw ?? []) as VariacaoUP[];
+      const variacoesTodas = (variacoesRaw ?? []) as Array<VariacaoUP & VariacaoMarcacao>;
+      const variacoes: VariacaoUP[] = variacoesTodas.filter((v) => !v.excluida_da_publicacao);
 
       // Validação defensiva (revisão adversarial, 2ª rodada — achado real: excluir da checagem os
       // SKUs "já ativos" NÃO bastava. `reposicao()` em atualizar-composicao.ts roda pra TODO SKU
@@ -93,23 +99,41 @@ export function criarPortasConvergencia(
       // nenhuma intenção real. Portanto TODO SKU esperado precisa ter dado fonte em `variacoes`,
       // sem exceção pra "já ativo" — se algum estiver ausente, falha alto: intervenção manual,
       // nunca criação silenciosa com dado incompleto nem reposição com estoque zero não-intencional.
+      // (A checagem em si roda depois da recusa do Adicionar variação, logo abaixo: a cor desmarcada que estava
+      // no snapshot também cai aqui, e este throw deixaria a raiz presa em vez do desfecho terminal.)
       const codigosVariacoes = new Set(variacoes.map((v) => v.codigo));
       const semDadoFonte = claim.skusEsperados.filter((sku) => !codigosVariacoes.has(sku));
-      if (semDadoFonte.length > 0) {
-        throw new Error(
-          `SKU(s) ${semDadoFonte.join(', ')} esperado(s) pela composição travada mas ausente(s) das variações atuais da família ${familia.id} — não dá pra criar/repor com segurança (reposição zeraria estoque sem intenção real). Intervenção manual necessária (verifique se a cor foi excluída num re-ingest posterior).`,
-        );
-      }
 
       // Codex #1: a retomada de uma composição do fluxo "Adicionar variação" (ADR-0129) rodava sem
       // `preservarPublicadas` e podia reenviar preço/atributos às irmãs. Mesmo predicado do worker.
       // Antes de resolver conexão/token: erro lendo o lote falha a rodada sem tocar o ML.
       const preservarPublicadas = await ehFluxoAddVariacao(admin, familia.lote_id);
       // Incidente 12/11/2026: mesma recusa do worker (update-familia-ml). Cor desmarcada que está no ar seria lida
-      // pela saga como retirada. Lança antes de tocar o ML; a raiz segue travada e o erro aparece na rodada.
+      // pela saga como retirada. Nada é enviado ao ML.
+      //
+      // Desfecho TERMINAL, igual ao do `incompleto` esgotado em atualizarFamiliaUP: família em `erro` com a
+      // mensagem e raiz solta. Só `mudando_composicao=true` seleciona raiz aqui (listagem e RPC de claim); um
+      // throw a deixaria ser reclamada a cada rodada para sempre, sem erro visível. O que a composição
+      // interrompida já criou fica como está: o operador marca as cores e reenvia, e a saga retoma das linhas.
       if (preservarPublicadas) {
-        const desmarcadas = await coresDesmarcadasPublicadas(admin, familia.id, claim.rootId);
-        if (desmarcadas.length > 0) throw new Error(mensagemCoresDesmarcadas(desmarcadas));
+        const desmarcadas = await coresDesmarcadasPublicadas(admin, variacoesTodas, claim.rootId);
+        if (desmarcadas.length > 0) {
+          const { error: errGravar } = await admin.from('familias')
+            .update({ status: 'erro', erro_mensagem: mensagemCoresDesmarcadas(desmarcadas) }).eq('id', familia.id);
+          // Antes de soltar a raiz: sem o erro gravado, soltá-la esconderia a recusa. Lança e a próxima rodada repete.
+          if (errGravar) throw new Error(`gravar erro da família (${familia.id}): ${errGravar.message}`);
+          const { error: errSoltar } = await admin.from('anuncios_externos')
+            .update({ mudando_composicao: false, reconciliacao_tentativas: 0, mudando_composicao_familia_id: null })
+            .eq('id', claim.rootId);
+          if (errSoltar) throw new Error(`soltar a raiz (${claim.rootId}): ${errSoltar.message}`);
+          await talvezFinalizarLote(admin, familia.lote_id);
+          return { estado: 'erro' as const };
+        }
+      }
+      if (semDadoFonte.length > 0) {
+        throw new Error(
+          `SKU(s) ${semDadoFonte.join(', ')} esperado(s) pela composição travada mas ausente(s) das variações atuais da família ${familia.id} — não dá pra criar/repor com segurança (reposição zeraria estoque sem intenção real). Intervenção manual necessária (verifique se a cor foi excluída num re-ingest posterior).`,
+        );
       }
 
       const conexao = await resolverConexao(admin, claim.orgId, CANAL);

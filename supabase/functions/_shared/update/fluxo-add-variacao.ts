@@ -33,17 +33,19 @@ export async function ehFluxoAddVariacao(admin: SupabaseClient, loteId: string):
  * Devolve os SKUs com `excluida_da_publicacao=true` que estão no ar: filho User Products vivo (`retirado=false`
  * com item) ou variação casada do anúncio com variações (`ml_variation_id`). Quem chama recusa antes de escrever.
  *
- * Fail-closed: qualquer leitura que falhe lança. Erro de SELECT nunca vira "sem desmarcadas".
+ * `variacoes` é a MESMA fotografia de onde quem chama tira as cores incluídas que entrega à saga — nunca uma
+ * segunda leitura. Relendo, uma cor remarcada no intervalo sumia das duas listas: fora das incluídas (lidas
+ * antes) e fora das desmarcadas (lidas depois), e a saga a retirava.
+ *
+ * Fail-closed: a leitura dos itens que falha lança. Erro de SELECT nunca vira "sem desmarcadas".
  */
+export interface VariacaoMarcacao {
+  codigo: string; ml_variation_id?: string | null; excluida_da_publicacao?: boolean | null;
+}
 export async function coresDesmarcadasPublicadas(
-  admin: SupabaseClient, familiaId: string, raizId: string | null,
+  admin: SupabaseClient, variacoes: VariacaoMarcacao[], raizId: string | null,
 ): Promise<string[]> {
-  const { data: excl, error: errExcl } = await admin.from('variacoes')
-    .select('codigo, ml_variation_id').eq('familia_id', familiaId).eq('excluida_da_publicacao', true);
-  if (errExcl || !Array.isArray(excl)) {
-    throw new Error(`ler cores desmarcadas da família ${familiaId}: ${errExcl?.message ?? 'sem resposta'}`);
-  }
-  const excluidas = excl as Array<{ codigo: string; ml_variation_id: string | null }>;
+  const excluidas = variacoes.filter((v) => v.excluida_da_publicacao);
   if (excluidas.length === 0) return [];
 
   let vivos = new Set<string>();
