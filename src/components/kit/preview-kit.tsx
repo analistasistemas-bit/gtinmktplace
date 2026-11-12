@@ -53,7 +53,7 @@ export function valorInicialPreview(base: BaseParaKit, titulo: string, descricao
   };
 }
 
-export function PreviewKit({ n, indice, total, base, value, onChange, categoriaMlId, onPodeSeguir, galeria }: {
+export function PreviewKit({ n, indice, total, base, value, onChange, categoriaMlId, onPodeSeguir, galeria, capaUnidades }: {
   n: number;
   /** Posição na lista quando há vários kits (1-based). Omitir se kit único. */
   indice?: number;
@@ -67,6 +67,8 @@ export function PreviewKit({ n, indice, total, base, value, onChange, categoriaM
   onPodeSeguir: (n: number, pode: boolean) => void;
   /** ADR-0204: prévia da galeria da base, abaixo da foto do kit (só com a base publicada no ML). */
   galeria?: ReactNode;
+  /** ADR-0205: "Gerar capa com N unidades" (estado no dialog), logo abaixo do campo Foto. */
+  capaUnidades?: ReactNode;
 }) {
   const { data: fotoAtualUrl } = useImageUrl(value.fotoFile ? null : value.imagemPath);
   const tituloExcedeu = value.titulo.length > TITULO_MAX_KIT;
@@ -156,6 +158,7 @@ export function PreviewKit({ n, indice, total, base, value, onChange, categoriaM
                 O produto-base não tem foto salva — escolha uma foto para o kit.
               </span>
             )}
+            {capaUnidades}
           </div>
           {galeria}
 

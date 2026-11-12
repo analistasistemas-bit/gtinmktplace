@@ -28,7 +28,7 @@ export async function fetchPrecoAvulsoKit(familiaBaseId: string): Promise<Map<st
 
 export type Resultado<T> = ({ ok: true } & T) | { ok: false; motivo?: string; mensagem: string };
 
-async function invocar<T>(nome: string, body: Record<string, unknown>): Promise<Resultado<T>> {
+export async function invocar<T>(nome: string, body: Record<string, unknown>): Promise<Resultado<T>> {
   const { data, error } = await supabase.functions.invoke(nome, { body });
   if (error) {
     const d = await corpoDoErroDaEdge(error);

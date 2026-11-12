@@ -30,6 +30,7 @@ import { PromocaoBaseKit } from '@/components/kit/promocao-base-kit';
 import { GaleriaBaseKit } from '@/components/kit/galeria-base-kit';
 import { useGaleriaBaseKit } from '@/hooks/useGaleriaBaseKit';
 import { idsDaGaleria, type EscolhaGaleria, type GaleriaProposta } from '@/lib/kit-galeria';
+import { GerarCapaUnidades, useCapasUnidades } from '@/components/kit/gerar-capa-unidades';
 import { PreviewKit, valorInicialPreview, type KitPreviewValue } from '@/components/kit/preview-kit';
 
 // Base fora do ML: sem leitura (a edge não é chamada); só a nota de que o kit leva a capa.
@@ -87,6 +88,8 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
 
   // ADR-0204: escolha da galeria por tamanho (a leitura é uma por categoria, compartilhada entre os tamanhos).
   const [escolhasGaleria, setEscolhasGaleria] = useState<Record<number, EscolhaGaleria>>({});
+  // ADR-0205: capa com N unidades por IA. Estado e request_id aqui: o PreviewKit desmonta em "Voltar".
+  const capas = useCapasUnidades(familiaBaseId, open);
 
   // Reset ao abrir: chaves e valores novos por sessão de diálogo (as chaves só trocam
   // depois de sucesso confirmado, nunca durante a edição).
@@ -412,7 +415,23 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
                     onChange={(e) => setEscolhasGaleria((prev) => ({ ...prev, [n]: e }))}
                   />
                 )}
-                onChange={(patch) => setValores((prev) => ({ ...prev, [n]: { ...prev[n], ...patch } }))}
+                capaUnidades={(
+                  <GerarCapaUnidades
+                    n={n} temCapa={!!base.fotoPath} estado={capas.estados[n]}
+                    onGerar={() => void capas.gerar(n)}
+                    onUsar={(path) => {
+                      setValores((prev) => ({ ...prev, [n]: { ...prev[n], imagemPath: path, fotoFile: null } }));
+                      capas.descartar(n);
+                    }}
+                  />
+                )}
+                onChange={(patch) => {
+                  // Arquivo manual vence a candidata: volta a foto da base e descarta a geração.
+                  if (patch.fotoFile) capas.descartar(n);
+                  setValores((prev) => ({
+                    ...prev, [n]: { ...prev[n], ...patch, ...(patch.fotoFile ? { imagemPath: base.fotoPath } : {}) },
+                  }));
+                }}
               />
             ))}
           </div>

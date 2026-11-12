@@ -3,8 +3,8 @@
 // ponto de entrada de UI novo. Cobre: visibilidade condicional a status='erro', o payload do
 // clique, o aviso de falso-positivo (enfileiradas===0) e o dedupe por criadoEm mais recente
 // (M-1) que decide qual linha manda no botão.
-import { describe, expect, it, vi, afterEach } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -44,6 +44,17 @@ vi.mock('@/lib/tarifa', async () => {
 });
 const aliquotasMock = { data: { nacional: 8, importado: 16, confirmada: true }, isLoading: false, isError: false, isFetched: true };
 vi.mock('@/hooks/useConfiguracoes', () => ({ useAliquotas: () => aliquotasMock }));
+
+// ADR-0205: módulos da org e edge da capa com N unidades (sem rede); upload fora do storage real.
+const modulosMock: { data: string[] | undefined } = { data: [] };
+vi.mock('@/hooks/useModulosHabilitados', () => ({ useModulosHabilitados: () => modulosMock }));
+const gerarCapaMock = vi.fn();
+vi.mock('@/lib/capa-unidades-edge', () => ({ gerarCapaUnidadesEdge: (...a: unknown[]) => gerarCapaMock(...a) }));
+const uploadFileMock = vi.fn();
+vi.mock('@/lib/storage', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/storage')>();
+  return { ...actual, uploadFile: (...a: unknown[]) => uploadFileMock(...a) };
+});
 
 const navigateMock = vi.fn();
 vi.mock('react-router-dom', () => ({ useNavigate: () => navigateMock }));
@@ -525,5 +536,95 @@ describe('DialogCriarKit — galeria da base (ADR-0204)', () => {
     await criar();
     await waitFor(() => expect(toast.success).toHaveBeenCalled());
     expect(toast.warning).not.toHaveBeenCalled();
+  });
+});
+
+// ADR-0205 (Task 4): capa com N unidades por IA. O estado vive no dialog; só "Usar esta foto" grava imagemPath.
+describe('DialogCriarKit — capa com N unidades (ADR-0205)', () => {
+  const aprovada = (id: string) => ({
+    ok: true as const, aprovado: true, proxima: false, path: `ORG/kit-variacao-ia/${id}.png`,
+    url: `https://x/${id}.png`, verificacao: { aprovado: true, itens: [], motivos: [] },
+  });
+  const botaoGerar = () => screen.queryByRole('button', { name: 'Gerar capa com 2 unidades' });
+  async function abrirPreview(base: BaseParaKit = BASE_COM_FOTO) {
+    renderDialog([], base);
+    await userEvent.click(screen.getByLabelText('Kit de 2 unidades'));
+    await userEvent.click(screen.getByRole('button', { name: 'Avançar' }));
+    await screen.findByRole('button', { name: 'Criar e publicar' });
+  }
+  const imagemPathEnviado = () => (criarKitVinculadoMock.mock.calls[0][0] as { kits: Array<{ imagemPath: string | null }> }).kits[0].imagemPath;
+  async function criar() {
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Criar e publicar' })).toBeEnabled());
+    await userEvent.click(screen.getByRole('button', { name: 'Criar e publicar' }));
+    await waitFor(() => expect(criarKitVinculadoMock).toHaveBeenCalled());
+  }
+
+  beforeEach(() => {
+    modulosMock.data = ['imagem_ia'];
+    gerarCapaMock.mockReset();
+    uploadFileMock.mockReset();
+    uploadFileMock.mockResolvedValue('owner-1/kit-x/manual.png');
+    // jsdom não tem createObjectURL (CampoFoto mostra a miniatura do arquivo escolhido).
+    URL.createObjectURL = vi.fn(() => 'blob:x');
+    URL.revokeObjectURL = vi.fn();
+    criarKitVinculadoMock.mockResolvedValue({ ok: true, kits: [], publicacaoOk: true, loteId: null });
+  });
+
+  it('botão só aparece com capa na base e módulo imagem_ia', async () => {
+    await abrirPreview(BASE);
+    expect(botaoGerar()).toBeNull();
+    cleanup();
+    modulosMock.data = [];
+    await abrirPreview();
+    expect(botaoGerar()).toBeNull();
+    cleanup();
+    modulosMock.data = ['imagem_ia'];
+    await abrirPreview();
+    expect(botaoGerar()).toBeInTheDocument();
+  });
+
+  it('gerar não altera a foto; "Usar esta foto" aplica o path e o kit sai com ele (sem upload)', async () => {
+    gerarCapaMock.mockResolvedValue(aprovada('r1'));
+    await abrirPreview();
+    await userEvent.click(botaoGerar()!);
+    const usar = await screen.findByRole('button', { name: 'Usar capa com 2 unidades' });
+    fireEvent.load(screen.getByAltText('Capa gerada com 2 unidades'));
+    await userEvent.click(usar);
+    await criar();
+    expect(imagemPathEnviado()).toBe('ORG/kit-variacao-ia/r1.png');
+    expect(uploadFileMock).not.toHaveBeenCalled();
+  });
+
+  it('sem clicar em "Usar", a candidata não vai para o kit', async () => {
+    gerarCapaMock.mockResolvedValue(aprovada('r1'));
+    await abrirPreview();
+    await userEvent.click(botaoGerar()!);
+    await screen.findByRole('button', { name: 'Usar capa com 2 unidades' });
+    await criar();
+    expect(imagemPathEnviado()).toBe(BASE_COM_FOTO.fotoPath);
+  });
+
+  it('arquivo manual descarta a candidata; ao remover o arquivo volta a foto da base', async () => {
+    gerarCapaMock.mockResolvedValue(aprovada('r1'));
+    await abrirPreview();
+    await userEvent.click(botaoGerar()!);
+    await screen.findByRole('button', { name: 'Usar capa com 2 unidades' });
+    await userEvent.upload(screen.getByLabelText('Foto do kit 2'), new File(['x'], 'manual.png', { type: 'image/png' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Usar capa com 2 unidades' })).toBeNull());
+    expect(botaoGerar()).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Remover Foto do kit 2' }));
+    await criar();
+    expect(imagemPathEnviado()).toBe(BASE_COM_FOTO.fotoPath);
+  });
+
+  it('Voltar durante a geração não perde a candidata ao reabrir a etapa', async () => {
+    let fim!: (v: unknown) => void;
+    gerarCapaMock.mockReturnValue(new Promise((r) => { fim = r; }));
+    await abrirPreview();
+    await userEvent.click(botaoGerar()!);
+    await userEvent.click(screen.getByRole('button', { name: 'Voltar' }));
+    await act(async () => { fim(aprovada('r2')); });
+    await userEvent.click(screen.getByRole('button', { name: 'Avançar' }));
+    expect(await screen.findByRole('button', { name: 'Usar capa com 2 unidades' })).toBeInTheDocument();
   });
 });
