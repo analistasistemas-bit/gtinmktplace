@@ -193,6 +193,41 @@ describe('GerarCapaUnidades', () => {
     expect(await screen.findByRole('button', { name: 'Usar capa com 3 unidades' })).toBeInTheDocument();
   });
 
+  it('fechar o dialog no meio da geração: a 1ª tentativa reprovada com próxima não chama a edge de novo', async () => {
+    let fimA!: (v: unknown) => void;
+    edge.mockReturnValueOnce(new Promise((r) => { fimA = r; }) as never).mockResolvedValue(aprovada('x'));
+    const { rerender } = render(<Harness />);
+    await userEvent.click(botao()!);
+    rerender(<Harness aberto={false} />);
+    await act(async () => { fimA(reprovada('a', 1)); });
+    expect(edge).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['reprovada final', reprovada('a', 3)],
+    ['falha definitiva', falha('imagem_inadequada', 'velha')],
+    ['aprovada', aprovada('a')],
+    ['falha incerta', falha('estado_incerto', 'velha')],
+  ])('descartar + nova geração: a abandonada voltando com %s não mexe no request_id nem no estado da vigente', async (_, resposta) => {
+    let fimA!: (v: unknown) => void;
+    let fimB!: (v: unknown) => void;
+    edge.mockReturnValueOnce(new Promise((r) => { fimA = r; }) as never).mockReturnValueOnce(new Promise((r) => { fimB = r; }) as never);
+    render(<Harness />);
+    await userEvent.click(botao()!);
+    await userEvent.click(screen.getByText('descartar'));
+    await userEvent.click(botao()!);
+    await act(async () => { fimA(resposta); });
+    expect(botao()).toBeDisabled(); // a vigente segue gerando
+    expect(screen.queryByText('velha')).toBeNull();
+    await act(async () => { fimB(falha('estado_incerto', 'incerto')); });
+    await screen.findByText('incerto');
+    edge.mockResolvedValueOnce(aprovada('c'));
+    await userEvent.click(botao()!);
+    await waitFor(() => expect(edge).toHaveBeenCalledTimes(3));
+    expect(ids()[2]).toBe(ids()[1]); // a vigente recupera a linha já gravada
+    expect(ids()[1]).not.toBe(ids()[0]);
+  });
+
   it('reabrir o dialog no meio da geração: a velha não repete nem solta o cadeado da nova', async () => {
     let fimA!: (v: unknown) => void;
     let fimB!: (v: unknown) => void;

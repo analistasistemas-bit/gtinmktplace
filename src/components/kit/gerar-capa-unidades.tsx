@@ -33,8 +33,8 @@ export function useCapasUnidades(familiaBaseId: string, open: boolean) {
   const descartes = useRef<Record<number, number>>({});
 
   useEffect(() => {
+    epoca.current++; // fechar também invalida a geração em voo: ela não chama a edge de novo (teto diário)
     if (!open) return;
-    epoca.current++;
     ids.current = {};
     descartes.current = {};
     emVoo.current.clear();
@@ -47,10 +47,11 @@ export function useCapasUnidades(familiaBaseId: string, open: boolean) {
     emVoo.current.set(n, token);
     const e = epoca.current;
     const d = descartes.current[n] ?? 0;
-    const vivo = () => e === epoca.current && (descartes.current[n] ?? 0) === d;
+    /** Geração abandonada (fechou, reabriu, descartou ou outra assumiu o n) não toca request_id, estado nem cadeado. */
+    const vivo = () => e === epoca.current && (descartes.current[n] ?? 0) === d && emVoo.current.get(n) === token;
     const set = (s: EstadoCapa) => { if (vivo()) setEstados((p) => ({ ...p, [n]: s })); };
     const id = (ids.current[n] ||= crypto.randomUUID());
-    const definitivo = () => { if (e === epoca.current) delete ids.current[n]; };
+    const definitivo = () => { if (vivo()) delete ids.current[n]; };
     set({ fase: 'gerando', tentativa: 1 });
     try {
       let r = await gerarCapaUnidadesEdge({ requestId: id, familiaBaseId, n });
