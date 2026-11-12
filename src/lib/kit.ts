@@ -138,7 +138,8 @@ export function descricaoDoKit(descricaoBase: string, n: number, tituloBase: str
     desc = `${desc}${secaoOQueVoceRecebe(n, titulo)}`;
   }
 
-  return desc;
+  const abertura = `Kit com ${unidades} de ${titulo}.\n\n`;
+  return desc.startsWith(abertura) ? desc : `${abertura}${desc}`;
 }
 
 /** Campos da família-base usados para pré-preencher o preview (Decisão 4). */

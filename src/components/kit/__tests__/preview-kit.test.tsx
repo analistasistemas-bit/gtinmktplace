@@ -45,6 +45,10 @@ function renderPreview(n: number, inicial: Partial<KitPreviewValue> = {}) {
   );
 }
 
+it('altura do kit sem ruído de ponto flutuante', () => {
+  expect(valorInicialPreview({ ...BASE, alturaCm: 9.8 }, 't', 'd', 6).alturaCm).toBe(58.8);
+});
+
 describe('valorInicialPreview', () => {
   it('pré-preenche só a altura × N — largura/comprimento seguem a base (Diego, 2026-09-08: bug '
     + 'MLB7585283770; multiplicar as 3 dimensões multiplicaria o volume por N³, não por N — '

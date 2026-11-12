@@ -44,7 +44,7 @@ export function valorInicialPreview(base: BaseParaKit, titulo: string, descricao
     // `calcularPesoUtilizado`), superestimando o frete — achado na revisão Fable. Só a altura
     // (eixo do empilhamento) escala por N; largura/comprimento seguem a base. Aproximação —
     // segue editável para quando o empacotamento real for diferente.
-    alturaCm: (base.alturaCm ?? 0) * n,
+    alturaCm: Math.round((base.alturaCm ?? 0) * n * 100) / 100,
     larguraCm: base.larguraCm ?? 0,
     comprimentoCm: base.comprimentoCm ?? 0,
     atacado: [],

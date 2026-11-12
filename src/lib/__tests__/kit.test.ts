@@ -70,6 +70,25 @@ describe('precoSugeridoDoKit', () => {
 });
 
 describe('descricaoDoKit', () => {
+  it('abre citando a quantidade e o título, idempotente', () => {
+    const abertura = 'Kit com 6 unidades de Ampola 3 em 1 10ml.\n\n';
+    const r = descricaoDoKit('Ampola capilar.', 6, 'Ampola 3 em 1 10ml');
+    expect(r.startsWith(abertura)).toBe(true);
+    const r2 = descricaoDoKit(r, 6, 'Ampola 3 em 1 10ml');
+    expect(r2.split('Kit com 6 unidades de').length - 1).toBe(1);
+  });
+
+  it('base que começa com "Kit com 10 agulhas" ainda recebe a abertura', () => {
+    const r = descricaoDoKit('Kit com 10 agulhas para costura.', 2, 'Agulha X');
+    expect(r.startsWith('Kit com 2 unidades de Agulha X.\n\n')).toBe(true);
+  });
+
+  it('descrição base vazia: abertura + seção O QUE VOCÊ RECEBE', () => {
+    const r = descricaoDoKit('', 3, 'Produto Y');
+    expect(r.startsWith('Kit com 3 unidades de Produto Y.\n\n')).toBe(true);
+    expect(r).toContain('O QUE VOCÊ RECEBE');
+  });
+
   it('troca o rótulo Metragem por Volume herdado da base (ml)', () => {
     const r = descricaoDoKit('📌 ESPECIFICAÇÕES\n\n• Metragem: 120ml\n\n🎯 INDICAÇÕES DE USO', 3, 'Água Micelar Gottin 120ml');
     expect(r).toContain('• Volume: 120ml');
@@ -98,7 +117,7 @@ O QUE VOCÊ RECEBE
   it('cria seção O QUE VOCÊ RECEBE quando ausente e nada foi adaptado', () => {
     const r = descricaoDoKit('Fita de boa qualidade.', 4, 'Fita Adesiva Transparente 45mm');
     expect(r).toBe(
-      'Fita de boa qualidade.\n\n📦 O QUE VOCÊ RECEBE\n\n• 4 unidades de Fita Adesiva Transparente 45mm',
+      'Kit com 4 unidades de Fita Adesiva Transparente 45mm.\n\nFita de boa qualidade.\n\n📦 O QUE VOCÊ RECEBE\n\n• 4 unidades de Fita Adesiva Transparente 45mm',
     );
     expect(r).not.toContain('Kit com 4 unidades.');
   });
