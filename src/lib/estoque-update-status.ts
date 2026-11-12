@@ -21,7 +21,34 @@ export async function fetchFamiliasNaoPublicadas(): Promise<FamiliaStatusRow[]> 
     .is('variacoes.ml_variation_id', null)
     .neq('status', 'publicado');
   if (error) throw error;
-  return (data ?? []) as FamiliaStatusRow[];
+  const rows = (data ?? []) as FamiliaStatusRow[];
+  return semCoresAtivasUP(rows, await fetchSkusAtivosUP(rows.map((r) => r.codigo_pai)));
+}
+
+/** User Products grava `ml_variation_id=null` em TODAS as cores — "sem vínculo" não distingue a cor
+ *  que falhou das que já estão no ar (12/11/2026: 10 cores com "Erro" por causa de 1). O sinal certo
+ *  é o item do SKU estar `ativo` em `anuncios_externos_itens`. Falha na leitura = Set vazio: cai no
+ *  comportamento anterior (marca todas), nunca esconde um erro real. RLS filtra por org. */
+async function fetchSkusAtivosUP(codigosPai: string[]): Promise<Set<string>> {
+  const pais = [...new Set(codigosPai)];
+  if (pais.length === 0) return new Set();
+  const { data: raizes, error: raizErr } = await supabase
+    .from('anuncios_externos').select('id').eq('canal', 'mercado_livre').eq('particao', 0).in('codigo_pai', pais);
+  if (raizErr || !raizes?.length) return new Set();
+  const { data: itens, error: itErr } = await supabase
+    .from('anuncios_externos_itens').select('sku')
+    .in('anuncio_externo_id', raizes.map((r) => r.id)).eq('retirado', false).eq('status', 'ativo');
+  if (itErr) return new Set();
+  return new Set((itens ?? []).map((i) => i.sku as string));
+}
+
+/** Tira do embed as cores cujo SKU já está ativo no ML (família User Products). Sem SKU ativo
+ *  conhecido (Legacy) devolve as linhas como vieram. */
+export function semCoresAtivasUP(rows: FamiliaStatusRow[], skusAtivos: Set<string>): FamiliaStatusRow[] {
+  if (skusAtivos.size === 0) return rows;
+  return rows.map((r) => (r.variacoes
+    ? { ...r, variacoes: r.variacoes.filter((v) => !skusAtivos.has(v.codigo)) }
+    : r));
 }
 
 export type StatusUpdateProduto = 'atualizando' | 'erro';

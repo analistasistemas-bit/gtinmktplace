@@ -15,6 +15,9 @@ import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
+import { resolverConexao } from '../_shared/canais/conexao.ts';
+import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
+import { lerPrecoBaseVivo } from '../_shared/preco/preco-base-vivo.ts';
 import { comRetryConcorrencia } from '../_shared/estoque/baixa.ts';
 import { codigosJaUsados, derivarCodigosSku } from '../_shared/produto/codigos.ts';
 import {
@@ -265,6 +268,29 @@ Deno.serve(async (req) => {
     return json({ erros: [{ campo: `variacoes[${semFoto}].imagemPath`, mensagem: 'O SKU de origem da foto não tem foto — envie uma.' }] }, 400);
   }
 
+  // User Products: cada cor é um item ML próprio → a cor nova sobe com o preço BASE vivo das irmãs,
+  // independente de promoção (Diego, 12/11/2026: `preco_publicacao` local defasado fez 5 cores
+  // nascerem a 58,90 com base 69,90). Fail-closed, ANTES de reservar código e de criar lote: sem
+  // leitura confiável não se inventa preço. Legacy (1 item, N variações) NÃO entra: o worker exige
+  // preço uniforme entre as variações (`garantirPrecoUniforme`) e a cor nova segue o das irmãs.
+  const { data: raizPreco, error: raizPrecoErr } = await admin.from('anuncios_externos').select('id')
+    .eq('org_id', orgId).eq('codigo_pai', codigoPai).eq('canal', 'mercado_livre').eq('particao', 0).maybeSingle();
+  const { data: itensPreco, error: itensPrecoErr } = raizPreco
+    ? await admin.from('anuncios_externos_itens').select('item_externo_id')
+      .eq('anuncio_externo_id', raizPreco.id as string).eq('retirado', false).not('item_externo_id', 'is', null)
+    : { data: [] as { item_externo_id: string }[], error: null };
+  const idsIrmasUP = (itensPreco ?? []).map((i) => i.item_externo_id as string);
+  const msgPreco503 = 'Não consegui ler o preço atual do anúncio no Mercado Livre. Tente novamente em instantes.';
+  if (raizPrecoErr || itensPrecoErr) return json({ error: msgPreco503 }, 503);
+  let precoBaseMl: number | null = null; // null = Legacy → preço uniforme das irmãs
+  if (idsIrmasUP.length > 0) {
+    const conexaoPreco = await resolverConexao(admin, orgId, 'mercado_livre');
+    precoBaseMl = conexaoPreco
+      ? await lerPrecoBaseVivo(await getValidAccessTokenConexao(conexaoPreco), idsIrmasUP)
+      : null;
+    if (precoBaseMl === null) return json({ error: msgPreco503 }, 503);
+  }
+
   let codigosNovos: string[];
   if (familiaGrade) {
     // Grade: o código é gerado pelo sistema — mesma reserva + conferência + UMA ressincronização
@@ -375,7 +401,7 @@ Deno.serve(async (req) => {
     { preco_publicacao: number | null; excluida_da_publicacao: boolean }[];
   const novasVariacoes = variacoesEntrada.map((v, i) => montarVariacaoNova(
     { ...v, codigo: codigosNovos[i], imagemPath: fotos[i]!.imagemPath, mlPictureId: fotos[i]!.mlPictureId },
-    { familiaId, userId, orgId, precoPublicacao: precoPublicacaoNova(irmasParaPreco, v.preco) },
+    { familiaId, userId, orgId, precoPublicacao: precoBaseMl ?? precoPublicacaoNova(irmasParaPreco, v.preco) },
   ));
 
   // Falha aqui derruba a família criada (padrão cadastrar-produto/index.ts:218-221): família

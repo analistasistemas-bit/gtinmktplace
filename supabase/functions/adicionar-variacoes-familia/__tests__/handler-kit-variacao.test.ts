@@ -2,6 +2,7 @@
 // `variacoes_kit_saldo_copia` (supabase/tests/kit_variacao_guards.sql). Com transferência aberta o
 // insert é recusado: o handler desfaz família e lote e devolve 409, sem publicar.
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { lerPrecoBaseVivo } from '../../_shared/preco/preco-base-vivo.ts';
 
 type Linha = Record<string, unknown>;
 const f = vi.hoisted(() => ({
@@ -10,6 +11,8 @@ const f = vi.hoisted(() => ({
   // Erros por tentativa (consumidos em ordem); vazio cai em `erroVariacoes`.
   errosVariacoes: [] as Array<{ code: string; message: string }>,
   escritas: [] as Array<{ tabela: string; op: string }>,
+  variacoesInseridas: [] as Array<Record<string, unknown>>,
+  up: false,
 }));
 
 const ANTERIOR = {
@@ -39,6 +42,9 @@ function builder(tabela: string) {
     if (tabela === 'variacoes') {
       return { data: [{ codigo: '00000001', cor: 'Preto', tamanho: null, excluida_da_publicacao: false, imagem_path: null, ml_picture_id: null, estoque: 3 }], error: null };
     }
+    // Família User Products: raiz + 1 item filho vivo (f.up). Sem isso é Legacy.
+    if (f.up && tabela === 'anuncios_externos') return { data: { id: 'raiz-1' }, error: null };
+    if (f.up && tabela === 'anuncios_externos_itens') return { data: [{ item_externo_id: 'MLB1' }], error: null };
     if (tabela === 'lotes' || tabela === 'anuncios_externos' || tabela === 'anuncios_externos_itens') return { data: [], error: null };
     return { data: null, error: null };
   };
@@ -49,7 +55,11 @@ function builder(tabela: string) {
     not: (c: string, _o: string, v: unknown) => { filtros[`not:${c}`] = v; return q; },
     neq: () => q, gte: () => q, lt: () => q, gt: () => q, is: () => q,
     order: () => q, limit: () => q, range: () => q,
-    insert: () => { op = 'insert'; return q; },
+    insert: (linhas: unknown) => {
+      op = 'insert';
+      if (tabela === 'variacoes') f.variacoesInseridas.push(...(Array.isArray(linhas) ? linhas : [linhas]) as Array<Record<string, unknown>>);
+      return q;
+    },
     update: () => { op = 'update'; return q; },
     delete: () => { op = 'delete'; return q; },
     maybeSingle: async () => resolver(),
@@ -73,6 +83,10 @@ vi.mock('../../_shared/supabase.ts', () => ({
   }),
 }));
 vi.mock('../../_shared/support-audit.ts', () => ({ auditarOperacaoSuporte: vi.fn() }));
+// Preço base vivo das irmãs no ML (leitura nova do handler): aqui, sempre 69,90.
+vi.mock('../../_shared/canais/conexao.ts', () => ({ resolverConexao: vi.fn(async () => ({ id: 'conn-1' })) }));
+vi.mock('../../_shared/ml/token.ts', () => ({ getValidAccessTokenConexao: vi.fn(async () => 'tok') }));
+vi.mock('../../_shared/preco/preco-base-vivo.ts', () => ({ lerPrecoBaseVivo: vi.fn(async () => 69.9) }));
 vi.mock('../../_shared/produto/modulo.ts', () => ({ exigirModulo: vi.fn(async () => true) }));
 
 let handler: (req: Request) => Promise<Response>;
@@ -83,7 +97,8 @@ beforeAll(async () => {
 });
 let fetchSpy: ReturnType<typeof vi.fn>;
 beforeEach(() => {
-  f.erroVariacoes = null; f.errosVariacoes = []; f.escritas = [];
+  f.erroVariacoes = null; f.errosVariacoes = []; f.escritas = []; f.variacoesInseridas = []; f.up = false;
+  vi.mocked(lerPrecoBaseVivo).mockClear();
   fetchSpy = vi.fn(async () => new Response('{}'));
   vi.stubGlobal('fetch', fetchSpy);
 });
@@ -95,6 +110,30 @@ const post = () => handler(new Request('http://localhost', {
     variacoes: [{ codigo: '00000002', nome: 'Azul', preco: 10, estoqueInicial: 1, imagemPath: 'user-1/a.jpg' }],
   }),
 }));
+
+describe('adicionar-variacoes-familia — preço base vivo das irmãs (12/11/2026)', () => {
+  it('User Products sem leitura confiável do ML → 503 e NADA é criado (nunca cai no preço local defasado)', async () => {
+    f.up = true;
+    vi.mocked(lerPrecoBaseVivo).mockResolvedValueOnce(null);
+    const r = await post();
+    expect(r.status).toBe(503);
+    expect(f.escritas).toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('User Products: a cor nova é gravada com o preço base lido no ML, não com o digitado (10)', async () => {
+    f.up = true;
+    await post();
+    expect(lerPrecoBaseVivo).toHaveBeenCalledWith('tok', ['MLB1']);
+    expect(f.variacoesInseridas.find((v) => v.codigo === '00000002')?.preco_publicacao).toBe(69.9);
+  });
+
+  it('Legacy (sem itens filhos): não lê o ML; a cor nova segue o preço uniforme das irmãs', async () => {
+    await post();
+    expect(lerPrecoBaseVivo).not.toHaveBeenCalled();
+    expect(f.variacoesInseridas.find((v) => v.codigo === '00000002')?.preco_publicacao).toBe(10);
+  });
+});
 
 describe('adicionar-variacoes-familia — SKU em transferência de kit com variação', () => {
   it('insert recusado pelo trigger → 409 com a mensagem, família e lote desfeitos, sem publicar', async () => {

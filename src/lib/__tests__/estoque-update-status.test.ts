@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   statusUpdatePorProduto, familiaEmVoo, codigosConcluidosComSucesso, coresSemVinculoPorProduto,
-  loteUpdatePorProduto, type FamiliaStatusRow,
+  loteUpdatePorProduto, semCoresAtivasUP, type FamiliaStatusRow,
 } from '../estoque-update-status';
 
 function row(over: Partial<FamiliaStatusRow> = {}): FamiliaStatusRow {
@@ -127,6 +127,31 @@ describe('coresSemVinculoPorProduto', () => {
       row({ criado_em: '2026-09-03T00:00:00Z', variacoes: [{ codigo: 'NOVA', ml_variation_id: null }] }),
     ];
     expect(coresSemVinculoPorProduto(rows).get('00000100')).toEqual(new Set(['NOVA']));
+  });
+});
+
+describe('semCoresAtivasUP (User Products: ml_variation_id é sempre null)', () => {
+  const rows = [row({
+    status: 'erro',
+    variacoes: [
+      { codigo: 'ATIVA1', ml_variation_id: null },
+      { codigo: 'ATIVA2', ml_variation_id: null },
+      { codigo: 'PENDENTE', ml_variation_id: null },
+    ],
+  })];
+
+  it('só a cor sem item ativo no ML recebe a pílula de erro', () => {
+    const filtradas = semCoresAtivasUP(rows, new Set(['ATIVA1', 'ATIVA2']));
+    expect(coresSemVinculoPorProduto(filtradas).get('00000100')).toEqual(new Set(['PENDENTE']));
+  });
+
+  it('família Legacy (nenhum SKU ativo conhecido) não muda', () => {
+    expect(semCoresAtivasUP(rows, new Set())).toEqual(rows);
+  });
+
+  it('tudo ativo → nenhuma cor marcada (o erro fica só no cabeçalho do card)', () => {
+    const filtradas = semCoresAtivasUP(rows, new Set(['ATIVA1', 'ATIVA2', 'PENDENTE']));
+    expect(coresSemVinculoPorProduto(filtradas).has('00000100')).toBe(false);
   });
 });
 
