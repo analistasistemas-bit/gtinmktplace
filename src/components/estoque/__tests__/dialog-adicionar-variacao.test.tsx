@@ -18,17 +18,22 @@ vi.mock('sonner', () => ({
 
 const invokeMock = vi.fn();
 const familiaPrefillDataMock = vi.fn();
+const conflitoVariacoesMock = vi.fn(() => [] as Array<Record<string, unknown>>);
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
     auth: { getUser: () => Promise.resolve({ data: { user: { id: 'user-1' } } }) },
     functions: { invoke: (...args: unknown[]) => invokeMock(...args) },
     from: (table: string) => {
+      if (table === 'variacoes') {
+        return { select: () => ({ in: () => Promise.resolve({ data: conflitoVariacoesMock(), error: null }) }) };
+      }
       if (table !== 'familias') throw new Error(`tabela inesperada no mock: ${table}`);
       // Espelha a query real (select→eq→order→limit) só o suficiente para o dialog: sempre
       // resolve com o array que o teste armou em familiaPrefillDataMock.
       return {
         select: () => ({
+          in: () => Promise.resolve({ data: [], error: null }),
           eq: () => ({
             order: () => ({
               limit: () => Promise.resolve({ data: familiaPrefillDataMock(), error: null }),
@@ -269,6 +274,34 @@ describe('DialogAdicionarVariacao', () => {
   // Extensão do D-6 (2026-08-21): custo e preço mínimo raramente mudam entre cores do mesmo
   // produto — pré-preencher da irmã evita o admin ter que ir consultar a outra variação antes
   // de digitar. Igual a peso/dimensões, continua editável.
+  it('409 de SKU duplicado deixa o erro fixo no diálogo, dizendo qual produto usa o código', async () => {
+    invokeMock.mockResolvedValue({
+      data: null,
+      error: {
+        context: new Response(
+          JSON.stringify({ error: 'Código já usado por outro produto nesta organização.', conflitos: ['00000006'] }),
+          { status: 409 },
+        ),
+      },
+    });
+    conflitoVariacoesMock.mockReturnValue([
+      { codigo: '00000006', nome: 'Tecido Oxford Natal Est.5', familia_id: 'fam-outra' },
+    ]);
+    const onFechar = vi.fn();
+    const user = userEvent.setup();
+    renderDialog(onFechar);
+    await waitFor(() => expect(familiaPrefillDataMock).toHaveBeenCalled());
+    await preencherLinha(user, 1, { codigo: '00000006' });
+    await waitFor(() => expect(BOTAO_SALVAR()).not.toBeDisabled());
+
+    await user.click(BOTAO_SALVAR());
+
+    const alerta = await screen.findByRole('alert');
+    expect(alerta).toHaveTextContent('Código já usado por outro produto nesta organização.');
+    expect(alerta).toHaveTextContent('6: já é "Tecido Oxford Natal Est.5" (outro produto)');
+    expect(onFechar).not.toHaveBeenCalled();
+  });
+
   it('pré-preenche custo e preço mínimo da variação irmã', async () => {
     familiaPrefillDataMock.mockReturnValue([{
       id: 'fam-canonica-1',
