@@ -27,6 +27,7 @@ export function estadoParaParams(e: EstadoPublicados): URLSearchParams {
   if (e.filtro.somenteEncalhados) p.set('encalhados', '1');
   if (e.filtro.somenteIncompletos) p.set('incompletos', '1');
   if (e.filtro.somenteSemCatalogo) p.set('semcatalogo', '1');
+  if (e.filtro.somenteComKitVariacao) p.set('comkit', '1');
   if (e.ord) {
     p.set('ord', e.ord.coluna);
     p.set('dir', e.ord.dir);
@@ -52,6 +53,7 @@ export function paramsParaEstado(p: URLSearchParams): EstadoPublicados {
   if (p.get('encalhados') === '1') filtro.somenteEncalhados = true;
   if (p.get('incompletos') === '1') filtro.somenteIncompletos = true;
   if (p.get('semcatalogo') === '1') filtro.somenteSemCatalogo = true;
+  if (p.get('comkit') === '1') filtro.somenteComKitVariacao = true;
 
   const ord: OrdenacaoPublicados | null =
     ordCol && (COLUNAS as string[]).includes(ordCol)

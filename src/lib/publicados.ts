@@ -285,6 +285,8 @@ export interface FiltroPublicados {
    *  Sem este filtro, achar o botão exigia varrer a lista linha a linha: foi assim que o Centrum
    *  passou um mês em `sem_produto` com o catálogo já ativo no ML sem ninguém notar. */
   somenteSemCatalogo?: boolean;
+  /** Só produtos com kit com variação (ADR-0200): a base e o próprio anúncio do kit. */
+  somenteComKitVariacao?: boolean;
 }
 
 /** Anúncio encalhado: ativo e sem nenhuma venda no período. */
@@ -300,6 +302,8 @@ export function fiscalPendente(i: Pick<PublicadoItem, 'canInvoice'>): boolean {
 export function filtrarPublicados(
   itens: PublicadoItem[],
   f: FiltroPublicados,
+  /** Códigos PAI da base e do kit de cada kit com variação ativo; só lido com `somenteComKitVariacao`. */
+  codigosComKitVariacao?: ReadonlySet<string>,
 ): PublicadoItem[] {
   const queryStr = normalizarParaBusca(f.busca);
   const termosBusca = queryStr ? queryStr.split(/\s+/) : [];
@@ -312,6 +316,7 @@ export function filtrarPublicados(
     if (f.somenteEncalhados && !ehEncalhado(i)) return false;
     if (f.somenteIncompletos && !i.publicacaoIncompleta) return false;
     if (f.somenteSemCatalogo && !i.catalogRetentavel) return false;
+    if (f.somenteComKitVariacao && !codigosComKitVariacao?.has(i.codigoPai)) return false;
 
     if (termosBusca.length > 0) {
       const textoBuscavel = normalizarParaBusca([

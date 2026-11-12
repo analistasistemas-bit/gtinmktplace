@@ -88,7 +88,7 @@ import { DialogGerenciarKit } from '@/components/kit-variacao/dialog-gerenciar-k
 import { BotaoGaleria } from '@/components/galeria/botao-galeria';
 import { restaurarRolagem } from '@/lib/galeria/retorno';
 import { useKitsVariacao } from '@/hooks/useKitsVariacao';
-import { fetchBaseCanonicaId, type KitVariacaoResumo } from '@/lib/kit-variacao-edge';
+import { fetchBaseCanonicaId, type KitVariacaoResumo, type LinkCombinacaoKit } from '@/lib/kit-variacao-edge';
 import { AnunciosOrfaos } from '@/components/anuncios-orfaos';
 import { paginar } from '@/lib/paginacao';
 import { paramsParaEstado, estadoParaParams, type EstadoPublicados } from '@/lib/publicados-url';
@@ -253,6 +253,28 @@ const SUFIXO_KIT: Record<string, string> = {
   erro: ' (com erro)', publicando: ' (montando…)', encerrando: ' (encerrando…)', encerrado: ' · Encerrado',
 };
 
+/** Um link por anúncio do kit (combinação × tamanho): o ML só junta no seletor depois de minutos e o link único
+ *  levava a uma combinação só. */
+function LinksCombinacoes({ links }: { links: LinkCombinacaoKit[] }) {
+  const porCombinacao = new Map<string, LinkCombinacaoKit[]>();
+  for (const l of links) porCombinacao.set(l.rotulo, [...(porCombinacao.get(l.rotulo) ?? []), l]);
+  return (
+    <ul className="grid w-full gap-1" aria-label="Anúncios do kit no ML">
+      {[...porCombinacao].map(([rotulo, ls]) => (
+        <li key={rotulo} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="text-muted-foreground">{rotulo}:</span>
+          {ls.map((l) => (
+            <a key={l.url} href={l.url} target="_blank" rel="noreferrer" title={`Ver ${rotulo} ${l.tamanho} no ML`}
+              className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-primary hover:bg-muted">
+              <ExternalLink className="h-3 w-3" aria-hidden />{l.tamanho}
+            </a>
+          ))}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** ADR-0200: kits com variação feitos a partir do produto. Mostra também o kit ainda montando ou com erro, que
  *  pode nem ter linha própria na tabela. Transferência aberta (adendo 08/11): etapa ao vivo com aura + raio; travada
  *  em vermelho; sem transferência, o link do anúncio. `foco`: veio de criar/montar/desmontar, rola até aqui e destaca. */
@@ -310,6 +332,8 @@ function KitsComVariacao({ kits, onGerenciar, foco }: {
                 </button>
                 {t ? (
                   <EtapaTransferencia t={t} />
+                ) : k.status === 'publicado' && (k.links?.length ?? 0) > 0 ? (
+                  <LinksCombinacoes links={k.links!} />
                 ) : k.permalink && k.status === 'publicado' ? (
                   <a href={k.permalink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline">
                     <ExternalLink className="h-3 w-3" aria-hidden />Ver anúncio no ML
@@ -1535,9 +1559,14 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
     [doCanal],
   );
 
+  // Base e kit de cada kit com variação ativo (encerrado já saiu de Publicados).
+  const codigosComKitVariacao = useMemo(
+    () => new Set((kitsVariacao ?? []).filter((k) => k.status !== 'encerrado').flatMap((k) => [k.codigoPaiBase, k.codigoPaiKit])),
+    [kitsVariacao],
+  );
   const itensExibidos = useMemo(
-    () => ordenarPublicados(filtrarPublicados(doCanal, filtro), ord),
-    [doCanal, filtro, ord],
+    () => ordenarPublicados(filtrarPublicados(doCanal, filtro, codigosComKitVariacao), ord),
+    [doCanal, filtro, ord, codigosComKitVariacao],
   );
   const pag = useMemo(() => paginar(itensExibidos, pagina, tamanho), [itensExibidos, pagina, tamanho]);
 
@@ -1934,6 +1963,18 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
                 </SelectContent>
               </Select>
             </div>
+            {temKitVariacao && (
+              <Button
+                type="button"
+                variant={filtro.somenteComKitVariacao ? 'default' : 'outline'}
+                size="sm"
+                className="h-8"
+                aria-pressed={!!filtro.somenteComKitVariacao}
+                onClick={() => setFiltro((f) => ({ ...f, somenteComKitVariacao: !f.somenteComKitVariacao }))}
+              >
+                <Layers className="h-3.5 w-3.5" aria-hidden />Com kit de variação
+              </Button>
+            )}
           </div>
 
           <FiltrosAtivos filtro={filtro} onRemover={removerFiltro} onLimpar={limparFiltros} />
