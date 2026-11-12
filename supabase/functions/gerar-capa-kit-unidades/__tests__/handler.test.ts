@@ -405,9 +405,10 @@ describe('gerar-capa-kit-unidades', () => {
     const r = await post(ok);
     expect(r.status).toBe(200);
     const j = await r.json();
-    expect(j).toMatchObject({ aprovado: false, proxima: true, tentativa: 1 });
+    // Falha técnica: proxima false (a UI não gasta a seguinte sozinha); repetir o pedido é manual.
+    expect(j).toMatchObject({ aprovado: false, proxima: false, tentativa: 1 });
     expect(j.path).toBeUndefined();
-    expect(j.motivos.join(' ')).toMatch(/Falha técnica/);
+    expect(j.motivos).toEqual(['Falha técnica na geração da foto (sem cobrança).']);
     expect(j.verificacao).toEqual({ aprovado: false, itens: [], motivos: j.motivos });
     expect(f.linhas).toHaveLength(1);
     expect(f.linhas[0]).toMatchObject({ tentativa: 1, status: 'recusada', custo_usd: null });
@@ -418,11 +419,11 @@ describe('gerar-capa-kit-unidades', () => {
     expect(f.linhas.map((l) => [l.tentativa, l.status])).toEqual([[1, 'recusada'], [2, 'gerada']]);
   });
 
-  it('3 falhas da IA no mesmo pedido: proxima false; repetir não chama a IA', async () => {
+  it('3 falhas da IA no mesmo pedido (repetidas à mão): proxima sempre false; depois da 3ª repetir não chama a IA', async () => {
     f.imagemFalha = true;
     const js = [];
     for (let i = 0; i < 3; i++) js.push(await (await post(ok)).json());
-    expect(js.map((j) => [j.tentativa, j.proxima])).toEqual([[1, true], [2, true], [3, false]]);
+    expect(js.map((j) => [j.tentativa, j.proxima])).toEqual([[1, false], [2, false], [3, false]]);
     expect(await (await post(ok)).json()).toMatchObject({ tentativa: 3, proxima: false, existente: true });
     expect(f.chamadasImagem).toHaveLength(3);
   });

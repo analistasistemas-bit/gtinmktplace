@@ -166,7 +166,8 @@ async function atender(req: Request, inicio: number): Promise<Response> {
     const v = l.verificacao!;
     const t = Number(l.tentativa);
     return json({
-      request_id: requestId, tentativa: t, aprovado: false, proxima: t < MAX_TENTATIVAS,
+      // Falha técnica nunca pede a próxima sozinha (provedor fora do ar queimaria as 3 num clique); repetir é manual.
+      request_id: requestId, tentativa: t, aprovado: false, proxima: t < MAX_TENTATIVAS && !v.falha_tecnica,
       verificacao: publica(v), motivos: v.motivos ?? [],
       previa_url: v.previa_path ? await assinar(v.previa_path) : null, originais: await originais(v),
       ...(existente ? { existente: true } : {}),
