@@ -9,7 +9,7 @@
 // `adicionar-variacoes-familia` recusa com 400 a família que tem tamanho, e o erro aparece aqui
 // pelo caminho de erro que já existe. Meia-feature (campo sem resolver a tabela de medidas nem o
 // SIZE_GRID_ROW_ID da cor nova) publicaria um anúncio quebrado — por isso recusa, não remendo.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Plus, AlertTriangle } from 'lucide-react';
@@ -33,6 +33,28 @@ import { formatarNomeProduto } from '@/lib/texto';
 import type { ModoNota } from '@/components/estoque/dialog-adicionar-variacao-roteador';
 
 /** ADR-0181 D-8: falha do ledger no modo nota — nunca sugerir entrada manual (somaria em dobro). */
+class ErroConflito extends Error {
+  constructor(msg: string, readonly linhas: string[]) { super(msg); }
+}
+
+// Diz a QUEM pertence cada código recusado (a edge só devolve os códigos). RLS por org garante
+// que só aparecem produtos da própria organização.
+async function descreverConflitos(codigos: string[], familiaAtualId: string): Promise<string[]> {
+  const [{ data: vars }, { data: pais }] = await Promise.all([
+    supabase.from('variacoes').select('codigo, nome, familia_id').in('codigo', codigos),
+    supabase.from('familias').select('codigo_pai').in('codigo_pai', codigos),
+  ]);
+  return codigos.map((c) => {
+    const v = vars?.find((x) => x.codigo === c);
+    if (v) {
+      return `${c.replace(/^0+/, '')}: já é "${formatarNomeProduto(v.nome)}"${v.familia_id === familiaAtualId ? ' (este mesmo produto)' : ' (outro produto)'}.`;
+    }
+    return pais?.some((f) => f.codigo_pai === c)
+      ? `${c.replace(/^0+/, '')}: já é o código de um produto (PAI).`
+      : `${c.replace(/^0+/, '')}: já em uso.`;
+  });
+}
+
 export const MSG_ESTOQUE_PELA_NOTA = 'O estoque desta variação será aplicado ao confirmar a importação da nota.';
 
 type LinhaAddVariacao = LinhaVariacao & { codigo: string };
@@ -120,6 +142,10 @@ export function DialogAdicionarVariacao({ produto, aberto, onFechar, refNota, es
   // "Adicionar variação" clicado ao menos uma vez — mesmo padrão blur/tentouSalvar do cadastro.
   const [tentouSalvar, setTentouSalvar] = useState(false);
   const [salvando, setSalvando] = useState(false);
+  // Erro do último Salvar, fixo no diálogo (o toast some em segundos e o operador perdia o motivo).
+  const [erroSalvar, setErroSalvar] = useState<string[] | null>(null);
+  const erroRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { erroRef.current?.scrollIntoView?.({ block: 'nearest' }); }, [erroSalvar]);
   // Regenerada só ao FECHAR (padrão do cadastro): a idempotência da edge (`chave`/`jaExistia`)
   // cobre o retry de rede sem duplicar o lote.
   const [chave, setChave] = useState(() => crypto.randomUUID());
@@ -158,6 +184,7 @@ export function DialogAdicionarVariacao({ produto, aberto, onFechar, refNota, es
     if (!aberto) return;
     setLinhas([novaLinhaComPrefill(null)]);
     setTentouSalvar(false);
+    setErroSalvar(null);
   }, [aberto, produto?.codigoPai]);
 
   // Aplica o prefill de peso/dimensões/custo/preço (D-6) quando ele chega DEPOIS do reset acima
@@ -199,6 +226,7 @@ export function DialogAdicionarVariacao({ produto, aberto, onFechar, refNota, es
   async function salvar() {
     if (!produto || !prefill) return;
     setSalvando(true);
+    setErroSalvar(null);
     try {
       if (!canWrite()) throw new Error('Suporte somente leitura.');
       const { data: ud } = await supabase.auth.getUser();
@@ -234,9 +262,10 @@ export function DialogAdicionarVariacao({ produto, aberto, onFechar, refNota, es
       if (error) {
         const detalhe = await corpoDoErroDaEdge(error);
         const conflitos = detalhe?.corpo.conflitos as string[] | undefined;
-        throw new Error(conflitos?.length
-          ? `${String(detalhe?.corpo.error)} (${conflitos.join(', ')})`
-          : String(detalhe?.corpo.error ?? (error as Error).message));
+        if (conflitos?.length) {
+          throw new ErroConflito(String(detalhe?.corpo.error), await descreverConflitos(conflitos, prefill.id));
+        }
+        throw new Error(String(detalhe?.corpo.error ?? (error as Error).message));
       }
       const r = data as {
         loteId: string; familiaId: string; publicacaoOk: boolean; falhasEstoque: string[]; jaExistia?: boolean;
@@ -273,7 +302,9 @@ export function DialogAdicionarVariacao({ produto, aberto, onFechar, refNota, es
       onConcluido?.({ codigos: r.codigos ?? [] });
       onFechar();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Falha ao adicionar variação.');
+      const msg = e instanceof Error ? e.message : 'Falha ao adicionar variação.';
+      setErroSalvar(e instanceof ErroConflito ? [msg, ...e.linhas] : [msg]);
+      toast.error(msg);
     } finally {
       setSalvando(false);
     }
@@ -375,6 +406,17 @@ export function DialogAdicionarVariacao({ produto, aberto, onFechar, refNota, es
           )}
           <span className="text-xs text-muted-foreground">* obrigatório</span>
         </div>
+
+        {erroSalvar && (
+          <div ref={erroRef} role="alert" className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <div className="flex flex-col gap-1">
+              <strong>{erroSalvar[0]}</strong>
+              {erroSalvar.slice(1).map((l) => <span key={l}>{l}</span>)}
+              <span className="text-xs text-muted-foreground">Nada foi salvo. Corrija o código e salve de novo.</span>
+            </div>
+          </div>
+        )}
 
         <DialogFooter>
           <Button variant="outline" onClick={onFechar} disabled={salvando}>Cancelar</Button>
