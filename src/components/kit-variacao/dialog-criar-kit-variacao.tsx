@@ -24,6 +24,7 @@ import { GaleriaPecas } from '@/components/kit-variacao/galeria-pecas';
 import { idsDaGaleria, type EscolhaGaleria } from '@/lib/kit-galeria';
 import { QK } from '@/lib/queries';
 import { fmtBRL } from '@/lib/formato';
+import { EtapasKit } from '@/components/kit/etapas-kit';
 import { cn } from '@/lib/utils';
 import {
   AVISO_SELETOR_ML, gerarCombinacoes, maximoPorCelula, rotuloCombinacao, saldoDePecas,
@@ -412,17 +413,10 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
             </DialogDescription>
           </DialogHeader>
 
-          <ol className="flex gap-2 text-xs" aria-label="Etapas">
-            {(['montagem', 'anuncio', 'conferir'] as Etapa[]).map((e, i) => (
-              <li
-                key={e}
-                aria-current={etapa === e ? 'step' : undefined}
-                className={cn('rounded-full border px-2 py-0.5', etapa === e ? 'border-primary/30 bg-primary/10 text-primary' : 'text-muted-foreground')}
-              >
-                {i + 1}. {e === 'montagem' ? 'Montagem' : e === 'anuncio' ? 'Anúncio' : 'Conferir'}
-              </li>
-            ))}
-          </ol>
+          <EtapasKit
+            atual={etapa}
+            etapas={[{ id: 'montagem', rotulo: 'Montagem' }, { id: 'anuncio', rotulo: 'Anúncio' }, { id: 'conferir', rotulo: 'Conferir' }]}
+          />
 
           {familiaQ.isLoading ? (
             <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Carregando o produto…</p>

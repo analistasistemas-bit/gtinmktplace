@@ -25,6 +25,7 @@ import {
   TAMANHOS_KIT, TITULO_MAX_KIT, tituloDoKit, descricaoDoKit, criarKitVinculado,
   type BaseParaKit, type KitFormValues,
 } from '@/lib/kit';
+import { EtapasKit } from '@/components/kit/etapas-kit';
 import { PromocaoBaseKit } from '@/components/kit/promocao-base-kit';
 import { PreviewKit, valorInicialPreview, type KitPreviewValue } from '@/components/kit/preview-kit';
 
@@ -271,7 +272,12 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-1.5">
+        <EtapasKit
+          atual={etapa}
+          etapas={[{ id: 'tamanhos', rotulo: 'Tamanhos' }, { id: 'preview', rotulo: 'Anúncio' }]}
+        />
+
+        <div className="flex flex-col gap-1.5 rounded-md border bg-muted/30 p-3">
           {/* Categoria de origem sempre visível: é ela que o kit herda quando não há override
               (achado do Diego, 10/09/2026 — sem isso a troca é às cegas). */}
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
@@ -330,7 +336,8 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
         {baseNoMl && <PromocaoBaseKit familiaBaseId={familiaBaseId} ativo />}
 
         {etapa === 'tamanhos' ? (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2" role="group" aria-label="Tamanhos do kit">
+            <span className="text-sm font-medium">Tamanhos do kit</span>
             {TAMANHOS_KIT.map((n) => {
               const existente = kitMaisRecentePorTamanho.get(n);
               const jaCriado = !!existente;
