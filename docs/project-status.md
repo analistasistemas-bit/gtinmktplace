@@ -462,6 +462,7 @@ Período de 51 commits que não criou ADR: são extensões e correções dentro 
   enviada, caminho para packs que o ML bloqueia. Avisa quando a RPC não alcança o pack (`fef02727`,
   ressalva do Fable). Antes, `98e12cb8` passou a traduzir o **403 `blocked_by_mediation`** do ML em
   vez de mostrar erro cru.
+- **Kit vinculado — evolução, Fatia 1 (2026-11-12, em branch, ainda não mergeada).** Descrição abre com "Kit com N unidades de <produto>."; "Você recebe por venda" no preview (recálculo com debounce, Clássico fixo, base sem custo/peso/categoria bloqueia, prejuízo/imposto fora da conta exige "Seguir mesmo assim"); promoção ativa/futura da base informativa via `preco-avulso-kit` (gate `kit_variacao` ou `estoque`); pílulas de etapa compartilhadas com o kit com variação. Deploy pendente após o merge: `preco-avulso-kit`. Fatias 2 (fotos 2–7 do anúncio principal, exige ADR) e 3 (capa por IA com N unidades) pendentes. Ver `docs/TASKS.md` e adendos do ADR-0151/0200.
 - **Kit vinculado — categoria própria, diferente da base (2026-09-09/10).** Extensão do ADR-0151:
   `categoriaOverride` resolve os atributos pela categoria nova e não pela da base, com UI "Trocar
   categoria" no diálogo. Caminho completo da categoria visível no seletor e no card da Revisão

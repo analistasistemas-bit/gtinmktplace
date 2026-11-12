@@ -1,5 +1,17 @@
 # PubliAI — Tasks
 
+## Kit vinculado: evolução, Fatia 1 (ADR-0151, adendos 12/11 do 0151 e do 0200) — 2026-11-12
+
+Branch `worktree-kit-vinculado-evolucao` (commits `29ee34b5`..`103a84b8`). Spec `docs/superpowers/specs/2026-11-12-kit-vinculado-evolucao-design.md`.
+
+- [x] Descrição do kit vinculado abre com "Kit com N unidades de <produto>." (`descricaoDoKit` em `src/lib/kit.ts`); altura do kit sem ruído de ponto flutuante.
+- [x] "Você recebe por venda" no preview (`src/lib/kit-recebe.ts`, `src/components/kit/recebe-kit.tsx`): recálculo com debounce de 500 ms ao mudar preço, dimensões ou categoria; tipo fixo Clássico; base sem custo, peso ou categoria bloqueia; prejuízo ou imposto fora da conta exige "Seguir mesmo assim" por kit.
+- [x] Promoção ativa/futura da base, informativa (`src/components/kit/promocao-base-kit.tsx`), via edge `preco-avulso-kit`; gate agora `kit_variacao` ou `estoque` (leitura).
+- [x] Pílulas de etapa compartilhadas (`src/components/kit/etapas-kit.tsx`) no kit vinculado e no kit com variação.
+- [ ] Deploy após o merge: `supabase functions deploy preco-avulso-kit`; conferir a versão ativa.
+- [ ] Fatia 2: fotos 2–7 do anúncio principal (reusar `picture_id` do ML); exige ADR e mexe na publicação comum.
+- [ ] Fatia 3: capa por IA com N unidades.
+
 ## Kit com variação: galeria das fotos das peças no anúncio do kit (adendo 12/11 do ADR-0200) — 2026-11-12
 
 - [x] Plano revisado (Fable 5.2: aprovado com ajustes, incorporados) em `docs/superpowers/plans/2026-11-12-kit-galeria-pecas.md`; ensaio sem escrita (`/items/validate` aceitou fotos de outros anúncios publicados; limite 12 confirmado).

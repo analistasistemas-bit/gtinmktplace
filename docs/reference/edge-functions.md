@@ -73,7 +73,7 @@
 | criar-kit-variacao | **true** | HTTP (frontend, **admin**, módulo `kit_variacao`) | sim (idempotência por `chave_cadastro` + `pedido_hash`) |
 | gerenciar-kit-variacao | **true** | HTTP (frontend, **admin**, módulo `kit_variacao`) | sim (`chave_cadastro` + `pedido_hash` + CAS de `kits_variacao.versao`) |
 | gerar-texto-kit | **true** | HTTP (frontend, **admin**, módulo `kit_variacao`) | não (cada chamada consome IA e grava uma prévia) |
-| preco-avulso-kit | **true** | HTTP (frontend, módulo `kit_variacao`) | sim (só leitura no ML, nada gravado) |
+| preco-avulso-kit | **true** | HTTP (frontend, módulo `kit_variacao` ou `estoque`) | sim (só leitura no ML, nada gravado) |
 | fotos-pecas-kit | **true** | HTTP (frontend, módulo `kit_variacao`) | sim (só leitura no ML, nada gravado) |
 | gerar-foto-kit | **true** | HTTP (frontend, **admin**, módulos `kit_variacao` e `imagem_ia`) | sim (por `request_id` em `kit_variacao_imagens`) |
 | kit-transferencia | false | QStash worker | sim (claim por `execucao_token`; um passo por invocação) |
@@ -1437,7 +1437,9 @@ um smoke test contra Postgres real antes do primeiro deploy.
   `/sale_price`, com uma repetição em 500/502/503: dão o fim da oferta vencedora (`metadata.promotion_id` antes do
   `campaign_id`) e `futuras` (adendo 11/11: `pending`/`started` com início depois de agora e preço abaixo do normal; sem
   preço legível vai com `preco: null`). Leitura inconclusiva → `futuras: []` e `futuras_indisponivel: true` no SKU. Timeout
-  5 s por chamada. Peça sem leitura volta sem preço; sem conexão ML → `indisponivel: true`. Nunca grava.
+  5 s por chamada. Peça sem leitura volta sem preço; sem conexão ML → `indisponivel: true`. Nunca grava. Gate (adendo
+  12/11 do ADR-0200 e do ADR-0151): módulo `kit_variacao` **ou** `estoque` (só leitura, escopo por `org_id`), para o kit
+  vinculado mostrar a promoção ativa/futura da base (`promocao-base-kit.tsx`), apenas informativa.
 - **gerar-texto-kit** — prévia de título e descrição (`copywriter-kit-prompt.ts`, modelo de texto da org, hoje `gpt-6-luna`).
   Parte da `descricao_ml` da base canônica (base sem descrição no padrão: gera antes pelo prompt do anúncio novo). A IA
   reescreve só a abertura "KIT N …" e a frase final; o resto é determinístico (Quantidade: Kit com N unidades; pergunta
