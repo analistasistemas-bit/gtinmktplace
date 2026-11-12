@@ -3,7 +3,7 @@
 // sessão/RLS do front. `VolumeAcimaDoLimite` se propaga (o worker responde TEXTO_VOLUME).
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { carregarContexto, lerVendasJanela, type MetricsDb } from '../../platform-admin/metrics-repository.ts';
-import { diaBrt, janelaDia, janelasMesCorrente, type JanelaIso } from './janelas.ts';
+import { diaBrt, janelaDia, janelaOntemAteAgora, janelasMesCorrente, type JanelaIso } from './janelas.ts';
 import { lerKpis } from './kpis.ts';
 import type { DadosResumo, KpisPeriodo } from './mensagens.ts';
 import { lucroDoPeriodo, resultadoPorItem, topPorLucro, type LucroPeriodo, type ResultadoItem } from './resultado.ts';
@@ -16,10 +16,12 @@ const base = (periodo: JanelaIso, agora: Date): Base => ({ periodo, fuso: 'Ameri
 
 async function kpisPeriodo(admin: SupabaseClient, orgId: string, agora: Date): Promise<KpisPeriodo> {
   const jm = janelasMesCorrente(agora);
-  const [hoje, mes, anterior] = await Promise.all([
+  const o = janelaOntemAteAgora(agora);
+  const [hoje, mes, anterior, ontem] = await Promise.all([
     lerKpis(admin, orgId, janelaDia(diaBrt(agora))), lerKpis(admin, orgId, jm.mes), lerKpis(admin, orgId, jm.anterior),
+    lerKpis(admin, orgId, o.janela),
   ]);
-  return { hoje, mes, anterior, rotuloMes: jm.rotuloMes, rotuloAnterior: jm.rotuloAnterior };
+  return { hoje, mes, anterior, rotuloMes: jm.rotuloMes, rotuloAnterior: jm.rotuloAnterior, ontem: { kpis: ontem, rotulo: o.rotulo } };
 }
 
 async function itensDaJanela(admin: SupabaseClient, orgId: string, j: JanelaIso): Promise<{ itens: ResultadoItem[]; configOk: boolean }> {

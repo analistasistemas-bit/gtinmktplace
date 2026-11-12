@@ -30,6 +30,19 @@ const rodape = [
   urlVendaML(2000000001),
 ];
 
+describe('dia contra dia', () => {
+  const ontem = { kpis: { faturamento: 400, pedidos: 10, ticket: 40 }, rotulo: 'ontem até 22:28' };
+  it('/hoje e carrinho trazem a variação vs ontem até a mesma hora', () => {
+    const kk = { ...k, hoje: { faturamento: 431.08, pedidos: 13, ticket: 33.16 }, ontem };
+    expect(montarHoje(kk, { lucro: null } as unknown as LucroPeriodo)).toContain('📈 +7,8% vs ontem até 22:28');
+    expect(montarMensagemCarrinho(carrinho, kk, 2000000001, estado)).toContain('Ticket médio: R$ 33,16\n📈 +7,8% vs ontem até 22:28');
+    expect(montarHoje({ ...kk, ontem: { ...ontem, kpis: { ...ontem.kpis, faturamento: 500 } } }, { lucro: null } as unknown as LucroPeriodo))
+      .toContain('📉 −13,8% vs ontem até 22:28');
+    expect(montarHoje({ ...kk, ontem: { ...ontem, kpis: { ...ontem.kpis, faturamento: 0 } } }, { lucro: null } as unknown as LucroPeriodo))
+      .toContain('sem base de comparação');
+  });
+});
+
 describe('brl / linhaCrescimento', () => {
   it('formata dinheiro', () => {
     expect(brl(1234.5)).toBe('R$ 1.234,50');

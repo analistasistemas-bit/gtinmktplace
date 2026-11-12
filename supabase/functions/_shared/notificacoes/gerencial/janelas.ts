@@ -28,6 +28,15 @@ export function janela30Dias(dia: string): JanelaIso {
   return { desde: inicioDia(ymd(utc(a, m - 1, d - 29))), ate: janelaDia(dia).ate };
 }
 
+/** Ontem até a mesma hora de `agora` (BRT): [início de ontem, início de ontem + tempo decorrido hoje). */
+export function janelaOntemAteAgora(agora: Date): { janela: JanelaIso; rotulo: string } {
+  const hoje = janelaDia(diaBrt(agora));
+  const ontem = janelaDia(diaBrt(new Date(Date.parse(hoje.desde) - 1)));
+  const ate = new Date(Date.parse(ontem.desde) + (agora.getTime() - Date.parse(hoje.desde)));
+  const hhmm = new Date(agora.getTime() - BRT_MS).toISOString().slice(11, 16);
+  return { janela: { desde: ontem.desde, ate: ate.toISOString() }, rotulo: `ontem até ${hhmm}` };
+}
+
 // Mês anterior de `dia`: dia 1 até o fim do dia correspondente (clamp no último dia do mês anterior).
 function janelaMesAnterior(a: number, m: number, d: number): { janela: JanelaIso; rotulo: string } {
   const ultimo = utc(a, m, 0).getUTCDate(); // último dia do mês anterior (m é 0-based do mês corrente)

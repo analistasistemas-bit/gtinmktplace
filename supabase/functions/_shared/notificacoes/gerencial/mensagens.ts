@@ -29,7 +29,11 @@ export function linhaCrescimento(mes: number, anterior: number, rotuloAnterior: 
   return `${v < 0 ? '−' : '+'}${Math.abs(v).toFixed(1).replace('.', ',')}% vs ${rotuloAnterior}`;
 }
 
-export interface KpisPeriodo { hoje: Kpis; mes: Kpis; anterior: Kpis; rotuloMes: string; rotuloAnterior: string }
+/** `ontem` (opcional) = ontem até a mesma hora de agora, p/ comparar o dia contra dia. */
+export interface KpisPeriodo {
+  hoje: Kpis; mes: Kpis; anterior: Kpis; rotuloMes: string; rotuloAnterior: string;
+  ontem?: { kpis: Kpis; rotulo: string };
+}
 
 type Linha = string | null | false | undefined;
 /** Layout para celular: uma informação por linha, blocos separados por linha em branco; bloco vazio some. */
@@ -45,6 +49,12 @@ const linhaVariacao = (k: KpisPeriodo): string => {
 };
 
 /** Período resumido (contexto): faturamento e pedidos numa linha curta, ticket na seguinte. */
+const linhaDiaContraDia = (k: KpisPeriodo): string | undefined => {
+  if (!k.ontem) return undefined;
+  const t = linhaCrescimento(k.hoje.faturamento, k.ontem.kpis.faturamento, k.ontem.rotulo);
+  return k.ontem.kpis.faturamento > 0 ? `${k.hoje.faturamento < k.ontem.kpis.faturamento ? '📉' : '📈'} ${t}` : t;
+};
+
 const blocoPeriodo = (titulo: string, x: Kpis, variacao?: string): string[] =>
   [titulo, `${brl(x.faturamento)} · ${x.pedidos} pedidos`, `Ticket médio: ${brl(x.ticket)}`, ...(variacao ? [variacao] : [])];
 
@@ -75,7 +85,7 @@ export function montarMensagemCarrinho(
       // Prejuízo por item usa o mesmo líquido pessimista: some quando o carrinho está incompleto.
       ...(estado.parcial || estado.composicaoIncerta ? [] : c.prejuizos).map((p) => `⚠️ ${encurtar(p.titulo)}: prejuízo de ${brl(Math.abs(p.valor))}`),
     ],
-    blocoPeriodo('📅 Hoje', k.hoje),
+    blocoPeriodo('📅 Hoje', k.hoje, linhaDiaContraDia(k)),
     blocoPeriodo(`📆 ${k.rotuloMes}`, k.mes, linhaVariacao(k)),
     [`🔗 Pedido ${chaveNumerica}`, urlVendaML(chaveNumerica)],
   );
@@ -166,7 +176,7 @@ export function montarResumoDiario(d: DadosResumo): string {
 }
 
 export function montarHoje(k: KpisPeriodo, l: LucroPeriodo): string {
-  return blocos(['📅 Hoje'], [...linhasKpis(k.hoje), ...linhasLucro(l)], linhasCobertura(l));
+  return blocos(['📅 Hoje'], [...linhasKpis(k.hoje), linhaDiaContraDia(k), ...linhasLucro(l)], linhasCobertura(l));
 }
 
 export function montarMes(k: KpisPeriodo, l: LucroPeriodo): string {
