@@ -101,9 +101,11 @@ interface FamiliaExpandedProps {
   ocultarSemEstoque?: boolean;
   /** Outra família nova do lote tem o mesmo título (ADR-0198). */
   tituloRepetido?: boolean;
+  /** Lote do "Adicionar variação" (`lotes.origem='manual'`, ADR-0129): cor já publicada não pode ser desmarcada. */
+  adicionarVariacao?: boolean;
 }
 
-export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarSemEstoque = false, tituloRepetido = false }: FamiliaExpandedProps) {
+export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarSemEstoque = false, tituloRepetido = false, adicionarVariacao = false }: FamiliaExpandedProps) {
   const [titulo, setTitulo] = useState(familia.titulo);
   const [descricao, setDescricao] = useState(familia.descricao);
   const [variacoes, setVariacoes] = useState(familia.variacoes);
@@ -561,6 +563,9 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
         <div className="flex items-start gap-2">
           <Checkbox
             checked={!v.excluidaDaPublicacao}
+            // Incidente 12/11/2026: no Adicionar variação a cor publicada segue no anúncio; desmarcá-la fazia a
+            // saga pausá-la. Só trava a marcada: a que veio desmarcada precisa poder voltar.
+            disabled={adicionarVariacao && familia.operacao === 'UPDATE' && casadaNoMl(v) && !v.excluidaDaPublicacao}
             aria-label={`Incluir cor ${v.cor || v.codigo} na publicação`}
             className="mt-2 shrink-0"
             onCheckedChange={async (marcado) => {
@@ -946,6 +951,9 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
           <label className="mb-2 block text-xs font-semibold text-muted-foreground">
               {publicado ? 'VARIAÇÕES PENDENTES' : 'VARIAÇÕES'} ({variacoesExibidas.length})
           </label>
+          {adicionarVariacao && familia.operacao === 'UPDATE' && !publicado && (
+            <p className="mb-2 text-xs text-muted-foreground">Em Adicionar variação, todas as cores seguem.</p>
+          )}
           {publicado && variacoesExibidas.length === 0 ? (
             <div className="rounded-md border border-success/40 bg-success/10 px-3 py-2 text-success">
               Todas as cores foram publicadas no anúncio. 🎉

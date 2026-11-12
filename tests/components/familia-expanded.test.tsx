@@ -66,6 +66,53 @@ describe('FamiliaExpanded — foto da variação reflete o refetch', () => {
   });
 });
 
+// Incidente 12/11/2026 (produto 92710170): no lote do "Adicionar variação" a Revisão deixava desmarcar cor já
+// publicada, e a saga pausou as 7 desmarcadas. O worker recusa; a tela nem oferece.
+describe('FamiliaExpanded — Adicionar variação não deixa desmarcar cor publicada', () => {
+  const familia = fam({
+    operacao: 'UPDATE', mlItemId: 'MLB1',
+    variacoes: [
+      cor({ id: 'v-a', codigo: 'A', cor: 'Azul', fotoPath: 'u/a.jpg', jaCasadaUP: true }),
+      cor({ id: 'v-b', codigo: 'B', cor: 'Bege', fotoPath: 'u/b.jpg', mlVariationId: 'm2' }),
+      cor({ id: 'v-c', codigo: 'C', cor: 'Coral', fotoPath: 'u/c.jpg', jaCasadaUP: true, excluidaDaPublicacao: true }),
+      cor({ id: 'v-n', codigo: 'N', cor: 'Nova', fotoPath: 'u/n.jpg' }),
+    ],
+  });
+  const caixa = (nome: string) => screen.getByRole('checkbox', { name: `Incluir cor ${nome} na publicação` });
+
+  it('cor publicada e marcada fica travada, com o aviso; clicar não grava', () => {
+    setVariacaoExcluidaMock.mockClear();
+    renderWithClient(<FamiliaExpanded familia={familia} adicionarVariacao />);
+    expect(screen.getByText('Em Adicionar variação, todas as cores seguem.')).toBeInTheDocument();
+    for (const nome of ['Azul', 'Bege']) {
+      expect(caixa(nome)).toBeDisabled();
+      expect(caixa(nome)).toBeChecked();
+      fireEvent.click(caixa(nome));
+    }
+    expect(setVariacaoExcluidaMock).not.toHaveBeenCalled();
+  });
+
+  it('cor nova segue desmarcável, e a publicada que já veio desmarcada pode ser marcada de volta', async () => {
+    setVariacaoExcluidaMock.mockClear();
+    renderWithClient(<FamiliaExpanded familia={familia} adicionarVariacao />);
+    expect(caixa('Nova')).toBeEnabled();
+    expect(caixa('Coral')).toBeEnabled();
+    fireEvent.click(caixa('Coral'));
+    await waitFor(() => expect(setVariacaoExcluidaMock).toHaveBeenCalledWith('v-c', false));
+    // Marcada de volta, trava como as demais.
+    expect(caixa('Coral')).toBeDisabled();
+  });
+
+  it('UPDATE de planilha (sem a prop): nada muda, a cor publicada segue desmarcável e sem aviso', async () => {
+    setVariacaoExcluidaMock.mockClear();
+    renderWithClient(<FamiliaExpanded familia={familia} />);
+    expect(screen.queryByText(/todas as cores seguem/)).not.toBeInTheDocument();
+    expect(caixa('Azul')).toBeEnabled();
+    fireEvent.click(caixa('Azul'));
+    await waitFor(() => expect(setVariacaoExcluidaMock).toHaveBeenCalledWith('v-a', true));
+  });
+});
+
 describe('FamiliaExpanded — prompt "aplicar às demais?" (ADR-0078 F2b, achado do review)', () => {
   it('UPDATE já publicado, "Não" cruzaria uma faixa no ar → avisa que vai exigir dividir o anúncio', async () => {
     const familia = fam({

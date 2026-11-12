@@ -273,3 +273,31 @@ o preço vivo só na cor nova travaria com 400 (achado da revisão pré-merge).
 **Limite conhecido.** Se o ML não devolver `original_price` numa oferta de seller-promotions, a
 leitura cai no `price` (preço da oferta). Upgrade: cruzar com `ml_promocao_itens.preco_original`.
 Validar no próximo "Adicionar variação" com o produto em oferta.
+
+## Adendo 2026-11-12 (2) — nenhuma cor publicada é desmarcável; o worker recusa
+
+**Incidente (produto 92710170, User Products, 8 cores).** O lote manual caiu na Revisão, onde ficou
+marcada só a cor nova, e "Atualizar tudo" foi clicado. O worker lê apenas as variações com
+`excluida_da_publicacao=false`; a saga de composição recebeu 1 SKU desejado e tratou as 7 cores
+vivas restantes como retiradas: pausou no ML e marcou `retirado=true`.
+
+**Invariante.** Este fluxo só adiciona cor. Em lote `origem='manual'` com família UPDATE, cor que já
+está no ar nunca pode estar desmarcada.
+
+1. **Worker recusa antes de qualquer escrita** (`update-familia-ml`, e a retomada em
+   `reconciliar-convergencia-up`): havendo variação desmarcada cujo SKU está vivo no canal (filho em
+   `anuncios_externos_itens` com `retirado=false` e item; ou, em anúncio com variações,
+   `ml_variation_id`), a família vai a `erro` com mensagem terminal no padrão do ADR-0195 e nada é
+   enviado. Regra em `_shared/update/fluxo-add-variacao.ts` (`coresDesmarcadasPublicadas`).
+2. **Fail-closed:** falha na leitura que decide isso aborta. Erro de SELECT nunca vira "sem
+   desmarcadas".
+3. **Revisão:** o checkbox da cor já publicada fica travado quando marcado, com o texto "Em Adicionar
+   variação, todas as cores seguem." A cor que já veio desmarcada pode ser marcada de volta.
+
+**Fora do escopo, de propósito.** UPDATE de planilha e "somente estoque" não mudam. A saga, o
+snapshot `skus_esperados`, a descrição e a trava de oferta não foram tocados: uma primeira tentativa
+de fazer a saga preservar as cores desmarcadas abriu frentes demais (snapshot, convergência, lista
+de cores da descrição) e foi descartada em favor da recusa.
+
+**Limite conhecido.** A cor retirada que volta num lote manual ainda recebe o preço local na
+reposição (`preservarPublicadas` só zera o preço das ativas). Não foi tratado aqui.

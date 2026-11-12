@@ -4,7 +4,7 @@
 // lógica Legacy de casadas/novas/conn.atualizarAnuncio. O caminho Legacy (incluindo o item-plano de
 // 1 variação do ADR-0084, que NÃO tem linhas filhas) fica EXATAMENTE como antes.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { ehFluxoAddVariacao } from '../_shared/update/fluxo-add-variacao.ts';
+import { coresDesmarcadasPublicadas, ehFluxoAddVariacao, mensagemCoresDesmarcadas } from '../_shared/update/fluxo-add-variacao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import type { ChannelConnector } from '../_shared/canais/contrato.ts';
@@ -235,6 +235,24 @@ async function executarAtualizacaoFamilia(
     // Fail-closed: erro na query de roteamento NUNCA pode virar "não é UP" em silêncio (cairia no
     // Legacy sobre uma família UP e a corromperia). Lança → o catch retenta (mesmo fix de vinculacao.ts).
     if (raizErr) throw new Error(`roteamento UP (raiz): ${raizErr.message}`);
+
+    // Incidente 12/11/2026: no Adicionar variação nenhuma cor pode ser desmarcada — a saga leria a cor fora do
+    // conjunto como retirada e a pausaria. Recusa aqui, antes de qualquer upload, GET ou PUT. Leitura que falha
+    // lança (o catch retenta ou grava erro; nada é enviado). "Somente estoque" fica de fora: nunca muda composição.
+    if (preservarPublicadas && !job.somenteEstoque) {
+      const desmarcadas = await coresDesmarcadasPublicadas(admin, job.familia_id, (raizUP as { id: string } | null)?.id ?? null);
+      if (desmarcadas.length > 0) {
+        const mensagem = mensagemCoresDesmarcadas(desmarcadas);
+        const { error: errGravar } = await admin.from('familias')
+          .update({ status: 'erro', erro_mensagem: mensagem }).eq('id', job.familia_id);
+        // Sem o erro gravado a família fica `publicando` e prende o lote: retenta.
+        if (errGravar) {
+          throw Object.assign(new Error(`gravar erro da família: ${errGravar.message}`), { retentavel: true });
+        }
+        await finalizarLote(job.lote_id);
+        return { tipo: 'erro', mensagem };
+      }
+    }
     // ADR-0186 — marca própria da org: BRAND = marca da org nos dois caminhos (UP e Legacy).
 
     // ADR-0195: best-effort, o erro já está gravado na família. A chave evita repetir no sino.

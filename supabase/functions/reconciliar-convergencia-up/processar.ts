@@ -6,7 +6,7 @@ import { filtroNotIn, listarOrgsArquivadas } from '../_shared/orgs-arquivadas.ts
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
-import { ehFluxoAddVariacao } from '../_shared/update/fluxo-add-variacao.ts';
+import { coresDesmarcadasPublicadas, ehFluxoAddVariacao, mensagemCoresDesmarcadas } from '../_shared/update/fluxo-add-variacao.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { EMBED_MODULOS } from '../_shared/kit-variacao/politica.ts';
 import {
@@ -105,6 +105,12 @@ export function criarPortasConvergencia(
       // `preservarPublicadas` e podia reenviar preço/atributos às irmãs. Mesmo predicado do worker.
       // Antes de resolver conexão/token: erro lendo o lote falha a rodada sem tocar o ML.
       const preservarPublicadas = await ehFluxoAddVariacao(admin, familia.lote_id);
+      // Incidente 12/11/2026: mesma recusa do worker (update-familia-ml). Cor desmarcada que está no ar seria lida
+      // pela saga como retirada. Lança antes de tocar o ML; a raiz segue travada e o erro aparece na rodada.
+      if (preservarPublicadas) {
+        const desmarcadas = await coresDesmarcadasPublicadas(admin, familia.id, claim.rootId);
+        if (desmarcadas.length > 0) throw new Error(mensagemCoresDesmarcadas(desmarcadas));
+      }
 
       const conexao = await resolverConexao(admin, claim.orgId, CANAL);
       if (!conexao) throw new Error(`organização ${claim.orgId} sem conexão com o Mercado Livre`);

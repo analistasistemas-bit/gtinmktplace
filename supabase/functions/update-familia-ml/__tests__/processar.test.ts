@@ -63,6 +63,8 @@ function fakeAdmin(over: {
   ncm?: 'vigente' | 'vencido' | 'inexistente' | 'erro'; // rpc ncm_consultar (ADR-0187)
   kitComponentes?: string[]; // ADR-0200: SKUs usados em kit com variação
   estender?: boolean; // ADR-0201: ml_estender_trava (default true)
+  excluidas?: Record<string, unknown>[]; // variações com excluida_da_publicacao=true (desmarcadas na Revisão)
+  excluidasErr?: boolean;                // a leitura das desmarcadas falha
 } = {}) {
   const rpcs: Array<{ fn: string; args: unknown }> = [];
   const writes: Array<{ table: string; payload: Record<string, unknown>; filters: Record<string, unknown> }> = [];
@@ -78,7 +80,7 @@ function fakeAdmin(over: {
     const rec = { table, op: '', filters: {} as Record<string, unknown>, payload: {} as Record<string, unknown> };
     const ler = () => {
       if (table === 'familias') return familia;
-      if (table === 'variacoes') return variacoes;
+      if (table === 'variacoes') return rec.filters.excluida_da_publicacao === true ? (over.excluidas ?? []) : variacoes;
       if (table === 'marketplace_connections') return conexao;
       if (table === 'organizations') return { modulos_habilitados: modulosHabilitados, ...(over.org ?? { marca_padrao: 'Avil', marca_propria: false }) };
       if (table === 'empresa_fiscal') return { regime_tributario: 'simples' };
@@ -103,6 +105,9 @@ function fakeAdmin(over: {
         if (rec.op === 'update') writes.push({ table, payload: rec.payload, filters: rec.filters });
         if (rec.op === 'update' && table === 'familias' && over.familiaUpdateErr) {
           return Promise.resolve({ data: null, error: { message: 'boom-familia' } }).then(resolve);
+        }
+        if (table === 'variacoes' && over.excluidasErr && rec.filters.excluida_da_publicacao === true) {
+          return Promise.resolve({ data: null, error: { message: 'boom-excluidas' } }).then(resolve);
         }
         if (table === 'anuncios_externos_itens' && over.itensErr) return Promise.resolve({ data: null, error: { message: 'boom-itens' } }).then(resolve);
         return Promise.resolve({ data: rec.op === 'update' ? null : ler(), error: null }).then(resolve);
@@ -237,6 +242,109 @@ describe('processarAtualizacaoFamilia — registra a conferência no ML (ADR-019
       atualizarUP: async (): Promise<ResultadoAtualizarUP> => ({ estado: 'erro', mensagem: 'x' }),
     }), JOB, { tentativas: 0 });
     expect(registrarSpy).not.toHaveBeenCalled();
+  });
+});
+
+// Incidente 12/11/2026 (produto 92710170): no "Adicionar variação" (lote manual, ADR-0129) a Revisão ficou com
+// 1 de 8 cores marcada, e a saga pausou e retirou as 7 desmarcadas. O fluxo só adiciona cor: o worker recusa
+// antes de qualquer escrita.
+describe('processarAtualizacaoFamilia — Adicionar variação recusa cor desmarcada já publicada', () => {
+  const MANUAL = { origem: 'manual' };
+  const OITO = ['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8'];
+  const RAIZ = { id: 'root-1', titulo: 'T', criado_em: null };
+  const vivos = OITO.map((sku, i) => ({ id: `it-${i}`, sku, item_externo_id: `MLB${i + 1}`, retirado: false, status: 'ativo' }));
+  const marcada = (codigo: string) => ({ ...VAR_CASADA, codigo, ml_variation_id: null });
+  const desmarcada = (codigo: string, ml_variation_id: string | null = null) => ({ codigo, ml_variation_id });
+  const SETE = OITO.slice(1).map((c) => desmarcada(c));
+
+  async function rodar(over: Parameters<typeof fakeAdmin>[0], job: Record<string, unknown> = {}) {
+    const { admin, writes } = fakeAdmin(over);
+    const upArgs: unknown[] = [];
+    let finalizou = false;
+    const deps = baseDeps(admin, {
+      atualizarUP: async (a): Promise<ResultadoAtualizarUP> => { upArgs.push(a); return { estado: 'ok', adicionadas: 0 }; },
+      finalizarLote: async () => { finalizou = true; },
+    });
+    const r = await processarAtualizacaoFamilia(deps, { ...JOB, ...job }, { tentativas: 0 });
+    const familia = writes.filter((w) => w.table === 'familias').map((w) => w.payload);
+    return { r, upArgs, familia, finalizou, escritasML: fakeConnector.chamadas.filter((c) => c.metodo !== 'buscarAnuncio') };
+  }
+
+  it('8 cores no ar, 7 desmarcadas: família em erro com a mensagem; saga e ML intocados', async () => {
+    const { r, upArgs, familia, finalizou, escritasML } = await rodar({
+      lote: MANUAL, raizUP: RAIZ, itensUP: vivos, variacoes: [marcada('C1')], excluidas: SETE,
+    });
+    const mensagem = 'UPDATE bloqueado: 7 cor(es) desmarcada(s) já publicada(s) no Mercado Livre '
+      + "(C2, C3, C4, C5, C6, C7, C8). Em 'Adicionar variação' nenhuma cor pode ser desmarcada. "
+      + 'Nada foi enviado. Marque todas as cores e reenvie.';
+    expect(r).toEqual({ tipo: 'erro', mensagem });
+    expect(upArgs).toHaveLength(0);
+    expect(escritasML).toEqual([]);
+    expect(familia).toEqual([{ status: 'erro', erro_mensagem: mensagem }]);
+    expect(finalizou).toBe(true);
+  });
+
+  it('controle: todas as cores marcadas → segue para a saga normalmente', async () => {
+    const { r, upArgs, familia } = await rodar({
+      lote: MANUAL, raizUP: RAIZ, itensUP: vivos, variacoes: OITO.map(marcada), excluidas: [],
+    });
+    expect(r.tipo).toBe('ok');
+    expect(upArgs).toHaveLength(1);
+    expect((upArgs[0] as { preservarPublicadas?: boolean }).preservarPublicadas).toBe(true);
+    expect(familia.some((p) => p.status === 'erro')).toBe(false);
+  });
+
+  it('desmarcada que não está no ar (cor nova, ou já retirada) não bloqueia', async () => {
+    const itens = [...vivos.slice(0, 7), { ...vivos[7], retirado: true, status: 'pausado' }];
+    const { r, upArgs } = await rodar({
+      lote: MANUAL, raizUP: RAIZ, itensUP: itens, variacoes: OITO.slice(0, 7).map(marcada),
+      excluidas: [desmarcada('C8'), desmarcada('NOVA')],
+    });
+    expect(r.tipo).toBe('ok');
+    expect(upArgs).toHaveLength(1);
+  });
+
+  it('Legacy: desmarcada com ml_variation_id → mesma recusa, nenhum PUT', async () => {
+    const { r, escritasML, familia } = await rodar({ lote: MANUAL, excluidas: [desmarcada('V2', 'MLV2')] });
+    expect(r.tipo).toBe('erro');
+    expect((r as { mensagem: string }).mensagem).toMatch(/^UPDATE bloqueado: 1 cor\(es\) desmarcada\(s\).*\(V2\)/);
+    expect(escritasML).toEqual([]);
+    expect(familia).toContainEqual(expect.objectContaining({ status: 'erro' }));
+  });
+
+  it('falha ao ler as desmarcadas → aborta sem escrever (erro de leitura nunca vira "sem desmarcadas")', async () => {
+    const { r, upArgs, escritasML } = await rodar({
+      lote: MANUAL, raizUP: RAIZ, itensUP: vivos, variacoes: [marcada('C1')], excluidasErr: true,
+    });
+    expect(r.tipo).not.toBe('ok');
+    expect((r as { mensagem: string }).mensagem).toContain('boom-excluidas');
+    expect(upArgs).toHaveLength(0);
+    expect(escritasML).toEqual([]);
+  });
+
+  it('falha ao ler os itens do anúncio → aborta sem escrever', async () => {
+    const { r, upArgs, escritasML } = await rodar({
+      lote: MANUAL, raizUP: RAIZ, itensUP: vivos, variacoes: [marcada('C1')], excluidas: SETE, itensErr: true,
+    });
+    expect(r.tipo).not.toBe('ok');
+    expect(upArgs).toHaveLength(0);
+    expect(escritasML).toEqual([]);
+  });
+
+  it('UPDATE de planilha com as mesmas 7 desmarcadas: nada muda, segue para a saga', async () => {
+    const { r, upArgs } = await rodar({ raizUP: RAIZ, itensUP: vivos, variacoes: [marcada('C1')], excluidas: SETE });
+    expect(r.tipo).toBe('ok');
+    expect(upArgs).toHaveLength(1);
+    expect((upArgs[0] as { preservarPublicadas?: boolean }).preservarPublicadas).toBe(false);
+  });
+
+  it('somente estoque em lote manual: nada muda (esse modo nunca mexe na composição)', async () => {
+    const { r, upArgs } = await rodar(
+      { lote: MANUAL, raizUP: RAIZ, itensUP: vivos, variacoes: [marcada('C1')], excluidas: SETE },
+      { somenteEstoque: true },
+    );
+    expect(r.tipo).toBe('ok');
+    expect(upArgs).toHaveLength(1);
   });
 });
 

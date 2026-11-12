@@ -25,3 +25,45 @@ export async function ehFluxoAddVariacao(admin: SupabaseClient, loteId: string):
   if (!data) throw new Error(`lote ${loteId} não encontrado ao decidir preservarPublicadas`);
   return data.origem === 'manual';
 }
+
+/**
+ * Incidente 12/11/2026 (produto 92710170): neste fluxo nenhuma cor pode ser desmarcada. A saga de composição lê
+ * "cor fora do conjunto" como retirada, e 7 cores desmarcadas na Revisão foram pausadas no ML.
+ *
+ * Devolve os SKUs com `excluida_da_publicacao=true` que estão no ar: filho User Products vivo (`retirado=false`
+ * com item) ou variação casada do anúncio com variações (`ml_variation_id`). Quem chama recusa antes de escrever.
+ *
+ * Fail-closed: qualquer leitura que falhe lança. Erro de SELECT nunca vira "sem desmarcadas".
+ */
+export async function coresDesmarcadasPublicadas(
+  admin: SupabaseClient, familiaId: string, raizId: string | null,
+): Promise<string[]> {
+  const { data: excl, error: errExcl } = await admin.from('variacoes')
+    .select('codigo, ml_variation_id').eq('familia_id', familiaId).eq('excluida_da_publicacao', true);
+  if (errExcl || !Array.isArray(excl)) {
+    throw new Error(`ler cores desmarcadas da família ${familiaId}: ${errExcl?.message ?? 'sem resposta'}`);
+  }
+  const excluidas = excl as Array<{ codigo: string; ml_variation_id: string | null }>;
+  if (excluidas.length === 0) return [];
+
+  let vivos = new Set<string>();
+  if (raizId) {
+    const { data: itens, error: errItens } = await admin.from('anuncios_externos_itens')
+      .select('sku, item_externo_id, retirado').eq('anuncio_externo_id', raizId);
+    if (errItens || !Array.isArray(itens)) {
+      throw new Error(`ler itens do anúncio ${raizId}: ${errItens?.message ?? 'sem resposta'}`);
+    }
+    vivos = new Set(
+      (itens as Array<{ sku: string; item_externo_id: string | null; retirado: boolean | null }>)
+        .filter((i) => !i.retirado && i.item_externo_id).map((i) => i.sku),
+    );
+  }
+  return excluidas.filter((v) => v.ml_variation_id || vivos.has(v.codigo)).map((v) => v.codigo).sort();
+}
+
+/** Mesmo padrão do `reposicao_sem_item` (ADR-0195): terminal, diz o que houve e o que fazer. */
+export function mensagemCoresDesmarcadas(skus: string[]): string {
+  return `UPDATE bloqueado: ${skus.length} cor(es) desmarcada(s) já publicada(s) no Mercado Livre `
+    + `(${skus.slice(0, 10).join(', ')}${skus.length > 10 ? '…' : ''}). Em 'Adicionar variação' nenhuma cor pode ser `
+    + 'desmarcada. Nada foi enviado. Marque todas as cores e reenvie.';
+}

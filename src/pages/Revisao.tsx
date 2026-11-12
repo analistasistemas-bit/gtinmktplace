@@ -644,6 +644,7 @@ export default function Revisao() {
                       onFocoConcluido={() => setFocoCritica(null)}
                       ocultarSemEstoque={ocultarSemEstoque}
                       tituloRepetido={idsTituloRepetido.has(familia.id)}
+                      adicionarVariacao={lote?.origem === 'manual'}
                     />
                   </Collapsible.Content>
                 </Collapsible.Root>

@@ -349,6 +349,19 @@ describe('criarPortasConvergencia — resumirComposicao (preservarPublicadas, Co
     expect(atualizarFamiliaUPMock.mock.calls[0]![0].preservarPublicadas).toBe(true);
   });
 
+  // Incidente 12/11/2026: a retomada também chama a saga com preservarPublicadas — mesma recusa do worker.
+  it('lote manual com cor desmarcada viva no ML → lança antes da saga (nada é pausado)', async () => {
+    atualizarFamiliaUPMock.mockReset();
+    const { admin } = fakeAdmin({
+      ...filas({ origem: 'manual' }),
+      variacoes: [VARIACOES_OK, [{ codigo: 'X', ml_variation_id: null }]], // 2ª leitura: as desmarcadas
+      anuncios_externos_itens: [[{ sku: 'X', item_externo_id: 'MLB9', retirado: false }]],
+    });
+    await expect(criarPortasConvergencia(admin, '2026-01-01T00:00:00Z').resumirComposicao(CLAIM_OK))
+      .rejects.toThrow(/^UPDATE bloqueado: 1 cor\(es\) desmarcada\(s\).*\(X\)/);
+    expect(atualizarFamiliaUPMock).not.toHaveBeenCalled();
+  });
+
   it('lote de planilha → preservarPublicadas: false', async () => {
     atualizarFamiliaUPMock.mockReset().mockResolvedValueOnce({ estado: 'retry' });
     const { admin } = fakeAdmin(filas(LOTE_PLANILHA));
