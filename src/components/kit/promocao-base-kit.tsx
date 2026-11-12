@@ -16,9 +16,10 @@ export function PromocaoBaseKit({ familiaBaseId, ativo }: { familiaBaseId: strin
   if (q.isError) return <p className="text-xs text-muted-foreground">{INDISPONIVEL}</p>;
   const p = q.data ? [...q.data.values()][0] : undefined;
   if (!p) return null;
-  if (p.futurasIndisponivel) return <p className="text-xs text-muted-foreground">{INDISPONIVEL}</p>;
   const futuras = p.futuras ?? [];
-  if (p.promocao == null && futuras.length === 0) return null;
+  if (p.promocao == null && futuras.length === 0) {
+    return p.futurasIndisponivel ? <p className="text-xs text-muted-foreground">{INDISPONIVEL}</p> : null;
+  }
   return (
     <div className="grid gap-1 text-xs">
       {p.promocao != null && (
@@ -28,6 +29,7 @@ export function PromocaoBaseKit({ familiaBaseId, ativo }: { familiaBaseId: strin
         </p>
       )}
       <PromocoesFuturas rotuloTitulo="da base" pecas={[{ rotulo: 'Produto-base', normal: p.normal, futuras, indisponivel: false }]} />
+      {p.futurasIndisponivel && <p className="text-muted-foreground">{INDISPONIVEL}</p>}
     </div>
   );
 }

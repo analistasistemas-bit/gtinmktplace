@@ -39,6 +39,13 @@ describe('PromocaoBaseKit', () => {
     expect(await screen.findByText('promoção da base indisponível')).toBeInTheDocument();
   });
 
+  it('promoção ativa + futuras_indisponivel mostra as duas coisas', async () => {
+    fetchMock.mockResolvedValue(mapa({ normal: 50, promocao: 40, fimPromocao: null, futuras: [], futurasIndisponivel: true }));
+    renderPromo();
+    expect(await screen.findByText(/Base em promoção: R\$\s*40,00/)).toBeInTheDocument();
+    expect(screen.getByText('promoção da base indisponível')).toBeInTheDocument();
+  });
+
   it('sem promoção não renderiza nada', async () => {
     fetchMock.mockResolvedValue(mapa({ normal: 50, promocao: null, fimPromocao: null, futuras: [] }));
     const { container } = renderPromo();
