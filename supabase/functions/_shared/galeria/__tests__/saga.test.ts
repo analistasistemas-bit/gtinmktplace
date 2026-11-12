@@ -47,7 +47,10 @@ class MLFake implements PortasML {
     const i = this.itens.get(id)!
     return structuredClone(i)
   }
+  /** Próximos uploads recusados com 429 (o ML não criou nada). */
+  n429 = 0
   async subir() {
+    if (this.n429 > 0) { this.n429--; throw Object.assign(new Error('429'), { status: 429 }) }
     if (this.falhaUpload === 'timeout') throw new DOMException('timeout', 'TimeoutError')
     if (this.falhaUpload === '400') throw Object.assign(new Error('400'), { status: 400 })
     const id = `UP${++this.n}`
@@ -704,6 +707,50 @@ describe('saga — envio das fotos em lote', () => {
     await tick()
     expect(itemDe('P').status).toBe('compensado')
     expect(corRosa('P')).toEqual(['R0-P'])
+  })
+
+  it('429 no upload da 3ª foto → o laço para, a marca `enviando` sai, nada falha; a mensagem seguinte retoma e conclui sem repetir foto', async () => {
+    montar(['P'], 7)
+    aoSubir((n) => { if (n === 3) ml.n429 = 1 })
+    expect(await exec()).toBe('esperar')
+    expect(ml.uploads).toHaveLength(2)
+    const fotos = itemDe('P').fotos_novas as Array<{ upload_id: string | null; enviando?: boolean; tentativas?: number }>
+    expect(fotos.filter((f) => f.upload_id)).toHaveLength(2)
+    expect(fotos[2]).toMatchObject({ upload_id: null, enviando: false, tentativas: 1 })
+    expect(itemDe('P')).toMatchObject({ status: 'subindo', fase: 1, posse: null, lease_ate: null, publicado_em: null, erro: null })
+    expect(aplicacao().status).toBe('em_andamento')
+    await ate('aplicado')
+    expect(ml.uploads).toHaveLength(7)
+    expect(new Set((itemDe('P').fotos_novas as Array<{ upload_id: string }>).map((f) => f.upload_id)).size).toBe(7)
+    expect(putsDe('P')).toHaveLength(1)
+  })
+
+  it('429 já na 1ª foto da mensagem → espera sem falhar e sem upload', async () => {
+    ml.n429 = 1
+    expect(await exec()).toBe('esperar')
+    expect(ml.uploads).toEqual([])
+    expect(itemDe('P')).toMatchObject({ status: 'subindo', fase: 1 })
+    await ate('aplicado')
+    expect(ml.uploads).toHaveLength(1)
+  })
+
+  it('429 que não passa (mais de 5 tentativas na mesma foto) → falhou upload_429, sem PUT; o irmão aplicado é compensado', async () => {
+    montar(['P', 'M'], 2)
+    await ate('aplicado', 'P')
+    ml.n429 = 99
+    for (let k = 0; k < 5; k++) expect(await exec('M')).toBe('esperar')
+    expect(itemDe('M').status).toBe('subindo')
+    await exec('M')
+    expect(itemDe('M')).toMatchObject({ status: 'falhou', erro: 'upload_429' })
+    expect(putsDe('M')).toEqual([])
+    await tick()
+    expect(itemDe('P').status).toBe('compensado')
+  })
+
+  it('só o 429 é "nada criado": 5xx com status continua falhando como recusa e timeout como incerto', async () => {
+    ml.subir = async () => { throw Object.assign(new Error('502'), { status: 502 }) }
+    await exec()
+    expect(itemDe('P')).toMatchObject({ status: 'falhou', erro: 'upload_recusado_502' })
   })
 
   it('sha divergente ou arquivo ausente numa foto depois da 1ª → falhou, sem novo upload nem PUT', async () => {

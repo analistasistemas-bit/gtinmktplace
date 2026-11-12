@@ -33,7 +33,9 @@ export const LIMITE_ITEM = 12;
 const sha256Hex = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 const EXECUCAO = new Set(['em_andamento', 'abortando', 'revertendo']);
 
-export interface FotoNova { imagem_id: string; missao: number; final_sha256: string; upload_id: string | null; pronta: boolean; enviando?: boolean }
+/** Uploads recusados com 429 por foto antes de falhar a aplicação (1 min entre tentativas, o prazo da aplicação segue valendo). */
+export const MAX_429_POR_FOTO = 5;
+export interface FotoNova { imagem_id: string; missao: number; final_sha256: string; upload_id: string | null; pronta: boolean; enviando?: boolean; tentativas?: number }
 export interface ItemSaga {
   id: string; org_id: string; anuncio_externo_id: string | null; aplicacao_id: string; item_id: string; status: string;
   fase: number; posse: string | null; lease_ate: string | null; put_em: string | null; compensar_ate: string | null;
@@ -297,7 +299,15 @@ export async function executarItem(admin: SupabaseClient, msg: { id: string; fas
       try {
         subida = await ml.subir(token, bytes, 'image/jpeg');
       } catch (e) {
-        // Sem status (timeout/rede) = incerto: o ML pode ter criado a foto. Nunca re-sobe às cegas; com status, recusa.
+        // 429 = o ML recusou antes de criar a foto (ADR-0201 (m)): tira a marca, solta e tenta no tick seguinte, até
+        // MAX_429_POR_FOTO vezes. Os outros erros seguem iguais: sem status (timeout/rede) = incerto, o ML pode ter
+        // criado a foto e nunca re-sobe às cegas; com outro status, recusa.
+        if (statusHttp(e) === 429) {
+          const tentativas = (foto.tentativas ?? 0) + 1;
+          if (tentativas > MAX_429_POR_FOTO) return concluir('falhou', { erro: 'upload_429' });
+          fotos[j] = { ...foto, enviando: false, tentativas };
+          return (await gravar({ fotos_novas: fotos, fase: item.fase + 1 }, true)) ? 'esperar' : 'perdeu_posse';
+        }
         return concluir('falhou', { erro: statusHttp(e) ? `upload_recusado_${statusHttp(e)}` : 'upload_incerto' });
       }
       fotos[j] = { ...foto, upload_id: subida.id, pronta: subida.pronta, enviando: false };
