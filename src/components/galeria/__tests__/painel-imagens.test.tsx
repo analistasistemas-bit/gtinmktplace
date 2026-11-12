@@ -228,6 +228,9 @@ describe('PainelImagens: estados do cartão', () => {
     const c = await esperaCartao('Capa');
     expect(c).toHaveAttribute('data-estado', 'gerando');
     expect(within(c).getByText('Gerando…')).toBeInTheDocument();
+    // Neon girando só no cartão que está gerando.
+    expect(c.querySelector('.border-trail__track')).not.toBeNull();
+    expect(cartao('Em uso').querySelector('.border-trail__track')).toBeNull();
     expect(screen.queryByAltText('Capa · Preto')).toBeNull();
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
     expect(api.listarImagens).toHaveBeenCalledTimes(2);
@@ -583,15 +586,21 @@ describe('PainelImagens: aprovar todas', () => {
     api.aprovarFinal.mockImplementation((_ml: string, id: string) => (id === 'g1' ? new Promise((r) => { liberar = r; }) : Promise.resolve(ok({ status: 'aprovada' }))));
     api.listarImagens.mockResolvedValue(ok(lista(sete({ 2: { alertas: AVISO }, 3: { status: 'aprovada' } }))));
     painel();
-    await userEvent.click(await botaoTodas(5));
+    const antes = await botaoTodas(5);
+    expect(antes.parentElement!.querySelector('.border-trail__track')).toBeNull();
+    await userEvent.click(antes);
     await confirmarAprovacao();
     await waitFor(() => expect(idsAprovados()).toEqual(['g1']));
-    expect(await screen.findByRole('button', { name: 'Aprovando 1 de 5…' })).toBeDisabled();
+    const aprovando = await screen.findByRole('button', { name: 'Aprovando 1 de 5…' });
+    expect(aprovando).toBeDisabled();
+    // Neon girando em volta do botão só enquanto a fila roda.
+    expect(aprovando.parentElement!.querySelector('.border-trail__track')).not.toBeNull();
     await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
     expect(idsAprovados()).toEqual(['g1']);
     await act(async () => { liberar(ok({ status: 'aprovada' })); });
     await waitFor(() => expect(idsAprovados()).toEqual(['g1', 'g4', 'g5', 'g6', 'g7']));
     expect(idsAprovados()).not.toContain('g2');
+    await waitFor(() => expect(document.querySelector('.border-trail__track')).toBeNull());
     const { toast } = await import('sonner');
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('5 imagens aprovadas'));
   });

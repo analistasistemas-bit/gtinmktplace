@@ -5,6 +5,7 @@
 // Alertas da conferência do texto só avisam: nunca bloqueiam o Aprovar.
 import { useState } from 'react';
 import { Check, ImageOff, Loader2, RefreshCw } from 'lucide-react';
+import { BorderTrail } from '@/components/ui/border-trail';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -100,10 +101,12 @@ export function CartaoImagem({ nome, cor, preco, imagem, indisponivel, antiga = 
       </div>
 
       {estado === 'gerando' ? (
-        <div role="status" className={`${MOLDURA} flex flex-col items-center justify-center gap-1.5 text-muted-foreground`}>
-          <Loader2 aria-hidden className="size-4 motion-safe:animate-spin" />
-          <span>Gerando…</span>
-        </div>
+        <BorderTrail active radius="var(--radius)">
+          <div role="status" className={`${MOLDURA} flex flex-col items-center justify-center gap-1.5 text-muted-foreground`}>
+            <Loader2 aria-hidden className="size-4 motion-safe:animate-spin" />
+            <span>Gerando…</span>
+          </div>
+        </BorderTrail>
       ) : (estado === 'pronta' || estado === 'aprovada') && imagem?.url && !quebrou ? (
         <button type="button" aria-label={`Ampliar ${nome}`} className="block w-full cursor-zoom-in rounded-lg" onClick={() => setAmpliada(true)}>
           <img src={imagem.url} alt={`${nome} · ${cor}`} crossOrigin="anonymous" className={`${MOLDURA} object-cover`}

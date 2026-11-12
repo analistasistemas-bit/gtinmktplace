@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { escolherNoSelect } from '@/test/select';
 import { PassoAplicar } from '../passo-aplicar';
-import type { EstadoAplicacao, Res } from '@/lib/galeria/api';
+import type { EstadoAplicacao, ItemAplicacao, Res } from '@/lib/galeria/api';
 
 const api = vi.hoisted(() => ({
   prepararAplicacao: vi.fn(), confirmarAplicacao: vi.fn(), reverterAplicacao: vi.fn(), estadoAplicacoes: vi.fn(),
@@ -357,7 +357,10 @@ describe('PassoAplicar: prévia e acompanhamento (Fase C2)', () => {
     await preparar();
     await aplicar();
     const painel = screen.getByRole('region', { name: 'Prévia' });
-    expect(await within(painel).findByText('Aplicando')).toBeInTheDocument();
+    // Edge sem os campos de progresso: cai em "Aplicando…" (sem barra), com o neon.
+    expect(await within(painel).findByText('Aplicando…')).toBeInTheDocument();
+    expect(within(painel).queryByRole('progressbar')).toBeNull();
+    expect(within(painel).getByTestId('progresso-aplicacao').parentElement!.querySelector('.border-trail__track')).not.toBeNull();
     expect(within(painel).getAllByRole('img', { name: /será removida/ })).toHaveLength(2);
     expect(screen.getAllByRole('status').at(-1)).toHaveTextContent('Aplicando no Mercado Livre');
     await vi.advanceTimersByTimeAsync(5000);
@@ -367,6 +370,9 @@ describe('PassoAplicar: prévia e acompanhamento (Fase C2)', () => {
     expect(screen.getByRole('button', { name: 'Voltar a Publicados' })).toBeEnabled();
     // A aplicação mostrada na prévia não se repete na lista.
     expect(screen.queryByRole('list', { name: 'Aplicações' })).not.toBeInTheDocument();
+    // Terminou: o bloco de progresso e o neon saem.
+    expect(screen.queryByTestId('progresso-aplicacao')).toBeNull();
+    expect(document.querySelector('.border-trail__track')).toBeNull();
   });
 
   it('Não aplicado mostra o motivo em português (código só no title)', async () => {
@@ -411,6 +417,67 @@ describe('PassoAplicar: prévia e acompanhamento (Fase C2)', () => {
     expect(screen.getAllByRole('status').at(-1)).toHaveTextContent('Veja o motivo abaixo e clique em Refazer prévia');
     await userEvent.click(screen.getByRole('button', { name: 'Refazer prévia' }));
     expect(api.prepararAplicacao).toHaveBeenCalledTimes(2);
+  });
+
+  describe('progresso da aplicação', () => {
+    const andando = (item: Partial<ItemAplicacao>, extra: Partial<EstadoAplicacao> = {}) =>
+      aplicacao({ status: 'em_andamento', itens: [{ item_id: 'MLB3P', status: 'subindo', erro: null, ...item }], ...extra });
+
+    it('reabrindo a tela (sem prévia): aplicação em andamento no topo, "4 de 7", barra 4/9, neon, e Ver prévia travado na cor', async () => {
+      api.estadoAplicacoes.mockResolvedValue(ok({ aplicacoes: [andando({ fotos_total: 7, fotos_enviadas: 4, trocado: false, conferido: false })] }));
+      montar();
+      const lista = await screen.findByRole('list', { name: 'Aplicações em andamento' });
+      expect(lista).toHaveTextContent('Cor Rosa · Substituir');
+      const bloco = within(lista).getByTestId('progresso-aplicacao');
+      expect(bloco).toHaveTextContent('Enviando fotos ao Mercado Livre: 4 de 7');
+      expect(bloco).toHaveTextContent('Cada foto leva cerca de 1 minuto. Pode sair desta tela: a aplicação continua sozinha e o anúncio só muda no final.');
+      const barra = within(bloco).getByRole('progressbar');
+      expect(barra).toHaveAttribute('aria-valuenow', '4');
+      expect(barra).toHaveAttribute('aria-valuemax', '9');
+      expect(bloco.parentElement!.querySelector('.border-trail__track')).not.toBeNull();
+      // Em destaque antes do formulário de prévia; nada repetido no histórico.
+      expect(lista.compareDocumentPosition(screen.getByRole('region', { name: 'Prévia' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(screen.queryByRole('list', { name: 'Aplicações' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Ver prévia' })).toBeDisabled();
+      expect(screen.getByText('Há uma aplicação em andamento nesta cor.')).toBeInTheDocument();
+    });
+
+    it('outra cor em andamento não trava o Ver prévia da cor escolhida', async () => {
+      api.estadoAplicacoes.mockResolvedValue(ok({ aplicacoes: [andando({ fotos_total: 7, fotos_enviadas: 1 }, { cor: 'Azul' })] }));
+      montar();
+      await screen.findByRole('list', { name: 'Aplicações em andamento' });
+      expect(screen.getByRole('button', { name: 'Ver prévia' })).toBeEnabled();
+      expect(screen.queryByText('Há uma aplicação em andamento nesta cor.')).toBeNull();
+    });
+
+    it.each([
+      [{ fotos_total: 7, fotos_enviadas: 7, trocado: false, conferido: false }, 'subindo', 'Trocando as fotos no anúncio…', '7'],
+      [{ fotos_total: 7, fotos_enviadas: 7, trocado: true, conferido: false }, 'aplicando', 'Conferindo no Mercado Livre…', '8'],
+    ])('%o → texto e barra', async (campos, status, texto, valor) => {
+      api.estadoAplicacoes.mockResolvedValue(ok({ aplicacoes: [andando({ ...campos, status })] }));
+      montar();
+      const bloco = await screen.findByTestId('progresso-aplicacao');
+      expect(bloco).toHaveTextContent(texto);
+      expect(within(bloco).getByRole('progressbar')).toHaveAttribute('aria-valuenow', valor);
+    });
+
+    it('sem os campos novos: "Aplicando…" sem barra', async () => {
+      api.estadoAplicacoes.mockResolvedValue(ok({ aplicacoes: [andando({})] }));
+      montar();
+      const bloco = await screen.findByTestId('progresso-aplicacao');
+      expect(bloco).toHaveTextContent('Aplicando…');
+      expect(within(bloco).queryByRole('progressbar')).toBeNull();
+    });
+
+    it('desfazendo: mantém o selo de hoje, sem progresso nem neon', async () => {
+      api.estadoAplicacoes.mockResolvedValue(ok({ aplicacoes: [andando({ status: 'compensando', fotos_total: 7, fotos_enviadas: 7, trocado: true }, { status: 'revertendo' })] }));
+      montar();
+      const lista = await screen.findByRole('list', { name: 'Aplicações em andamento' });
+      expect(lista).toHaveTextContent('Desfazendo…');
+      expect(within(lista).getByText('Desfazendo')).toBeInTheDocument();
+      expect(screen.queryByTestId('progresso-aplicacao')).toBeNull();
+      expect(document.querySelector('.border-trail__track')).toBeNull();
+    });
   });
 
   it('edge sem prévia (anterior à C2): mostra só os MLB e as imagens', async () => {

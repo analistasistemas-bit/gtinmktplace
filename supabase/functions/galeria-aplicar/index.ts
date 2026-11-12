@@ -94,12 +94,21 @@ Deno.serve(async (req) => {
       if (eL) throw new Error(eL.message);
       const ids = (apls ?? []).map((a: { id: string }) => a.id);
       const { data: its, error: eIt } = ids.length === 0 ? { data: [], error: null }
-        : await admin.from('galeria_aplicacao_itens').select('aplicacao_id, item_id, status, erro').eq('org_id', orgId).in('aplicacao_id', ids);
+        : await admin.from('galeria_aplicacao_itens').select('aplicacao_id, item_id, status, erro, fotos_novas, put_em').eq('org_id', orgId).in('aplicacao_id', ids);
       if (eIt) throw new Error(eIt.message);
+      type ItemEstado = { item_id: string; status: string; erro: string | null; fotos_novas: Array<{ pronta?: boolean }> | null; put_em: string | null };
       return json({ aplicacoes: (apls ?? []).map((a: { id: string; cor: string; modo: string; status: string; manifesto: unknown }) => ({
         id: a.id, cor: a.cor, modo: a.modo, status: a.status, manifesto: a.manifesto,
         itens: (its ?? []).filter((i: { aplicacao_id: string }) => i.aplicacao_id === a.id)
-          .map((i: { item_id: string; status: string; erro: string | null }) => ({ item_id: i.item_id, status: i.status, erro: i.erro })) })) });
+          .map((i: ItemEstado) => {
+            // Progresso da ida para a tela; só contagens e flags (upload_id e corpo ficam no servidor).
+            const fotos = Array.isArray(i.fotos_novas) ? i.fotos_novas : [];
+            return { item_id: i.item_id, status: i.status, erro: i.erro,
+              fotos_total: fotos.length, fotos_enviadas: fotos.filter((f) => f?.pronta === true).length,
+              trocado: i.put_em != null,
+              // `publicado_em` é o marcador do despacho (zerado a cada fase), não a conferência: conferido = item aplicado.
+              conferido: i.status === 'aplicado' };
+          }) })) });
     }
 
     if (acao !== 'preparar') {

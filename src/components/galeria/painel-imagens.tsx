@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { BorderTrail } from '@/components/ui/border-trail';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -330,10 +331,13 @@ export function PainelImagens({ mlItemId, cor, aoLista, aoFalha }: {
         </p>
         <div className="flex flex-col gap-2 max-sm:w-full sm:flex-row">
           {(aprovaveis.length > 0 || progresso) && (
-            <Button variant="outline" className="h-10 px-4" disabled={trabalhando}
-              onClick={() => setConfirmaTodas({ itens: aprovaveis, comAviso: nComAviso })}>
-              {progresso ? <><Loader2 aria-hidden className="motion-safe:animate-spin" />{`Aprovando ${progresso.n} de ${progresso.total}…`}</> : `Aprovar todas (${aprovaveis.length})`}
-            </Button>
+            // `grid`: o botão continua esticando no celular (flex-col) dentro do contorno.
+            <BorderTrail active={!!progresso} radius="var(--radius)" className="grid">
+              <Button variant="outline" className="h-10 px-4" disabled={trabalhando}
+                onClick={() => setConfirmaTodas({ itens: aprovaveis, comAviso: nComAviso })}>
+                {progresso ? <><Loader2 aria-hidden className="motion-safe:animate-spin" />{`Aprovando ${progresso.n} de ${progresso.total}…`}</> : `Aprovar todas (${aprovaveis.length})`}
+              </Button>
+            </BorderTrail>
           )}
           <Button className="h-10 px-4" disabled={trabalhando || nTodas === 0} onClick={() => abrir(todas)}>
             {nTodas === 0 ? 'Gerar todas' : `Gerar todas (${imagens(nTodas)} · ${fmtBRL((nTodas * preco) / 100)})`}

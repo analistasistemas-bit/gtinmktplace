@@ -337,9 +337,24 @@ describe('galeria-aplicar — estado (somente leitura)', () => {
     const lista = r.body.aplicacoes as Linha[]
     expect(lista.map((a) => a.id)).toEqual([B, APL])
     expect(lista[0]).toEqual({ id: B, cor: 'Rosa', modo: 'substituir', status: 'aplicada',
-      manifesto: [{ imagem_id: 'g1', missao: 1, final_sha256: 's' }], itens: [{ item_id: 'MLB1', status: 'pulado', erro: 'x' }] })
+      manifesto: [{ imagem_id: 'g1', missao: 1, final_sha256: 's' }],
+      itens: [{ item_id: 'MLB1', status: 'pulado', erro: 'x', fotos_total: 0, fotos_enviadas: 0, trocado: false, conferido: false }] })
     expect(fake.rpcs).toEqual([])
     expect(metodos).toEqual([])
+  })
+
+  it('progresso por item: fotos enviadas, troca e conferência; nada interno sai', async () => {
+    semear('an1', APL)
+    const novas = (prontas: number) => Array.from({ length: 7 }, (_, k) => ({ imagem_id: `g${k}`, missao: k + 1, final_sha256: 's',
+      upload_id: k < prontas + 1 ? `U${k}` : null, pronta: k < prontas }))
+    Object.assign(db.galeria_aplicacao_itens[0], { status: 'subindo', erro: null, fotos_novas: novas(4), put_em: null, publicado_em: '2026-11-11T10:00:00Z' })
+    db.galeria_aplicacao_itens.push({ id: 'it-2', org_id: 'org', aplicacao_id: APL, item_id: 'MLB9', status: 'aplicado', erro: null,
+      fotos_novas: novas(7), put_em: '2026-11-11T10:05:00Z', publicado_em: null, corpo_planejado: { direcao: 'ida' } })
+    const itens = ((await chamar({ acao: 'estado', ml_item_id: 'MLB1' })).body.aplicacoes as Linha[])[0].itens as Linha[]
+    expect(itens).toEqual([
+      { item_id: 'MLB1', status: 'subindo', erro: null, fotos_total: 7, fotos_enviadas: 4, trocado: false, conferido: false },
+      { item_id: 'MLB9', status: 'aplicado', erro: null, fotos_total: 7, fotos_enviadas: 7, trocado: true, conferido: true },
+    ])
   })
 
   it('com aplicacao_id devolve só essa; de outra org → lista vazia', async () => {

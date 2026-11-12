@@ -73,7 +73,11 @@ export interface PreviaItem {
 }
 /** `previa` ausente = edge anterior à Fase C2 (a tela mostra só a lista de MLB e de imagens). */
 export interface AplicacaoPreparada { aplicacao_id: string; status: 'preparada'; itens: string[]; manifesto: ManifestoItem[]; previa?: PreviaItem[] }
-export interface ItemAplicacao { item_id: string; status: string; erro: string | null }
+export interface ItemAplicacao {
+  item_id: string; status: string; erro: string | null;
+  /** Progresso da ida (ausente = edge anterior): fotos enviadas de `fotos_total`, troca feita e conferida. */
+  fotos_total?: number; fotos_enviadas?: number; trocado?: boolean; conferido?: boolean;
+}
 export interface EstadoAplicacao {
   id: string; cor: string; modo: ModoAplicar; status: string; manifesto: ManifestoItem[]; itens: ItemAplicacao[];
 }

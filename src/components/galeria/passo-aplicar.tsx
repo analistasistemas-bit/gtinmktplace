@@ -7,8 +7,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, ArrowRight, Check, ImageOff, Images, Loader2, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { BorderTrail } from '@/components/ui/border-trail';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Progress } from '@/components/ui/progress';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
@@ -25,6 +27,7 @@ import { MioloPasso, Rodape } from './rodape';
 
 const POLLING_MS = 5000;
 const SO_ADMIN = 'Somente administradores podem aplicar ou desfazer fotos';
+const EM_CURSO_NA_COR = 'Há uma aplicação em andamento nesta cor.';
 const STATUS: Record<string, string> = {
   preparada: 'Preparada', em_andamento: 'Aplicando…', aplicada: 'Aplicada', abortando: 'Interrompendo…', falhou: 'Não aplicada',
   revertendo: 'Desfazendo…', revertida: 'Desfeita', reversao_incompleta: 'Desfazer incompleto',
@@ -112,11 +115,44 @@ function Comparacao({ p, nomes }: { p: PreviaItem; nomes: Record<number, string>
   );
 }
 
-/** Linha de um MLB: id, formato e cor, selo e o motivo quando não foi aplicado. */
-function LinhaMLB({ itemId, cor, formato, item }: { itemId: string; cor: string; formato: string; item?: ItemAplicacao }) {
+/** Item ainda na ida (sobe as fotos, troca e confere). */
+const IDA = new Set(['pendente', 'subindo', 'aplicando']);
+
+/** Andamento de um MLB na ida: fotos enviadas, troca e conferência (fotos_total + 2 passos). Edge sem os campos → "Aplicando…". */
+function ProgressoItem({ item }: { item: ItemAplicacao }) {
+  const total = item.fotos_total ?? 0;
+  const enviadas = item.fotos_enviadas ?? 0;
+  const tem = total > 0 && item.fotos_enviadas !== undefined;
+  const texto = !tem ? 'Aplicando…'
+    : enviadas < total ? `Enviando fotos ao Mercado Livre: ${enviadas} de ${total}`
+    : !item.trocado ? 'Trocando as fotos no anúncio…'
+    : 'Conferindo no Mercado Livre…';
+  const passos = total + 2;
+  const feitos = Math.min(enviadas, total) + (item.trocado ? 1 : 0) + (item.conferido ? 1 : 0);
+  return (
+    <BorderTrail active radius="var(--radius)" className="w-full">
+      <div data-testid="progresso-aplicacao" className="space-y-2 rounded-lg bg-muted/40 p-3 ring-1 ring-foreground/5">
+        <p className="flex items-center gap-1.5 text-sm font-medium">
+          <Loader2 aria-hidden className="size-3.5 shrink-0 motion-safe:animate-spin" />{texto}
+        </p>
+        {tem && (
+          <Progress value={(feitos / passos) * 100} aria-label="Andamento da aplicação"
+            aria-valuemin={0} aria-valuemax={passos} aria-valuenow={feitos} />
+        )}
+        <p className="text-xs text-muted-foreground">
+          Cada foto leva cerca de 1 minuto. Pode sair desta tela: a aplicação continua sozinha e o anúncio só muda no final.
+        </p>
+      </div>
+    </BorderTrail>
+  );
+}
+
+/** Linha de um MLB: id, formato e cor, selo e o motivo quando não foi aplicado. `ida` = aplicação em_andamento. */
+function LinhaMLB({ itemId, cor, formato, item, ida = false }: { itemId: string; cor: string; formato: string; item?: ItemAplicacao; ida?: boolean }) {
   const selo = item ? SELO[item.status] ?? { rotulo: item.status, tom: 'neutral' as StatusTone } : { rotulo: 'Aguardando', tom: 'neutral' as StatusTone };
   const motivo = item ? motivoItem(item) : null;
   const ruim = !!item && PROBLEMA.has(item.status);
+  const progresso = ida && !!item && IDA.has(item.status);
   return (
     <div className={cn('flex min-h-16 flex-wrap items-center gap-3', ruim && 'text-destructive')}>
       <div className="min-w-40 flex-1">
@@ -128,11 +164,39 @@ function LinhaMLB({ itemId, cor, formato, item }: { itemId: string; cor: string;
           </p>
         )}
       </div>
-      <StatusPill tone={selo.tom}>
-        {selo.gira ? <Loader2 aria-hidden className="size-3 animate-spin" /> : selo.tom === 'success' ? <Check aria-hidden className="size-3" /> : selo.tom === 'danger' ? <AlertTriangle aria-hidden className="size-3" /> : null}
-        {selo.rotulo}
-      </StatusPill>
+      {progresso ? <ProgressoItem item={item!} /> : (
+        <StatusPill tone={selo.tom}>
+          {selo.gira ? <Loader2 aria-hidden className="size-3 animate-spin" /> : selo.tom === 'success' ? <Check aria-hidden className="size-3" /> : selo.tom === 'danger' ? <AlertTriangle aria-hidden className="size-3" /> : null}
+          {selo.rotulo}
+        </StatusPill>
+      )}
     </div>
+  );
+}
+
+/** Uma aplicação do anúncio (cor, modo, status e os MLB), com Desfazer quando aplicada. */
+function CartaoAplicacao({ a, formato, isAdmin, ocupado, bloqueio, aoReverter }: {
+  a: EstadoAplicacao; formato: string; isAdmin: boolean; ocupado: boolean; bloqueio?: string; aoReverter: (a: EstadoAplicacao) => void;
+}) {
+  return (
+    <li className="rounded-xl bg-card text-card-foreground shadow-sm ring-1 ring-foreground/5 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2">
+        <p className={PROBLEMA.has(a.status) ? 'font-medium text-destructive' : 'font-medium'}>
+          Cor {a.cor} · {a.modo === 'substituir' ? 'Substituir' : 'Adicionar'} · {STATUS[a.status] ?? a.status}
+        </p>
+        {a.status === 'aplicada' && (
+          <Button variant="outline" className="h-11 px-4" disabled={!isAdmin || ocupado} title={bloqueio ?? 'Voltar as fotos anteriores'}
+            onClick={() => aoReverter(a)}><Undo2 aria-hidden />Desfazer aplicação</Button>
+        )}
+      </div>
+      <ul className="divide-y px-4">
+        {a.itens.map((i) => (
+          <li key={i.item_id} className={PROBLEMA.has(i.status) ? 'text-destructive' : undefined}>
+            <LinhaMLB itemId={i.item_id} cor={a.cor} formato={formato} item={i} ida={a.status === 'em_andamento'} />
+          </li>
+        ))}
+      </ul>
+    </li>
   );
 }
 
@@ -226,6 +290,11 @@ export function PassoAplicar({ mlItemId, cores: coresDoAnuncio, isAdmin, nomes =
   const bloqueio = isAdmin ? undefined : SO_ADMIN;
   const estadoAtual = atual?.confirmada ? aplicacoes.find((a) => a.id === atual.aplicacao_id) : undefined;
   const anteriores = aplicacoes.filter((a) => a.id !== estadoAtual?.id && a.status !== 'preparada');
+  // Em curso (ex.: reabriu a tela com a aplicação andando): destaque no topo; o histórico fica embaixo.
+  const emCurso = anteriores.filter((a) => APLICACAO_EM_ANDAMENTO.has(a.status));
+  const historico = anteriores.filter((a) => !APLICACAO_EM_ANDAMENTO.has(a.status));
+  // A edge prepara mesmo assim, mas o Confirmar recusa (trava do MLB → item_ocupado): a tela não deixa começar.
+  const corOcupada = aplicacoes.some((a) => APLICACAO_EM_ANDAMENTO.has(a.status) && a.cor === cor);
   const nNovas = atual?.manifesto.length ?? 0;
   const nSaem = atual?.previa?.reduce((s, p) => s + p.antes.filter((f) => f.sai).length, 0);
   const anuncios = `${atual && atual.itens.length > 1 ? 'nos anúncios' : 'no anúncio'} ${lista(atual?.itens ?? [])}`;
@@ -264,6 +333,15 @@ export function PassoAplicar({ mlItemId, cores: coresDoAnuncio, isAdmin, nomes =
             </p>
           )}
 
+          {emCurso.length > 0 && (
+            <section aria-labelledby="em-curso-h" className="space-y-2">
+              <h2 id="em-curso-h" className="text-sm font-semibold">Aplicação em andamento</h2>
+              <ul aria-label="Aplicações em andamento" aria-live="polite" className="space-y-2">
+                {emCurso.map((a) => <CartaoAplicacao key={a.id} a={a} formato={formato} isAdmin={isAdmin} ocupado={ocupado} bloqueio={bloqueio} aoReverter={setReverterEm} />)}
+              </ul>
+            </section>
+          )}
+
           {semAprovadas ? (
             <EmptyState icon={Images} title="Aprove ao menos 1 imagem"
               description="Só as imagens aprovadas entram nas fotos do anúncio. Gere as imagens da cor e aprove as que vão para o Mercado Livre."
@@ -293,8 +371,8 @@ export function PassoAplicar({ mlItemId, cores: coresDoAnuncio, isAdmin, nomes =
                   </Select>
                 </div>
                 {(!atual?.confirmada || encerrada) && (
-                  <Button variant={atual ? 'outline' : 'default'} className="h-11 px-4" disabled={!isAdmin || ocupado || !cor}
-                    title={bloqueio ?? 'Ver o que muda, sem alterar o anúncio'} onClick={() => void preparar()}>
+                  <Button variant={atual ? 'outline' : 'default'} className="h-11 px-4" disabled={!isAdmin || ocupado || !cor || corOcupada}
+                    title={bloqueio ?? (corOcupada ? EM_CURSO_NA_COR : 'Ver o que muda, sem alterar o anúncio')} onClick={() => void preparar()}>
                     {ocupado && <Loader2 aria-hidden className="animate-spin" />}{encerrada ? 'Refazer prévia' : atual ? 'Ver prévia de novo' : 'Ver prévia'}
                   </Button>
                 )}
@@ -302,7 +380,8 @@ export function PassoAplicar({ mlItemId, cores: coresDoAnuncio, isAdmin, nomes =
 
               {!atual && !ocupado && (
                 <p className="border-t px-4 py-3 text-muted-foreground">
-                  A prévia mostra as fotos da cor hoje e como ficam depois, em cada anúncio. Nada muda no Mercado Livre até você confirmar.
+                  {corOcupada ? EM_CURSO_NA_COR
+                    : 'A prévia mostra as fotos da cor hoje e como ficam depois, em cada anúncio. Nada muda no Mercado Livre até você confirmar.'}
                 </p>
               )}
 
@@ -314,7 +393,7 @@ export function PassoAplicar({ mlItemId, cores: coresDoAnuncio, isAdmin, nomes =
                       return (
                         <li key={id} data-problema={PROBLEMA.has(estadoAtual?.itens.find((i) => i.item_id === id)?.status ?? '')} className="space-y-3 px-4 py-3">
                           {p && <Comparacao p={p} nomes={nomes} />}
-                          <LinhaMLB itemId={id} cor={atual.cor} formato={formato}
+                          <LinhaMLB itemId={id} cor={atual.cor} formato={formato} ida={atual.confirmada && (estadoAtual?.status ?? 'em_andamento') === 'em_andamento'}
                             item={atual.confirmada ? estadoAtual?.itens.find((i) => i.item_id === id) ?? { item_id: id, status: 'pendente', erro: null } : undefined} />
                         </li>
                       );
@@ -339,30 +418,11 @@ export function PassoAplicar({ mlItemId, cores: coresDoAnuncio, isAdmin, nomes =
             </section>
           )}
 
-          {anteriores.length > 0 && (
+          {historico.length > 0 && (
             <section aria-labelledby="aplicacoes-h" className="space-y-2">
               <h2 id="aplicacoes-h" className="text-sm font-semibold">Aplicações neste anúncio</h2>
               <ul aria-label="Aplicações" aria-live="polite" className="space-y-2">
-                {anteriores.map((a) => (
-                  <li key={a.id} className="rounded-xl bg-card text-card-foreground shadow-sm ring-1 ring-foreground/5 text-sm">
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2">
-                      <p className={PROBLEMA.has(a.status) ? 'font-medium text-destructive' : 'font-medium'}>
-                        Cor {a.cor} · {a.modo === 'substituir' ? 'Substituir' : 'Adicionar'} · {STATUS[a.status] ?? a.status}
-                      </p>
-                      {a.status === 'aplicada' && (
-                        <Button variant="outline" className="h-11 px-4" disabled={!isAdmin || ocupado} title={bloqueio ?? 'Voltar as fotos anteriores'}
-                          onClick={() => setReverterEm(a)}><Undo2 aria-hidden />Desfazer aplicação</Button>
-                      )}
-                    </div>
-                    <ul className="divide-y px-4">
-                      {a.itens.map((i) => (
-                        <li key={i.item_id} className={PROBLEMA.has(i.status) ? 'text-destructive' : undefined}>
-                          <LinhaMLB itemId={i.item_id} cor={a.cor} formato={formato} item={i} />
-                        </li>
-                      ))}
-                    </ul>
-                  </li>
-                ))}
+                {historico.map((a) => <CartaoAplicacao key={a.id} a={a} formato={formato} isAdmin={isAdmin} ocupado={ocupado} bloqueio={bloqueio} aoReverter={setReverterEm} />)}
               </ul>
             </section>
           )}
