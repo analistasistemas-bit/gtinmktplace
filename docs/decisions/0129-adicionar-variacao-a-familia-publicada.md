@@ -248,3 +248,26 @@ consecutivos do poll de 15s já existente (`Estoque.tsx`) e devolve os `codigo_p
 `QK.variacoesEstoque(codigoPai)`. Cobre também o hiato entre o toast imediato do submit (as
 linhas já existem no banco, mas `ml_variation_id` ainda não) e o momento em que a publicação
 assíncrona termina de verdade.
+
+## Adendo 2026-11-12 — preço da cor nova = preço BASE vivo das irmãs; pílula "Erro" só na cor com problema
+
+**Incidente (Tecido Oxford 02710170).** Cinco cores adicionadas pelo Estoque nasceram a R$ 58,90 no
+ML; as irmãs estavam em 69,90 (base) / 64,00 (oferta Black Friday). A cor nova herdava o menor
+`preco_publicacao` local das irmãs (`precoPublicacaoNova`), valor de 29/07 que nunca acompanhou o
+ML. Editar o preço na Revisão depois não adiantou: o item já existia e o reenvio "Somente estoque"
+não reenvia preço. Além disso, em família User Products (`ml_variation_id` sempre null) as 10 cores
+mostraram "Erro" por causa de 1.
+
+**Decisão (Diego, 12/11/2026).** Ao criar variação, a cor nova sobe com o **preço base vivo do
+anúncio no ML, independente de promoção**.
+1. `adicionar-variacoes-familia` lê as irmãs via `/items/bulk` (`_shared/preco/preco-base-vivo.ts`):
+   `original_price` quando em promoção, senão `price`; usa o menor entre os itens vivos. O preço
+   digitado no diálogo deixa de definir `preco_publicacao`.
+2. **Fail-closed:** sem leitura confiável (sem conexão, ML fora, nenhum item legível) a edge
+   responde 503 **antes** de criar lote/família — nunca cai em preço local.
+3. A pílula "Erro" por linha só vai para a cor cujo SKU não está `ativo` em
+   `anuncios_externos_itens` (`semCoresAtivasUP`); o "Erro na última atualização" do card fica.
+
+**Limite conhecido.** Se o ML não devolver `original_price` numa oferta de seller-promotions, a
+leitura cai no `price` (preço da oferta). Upgrade: cruzar com `ml_promocao_itens.preco_original`.
+Validar no próximo "Adicionar variação" com o produto em oferta.

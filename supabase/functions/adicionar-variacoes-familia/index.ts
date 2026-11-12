@@ -15,13 +15,16 @@ import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
+import { resolverConexao } from '../_shared/canais/conexao.ts';
+import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
+import { lerPrecoBaseVivo } from '../_shared/preco/preco-base-vivo.ts';
 import { comRetryConcorrencia } from '../_shared/estoque/baixa.ts';
 import { codigosJaUsados, derivarCodigosSku } from '../_shared/produto/codigos.ts';
 import {
   aplicarEstoqueInicial, checarNcmDaFamilia, carregarContextoGrade, clonarFamilia, clonarVariacao, decidirAposEstoque, decidirIncompleto, decidirRetry,
   desfazerCriacao, haAtualizacaoComErro, haFamiliaEmVoo, type IntencaoGravada, limparFamiliaOrfa, montarVariacaoNova, normalizarCodigo8, normalizarIntencao,
   MSG_NOTA_JA_IMPORTADA, notaJaImportada,
-  precoPublicacaoNova, resolverFotoHerdada, validarEntrada, validarGrade, type VariacaoNovaEntrada,
+  resolverFotoHerdada, validarEntrada, validarGrade, type VariacaoNovaEntrada,
 } from './processar.ts';
 
 function json(body: unknown, status = 200): Response {
@@ -319,6 +322,25 @@ Deno.serve(async (req) => {
     estoquePorCodigo = new Map((varsCanonicas ?? []).map((v) => [v.codigo as string, v.estoque as number]));
   }
 
+  // Preço da cor nova = preço BASE vivo das irmãs no ML, independente de promoção (pedido do Diego,
+  // 12/11/2026: `preco_publicacao` local defasado fez 5 cores nascerem a 58,90 com base 69,90).
+  // Fail-closed ANTES de criar o lote: sem leitura confiável não se inventa preço.
+  const { data: raizPreco } = await admin.from('anuncios_externos').select('id')
+    .eq('org_id', orgId).eq('codigo_pai', codigoPai).eq('canal', 'mercado_livre').eq('particao', 0).maybeSingle();
+  const { data: itensPreco } = raizPreco
+    ? await admin.from('anuncios_externos_itens').select('item_externo_id')
+      .eq('anuncio_externo_id', raizPreco.id as string).eq('retirado', false).not('item_externo_id', 'is', null)
+    : { data: [] as { item_externo_id: string }[] };
+  const idsIrmas = (itensPreco ?? []).map((i) => i.item_externo_id as string);
+  if (idsIrmas.length === 0 && anterior.ml_item_id) idsIrmas.push(anterior.ml_item_id as string);
+  const conexaoPreco = await resolverConexao(admin, orgId, 'mercado_livre');
+  const precoBaseMl = conexaoPreco
+    ? await lerPrecoBaseVivo(await getValidAccessTokenConexao(conexaoPreco), idsIrmas)
+    : null;
+  if (precoBaseMl === null) {
+    return json({ error: 'Não consegui ler o preço atual do anúncio no Mercado Livre. Tente novamente em instantes.' }, 503);
+  }
+
   // Lote nasce em 'publicando' de propósito (D-10/critério de aceite 8): NUNCA aparece na fila
   // de Revisão. Se o encadeamento da publicação mais abaixo falhar, rebaixamos para 'revisao'
   // só como rota de recuperação visível na tela Lotes.
@@ -371,11 +393,9 @@ Deno.serve(async (req) => {
     v as Record<string, unknown>,
     { familiaId, userId, estoqueCanonico: estoquePorCodigo.get(v.codigo as string) },
   ));
-  const irmasParaPreco = clonesVariacoes as unknown as
-    { preco_publicacao: number | null; excluida_da_publicacao: boolean }[];
   const novasVariacoes = variacoesEntrada.map((v, i) => montarVariacaoNova(
     { ...v, codigo: codigosNovos[i], imagemPath: fotos[i]!.imagemPath, mlPictureId: fotos[i]!.mlPictureId },
-    { familiaId, userId, orgId, precoPublicacao: precoPublicacaoNova(irmasParaPreco, v.preco) },
+    { familiaId, userId, orgId, precoPublicacao: precoBaseMl },
   ));
 
   // Falha aqui derruba a família criada (padrão cadastrar-produto/index.ts:218-221): família
