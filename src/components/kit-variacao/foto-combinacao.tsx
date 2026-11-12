@@ -26,8 +26,8 @@ export type FotoKit = File | FotoGerada;
 /** Adendo 11/11 do ADR-0200: o diálogo comanda as fotos em lote (fila de 3) e a aprovação pela grade. */
 export interface CandidataFoto extends FotoGerada { conferencia: ConferenciaFoto }
 export interface ControleFoto {
-  /** A mesma geração do botão, sem toast por falha (o lote mostra um resumo). true = candidata nova pronta para revisar. */
-  gerar(): Promise<boolean>;
+  /** A mesma geração do botão, sem toast por falha (o lote mostra um resumo). Já gerando: não chama de novo ('falhou'). */
+  gerar(): Promise<'ok' | 'naoFiel' | 'falhou'>;
   candidata(): CandidataFoto | null;
   /** Vira a foto da combinação. Só a grade de aprovação chama, depois de mostrar a foto em tamanho real. */
   aprovar(): void;
@@ -38,7 +38,7 @@ const conferenciaDe = (r: RespostaFotoKit): ConferenciaFoto => ({
   itens: r.verificacao?.itens ?? [], motivos: r.motivos ?? r.verificacao?.motivos ?? [], originais: r.originais ?? [],
 });
 
-export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, temImagemIA, valor, onChange, controle, onEstado }: {
+export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, temImagemIA, valor, onChange, controle, onEstado, travado = false }: {
   rotulo: string;
   titulo?: string;
   cores: string[];
@@ -48,6 +48,8 @@ export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, 
   onChange: (f: FotoKit) => void;
   controle?: Ref<ControleFoto>;
   onEstado?: (e: EstadoFoto) => void;
+  /** Lote em curso: os botões de geração deste card ficam travados (uma geração por combinação, a do lote). */
+  travado?: boolean;
 }) {
   const [candidata, setCandidata] = useState<(FotoGerada & { requestId: string; conferencia: ConferenciaFoto }) | null>(null);
   /** 3 reprovações: a IA não conseguiu uma foto fiel (só a prévia da última, sem "Usar"). */
@@ -99,10 +101,12 @@ export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, 
 
   useImperativeHandle(controle, () => ({
     async gerar() {
+      if (gerar.isPending) return 'falhou' as const;
       try {
         const { r } = await gerar.mutateAsync({ silencioso: true });
-        return r.ok && r.aprovado !== false && !!r.path;
-      } catch { return false; }
+        if (r.ok && r.aprovado === false) return 'naoFiel' as const;
+        return r.ok && r.path ? 'ok' as const : 'falhou' as const;
+      } catch { return 'falhou' as const; }
     },
     candidata: () => (candidata ? { path: candidata.path, url: candidata.url, conferencia: candidata.conferencia } : null),
     aprovar() {
@@ -159,7 +163,7 @@ export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, 
                 </Button>
                 {(!candidata.url || erroPrevia) && (
                   <Button
-                    size="sm" variant="outline" aria-label={`Recarregar prévia ${rotulo}`} disabled={gerar.isPending}
+                    size="sm" variant="outline" aria-label={`Recarregar prévia ${rotulo}`} disabled={gerar.isPending || travado}
                     onClick={() => gerar.mutate({ recarregar: candidata.requestId })}
                   >
                     Recarregar prévia
@@ -170,14 +174,14 @@ export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, 
                     <Maximize2 className="size-3.5" /> Ampliar
                   </Button>
                 )}
-                <Button size="sm" variant="outline" aria-label={`Gerar outra ${rotulo}`} disabled={gerar.isPending} onClick={() => gerar.mutate(undefined)}>
+                <Button size="sm" variant="outline" aria-label={`Gerar outra ${rotulo}`} disabled={gerar.isPending || travado} onClick={() => gerar.mutate(undefined)}>
                   {gerar.isPending && <Loader2 className="size-3.5 animate-spin" />} Gerar outra
                 </Button>
               </div>
             </div>
             <PreviaAmpliada
               open={ampliar} onOpenChange={setAmpliar} rotulo={rotulo} url={candidata.url} aprovada
-              conferencia={candidata.conferencia} gerando={gerar.isPending} onGerarDeNovo={() => gerar.mutate(undefined)}
+              conferencia={candidata.conferencia} gerando={gerar.isPending || travado} onGerarDeNovo={() => gerar.mutate(undefined)}
               onUsar={() => { onChange({ path: candidata.path, url: candidata.url }); setCandidata(null); }}
             />
           </div>
@@ -194,19 +198,19 @@ export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, 
                   <Maximize2 className="size-3.5" /> Ampliar
                 </Button>
               )}
-              <Button size="sm" variant="outline" aria-label={`Gerar de novo ${rotulo}`} onClick={() => gerar.mutate(undefined)}>
+              <Button size="sm" variant="outline" aria-label={`Gerar de novo ${rotulo}`} disabled={travado} onClick={() => gerar.mutate(undefined)}>
                 <Sparkles className="size-3.5" /> Gerar de novo
               </Button>
             </div>
             <PreviaAmpliada
               open={ampliar} onOpenChange={setAmpliar} rotulo={rotulo} url={naoFiel.previaUrl} aprovada={false}
-              conferencia={naoFiel} gerando={gerar.isPending} onGerarDeNovo={() => gerar.mutate(undefined)}
+              conferencia={naoFiel} gerando={gerar.isPending || travado} onGerarDeNovo={() => gerar.mutate(undefined)}
             />
           </div>
         ) : (
           <Button
             size="sm" variant="outline" className="justify-self-start" aria-label={`Gerar foto ${rotulo}`}
-            disabled={gerar.isPending} onClick={() => gerar.mutate(undefined)}
+            disabled={gerar.isPending || travado} onClick={() => gerar.mutate(undefined)}
           >
             {gerar.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
             {gerar.isPending ? (tentativa > 1 ? `Corrigindo (tentativa ${tentativa} de 3)…` : 'Gerando e conferindo…') : 'Gerar foto'}

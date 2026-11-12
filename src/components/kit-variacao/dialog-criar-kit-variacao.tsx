@@ -191,24 +191,29 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
   const ef = (r: string) => estadosFoto[r];
   const paraGerar = rotulosFoto.filter((r) => !fotos[r] && !ef(r)?.temCandidata && !ef(r)?.gerando && !ef(r)?.naoFiel);
   const paraRegerar = rotulosFoto.filter((r) => !fotos[r] && !ef(r)?.gerando && (ef(r)?.temCandidata || ef(r)?.naoFiel));
-  const prontas = rotulosFoto.filter((r) => ef(r)?.pronta);
+  // Combinação com foto escolhida (arquivo do operador ou IA já aprovada) nunca entra na grade: aprovar trocaria a foto.
+  const prontas = rotulosFoto.filter((r) => ef(r)?.pronta && !fotos[r]);
   const candidatasAbertas = rotulosFoto.filter((r) => ef(r)?.temCandidata).length;
   const gerandoFoto = loteAtivo > 0 || rotulosFoto.some((r) => ef(r)?.gerando);
   async function gerarLote(rotulos: string[]) {
     setLoteAtivo(rotulos.length);
     const fila = [...rotulos];
-    let falhas = 0;
+    let falhas = 0; let reprovadas = 0;
     const trabalhar = async () => {
       for (let r = fila.shift(); r; r = fila.shift()) {
-        const c = controlesFoto.current.get(r);
-        if (!(c && await c.gerar())) falhas++;
+        const res = await controlesFoto.current.get(r)?.gerar() ?? 'falhou';
+        if (res === 'falhou') falhas++; else if (res === 'naoFiel') reprovadas++;
       }
     };
     // ponytail: teto de 3 gerações simultâneas (cada uma leva até ~145 s com a conferência).
     await Promise.all(Array.from({ length: Math.min(3, fila.length) }, trabalhar));
     setLoteAtivo(0);
-    if (falhas > 0) {
-      toast.error(`${falhas} de ${rotulos.length} ${rotulos.length === 1 ? 'foto não foi gerada' : 'fotos não foram geradas'}`, {
+    if (falhas + reprovadas > 0) {
+      const partes = [
+        reprovadas > 0 && `${reprovadas} não ${reprovadas === 1 ? 'passou' : 'passaram'} na conferência com a peça original (não cobrada)`,
+        falhas > 0 && `${falhas} não ${falhas === 1 ? 'foi gerada' : 'foram geradas'}`,
+      ].filter(Boolean);
+      toast.error(`${partes.join('; ')}, de ${rotulos.length} ${rotulos.length === 1 ? 'foto' : 'fotos'}`, {
         description: 'Gere de novo ou envie a foto dessas combinações.',
       });
     }
@@ -668,7 +673,7 @@ export function DialogCriarKitVariacao({ familiaBaseId, open, onOpenChange, isAd
                         key={rotulo} rotulo={rotulo} cores={c} familiaBaseId={familiaBaseId} temImagemIA={temImagemIA}
                         valor={fotos[rotulo]} onChange={(f) => setFotos((p) => ({ ...p, [rotulo]: f }))}
                         controle={(c) => { if (c) controlesFoto.current.set(rotulo, c); else controlesFoto.current.delete(rotulo); }}
-                        onEstado={(e) => atualizarEstadoFoto(rotulo, e)}
+                        onEstado={(e) => atualizarEstadoFoto(rotulo, e)} travado={loteAtivo > 0}
                       />
                     );
                   })}

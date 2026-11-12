@@ -119,6 +119,36 @@ describe('DialogCriarKitVariacao: fotos em lote', () => {
     await vi.waitFor(() => expect(screen.queryByText(/faltando/)).toBeNull());
   });
 
+  it('durante o lote, os botões de cada card ficam travados (sem segunda geração na mesma combinação)', async () => {
+    const libera: Array<() => void> = [];
+    vi.mocked(gerarFotoKitEdge).mockImplementation(async (p) => { await new Promise<void>((ok) => libera.push(ok)); return gerada(p.requestId); });
+    const user = userEvent.setup();
+    abrir();
+    await irParaAnuncio(user, ['Preto', 'Branco', 'Azul', 'Caqui']); // 6: 3 gerando, 3 na fila
+    await user.click(screen.getByRole('button', { name: 'Gerar todas (6)' }));
+    await vi.waitFor(() => expect(libera.length).toBe(3));
+    for (const b of screen.getAllByRole('button', { name: /^Gerar foto / })) expect(b).toBeDisabled();
+    while (libera.length || vi.mocked(gerarFotoKitEdge).mock.calls.length < 6) {
+      if (libera.length) libera.shift()!();
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    await vi.waitFor(() => expect(screen.getAllByRole('img', { name: /^Foto gerada / })).toHaveLength(6));
+    expect(gerarFotoKitEdge).toHaveBeenCalledTimes(6);
+  });
+
+  it('"Aprovar todas" pula a combinação em que o operador já enviou a foto', async () => {
+    const user = userEvent.setup();
+    abrir();
+    await irParaAnuncio(user, ['Preto', 'Branco', 'Azul']);
+    await user.click(screen.getByRole('button', { name: 'Gerar todas (3)' }));
+    await vi.waitFor(() => expect(screen.getAllByRole('img', { name: /^Foto gerada / })).toHaveLength(3));
+    carregarPrevias();
+    await user.upload(screen.getByLabelText('Foto Preto e Branco'), new File(['x'], 'pb.jpg', { type: 'image/jpeg' }));
+    await user.click(await screen.findByRole('button', { name: 'Aprovar todas (2)' }));
+    const grade = await screen.findByRole('dialog', { name: 'Aprovar 2 fotos' });
+    expect(within(grade).queryByRole('img', { name: 'Foto gerada Preto e Branco, tamanho real' })).toBeNull();
+  });
+
   it('"Gerar de novo todas" avisa quantas fotos novas serão cobradas antes de gerar', async () => {
     const user = userEvent.setup();
     abrir();
