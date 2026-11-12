@@ -203,6 +203,10 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
       const action = r.loteId
         ? { label: 'Acompanhar', onClick: () => navigate(`/relatorio/${r.loteId}`) }
         : undefined;
+      // ADR-0204: o servidor descartou a galeria (releitura do ML falhou): o kit existe, mas só com a capa.
+      if (r.avisos?.length) {
+        toast.warning('O kit foi criado só com a capa', { description: r.avisos.join(' ') });
+      }
       // ADR-0151 (Task 6, fix I2): o kit foi criado, mas o encadeamento da publicação é uma
       // etapa separada — `publicacaoOk: false` não pode virar sucesso silencioso.
       if (r.publicacaoOk === false) {

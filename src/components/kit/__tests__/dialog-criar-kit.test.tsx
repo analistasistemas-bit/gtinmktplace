@@ -501,4 +501,29 @@ describe('DialogCriarKit — galeria da base (ADR-0204)', () => {
     expect(screen.getByText('A base ainda não foi publicada: o kit sai só com a capa')).toBeInTheDocument();
     expect(screen.queryByText(/Fotos 2 a 7/)).not.toBeInTheDocument();
   });
+
+  it('resposta com avisos mostra o aviso de kit só com a capa', async () => {
+    invokeMock.mockResolvedValue({ data: FOTOS, error: null });
+    criarKitVinculadoMock.mockResolvedValue({ ok: true, kits: [], publicacaoOk: true, avisos: ['Galeria da base não lida.'] });
+    renderDialog([], BASE_COM_FOTO, true);
+    await irAoPreview();
+    await screen.findByText(/Fotos 2 a 7 do anúncio principal/);
+    await criar();
+    await waitFor(() => expect(toast.warning).toHaveBeenCalledWith(
+      'O kit foi criado só com a capa',
+      expect.objectContaining({ description: 'Galeria da base não lida.' }),
+    ));
+    expect(toast.success).toHaveBeenCalled();
+  });
+
+  it('resposta sem avisos não mostra o aviso', async () => {
+    invokeMock.mockResolvedValue({ data: FOTOS, error: null });
+    criarKitVinculadoMock.mockResolvedValue({ ok: true, kits: [], publicacaoOk: true });
+    renderDialog([], BASE_COM_FOTO, true);
+    await irAoPreview();
+    await screen.findByText(/Fotos 2 a 7 do anúncio principal/);
+    await criar();
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(toast.warning).not.toHaveBeenCalled();
+  });
 });
