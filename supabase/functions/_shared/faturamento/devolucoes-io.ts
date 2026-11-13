@@ -320,7 +320,7 @@ export async function claimDoPedido(
   admin: SupabaseClient, p: { orgId: string; orderId: string | number },
 ): Promise<ClaimDoPedido | null> {
   const { data, error } = await admin.from('ml_devolucoes').select('type, reason_texto, detalhe')
-    .eq('org_id', p.orgId).eq('order_id', p.orderId).order('aberto_em', { ascending: false }).limit(1);
+    .eq('org_id', p.orgId).eq('order_id', p.orderId).order('aberto_em', { ascending: false, nullsFirst: false }).limit(1);
   if (error) throw new Error(`claim do pedido ${p.orderId}: ${error.message}`);
   const c = data?.[0];
   if (!c) return null;
