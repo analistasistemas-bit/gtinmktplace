@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { filtrarPublicados, dedupePublicados, ordenarPublicados, rotuloTipo } from '../../src/lib/publicados';
+import { filtrarPublicados, dedupePublicados, ordenarPublicados, rotuloTipo, filtroKitEfetivo, indiceKitsDaTela } from '../../src/lib/publicados';
 import type { PublicadoItem } from '../../src/lib/publicados';
 
 const fixtures: PublicadoItem[] = [
@@ -309,5 +309,41 @@ describe('dedupePublicados', () => {
     it('versão sem publicadoEm é ignorada', () => {
       expect(dedupePublicados([v('2026-06-04T00:00:00Z', true), v(null, false)])[0].canInvoice).toBe(true);
     });
+  });
+});
+
+describe('kits na tela Publicados (filtro efetivo e índice pronto)', () => {
+  const base = { ...fixtures[0], codigoPai: 'B1' } as PublicadoItem;
+  const kit = { ...fixtures[1], codigoPai: 'K1' } as PublicadoItem;
+  const outro = { ...fixtures[2], codigoPai: 'O1' } as PublicadoItem;
+  const itens = [base, kit, outro];
+  const vinc = [{ codigoPai: 'B1', kitBaseCodigoPai: 'B1', multiplicador: 2, status: 'pronto', mlItemId: 'MLB1', criadoEm: '2026-01-01' }] as never;
+
+  it('?comkit=1 antigo (variacao) com módulo desligado vira sem filtro de kit', () => {
+    expect(filtroKitEfetivo('variacao', false)).toBeNull();
+    expect(filtroKitEfetivo('variacao', true)).toBe('variacao');
+    expect(filtroKitEfetivo('vinculado', false)).toBe('vinculado');
+    expect(filtroKitEfetivo(undefined, true)).toBeNull();
+  });
+
+  it('índice fica undefined enquanto vinculados carrega ou falhou', () => {
+    expect(indiceKitsDaTela(itens, undefined, [], false)).toBeUndefined();
+  });
+
+  it('índice fica undefined com variação carregando/falha e módulo ligado; módulo desligado usa lista vazia', () => {
+    expect(indiceKitsDaTela(itens, [], undefined, true)).toBeUndefined();
+    expect(indiceKitsDaTela(itens, [], undefined, false)).toBeInstanceOf(Map);
+  });
+
+  it('com índice undefined o filtro de kit (sem) não esconde nenhuma linha', () => {
+    const idx = indiceKitsDaTela(itens, undefined, [], false);
+    expect(filtrarPublicados(itens, { kit: 'sem' }, idx)).toHaveLength(3);
+  });
+
+  it('com índice pronto, kit=vinculado deixa só a base (e o kit, se ele tiver marca)', () => {
+    const idx = indiceKitsDaTela(itens, vinc, [], false);
+    expect(filtrarPublicados(itens, { kit: 'vinculado' }, idx).map((i) => i.codigoPai)).toContain('B1');
+    expect(filtrarPublicados(itens, { kit: 'vinculado' }, idx).map((i) => i.codigoPai)).not.toContain('O1');
+    expect(idx?.get('B1')?.[0].tipo).toBe('vinculado');
   });
 });

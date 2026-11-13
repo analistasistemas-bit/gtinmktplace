@@ -421,6 +421,25 @@ export function indiceKits(
   return idx;
 }
 
+/** Filtro de kit que vale na tela: 'variacao' sem o módulo `kit_variacao` (ex.: `?comkit=1` antigo) não filtra. */
+export function filtroKitEfetivo(kit: FiltroKit | null | undefined, temKitVariacao: boolean): FiltroKit | null {
+  if (!kit || (kit === 'variacao' && !temKitVariacao)) return null;
+  return kit;
+}
+
+/** Índice da tela, ou undefined enquanto alguma leitura necessária carrega ou falhou (o filtro então não esconde nada).
+ *  Módulo `kit_variacao` desligado: a lista de variação não é lida e vale `[]`. */
+export function indiceKitsDaTela(
+  itens: PublicadoItem[],
+  vinculados: Parameters<typeof indiceKits>[1] | undefined,
+  variacao: Parameters<typeof indiceKits>[2] | undefined,
+  temKitVariacao: boolean,
+): IndiceKits | undefined {
+  if (!vinculados) return undefined;
+  if (temKitVariacao && !variacao) return undefined;
+  return indiceKits(itens, vinculados, temKitVariacao ? variacao ?? [] : []);
+}
+
 export function filtrarPublicados(
   itens: PublicadoItem[],
   f: FiltroPublicados,

@@ -105,6 +105,9 @@ vi.mock('@/lib/movimentos-estoque', async (importOriginal) => {
   };
 });
 // ADR-0200: kits com variação (só lidos com o módulo `kit_variacao`).
+vi.mock('@/hooks/useKitsVinculadosOrg', () => ({
+  useKitsVinculadosOrg: () => ({ data: [], isError: false }),
+}));
 const useKitsVariacaoMock = vi.fn((): { data: unknown[] } => ({ data: [] }));
 vi.mock('@/hooks/useKitsVariacao', () => ({
   useKitsVariacao: () => useKitsVariacaoMock(),

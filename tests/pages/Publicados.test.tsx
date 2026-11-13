@@ -148,6 +148,10 @@ vi.mock('@/lib/movimentos-estoque', async (importOriginal) => {
 // Gate do módulo fiscal (ADR-0135 D-13) — mockado no nível do módulo porque viabilidade-linha.tsx
 // (dentro do painel expandido) também chama o hook.
 // ADR-0200: kits com variação (só lidos com o módulo `kit_variacao`).
+const useKitsVinculadosOrgMock = vi.fn((): { data: unknown[] | undefined; isError: boolean } => ({ data: [], isError: false }));
+vi.mock('@/hooks/useKitsVinculadosOrg', () => ({
+  useKitsVinculadosOrg: () => useKitsVinculadosOrgMock(),
+}));
 const useKitsVariacaoMock = vi.fn((): { data: unknown[] } => ({ data: [] }));
 vi.mock('@/hooks/useKitsVariacao', () => ({
   useKitsVariacao: () => useKitsVariacaoMock(),
@@ -778,6 +782,52 @@ describe('Publicados', () => {
       useKitsVariacaoMock.mockReturnValue({ data: [{ ...kit, status: 'encerrado' }] });
       render(<MemoryRouter><Publicados /></MemoryRouter>);
       expect(screen.queryByRole('button', { name: 'Gerenciar kit' })).toBeNull();
+    });
+  });
+
+  // Badges de kit na linha e filtro por kits.
+  describe('badges e filtro de kits', () => {
+    const base = itemBase({ codigoPai: 'BASE1', titulo: 'PRODUTO BASE', mlItemId: 'MLB10' });
+    const kitV = itemBase({ codigoPai: 'KIT1', titulo: 'PRODUTO KIT', mlItemId: 'MLB11', familiaId: 'f2', kitBaseCodigoPai: 'BASE1' });
+    const solto = itemBase({ codigoPai: 'SOLTO1', titulo: 'PRODUTO SOLTO', mlItemId: 'MLB12', familiaId: 'f3' });
+    const vinculado = [{ codigoPai: 'BASE1', kitBaseCodigoPai: 'BASE1', multiplicador: 2, status: 'pronto', mlItemId: 'MLB11', criadoEm: '2026-01-01' }];
+    const abrir = (url = '/') => render(<MemoryRouter initialEntries={[url]}><Publicados /></MemoryRouter>);
+    beforeEach(() => {
+      useModulosHabilitadosMock.mockReturnValue({ data: [] });
+      usePublicadosMock.mockReturnValue({ data: [base, kitV, solto], isLoading: false, error: null });
+    });
+    afterEach(() => useKitsVinculadosOrgMock.mockReturnValue({ data: [], isError: false }));
+
+    it('linha do produto com kit vinculado mostra a badge "Tem kit vinculado."', () => {
+      useKitsVinculadosOrgMock.mockReturnValue({ data: vinculado, isError: false });
+      abrir();
+      expect(screen.getAllByRole('button', { name: /^Tem kit vinculado\. / }).length).toBeGreaterThan(0);
+    });
+
+    it('?comkit=1 antigo com o módulo kit_variacao desligado não filtra a lista', () => {
+      abrir('/?comkit=1');
+      expect(screen.getByText('Produto Base')).toBeInTheDocument();
+      expect(screen.getByText('Produto Kit')).toBeInTheDocument();
+      expect(screen.getByText('Produto Solto')).toBeInTheDocument();
+    });
+
+    it('com a leitura de kits em erro e kit=sem, todas as linhas aparecem e há aviso', () => {
+      useKitsVinculadosOrgMock.mockReturnValue({ data: undefined, isError: true });
+      abrir('/?kit=sem');
+      expect(screen.getByText('Produto Base')).toBeInTheDocument();
+      expect(screen.getByText('Produto Kit')).toBeInTheDocument();
+      expect(screen.getByText('Produto Solto')).toBeInTheDocument();
+      expect(screen.getByRole('status')).toHaveTextContent('Não foi possível ler os kits');
+    });
+
+    it('escolher "Kit vinculado" no Select deixa só a base e o kit', async () => {
+      useKitsVinculadosOrgMock.mockReturnValue({ data: vinculado, isError: false });
+      abrir();
+      fireEvent.click(screen.getByText('Todos kits'));
+      fireEvent.click(await screen.findByRole('option', { name: 'Kit vinculado' }));
+      expect(screen.getByText('Produto Base')).toBeInTheDocument();
+      expect(screen.getByText('Produto Kit')).toBeInTheDocument();
+      expect(screen.queryByText('Produto Solto')).toBeNull();
     });
   });
 

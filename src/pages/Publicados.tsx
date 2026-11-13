@@ -38,13 +38,16 @@ import {
 import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
 import { formatarNomeProduto } from '@/lib/texto';
-import { filtrarPublicados, indiceKits, ordenarPublicados, rotuloTipo, fiscalPendente, agregarStatusUP, alvosStatus, resumirVariacoesPorCor, vendasDoAnuncio } from '@/lib/publicados';
+import { filtrarPublicados, filtroKitEfetivo, indiceKitsDaTela, ordenarPublicados, rotuloTipo, fiscalPendente, agregarStatusUP, alvosStatus, resumirVariacoesPorCor, vendasDoAnuncio } from '@/lib/publicados';
 import { CanalTabs } from '@/components/canal-tabs';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ListaOperacoes } from '@/components/operacoes/lista-operacoes';
 import { ListaPendentesGaleria } from '@/components/galeria/lista-pendentes';
 import { useGaleriaPendentes } from '@/hooks/useGaleriaPendentes';
 import { CanalBadge } from '@/components/canal-badge';
+import { BadgesKit } from '@/components/badge-kit';
+import { useKitsVinculadosOrg } from '@/hooks/useKitsVinculadosOrg';
+import type { FiltroKit, MarcaKit } from '@/lib/publicados';
 import { MovimentosEstoque } from '@/components/movimentos-estoque';
 import { CatalogoEmRisco } from '@/components/catalogo-em-risco';
 import { agruparCatalogoRisco, filtrarCatalogForewarning } from '@/lib/catalogo-risco';
@@ -376,6 +379,8 @@ interface LinhaProps {
   temImagemIA: boolean;
   /** Kits com variação feitos a partir deste produto. */
   kitsVariacaoDaBase: KitVariacaoResumo[];
+  /** Marcas de kit do produto (badges na coluna do produto). */
+  marcasKit: MarcaKit[];
   /** Recebe o PAI: a base do kit é a família canônica dele, não a família da linha. */
   onCriarKitVariacao: (codigoPai: string) => void;
   onGerenciarKit: (kit: KitVariacaoResumo) => void;
@@ -414,7 +419,7 @@ function LinhaTabela({
   item, onRemover, removendo, onRepublicar, republicando, onPausarReativar, pausando,
   onRetentarCatalogo, retentandoCatalogo, isAdmin, temFiscal, onPreencherFiscal,
   temModuloEstoque, onCriarKit, onMigrarPrecoPorVariacao, migrando,
-  temKitVariacao, kitVariacao, kitsVariacaoDaBase, onCriarKitVariacao, onGerenciarKit, focoKit,
+  temKitVariacao, kitVariacao, kitsVariacaoDaBase, marcasKit, onCriarKitVariacao, onGerenciarKit, focoKit,
   temImagemIA,
   selecionado, onSelecionar, motivoNaoSelecionavel: motivoSelecao,
 }: LinhaProps) {
@@ -500,7 +505,10 @@ function LinhaTabela({
           <div className="max-w-[260px]">
             <p className="text-sm font-medium break-words">{formatarNomeProduto(item.titulo)}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">{item.codigoPai}</p>
-            <CanalBadge canal={item.canal ?? 'mercado_livre'} className="mt-1" />
+            <div className="mt-1 flex flex-wrap items-center gap-1">
+              <CanalBadge canal={item.canal ?? 'mercado_livre'} />
+              <BadgesKit marcas={marcasKit} />
+            </div>
           </div>
         </div>
       </TableCell>
@@ -1265,7 +1273,8 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
   // ADR-0200: kit com variação. Sem o módulo as tabelas nem são lidas.
   const temKitVariacao = !!modulos?.includes('kit_variacao');
   const temImagemIA = !!modulos?.includes('imagem_ia');
-  const { data: kitsVariacao } = useKitsVariacao(temKitVariacao);
+  const { data: kitsVariacao, isError: kitsVariacaoErro } = useKitsVariacao(temKitVariacao);
+  const { data: kitsVinculados, isError: kitsVinculadosErro } = useKitsVinculadosOrg();
   const kitPorCodigo = useMemo(() => new Map((kitsVariacao ?? []).map((k) => [k.codigoPaiKit, k])), [kitsVariacao]);
   // Kit com variação encerrado sai de Publicados (itens fechados no ML); segue no bloco "Kits com variação" da base.
   const publicados = useMemo(
@@ -1560,11 +1569,17 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
     [doCanal],
   );
 
-  // Índice de kits (por ora só variação; Task 4 acrescenta vinculado e virtual).
-  const indiceDeKits = useMemo(() => indiceKits(doCanal, [], kitsVariacao ?? []), [doCanal, kitsVariacao]);
+  // Índice de kits: undefined enquanto carrega ou falhou (filtro não esconde nada, sem badges).
+  const indiceDeKits = useMemo(
+    () => indiceKitsDaTela(doCanal, kitsVinculados, kitsVariacao, temKitVariacao),
+    [doCanal, kitsVinculados, kitsVariacao, temKitVariacao],
+  );
+  const filtroKit = filtroKitEfetivo(filtro.kit, temKitVariacao);
+  const filtroDaTela = useMemo(() => ({ ...filtro, kit: filtroKit }), [filtro, filtroKit]);
+  const kitsFalhou = !indiceDeKits && (kitsVinculadosErro || (temKitVariacao && kitsVariacaoErro));
   const itensExibidos = useMemo(
-    () => ordenarPublicados(filtrarPublicados(doCanal, filtro, indiceDeKits), ord),
-    [doCanal, filtro, ord, indiceDeKits],
+    () => ordenarPublicados(filtrarPublicados(doCanal, filtroDaTela, indiceDeKits), ord),
+    [doCanal, filtroDaTela, ord, indiceDeKits],
   );
   const pag = useMemo(() => paginar(itensExibidos, pagina, tamanho), [itensExibidos, pagina, tamanho]);
 
@@ -1585,7 +1600,7 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
     const idx = itensExibidos.findIndex(ehBase);
     if (idx >= 0) { aplicar(() => ({ pagina: Math.floor(idx / tamanho) + 1 })); return; }
     if (doCanal.some(ehBase) && filtro.busca !== focoPedido.codigoPaiBase) {
-      aplicar((a) => ({ filtro: { busca: focoPedido.codigoPaiBase, fornecedor: null, status: null, tipo: null }, ord: a.ord, pagina: 1 }));
+      aplicar((a) => ({ filtro: { busca: focoPedido.codigoPaiBase, fornecedor: null, status: null, tipo: null, kit: null }, ord: a.ord, pagina: 1 }));
       return;
     }
     const kit = (kitsVariacao ?? []).find((k) => k.id === focoPedido.kitId)
@@ -1601,7 +1616,9 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
   }, [focoLinha]);
 
   // Link do aviso de transferência travada (`?kit=<id>`): abre o Gerenciar kit direto e tira o parâmetro.
-  const kitDoLink = searchParams.get('kit');
+  // O mesmo parâmetro carrega o filtro de kits (`?kit=sem`): valor que é o filtro válido não é id de kit.
+  const kitParam = searchParams.get('kit');
+  const kitDoLink = kitParam && kitParam !== filtro.kit ? kitParam : null;
   useEffect(() => {
     if (!kitDoLink || !kitsVariacao) return;
     const kit = kitsVariacao.find((k) => k.id === kitDoLink);
@@ -1961,21 +1978,35 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
                 </SelectContent>
               </Select>
             </div>
-            {temKitVariacao && (
-              <Button
-                type="button"
-                variant={filtro.kit === 'variacao' ? 'default' : 'outline'}
-                size="sm"
-                className="h-8"
-                aria-pressed={filtro.kit === 'variacao'}
-                onClick={() => setFiltro((f) => ({ ...f, kit: f.kit === 'variacao' ? null : 'variacao' }))}
+
+            <div className="w-full sm:w-auto">
+              <Select
+                value={filtroKit ?? '__todos'}
+                onValueChange={(v) =>
+                  setFiltro((f) => ({ ...f, kit: v === '__todos' ? null : (v as FiltroKit) }))
+                }
               >
-                <Layers className="h-3.5 w-3.5" aria-hidden />Com kit de variação
-              </Button>
-            )}
+                <SelectTrigger className="h-8 w-full min-w-0 text-sm sm:w-[180px]">
+                  <SelectValue placeholder="Kits" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__todos">Todos kits</SelectItem>
+                  <SelectItem value="qualquer">Com qualquer kit</SelectItem>
+                  <SelectItem value="vinculado">Kit vinculado</SelectItem>
+                  {temKitVariacao && <SelectItem value="variacao">Kit com variação</SelectItem>}
+                  <SelectItem value="virtual">Kit virtual</SelectItem>
+                  <SelectItem value="sem">Sem kit</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
-          <FiltrosAtivos filtro={filtro} onRemover={removerFiltro} onLimpar={limparFiltros} />
+          <FiltrosAtivos filtro={filtroDaTela} onRemover={removerFiltro} onLimpar={limparFiltros} />
+          {filtroKit && kitsFalhou && (
+            <p role="status" className="text-xs text-muted-foreground">
+              Não foi possível ler os kits. A lista está sem o filtro de kits.
+            </p>
+          )}
 
           {/* Tabela */}
           <div ref={topoRef} className="scroll-mt-6 rounded-md border">
@@ -2049,6 +2080,7 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
                         temKitVariacao={temKitVariacao}
                         kitVariacao={kitPorCodigo.get(item.codigoPai) ?? null}
                         kitsVariacaoDaBase={(kitsVariacao ?? []).filter((k) => k.codigoPaiBase === item.codigoPai)}
+                        marcasKit={indiceDeKits?.get(item.codigoPai) ?? []}
                         onCriarKitVariacao={abrirKitVariacao}
                         onGerenciarKit={setKitGerenciado}
                         focoKit={focoLinha?.mlItemId === item.mlItemId ? focoLinha.seq : null}

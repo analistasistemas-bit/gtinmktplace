@@ -1,4 +1,4 @@
-import type { FiltroKit, FiltroPublicados,OrdenacaoPublicados, StatusPublicado, ColunaOrdenavel } from '@/lib/publicados';
+import type { FiltroKit, FiltroPublicados, OrdenacaoPublicados, StatusPublicado, ColunaOrdenavel } from '@/lib/publicados';
 
 export const TAMANHO_PADRAO = 10;
 const TAMANHOS_VALIDOS = [5, 10, 20, 50];
