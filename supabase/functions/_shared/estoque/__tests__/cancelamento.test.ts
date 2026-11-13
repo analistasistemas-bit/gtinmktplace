@@ -34,7 +34,7 @@ function fakeDeps(over: Partial<DepsCancelamento> = {}) {
       chamadas.consultasDeBaixa++;
       return Promise.resolve(true);
     },
-    cancelamentoPeloComprador: () => Promise.resolve(false),
+    claimDoPedido: () => Promise.resolve(null),
     reservarNotificacao: (_admin, _org, _user, entidade, chave) => {
       chamadas.reservas.push({ entidade, chave });
       return Promise.resolve(true);
@@ -102,7 +102,7 @@ describe('tratarPedidoCancelado — o que não é pré-despacho apenas avisa', (
   // Emenda ADR-0121 (03/11/2026): claim cancel_purchase, fechado pelo ML em ~3 min. O texto não
   // pode mandar "conferir o que voltou" nem afirmar que a mercadoria ficou, mas mantém a entrada manual.
   it('cancel_purchase usa texto próprio e NÃO estorna', async () => {
-    const { chamadas, deps } = fakeDeps({ cancelamentoPeloComprador: () => Promise.resolve(true) });
+    const { chamadas, deps } = fakeDeps({ claimDoPedido: () => Promise.resolve({ tipo: 'cancel_purchase', motivo: 'Outro motivo', desfecho: null }) });
     const r = await tratarPedidoCancelado(ADMIN, deps, { ...BASE, shipmentStatus: 'cancelled' });
     expect(r).toBe('avisado');
     expect(chamadas.estornos).toHaveLength(0);
@@ -113,11 +113,30 @@ describe('tratarPedidoCancelado — o que não é pré-despacho apenas avisa', (
   });
 
   it('falha ao ler o claim cai no texto genérico e não cala o aviso', async () => {
-    const { chamadas, deps } = fakeDeps({ cancelamentoPeloComprador: () => Promise.reject(new Error('rede')) });
+    const { chamadas, deps } = fakeDeps({ claimDoPedido: () => Promise.reject(new Error('rede')) });
     const r = await tratarPedidoCancelado(ADMIN, deps, { ...BASE, shipmentStatus: 'cancelled' });
     expect(r).toBe('avisado');
     expect(chamadas.notificacoes[0].texto).toContain('Não dá para saber se a mercadoria saiu');
     expect(chamadas.notificacoes[0].texto).toContain('Se o produto estiver aí');
+  });
+
+  // Caso real 2000019297158586 (13/11/2026): entregue, mediação "defeito ou diferente" fechada com cobertura.
+  it('mediação aparece como motivo e desfecho no aviso', async () => {
+    const { chamadas, deps } = fakeDeps({ claimDoPedido: () => Promise.resolve({
+      tipo: 'mediations', motivo: 'Produto com defeito ou diferente', desfecho: 'Mediação finalizada. Te demos o dinheiro.',
+    }) });
+    const r = await tratarPedidoCancelado(ADMIN, deps, { ...BASE, shipmentStatus: 'delivered' });
+    expect(r).toBe('avisado');
+    const t = chamadas.notificacoes[0].texto;
+    expect(t).toContain('Motivo: Mediação — Produto com defeito ou diferente');
+    expect(t).toContain('Desfecho: Mediação finalizada. Te demos o dinheiro.');
+    expect(t).toContain('A mercadoria já saiu');
+  });
+
+  it('sem claim não inventa motivo', async () => {
+    const { chamadas, deps } = fakeDeps();
+    await tratarPedidoCancelado(ADMIN, deps, { ...BASE, shipmentStatus: 'delivered' });
+    expect(chamadas.notificacoes[0].texto).not.toContain('Motivo:');
   });
 
   it('envio entregue avisa e NÃO estorna', async () => {

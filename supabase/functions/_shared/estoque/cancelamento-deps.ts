@@ -3,7 +3,7 @@
 // existe no runtime Deno. Aqui só há ligação, nenhuma decisão.
 import { enfileirarSaga, enfileirarSincronizacaoEstoque } from '../queue.ts';
 import { estornarVendaCancelada, despacharPushPendente, houveBaixaDeVenda } from './baixa.ts';
-import { cancelamentoPeloComprador } from '../faturamento/devolucoes-io.ts';
+import { claimDoPedido } from '../faturamento/devolucoes-io.ts';
 import { reservarNotificacao } from '../faturamento/notificacoes-dedupe.ts';
 import { registrarPendenciaKit } from '../faturamento/pendencias.ts';
 import { classificarItensKit, gravarIdentidades } from '../kit-variacao/venda.ts';
@@ -17,7 +17,7 @@ export const depsCancelamento: DepsCancelamento = {
   despacharPushPendente,
   enfileirarSincronizacaoEstoque,
   houveBaixaDeVenda,
-  cancelamentoPeloComprador,
+  claimDoPedido,
   reservarNotificacao,
   notificarCategoria,
   skusParticipantes,

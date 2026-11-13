@@ -20,6 +20,12 @@ import type { classificarItensKit, gravarIdentidades } from '../kit-variacao/ven
  *  "não despachado" reporia estoque de mercadoria já enviada. */
 const PRE_DESPACHO = ['pending', 'handling', 'ready_to_ship'];
 
+/** Rótulo do tipo de claim — espelha `TIPO_LABEL` de `src/lib/devolucoes.ts` (runtimes separados). */
+const TIPO_CLAIM: Record<string, string> = {
+  returns: 'Devolução', mediations: 'Mediação', cancel_purchase: 'Cancelamento (compra)',
+  cancel_sale: 'Cancelamento (venda)', ml_case: 'Reclamação', fulfillment: 'Fulfillment',
+};
+
 /** Só para o texto do aviso: estados em que a mercadoria comprovadamente saiu. */
 const SAIU = ['shipped', 'delivered', 'not_delivered'];
 
@@ -48,9 +54,10 @@ export interface DepsCancelamento {
     admin: SupabaseClient,
     p: { orgId: string; canal: string; orderId: string | number; itens: ItemVendaBaixa[] },
   ) => Promise<boolean>;
-  cancelamentoPeloComprador: (
+  /** Claim mais recente do pedido (`ml_devolucoes`): o motivo real do cancelamento. */
+  claimDoPedido: (
     admin: SupabaseClient, p: { orgId: string; orderId: string | number },
-  ) => Promise<boolean>;
+  ) => Promise<{ tipo: string; motivo: string | null; desfecho: string | null } | null>;
   reservarNotificacao: (
     admin: SupabaseClient, orgId: string, userId: string | null, entidade: string, chave: string,
   ) => Promise<boolean>;
@@ -149,9 +156,13 @@ export async function tratarPedidoCancelado(
       return 'silenciado';
     }
     // Falha de leitura cai no texto genérico: o aviso já foi reservado e não pode se perder.
-    const peloComprador = await deps.cancelamentoPeloComprador(admin, { orgId: p.orgId, orderId: p.orderId })
-      .catch(() => false);
+    const claim = await deps.claimDoPedido(admin, { orgId: p.orgId, orderId: p.orderId }).catch(() => null);
+    const peloComprador = claim?.tipo === 'cancel_purchase';
     const situacaoEnvio = st === null ? 'Envio: não deu para consultar' : `Envio: ${LABEL_ENVIO[st] ?? st}`;
+    const motivo = claim
+      ? `Motivo: ${TIPO_CLAIM[claim.tipo] ?? claim.tipo}${claim.motivo ? ` — ${claim.motivo}` : ''}\n`
+        + (claim.desfecho ? `Desfecho: ${claim.desfecho}\n` : '')
+      : '';
     const saiu = st !== null && SAIU.includes(st);
     await deps.notificarCategoria(
       admin, p.orgId, 'pos_venda',
@@ -159,7 +170,7 @@ export async function tratarPedidoCancelado(
         ? `🚫 Comprador cancelou o pedido ${p.orderId}\n\n`
           + 'O ML já resolveu: não precisa responder nada.\n\n'
           + 'O estoque NÃO foi reposto. Se a mercadoria ainda está aí, dê entrada manual em Estoque.'
-        : `📦 Pedido ${p.orderId} cancelado — estoque NÃO reposto\n\n${situacaoEnvio}\n`
+        : `📦 Pedido ${p.orderId} cancelado — estoque NÃO reposto\n\n${motivo}${situacaoEnvio}\n`
           + (saiu
             ? 'A mercadoria já saiu, por isso o PubliAI não devolveu ao estoque sozinho.\n\n'
               + '👉 Quando o produto voltar, dê entrada manual em Estoque.'

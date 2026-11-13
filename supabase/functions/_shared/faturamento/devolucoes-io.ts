@@ -313,12 +313,17 @@ export async function carregarDevolucoesLocais(
   return mapa;
 }
 
-/** O pedido tem claim `cancel_purchase`? Erro lança: quem chama decide o texto de reserva. */
-export async function cancelamentoPeloComprador(
+export interface ClaimDoPedido { tipo: string; motivo: string | null; desfecho: string | null }
+
+/** Claim mais recente do pedido (motivo real do cancelamento), ou null. Erro lança: quem chama decide o texto de reserva. */
+export async function claimDoPedido(
   admin: SupabaseClient, p: { orgId: string; orderId: string | number },
-): Promise<boolean> {
-  const { data, error } = await admin.from('ml_devolucoes').select('id')
-    .eq('org_id', p.orgId).eq('order_id', p.orderId).eq('type', 'cancel_purchase').limit(1);
+): Promise<ClaimDoPedido | null> {
+  const { data, error } = await admin.from('ml_devolucoes').select('type, reason_texto, detalhe')
+    .eq('org_id', p.orgId).eq('order_id', p.orderId).order('aberto_em', { ascending: false }).limit(1);
   if (error) throw new Error(`claim do pedido ${p.orderId}: ${error.message}`);
-  return (data ?? []).length > 0;
+  const c = data?.[0];
+  if (!c) return null;
+  const titulo = (c.detalhe as { title?: string } | null)?.title;
+  return { tipo: String(c.type), motivo: (c.reason_texto as string | null) ?? null, desfecho: titulo ?? null };
 }
