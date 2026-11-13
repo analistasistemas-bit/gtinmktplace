@@ -34,6 +34,22 @@ const centavos = (n: number) => Math.round(n * 100);
 const texto = (x: unknown) => (typeof x === 'string' && x ? x : null);
 const LOTE = 20;
 
+/** Item do ML de cada SKU: vínculo por SKU (UP) primeiro; sem ele, o anúncio legado (um item com variações) que lista o
+ *  SKU em `variacoes_externas` — família dividida em faixas (ADR-0078) tem um item por partição. */
+export function itensPorSku(
+  skus: string[],
+  vinculosUp: { sku: string; item_externo_id: string | null }[],
+  legados: { item_externo_id: string | null; variacoes_externas: unknown }[],
+): { sku: string; item_id: string | null }[] {
+  const itemDe = new Map<string, string>();
+  for (const l of legados) {
+    if (!l.item_externo_id || !l.variacoes_externas || typeof l.variacoes_externas !== 'object') continue;
+    for (const sku of Object.keys(l.variacoes_externas)) itemDe.set(sku, l.item_externo_id);
+  }
+  for (const v of vinculosUp) if (v.item_externo_id) itemDe.set(v.sku, v.item_externo_id);
+  return skus.map((sku) => ({ sku, item_id: itemDe.get(sku) ?? null }));
+}
+
 async function precosNormais(get: GetML, ids: string[]): Promise<Map<string, number>> {
   const out = new Map<string, number>();
   for (let i = 0; i < ids.length; i += LOTE) {

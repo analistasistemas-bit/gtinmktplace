@@ -8,7 +8,7 @@ import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { criarClienteReajusteML } from '../_shared/operacoes/reajuste/ml.ts';
-import { lerPrecosAvulsos, type GetML, type PrecoAvulso } from './processar.ts';
+import { itensPorSku, lerPrecosAvulsos, type GetML, type PrecoAvulso } from './processar.ts';
 
 /** 5 s por chamada: uma leitura pendurada não segura a tela (mesma espera de lerSalePriceML). */
 const getML = (token: string): GetML => async (path) => {
@@ -60,8 +60,13 @@ Deno.serve(async (req) => {
     .eq('org_id', orgId).eq('anuncios_externos.codigo_pai', familia.codigo_pai as string).eq('retirado', false)
     .in('sku', skus);
   if (errV) return json({ error: 'Falha ao carregar os anúncios das peças.' }, 500);
-  const itemDe = new Map((vinculos ?? []).map((v) => [v.sku as string, v.item_externo_id as string | null]));
-  const pedidos = skus.map((sku) => ({ sku, item_id: itemDe.get(sku) ?? null }));
+  // Anúncio legado (um item com variações) não tem linha por SKU: o item vem do anúncio do PAI.
+  const { data: legados, error: errL } = await admin.from('anuncios_externos')
+    .select('item_externo_id, variacoes_externas')
+    .eq('org_id', orgId).eq('canal', 'mercado_livre').eq('codigo_pai', familia.codigo_pai as string)
+    .not('item_externo_id', 'is', null);
+  if (errL) return json({ error: 'Falha ao carregar os anúncios das peças.' }, 500);
+  const pedidos = itensPorSku(skus, (vinculos ?? []) as { sku: string; item_externo_id: string | null }[], legados ?? []);
 
   const vazio = () => Object.fromEntries(skus.map((s) => [s, { normal: null, promocao: null, fim_promocao: null, futuras: [], futuras_indisponivel: true } as PrecoAvulso]));
   let token: string;

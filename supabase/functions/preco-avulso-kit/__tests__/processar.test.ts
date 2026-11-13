@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { lerPrecosAvulsos, moduloPermitido, type DepsPrecoAvulso } from '../processar';
+import { itensPorSku, lerPrecosAvulsos, moduloPermitido, type DepsPrecoAvulso } from '../processar';
 import { oferta } from '../../_shared/operacoes/reajuste/ofertas';
 import type { OfertaVigente } from '../../_shared/operacoes/reajuste/tipos';
 
@@ -118,5 +118,25 @@ describe('moduloPermitido (gate da edge, ADR-0200 adendo 12/11)', () => {
   it('recusa sem nenhum dos dois', () => {
     expect(moduloPermitido([])).toBe(false);
     expect(moduloPermitido(['outro'])).toBe(false);
+  });
+});
+
+describe('itensPorSku (item do ML de cada SKU da base)', () => {
+  it('anúncio legado (um item com variações, sem vínculo por SKU): usa o item que lista o SKU', () => {
+    // Caso real 13/11: MLB7143671454 (fita refletiva) em promoção e a tela dizia "promoção da base indisponível".
+    const legados = [{ item_externo_id: 'MLB7143671454', variacoes_externas: { '02933284': { variation_id: '197500604796' } } }];
+    expect(itensPorSku(['02933284'], [], legados)).toEqual([{ sku: '02933284', item_id: 'MLB7143671454' }]);
+  });
+  it('família legada dividida em faixas (ADR-0078): cada SKU no item da sua partição', () => {
+    const legados = [
+      { item_externo_id: 'MLB1', variacoes_externas: { A: {} } },
+      { item_externo_id: 'MLB2', variacoes_externas: { B: {} } },
+    ];
+    expect(itensPorSku(['A', 'B'], [], legados)).toEqual([{ sku: 'A', item_id: 'MLB1' }, { sku: 'B', item_id: 'MLB2' }]);
+  });
+  it('vínculo por SKU (UP) ganha do legado; SKU sem anúncio fica sem item', () => {
+    const legados = [{ item_externo_id: 'MLB1', variacoes_externas: { A: {} } }, { item_externo_id: null, variacoes_externas: { C: {} } }];
+    expect(itensPorSku(['A', 'C'], [{ sku: 'A', item_externo_id: 'MLB9' }], legados))
+      .toEqual([{ sku: 'A', item_id: 'MLB9' }, { sku: 'C', item_id: null }]);
   });
 });

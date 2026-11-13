@@ -1449,7 +1449,8 @@ um smoke test contra Postgres real antes do primeiro deploy.
   acrescenta os ids a `payload.pictures`; 4xx `item.pictures.*` zera a lista da variação, avisa (chave idempotente) e relança,
   e a saga recria só com a foto do kit.
 - **preco-avulso-kit** — preço avulso das peças da base do kit (adendo ADR-0200). Corpo `{familia_base_id}`; vínculo
-  SKU→item de `anuncios_externos_itens` (raiz do PAI, `retirado=false`). Normal = `price` do `/items/bulk` (lotes de 20 ids
+  SKU→item de `anuncios_externos_itens` (raiz do PAI, `retirado=false`); SKU sem esse vínculo (anúncio legado, um item
+  com variações) usa o `item_externo_id` do `anuncios_externos` do PAI que o lista em `variacoes_externas`. Normal = `price` do `/items/bulk` (lotes de 20 ids
   únicos); promoção = `amount` do `/sale_price` abaixo do normal. Promoções do item por `lerOfertas` do reajuste
   (`_shared/operacoes/reajuste/ml.ts`: visão por item + visão da campanha para `candidate`, que atrasa), em paralelo ao
   `/sale_price`, com uma repetição em 500/502/503: dão o fim da oferta vencedora (`metadata.promotion_id` antes do
