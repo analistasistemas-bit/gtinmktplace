@@ -362,34 +362,45 @@ export function forcarSaleFormatKit(schema: AtributoSchema[], atributos: Atribut
  * na ficha, não usado no cálculo de frete (ADR-0018).
  */
 export function aplicarKitNosAtributos(
-  schema: AtributoSchema[], atributos: AtributoML[], n: number, pesoBaseGramas?: number,
+  schema: AtributoSchema[], atributos: AtributoML[], n: number, pesoBaseGramas?: number, unidadesBase?: number,
 ): AtributoML[] {
-  const comKit = forcarSaleFormatKit(schema, atributos);
-  const mudou = comKit.find((a) => a.id === 'SALE_FORMAT');
-  // `valores`/`nome` + `normalizar`, exatamente como `forcarSaleFormatKit` faz (atributos.ts:254).
-  // `values`/`name` é o shape da API do ML CRU, que `parseAtributosSchema` já traduziu — usá-lo
-  // aqui devolveria `undefined` sempre e recusaria kit em TODA categoria.
-  const kitDisponivel = schema
-    .find((s) => s.id === 'SALE_FORMAT')?.valores.some((v) => normalizar(v.nome) === 'kit');
-  if (!kitDisponivel || !mudou) {
+  // `valores`/`nome` + `normalizar` (o shape cru da API, `values`/`name`, já foi traduzido por
+  // `parseAtributosSchema` — usá-lo devolveria `undefined` e recusaria kit em TODA categoria).
+  // Emenda ADR-0151 D-3 (13/11, Lápis MLB430146): categoria sem "Kit" mas com "Pack" vende o kit como
+  // Pack — é o que os concorrentes fazem. "Kit" vence quando a categoria tem os dois.
+  const valores = schema.find((s) => s.id === 'SALE_FORMAT')?.valores ?? [];
+  const kit = valores.find((v) => normalizar(v.nome) === 'kit');
+  const formato = kit ?? valores.find((v) => normalizar(v.nome) === 'pack');
+  if (!formato) {
     const e = new Error(
-      'Esta categoria do ML não oferece o formato de venda "Kit". Não é possível criar kit vinculado aqui.',
+      'Esta categoria do ML não oferece o formato de venda "Kit" nem "Pack". Não é possível criar kit vinculado aqui.',
     ) as Error & { status?: number };
     e.status = 400;
     throw e;
   }
+  const comKit = [...atributos.filter((a) => a.id !== 'SALE_FORMAT'), { id: 'SALE_FORMAT', value_id: formato.id }];
+  // Em Pack, UNITS_PER_PACK conta o conteúdo (ex.: "Quantidade de lápis"): a base já é um pack de
+  // `unidadesBase` → o kit de N declara base × N (12 × 3 = 36). Só quem conhece a BASE passa o número;
+  // nunca é lido de `atributos` (reaplicar sobre atributos do próprio kit multiplicaria duas vezes).
+  const contagem = !kit && unidadesBase != null && Number.isInteger(unidadesBase) && unidadesBase > 1 ? unidadesBase * n : n;
   // Kit vinculado é kit por definição: "É kit" volta a Sim mesmo se a base saiu como Não pela trava
   // de prova no texto (emenda 3 ADR-0071, revisão Codex). Só troca valor que já existe.
   const sim = schema.find((s) => s.id === 'IS_KIT')?.valores.find((v) => normalizar(v.nome) === 'sim')?.id;
   const comIsKit = sim ? comKit.map((a) => (a.id === 'IS_KIT' ? { id: 'IS_KIT', value_id: sim } : a)) : comKit;
   const semUpp = comIsKit.filter((a) => a.id !== 'UNITS_PER_PACK');
-  const comUpp = [...semUpp, { id: 'UNITS_PER_PACK', value_name: String(n) }];
+  const comUpp = [...semUpp, { id: 'UNITS_PER_PACK', value_name: String(contagem) }];
   const tinhaNetWeight = comUpp.some((a) => a.id === 'NET_WEIGHT');
   if (pesoBaseGramas == null || !tinhaNetWeight) return comUpp;
   return [
     ...comUpp.filter((a) => a.id !== 'NET_WEIGHT'),
     { id: 'NET_WEIGHT', value_name: `${fmt(pesoBaseGramas * n)} g` },
   ];
+}
+
+/** UNITS_PER_PACK inteiro dos atributos da BASE (para `aplicarKitNosAtributos(..., unidadesBase)`). */
+export function unidadesPorPack(atributos: AtributoML[]): number | undefined {
+  const n = Number(atributos.find((a) => a.id === 'UNITS_PER_PACK')?.value_name);
+  return Number.isInteger(n) && n > 0 ? n : undefined;
 }
 
 /** Monta os atributos obrigatórios da categoria a partir do nome (ADR-0009). */

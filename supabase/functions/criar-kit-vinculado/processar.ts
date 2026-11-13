@@ -5,7 +5,7 @@
 // divergir do preview que o operador confirmou, furando a revisão humana (D-4).
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import {
-  aplicarKitNosAtributos, tipoParaCategoria, montarAtributosML, atributosFaltantesGenerico,
+  aplicarKitNosAtributos, unidadesPorPack, tipoParaCategoria, montarAtributosML, atributosFaltantesGenerico,
   FALTANTE_ATRIBUTOS_NAO_VALIDADOS, type AtributoML,
 } from '../_shared/categoria/atributos.ts';
 import { resolverAtributosGenericos } from '../_shared/categoria/resolver-atributos-genericos.ts';
@@ -608,7 +608,7 @@ export async function criarKitsVinculados(
       try {
         atributosPorMultiplicador.set(
           kit.multiplicador,
-          aplicarKitNosAtributos(schema, atributosBase, kit.multiplicador, pesoBase),
+          aplicarKitNosAtributos(schema, atributosBase, kit.multiplicador, pesoBase, unidadesPorPack(atributosBase)),
         );
       } catch (e) {
         const status = (e as Error & { status?: number }).status;

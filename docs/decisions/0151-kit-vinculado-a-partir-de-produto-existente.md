@@ -559,3 +559,12 @@ O dialog do kit vinculado mostra a promoção ativa/futura do produto-base, lida
 ## Adendo 2026-11-12 — Fotos 2 a 7 da base
 
 O kit vinculado deixa de nascer só com a capa: leva também as fotos 2 a 7 do anúncio publicado da base, conforme o ADR-0204 (reuso de `picture_id`, só com a base publicada, sem galeria quando a base está em Revisão). A decisão 6 do adendo de 12/11 do ADR-0200 ("a publicação comum não leva galeria") segue valendo para o kit com variação; o kit vinculado é a exceção, só em `publish-familia-ml`.
+
+## Emenda 2026-11-13 — Categoria sem "Kit", com "Pack"
+
+A Decisão 3 recusava (400) toda categoria cujo `SALE_FORMAT` não tivesse o valor "Kit". A categoria Lápis (`MLB430146`) só oferece "Unidade" e "Pack", e os concorrentes vendem kit nela como Pack. Decisão do Diego (opção A, 13/11):
+
+- `aplicarKitNosAtributos` usa "Kit" quando a categoria o tem; senão usa "Pack". Sem nenhum dos dois, continua recusando.
+- Em Pack, `UNITS_PER_PACK` conta o conteúdo (ex.: "Quantidade de lápis", tag `unit_yield`). Quando a base já é um pack, o kit declara **base × N** (12 lápis × 3 = 36). O número da base é passado explicitamente por quem conhece a base (`criar-kit-vinculado`, `criar-kit-variacao`), nunca lido dos atributos do próprio kit, para não multiplicar duas vezes. `definir-categoria-familia` não passa a base e grava N (limite conhecido).
+- Em "Kit" nada muda: `UNITS_PER_PACK = N`.
+- Prova: `POST /items/validate` com a base real da AVIL (02844303, kit de 3, Pack + 36) devolveu só o warning de frete `shipping.lost_me1_by_user`.

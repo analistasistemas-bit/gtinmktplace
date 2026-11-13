@@ -471,3 +471,37 @@ describe('preencherNomeObrigatorio (NAME — lote #11, Cuidado Facial MLB264874)
     expect(preencherNomeObrigatorio([NAME()], [], '   ').some((a) => a.id === 'NAME')).toBe(false);
   });
 });
+
+describe('aplicarKitNosAtributos em categoria só com Unidade/Pack (Lápis MLB430146, 13/11)', () => {
+  const schemaPack: AtributoSchema[] = [
+    { id: 'UNITS_PER_PACK', nome: 'Quantidade de lápis', required: false, conditionalRequired: true, valueType: 'number', valores: [], allowedUnits: [], tags: ['unit_yield'] },
+    { id: 'SALE_FORMAT', nome: 'Formato de venda', required: false, conditionalRequired: false, valueType: 'list', valores: [{ id: '1359391', nome: 'Unidade' }, { id: '1359392', nome: 'Pack' }], allowedUnits: [], tags: [] },
+    { id: 'IS_KIT', nome: 'É kit', required: false, conditionalRequired: false, valueType: 'boolean', valores: [{ id: '242084', nome: 'Não' }, { id: '242085', nome: 'Sim' }], allowedUnits: [], tags: [] },
+  ];
+  const base = [{ id: 'SALE_FORMAT', value_id: '1359392' }, { id: 'UNITS_PER_PACK', value_name: '12' }, { id: 'IS_KIT', value_id: '242084' }];
+
+  it('sem "Kit" no schema usa "Pack" e multiplica a quantidade da base (12 lápis × 3 = 36)', () => {
+    const out = aplicarKitNosAtributos(schemaPack, base, 3, undefined, 12);
+    expect(out).toContainEqual({ id: 'SALE_FORMAT', value_id: '1359392' });
+    expect(out).toContainEqual({ id: 'UNITS_PER_PACK', value_name: '36' });
+    expect(out).toContainEqual({ id: 'IS_KIT', value_id: '242085' });
+    expect(out.filter((a) => a.id === 'UNITS_PER_PACK')).toHaveLength(1);
+  });
+
+  it('Pack sem a quantidade da base conhecida grava N (nunca lê UNITS_PER_PACK dos atributos de entrada)', () => {
+    expect(aplicarKitNosAtributos(schemaPack, base, 3)).toContainEqual({ id: 'UNITS_PER_PACK', value_name: '3' });
+  });
+
+  it('categoria com "Kit" segue como antes: Kit e N, mesmo com a quantidade da base', () => {
+    const schemaKit: AtributoSchema[] = schemaPack.map((s) => (s.id === 'SALE_FORMAT'
+      ? { ...s, valores: [...s.valores, { id: '999', nome: 'Kit' }] } : s));
+    const out = aplicarKitNosAtributos(schemaKit, base, 3, undefined, 12);
+    expect(out).toContainEqual({ id: 'SALE_FORMAT', value_id: '999' });
+    expect(out).toContainEqual({ id: 'UNITS_PER_PACK', value_name: '3' });
+  });
+
+  it('sem Kit nem Pack continua recusando com 400', () => {
+    const soUnidade = schemaPack.map((s) => (s.id === 'SALE_FORMAT' ? { ...s, valores: [s.valores[0]] } : s));
+    expect(() => aplicarKitNosAtributos(soUnidade, base, 3, undefined, 12)).toThrow(/Kit/);
+  });
+});

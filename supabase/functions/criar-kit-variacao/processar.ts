@@ -10,7 +10,7 @@
 // `status='pronto'`, sem `process-familia`. Diferente dele: não encadeia `publicar-familias`. O único caminho
 // de CREATE do SKU de kit é a saga; a publicação comum recusa SKU de kit sob a exclusão da transferência.
 import type { AtributoML } from '../_shared/categoria/atributos.ts';
-import { aplicarKitNosAtributos } from '../_shared/categoria/atributos.ts';
+import { aplicarKitNosAtributos, unidadesPorPack } from '../_shared/categoria/atributos.ts';
 import type { AtributoSchema } from '../_shared/categoria/schema.ts';
 import { gradeDaFamilia } from '../_shared/produto/tipos-produto-valores.ts';
 import { parseStatusML } from '../_shared/ml/status.ts';
@@ -557,7 +557,7 @@ export async function criarKitVariacao(
   );
   if (schema.some((s) => s.id === 'SALE_FORMAT')) {
     try {
-      atributos = aplicarKitNosAtributos(schema, atributos, input.pecasPorKit);
+      atributos = aplicarKitNosAtributos(schema, atributos, input.pecasPorKit, undefined, unidadesPorPack(atributos));
     } catch (e) {
       return recusa('categoria_sem_kit', e instanceof Error ? e.message : String(e));
     }
