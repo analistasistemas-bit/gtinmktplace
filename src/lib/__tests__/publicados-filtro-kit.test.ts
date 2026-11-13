@@ -32,21 +32,21 @@ describe('filtro por kits', () => {
   it('sem índice (carregando ou falha), kit="sem" não esconde nenhuma linha', () => {
     expect(filtrarPublicados(itens, { kit: 'sem' }, undefined)).toHaveLength(itens.length);
   });
-  it('URL: kit=virtual vai e volta', () => {
+  it('URL: comkit=virtual vai e volta', () => {
     const p = estadoParaParams(estado({ kit: 'virtual' }));
-    expect(p.toString()).toBe('kit=virtual');
+    expect(p.toString()).toBe('comkit=virtual');
     expect(paramsParaEstado(p).filtro.kit).toBe('virtual');
   });
   it('URL: comkit=1 antigo vira kit variacao', () => {
     expect(paramsParaEstado(new URLSearchParams('comkit=1')).filtro.kit).toBe('variacao');
   });
-  it('URL: kit vence comkit', () => {
-    expect(paramsParaEstado(new URLSearchParams('comkit=1&kit=virtual')).filtro.kit).toBe('virtual');
+  it('URL: comkit inválido é ignorado', () => {
+    expect(paramsParaEstado(new URLSearchParams('comkit=xyz')).filtro.kit).toBeUndefined();
   });
-  it('URL: kit inválido é ignorado', () => {
-    expect(paramsParaEstado(new URLSearchParams('kit=xyz')).filtro.kit).toBeUndefined();
+  it('URL: o filtro nunca escreve o parâmetro kit', () => {
+    expect(estadoParaParams(estado({ kit: 'variacao' })).has('kit')).toBe(false);
   });
-  it('URL: nunca mais escreve comkit', () => {
-    expect(estadoParaParams(estado({ kit: 'variacao' })).has('comkit')).toBe(false);
+  it('URL: o deep link ?kit=<id> não vira filtro', () => {
+    expect(paramsParaEstado(new URLSearchParams('kit=abc-123')).filtro.kit).toBeUndefined();
   });
 });

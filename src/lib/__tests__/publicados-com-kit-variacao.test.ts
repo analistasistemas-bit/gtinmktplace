@@ -29,7 +29,7 @@ describe('filtro kit="variacao"', () => {
   });
   it('vai e volta pela URL', () => {
     const e = { filtro: { kit: 'variacao' as const }, ord: null, pagina: 1, tamanho: 10 };
-    expect(estadoParaParams(e).get('kit')).toBe('variacao');
+    expect(estadoParaParams(e).get('comkit')).toBe('variacao');
     expect(paramsParaEstado(estadoParaParams(e)).filtro.kit).toBe('variacao');
   });
 });

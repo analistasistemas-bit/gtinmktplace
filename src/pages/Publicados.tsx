@@ -1616,9 +1616,7 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
   }, [focoLinha]);
 
   // Link do aviso de transferência travada (`?kit=<id>`): abre o Gerenciar kit direto e tira o parâmetro.
-  // O mesmo parâmetro carrega o filtro de kits (`?kit=sem`): valor que é o filtro válido não é id de kit.
-  const kitParam = searchParams.get('kit');
-  const kitDoLink = kitParam && kitParam !== filtro.kit ? kitParam : null;
+  const kitDoLink = searchParams.get('kit');
   useEffect(() => {
     if (!kitDoLink || !kitsVariacao) return;
     const kit = kitsVariacao.find((k) => k.id === kitDoLink);

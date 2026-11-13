@@ -6,7 +6,7 @@ import type { EstadoKit, MarcaKit, TipoKit } from '@/lib/publicados';
 // Classes escolhidas para contraste >= 4,5:1 nos dois temas (não trocar por chart-* no texto).
 const CLASSES: Record<TipoKit, { tem: string; e?: string }> = {
   vinculado: {
-    tem: 'border-teal-600/30 bg-teal-500/10 text-teal-700 dark:text-teal-300',
+    tem: 'border-teal-600/30 bg-teal-500/10 text-teal-800 dark:text-teal-300',
     e: 'border-transparent bg-teal-700 text-white',
   },
   variacao: {
@@ -46,7 +46,7 @@ export function BadgesKit({ marcas, className }: { marcas: MarcaKit[]; className
                 aria-label={`${m.rotulo}. ${m.detalhe}`}
                 onClick={(e) => e.stopPropagation()}
                 className={cn(
-                  'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium',
+                  'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
                   CLASSES[m.tipo][m.papel],
                 )}
               >

@@ -811,13 +811,22 @@ describe('Publicados', () => {
       expect(screen.getByText('Produto Solto')).toBeInTheDocument();
     });
 
-    it('com a leitura de kits em erro e kit=sem, todas as linhas aparecem e há aviso', () => {
+    it('com a leitura de kits em erro e comkit=sem, todas as linhas aparecem e há aviso', () => {
       useKitsVinculadosOrgMock.mockReturnValue({ data: undefined, isError: true });
-      abrir('/?kit=sem');
+      abrir('/?comkit=sem');
       expect(screen.getByText('Produto Base')).toBeInTheDocument();
       expect(screen.getByText('Produto Kit')).toBeInTheDocument();
       expect(screen.getByText('Produto Solto')).toBeInTheDocument();
       expect(screen.getByRole('status')).toHaveTextContent('Não foi possível ler os kits');
+    });
+
+    it('?comkit=sem sobrevive à primeira renderização e filtra com o índice pronto', async () => {
+      useKitsVinculadosOrgMock.mockReturnValue({ data: vinculado, isError: false });
+      abrir('/?comkit=sem');
+      await new Promise((r) => setTimeout(r, 0));
+      expect(screen.getByText('Produto Solto')).toBeInTheDocument();
+      expect(screen.queryByText('Produto Base')).toBeNull();
+      expect(screen.getByText('Sem kit')).toBeInTheDocument();
     });
 
     it('escolher "Kit vinculado" no Select deixa só a base e o kit', async () => {

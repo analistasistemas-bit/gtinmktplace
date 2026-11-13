@@ -28,7 +28,7 @@ export function estadoParaParams(e: EstadoPublicados): URLSearchParams {
   if (e.filtro.somenteEncalhados) p.set('encalhados', '1');
   if (e.filtro.somenteIncompletos) p.set('incompletos', '1');
   if (e.filtro.somenteSemCatalogo) p.set('semcatalogo', '1');
-  if (e.filtro.kit) p.set('kit', e.filtro.kit);
+  if (e.filtro.kit) p.set('comkit', e.filtro.kit);
   if (e.ord) {
     p.set('ord', e.ord.coluna);
     p.set('dir', e.ord.dir);
@@ -54,9 +54,10 @@ export function paramsParaEstado(p: URLSearchParams): EstadoPublicados {
   if (p.get('encalhados') === '1') filtro.somenteEncalhados = true;
   if (p.get('incompletos') === '1') filtro.somenteIncompletos = true;
   if (p.get('semcatalogo') === '1') filtro.somenteSemCatalogo = true;
-  const kit = p.get('kit');
-  if (kit && KITS_VALIDOS.includes(kit)) filtro.kit = kit as FiltroKit;
-  else if (!kit && p.get('comkit') === '1') filtro.kit = 'variacao'; // link antigo
+  // `kit` é o deep link de kit com variação (id); o filtro usa só `comkit`. `comkit=1` é o link antigo.
+  const comkit = p.get('comkit');
+  if (comkit === '1') filtro.kit = 'variacao';
+  else if (comkit && KITS_VALIDOS.includes(comkit)) filtro.kit = comkit as FiltroKit;
 
   const ord: OrdenacaoPublicados | null =
     ordCol && (COLUNAS as string[]).includes(ordCol)
