@@ -89,6 +89,20 @@ describe('campos decimais aceitam vírgula (bug 13/11: preço zerava ao digitar 
     expect(sel).toHaveBeenCalled();
   });
 
+  it('milhar pt-BR no meio da digitação ("1.234,") não apaga o texto nem zera o preço (achado Grok)', () => {
+    renderPreview(3);
+    const preco = screen.getByLabelText('Preço do kit 3') as HTMLInputElement;
+    fireEvent.change(preco, { target: { value: '1.234' } });
+    fireEvent.change(preco, { target: { value: '1.234,' } });
+    expect(preco.value).toBe('1.234,');
+    fireEvent.change(preco, { target: { value: '1.234,56' } });
+    expect(preco.value).toBe('1.234,56');
+    expect(preco).toHaveAttribute('aria-invalid', 'false');
+    fireEvent.change(preco, { target: { value: '38,5a' } });
+    expect(preco.value).toBe('38,5a');
+    expect(preco).toHaveAttribute('aria-invalid', 'true');
+  });
+
   it('altura digitada com vírgula não zera', () => {
     renderPreview(3);
     const altura = screen.getByLabelText('Altura do kit 3 (cm)') as HTMLInputElement;

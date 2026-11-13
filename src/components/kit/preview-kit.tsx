@@ -27,7 +27,13 @@ function CampoDecimal({ valor, onValor, ...props }: Omit<ComponentProps<typeof I
 }) {
   const [texto, setTexto] = useState(() => paraTexto(valor));
   // Valor mudado por fora (o desconto recalcula o preço): reflete sem atropelar o que está sendo digitado.
-  useEffect(() => { setTexto((t) => ((parseNumeroPtBr(t) ?? 0) === valor ? t : paraTexto(valor))); }, [valor]);
+  // Texto ilegível (ex.: "1.234," a caminho de "1.234,56") fica como está: o valor 0 já bloqueia/avisa.
+  useEffect(() => {
+    setTexto((t) => {
+      const lido = parseNumeroPtBr(t) ?? 0;
+      return Number.isNaN(lido) && valor === 0 ? t : lido === valor ? t : paraTexto(valor);
+    });
+  }, [valor]);
   return (
     <Input
       {...props} type="text" inputMode="decimal" value={texto} onFocus={selecionarTudo}
