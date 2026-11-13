@@ -1,5 +1,7 @@
 import type { TipoAviamento } from './tipos-dominio';
 import { normalizarParaBusca } from './texto';
+import type { KitVinculado } from './queries';
+import type { KitVariacaoResumo } from './kit-variacao-edge';
 
 export type StatusPublicado =
   | 'ativo'
@@ -83,6 +85,8 @@ export interface PublicadoItem {
   /** ADR-0154: `kits_virtuais.id` — necessário para "Refazer kit" (encerrar-kit-virtual). Só
    *  presente quando `ehKitVirtual` é true. */
   kitVirtualId?: string;
+  /** codigo_pai dos componentes do kit virtual (nulos fora). Só presente quando `ehKitVirtual`. */
+  kitVirtualComponentes?: string[];
   /** ADR-0161: migração para preço por variação em andamento no ML — trava
    *  Migrar/Pausar/Reativar/Remover desta linha. Durante a migração o ML recusa qualquer alteração
    *  no anúncio. `undefined` = false. */
@@ -297,6 +301,122 @@ export function ehEncalhado(i: PublicadoItem): boolean {
 /** Cadastro fiscal incompleto no ML (ADR-0135 D-10) — false explícito, não null/undefined (ainda não verificado). */
 export function fiscalPendente(i: Pick<PublicadoItem, 'canInvoice'>): boolean {
   return i.canInvoice === false;
+}
+
+export type TipoKit = 'vinculado' | 'variacao' | 'virtual';
+export type EstadoKit = 'normal' | 'aguardando' | 'montando' | 'falha';
+export interface MarcaKit {
+  tipo: TipoKit;
+  /** 'tem' = produto-base (ou componente, no virtual); 'e' = o anúncio é o próprio kit. */
+  papel: 'tem' | 'e';
+  /** Pior estado entre os kits da marca: falha > montando > aguardando > normal. */
+  estado: EstadoKit;
+  rotulo: string;
+  detalhe: string;
+}
+export type IndiceKits = ReadonlyMap<string, MarcaKit[]>; // chave: PublicadoItem.codigoPai
+
+const GRAVIDADE: EstadoKit[] = ['normal', 'aguardando', 'montando', 'falha'];
+const pior = (estados: EstadoKit[]): EstadoKit =>
+  estados.reduce((a, b) => (GRAVIDADE.indexOf(b) > GRAVIDADE.indexOf(a) ? b : a), 'normal');
+
+function estadoVinculado(k: Pick<KitVinculado, 'status' | 'mlItemId'>): EstadoKit {
+  if (k.status === 'erro') return 'falha';
+  if (k.status === 'publicando' || k.status === 'pendente' || k.status === 'processando') return 'montando';
+  if (k.status === 'pronto' && !k.mlItemId) return 'aguardando';
+  return 'normal';
+}
+const PALAVRA: Record<EstadoKit, string> = {
+  normal: 'ativo', aguardando: 'aguardando publicação', montando: 'processando', falha: 'falhou',
+};
+
+/**
+ * Marcas de kit por produto em Publicados (badges + filtro). Chave = `codigoPai` do item.
+ * Uma marca por (tipo, papel) por código; ordem: vinculado, variação, virtual.
+ */
+export function indiceKits(
+  itens: PublicadoItem[],
+  vinculados: Array<Pick<KitVinculado, 'codigoPai' | 'kitBaseCodigoPai' | 'multiplicador' | 'status' | 'mlItemId' | 'criadoEm'>>,
+  variacao: Array<Pick<KitVariacaoResumo, 'codigoPaiBase' | 'codigoPaiKit' | 'pecasPorKit' | 'status'>>,
+): IndiceKits {
+  const idx = new Map<string, MarcaKit[]>();
+  const add = (codigo: string, m: MarcaKit) => {
+    const l = idx.get(codigo);
+    if (l) l.push(m); else idx.set(codigo, [m]);
+  };
+
+  // Vinculado: dedupe por (base, multiplicador) pelo criadoEm mais recente (ciclos de UPDATE).
+  const vivos = new Map<string, (typeof vinculados)[number]>();
+  for (const k of vinculados) {
+    if (!k.kitBaseCodigoPai) continue;
+    const chave = `${k.kitBaseCodigoPai}|${k.multiplicador}`;
+    const atual = vivos.get(chave);
+    if (!atual || k.criadoEm > atual.criadoEm) vivos.set(chave, k);
+  }
+  const porBase = new Map<string, (typeof vinculados)[number][]>();
+  for (const k of vivos.values()) {
+    const l = porBase.get(k.kitBaseCodigoPai as string);
+    if (l) l.push(k); else porBase.set(k.kitBaseCodigoPai as string, [k]);
+  }
+  for (const [base, ks] of porBase) {
+    ks.sort((a, b) => a.multiplicador - b.multiplicador);
+    const estados = ks.map(estadoVinculado);
+    add(base, {
+      tipo: 'vinculado', papel: 'tem', estado: pior(estados), rotulo: 'Tem kit vinculado',
+      detalhe: `Kit vinculado: ${ks.map((k, i) => `Kit ${k.multiplicador} (${PALAVRA[estados[i]]})`).join(', ')}`,
+    });
+  }
+  for (const it of itens) {
+    if (!it.kitBaseCodigoPai) continue;
+    const kit = [...vivos.values()].find((k) => k.codigoPai === it.codigoPai);
+    add(it.codigoPai, {
+      tipo: 'vinculado', papel: 'e', estado: kit ? estadoVinculado(kit) : 'normal',
+      rotulo: kit ? `Kit ×${kit.multiplicador}` : 'Kit vinculado',
+      detalhe: `Este anúncio é um kit vinculado de ${it.kitBaseCodigoPai}`,
+    });
+  }
+
+  // Variação: encerrado não acende. A base recebe a marca mesmo sem o kit estar em `itens`.
+  const ativos = variacao.filter((k) => k.status !== 'encerrado');
+  const estadoVar = (s: string): EstadoKit =>
+    s === 'erro' ? 'falha' : s === 'publicando' || s === 'encerrando' ? 'montando' : 'normal';
+  const varPorBase = new Map<string, typeof ativos>();
+  for (const k of ativos) {
+    const l = varPorBase.get(k.codigoPaiBase);
+    if (l) l.push(k); else varPorBase.set(k.codigoPaiBase, [k]);
+  }
+  for (const [base, ks] of varPorBase) {
+    add(base, {
+      tipo: 'variacao', papel: 'tem', estado: pior(ks.map((k) => estadoVar(k.status))),
+      rotulo: 'Tem kit com variação',
+      detalhe: `Kit com variação: ${ks.map((k) => `Kit ${k.pecasPorKit} · ${k.codigoPaiKit}`).join(', ')}`,
+    });
+  }
+  for (const k of ativos) {
+    add(k.codigoPaiKit, {
+      tipo: 'variacao', papel: 'e', estado: estadoVar(k.status), rotulo: 'Kit com variação',
+      detalhe: `Este anúncio é um kit com variação de ${k.codigoPaiBase}`,
+    });
+  }
+
+  // Virtual: o próprio kit e, agregados por título, os componentes.
+  const titulos = new Map<string, string[]>();
+  for (const it of itens) {
+    if (!it.ehKitVirtual) continue;
+    add(it.codigoPai, { tipo: 'virtual', papel: 'e', estado: 'normal', rotulo: 'Kit Virtual', detalhe: 'Kit virtual' });
+    for (const c of it.kitVirtualComponentes ?? []) {
+      if (!c) continue;
+      const l = titulos.get(c);
+      if (l) l.push(it.titulo); else titulos.set(c, [it.titulo]);
+    }
+  }
+  for (const [codigo, ts] of titulos) {
+    add(codigo, {
+      tipo: 'virtual', papel: 'tem', estado: 'normal', rotulo: 'Compõe kit virtual',
+      detalhe: `Compõe o kit virtual: ${ts.join(', ')}`,
+    });
+  }
+  return idx;
 }
 
 export function filtrarPublicados(

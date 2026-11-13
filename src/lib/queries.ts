@@ -58,6 +58,8 @@ export const QK = {
   kitsDaPagina: (codigosPai: string[]) => ['kits-do-produto', 'pagina', codigosPai] as const,
   // Prefixo de ambas as chaves acima — invalida a página da Revisão e qualquer produto aberto.
   kitsDoProdutoRaiz: ['kits-do-produto'] as const,
+  // Todos os kits vinculados da org (badges/filtro de Publicados); fica sob a raiz acima.
+  kitsVinculadosOrg: ['kits-do-produto', '__org'] as const,
   // Marcador client-side (nunca vai à rede, só setQueryData): SKUs da última submissão de
   // "Adicionar variação" p/ este produto — badge por linha (Publicado/Erro/Publicando).
   variacoesRecemAdicionadas: (codigoPai: string) => ['variacoes-recem-adicionadas', codigoPai] as const,
@@ -172,6 +174,26 @@ export async function fetchKitsDosProdutos(codigosPai: string[]): Promise<KitVin
     familiaId: r.id,
     codigoPai: r.codigo_pai,
     // M-0: quem agrupa por produto-base precisa deste (codigoPai acima é o do próprio kit).
+    kitBaseCodigoPai: r.kit_base_codigo_pai as string,
+    multiplicador: r.kit_multiplicador as number,
+    status: r.status as FamiliaStatus,
+    mlPermalink: r.ml_permalink,
+    mlItemId: r.ml_item_id,
+    criadoEm: r.criado_em as string,
+  }));
+}
+
+/** Mesmo select de `fetchKitsDosProdutos`, sem o `.in`: todos os kits vinculados da org (RLS filtra). */
+export async function fetchKitsVinculadosDaOrg(): Promise<KitVinculado[]> {
+  const { data, error } = await supabase
+    .from('familias')
+    .select('id, codigo_pai, kit_base_codigo_pai, kit_multiplicador, status, ml_permalink, ml_item_id, criado_em')
+    .not('kit_multiplicador', 'is', null)
+    .order('kit_multiplicador', { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map((r) => ({
+    familiaId: r.id,
+    codigoPai: r.codigo_pai,
     kitBaseCodigoPai: r.kit_base_codigo_pai as string,
     multiplicador: r.kit_multiplicador as number,
     status: r.status as FamiliaStatus,
@@ -1326,6 +1348,9 @@ export async function fetchPublicados(): Promise<PublicadoItem[]> {
     publicadoEm: k.publicado_em ?? null,
     ehKitVirtual: true,
     kitVirtualId: k.id,
+    kitVirtualComponentes: (
+      (k as { kits_virtuais_componentes?: Array<{ codigo_pai: string | null }> }).kits_virtuais_componentes ?? []
+    ).map((c) => c.codigo_pai).filter((c): c is string => !!c),
   }));
 
   const incompletas = await fetchPublicacoesIncompletas(new Set(rows.map((r) => r.codigo_pai)));
