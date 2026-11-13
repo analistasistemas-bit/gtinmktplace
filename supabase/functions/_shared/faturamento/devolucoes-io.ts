@@ -323,7 +323,7 @@ export async function claimDoPedido(
     .eq('org_id', p.orgId).eq('order_id', p.orderId).order('aberto_em', { ascending: false, nullsFirst: false }).limit(1);
   if (error) throw new Error(`claim do pedido ${p.orderId}: ${error.message}`);
   const c = data?.[0];
-  if (!c) return null;
+  if (!c?.type) return null;
   const titulo = (c.detalhe as { title?: string } | null)?.title;
   return { tipo: String(c.type), motivo: (c.reason_texto as string | null) ?? null, desfecho: titulo ?? null };
 }
