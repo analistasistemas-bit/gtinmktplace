@@ -1,12 +1,12 @@
 // ADR-0151 D-4: um bloco de preview por tamanho de kit, com todos os campos editáveis. É a
 // revisão inteira do kit — não passa por process-familia nem por card na tela Revisão.
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ComponentProps, type FocusEvent, type ReactNode } from 'react';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { CampoFoto } from '@/components/estoque/campo-foto';
 import { AtacadoEditor } from '@/components/atacado-editor';
 import { useImageUrl } from '@/hooks/useImageUrl';
-import { fmtBRL } from '@/lib/formato';
+import { fmtBRL, parseNumeroPtBr } from '@/lib/formato';
 import { cn } from '@/lib/utils';
 import type { FaixaAtacado } from '@/lib/atacado';
 import { precoSugeridoDoKit, TITULO_MAX_KIT, type BaseParaKit } from '@/lib/kit';
@@ -15,6 +15,30 @@ import { RecebeKit } from '@/components/kit/recebe-kit';
 
 /** ui-ux-pro-max: form-labels + content-jumping — reserva 2 linhas p/ rótulos de grid. */
 const LABEL_CAMPO_GRID = 'min-h-10 text-xs leading-snug text-muted-foreground';
+
+const paraTexto = (v: number) => String(v).replace('.', ',');
+/** Ao entrar no campo, o que for digitado substitui o valor (pedido do Diego, 13/11). */
+const selecionarTudo = (e: FocusEvent<HTMLInputElement>) => e.target.select();
+
+/** Decimal pt-BR digitado como texto. `type="number"` devolvia "" no parcial "38," e o campo zerava (bug 13/11);
+ *  mesmo padrão do preço do kit com variação. Vazio/ilegível vale 0 (a validação de cada campo bloqueia). */
+function CampoDecimal({ valor, onValor, ...props }: Omit<ComponentProps<typeof Input>, 'value' | 'onChange' | 'type'> & {
+  valor: number; onValor: (n: number) => void;
+}) {
+  const [texto, setTexto] = useState(() => paraTexto(valor));
+  // Valor mudado por fora (o desconto recalcula o preço): reflete sem atropelar o que está sendo digitado.
+  useEffect(() => { setTexto((t) => ((parseNumeroPtBr(t) ?? 0) === valor ? t : paraTexto(valor))); }, [valor]);
+  return (
+    <Input
+      {...props} type="text" inputMode="decimal" value={texto} onFocus={selecionarTudo}
+      onChange={(e) => {
+        setTexto(e.target.value);
+        const n = parseNumeroPtBr(e.target.value);
+        onValor(n != null && Number.isFinite(n) ? n : 0);
+      }}
+    />
+  );
+}
 
 export interface KitPreviewValue {
   titulo: string;
@@ -165,26 +189,26 @@ export function PreviewKit({ n, indice, total, base, value, onChange, categoriaM
           <div className="grid gap-2 sm:grid-cols-3 sm:items-end">
             <div className="flex flex-col gap-1">
               <label htmlFor={id('altura')} className={LABEL_CAMPO_GRID}>Altura (cm)</label>
-              <Input
-                id={id('altura')} type="number" aria-label={`Altura do kit ${n} (cm)`}
-                className="h-8 text-sm" value={value.alturaCm}
-                onChange={(e) => onChange({ alturaCm: Number(e.target.value) })}
+              <CampoDecimal
+                id={id('altura')} aria-label={`Altura do kit ${n} (cm)`}
+                className="h-8 text-sm" valor={value.alturaCm}
+                onValor={(alturaCm) => onChange({ alturaCm })}
               />
             </div>
             <div className="flex flex-col gap-1">
               <label htmlFor={id('largura')} className={LABEL_CAMPO_GRID}>Largura (cm)</label>
-              <Input
-                id={id('largura')} type="number" aria-label={`Largura do kit ${n} (cm)`}
-                className="h-8 text-sm" value={value.larguraCm}
-                onChange={(e) => onChange({ larguraCm: Number(e.target.value) })}
+              <CampoDecimal
+                id={id('largura')} aria-label={`Largura do kit ${n} (cm)`}
+                className="h-8 text-sm" valor={value.larguraCm}
+                onValor={(larguraCm) => onChange({ larguraCm })}
               />
             </div>
             <div className="flex flex-col gap-1">
               <label htmlFor={id('comprimento')} className={LABEL_CAMPO_GRID}>Comprimento (cm)</label>
-              <Input
-                id={id('comprimento')} type="number" aria-label={`Comprimento do kit ${n} (cm)`}
-                className="h-8 text-sm" value={value.comprimentoCm}
-                onChange={(e) => onChange({ comprimentoCm: Number(e.target.value) })}
+              <CampoDecimal
+                id={id('comprimento')} aria-label={`Comprimento do kit ${n} (cm)`}
+                className="h-8 text-sm" valor={value.comprimentoCm}
+                onValor={(comprimentoCm) => onChange({ comprimentoCm })}
               />
             </div>
           </div>
@@ -197,10 +221,10 @@ export function PreviewKit({ n, indice, total, base, value, onChange, categoriaM
           <div className="grid gap-2 sm:grid-cols-3 sm:items-end">
             <div className="flex flex-col gap-1">
               <label htmlFor={id('preco')} className={LABEL_CAMPO_GRID}>Preço</label>
-              <Input
-                id={id('preco')} type="number" step="0.01" aria-label={`Preço do kit ${n}`}
-                className="h-8 text-sm" value={value.preco}
-                onChange={(e) => onChange({ preco: Number(e.target.value) })}
+              <CampoDecimal
+                id={id('preco')} aria-label={`Preço do kit ${n}`}
+                className="h-8 text-sm" valor={value.preco}
+                onValor={(preco) => onChange({ preco })}
                 aria-invalid={!(value.preco > 0)}
               />
             </div>
@@ -208,7 +232,7 @@ export function PreviewKit({ n, indice, total, base, value, onChange, categoriaM
               <label htmlFor={id('desconto')} className={LABEL_CAMPO_GRID}>Desconto sobre N× unitário (%)</label>
               <Input
                 id={id('desconto')} type="number" min={0} max={99} aria-label={`Desconto do kit ${n} (%)`}
-                className="h-8 text-sm" value={value.descontoPct}
+                className="h-8 text-sm" value={value.descontoPct} onFocus={selecionarTudo}
                 onChange={(e) => aplicarDesconto(Number(e.target.value))}
               />
             </div>

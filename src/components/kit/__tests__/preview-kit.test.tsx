@@ -63,6 +63,46 @@ function renderPreview(n: number, inicial: Partial<KitPreviewValue> = {}) {
   );
 }
 
+describe('campos decimais aceitam vírgula (bug 13/11: preço zerava ao digitar "38,")', () => {
+  it('preço digitado com vírgula não zera e vale o número', () => {
+    renderPreview(3);
+    const preco = screen.getByLabelText('Preço do kit 3') as HTMLInputElement;
+    fireEvent.change(preco, { target: { value: '38,' } });
+    expect(preco.value).toBe('38,');
+    fireEvent.change(preco, { target: { value: '38,5' } });
+    expect(preco.value).toBe('38,5');
+    expect(preco).toHaveAttribute('aria-invalid', 'false');
+  });
+
+  it('apagar o preço deixa o campo vazio (não volta o zero) e o foco seleciona tudo', () => {
+    renderPreview(3);
+    const preco = screen.getByLabelText('Preço do kit 3') as HTMLInputElement;
+    fireEvent.change(preco, { target: { value: '' } });
+    expect(preco.value).toBe('');
+    expect(preco).toHaveAttribute('aria-invalid', 'true');
+    fireEvent.change(preco, { target: { value: '45' } });
+    fireEvent.focus(preco);
+    expect([preco.selectionStart, preco.selectionEnd]).toEqual([0, 2]);
+    const desconto = screen.getByLabelText('Desconto do kit 3 (%)') as HTMLInputElement;
+    const sel = vi.spyOn(desconto, 'select');
+    fireEvent.focus(desconto);
+    expect(sel).toHaveBeenCalled();
+  });
+
+  it('altura digitada com vírgula não zera', () => {
+    renderPreview(3);
+    const altura = screen.getByLabelText('Altura do kit 3 (cm)') as HTMLInputElement;
+    fireEvent.change(altura, { target: { value: '60,' } });
+    expect(altura.value).toBe('60,');
+  });
+
+  it('desconto recalcula e o campo de preço mostra o novo valor com vírgula', () => {
+    renderPreview(3);
+    fireEvent.change(screen.getByLabelText('Desconto do kit 3 (%)'), { target: { value: '10' } });
+    expect((screen.getByLabelText('Preço do kit 3') as HTMLInputElement).value).toBe('53,73');
+  });
+});
+
 it('altura do kit sem ruído de ponto flutuante', () => {
   expect(valorInicialPreview({ ...BASE, alturaCm: 9.8 }, 't', 'd', 6).alturaCm).toBe(58.8);
 });
