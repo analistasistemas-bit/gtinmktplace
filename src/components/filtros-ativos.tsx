@@ -7,7 +7,11 @@ const STATUS_LABEL: Record<string, string> = {
   problema: 'Com problema',
 };
 
-export type ChaveFiltro = 'busca' | 'fornecedor' | 'status' | 'tipo';
+const KIT_LABEL: Record<string, string> = {
+  qualquer: 'qualquer', vinculado: 'vinculado', variacao: 'com variação', virtual: 'virtual', sem: 'sem kit',
+};
+
+export type ChaveFiltro = 'busca' | 'fornecedor' | 'status' | 'tipo' | 'kit';
 
 /** Chips dos filtros ativos da Publicados, cada um removível, + "Limpar tudo". Some se não há filtro. */
 export function FiltrosAtivos({
@@ -24,6 +28,7 @@ export function FiltrosAtivos({
   if (filtro.fornecedor) chips.push({ chave: 'fornecedor', label: filtro.fornecedor });
   if (filtro.status) chips.push({ chave: 'status', label: STATUS_LABEL[filtro.status] ?? filtro.status });
   if (filtro.tipo) chips.push({ chave: 'tipo', label: filtro.tipo });
+  if (filtro.kit) chips.push({ chave: 'kit', label: `Kits: ${KIT_LABEL[filtro.kit]}` });
 
   if (chips.length === 0) return null;
 

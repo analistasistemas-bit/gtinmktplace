@@ -289,9 +289,11 @@ export interface FiltroPublicados {
    *  Sem este filtro, achar o botão exigia varrer a lista linha a linha: foi assim que o Centrum
    *  passou um mês em `sem_produto` com o catálogo já ativo no ML sem ninguém notar. */
   somenteSemCatalogo?: boolean;
-  /** Só produtos com kit com variação (ADR-0200): a base e o próprio anúncio do kit. */
-  somenteComKitVariacao?: boolean;
+  /** Filtro por kits: qualquer marca, um tipo (papel "tem" ou "é") ou nenhuma marca. */
+  kit?: FiltroKit | null;
 }
+
+export type FiltroKit = 'qualquer' | TipoKit | 'sem';
 
 /** Anúncio encalhado: ativo e sem nenhuma venda no período. */
 export function ehEncalhado(i: PublicadoItem): boolean {
@@ -422,8 +424,8 @@ export function indiceKits(
 export function filtrarPublicados(
   itens: PublicadoItem[],
   f: FiltroPublicados,
-  /** Códigos PAI da base e do kit de cada kit com variação ativo; só lido com `somenteComKitVariacao`. */
-  codigosComKitVariacao?: ReadonlySet<string>,
+  /** undefined = kits ainda carregando ou leitura falhou: o filtro de kit não esconde nada. */
+  kits?: IndiceKits,
 ): PublicadoItem[] {
   // "MLB-7168683146" (como o ML exibe) → "MLB7168683146" (como guardamos).
   const queryStr = normalizarParaBusca(f.busca).replace(/\b(mlbu?)-(?=\d)/g, '$1');
@@ -437,7 +439,13 @@ export function filtrarPublicados(
     if (f.somenteEncalhados && !ehEncalhado(i)) return false;
     if (f.somenteIncompletos && !i.publicacaoIncompleta) return false;
     if (f.somenteSemCatalogo && !i.catalogRetentavel) return false;
-    if (f.somenteComKitVariacao && !codigosComKitVariacao?.has(i.codigoPai)) return false;
+    if (f.kit && kits) {
+      const marcas = kits.get(i.codigoPai) ?? [];
+      const ok = f.kit === 'sem' ? marcas.length === 0
+        : f.kit === 'qualquer' ? marcas.length > 0
+        : marcas.some((m) => m.tipo === f.kit);
+      if (!ok) return false;
+    }
 
     if (termosBusca.length > 0) {
       const textoBuscavel = normalizarParaBusca([

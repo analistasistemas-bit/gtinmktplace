@@ -38,7 +38,7 @@ import {
 import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
 import { formatarNomeProduto } from '@/lib/texto';
-import { filtrarPublicados, ordenarPublicados, rotuloTipo, fiscalPendente, agregarStatusUP, alvosStatus, resumirVariacoesPorCor, vendasDoAnuncio } from '@/lib/publicados';
+import { filtrarPublicados, indiceKits, ordenarPublicados, rotuloTipo, fiscalPendente, agregarStatusUP, alvosStatus, resumirVariacoesPorCor, vendasDoAnuncio } from '@/lib/publicados';
 import { CanalTabs } from '@/components/canal-tabs';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ListaOperacoes } from '@/components/operacoes/lista-operacoes';
@@ -1560,14 +1560,11 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
     [doCanal],
   );
 
-  // Base e kit de cada kit com variação ativo (encerrado já saiu de Publicados).
-  const codigosComKitVariacao = useMemo(
-    () => new Set((kitsVariacao ?? []).filter((k) => k.status !== 'encerrado').flatMap((k) => [k.codigoPaiBase, k.codigoPaiKit])),
-    [kitsVariacao],
-  );
+  // Índice de kits (por ora só variação; Task 4 acrescenta vinculado e virtual).
+  const indiceDeKits = useMemo(() => indiceKits(doCanal, [], kitsVariacao ?? []), [doCanal, kitsVariacao]);
   const itensExibidos = useMemo(
-    () => ordenarPublicados(filtrarPublicados(doCanal, filtro, codigosComKitVariacao), ord),
-    [doCanal, filtro, ord, codigosComKitVariacao],
+    () => ordenarPublicados(filtrarPublicados(doCanal, filtro, indiceDeKits), ord),
+    [doCanal, filtro, ord, indiceDeKits],
   );
   const pag = useMemo(() => paginar(itensExibidos, pagina, tamanho), [itensExibidos, pagina, tamanho]);
 
@@ -1967,11 +1964,11 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
             {temKitVariacao && (
               <Button
                 type="button"
-                variant={filtro.somenteComKitVariacao ? 'default' : 'outline'}
+                variant={filtro.kit === 'variacao' ? 'default' : 'outline'}
                 size="sm"
                 className="h-8"
-                aria-pressed={!!filtro.somenteComKitVariacao}
-                onClick={() => setFiltro((f) => ({ ...f, somenteComKitVariacao: !f.somenteComKitVariacao }))}
+                aria-pressed={filtro.kit === 'variacao'}
+                onClick={() => setFiltro((f) => ({ ...f, kit: f.kit === 'variacao' ? null : 'variacao' }))}
               >
                 <Layers className="h-3.5 w-3.5" aria-hidden />Com kit de variação
               </Button>

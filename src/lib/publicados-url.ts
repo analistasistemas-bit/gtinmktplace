@@ -1,4 +1,4 @@
-import type { FiltroPublicados, OrdenacaoPublicados, StatusPublicado, ColunaOrdenavel } from '@/lib/publicados';
+import type { FiltroKit, FiltroPublicados,OrdenacaoPublicados, StatusPublicado, ColunaOrdenavel } from '@/lib/publicados';
 
 export const TAMANHO_PADRAO = 10;
 const TAMANHOS_VALIDOS = [5, 10, 20, 50];
@@ -12,6 +12,7 @@ export interface EstadoPublicados {
 
 const STATUSES: StatusPublicado[] = ['ativo', 'pausado', 'encerrado', 'moderado', 'inativo', 'indisponivel'];
 const STATUS_PARAM_VALIDOS: string[] = [...STATUSES, 'problema'];
+const KITS_VALIDOS: string[] = ['qualquer', 'vinculado', 'variacao', 'virtual', 'sem'];
 const COLUNAS: ColunaOrdenavel[] = [
   'titulo', 'fornecedor', 'tipo', 'precoPublicacao', 'estoque', 'precoAtual',
   'unidadesVendidas', 'valorVendido', 'status', 'publicadoEm',
@@ -27,7 +28,7 @@ export function estadoParaParams(e: EstadoPublicados): URLSearchParams {
   if (e.filtro.somenteEncalhados) p.set('encalhados', '1');
   if (e.filtro.somenteIncompletos) p.set('incompletos', '1');
   if (e.filtro.somenteSemCatalogo) p.set('semcatalogo', '1');
-  if (e.filtro.somenteComKitVariacao) p.set('comkit', '1');
+  if (e.filtro.kit) p.set('kit', e.filtro.kit);
   if (e.ord) {
     p.set('ord', e.ord.coluna);
     p.set('dir', e.ord.dir);
@@ -53,7 +54,9 @@ export function paramsParaEstado(p: URLSearchParams): EstadoPublicados {
   if (p.get('encalhados') === '1') filtro.somenteEncalhados = true;
   if (p.get('incompletos') === '1') filtro.somenteIncompletos = true;
   if (p.get('semcatalogo') === '1') filtro.somenteSemCatalogo = true;
-  if (p.get('comkit') === '1') filtro.somenteComKitVariacao = true;
+  const kit = p.get('kit');
+  if (kit && KITS_VALIDOS.includes(kit)) filtro.kit = kit as FiltroKit;
+  else if (!kit && p.get('comkit') === '1') filtro.kit = 'variacao'; // link antigo
 
   const ord: OrdenacaoPublicados | null =
     ordCol && (COLUNAS as string[]).includes(ordCol)
