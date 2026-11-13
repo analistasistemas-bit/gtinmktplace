@@ -368,9 +368,9 @@ export function aplicarKitNosAtributos(
   // `parseAtributosSchema` — usá-lo devolveria `undefined` e recusaria kit em TODA categoria).
   // Emenda ADR-0151 D-3 (13/11, Lápis MLB430146): categoria sem "Kit" mas com "Pack" vende o kit como
   // Pack — é o que os concorrentes fazem. "Kit" vence quando a categoria tem os dois.
-  const valores = schema.find((s) => s.id === 'SALE_FORMAT')?.valores ?? [];
-  const kit = valores.find((v) => normalizar(v.nome) === 'kit');
-  const formato = kit ?? valores.find((v) => normalizar(v.nome) === 'pack');
+  const tipoFormato = formatoKitDaCategoria(schema);
+  const formato = schema.find((s) => s.id === 'SALE_FORMAT')?.valores.find((v) => normalizar(v.nome) === tipoFormato);
+  const kit = tipoFormato === 'kit';
   if (!formato) {
     const e = new Error(
       'Esta categoria do ML não oferece o formato de venda "Kit" nem "Pack". Não é possível criar kit vinculado aqui.',
@@ -395,6 +395,12 @@ export function aplicarKitNosAtributos(
     ...comUpp.filter((a) => a.id !== 'NET_WEIGHT'),
     { id: 'NET_WEIGHT', value_name: `${fmt(pesoBaseGramas * n)} g` },
   ];
+}
+
+/** Formato que o kit usa na categoria: "Kit" se o SALE_FORMAT o oferece, senão "Pack", senão nenhum. */
+export function formatoKitDaCategoria(schema: AtributoSchema[]): 'kit' | 'pack' | null {
+  const nomes = (schema.find((s) => s.id === 'SALE_FORMAT')?.valores ?? []).map((v) => normalizar(v.nome));
+  return nomes.includes('kit') ? 'kit' : nomes.includes('pack') ? 'pack' : null;
 }
 
 /** UNITS_PER_PACK inteiro dos atributos da BASE (para `aplicarKitNosAtributos(..., unidadesBase)`). */

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { categoriaParaTipo, tipoParaCategoria, montarAtributosML, montarAtributosBase, atributosFaltantes, ehDuplaFace, categoriaAceitaEmptyGtinReason, extrairUnitsPerPack, preencherUnitsPerPack, preencherNomeObrigatorio, aplicarKitNosAtributos, faltanteKitSemContagem } from '../atributos';
+import { categoriaParaTipo, tipoParaCategoria, montarAtributosML, montarAtributosBase, atributosFaltantes, ehDuplaFace, categoriaAceitaEmptyGtinReason, extrairUnitsPerPack, preencherUnitsPerPack, preencherNomeObrigatorio, aplicarKitNosAtributos, faltanteKitSemContagem, formatoKitDaCategoria, unidadesPorPack } from '../atributos';
 import type { AtributoSchema } from '../schema';
 
 describe('categoriaParaTipo (IDs reais validados na API ML)', () => {
@@ -498,6 +498,20 @@ describe('aplicarKitNosAtributos em categoria só com Unidade/Pack (Lápis MLB43
     const out = aplicarKitNosAtributos(schemaKit, base, 3, undefined, 12);
     expect(out).toContainEqual({ id: 'SALE_FORMAT', value_id: '999' });
     expect(out).toContainEqual({ id: 'UNITS_PER_PACK', value_name: '3' });
+  });
+
+  it('formatoKitDaCategoria: kit vence pack; só pack → pack; nenhum → null', () => {
+    const schemaKit: AtributoSchema[] = schemaPack.map((s) => (s.id === 'SALE_FORMAT'
+      ? { ...s, valores: [...s.valores, { id: '999', nome: 'Kit' }] } : s));
+    expect(formatoKitDaCategoria(schemaKit)).toBe('kit');
+    expect(formatoKitDaCategoria(schemaPack)).toBe('pack');
+    expect(formatoKitDaCategoria([])).toBeNull();
+  });
+
+  it('unidadesPorPack lê só inteiro > 0', () => {
+    expect(unidadesPorPack(base)).toBe(12);
+    expect(unidadesPorPack([{ id: 'UNITS_PER_PACK', value_name: '12 un' }])).toBeUndefined();
+    expect(unidadesPorPack([])).toBeUndefined();
   });
 
   it('sem Kit nem Pack continua recusando com 400', () => {

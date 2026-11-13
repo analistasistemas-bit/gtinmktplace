@@ -2,7 +2,7 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { userClient, adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
-import { aplicarKitNosAtributos, montarAtributosML, tipoParaCategoria } from '../_shared/categoria/atributos.ts';
+import { aplicarKitNosAtributos, formatoKitDaCategoria, montarAtributosML, tipoParaCategoria, unidadesPorPack } from '../_shared/categoria/atributos.ts';
 import { resolverAtributosGenericos } from '../_shared/categoria/resolver-atributos-genericos.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
@@ -56,7 +56,7 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
   // operação; qualquer membro define a categoria. Sem filtro por user.id.
   const { data: familia, error } = await sb
     .from('familias')
-    .select('id, user_id, nome_pai, descricao_pai, fornecedor, marca, kit_multiplicador')
+    .select('id, user_id, nome_pai, descricao_pai, fornecedor, marca, kit_multiplicador, kit_base_codigo_pai')
     .eq('id', body.familia_id)
     .maybeSingle();
 
@@ -119,7 +119,21 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
     }
     try {
       const schemaKit = await lerSchemaAtributos(tok, categoriaMlId);
-      atributosMl = aplicarKitNosAtributos(schemaKit, atributosMl, n);
+      // Emenda ADR-0151 (13/11): em Pack a quantidade é base × N — lida da BASE (mesma org, a família não-kit
+      // mais recente do PAI). Sem conseguir ler a base, recusa: assumir N declararia menos conteúdo (36 → 3).
+      let unidadesBase: number | undefined;
+      if (formatoKitDaCategoria(schemaKit) === 'pack') {
+        const { data: bases, error: errBase } = familia.kit_base_codigo_pai
+          ? await sb.from('familias').select('atributos_ml').eq('org_id', orgId)
+            .eq('codigo_pai', familia.kit_base_codigo_pai).is('kit_multiplicador', null)
+            .order('criado_em', { ascending: false }).limit(1)
+          : { data: null, error: null };
+        if (errBase || !bases?.[0]) {
+          return new Response('Não foi possível ler o produto-base do kit para calcular a quantidade do Pack. Tente de novo.', { status: 409, headers: corsHeaders });
+        }
+        unidadesBase = unidadesPorPack((bases[0].atributos_ml as Parameters<typeof unidadesPorPack>[0] | null) ?? []);
+      }
+      atributosMl = aplicarKitNosAtributos(schemaKit, atributosMl, n, undefined, unidadesBase);
       // N preencheu a quantidade: o faltante "Kit sem quantidade" do resolver deixa de valer.
       const nomeUnits = schemaKit.find((s) => s.id === 'UNITS_PER_PACK')?.nome;
       atributosFaltantes = atributosFaltantes.filter((f) => f !== nomeUnits);
