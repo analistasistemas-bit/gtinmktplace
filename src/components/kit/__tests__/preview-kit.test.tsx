@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { useState } from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PreviewKit, valorInicialPreview, type KitPreviewValue } from '../preview-kit';
 import { tituloDoKit, descricaoDoKit, type BaseParaKit } from '@/lib/kit';
@@ -16,6 +16,9 @@ vi.mock('@/lib/tarifa', async () => {
     calcularTarifaML: vi.fn(async (preco: number) => ({ classico: tipo(preco, 12), premium: tipo(preco, 17), frete: 10, proveniencia: 'official' })),
   };
 });
+vi.mock('@/hooks/useImageUrl', () => ({
+  useImageUrl: (path: string | null) => ({ data: path ? `https://img.test/${path}` : undefined }),
+}));
 vi.mock('@/hooks/useConfiguracoes', () => ({
   useAliquotas: () => ({ data: { nacional: 8, importado: 16, confirmada: true }, isLoading: false, isError: false, isFetched: true }),
 }));
@@ -129,6 +132,20 @@ describe('valorInicialPreview', () => {
     expect(v.alturaCm).toBe(30); // 10 × 3 — eixo do empilhamento
     expect(v.larguraCm).toBe(8); // igual à base
     expect(v.comprimentoCm).toBe(3); // igual à base
+  });
+});
+
+describe('miniatura da capa', () => {
+  it('clicar na miniatura abre a foto grande num dialog', () => {
+    renderPreview(3, { imagemPath: 'kit/capa.jpg' });
+    fireEvent.click(screen.getByRole('button', { name: 'Ampliar foto de capa do kit 3' }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByAltText('Foto de capa do kit 3, ampliada')).toHaveAttribute('src', 'https://img.test/kit/capa.jpg');
+  });
+
+  it('sem foto não há botão de ampliar', () => {
+    renderPreview(3);
+    expect(screen.queryByRole('button', { name: 'Ampliar foto de capa do kit 3' })).toBeNull();
   });
 });
 

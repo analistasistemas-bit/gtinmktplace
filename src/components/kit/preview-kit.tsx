@@ -3,6 +3,7 @@
 import { useEffect, useState, type ComponentProps, type FocusEvent, type ReactNode } from 'react';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CampoFoto } from '@/components/estoque/campo-foto';
 import { AtacadoEditor } from '@/components/atacado-editor';
 import { useImageUrl } from '@/hooks/useImageUrl';
@@ -101,6 +102,7 @@ export function PreviewKit({ n, indice, total, base, value, onChange, categoriaM
   capaUnidades?: ReactNode;
 }) {
   const { data: fotoAtualUrl } = useImageUrl(value.fotoFile ? null : value.imagemPath);
+  const [ampliada, setAmpliada] = useState(false);
   const tituloExcedeu = value.titulo.length > TITULO_MAX_KIT;
   const custoDerivado = base.custo != null ? base.custo * n : null;
   const pesoDerivado = base.pesoGramas != null ? base.pesoGramas * n : null;
@@ -171,7 +173,12 @@ export function PreviewKit({ n, indice, total, base, value, onChange, categoriaM
             <span className="text-sm font-medium text-foreground">Foto<span className="text-destructive"> *</span></span>
             <div className="flex items-center gap-2">
               {!value.fotoFile && fotoAtualUrl && (
-                <img src={fotoAtualUrl} alt={`Foto atual do kit ${n}`} className="h-14 w-14 shrink-0 rounded-md object-cover" />
+                <button
+                  type="button" aria-label={`Ampliar foto de capa do kit ${n}`} onClick={() => setAmpliada(true)}
+                  className="shrink-0 cursor-zoom-in rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                >
+                  <img src={fotoAtualUrl} alt={`Foto atual do kit ${n}`} className="h-14 w-14 rounded-md object-cover" />
+                </button>
               )}
               <div className="flex-1">
                 <CampoFoto
@@ -189,6 +196,17 @@ export function PreviewKit({ n, indice, total, base, value, onChange, categoriaM
               </span>
             )}
             {capaUnidades}
+            <Dialog open={ampliada} onOpenChange={setAmpliada}>
+              <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-3xl">
+                <DialogHeader>
+                  <DialogTitle>Foto de capa do kit de {n} unidades</DialogTitle>
+                  <DialogDescription className="sr-only">Foto ampliada para conferir a capa.</DialogDescription>
+                </DialogHeader>
+                {fotoAtualUrl && (
+                  <img src={fotoAtualUrl} alt={`Foto de capa do kit ${n}, ampliada`} className="mx-auto max-h-[80vh] w-auto max-w-full rounded-md object-contain" />
+                )}
+              </DialogContent>
+            </Dialog>
           </div>
           {galeria}
 
