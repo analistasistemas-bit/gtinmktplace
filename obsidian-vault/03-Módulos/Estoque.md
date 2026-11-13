@@ -264,6 +264,9 @@ Ação disponível no menu do card para administradores:
 - Permite adicionar uma nova cor/variação a um produto já publicado no Mercado Livre.
 - Cria um lote dedicado de `UPDATE`, copia atributos da família viva e adiciona a nova variação com foto e estoque inicial no ledger.
 - Executa a atualização diretamente pelo pipeline de publicação sem passar pela tela de Revisão humana (dados são 100% auditados pelo operador).
+- **Preço da cor nova (12/11/2026):** em User Products a cor nasce com o **preço base** das irmãs no ML (lido ao vivo, sem promoção); se o ML não responder, o sistema recusa (503) e não cria nada.
+- **Nunca desmarcar cor (12/11/2026):** se o lote cair na Revisão (erro), todas as cores já publicadas ficam marcadas e travadas; desmarcar fazia a saga retirar as outras. O worker recusa, sem enviar nada, e pede "marque todas e reenvie".
+- **Risco residual:** o reconciliador de convergência ainda pode retirar cor numa recuperação interrompida com snapshot antigo (pré-existente; frente própria — ADR-0129, adendo 2).
 
 ## Feedback visual e monitoramento
 

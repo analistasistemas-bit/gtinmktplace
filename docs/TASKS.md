@@ -1,5 +1,18 @@
 # PubliAI — Tasks
 
+## Adicionar variação: preço base, FABRIC_DESIGN e recusa de cor desmarcada (ADR-0129, adendos 12/11) — 2026-11-12
+
+Incidente no Tecido Oxford (02710170 e 92710170). Mergeado na `main`: `fe6e8ab6` (preço), `4fd4f915` (atributo), `970b9c33` (recusa).
+
+- [x] Cor nova sobe com o preço **base** vivo das irmãs no ML (UP; Legacy segue uniforme); 503 antes de criar qualquer coisa se a leitura falhar (`_shared/preco/preco-base-vivo.ts`). Deploy `adicionar-variacoes-familia` v37.
+- [x] Pílula "Erro" por linha só na cor sem item ativo em família UP (`semCoresAtivasUP`, `src/lib/estoque-update-status.ts`).
+- [x] `atributos-irmao.ts`: cor nova herda `value_name` junto do `value_id` (texto livre como FABRIC_DESIGN "Estampas de Natal" dava 400). Deploy `update-familia-ml` + `reconciliar-convergencia-up`.
+- [x] Guard: lote manual com cor desmarcada viva no canal → `update-familia-ml` recusa antes de escrever no ML (família `erro`); trava de checkbox na Revisão. Deploy `update-familia-ml` v171.
+- [ ] **Pendente:** reconciliador de convergência ainda pode retirar cor numa recuperação interrompida com snapshot antigo (pré-existente; Codex reprovou 3 versões que mexiam nele). Fechar com saga `semRetirada` + snapshot final consistente, com ADR.
+- [ ] **Pendente:** cor retirada que volta em lote manual ainda recebe o preço local na reposição (limite registrado no ADR).
+- [ ] **Pendente:** mesmo descarte de `value_name` no PUT de reposição (`atributos-divergentes.ts:98`).
+- [ ] **Pendente (dados):** lote 9c1e8a12 — 8 famílias UPDATE em `pronto` desde 16/10; Diego decide enviar ou descartar.
+
 ## Kit vinculado: evolução, Fatia 1 (ADR-0151, adendos 12/11 do 0151 e do 0200) — 2026-11-12
 
 Branch `worktree-kit-vinculado-evolucao` (commits `29ee34b5`..`103a84b8`). Spec `docs/superpowers/specs/2026-11-12-kit-vinculado-evolucao-design.md`.

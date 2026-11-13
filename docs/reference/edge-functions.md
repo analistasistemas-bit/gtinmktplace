@@ -29,7 +29,7 @@
 | process-familia | false | QStash worker | sim (claim atômico) |
 | publicar-familias | true | HTTP (frontend) | não |
 | publish-familia-ml | false | QStash (fila serial) | sim (reusa picture_ids) |
-| update-familia-ml | false | QStash (fila serial) | sim |
+| update-familia-ml | false | QStash (fila serial); em lote `origem='manual'` (Adicionar variação) **recusa** cor desmarcada já no ar — família `erro`, nada enviado ao ML (adendo 2 do ADR-0129; v171, 12/11/2026) | sim |
 | publicar-split-ml | false | QStash (fila serial) | sim (item cravado cedo) |
 | publicar-anuncio | false | QStash (fila serial por canal) | sim (claim atômico por canal) |
 | regenerar-copy-familia | false | HTTP (JWT manual) | não |
@@ -1168,6 +1168,13 @@ falha ao ler `organizations` não libera.
   `familias.status not in ('publicado','erro')`), família ainda não publicada no ML, `codigo_pai`
   ou alguma variação viva fora do padrão de 8 dígitos, ou corrida de dupla submissão com a mesma
   `chave` (23505).
+  **Preço da cor nova (adendo ADR-0129, 12/11/2026):** em família **User Products** a cor nova
+  grava `preco_publicacao` = preço **base** vivo das irmãs no ML (`original_price ?? price`, menor
+  entre os itens vivos, via `/items/bulk` — `_shared/preco/preco-base-vivo.ts`), independente de
+  promoção; o preço digitado não define o de publicação. **Fail-closed:** sem leitura confiável
+  (conexão ausente, ML fora, nada legível) responde **503** *antes* de reservar código, criar lote ou
+  família. Família **Legacy** segue o preço uniforme das irmãs (`garantirPrecoUniforme`). Deploy
+  2026-11-12: `adicionar-variacoes-familia` v37.
   **Idempotência por `chave` → `familias.chave_cadastro`**: um retry com a mesma chave devolve
   `jaExistia: true` sem duplicar família/estoque/publicação; se a família do retry ainda está
   `'pronto'` (a 1ª tentativa morreu **antes** de encadear a publicação), re-encadeia
