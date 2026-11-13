@@ -148,3 +148,18 @@ mês com os XMLs do download por período do ML (sem CT-e) + relatório xlsx/PDF
 (CFOP de venda/devolução, cancelamento 135/155, CC-e 135), sem gravar nada. Cobertura: nota emitida fora do ML e não
 enviada a ele não aparece. "Vendas sem nota" pendente. Spec: `docs/superpowers/specs/2026-10-16-pacote-contador-vendas-design.md`.
 Plano 2b-1 (compras no pacote) EM PRODUÇÃO desde 2026-10-16 (main `ff67a7e6`; edge `baixar-notas-venda` v2): `relatorio-compras.xlsx`/`.pdf` (uma linha por item, com CSOSN/CST do XML) + XMLs das notas importadas, competência pela data de emissão; desfeitas e marcadas canceladas em pastas próprias, fora dos totais. Spec: `docs/superpowers/specs/2026-10-16-pacote-contador-compras-design.md`. Inventário (2b-2): EM PRODUÇÃO desde 2026-10-17 (main `b4250469`; 3 migrations aplicadas; edge `inventario` v1; validado em runtime em org de teste descartável) — foto de 31/12 (`inventarios`, `pg_cron`), custo médio ponderado móvel, contagem/confirmação pela edge `inventario`, relatório no `pacote-AAAA-12.zip`. Ver ADR-0181 e a spec `docs/superpowers/specs/2026-10-16-pacote-contador-inventario-design.md`.
+
+## Expedição diária com o Faturador (decisão 2026-11-13)
+
+Emitir NF-e e imprimir etiquetas em massa **já existe no Seller Center**; o PubliAI não constrói isso por ora.
+Rotina (Vendas → Envios de hoje → selecionar todas):
+1. **Emitir NF-e** — assíncrono; aviso "N NF-e emitidas" no canto.
+2. **Imprimir NF-e** — um PDF com todos os DANFEs.
+3. **Imprimir etiquetas → Pela primeira vez** — um PDF; a última página é a lista de conferência (envio + produto),
+   não etiqueta — imprimir só as páginas de etiqueta.
+
+Medido na Zaven em 13/11. Ficou de fora só juntar notas + etiquetas num PDF único (~1–2 min/dia).
+Se o volume crescer ou virar funcionalidade para clientes: a API existe — `POST /users/{id}/invoices/orders`
+(`{"orders":[...]}`, carrinho = 1 nota, resposta já `authorized` com `danfe_location`) e
+`GET /shipment_labels?shipment_ids=…&response_type=pdf` (até 50, só `ready_to_print`). Exige emenda da D-1 do
+[[ADR-0135]] (o PubliAI passaria a emitir) e revisão crítica. Rota do PDF avulso do DANFE não documentada — medir.
