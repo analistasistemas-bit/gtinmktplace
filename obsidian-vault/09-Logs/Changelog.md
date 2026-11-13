@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-11-11
+atualizado: 2026-11-13
 ---
 
 # Changelog
@@ -8,6 +8,11 @@ atualizado: 2026-11-11
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-11-13
+
+- **Aviso de pedido cancelado com motivo real** (`main` `5d73552d`). Telegram mostra "estoque NÃO reposto" no título,
+  `Motivo:`/`Desfecho:` do claim do ML, "já saiu" × "não dá para saber" e o link do pedido. Ver ADR-0121 (emenda 6).
 
 ## 2026-11-12
 

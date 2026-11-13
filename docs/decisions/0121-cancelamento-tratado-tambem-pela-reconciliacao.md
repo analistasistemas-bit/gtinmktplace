@@ -73,6 +73,15 @@ não saiu. Falha ao ler o claim cai no texto genérico, nunca cala o aviso.
 Custo aceito: `cancel_purchase` que o ML não concluir não gera alerta no Telegram; continua visível
 em Faturamento › Devoluções. Cancelamento que cai no ramo de reposição segue sem aviso, como já era.
 
+**6. Emenda 13/11/2026: o aviso genérico diz o motivo real.** Caso Hairfly `2000019297158586`: envio
+entregue, mediação "Produto com defeito ou diferente" fechada pelo ML com cobertura. O texto antigo
+("não dá para confirmar que a mercadoria não foi despachada") não dizia por que o pedido caiu.
+Agora o título já diz "estoque NÃO reposto"; o aviso inclui `Motivo:` (tipo + `reason_texto`) e
+`Desfecho:` (`detalhe.title`) do claim mais recente do pedido em `ml_devolucoes` (`claimDoPedido`,
+que substitui `cancelamentoPeloComprador`); separa "a mercadoria já saiu" (`shipped`, `delivered`,
+`not_delivered`) de "não dá para saber"; e leva o link do pedido. Sem claim, a linha some — nada é
+inventado. A decisão de repor **não muda**.
+
 ## Consequências
 
 **Aceitas.** A reconciliação revisita o mesmo pedido cancelado de hora em hora enquanto ele estiver

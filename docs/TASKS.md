@@ -1,5 +1,12 @@
 # PubliAI — Tasks
 
+## Aviso de pedido cancelado com motivo real (emenda 6 do ADR-0121) — 2026-11-13
+
+Mergeado na `main`: `5d73552d`.
+
+- [x] Texto sem dupla negação; título "estoque NÃO reposto"; "já saiu" × "não dá para saber"; link do pedido.
+- [x] `Motivo:`/`Desfecho:` do claim mais recente em `ml_devolucoes` (`claimDoPedido`). Deploy das 6 edges que importam os arquivos.
+
 ## Adicionar variação: preço base, FABRIC_DESIGN e recusa de cor desmarcada (ADR-0129, adendos 12/11) — 2026-11-12
 
 Incidente no Tecido Oxford (02710170 e 92710170). Mergeado na `main`: `fe6e8ab6` (preço), `4fd4f915` (atributo), `970b9c33` (recusa).
