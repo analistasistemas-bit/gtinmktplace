@@ -19,15 +19,17 @@ export function capaMlDoBulk(itemBase: string, ids: string[], entradas: unknown)
   return ehUrlFotoMl(url) ? url : null;
 }
 
-/** Foto 1 do anúncio da base no ML, conferindo a moderação da base e das cópias (filhos UP / catálogo) do mesmo PAI. */
+/** Foto 1 do anúncio da base no ML, conferindo a moderação da base, das cópias Legacy (`copiasLegacy` =
+ *  `variacoes.catalog_listing_id` da base) e dos filhos UP / cópias de catálogo do mesmo PAI. */
 export async function capaMlDaBase(
   admin: SupabaseClient, orgId: string, tokenML: () => Promise<string>, itemBase: string, codigoPai: string,
+  copiasLegacy: string[],
 ): Promise<string | null> {
   const { data: filhos, error } = await admin.from('anuncios_externos_itens')
     .select('item_externo_id, catalog_listing_id, anuncios_externos!inner(codigo_pai)')
     .eq('org_id', orgId).eq('anuncios_externos.codigo_pai', codigoPai);
   if (error) throw new Error(`itens da base: ${error.message}`);
-  const ids = [...new Set([itemBase, ...(filhos ?? []).flatMap((f: Record<string, unknown>) =>
+  const ids = [...new Set([itemBase, ...copiasLegacy.filter(Boolean), ...(filhos ?? []).flatMap((f: Record<string, unknown>) =>
     [f.item_externo_id, f.catalog_listing_id].filter((x): x is string => typeof x === 'string' && !!x))])];
   const token = await tokenML();
   const entradas: unknown[] = [];

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { capaMlDoBulk, ehUrlFotoMl } from '../capa-ml.ts';
+import { describe, it, expect, vi } from 'vitest';
+import { capaMlDaBase, capaMlDoBulk, ehUrlFotoMl } from '../capa-ml.ts';
 
 const FOTO = 'https://http2.mlstatic.com/D_672106-MLB114489001149_072026-O.jpg';
 const item = (id: string, extra: Record<string, unknown> = {}) =>
@@ -22,6 +22,25 @@ describe('capaMlDoBulk', () => {
 
   it('item não lido no bulk: lança (quem chama recusa)', () => {
     expect(() => capaMlDoBulk('MLB1', ['MLB1', 'MLB2'], [item('MLB1')])).toThrow();
+  });
+});
+
+describe('capaMlDaBase', () => {
+  it('cópia Legacy (variacoes.catalog_listing_id) moderada entra no bulk e bloqueia', async () => {
+    const pedidos: string[][] = [];
+    vi.stubGlobal('fetch', async (url: string) => {
+      const ids = new URL(url).searchParams.get('ids')!.split(',');
+      pedidos.push(ids);
+      return new Response(JSON.stringify(ids.map((id) => ({
+        code: 200, body: { id, status: id === 'MLB-CAT' ? 'under_review' : 'active', sub_status: [], pictures: [{ secure_url: FOTO }] },
+      }))));
+    });
+    const q = { select: () => q, eq: () => q, then: (r: (x: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(r) };
+    const admin = { from: () => q } as never;
+    try {
+      expect(await capaMlDaBase(admin, 'ORG', async () => 't', 'MLB1', 'PAI', ['MLB-CAT'])).toBeNull();
+      expect(pedidos.flat().sort()).toEqual(['MLB-CAT', 'MLB1']);
+    } finally { vi.unstubAllGlobals(); }
   });
 });
 

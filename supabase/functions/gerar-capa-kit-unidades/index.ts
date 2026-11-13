@@ -248,11 +248,11 @@ async function atender(req: Request, inicio: number): Promise<Response> {
 
   // Foto de origem: capa da base ou, sem ela, a da única variação (como o front); da própria org e fora de moderado.
   // Sem nenhuma no storage e com a base publicada: foto 1 do anúncio vivo no ML (`capa-ml.ts`), mesma regra de moderação.
-  const { data: base, error } = await admin.from('familias').select('capa_storage_path, ml_item_id, codigo_pai, variacoes(imagem_path)')
+  const { data: base, error } = await admin.from('familias').select('capa_storage_path, ml_item_id, codigo_pai, variacoes(imagem_path, catalog_listing_id)')
     .eq('id', familiaBaseId).eq('org_id', orgId).maybeSingle();
   if (error) return json({ error: 'Falha ao carregar a família base. Tente novamente.' }, 500);
   if (!base) return json({ error: 'Família base não encontrada.' }, 404);
-  const variacoes = (base.variacoes ?? []) as Array<{ imagem_path: string | null }>;
+  const variacoes = (base.variacoes ?? []) as Array<{ imagem_path: string | null; catalog_listing_id: string | null }>;
   const candidata = (base.capa_storage_path as string | null)
     || (variacoes.length === 1 ? variacoes[0].imagem_path : null) || null;
   const itemBase = (base.ml_item_id as string | null) || null;
@@ -278,7 +278,8 @@ async function atender(req: Request, inicio: number): Promise<Response> {
       if (moderadas.includes(candidata)) return semFoto();
       origemPath = candidata;
     } else {
-      const url = await comPrazo(capaMlDaBase(admin, orgId, tokenML, itemBase!, String(base.codigo_pai)), ms);
+      const url = await comPrazo(capaMlDaBase(admin, orgId, tokenML, itemBase!, String(base.codigo_pai),
+        variacoes.map((v) => v.catalog_listing_id).filter((x): x is string => !!x)), ms);
       if (!url) return semFoto();
       origemPath = url;
       origemMl = true;
