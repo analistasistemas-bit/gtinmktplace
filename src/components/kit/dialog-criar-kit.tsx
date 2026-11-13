@@ -407,6 +407,7 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
                 value={valores[n]}
                 categoriaMlId={categoriaMlIdEfetiva}
                 onPodeSeguir={aoMudarPodeSeguir}
+                onRemover={mutation.isPending ? undefined : () => alternarTamanho(n, false)}
                 galeria={(
                   <GaleriaBaseKit
                     n={n}

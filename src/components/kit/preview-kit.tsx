@@ -3,6 +3,8 @@
 import { useEffect, useState, type ComponentProps, type FocusEvent, type ReactNode } from 'react';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Trash2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CampoFoto } from '@/components/estoque/campo-foto';
 import { AtacadoEditor } from '@/components/atacado-editor';
@@ -84,7 +86,7 @@ export function valorInicialPreview(base: BaseParaKit, titulo: string, descricao
   };
 }
 
-export function PreviewKit({ n, indice, total, base, value, onChange, categoriaMlId, onPodeSeguir, galeria, capaUnidades }: {
+export function PreviewKit({ n, indice, total, base, value, onChange, categoriaMlId, onPodeSeguir, galeria, capaUnidades, onRemover }: {
   n: number;
   /** Posição na lista quando há vários kits (1-based). Omitir se kit único. */
   indice?: number;
@@ -100,6 +102,8 @@ export function PreviewKit({ n, indice, total, base, value, onChange, categoriaM
   galeria?: ReactNode;
   /** ADR-0205: "Gerar capa com N unidades" (estado no dialog), logo abaixo do campo Foto. */
   capaUnidades?: ReactNode;
+  /** Tira este tamanho da revisão; o botão só aparece com 2+ kits (o último sai pelo "Voltar"). */
+  onRemover?: () => void;
 }) {
   const { data: fotoAtualUrl } = useImageUrl(value.fotoFile ? null : value.imagemPath);
   const [ampliada, setAmpliada] = useState(false);
@@ -125,13 +129,27 @@ export function PreviewKit({ n, indice, total, base, value, onChange, categoriaM
       role="listitem"
       aria-label={`Kit de ${n} unidades${multiplos ? ` (${indice} de ${total})` : ''}`}
     >
-      <div className="flex items-baseline justify-between gap-2 border-b pb-2">
+      <div className="flex items-center justify-between gap-2 border-b pb-2">
         <h3 className="text-base font-semibold leading-tight">Kit de {n} unidades</h3>
-        {multiplos && indice != null && total != null && (
-          <span className="shrink-0 text-xs font-medium text-muted-foreground">
-            {indice} de {total}
-          </span>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          {multiplos && indice != null && total != null && (
+            <span className="text-xs font-medium text-muted-foreground">
+              {indice} de {total}
+            </span>
+          )}
+          {multiplos && onRemover && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-muted-foreground hover:text-destructive"
+              onClick={onRemover}
+              aria-label={`Remover kit de ${n} unidades`}
+            >
+              <Trash2 className="mr-1 h-3.5 w-3.5" />
+              Remover
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">

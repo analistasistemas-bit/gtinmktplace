@@ -249,6 +249,28 @@ describe('DialogCriarKit — conta do "Você recebe" trava a criação', () => {
   });
 });
 
+describe('DialogCriarKit — remover um tamanho na etapa 2', () => {
+  it('com 2+ kits, "Remover" tira o tamanho da revisão e do pedido; com 1 kit o botão some', async () => {
+    criarKitVinculadoMock.mockResolvedValue({ ok: true, kits: [], publicacaoOk: true, loteId: null });
+    renderDialog([], BASE_COM_FOTO);
+    await userEvent.click(screen.getByLabelText('Kit de 2 unidades'));
+    await userEvent.click(screen.getByLabelText('Kit de 3 unidades'));
+    await userEvent.click(screen.getByRole('button', { name: 'Avançar' }));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Remover kit de 3 unidades' }));
+
+    expect(screen.queryByLabelText('Preço do kit 3')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Preço do kit 2')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Remover kit de/ })).not.toBeInTheDocument();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Criar e publicar' })).toBeEnabled());
+    await userEvent.click(screen.getByRole('button', { name: 'Criar e publicar' }));
+    await waitFor(() => expect(criarKitVinculadoMock).toHaveBeenCalled());
+    const { kits } = criarKitVinculadoMock.mock.calls.at(-1)![0] as { kits: Array<{ multiplicador: number }> };
+    expect(kits.map((k) => k.multiplicador)).toEqual([2]);
+  });
+});
+
 describe('DialogCriarKit — toast pós-criação com link pro relatório', () => {
   it('sucesso com loteId: toast tem action "Acompanhar" que navega para o relatório', async () => {
     criarKitVinculadoMock.mockResolvedValue({
