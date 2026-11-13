@@ -109,14 +109,15 @@ describe('tratarPedidoCancelado — o que não é pré-despacho apenas avisa', (
     expect(chamadas.notificacoes).toHaveLength(1);
     expect(chamadas.notificacoes[0].texto).toContain(`Comprador cancelou o pedido ${BASE.orderId}`);
     expect(chamadas.notificacoes[0].texto).toContain('entrada manual em Estoque');
-    expect(chamadas.notificacoes[0].texto).not.toContain('Confira o que voltou');
+    expect(chamadas.notificacoes[0].texto).not.toContain('Se o produto estiver aí');
   });
 
   it('falha ao ler o claim cai no texto genérico e não cala o aviso', async () => {
     const { chamadas, deps } = fakeDeps({ cancelamentoPeloComprador: () => Promise.reject(new Error('rede')) });
     const r = await tratarPedidoCancelado(ADMIN, deps, { ...BASE, shipmentStatus: 'cancelled' });
     expect(r).toBe('avisado');
-    expect(chamadas.notificacoes[0].texto).toContain('Confira o que voltou');
+    expect(chamadas.notificacoes[0].texto).toContain('Não dá para saber se a mercadoria saiu');
+    expect(chamadas.notificacoes[0].texto).toContain('Se o produto estiver aí');
   });
 
   it('envio entregue avisa e NÃO estorna', async () => {
@@ -124,6 +125,12 @@ describe('tratarPedidoCancelado — o que não é pré-despacho apenas avisa', (
     const r = await tratarPedidoCancelado(ADMIN, deps, { ...BASE, shipmentStatus: 'delivered' });
     expect(r).toBe('avisado');
     expect(chamadas.estornos).toHaveLength(0);
+    const t = chamadas.notificacoes[0].texto;
+    expect(t).toContain('estoque NÃO reposto');
+    expect(t).toContain('Envio: Entregue');
+    expect(t).toContain('A mercadoria já saiu');
+    expect(t).toContain('Quando o produto voltar');
+    expect(t).toContain(`/vendas/${BASE.orderId}/detalhe`);
   });
 
   // buscarShipment devolve null em QUALQUER erro de rede — tratar null como "não despachado"

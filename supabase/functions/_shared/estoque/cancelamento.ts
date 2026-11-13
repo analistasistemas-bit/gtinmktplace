@@ -11,6 +11,7 @@
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { refBaixa, selecionarBaixas, type ItemVendaBaixa, type MovimentoPendente } from './baixa.ts';
 import type { CategoriaNotificacao } from '../notificacoes/categorias.ts';
+import { urlVendaML } from '../notificacoes/telegram.ts';
 import { criarTransferencia } from '../kit-variacao/saga.ts';
 import type { classificarItensKit, gravarIdentidades } from '../kit-variacao/venda.ts';
 
@@ -18,6 +19,9 @@ import type { classificarItensKit, gravarIdentidades } from '../kit-variacao/ven
  *  `buscarShipment` devolve null em qualquer erro de rede, e tratar o desconhecido como
  *  "não despachado" reporia estoque de mercadoria já enviada. */
 const PRE_DESPACHO = ['pending', 'handling', 'ready_to_ship'];
+
+/** Só para o texto do aviso: estados em que a mercadoria comprovadamente saiu. */
+const SAIU = ['shipped', 'delivered', 'not_delivered'];
 
 /** Rótulo pt-BR só para o texto da notificação — mesmos códigos de `ENVIO` em
  *  `src/lib/ml-status.ts`, duplicado aqui porque edge (Deno) e frontend não compartilham módulo.
@@ -148,15 +152,20 @@ export async function tratarPedidoCancelado(
     const peloComprador = await deps.cancelamentoPeloComprador(admin, { orgId: p.orgId, orderId: p.orderId })
       .catch(() => false);
     const situacaoEnvio = st === null ? 'Envio: não deu para consultar' : `Envio: ${LABEL_ENVIO[st] ?? st}`;
+    const saiu = st !== null && SAIU.includes(st);
     await deps.notificarCategoria(
       admin, p.orgId, 'pos_venda',
       peloComprador
         ? `🚫 Comprador cancelou o pedido ${p.orderId}\n\n`
           + 'O ML já resolveu: não precisa responder nada.\n\n'
           + 'O estoque NÃO foi reposto. Se a mercadoria ainda está aí, dê entrada manual em Estoque.'
-        : `📦 Pedido ${p.orderId} cancelado\n\n${situacaoEnvio}\n`
-          + 'Não dá para confirmar que a mercadoria não foi despachada, então o estoque NÃO foi reposto automaticamente.\n\n'
-          + 'Confira o que voltou e dê entrada manual em Estoque.',
+        : `📦 Pedido ${p.orderId} cancelado — estoque NÃO reposto\n\n${situacaoEnvio}\n`
+          + (saiu
+            ? 'A mercadoria já saiu, por isso o PubliAI não devolveu ao estoque sozinho.\n\n'
+              + '👉 Quando o produto voltar, dê entrada manual em Estoque.'
+            : 'Não dá para saber se a mercadoria saiu, por isso o PubliAI não devolveu ao estoque sozinho.\n\n'
+              + '👉 Se o produto estiver aí, dê entrada manual em Estoque.')
+          + `\n\n${urlVendaML(Number(p.orderId))}`,
     );
     return 'avisado';
   } catch (e) {
