@@ -790,7 +790,7 @@ describe('Publicados', () => {
     const base = itemBase({ codigoPai: 'BASE1', titulo: 'PRODUTO BASE', mlItemId: 'MLB10' });
     const kitV = itemBase({ codigoPai: 'KIT1', titulo: 'PRODUTO KIT', mlItemId: 'MLB11', familiaId: 'f2', kitBaseCodigoPai: 'BASE1' });
     const solto = itemBase({ codigoPai: 'SOLTO1', titulo: 'PRODUTO SOLTO', mlItemId: 'MLB12', familiaId: 'f3' });
-    const vinculado = [{ codigoPai: 'BASE1', kitBaseCodigoPai: 'BASE1', multiplicador: 2, status: 'pronto', mlItemId: 'MLB11', criadoEm: '2026-01-01' }];
+    const vinculado = [{ codigoPai: 'KIT1', kitBaseCodigoPai: 'BASE1', multiplicador: 2, status: 'pronto', mlItemId: 'MLB11', criadoEm: '2026-01-01' }];
     const abrir = (url = '/') => render(<MemoryRouter initialEntries={[url]}><Publicados /></MemoryRouter>);
     beforeEach(() => {
       useModulosHabilitadosMock.mockReturnValue({ data: [] });
@@ -798,10 +798,13 @@ describe('Publicados', () => {
     });
     afterEach(() => useKitsVinculadosOrgMock.mockReturnValue({ data: [], isError: false }));
 
-    it('linha do produto com kit vinculado mostra a badge "Tem kit vinculado."', () => {
+    it('a base mostra "Tem kit vinculado" e o kit mostra "Kit ×2", cada um na própria linha', () => {
       useKitsVinculadosOrgMock.mockReturnValue({ data: vinculado, isError: false });
       abrir();
-      expect(screen.getAllByRole('button', { name: /^Tem kit vinculado\. / }).length).toBeGreaterThan(0);
+      const linhaDe = (titulo: string) => screen.getByText(titulo).closest('tr') as HTMLElement;
+      expect(within(linhaDe('Produto Base')).getByRole('button', { name: 'Tem kit vinculado' })).toBeInTheDocument();
+      expect(within(linhaDe('Produto Kit')).getByRole('button', { name: 'Kit ×2' })).toBeInTheDocument();
+      expect(within(linhaDe('Produto Solto')).queryByRole('button', { name: /^(Tem kit|Kit ×)/ })).toBeNull();
     });
 
     it('?comkit=1 antigo com o módulo kit_variacao desligado não filtra a lista', () => {

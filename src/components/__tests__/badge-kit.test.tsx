@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { BadgesKit } from '../badge-kit';
 import type { MarcaKit } from '@/lib/publicados';
 
@@ -15,11 +15,15 @@ const marca = (p: Partial<MarcaKit> = {}): MarcaKit => ({
 });
 
 describe('BadgesKit', () => {
-  it('mostra o rótulo e expõe o detalhe no aria-label', () => {
+  it('o nome acessível é o rótulo visível', () => {
     render(<BadgesKit marcas={[marca()]} />);
-    expect(
-      screen.getByRole('button', { name: 'Tem kit vinculado. Kit vinculado: Kit 4 (ativo)' }),
-    ).toHaveTextContent('Tem kit vinculado');
+    expect(screen.getByRole('button', { name: 'Tem kit vinculado' })).toHaveTextContent('Tem kit vinculado');
+  });
+
+  it('o detalhe fica acessível no tooltip ao focar o botão', async () => {
+    render(<BadgesKit marcas={[marca()]} />);
+    act(() => screen.getByRole('button', { name: 'Tem kit vinculado' }).focus());
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Kit vinculado: Kit 4 (ativo)');
   });
 
   it('uma badge por marca, na ordem recebida', () => {

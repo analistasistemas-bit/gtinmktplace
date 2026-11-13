@@ -185,13 +185,14 @@ export async function fetchKitsDosProdutos(codigosPai: string[]): Promise<KitVin
 
 /** Mesmo select de `fetchKitsDosProdutos`, sem o `.in`: todos os kits vinculados da org (RLS filtra). */
 export async function fetchKitsVinculadosDaOrg(): Promise<KitVinculado[]> {
-  const { data, error } = await supabase
+  // Paginado (teto de 1000 linhas do PostgREST): truncar em silêncio faria kit saudável parecer falho.
+  const data = await buscarTodasPaginas((de, ate) => supabase
     .from('familias')
     .select('id, codigo_pai, kit_base_codigo_pai, kit_multiplicador, status, ml_permalink, ml_item_id, criado_em')
     .not('kit_multiplicador', 'is', null)
-    .order('kit_multiplicador', { ascending: true });
-  if (error) throw error;
-  return (data ?? []).map((r) => ({
+    .order('id')
+    .range(de, ate));
+  return data.map((r) => ({
     familiaId: r.id,
     codigoPai: r.codigo_pai,
     kitBaseCodigoPai: r.kit_base_codigo_pai as string,

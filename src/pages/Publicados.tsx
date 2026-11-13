@@ -1571,10 +1571,11 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
 
   // Índice de kits: undefined enquanto carrega ou falhou (filtro não esconde nada, sem badges).
   const indiceDeKits = useMemo(
-    () => indiceKitsDaTela(doCanal, kitsVinculados, kitsVariacao, temKitVariacao),
-    [doCanal, kitsVinculados, kitsVariacao, temKitVariacao],
+    () => indiceKitsDaTela(doCanal, kitsVinculados, kitsVariacao, modulos ? temKitVariacao : undefined),
+    [doCanal, kitsVinculados, kitsVariacao, modulos, temKitVariacao],
   );
-  const filtroKit = filtroKitEfetivo(filtro.kit, temKitVariacao);
+  // Módulos ainda carregando: não descarta ?comkit=1 (o índice undefined já impede esconder linhas).
+  const filtroKit = filtroKitEfetivo(filtro.kit, modulos ? temKitVariacao : true);
   const filtroDaTela = useMemo(() => ({ ...filtro, kit: filtroKit }), [filtro, filtroKit]);
   const kitsFalhou = !indiceDeKits && (kitsVinculadosErro || (temKitVariacao && kitsVariacaoErro));
   const itensExibidos = useMemo(

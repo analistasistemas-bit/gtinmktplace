@@ -433,9 +433,10 @@ export function indiceKitsDaTela(
   itens: PublicadoItem[],
   vinculados: Parameters<typeof indiceKits>[1] | undefined,
   variacao: Parameters<typeof indiceKits>[2] | undefined,
-  temKitVariacao: boolean,
+  /** undefined = módulos da org ainda carregando (desconhecido): sem índice, como nas outras leituras. */
+  temKitVariacao: boolean | undefined,
 ): IndiceKits | undefined {
-  if (!vinculados) return undefined;
+  if (!vinculados || temKitVariacao === undefined) return undefined;
   if (temKitVariacao && !variacao) return undefined;
   return indiceKits(itens, vinculados, temKitVariacao ? variacao ?? [] : []);
 }

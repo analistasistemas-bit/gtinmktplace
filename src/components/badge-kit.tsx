@@ -43,10 +43,9 @@ export function BadgesKit({ marcas, className }: { marcas: MarcaKit[]; className
                 data-tipo={m.tipo}
                 data-papel={m.papel}
                 data-estado={m.estado}
-                aria-label={`${m.rotulo}. ${m.detalhe}`}
                 onClick={(e) => e.stopPropagation()}
                 className={cn(
-                  'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                  'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-left text-xs font-medium outline-none sm:whitespace-nowrap focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
                   CLASSES[m.tipo][m.papel],
                 )}
               >

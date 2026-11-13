@@ -314,10 +314,10 @@ describe('dedupePublicados', () => {
 
 describe('kits na tela Publicados (filtro efetivo e índice pronto)', () => {
   const base = { ...fixtures[0], codigoPai: 'B1' } as PublicadoItem;
-  const kit = { ...fixtures[1], codigoPai: 'K1' } as PublicadoItem;
+  const kit = { ...fixtures[1], codigoPai: 'K1', kitBaseCodigoPai: 'B1' } as PublicadoItem;
   const outro = { ...fixtures[2], codigoPai: 'O1' } as PublicadoItem;
   const itens = [base, kit, outro];
-  const vinc = [{ codigoPai: 'B1', kitBaseCodigoPai: 'B1', multiplicador: 2, status: 'pronto', mlItemId: 'MLB1', criadoEm: '2026-01-01' }] as never;
+  const vinc = [{ codigoPai: 'K1', kitBaseCodigoPai: 'B1', multiplicador: 2, status: 'pronto', mlItemId: 'MLB1', criadoEm: '2026-01-01' }] as never;
 
   it('?comkit=1 antigo (variacao) com módulo desligado vira sem filtro de kit', () => {
     expect(filtroKitEfetivo('variacao', false)).toBeNull();
@@ -328,6 +328,10 @@ describe('kits na tela Publicados (filtro efetivo e índice pronto)', () => {
 
   it('índice fica undefined enquanto vinculados carrega ou falhou', () => {
     expect(indiceKitsDaTela(itens, undefined, [], false)).toBeUndefined();
+  });
+
+  it('índice fica undefined enquanto os módulos da org carregam (temKitVariacao desconhecido)', () => {
+    expect(indiceKitsDaTela(itens, [], [], undefined)).toBeUndefined();
   });
 
   it('índice fica undefined com variação carregando/falha e módulo ligado; módulo desligado usa lista vazia', () => {
@@ -344,6 +348,7 @@ describe('kits na tela Publicados (filtro efetivo e índice pronto)', () => {
     const idx = indiceKitsDaTela(itens, vinc, [], false);
     expect(filtrarPublicados(itens, { kit: 'vinculado' }, idx).map((i) => i.codigoPai)).toContain('B1');
     expect(filtrarPublicados(itens, { kit: 'vinculado' }, idx).map((i) => i.codigoPai)).not.toContain('O1');
-    expect(idx?.get('B1')?.[0].tipo).toBe('vinculado');
+    expect(idx?.get('B1')?.[0]).toMatchObject({ tipo: 'vinculado', papel: 'tem' });
+    expect(idx?.get('K1')?.[0]).toMatchObject({ tipo: 'vinculado', papel: 'e' });
   });
 });
