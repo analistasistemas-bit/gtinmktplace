@@ -11,10 +11,23 @@ import type { DevolucaoLocal } from './reconciliar-filtros.ts';
 
 const API = 'https://api.mercadolibre.com';
 
+/** GET no post-purchase com retry em 429/5xx. Medido 13/11 (claim 5611317703): o ML devolve 429
+ *  em ~1/3 das chamadas sequenciais; sem retry a leitura falhava e a resposta ao claim era barrada.
+ *  Só para GET (idempotente). Rede caída propaga a exceção como antes. */
+const ESPERAS_MS = [300, 900];
+export async function fetchML(url: string, token: string): Promise<Response> {
+  for (let i = 0; ; i++) {
+    const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if ((resp.status !== 429 && resp.status < 500) || i >= ESPERAS_MS.length) return resp;
+    await resp.body?.cancel().catch(() => {});
+    await new Promise((r) => setTimeout(r, ESPERAS_MS[i]));
+  }
+}
+
 /** GET /post-purchase/v1/claims/{id}. Lança MLApiError(status) em erro (caller classifica via
  * classificarErroML). */
 export async function buscarClaim(token: string, claimId: string): Promise<ClaimML> {
-  const resp = await fetch(`${API}/post-purchase/v1/claims/${claimId}`, { headers: { Authorization: `Bearer ${token}` } });
+  const resp = await fetchML(`${API}/post-purchase/v1/claims/${claimId}`, token);
   if (!resp.ok) {
     const corpo = (await resp.text().catch(() => '')).slice(0, 200); // classificador de recusa permanente lê isto
     throw new MLApiError(resp.status, `ML /claims/${claimId} ${resp.status} ${corpo}`.trim());
@@ -22,7 +35,6 @@ export async function buscarClaim(token: string, claimId: string): Promise<Claim
   return await resp.json() as ClaimML;
 }
 
-const AUTH = (token: string) => ({ headers: { Authorization: `Bearer ${token}` } });
 
 const numOuNull = (v: unknown): number | null => {
   const n = Number(v);
@@ -57,7 +69,7 @@ function lerReturn(data: unknown): ReturnML | null {
  *  estado de negócio comum, não erro de liveness. */
 export async function buscarReturnLeitura(token: string, claimId: string, encerrado = false): Promise<Leitura<ReturnML | null>> {
   try {
-    const resp = await fetch(`${API}/post-purchase/v2/claims/${claimId}/returns`, AUTH(token));
+    const resp = await fetchML(`${API}/post-purchase/v2/claims/${claimId}/returns`, token);
     if (resp.status === 404) return { ok: true, valor: null };
     if (!resp.ok) {
       // Só claim encerrado: recusa permanente = conclusão sem dado (não apaga o já gravado).
@@ -76,7 +88,7 @@ export async function buscarReturn(token: string, claimId: string): Promise<Retu
 
 async function lerJson(url: string, token: string): Promise<{ status: number; body: unknown } | null> {
   try {
-    const resp = await fetch(url, AUTH(token));
+    const resp = await fetchML(url, token);
     // 2xx com corpo ilegível é leitura FALHA (null), nunca "lido e vazio". Só o corpo de erro
     // (404 "review not found") pode faltar.
     if (resp.ok) return { status: resp.status, body: await resp.json() };

@@ -1,7 +1,7 @@
 // Leitura do detalhe de reclamação no ML (ADR-0192). Compartilhada pela edge `posvenda-detalhe` e
 // pelas ações (Task 5, que relê o estado após escrever — sem HTTP entre edges). Não testado por vitest.
 import { acoesDaConta, playerDaConta, revisaoPendente, vezDe } from './devolucao.ts';
-import { lerClaimCompleto } from './devolucoes-io.ts';
+import { fetchML, lerClaimCompleto } from './devolucoes-io.ts';
 import {
   mapearAcoesFeitas, mapearResolucoes, montarHistorico, motivosRevisao, ofertasReembolso,
   type DetalheReclamacao,
@@ -14,7 +14,7 @@ type Lido = { ok: true; body: unknown } | { ok: false };
 /** GET que distingue "lido" de "não consegui ler" (HTTP != 2xx, rede ou JSON ilegível). */
 async function ler(token: string, url: string): Promise<Lido> {
   try {
-    const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    const resp = await fetchML(url, token);
     return resp.ok ? { ok: true, body: await resp.json() } : { ok: false };
   } catch { return { ok: false }; }
 }

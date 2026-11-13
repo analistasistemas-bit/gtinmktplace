@@ -57,6 +57,19 @@ describe('lerDetalheReclamacao', () => {
     expect(d.custo_devolucao).toBeNull();
     expect(d.incompleto).toContain('custo_devolucao');
   });
+  it('429 transitório no /returns → tenta de novo e lê (claim 5611317703, 13/11)', async () => {
+    let n = 0;
+    const rotas = { ...base, '/claims/9/returns': { status: 404, body: { message: 'There is no associated return' } } };
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (String(url).includes('/claims/9/returns') && n++ === 0) return new Response('{"code":429}', { status: 429 });
+      const k = Object.keys(rotas).find((r) => String(url).includes(r));
+      const r = k ? rotas[k as keyof typeof rotas] : { status: 404, body: {} };
+      return new Response(JSON.stringify(r.body ?? {}), { status: r.status ?? 200 });
+    }));
+    const d = await lerDetalheReclamacao('t', '9', '7');
+    expect(d.return_id).toBeNull();
+    expect(n).toBe(2);
+  });
   it('mensagens 500 → historico incompleto', async () => {
     fakeFetch({ ...base, '/claims/9/messages': { status: 500 } });
     expect((await lerDetalheReclamacao('t', '9', '7')).incompleto).toContain('historico');
