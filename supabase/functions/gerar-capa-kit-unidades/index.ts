@@ -18,6 +18,7 @@ import { MAX_TENTATIVAS, reprovacao, type Verificacao } from '../_shared/ai/foto
 import { avaliarUnidades, montarPedidoUnidades, verificarUnidades } from '../_shared/ai/foto-kit-unidades.ts';
 import { fotoDaOrg } from '../criar-kit-variacao/processar.ts';
 import { fotosEmItemModerado } from '../criar-kit-variacao/fotos-moderadas.ts';
+import { baixarFotoMl, capaMlDaBase, ehUrlFotoMl } from './capa-ml.ts';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -146,7 +147,8 @@ async function atender(req: Request, inicio: number): Promise<Response> {
   };
   /** Foto de origem com URL assinada, para a prévia ampliada. Falha → lista vazia. */
   const originais = async (v: Registro | null | undefined) => {
-    const url = v?.origem_path ? await assinar(v.origem_path) : null;
+    // Origem do ML (base sem foto no storage) já é URL pública do CDN; do storage, assinada.
+    const url = !v?.origem_path ? null : ehUrlFotoMl(v.origem_path) ? v.origem_path : await assinar(v.origem_path);
     return [{ cor: 'Base', urls: url ? [url] : [] }];
   };
   // Resposta sempre no formato do contrato: nunca o jsonb gravado cru (traz origem_path/previa_path).
@@ -245,31 +247,46 @@ async function atender(req: Request, inicio: number): Promise<Response> {
   const motivos = anterior?.verificacao?.motivos ?? [];
 
   // Foto de origem: capa da base ou, sem ela, a da única variação (como o front); da própria org e fora de moderado.
-  const { data: base, error } = await admin.from('familias').select('capa_storage_path, variacoes(imagem_path)')
+  // Sem nenhuma no storage e com a base publicada: foto 1 do anúncio vivo no ML (`capa-ml.ts`), mesma regra de moderação.
+  const { data: base, error } = await admin.from('familias').select('capa_storage_path, ml_item_id, codigo_pai, variacoes(imagem_path)')
     .eq('id', familiaBaseId).eq('org_id', orgId).maybeSingle();
   if (error) return json({ error: 'Falha ao carregar a família base. Tente novamente.' }, 500);
   if (!base) return json({ error: 'Família base não encontrada.' }, 404);
   const variacoes = (base.variacoes ?? []) as Array<{ imagem_path: string | null }>;
   const candidata = (base.capa_storage_path as string | null)
     || (variacoes.length === 1 ? variacoes[0].imagem_path : null) || null;
+  const itemBase = (base.ml_item_id as string | null) || null;
   const semFoto = () => json({ error: 'Sem foto utilizável da base (nenhuma, de outra empresa ou de anúncio moderado). Envie a foto.', motivo: 'sem_foto_origem' }, 409);
-  if (!candidata) return semFoto();
-  const { data: perfis, error: errPerfis } = await admin.from('profiles').select('id').eq('org_id', orgId);
-  if (errPerfis) return json({ error: 'Falha ao carregar a empresa. Tente novamente.' }, 500);
-  if (!fotoDaOrg(candidata, orgId, new Set((perfis ?? []).map((p: { id: string }) => p.id)))) return semFoto();
+  if (!candidata && !itemBase) return semFoto();
+  const tokenML = async () => {
+    const cx = await resolverConexaoEstrita(admin, orgId, 'mercado_livre');
+    if (!cx) throw new Error('Organização sem conexão com o Mercado Livre');
+    return await getValidAccessTokenConexao(cx);
+  };
+  // Storage: path no bucket `imagens`. ML: URL do CDN (validada em `capaMlDoBulk`), gravada em `origem_path` também.
+  let origemPath: string;
+  let origemMl = false;
+  if (candidata) {
+    const { data: perfis, error: errPerfis } = await admin.from('profiles').select('id').eq('org_id', orgId);
+    if (errPerfis) return json({ error: 'Falha ao carregar a empresa. Tente novamente.' }, 500);
+    if (!fotoDaOrg(candidata, orgId, new Set((perfis ?? []).map((p: { id: string }) => p.id)))) return semFoto();
+  }
   try {
     const ms = fatia(30_000, MINIMO_IA_MS);
-    const moderadas = await comPrazo(fotosEmItemModerado(admin, orgId, async () => {
-      const cx = await resolverConexaoEstrita(admin, orgId, 'mercado_livre');
-      if (!cx) throw new Error('Organização sem conexão com o Mercado Livre');
-      return await getValidAccessTokenConexao(cx);
-    }, [candidata]), ms);
-    if (moderadas.includes(candidata)) return semFoto();
+    if (candidata) {
+      const moderadas = await comPrazo(fotosEmItemModerado(admin, orgId, tokenML, [candidata]), ms);
+      if (moderadas.includes(candidata)) return semFoto();
+      origemPath = candidata;
+    } else {
+      const url = await comPrazo(capaMlDaBase(admin, orgId, tokenML, itemBase!, String(base.codigo_pai)), ms);
+      if (!url) return semFoto();
+      origemPath = url;
+      origemMl = true;
+    }
   } catch (e) {
     logErro('moderacao', e);
     return json({ error: 'Não foi possível conferir as fotos no Mercado Livre. Tente novamente.', motivo: 'foto_moderacao_ilegivel' }, 502);
   }
-  const origemPath = candidata;
   // Foto de origem lida ANTES da reserva: falha de leitura não consome o teto diário (o operador corrige a capa e
   // tenta de novo). Só a chamada ao provedor (e a verificação) gasta tentativa.
   const semTempo = () => json({ error: 'Sem tempo para gerar a foto agora. Tente novamente.', motivo: 'prazo' }, 503);
@@ -277,6 +294,7 @@ async function atender(req: Request, inicio: number): Promise<Response> {
   let original: string;
   try {
     const blob = await comPrazo((async () => {
+      if (origemMl) return await baixarFotoMl(origemPath);
       const { data, error: e } = await admin.storage.from('imagens').download(origemPath);
       if (e || !data) throw new Error('foto de origem não encontrada');
       return data as Blob;

@@ -417,7 +417,7 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
                 )}
                 capaUnidades={(
                   <GerarCapaUnidades
-                    n={n} temCapa={!!base.fotoPath} estado={capas.estados[n]}
+                    n={n} temCapa={!!base.fotoPath || baseNoMl} estado={capas.estados[n]}
                     onGerar={() => void capas.gerar(n)}
                     onUsar={(path) => {
                       setValores((prev) => ({ ...prev, [n]: { ...prev[n], imagemPath: path, fotoFile: null } }));
