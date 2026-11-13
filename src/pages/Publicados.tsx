@@ -1267,7 +1267,7 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
   // Mesmo predicado das edges (auth-org): em sessão de suporte vale o escopo `full`; fora dela, admin.
   const isAdmin = usePodeExecutarOperacao();
   const { canal: canalAtivo, setCanal, habilitados } = useCanalAtivo();
-  const { data: modulos } = useModulosHabilitados();
+  const { data: modulos, isError: modulosErro } = useModulosHabilitados();
   const temFiscal = !!modulos?.includes('fiscal');
   const temModuloEstoque = !!modulos?.includes('estoque');
   // ADR-0200: kit com variação. Sem o módulo as tabelas nem são lidas.
@@ -1577,7 +1577,8 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
   // Módulos ainda carregando: não descarta ?comkit=1 (o índice undefined já impede esconder linhas).
   const filtroKit = filtroKitEfetivo(filtro.kit, modulos ? temKitVariacao : true);
   const filtroDaTela = useMemo(() => ({ ...filtro, kit: filtroKit }), [filtro, filtroKit]);
-  const kitsFalhou = !indiceDeKits && (kitsVinculadosErro || (temKitVariacao && kitsVariacaoErro));
+  // Módulos em erro também deixa o índice sem fechar ("não sei", ADR-0153 D5): avisa em vez de mostrar tudo calado.
+  const kitsFalhou = !indiceDeKits && (kitsVinculadosErro || (temKitVariacao && kitsVariacaoErro) || (modulos === undefined && modulosErro));
   const itensExibidos = useMemo(
     () => ordenarPublicados(filtrarPublicados(doCanal, filtroDaTela, indiceDeKits), ord),
     [doCanal, filtroDaTela, ord, indiceDeKits],

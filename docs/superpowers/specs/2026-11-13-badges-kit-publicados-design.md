@@ -117,6 +117,18 @@ Codex `gpt-6.1-sol` (effort high, somente leitura), 13/11: aprovar com ajustes. 
 (alias `comkit`, regra de "encerrado", multiplicador e deduplicação, "Sem kit" × falha de leitura,
 contraste e foco) foram conferidos no código e incorporados acima, junto com os rótulos mais explícitos.
 
+## Ajustes feitos na execução (13/11)
+
+- **Parâmetro da URL:** a tela já usava `?kit=<id>` como link do aviso de transferência travada. O
+  filtro de kits ficou só em `comkit=<valor>` (`qualquer`, `vinculado`, `variacao`, `virtual`, `sem`);
+  `comkit=1` antigo equivale a `variacao`. Não existe parâmetro novo separado.
+- **Texto do hover no componente de kit virtual:** "Compõe o kit virtual: <título>".
+- **Leitura dos kits vinculados:** paginada (`buscarTodasPaginas`), porque a tabela guarda histórico e
+  o PostgREST corta em 1.000 linhas sem erro.
+- **Cor do teal no tema claro:** `teal-800` (o `teal-700` media 4,47:1 sobre fundo `muted`).
+- **Módulos ainda carregando:** tratado como leitura em andamento (índice indefinido, nada escondido).
+- **Nome acessível da badge:** só o rótulo visível; o detalhe chega pelo tooltip.
+
 ## Fica com quem constrói
 
 - Assinatura exata da função pura e do parâmetro de URL.

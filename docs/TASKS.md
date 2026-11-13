@@ -1,5 +1,14 @@
 # PubliAI — Tasks
 
+## Badges de kit e filtro por kits em Publicados — 2026-11-13
+
+Spec `docs/superpowers/specs/2026-11-13-badges-kit-publicados-design.md`. Só tela e leitura: sem migration, sem edge function.
+
+- [x] Badge por tipo de kit na linha fechada, ao lado do chip do canal (`src/components/badge-kit.tsx`): `Tem kit vinculado` (teal), `Tem kit com variação` (violeta), `Compõe kit virtual` (azul); no anúncio do próprio kit, `Kit ×N` e `Kit com variação` em fundo cheio. Detalhe no hover e no foco; ícone de alerta, montagem ou aguardando conforme o estado.
+- [x] Índice único por `codigoPai` (`indiceKits` em `src/lib/publicados.ts`) alimenta badge e filtro. Kits vinculados da org em uma leitura paginada (`fetchKitsVinculadosDaOrg`); variação e virtual reaproveitam leituras existentes.
+- [x] Filtro "Kits" (Select) no lugar do botão "Com kit de variação": qualquer, vinculado, com variação, virtual, sem kit. Traz a base e o anúncio do kit. URL em `comkit=<valor>`; `comkit=1` antigo continua valendo. O nome `kit` na URL segue exclusivo do link do aviso de transferência travada.
+- [x] Leitura de kits carregando ou com falha: o filtro não esconde linha e a tela avisa "Não foi possível ler os kits".
+
 ## Aviso de pedido cancelado com motivo real (emenda 6 do ADR-0121) — 2026-11-13
 
 Mergeado na `main`: `5d73552d`.

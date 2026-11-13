@@ -823,6 +823,18 @@ describe('Publicados', () => {
       expect(screen.getByRole('status')).toHaveTextContent('Não foi possível ler os kits');
     });
 
+    // Módulos `undefined` é "não sei" (ADR-0153 D5): sem saber se a org tem kit com variação, o índice não fecha.
+    it('com a leitura de módulos em erro e comkit=sem, todas as linhas aparecem, sem badges e com aviso', () => {
+      useModulosHabilitadosMock.mockReturnValue({ data: undefined, isError: true });
+      useKitsVinculadosOrgMock.mockReturnValue({ data: vinculado, isError: false });
+      abrir('/?comkit=sem');
+      expect(screen.getByText('Produto Base')).toBeInTheDocument();
+      expect(screen.getByText('Produto Kit')).toBeInTheDocument();
+      expect(screen.getByText('Produto Solto')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Tem kit vinculado' })).not.toBeInTheDocument();
+      expect(screen.getByRole('status')).toHaveTextContent('Não foi possível ler os kits');
+    });
+
     it('?comkit=sem sobrevive à primeira renderização e filtra com o índice pronto', async () => {
       useKitsVinculadosOrgMock.mockReturnValue({ data: vinculado, isError: false });
       abrir('/?comkit=sem');
