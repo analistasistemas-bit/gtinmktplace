@@ -9,7 +9,7 @@ export interface MensagemHistorico {
   destinatario: Autor | null;
   texto: string;
   /** `id` = filename do ML (identificador); `nome` = nome de exibição. */
-  anexos: Array<{ id: string; nome: string }>;
+  anexos: Array<{ id: string; nome: string; tipo: string | null; tamanho: number | null }>;
   status: string | null;
   moderacao: string | null;
 }
@@ -88,7 +88,11 @@ export function montarHistorico(
     if (!data) continue;
     const anexos = (Array.isArray(m.attachments) ? m.attachments : []).flatMap((a) => {
       const id = str(obj(a)?.filename) ?? str(obj(a)?.original_filename);
-      return id ? [{ id, nome: str(obj(a)?.original_filename) ?? id }] : [];
+      const tam = obj(a)?.size;
+      return id ? [{
+        id, nome: str(obj(a)?.original_filename) ?? id,
+        tipo: str(obj(a)?.type), tamanho: typeof tam === 'number' ? tam : null,
+      }] : [];
     });
     const dest = str(m.receiver_role);
     out.push({
@@ -434,6 +438,12 @@ export function anexoDaConversa(raws: unknown[], filename: string): AnexoMensage
     }
   }
   return null;
+}
+
+/** Procura o anexo `filename` em `GET claims/{id}/messages` (campo `attachments`, sem flag de ameaça). */
+export function anexoDaReclamacao(mensagens: unknown, filename: string): AnexoMensagem | null {
+  const lista = Array.isArray(mensagens) ? mensagens : [];
+  return anexoDaConversa(lista.map((m) => ({ message_attachments: (m as { attachments?: unknown } | null)?.attachments })), filename);
 }
 
 /** Motivo para NÃO servir o anexo ao navegador (ameaça sinalizada ou tipo fora da lista). null = liberado. */

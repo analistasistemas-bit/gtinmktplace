@@ -1,5 +1,23 @@
 import { describe, it, expect } from 'vitest';
-import { validarArquivoAnexo, nomeDoAnexo, anexoDaConversa, motivoDownloadBloqueado } from '../posvenda';
+import { validarArquivoAnexo, nomeDoAnexo, anexoDaConversa, anexoDaReclamacao, motivoDownloadBloqueado } from '../posvenda';
+
+// Formato medido em 14/11/2026 (claim 5611317703): GET claims/{id}/messages → attachments[] sem campo de ameaça.
+describe('anexoDaReclamacao', () => {
+  const msgs = [
+    { message: 'oi', attachments: [] },
+    { message: 'foto', attachments: [{ filename: '46622406_a.jpg', original_filename: 'image.jpg', size: 3685549, type: 'image/jpeg' }] },
+  ];
+  it('acha o anexo nas mensagens da reclamação', () => {
+    expect(anexoDaReclamacao(msgs, '46622406_a.jpg')).toEqual({
+      filename: '46622406_a.jpg', original_filename: 'image.jpg', type: 'image/jpeg', size: 3685549, potential_security_threat: false,
+    });
+  });
+  it('null para anexo de fora da reclamação ou resposta ilegível', () => {
+    expect(anexoDaReclamacao(msgs, 'outro.jpg')).toBeNull();
+    expect(anexoDaReclamacao(null, '46622406_a.jpg')).toBeNull();
+    expect(anexoDaReclamacao([{ attachments: null }, null], '46622406_a.jpg')).toBeNull();
+  });
+});
 
 describe('anexo por pack (mensagem_pack)', () => {
   const msg = 'Formato não aceito: use JPG, PNG ou PDF.';

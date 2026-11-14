@@ -1,11 +1,15 @@
 // Upload de foto/PDF para o ML (ADR-0192). Chamada pelo frontend (JWT, multipart). Devolve o identificador
 // do anexo, que a ação (posvenda-acao) referencia depois. O upload em si não altera a reclamação.
+// Com corpo JSON: download (só leitura) de anexo recebido numa conversa (pack_id) ou reclamação (claim_id).
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { mapearConexao } from '../_shared/canais/conexao.ts';
-import { anexoDaConversa, motivoDownloadBloqueado, nomeDoAnexo, validarArquivoAnexo, type DestinoAnexo } from '../_shared/faturamento/posvenda.ts';
+import {
+  anexoDaConversa, anexoDaReclamacao, motivoDownloadBloqueado, nomeDoAnexo, validarArquivoAnexo,
+  type AnexoMensagem, type DestinoAnexo,
+} from '../_shared/faturamento/posvenda.ts';
 
 const API = 'https://api.mercadolibre.com/post-purchase/v1/claims';
 const API_MSG = 'https://api.mercadolibre.com/messages/attachments';
@@ -37,23 +41,44 @@ Deno.serve(async (req) => {
   }
 
   if (ehJson) {
-    // Download: o acesso é decidido pela org dona da conversa (org_id + pack_id), nunca por user_id.
-    const body = await req.json().catch(() => null) as { pack_id?: unknown; filename?: unknown } | null;
+    // Download: o acesso é decidido pela org dona da conversa (org_id + pack_id) ou da reclamação
+    // (org_id + claim_id), nunca por user_id. Só leitura no ML.
+    const body = await req.json().catch(() => null) as { pack_id?: unknown; claim_id?: unknown; filename?: unknown } | null;
     const pack = String(body?.pack_id ?? '').trim();
+    const claim = String(body?.claim_id ?? '').trim();
     const filename = typeof body?.filename === 'string' ? body.filename : '';
-    if (!/^\d+$/.test(pack)) return erro('pack_id inválido', 400);
+    if (claim ? !/^\d+$/.test(claim) : !/^\d+$/.test(pack)) return erro(claim ? 'claim_id inválido' : 'pack_id inválido', 400);
     if (!filename) return erro('filename inválido', 400);
-    const { data: rows } = await admin.from('ml_mensagens').select('raw')
-      .eq('org_id', orgId).eq('pack_id', pack);
-    const anexo = anexoDaConversa((rows ?? []).map((r: { raw: unknown }) => r.raw), filename);
+    let anexo: AnexoMensagem | null;
+    let tk: string | Response | null = null;
+    if (claim) {
+      const { data: dev } = await admin.from('ml_devolucoes').select('claim_id')
+        .eq('org_id', orgId).eq('claim_id', claim).maybeSingle();
+      if (!dev) return erro('Reclamação não encontrada.', 404);
+      tk = await tokenDaOrg();
+      if (tk instanceof Response) return tk;
+      // As mensagens da reclamação não ficam no banco: confere no ML que o anexo é desta reclamação.
+      let msgs: Response;
+      try { msgs = await fetch(`${API}/${claim}/messages`, { headers: { Authorization: `Bearer ${tk}` } }); }
+      catch { return erro('Falha ao falar com o Mercado Livre. Tente de novo.', 502); }
+      if (!msgs.ok) return erro(`O ML recusou a leitura da reclamação (${msgs.status}).`, 502);
+      anexo = anexoDaReclamacao(await msgs.json().catch(() => null), filename);
+    } else {
+      const { data: rows } = await admin.from('ml_mensagens').select('raw')
+        .eq('org_id', orgId).eq('pack_id', pack);
+      anexo = anexoDaConversa((rows ?? []).map((r: { raw: unknown }) => r.raw), filename);
+    }
     if (!anexo) return erro('Anexo não encontrado.', 404);
     const bloqueio = motivoDownloadBloqueado(anexo);
     if (bloqueio) return erro(bloqueio, 403);
-    const tk = await tokenDaOrg();
+    if (!tk) tk = await tokenDaOrg();
     if (tk instanceof Response) return tk;
+    const urlDownload = claim
+      ? `${API}/${claim}/attachments/${encodeURIComponent(filename)}/download`
+      : `${API_MSG}/${encodeURIComponent(filename)}?${QS_MSG}`;
     let r: Response;
     try {
-      r = await fetch(`${API_MSG}/${encodeURIComponent(filename)}?${QS_MSG}`, { headers: { Authorization: `Bearer ${tk}` } });
+      r = await fetch(urlDownload, { headers: { Authorization: `Bearer ${tk}` } });
     } catch { return erro('Falha ao falar com o Mercado Livre. Tente de novo.', 502); }
     if (r.status === 404) return json({ ok: false, erro: 'Anexo indisponível no Mercado Livre.', codigo: 'anexo_indisponivel' }, 404);
     if (!r.ok) return erro(`O ML recusou o download (${r.status}).`, 502);

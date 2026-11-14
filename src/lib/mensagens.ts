@@ -225,13 +225,22 @@ export async function enviarAnexoMensagem(pack_id: string, file: File): Promise<
 }
 
 /** Baixa o anexo recebido (fetch autenticado; a edge devolve os bytes). Erro leva `codigo` (ex. `anexo_indisponivel`). */
-export async function baixarAnexoMensagem(pack_id: string, filename: string): Promise<Blob> {
+export function baixarAnexoMensagem(pack_id: string, filename: string): Promise<Blob> {
+  return baixarAnexo({ pack_id, filename });
+}
+
+/** Baixa o anexo de uma mensagem da reclamação (ex.: foto que a compradora mandou ao mediador). */
+export function baixarAnexoReclamacao(claim_id: string, filename: string): Promise<Blob> {
+  return baixarAnexo({ claim_id, filename });
+}
+
+async function baixarAnexo(corpo: { pack_id: string; filename: string } | { claim_id: string; filename: string }): Promise<Blob> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Sem sessão');
   const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/posvenda-anexo`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-    body: JSON.stringify({ pack_id, filename }),
+    body: JSON.stringify(corpo),
   });
   if (!resp.ok) {
     const json = await resp.json().catch(() => null);

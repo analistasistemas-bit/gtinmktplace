@@ -1,5 +1,12 @@
 # PubliAI — Tasks
 
+## Pós-venda: anexo da reclamação abre no app (ADR-0192) — 2026-11-14
+
+Branch `worktree-anexo-reclamacao`. Sem migration; edge `posvenda-anexo` alterada (e `_shared/faturamento/posvenda.ts`).
+
+- [x] No histórico da reclamação, o anexo (ex.: foto que a compradora mandou ao mediador) aparece em miniatura e abre ampliado; PDF abre em nova aba. Antes só aparecia o nome.
+- [x] `posvenda-anexo` aceita download por `{claim_id, filename}`: confere a org, confere em `GET claims/{id}/messages` que o anexo é daquela reclamação e baixa por `GET claims/{id}/attachments/{filename}/download` (contrato medido em 14/11, claim 5611317703). Só leitura.
+
 ## Kit vinculado: remover um tamanho na etapa 2 — 2026-11-13
 
 Mergeado na `main`: `a481bb69`. Só tela: sem migration, sem edge function.

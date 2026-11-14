@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Paperclip } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -10,6 +10,7 @@ import { buscarDetalheReclamacao, type AcaoPosvenda, type DetalheReclamacao } fr
 import { acaoLiberada, motivoRevisaoIndisponivel, travada, type ProdutoPedido } from '@/lib/posvenda-fila';
 import { QK_POSVENDA, useProdutosPedidos } from '@/hooks/usePosvenda';
 import { ThumbProduto } from '@/components/faturamento/pilha-thumbs';
+import { AnexoMensagem } from '@/components/faturamento/anexo-mensagem';
 import type { Travas } from './lista-reclamacoes';
 import type { Devolucao } from '@/lib/devolucoes';
 import { fmtBRL } from '@/lib/formato';
@@ -142,7 +143,10 @@ function Conteudo({ d, item, travas, produto, onFechar }: {
               {partesNegrito(textoHistorico(m.texto)).map((p, j) => (p.b ? <strong key={j}>{p.t}</strong> : <span key={j}>{p.t}</span>))}
             </div>
             {m.anexos.length > 0 && (
-              <div className="mt-1 flex flex-wrap gap-1">{m.anexos.map((a) => (<span key={a.id} className="inline-flex items-center gap-1 text-muted-foreground"><Paperclip className="h-3 w-3" />{a.nome}</span>))}</div>
+              <div className="mt-1 flex flex-wrap gap-1">{m.anexos.map((a) => (
+                <AnexoMensagem key={a.id} claimId={claimId}
+                  anexo={{ filename: a.id, original_filename: a.nome, type: a.tipo, size: a.tamanho, potential_security_threat: false }} />
+              ))}</div>
             )}
             {m.moderacao === 'rejected' && <div className="mt-1 text-destructive">Mensagem rejeitada pela moderação do ML.</div>}
           </div>

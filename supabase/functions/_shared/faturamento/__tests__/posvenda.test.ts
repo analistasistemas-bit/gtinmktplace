@@ -29,10 +29,13 @@ describe('montarHistorico', () => {
   it('ordena por data, mapeia autor/destinatário/anexos (id + nome)/moderação', () => {
     const h = montarHistorico([
       { sender_role: 'mediator', receiver_role: 'respondent', message: 'ML', date_created: '2026-10-02T10:00:00Z', attachments: [], status: 'available', message_moderation: { status: 'clean' } },
-      { sender_role: 'complainant', receiver_role: 'respondent', message: 'oi', date_created: '2026-10-01T10:00:00Z', attachments: [{ filename: 'a_x.jpg', original_filename: 'foto.jpg' }, { filename: 'b.pdf' }], message_moderation: { status: 'rejected' } },
+      { sender_role: 'complainant', receiver_role: 'respondent', message: 'oi', date_created: '2026-10-01T10:00:00Z', attachments: [{ filename: 'a_x.jpg', original_filename: 'foto.jpg', type: 'image/jpeg', size: 3685549 }, { filename: 'b.pdf' }], message_moderation: { status: 'rejected' } },
     ], null, 'respondent');
     expect(h.map((m) => m.autor)).toEqual(['comprador', 'ml']);
-    expect(h[0].anexos).toEqual([{ id: 'a_x.jpg', nome: 'foto.jpg' }, { id: 'b.pdf', nome: 'b.pdf' }]);
+    expect(h[0].anexos).toEqual([
+      { id: 'a_x.jpg', nome: 'foto.jpg', tipo: 'image/jpeg', tamanho: 3685549 },
+      { id: 'b.pdf', nome: 'b.pdf', tipo: null, tamanho: null },
+    ]);
     expect(h[0]).toMatchObject({ destinatario: 'vendedor', moderacao: 'rejected', status: null });
     expect(h[1]).toMatchObject({ texto: 'ML', status: 'available', moderacao: 'clean' });
   });

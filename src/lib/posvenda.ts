@@ -24,7 +24,7 @@ export interface DetalheReclamacao {
   custo_devolucao: number | null;
   historico: Array<{
     data: string; autor: 'comprador' | 'vendedor' | 'ml'; destinatario: 'comprador' | 'vendedor' | 'ml' | null;
-    texto: string; anexos: Array<{ id: string; nome: string }>; status: string | null; moderacao: string | null;
+    texto: string; anexos: Array<{ id: string; nome: string; tipo: string | null; tamanho: number | null }>; status: string | null; moderacao: string | null;
   }>;
   acoes: string[];
   revisoes: Array<{ order_id: number; seller_status: string | null }>;
