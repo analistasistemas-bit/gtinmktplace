@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -79,6 +79,17 @@ function Conteudo({ d, item, travas, produto, onFechar }: {
   const [subindo, setSubindo] = useState(0);
   const linkML = item.order_id ? urlVendaML(item.pack_id ?? item.order_id) : undefined;
   const concluido = () => { void qc.invalidateQueries({ queryKey: QK_POSVENDA }); void qc.invalidateQueries({ queryKey: ['devolucoes'] }); };
+  // O assistente do ML só passa a vez ~15 s depois da resposta (medido 14/11): a releitura imediata
+  // ainda vê "Vez sua". Relê só o detalhe uma vez mais tarde; cancela se o painel fechar.
+  // ponytail: uma releitura fixa em 30 s; se o ML demorar mais, o selo vira na próxima abertura.
+  const releitura = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(releitura.current), []);
+  const relerDepois = () => {
+    clearTimeout(releitura.current);
+    releitura.current = setTimeout(() => {
+      void qc.invalidateQueries({ queryKey: [...QK_POSVENDA, 'detalhe', d.claim_id] });
+    }, 30_000);
+  };
 
   // travas === null: ainda não sabemos o que está em andamento => nada liberado.
   const bloqueada = (a: AcaoPosvenda) => travas === null || travada(travas, a, d.claim_id, d.return_id);
@@ -174,7 +185,7 @@ function Conteudo({ d, item, travas, produto, onFechar }: {
         <DialogoConfirmarAcao open onOpenChange={() => setDialogo(null)} claimId={claimId} linkML={linkML} onEstado={concluido}
           titulo="Enviar mensagem" rotuloEnviar="Enviar mensagem" podeEnviar
           corpo={{ acao: 'responder', texto: texto.trim(), anexos: anexos.map((a) => a.id) }}
-          onConcluido={() => { setTexto(''); setAnexos([]); concluido(); }}
+          onConcluido={() => { setTexto(''); setAnexos([]); concluido(); relerDepois(); }}
           efeito="Esta mensagem será enviada dentro da reclamação no Mercado Livre.">
           <p className="whitespace-pre-wrap rounded-lg bg-muted p-2.5 text-sm">{texto.trim()}</p>
         </DialogoConfirmarAcao>

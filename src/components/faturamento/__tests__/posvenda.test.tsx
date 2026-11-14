@@ -204,3 +204,32 @@ describe('tentativa ativa trava o recurso', () => {
     expect(screen.getByRole('button', { name: 'Responder' })).toBeEnabled();
   });
 });
+
+describe('releitura depois de responder', () => {
+  it('o ML vira a vez segundos depois da resposta: relê o detalhe ~30 s após confirmar', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const antes = detalhe({ stage: 'dispute', acoes: ['send_message_to_mediator'], revisoes: [] });
+      detalheMock.mockResolvedValue(antes);
+      executarMock.mockResolvedValue({ ok: true, estado: 'confirmada', operacao_id: 'op', pendenteConfirmacao: false, sincronizacaoPendente: false, devolucao: null });
+      comQuery(<PainelReclamacao item={dev({ revisao_pendente: false })} onOpenChange={() => {}} travas={[]} />);
+      expect(await screen.findByText(/Vez sua/)).toBeInTheDocument();
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      await user.type(screen.getByLabelText('Responder'), '1. Reembolso');
+      await user.click(screen.getByRole('button', { name: 'Responder' }));
+      await user.click(screen.getByRole('button', { name: 'Enviar mensagem' }));
+      await waitFor(() => expect(executarMock).toHaveBeenCalledTimes(1));
+      // Releituras imediatas ainda veem a vez com o vendedor (o assistente do ML não processou).
+      await waitFor(() => expect(detalheMock.mock.calls.length).toBeGreaterThan(1));
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(screen.getByText(/Vez sua/)).toBeInTheDocument();
+      const lidas = detalheMock.mock.calls.length;
+      detalheMock.mockResolvedValue(detalhe({ ...antes, acoes: [], estado: { ...antes.estado, vez_de: 'comprador' } }));
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(await screen.findByText(/Vez do comprador/)).toBeInTheDocument();
+      expect(detalheMock.mock.calls.length).toBe(lidas + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

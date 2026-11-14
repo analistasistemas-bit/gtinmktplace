@@ -1,5 +1,11 @@
 # PubliAI — Tasks
 
+## Pós-venda: selo "Vez" relido depois de responder (ADR-0192) — 2026-11-14
+
+Só tela: sem migration, sem edge function.
+
+- [x] Depois de uma resposta confirmada na reclamação, o detalhe é relido do ML mais uma vez 30 s depois. Motivo: em mediação, o assistente do ML só passa a vez ~15 s após a mensagem (medido no claim 5611317703), e a releitura imediata deixava "Vez sua" na tela. O timer é cancelado se o painel fechar.
+
 ## Pós-venda: anexo da reclamação abre no app (ADR-0192) — 2026-11-14
 
 Branch `worktree-anexo-reclamacao`. Sem migration; edge `posvenda-anexo` alterada (e `_shared/faturamento/posvenda.ts`).
