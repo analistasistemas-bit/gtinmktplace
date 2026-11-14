@@ -1,5 +1,11 @@
 # PubliAI — Tasks
 
+## Kit vinculado: remover um tamanho na etapa 2 — 2026-11-13
+
+Mergeado na `main`: `a481bb69`. Só tela: sem migration, sem edge function.
+
+- [x] Com 2+ kits marcados, cada card da revisão (`PreviewKit`) ganha "Remover", que desmarca o tamanho pelo mesmo caminho do checkbox da etapa 1. Com 1 kit o botão some (o último sai pelo "Voltar"); desligado com a criação em voo.
+
 ## Badges de kit e filtro por kits em Publicados — 2026-11-13
 
 Spec `docs/superpowers/specs/2026-11-13-badges-kit-publicados-design.md`. Só tela e leitura: sem migration, sem edge function.

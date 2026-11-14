@@ -11,6 +11,8 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-11-13
 
+- **Kit vinculado: remover tamanho na etapa 2** (`main` `a481bb69`). Com 2+ kits, cada card da revisão tem "Remover";
+  com 1 kit o botão some.
 - **Aviso de pedido cancelado com motivo real** (`main` `5d73552d`). Telegram mostra "estoque NÃO reposto" no título,
   `Motivo:`/`Desfecho:` do claim do ML, "já saiu" × "não dá para saber" e o link do pedido. Ver ADR-0121 (emenda 6).
 
