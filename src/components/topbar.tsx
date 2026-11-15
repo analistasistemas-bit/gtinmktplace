@@ -5,6 +5,7 @@ import { ThemeToggle } from '@/components/theme-toggle';
 import { UserMenu } from '@/components/user-menu';
 import { NotificacoesBell } from '@/components/notificacoes-bell';
 import { BrandMark } from '@/components/sidebar';
+import { OrgIdentidade } from '@/components/org-identidade';
 import { useProfile } from '@/hooks/useProfile';
 
 export function Topbar({ onOpenMobile }: { onOpenMobile: () => void }) {
@@ -24,6 +25,7 @@ export function Topbar({ onOpenMobile }: { onOpenMobile: () => void }) {
         <div className="lg:hidden">
           <BrandMark />
         </div>
+        <OrgIdentidade className="hidden lg:flex" />
       </div>
       <div className="flex items-center gap-1">
         {profile?.is_super_admin && (

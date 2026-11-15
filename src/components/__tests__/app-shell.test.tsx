@@ -6,6 +6,7 @@ import { useSupportStore } from '@/stores/support-store';
 vi.mock('@/components/sidebar', () => ({ Sidebar: () => <aside />, SidebarNav: () => <nav />, BrandMark: () => <span /> }));
 vi.mock('@/components/topbar', () => ({ Topbar: () => <header /> }));
 vi.mock('@/components/support-banner', () => ({ SupportBanner: () => null }));
+vi.mock('@/components/org-identidade', () => ({ OrgIdentidade: () => <div data-testid="org-sheet" /> }));
 vi.mock('@/components/ui/sonner', () => ({ Toaster: () => null }));
 vi.mock('@/components/ui/sheet', () => ({ Sheet: ({ children }: { children: React.ReactNode }) => <>{children}</>, SheetContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>, SheetHeader: ({ children }: { children: React.ReactNode }) => <div>{children}</div>, SheetTitle: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 
@@ -38,5 +39,12 @@ describe('AppShell — rolagem', () => {
   it('o <main> é o containing block dos filhos absolute', () => {
     renderShell(null);
     expect(screen.getByRole('main').className).toMatch(/\brelative\b/);
+  });
+});
+
+describe('AppShell — menu do celular', () => {
+  it('mostra a identidade da org no sheet, abaixo da marca PubliAI', () => {
+    renderShell(null);
+    expect(screen.getByTestId('org-sheet')).toBeTruthy();
   });
 });

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar, SidebarNav, BrandMark } from '@/components/sidebar';
 import { Topbar } from '@/components/topbar';
+import { OrgIdentidade } from '@/components/org-identidade';
 import { Toaster } from '@/components/ui/sonner';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { SupportBanner } from '@/components/support-banner';
@@ -37,6 +38,7 @@ export function AppShell() {
           <SheetHeader className="h-14 flex-row items-center border-b px-4">
             <SheetTitle className="flex items-center"><BrandMark /></SheetTitle>
           </SheetHeader>
+          <OrgIdentidade className="border-b px-4 py-2" />
           <SidebarNav onNavigate={() => setMobileOpen(false)} />
         </SheetContent>
       </Sheet>
