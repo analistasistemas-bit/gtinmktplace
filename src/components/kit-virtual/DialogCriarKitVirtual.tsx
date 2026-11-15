@@ -1,34 +1,49 @@
-// ADR-0154: diálogo de criação de Kit Virtual — combina 2 a 6 produtos DISTINTOS já publicados
-// num anúncio novo do Mercado Livre. Fluxo em 2 etapas (mesmo padrão de dialog-criar-kit.tsx,
-// ADR-0151): 'selecionar' (busca + composição + foto) e 'preview' (título/descrição/desconto/
-// margem — é a revisão inteira, "Herdadas por precedente": não existe card na tela Revisão).
+// ADR-0154 + ADR-0206: diálogo de criação de Kit Virtual — combina 2 a 6 produtos DISTINTOS já
+// publicados num anúncio novo do Mercado Livre. Duas etapas (mesmo visual de dialog-criar-kit.tsx):
+// "1. Composição" (busca + composição) e "2. Anúncio" (capa por IA ou upload, título/descrição
+// gerados por IA, desconto/margem e "você recebe vendendo avulso") — é a revisão inteira, não
+// existe card na tela Revisão.
 //
 // Admin-only por convenção do precedente: o gate fica em quem embute o diálogo (Publicados.tsx),
 // não aqui — ver dialog-criar-kit.tsx, que também não checa isAdmin internamente.
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { Sparkles } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { CampoFoto } from '@/components/estoque/campo-foto';
+import { EtapasKit } from '@/components/kit/etapas-kit';
 import { supabase } from '@/lib/supabase';
 import { effectiveOrgId, useSupportStore } from '@/stores/support-store';
 import { storageOwnerForUpload } from '@/hooks/useUploadLote';
+import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { uploadFile, buildStoragePath } from '@/lib/storage';
 import { round2 } from '@/lib/formato';
 import { QK } from '@/lib/queries';
 import {
   buscarComponentesKitVirtual, previewKitVirtual, criarKitVirtualEdge, subirFotoKitVirtualEdge,
   pctParaFracaoDesconto,
-  type ComponenteParaPreviewKit, type PreviewKitVirtualResultado,
+  type PreviewKitVirtualResultado,
   type ComponenteSelecionadoKitVirtual, type ComponenteCandidatoKitVirtual,
   type KitVirtualParaRefazer,
 } from '@/lib/kit-virtual';
 import { corrigirRotuloQuantidade } from '../../../supabase/functions/_shared/ai/unidade.ts';
 import { ListaComponentesKitVirtual } from '@/components/kit-virtual/lista-componentes-kit-virtual';
 import { PreviewKitVirtual } from '@/components/kit-virtual/preview-kit-virtual';
+import { GerarCapaKitVirtual, useCapaKitVirtual } from '@/components/kit-virtual/gerar-capa-kit-virtual';
+import { RecebeAvulsoKitVirtual } from '@/components/kit-virtual/recebe-avulso-kit-virtual';
+
+type Etapa = 'selecionar' | 'preview';
+const ETAPAS = [{ id: 'selecionar', rotulo: 'Composição' }, { id: 'preview', rotulo: 'Anúncio' }] as const;
+
+/** Produtos + quantidades (sem ordem, igual à capa): mudou → texto e capa novos. */
+const assinaturaComposicao = (s: ComponenteSelecionadoKitVirtual[]) =>
+  s.map((c) => `${c.candidato.userProductId}:${c.quantidade}`).sort().join('|');
+
+type PedidoPreview = { gerarTexto: boolean; assinaturaTexto: string; assinaturaMargem: string; seq: number };
 
 export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
   open: boolean;
@@ -41,7 +56,7 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
   refazerDe?: KitVirtualParaRefazer;
 }) {
   const qc = useQueryClient();
-  const [etapa, setEtapa] = useState<'selecionar' | 'preview'>('selecionar');
+  const [etapa, setEtapa] = useState<Etapa>('selecionar');
   const [chaveCadastro, setChaveCadastro] = useState('');
 
   const [searchText, setSearchText] = useState('');
@@ -51,20 +66,37 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
   const [fotoFile, setFotoFile] = useState<File | null>(null);
   const [fotoStoragePath, setFotoStoragePath] = useState<string | null>(null);
   const [fotoMlPictureId, setFotoMlPictureId] = useState<string | null>(null);
+  /** Prévia da capa por IA escolhida (upload manual mostra a miniatura do próprio arquivo). */
+  const [fotoUrlIA, setFotoUrlIA] = useState<string | null>(null);
   const [uploadingFoto, setUploadingFoto] = useState(false);
 
   const [descontoPct, setDescontoPct] = useState(0);
   const [titulo, setTitulo] = useState('');
   const [descricao, setDescricao] = useState('');
-  const [descricaoGeradaPorIA, setDescricaoGeradaPorIA] = useState(false);
+  /** Último texto entregue pela IA (ou herdado no Refazer): diferente dele = editado à mão. */
+  const [textoBase, setTextoBase] = useState({ titulo: '', descricao: '' });
+  const [tituloPadrao, setTituloPadrao] = useState(false);
+  const [gerandoTexto, setGerandoTexto] = useState(false);
   const [previewResultado, setPreviewResultado] = useState<PreviewKitVirtualResultado | null>(null);
 
-  const tituloInicializadoRef = useRef(false);
-  const primeiraPreviewFeitaRef = useRef(false);
+  // Assinaturas: a do texto pedido decide geração automática e reset da capa; a da margem
+  // (ordem + preços + desconto) decide recálculo. As "atuais" filtram respostas que chegam tarde.
+  const assinaturaTexto = assinaturaComposicao(selecionados);
+  const assinaturaMargem = `${selecionados.map((s) => `${s.candidato.userProductId}:${s.quantidade}:${s.precoAtualML}`).join('|')}#${descontoPct}`;
+  const textoPedidoRef = useRef<string | null>(null);
+  const margemPedidaRef = useRef<string | null>(null);
+  const assinaturaTextoAtual = useRef(assinaturaTexto);
+  const assinaturaMargemAtual = useRef(assinaturaMargem);
+  assinaturaTextoAtual.current = assinaturaTexto;
+  assinaturaMargemAtual.current = assinaturaMargem;
+  const textoSeq = useRef(0);
+  /** Cada troca de foto incrementa: upload ao Storage que termina depois de outra troca é ignorado. */
+  const fotoSeq = useRef(0);
 
   // Reset ao abrir — mesmo padrão de dialog-criar-kit.tsx: chave nova por sessão de diálogo.
   // `refazerDe` (ADR-0154 D-8) troca o branco de sempre pela composição/título/descrição/
-  // desconto/foto do kit que acabou de ser encerrado — ausente, nada muda.
+  // desconto/foto do kit que acabou de ser encerrado — e conta como texto já gerado para essa
+  // composição (sem geração automática ao entrar na etapa 2).
   useEffect(() => {
     if (!open) return;
     setEtapa('selecionar');
@@ -72,31 +104,33 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
     setSearchText('');
     setSearchTextAplicado('');
     setUploadingFoto(false);
+    setFotoFile(null);
+    setFotoUrlIA(null);
     setPreviewResultado(null);
-    primeiraPreviewFeitaRef.current = false;
+    setTituloPadrao(false);
+    setGerandoTexto(false);
+    fotoSeq.current++;
+    margemPedidaRef.current = null;
 
     if (refazerDe) {
+      const desc = corrigirRotuloQuantidade(refazerDe.descricao ?? '');
       setSelecionados(refazerDe.componentes);
-      setFotoFile(null);
       setFotoStoragePath(refazerDe.fotoStoragePath);
       setFotoMlPictureId(refazerDe.fotoMlPictureId);
       setDescontoPct(refazerDe.descontoPct);
       setTitulo(refazerDe.titulo);
-      setDescricao(corrigirRotuloQuantidade(refazerDe.descricao ?? ''));
-      setDescricaoGeradaPorIA(!!refazerDe.descricao);
-      // Título reusado não pode ser sobrescrito pelo 1º preview automático (que reenvia o MESMO
-      // template pra uma composição que ainda não mudou) — mesma trava de uma edição manual.
-      tituloInicializadoRef.current = true;
+      setDescricao(desc);
+      setTextoBase({ titulo: refazerDe.titulo, descricao: desc });
+      textoPedidoRef.current = assinaturaComposicao(refazerDe.componentes);
     } else {
       setSelecionados([]);
-      setFotoFile(null);
       setFotoStoragePath(null);
       setFotoMlPictureId(null);
       setDescontoPct(0);
       setTitulo('');
       setDescricao('');
-      setDescricaoGeradaPorIA(false);
-      tituloInicializadoRef.current = false;
+      setTextoBase({ titulo: '', descricao: '' });
+      textoPedidoRef.current = null;
     }
     // refazerDe só é lido nesta abertura (chave nova de diálogo); incluí-lo nas deps re-rodaria
     // o reset a cada render do pai que passe um objeto inline novo, apagando edição em curso.
@@ -140,11 +174,31 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
     });
   }
 
-  async function handleEscolherFoto(file: File | null) {
+  // ── Capa ──────────────────────────────────────────────────────────────────────────────
+  // O hook fica aqui (não na etapa 2): voltar à etapa 1 não pode perder a candidata nem o request_id.
+  const componentesCapa = selecionados.map((s) => ({
+    userProductId: s.candidato.userProductId, itemId: s.candidato.itemId ?? '', quantidade: s.quantidade, rotulo: s.candidato.title,
+  }));
+  const capa = useCapaKitVirtual(componentesCapa, open);
+  const capaHabilitada = selecionados.length > 0 && selecionados.every((s) => !!s.candidato.itemId);
+  const { data: modulos } = useModulosHabilitados();
+  const capaIADisponivel = capaHabilitada && !!modulos?.includes('imagem_ia');
+
+  /** Toda troca de capa zera arquivo, path e picture id JUNTOS — picture id velho nunca viaja com foto nova. */
+  function trocarFoto(path: string | null, file: File | null, urlIA: string | null = null) {
+    fotoSeq.current++;
     setFotoFile(file);
-    setFotoStoragePath(null);
+    setFotoStoragePath(path);
     setFotoMlPictureId(null);
+    setFotoUrlIA(urlIA);
+    setUploadingFoto(false);
+  }
+
+  async function handleEscolherFoto(file: File | null) {
+    trocarFoto(null, file);
     if (!file) return;
+    capa.descartar(); // arquivo manual vence a candidata da IA
+    const seq = fotoSeq.current;
     setUploadingFoto(true);
     try {
       const { data: ud } = await supabase.auth.getUser();
@@ -154,26 +208,29 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
       const storageOwner = storageOwnerForUpload(userId, orgId, useSupportStore.getState().context?.scope ?? null);
       const path = buildStoragePath(storageOwner, `kit-virtual-${chaveCadastro}`, file.name);
       await uploadFile('imagens', path, file);
+      if (seq !== fotoSeq.current) return;
       setFotoStoragePath(path);
     } catch (e) {
+      if (seq !== fotoSeq.current) return;
       toast.error('Falha ao enviar a foto do kit', { description: e instanceof Error ? e.message : String(e) });
       setFotoFile(null);
     } finally {
-      setUploadingFoto(false);
+      if (seq === fotoSeq.current) setUploadingFoto(false);
     }
+  }
+
+  function usarCapaIA(path: string) {
+    trocarFoto(path, null, capa.estado.fase === 'candidata' ? capa.estado.url : null);
   }
 
   // ADR-0154 D-5/ADR-0033: sobe a foto ao ML assim que ela assenta no Storage, não no publicar —
   // a propagação é assíncrona. Best-effort: falha aqui NÃO trava o diálogo, `criar-kit-virtual`
-  // reusa o `foto_storage_path` e faz o upload no publicar (rede de segurança, comportamento
-  // anterior a este gap).
+  // reusa o `foto_storage_path` e faz o upload no publicar (rede de segurança).
   //
-  // `fotoMlPictureId` truthy já bloqueia: cobre o Refazer (ADR-0154 regra 3) — o
-  // `fotoStoragePath` reusado do kit antigo chega prefilled JUNTO com o `fotoMlPictureId`
-  // antigo (mesmo commit, ver reset acima), e reenviar a mesma imagem de novo ao ML trocaria um
-  // `picture_id` já propagado por um novo que precisa esperar a propagação de novo — exatamente
-  // o atraso que reusar o antigo existe para evitar. Upload genuíno sempre zera
-  // `fotoMlPictureId` antes (`handleEscolherFoto`), então o caminho normal não é afetado.
+  // `fotoMlPictureId` truthy já bloqueia: cobre o Refazer (ADR-0154 regra 3) — o path reusado
+  // chega junto com o picture id antigo e reenviar a mesma imagem só atrasaria a propagação.
+  // Toda troca de foto zera o picture id (`trocarFoto`), e o cleanup descarta a resposta da
+  // subida da foto anterior.
   useEffect(() => {
     if (!fotoStoragePath || fotoMlPictureId) return;
     let cancelado = false;
@@ -195,63 +252,81 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
   const precosValidos = selecionados.every((s) => s.precoAtualML > 0);
   const composicaoValida = selecionados.length >= 2 && selecionados.length <= 6 && quantidadesValidas;
   const fotoValida = !!fotoStoragePath && !uploadingFoto;
-  // A foto NÃO trava o avanço pra etapa de preview (ela é escolhida nesta mesma etapa, mas o
-  // gate fica só no botão final) — Decisão 5 exige foto pra PUBLICAR, não pra revisar o preview.
+  // A foto NÃO trava o avanço (ela é escolhida na etapa 2); Decisão 5 exige foto só pra PUBLICAR.
   const podeAvancar = composicaoValida && precosValidos && !!categoriaMlIdPrincipal;
 
-  function componentesParaPreview(): ComponenteParaPreviewKit[] {
-    return selecionados.map((s, i) => ({
-      ordem: i,
-      userProductId: s.candidato.userProductId,
-      quantidade: s.quantidade,
-      precoAtualML: s.precoAtualML,
-      custo: s.candidato.custo,
-      origem: s.candidato.origem,
-      titulo: s.candidato.title,
-      kitMultiplicador: s.candidato.kitMultiplicador,
-    }));
-  }
-
+  // ── Preview (texto IA + margem) ───────────────────────────────────────────────────────
   const previewMutation = useMutation({
-    mutationFn: (gerarDescricao: boolean) => previewKitVirtual({
-      componentes: componentesParaPreview(),
-      descontoPct: pctParaFracaoDesconto(descontoPct),
-      categoriaMlIdPrincipal: categoriaMlIdPrincipal!,
-      gerarDescricao,
-    }),
-    onSuccess: (r, gerarDescricao) => {
-      setPreviewResultado(r);
-      // Decisão 4: descrição por IA só quando pedida — uma resposta com gerar_descricao=false
-      // sempre traz `descricao: null` e NÃO pode apagar o texto que o operador já gerou/editou.
-      if (gerarDescricao) {
-        setDescricao(r.descricao ?? '');
-        setDescricaoGeradaPorIA(true);
-      }
-      // Título nasce do template do servidor (Decisão 4) uma única vez — recálculo por causa
-      // do desconto reenvia o MESMO template (a composição não muda nesta etapa), então
-      // sobrescrever aqui apagaria uma edição manual do operador.
-      if (!tituloInicializadoRef.current) {
+    mutationFn: (p: PedidoPreview & { input: Parameters<typeof previewKitVirtual>[0] }) => previewKitVirtual(p.input),
+    // Roda para TODA execução (TanStack v5): cada resposta é filtrada pela assinatura do próprio pedido.
+    onSuccess: (r, p) => {
+      if (p.assinaturaMargem === assinaturaMargemAtual.current) setPreviewResultado(r);
+      // Só um pedido de texto mexe em título/descrição; recálculo de desconto nunca sobrescreve.
+      if (p.gerarTexto && p.assinaturaTexto === assinaturaTextoAtual.current) {
+        const desc = r.descricao ?? '';
         setTitulo(r.titulo);
-        tituloInicializadoRef.current = true;
+        setDescricao(desc);
+        setTextoBase({ titulo: r.titulo, descricao: desc });
+        setTituloPadrao(!r.tituloGeradoPorIA);
       }
     },
-    onError: (err) => {
+    onError: (err, p) => {
+      // Falhou: a próxima entrada na etapa 2 (ou o próximo ajuste) tenta de novo.
+      if (p.gerarTexto && textoPedidoRef.current === p.assinaturaTexto) textoPedidoRef.current = null;
+      if (margemPedidaRef.current === p.assinaturaMargem) margemPedidaRef.current = null;
       toast.error('Falha ao calcular o preview do kit', { description: err instanceof Error ? err.message : String(err) });
+    },
+    onSettled: (_r, _e, p) => {
+      if (p.gerarTexto && p.seq === textoSeq.current) setGerandoTexto(false);
     },
   });
 
-  // Preview automático ao entrar na etapa + a cada ajuste de desconto (debounced) — nunca a
-  // descrição por IA, que é ação explícita do operador (botão em PreviewKitVirtual).
+  function pedirPreview(gerarTexto: boolean) {
+    margemPedidaRef.current = assinaturaMargem;
+    if (gerarTexto) setGerandoTexto(true);
+    previewMutation.mutate({
+      gerarTexto, assinaturaTexto, assinaturaMargem, seq: gerarTexto ? ++textoSeq.current : textoSeq.current,
+      input: {
+        componentes: selecionados.map((s, i) => ({
+          ordem: i,
+          userProductId: s.candidato.userProductId,
+          quantidade: s.quantidade,
+          precoAtualML: s.precoAtualML,
+          custo: s.candidato.custo,
+          origem: s.candidato.origem,
+          titulo: s.candidato.title,
+          kitMultiplicador: s.candidato.kitMultiplicador,
+        })),
+        descontoPct: pctParaFracaoDesconto(descontoPct),
+        categoriaMlIdPrincipal: categoriaMlIdPrincipal!,
+        gerarDescricao: gerarTexto,
+      },
+    });
+  }
+
+  // Entrar na etapa 2: composição nova → texto IA (título + descrição, já com a margem) e capa
+  // zerada; só preço/ordem mudou → só a margem; nada mudou → nenhuma chamada.
   useEffect(() => {
     if (etapa !== 'preview') return;
-    const atraso = primeiraPreviewFeitaRef.current ? 500 : 0;
-    const t = setTimeout(() => {
-      previewMutation.mutate(false);
-      primeiraPreviewFeitaRef.current = true;
-    }, atraso);
+    if (assinaturaTexto !== textoPedidoRef.current) {
+      textoPedidoRef.current = assinaturaTexto;
+      trocarFoto(null, null);
+      setPreviewResultado(null);
+      pedirPreview(true);
+    } else if (assinaturaMargem !== margemPedidaRef.current) {
+      setPreviewResultado(null);
+      pedirPreview(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [etapa]);
+
+  // Ajuste de desconto na etapa 2: só margem, debounced.
+  useEffect(() => {
+    if (etapa !== 'preview' || assinaturaMargem === margemPedidaRef.current) return;
+    const t = setTimeout(() => pedirPreview(false), 500);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [etapa, descontoPct]);
+  }, [descontoPct]);
 
   const criarMutation = useMutation({
     mutationFn: () => criarKitVirtualEdge({
@@ -286,7 +361,50 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
   const somaComponentes = selecionados.reduce((t, s) => t + s.precoAtualML * s.quantidade, 0);
   const precoEstimado = round2(somaComponentes * (1 - descontoPct / 100));
   const podePublicar = composicaoValida && precosValidos && fotoValida && !!categoriaMlIdPrincipal
-    && titulo.trim().length > 0 && !criarMutation.isPending;
+    && titulo.trim().length > 0 && !gerandoTexto && !criarMutation.isPending;
+
+  const secaoCapa = (
+    <div className="flex flex-col gap-3">
+      <GerarCapaKitVirtual
+        estado={capa.estado}
+        itens={componentesCapa.map(({ rotulo, quantidade }) => ({ rotulo, quantidade }))}
+        onGerar={capa.gerar} onUsar={usarCapaIA} onDescartar={capa.descartar}
+        habilitado={capaHabilitada}
+      />
+      <div className="flex flex-col gap-1">
+        <span className="text-xs font-medium text-muted-foreground">
+          {capaIADisponivel ? 'Ou envie uma foto' : 'Foto do kit'}<span className="text-destructive"> *</span>
+        </span>
+        {fotoUrlIA && fotoStoragePath ? (
+          <div className="flex h-20 items-center gap-2 rounded-md border border-primary/20 bg-primary/5 p-2">
+            <img src={fotoUrlIA} alt="Capa do kit escolhida" className="size-14 shrink-0 rounded-md bg-background object-contain ring-1 ring-border" />
+            <span className="flex flex-1 items-center gap-1 text-xs text-success">
+              <Sparkles aria-hidden className="size-3" /> capa gerada por IA em uso
+            </span>
+            <Button type="button" variant="ghost" size="sm" className="h-6 shrink-0 px-1.5 text-xs" onClick={() => trocarFoto(null, null)}>
+              Trocar
+            </Button>
+          </div>
+        ) : (
+          <CampoFoto
+            id="kv-foto"
+            ariaLabel="Foto do kit"
+            arquivo={fotoFile}
+            enviada={!!fotoStoragePath}
+            opcional={false}
+            onEscolher={handleEscolherFoto}
+            onTrocar={() => trocarFoto(null, null)}
+          />
+        )}
+        {uploadingFoto && <span className="text-xs text-muted-foreground">Enviando foto…</span>}
+        {!fotoStoragePath && !uploadingFoto && (
+          <span className="text-xs text-muted-foreground">
+            Obrigatória (ADR-0154 D-5) — o kit não publica com a foto de um componente.
+          </span>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <Dialog open={open} onOpenChange={(v) => !criarMutation.isPending && onOpenChange(v)}>
@@ -301,10 +419,12 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
           <DialogTitle>Criar Kit Virtual</DialogTitle>
           <DialogDescription>
             {etapa === 'selecionar'
-              ? 'Escolha de 2 a 6 produtos distintos, defina quantidades e a foto do kit.'
+              ? 'Escolha de 2 a 6 produtos distintos e defina as quantidades.'
               : 'Confira e ajuste o kit antes de publicar — é a revisão inteira, não passa por outra tela.'}
           </DialogDescription>
         </DialogHeader>
+
+        <EtapasKit atual={etapa} etapas={ETAPAS} />
 
         {etapa === 'selecionar' ? (
           <div className="flex flex-col gap-4">
@@ -337,43 +457,33 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
                 devolveu a categoria dele. Torne outro item principal ou remova este.
               </div>
             )}
-
-            <div className="flex flex-col gap-1">
-              <span className="text-sm font-medium text-foreground">Foto do kit<span className="text-destructive"> *</span></span>
-              <CampoFoto
-                id="kv-foto"
-                ariaLabel="Foto do kit"
-                arquivo={fotoFile}
-                enviada={!!fotoStoragePath}
-                opcional={false}
-                onEscolher={handleEscolherFoto}
-                onTrocar={() => { setFotoFile(null); setFotoStoragePath(null); }}
-              />
-              {uploadingFoto && <span className="text-xs text-muted-foreground">Enviando foto…</span>}
-              {!fotoFile && (
-                <span className="text-xs text-muted-foreground">
-                  Obrigatória (ADR-0154 D-5) — o kit não publica com a foto de um componente.
-                </span>
-              )}
-            </div>
           </div>
         ) : (
-          <PreviewKitVirtual
-            componentes={selecionados}
-            titulo={titulo}
-            onTituloChange={setTitulo}
-            descricao={descricao}
-            onDescricaoChange={setDescricao}
-            onGerarDescricao={() => previewMutation.mutate(true)}
-            gerandoDescricao={previewMutation.isPending && previewMutation.variables === true}
-            descricaoGeradaPorIA={descricaoGeradaPorIA}
-            descontoPct={descontoPct}
-            onDescontoPctChange={setDescontoPct}
-            precoEstimado={precoEstimado}
-            resultado={previewResultado}
-            carregando={previewMutation.isPending && !previewResultado}
-            avisoKitVinculado={avisoKitVinculado}
-          />
+          <div className="flex flex-col gap-4">
+            <PreviewKitVirtual
+              capa={secaoCapa}
+              componentes={selecionados}
+              titulo={titulo}
+              onTituloChange={setTitulo}
+              descricao={descricao}
+              onDescricaoChange={setDescricao}
+              onRegerar={() => pedirPreview(true)}
+              regerando={gerandoTexto}
+              textoEditado={titulo !== textoBase.titulo || descricao !== textoBase.descricao}
+              tituloPadrao={tituloPadrao}
+              descontoPct={descontoPct}
+              onDescontoPctChange={setDescontoPct}
+              precoEstimado={precoEstimado}
+              resultado={previewResultado}
+              carregando={previewMutation.isPending && !previewResultado}
+              avisoKitVinculado={avisoKitVinculado}
+            />
+            <RecebeAvulsoKitVirtual
+              componentes={selecionados}
+              liquidoKit={previewResultado?.margem.ok ? previewResultado.margem.liquido : null}
+            />
+            <p className="text-xs text-muted-foreground">O kit vai direto para o Mercado Livre — esta tela é a revisão.</p>
+          </div>
         )}
 
         <DialogFooter>

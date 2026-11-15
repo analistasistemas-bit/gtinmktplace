@@ -11,8 +11,10 @@ import { calcularTarifaML } from '@/lib/tarifa';
 const calc = vi.mocked(calcularTarifaML);
 
 let aliquotas: { nacional: number; importado: number; confirmada: boolean } | undefined = { nacional: 8, importado: 16, confirmada: true };
+let aliquotasCarregando = false;
+let aliquotasErro = false;
 vi.mock('@/hooks/useConfiguracoes', () => ({
-  useAliquotas: () => ({ data: aliquotas, isFetched: true, isLoading: false, isError: false }),
+  useAliquotas: () => ({ data: aliquotas, isFetched: !aliquotasCarregando, isLoading: aliquotasCarregando, isError: aliquotasErro }),
 }));
 
 const tipo = (recebe: number) => ({ comissao: 10, percentual: 14, fixa: 0, imposto: 8, recebe });
@@ -34,7 +36,7 @@ function ui(componentes: ComponenteSelecionadoKitVirtual[], liquidoKit: number |
 }
 
 describe('RecebeAvulsoKitVirtual', () => {
-  beforeEach(() => { calc.mockReset(); calc.mockResolvedValue(tarifa()); aliquotas = { nacional: 8, importado: 16, confirmada: true }; });
+  beforeEach(() => { calc.mockReset(); calc.mockResolvedValue(tarifa()); aliquotas = { nacional: 8, importado: 16, confirmada: true }; aliquotasCarregando = false; aliquotasErro = false; });
   afterEach(cleanup);
 
   it('com custo: recebe e lucro; rodapé com os dois totais e aviso do frete', async () => {
@@ -71,5 +73,27 @@ describe('RecebeAvulsoKitVirtual', () => {
     expect(await screen.findByText('tipo do anúncio desconhecido')).toBeInTheDocument();
     expect(screen.getByText('alíquota não confirmada')).toBeInTheDocument();
     expect(calc).not.toHaveBeenCalled();
+  });
+
+  it('alíquotas carregando: "calculando…", nunca "alíquota não confirmada"', async () => {
+    aliquotas = undefined;
+    aliquotasCarregando = true;
+    ui([comp()]);
+    expect(await screen.findByText('calculando…')).toBeInTheDocument();
+    expect(screen.queryByText('alíquota não confirmada')).toBeNull();
+  });
+
+  it('erro ao ler alíquotas: "indisponível"', async () => {
+    aliquotas = undefined;
+    aliquotasErro = true;
+    ui([comp()]);
+    expect(await screen.findByText('indisponível')).toBeInTheDocument();
+    expect(screen.queryByText('alíquota não confirmada')).toBeNull();
+  });
+
+  it('preço 0 com medidas e categoria: indisponível sem o sufixo de frete', async () => {
+    ui([{ ...comp(), precoAtualML: 0 }]);
+    expect(await screen.findByText('indisponível')).toBeInTheDocument();
+    expect(screen.queryByText(/faltam medidas/)).toBeNull();
   });
 });

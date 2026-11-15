@@ -155,6 +155,8 @@ export type ResultadoMargemKitVirtual =
 
 export interface PreviewKitVirtualResultado {
   titulo: string;
+  /** false: a IA não devolveu título válido e veio o template (só faz sentido com `gerarDescricao:true`). */
+  tituloGeradoPorIA: boolean;
   descontoPct: number;
   descricao: string | null;
   descricaoGeradaPorIA: boolean;
@@ -190,11 +192,12 @@ export async function previewKitVirtual(input: {
   });
   if (error) throw await erroDaEdge(error);
   const d = data as {
-    titulo: string; desconto_pct: number; descricao: string | null; descricao_gerada_por_ia: boolean;
+    titulo: string; titulo_gerado_por_ia?: boolean; desconto_pct: number; descricao: string | null; descricao_gerada_por_ia: boolean;
     aviso_kit_vinculado: boolean; margem_estimativa: true; margem: ResultadoMargemKitVirtual;
   };
   return {
     titulo: d.titulo,
+    tituloGeradoPorIA: d.titulo_gerado_por_ia === true,
     descontoPct: d.desconto_pct,
     descricao: d.descricao,
     descricaoGeradaPorIA: d.descricao_gerada_por_ia,

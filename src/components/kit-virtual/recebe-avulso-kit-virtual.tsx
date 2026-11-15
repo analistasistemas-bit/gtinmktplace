@@ -25,10 +25,11 @@ export function RecebeAvulsoKitVirtual({ componentes, liquidoKit }: {
     const aliquotaPct = aliquotaDoKit(c.origem, aliquotasQ.data);
     const dim = c.medidas;
     // Sem medidas válidas o frete não existe: não cota (a tarifa devolveria frete 0 como se fosse real).
-    const cotavel = !!c.categoriaMlId && precoAtualML > 0 && dim != null
-      && [dim.alturaCm, dim.larguraCm, dim.comprimentoCm, dim.pesoGramas].every(medidaOk);
+    const semFrete = !c.categoriaMlId || dim == null
+      || ![dim.alturaCm, dim.larguraCm, dim.comprimentoCm, dim.pesoGramas].every(medidaOk);
+    const cotavel = !semFrete && precoAtualML > 0;
     const tipoOk = c.listingTypeId === 'gold_special' || c.listingTypeId === 'gold_pro';
-    return { c, quantidade, preco: precoAtualML, aliquotaPct, dim, cotavel, tipoOk };
+    return { c, quantidade, preco: precoAtualML, aliquotaPct, dim, cotavel, semFrete, tipoOk };
   });
 
   const qs = useQueries({
@@ -44,7 +45,11 @@ export function RecebeAvulsoKitVirtual({ componentes, liquidoKit }: {
   const itens = linhas.map((l, i) => {
     const q = qs[i];
     const tarifa = !l.cotavel || q.isError ? null : q.isSuccess ? q.data : undefined;
-    const r = recebeAvulso({ tarifa, listingTypeId: l.c.listingTypeId, aliquotaPct: l.aliquotaPct, custo: l.c.custo, preco: l.preco });
+    let r = recebeAvulso({ tarifa, listingTypeId: l.c.listingTypeId, aliquotaPct: l.aliquotaPct, custo: l.c.custo, preco: l.preco });
+    // Alíquota ainda carregando ou com erro de leitura não é "não confirmada": é cálculo pendente/indisponível.
+    if (r.estado === 'sem_aliquota' && (aliquotasQ.isLoading || aliquotasQ.isError)) {
+      r = { ...r, estado: aliquotasQ.isError ? 'indisponivel' : 'calculando' };
+    }
     const resumo = r.estado === 'ok' && tarifa && l.c.custo != null && l.aliquotaPct != null
       ? resumoDaTarifa(tarifa, l.c.listingTypeId as 'gold_special' | 'gold_pro', l.preco, l.c.custo, '', l.aliquotaPct) : null;
     return { ...l, r, resumo };
@@ -88,7 +93,7 @@ export function RecebeAvulsoKitVirtual({ componentes, liquidoKit }: {
               ) : (
                 <td colSpan={3} className="text-muted-foreground">
                   {i.r.estado === 'calculando' ? 'calculando…' : AVISO[i.r.estado]}
-                  {i.r.estado === 'indisponivel' && !i.cotavel && ' (frete: faltam medidas ou categoria)'}
+                  {i.r.estado === 'indisponivel' && i.semFrete && ' (frete: faltam medidas ou categoria)'}
                 </td>
               )}
             </tr>
