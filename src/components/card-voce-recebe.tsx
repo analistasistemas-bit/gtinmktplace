@@ -10,18 +10,22 @@ function Coluna({
   t,
   melhor,
   custo,
+  preco,
   real,
 }: {
   titulo: string;
   t: TarifaTipo;
   melhor: boolean;
   custo: number | null;
+  /** Preço de venda: base da margem (lucro ÷ preço), como nas telas de Vendas. */
+  preco: number;
   /** Modo realmente publicado neste anúncio (destaca a coluna). */
   real?: boolean;
 }) {
   const temCusto = custo != null && custo > 0;
   const { lucro, markup } = temCusto ? calcularMarkup(t.recebe, custo) : { lucro: 0, markup: 0 };
   const prejuizo = temCusto && lucro < 0;
+  const margem = preco > 0 ? lucro / preco : 0;
   return (
     <div className={cn(
       'rounded-md border bg-card p-2',
@@ -45,11 +49,17 @@ function Coluna({
         </div>
       )}
       {temCusto && (
-        <div className={cn('mt-0.5 text-[11px]', prejuizo ? 'text-destructive' : 'text-success')}>
-          {prejuizo ? 'prejuízo ' : 'lucro '}
-          <span className="font-semibold">{fmtBRL(lucro)}</span>
-          {' · markup '}
-          <span className="font-semibold">{Math.round(markup * 100)}%</span>
+        <div className={cn('mt-0.5 flex flex-wrap gap-x-1 text-[11px] tabular-nums', prejuizo ? 'text-destructive' : 'text-success')}>
+          <span className="whitespace-nowrap">
+            {prejuizo ? 'prejuízo ' : 'lucro '}
+            <span className="font-semibold">{fmtBRL(lucro)}</span>
+          </span>
+          <span className="whitespace-nowrap" title="Markup = lucro ÷ custo do produto">
+            · markup <span className="font-semibold">{Math.round(markup * 100)}%</span>
+          </span>
+          <span className="whitespace-nowrap" title="Margem = lucro ÷ preço de venda">
+            · margem <span className="font-semibold">{Math.round(margem * 100)}%</span>
+          </span>
         </div>
       )}
     </div>
@@ -97,8 +107,8 @@ export function CardVoceRecebe({
             )}
           </p>
           <div className="grid grid-cols-2 gap-2">
-            <Coluna titulo="Clássico" t={data.classico} melhor={data.classico.recebe >= data.premium.recebe} custo={custo ?? null} real={real === 'classico'} />
-            <Coluna titulo="Premium" t={data.premium} melhor={data.premium.recebe > data.classico.recebe} custo={custo ?? null} real={real === 'premium'} />
+            <Coluna titulo="Clássico" t={data.classico} melhor={data.classico.recebe >= data.premium.recebe} custo={custo ?? null} preco={preco} real={real === 'classico'} />
+            <Coluna titulo="Premium" t={data.premium} melhor={data.premium.recebe > data.classico.recebe} custo={custo ?? null} preco={preco} real={real === 'premium'} />
           </div>
           <p className="mt-1.5 text-[11px] text-muted-foreground">
             {data.frete > 0

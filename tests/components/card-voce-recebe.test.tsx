@@ -20,4 +20,14 @@ describe('CardVoceRecebe', () => {
     expect(screen.getByText(/4,20/)).toBeInTheDocument(); // Premium
     expect(screen.getByText(/acima de r\$19.*frete grátis/i)).toBeInTheDocument();
   });
+
+  it('mostra margem (lucro ÷ preço) ao lado do markup (lucro ÷ custo)', () => {
+    render(<CardVoceRecebe preco={10} custo={2} categoriaMlId="MLB270273" />);
+    // Clássico: lucro 2,82 → markup 141%, margem 28%
+    expect(screen.getByText('141%')).toBeInTheDocument();
+    expect(screen.getByText('28%')).toBeInTheDocument();
+    // Premium: lucro 2,20 → markup 110%, margem 22%
+    expect(screen.getByText('110%')).toBeInTheDocument();
+    expect(screen.getByText('22%')).toBeInTheDocument();
+  });
 });
