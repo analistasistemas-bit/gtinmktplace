@@ -25,9 +25,9 @@
 ## Review Focus
 1. Composição com Σqtd > 6 (ex.: 3+3+1): modo `uma_de_cada`, pedido e visão esperam 1 de cada → teste no Task 2.
 2. `itemId` enviado que é de outra org ou não pertence ao `user_product_id` → 403/409 sem gastar IA → teste no Task 3.
-3. Path de foto de outra org em `subir-foto-kit-virtual` → recusado → teste no Task 4.
-4. Operador volta à etapa 1, muda a composição e avança: capa e texto antigos não podem sobreviver → teste no Task 8.
-5. Componente sem custo / sem medidas / tarifa não oficial: card mostra estado, não número → teste no Task 7.
+3. Path de foto de outra org em `subir-foto-kit-virtual` **ou** em `criar-kit-virtual` (fallback de upload) → recusado sem assinar nem publicar → testes no Task 4.
+4. Operador volta à etapa 1, muda a composição e avança, ou troca a capa já enviada ao ML: capa/`fotoMlPictureId`/texto antigos não podem sobreviver nem chegar atrasados → testes no Task 8.
+5. Componente sem custo / sem medidas / sem alíquota / sem listing type / tarifa não oficial: card mostra estado, nunca número presumido → teste no Task 7.
 
 ---
 
@@ -42,15 +42,15 @@
 - Produces: colunas `kit_variacao_imagens.composicao text` e `pedido jsonb` (`[{user_product_id, quantidade}]` na ordem do kit; ambas nulas fora do kit virtual); `familia_base_id` nullable; RPC `public.kit_capa_virtual_reservar(p_org_id uuid, p_request_id uuid, p_tentativa smallint, p_composicao text, p_pedido jsonb, p_modelo text, p_criado_por uuid) returns text` (`'ok'|'teto'`).
 
 - [ ] **Step 1:** ADR-0206: decisões da spec §7, §8.1, §8.3, §8.4.1, §8.5 (cobrança igual ao vinculado; teto 6/24 h por composição sem quantidades; título IA com fallback; recebe avulso). Status PROPOSTO até a 1ª medição real (2, 3 e 6 itens).
-- [ ] **Step 2: Teste SQL que falha** (`supabase/tests/kit_capa_virtual_reservar.sql`, mesmo formato de `kit_capa_unidades_reservar.sql`): (a) 6 chamadas com request_ids distintos e mesma `composicao` → `ok`×6, 7ª → `teto`; (b) outra composição → `ok`; (c) insert direto com `composicao` + `cores` → viola check; (d) linha de unidades antiga (`n=2`, `familia_base_id` preenchido) continua válida; (e) linha `composicao` com `familia_base_id` nulo é aceita; (f) linha de cores sem `familia_base_id` é recusada.
+- [ ] **Step 2: Teste SQL que falha** (`supabase/tests/kit_capa_virtual_reservar.sql`, mesmo formato de `kit_capa_unidades_reservar.sql`): (a) 6 chamadas com request_ids distintos e mesma `composicao` → `ok`×6, 7ª → `teto`; (b) outra composição → `ok`; (c) insert direto com `composicao` + `cores` → viola check; (c2) linha de cores ou de unidades com `pedido` preenchido → viola check; (d) linha de unidades antiga (`n=2`, `familia_base_id` preenchido) continua válida; (e) linha `composicao` com `familia_base_id` nulo é aceita; (f) linha de cores sem `familia_base_id` é recusada; (g) **cobrança:** reserva via RPC → update para `gerada` com `custo_usd` e `storage_path` → exatamente 1 linha em `platform_image_deliveries` para o request (mesma asserção dos testes de cobrança de `20261108094500_platform_imagem_ia_metering.sql`); outra reserva levada a `recusada` → 0 entregas; (h) depois da chamada à RPC, `pg_locks` mostra o advisory lock da transação (a contagem roda sob lock).
 - [ ] **Step 3:** Rodar `python3 scripts/teste-sql-desfeito.py supabase/tests/kit_capa_virtual_reservar.sql supabase/migrations/<ts>_kit_virtual_capa_ia.sql` com a migration vazia → FAIL.
 - [ ] **Step 4: Migration** (re-executável, `if exists/if not exists`):
   - `alter column familia_base_id drop not null`; `add column if not exists composicao text`; `add column if not exists pedido jsonb`.
-  - Troca `kit_variacao_imagens_cores_ou_unidades_check` por `kit_variacao_imagens_tipo_check`: exatamente um de — cores (`cores`,`rotulo`,`familia_base_id` not null; `n`,`composicao` null) | unidades (`n`,`familia_base_id` not null; `cores`,`rotulo`,`composicao` null) | composição (`composicao`,`pedido` not null; `cores`,`rotulo`,`n`,`familia_base_id` null).
+  - `drop constraint if exists kit_variacao_imagens_cores_ou_unidades_check` **e** `drop constraint if exists kit_variacao_imagens_tipo_check` antes de criar `kit_variacao_imagens_tipo_check`: exatamente um de — cores (`cores`,`rotulo`,`familia_base_id` not null; `n`,`composicao`,`pedido` null) | unidades (`n`,`familia_base_id` not null; `cores`,`rotulo`,`composicao`,`pedido` null) | composição (`composicao`,`pedido` not null; `cores`,`rotulo`,`n`,`familia_base_id` null).
   - Índice parcial `kit_variacao_imagens_teto_composicao_idx (org_id, composicao, criado_em) where composicao is not null`.
   - RPC espelho de `kit_capa_unidades_reservar`: lock `hashtextextended('kit_capa_virtual:'||org||':'||composicao,0)`, teto 6 em 24 h, insere `pendente` com `composicao` e `pedido`. `security invoker`, `search_path=''`, revoke public/anon/authenticated, grant service_role.
   - Trigger de cobrança NÃO muda (conferir que não lê `familia_base_id`).
-- [ ] **Step 5:** Teste SQL → PASS; `npm run db:check` → OK.
+- [ ] **Step 5:** Teste SQL → PASS; rodar o script com a migration **duas vezes** na mesma transação (reaplicação) → PASS; `npm run db:check` → OK. Concorrência entre 2 sessões não tem teste automatizado (sem Postgres local; mesmo limite do ADR-0205): registrar no ADR-0206 e cobrir pelo item (h).
 - [ ] **Step 6:** Atualizar `src/lib/database.types.ts` (coluna + RPC). **Não** rodar `db push` (só no Task 9, após revisão).
 - [ ] **Step 7:** Commit `feat(kit-virtual): ADR-0206 e migration da capa IA (composicao + teto)`.
 
@@ -106,25 +106,25 @@ expect(montarPedidoComposicao({itens:[{rotulo:'A',quantidade:2},{rotulo:'B',quan
   - `origem.ts`: `fotosDeOrigem(entradas: unknown, pedidos: {userProductId:string; itemId:string}[]): { ok: true; urls: string[] } | { ok: false; motivo: 'item_divergente' | 'item_inelegivel'; itemId: string }` — puro, sobre o multiget `id,status,sub_status,pictures,user_product_id`: item não lido/`user_product_id` diferente → `item_divergente`; moderado (`moderadosDoBulk`) ou sem foto 1 válida (`ehUrlFotoMl`) → `item_inelegivel`.
 
 - [ ] **Step 1: Testes que falham (`origem.test.ts`):** item com `user_product_id` diferente → `item_divergente`; item `under_review` → `item_inelegivel`; foto fora do CDN → `item_inelegivel`; 2 itens ok → `urls` na ordem dos pedidos.
-- [ ] **Step 2: Testes que falham (`handler.test.ts`):** sem módulo `imagem_ia` → 403; não admin → 403; 1 componente ou 7 → 400; `item_id` fora de `anuncios_externos_itens` da org (`retirado=false`) → 403 sem chamar RPC nem IA; RPC `'teto'` → 429 `teto_diario`; mesmo `request_id` com composição diferente → 409 `pedido_diferente`; aprovado → path `${orgId}/kit-virtual-ia/${requestId}.${ext}` e chamada à RPC com `p_composicao = chaveComposicao(ids)`; `item_inelegivel` → 409 com `mensagem` citando o `rotulo` do componente.
+- [ ] **Step 2: Testes que falham (`handler.test.ts`):** sem módulo `imagem_ia` → 403; não admin → 403; 1 componente ou 7 → 400; `item_id` que não está nem em `familias.ml_item_id` nem em `anuncios_externos_itens` (`retirado=false`) da org → 403 sem chamar RPC nem IA; `item_id` só em `familias.ml_item_id` da org → aceito; replay do mesmo `request_id` já `gerada` → mesmo path sem nova reserva nem IA; `pendente_upload` vencida → mesmo tratamento do vinculado; falha técnica da IA → linha `recusada`, `proxima:false`, conta no teto; mesmo `request_id` mudando só a quantidade → 409 `pedido_diferente`; Σqtd > 6 (3+3+1) → `gerarImagem` recebe DATA com quantidades `[1,1,1]` e referências na ordem dos componentes, e `verificarComposicao` recebe `quantidades:[1,1,1]` com as mesmas referências; RPC `'teto'` → 429 `teto_diario`; mesmo `request_id` com composição diferente → 409 `pedido_diferente`; aprovado → path `${orgId}/kit-virtual-ia/${requestId}.${ext}` e chamada à RPC com `p_composicao = chaveComposicao(ids)`; `item_inelegivel` → 409 com `mensagem` citando o `rotulo` do componente.
 - [ ] **Step 3:** Rodar os dois arquivos → FAIL.
-- [ ] **Step 4:** Implementar. Diferenças em relação à cópia: (a) entrada e checagem de posse do item por `anuncios_externos_itens` (`org_id`, `item_externo_id in item_ids`, `retirado=false`); (b) origem = `fotosDeOrigem` + `baixarFotoMl` de cada URL, leitura antes da reserva (falha de leitura não conta no teto, como no vinculado); (c) reserva `kit_capa_virtual_reservar`; (d) `gerarImagem(modelo, montarPedidoComposicao(...).textos, originais, …)`; (e) visão `verificarComposicao` + `avaliarComposicao(…, quantidadesNaCapa(itens))`; (f) idempotência: mesmo `request_id` com `composicao` ou `pedido` diferentes → 409 `pedido_diferente`; (g) prefixo `kit-virtual-ia`. Prazos, logs por lista de permissão, cobrança e `MAX_TENTATIVAS` iguais.
+- [ ] **Step 4:** Implementar. Diferenças em relação à cópia: (a) entrada e checagem de posse do item pelos **dois** caminhos da busca (`familias.ml_item_id` e `anuncios_externos_itens.item_externo_id` com `retirado=false`), sempre com `org_id`; depois `fotosDeOrigem` confere item↔`user_product_id` no ML; (b) origem = `fotosDeOrigem` + `baixarFotoMl` de cada URL, leitura antes da reserva (falha de leitura não conta no teto, como no vinculado); (c) reserva `kit_capa_virtual_reservar`; (d) `gerarImagem(modelo, montarPedidoComposicao(...).textos, originais, …)`; (e) visão `verificarComposicao` + `avaliarComposicao(…, quantidadesNaCapa(itens))`; (f) idempotência: mesmo `request_id` com `composicao` ou `pedido` diferentes → 409 `pedido_diferente`; (g) prefixo `kit-virtual-ia`. Prazos, logs por lista de permissão, cobrança e `MAX_TENTATIVAS` iguais.
 - [ ] **Step 5:** Rodar → PASS; `pnpm lint:functions && pnpm check:functions` → OK.
 - [ ] **Step 6:** Commit `feat(kit-virtual): edge gerar-capa-kit-virtual`.
 
-### Task 4: `subir-foto-kit-virtual` aceita só foto da org
+### Task 4: foto do kit virtual só da org (`subir-foto-kit-virtual` e `criar-kit-virtual`)
 
 **Files:**
-- Modify: `supabase/functions/subir-foto-kit-virtual/processar.ts`, `index.ts`
-- Test: `supabase/functions/subir-foto-kit-virtual/__tests__/processar.test.ts` (criar se não existir)
+- Modify: `supabase/functions/subir-foto-kit-virtual/processar.ts`, `index.ts`; `supabase/functions/criar-kit-virtual/processar.ts`, `index.ts`
+- Test: `supabase/functions/subir-foto-kit-virtual/__tests__/processar.test.ts` (criar se não existir); teste existente de `criar-kit-virtual`
 
 **Interfaces:**
 - Consumes: `fotoDaOrg(path, orgId, usuariosDaOrg)` de `../criar-kit-variacao/processar.ts`.
 - Produces: `validarSubirFotoKitVirtual(input, orgId: string, usuariosDaOrg: Set<string>)` devolve `'path_invalido'` para path de outra org.
 
-- [ ] **Step 1: Teste que falha:** `outraOrg/kit-virtual-ia/x.png` → `{ok:false, motivo:'path_invalido'}` sem chamar `urlAssinadaFoto`; `${orgId}/kit-virtual-ia/x.png` e `${userId}/kit-virtual-<chave>/foto.jpg` (upload manual atual) → passam.
+- [ ] **Step 1: Testes que falham:** `criarKitVirtual` com `fotoStoragePath` de outra org → recusa (`foto_invalida`, 400) **antes** de persistir o path, assinar URL, subir foto ou chamar `criarKitML`; `subirFotoKitVirtual`: `outraOrg/kit-virtual-ia/x.png` → `{ok:false, motivo:'path_invalido'}` sem chamar `urlAssinadaFoto`; `${orgId}/kit-virtual-ia/x.png` e `${userId}/kit-virtual-<chave>/foto.jpg` (upload manual atual) → passam.
 - [ ] **Step 2:** Rodar → FAIL. **Step 3:** Implementar (index carrega `usuariosDaOrg` como `criar-kit-variacao` faz). **Step 4:** PASS.
-- [ ] **Step 5:** Commit `fix(kit-virtual): subir-foto-kit-virtual recusa foto de outra org`.
+- [ ] **Step 5:** Commit `fix(kit-virtual): foto do kit virtual recusada quando é de outra org`.
 
 ### Task 5: Título IA no `preview-kit-virtual` + `listingTypeId` no candidato
 
@@ -139,7 +139,8 @@ expect(montarPedidoComposicao({itens:[{rotulo:'A',quantidade:2},{rotulo:'B',quan
   - `gerarTituloKitViaIA(modelo: string, componentes: {titulo:string; quantidade:number}[]): Promise<string | null>` — 1 chamada `json_schema {titulo}`; nomes dos componentes no bloco DATA; erro → `null`.
   - `PreviewKitDeps.gerarTituloKit?: (componentes) => Promise<string | null>`; com `gerarDescricao=true`, `montarPreviewKit` chama título e descrição em paralelo e devolve `titulo = válido ? IA : template` + `tituloGeradoPorIA: boolean`. Resposta HTTP ganha `titulo_gerado_por_ia`.
   - `ComponenteCandidatoKitVirtual.listingTypeId: string | null` (multiget passa a pedir `listing_type_id`; edge devolve `listing_type_id`).
-- [ ] **Step 1: Testes que falham:** `tituloKitValido('Kit Shampoo + Máscara Tanox')===true`; `('Shampoo e Máscara')===false`; 61 chars → false. `montarPreviewKit` com `gerarDescricao:true` e IA devolvendo título inválido → `titulo` = template e `tituloGeradoPorIA:false`; válido → título da IA, `true`; `gerarDescricao:false` → não chama `gerarTituloKit`. Busca: candidato com `listingTypeId:'gold_special'`.
+  - `ComponenteCandidatoKitVirtual.medidas: DimensoesFrete | null`: `altura_cm, largura_cm, comprimento_cm, peso_gramas` lidos da **mesma linha vencedora** de `escolherVariacaoPorCodigo` (e da mesma linha no caminho `familias.ml_item_id`); `VariacaoResolvida` ganha `medidas`. Nunca resolver medidas só por SKU.
+- [ ] **Step 1: Testes que falham:** `tituloKitValido('Kit Shampoo + Máscara Tanox')===true`; `('Shampoo e Máscara')===false`; 61 chars → false. `montarPreviewKit` com `gerarDescricao:true` e IA devolvendo título inválido → `titulo` = template e `tituloGeradoPorIA:false`; válido → título da IA, `true`; `gerarDescricao:false` → não chama `gerarTituloKit`. Busca: candidato com `listingTypeId:'gold_special'`; SKU duplicado em duas famílias (`codigo_pai` diferentes) → medidas da família do anúncio vendido; re-ingest no mesmo `codigo_pai` → medidas da linha com `atualizado_em` mais recente (a mesma do custo).
 - [ ] **Step 2:** FAIL. **Step 3:** Implementar. **Step 4:** PASS.
 - [ ] **Step 5:** Commit `feat(kit-virtual): título por IA no preview e listing type no candidato`.
 
@@ -154,7 +155,7 @@ expect(montarPedidoComposicao({itens:[{rotulo:'A',quantidade:2},{rotulo:'B',quan
 - Produces:
   - `gerarCapaKitVirtualEdge(p: { requestId: string; componentes: { userProductId: string; itemId: string; quantidade: number; rotulo: string }[] })`.
   - `useCapaKitVirtual(componentes, open): { estado: EstadoCapa; gerar(): void; descartar(): void }` — mesma lógica de `useCapasUnidades` para um único pedido; **a assinatura da composição** (`userProductId:qtd` ordenados) muda → zera estado e `request_id` e ignora geração em voo.
-  - `<GerarCapaKitVirtual estado onGerar onUsar(path: string) onDescartar habilitado />` — botão "Gerar capa do kit" (ícone `Sparkles`), legenda do modo ("Mostra todas as N unidades" / "Mais de 6 unidades: uma de cada produto"), prévia, "Usar esta foto", "Gerar de novo", mensagens de erro/teto (`MSG_TETO`). Oculto sem módulo `imagem_ia` ou com componente sem `itemId`.
+  - `<GerarCapaKitVirtual estado itens={ItemComposicao[]} onGerar onUsar(path: string) onDescartar habilitado />` (modo e quantidades exibidos saem de `modoCapa`/`quantidadesNaCapa`, importados no front de `_shared/ai/foto-kit-virtual.ts` como `corrigirRotuloQuantidade` já é) — botão "Gerar capa do kit" (ícone `Sparkles`), legenda do modo ("Mostra todas as N unidades" / "Mais de 6 unidades: uma de cada produto"), prévia própria `PreviaCapaKitVirtual` (não reusar `PreviaCapaUnidades`, que fala em produtos idênticos; legenda "2× Shampoo · 1× Máscara"), "Usar esta foto", "Gerar de novo", mensagens de erro/teto (`MSG_TETO`). Oculto sem módulo `imagem_ia` ou com componente sem `itemId`.
 - [ ] **Step 1: Testes que falham:** sem módulo → botão ausente; candidata → "Usar esta foto" chama `onUsar(path)`; reprovada → motivos visíveis; mudar `componentes` (qtd) após candidata → estado volta a `idle`; 429 → mensagem de teto.
 - [ ] **Step 2:** FAIL. **Step 3:** Implementar. **Step 4:** PASS.
 - [ ] **Step 5:** Commit `feat(kit-virtual): botão e hook da capa por IA`.
@@ -166,12 +167,12 @@ expect(montarPedidoComposicao({itens:[{rotulo:'A',quantidade:2},{rotulo:'B',quan
 - Test: `src/lib/__tests__/kit-virtual-recebe.test.ts`, `src/components/kit-virtual/__tests__/recebe-avulso-kit-virtual.test.tsx`
 
 **Interfaces:**
-- Consumes: `calcularTarifaML(preco, categoriaMlId, dim, aliquotaPct)`, `DimensoesFrete`; `simularRecebe` (`@/lib/kit-recebe`); `useAliquotas`; `aliquotaDoKit(origem, aliquotas)`; `DetalheRecebe`; `ComponenteSelecionadoKitVirtual` (com `listingTypeId` do Task 5).
+- Consumes: `calcularTarifaML(preco, categoriaMlId, dim, aliquotaPct)`, `Tarifa`, `provenienciaDaTarifa`; `useAliquotas`; `aliquotaDoKit(origem, aliquotas)`; `DetalheRecebe` (só quando há custo); `ComponenteSelecionadoKitVirtual` com `listingTypeId` e `medidas` do Task 5.
 - Produces:
-  - `useMedidasComponentes(codigos: string[]): Record<string, DimensoesFrete>` — select em `variacoes` (`codigo, altura_cm, largura_cm, comprimento_cm, peso_gramas`) da org, query key própria.
+  - `recebeAvulso(p: { tarifa: Tarifa | null | undefined; listingTypeId: string | null; aliquotaPct: number | null; custo: number | null; preco: number }): { estado: 'calculando' | 'indisponivel' | 'sem_listing_type' | 'sem_aliquota' | 'ok'; recebe: number | null; lucro: number | null; margemPct: number | null }`. Puro: `recebe` sai **direto da tarifa oficial** (proveniência `official`) do tipo do anúncio (`gold_pro` → premium, `gold_special` → clássico; outro/nulo → `sem_listing_type`, nunca Clássico presumido); alíquota nula (origem ou alíquotas da org ausentes) → `sem_aliquota`, sem número; `lucro`/`margemPct` só com custo, senão `null`. Não usa `simularRecebe` nem custo fictício.
   - `somaRecebeAvulso(linhas: { recebe: number | null; quantidade: number }[]): number | null` — `null` se alguma linha `null`; senão Σ recebe × qtd, `round2`.
-  - `<RecebeAvulsoKitVirtual componentes liquidoKit: number | null />` — tabela por componente (Produto, Preço, Recebe, Lucro, Margem %) com `DetalheRecebe` expansível; tipo = `listingTypeId === 'gold_pro' ? 'gold_pro' : 'gold_special'`; rodapé "Separado (× qtd): R$ X · No kit: R$ Y" + aviso "frete do kit é estimativa (0)".
-- [ ] **Step 1: Testes que falham:** `somaRecebeAvulso([{recebe:50,quantidade:2},{recebe:30.5,quantidade:1}])===130.5`; com um `null` → `null`. Componente: sem custo → "custo não cadastrado" e sem lucro; tarifa não oficial (mock) → "indisponível"; sem medidas → frete "indisponível"; rodapé mostra os dois totais quando prontos.
+  - `<RecebeAvulsoKitVirtual componentes liquidoKit: number | null />` — tabela por componente (Produto, Preço, Recebe, Lucro, Margem %) com `DetalheRecebe` expansível; tipo pelo `listingTypeId` (desconhecido → estado `sem_listing_type`); rodapé "Separado (× qtd): R$ X · No kit: R$ Y" + aviso "frete do kit é estimativa (0)".
+- [ ] **Step 1: Testes que falham:** `somaRecebeAvulso([{recebe:50,quantidade:2},{recebe:30.5,quantidade:1}])===130.5`; com um `null` → `null`. `recebeAvulso`: sem custo → `recebe` numérico da tarifa e `lucro:null`; `listingTypeId:null` → `sem_listing_type`, `recebe:null`; `aliquotaPct:null` → `sem_aliquota`, `recebe:null`; `gold_pro` usa o bloco premium. Componente: sem custo → recebe + "custo não cadastrado", sem lucro; tarifa não oficial (mock) → "indisponível"; `medidas:null` → frete "indisponível" (não chama a tarifa com medidas vazias); rodapé mostra os dois totais quando prontos.
 - [ ] **Step 2:** FAIL. **Step 3:** Implementar. **Step 4:** PASS.
 - [ ] **Step 5:** Commit `feat(kit-virtual): card de recebe avulso por componente`.
 
@@ -187,7 +188,10 @@ expect(montarPedidoComposicao({itens:[{rotulo:'A',quantidade:2},{rotulo:'B',quan
 - [ ] **Step 1: Testes que falham:**
   - Pílulas `1. Composição` / `2. Anúncio`; etapa 1 não tem mais "Foto do kit".
   - Entrar na etapa 2 chama `previewKitVirtual` com `gerarDescricao:true` uma vez; voltar e avançar sem mudar a composição **não** chama de novo; mudar qtd e avançar → chama de novo e zera capa aprovada (`fotoStoragePath` null).
-  - "Regerar" chama `gerarDescricao:true`; com título editado à mão pede confirmação antes de sobrescrever.
+  - "Regerar" chama `gerarDescricao:true`; com título **ou descrição** editados à mão pede confirmação antes de sobrescrever.
+  - Resposta de texto que chega depois de a composição mudar (assinatura diferente da do pedido) é descartada.
+  - `tituloGeradoPorIA:false` → aviso discreto "Título padrão: a IA não gerou um título válido".
+  - Trocar a capa depois de já ter `fotoMlPictureId` (upload manual → capa IA, ou Refazer → nova foto) zera `fotoFile`, `fotoStoragePath` e `fotoMlPictureId` juntos; `criarKitVirtualEdge` recebe o picture id da foto **nova**; resposta atrasada de `subirFotoKitVirtualEdge` de foto anterior é ignorada.
   - Ajuste de desconto não sobrescreve título/descrição.
   - "Usar esta foto" → `fotoStoragePath = path` → `subirFotoKitVirtualEdge(path)` chamado; "Publicar kit" exige foto.
   - Refazer (`refazerDe`) continua abrindo com foto/título/descrição herdados e **não** dispara geração automática.
