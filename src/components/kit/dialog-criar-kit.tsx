@@ -86,7 +86,7 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
   // a edge devolve os campos, o operador escolhe aqui e a criação é reenviada com os valores.
   const [camposFaltantes, setCamposFaltantes] = useState<CampoFaltante[]>([]);
   const [informados, setInformados] = useState<Record<string, string>>({});
-  // Kit em erro com atributo ainda não gravado no editor: Reenviar espera (revisão Codex, 15/11).
+  // Kit em erro: Reenviar só libera quando o editor confirma que nada falta (ausente = ainda carregando).
   const [atributoPendente, setAtributoPendente] = useState<Record<string, boolean>>({});
   const marcarPendente = useCallback((familiaId: string, p: boolean) => setAtributoPendente((a) => (a[familiaId] === p ? a : { ...a, [familiaId]: p })), []);
   // "Você recebe" de cada kit: o gate nasce fechado e só abre quando o preview informa que a conta
@@ -438,7 +438,7 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
                       variant="outline"
                       size="sm"
                       className="ml-auto h-7"
-                      disabled={reenviarMutation.isPending || atributoPendente[existente!.familiaId] === true}
+                      disabled={reenviarMutation.isPending || atributoPendente[existente!.familiaId] !== false}
                       onClick={() => reenviarMutation.mutate(existente!.familiaId)}
                     >
                       <RotateCw className={cn('mr-1 h-3 w-3', reenviarMutation.isPending && reenviarMutation.variables === existente!.familiaId && 'animate-spin')} />

@@ -238,6 +238,28 @@ describe('DialogCriarKit — obrigatório da categoria que só o operador sabe',
     expect(listarFaltantesMock).toHaveBeenCalledWith(k.familiaId);
   });
 
+  // Bug real 15/11 14:51: Reenviar clicável enquanto o editor carregava → reenvio sem o valor, kit falhou de novo.
+  it('Reenviar fica bloqueado enquanto o campo carrega e enquanto falta escolher o valor', async () => {
+    let soltar: (v: unknown[]) => void = () => {};
+    listarFaltantesMock.mockImplementationOnce(() => new Promise((r) => { soltar = r; }));
+    renderDialog([kit(4, 'erro', '2026-11-15T13:00:00Z')]);
+    expect(screen.getByRole('button', { name: /Reenviar/i })).toBeDisabled(); // carregando
+    soltar([CONSERVACAO]);
+    expect(await screen.findByText('Conservação do produto')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Reenviar/i })).toBeDisabled(); // falta escolher
+  });
+
+  it('kit em erro sem campo faltante: Reenviar libera depois de carregar', async () => {
+    renderDialog([kit(4, 'erro', '2026-11-15T13:00:00Z')]);
+    await waitFor(() => expect(screen.getByRole('button', { name: /Reenviar/i })).toBeEnabled());
+  });
+
+  it('editor não carrega (erro da edge): Reenviar libera — o operador nunca fica sem saída', async () => {
+    listarFaltantesMock.mockRejectedValueOnce(new Error('502'));
+    renderDialog([kit(4, 'erro', '2026-11-15T13:00:00Z')]);
+    await waitFor(() => expect(screen.getByRole('button', { name: /Reenviar/i })).toBeEnabled(), { timeout: 3000 });
+  });
+
   it('kit já criado sem erro não consulta faltantes', () => {
     renderDialog([kit(4, 'publicado', '2026-11-15T13:00:00Z')]);
     expect(listarFaltantesMock).not.toHaveBeenCalled();

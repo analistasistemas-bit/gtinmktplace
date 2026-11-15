@@ -16,7 +16,7 @@ const FLASH_MS = 2000;
 export function EditorAtributosFaltantes({ familiaId, loteId = '', onPendenteChange }: {
   familiaId: string; loteId?: string; onPendenteChange?: (pendente: boolean) => void;
 }) {
-  const { data: campos = [], isError } = useQuery({
+  const { data: campos = [], isError, isLoading } = useQuery({
     queryKey: ['faltantes-atributos', familiaId],
     queryFn: () => listarFaltantesAtributos(familiaId),
   });
@@ -25,7 +25,10 @@ export function EditorAtributosFaltantes({ familiaId, loteId = '', onPendenteCha
 
   const setCampo = (id: string, s: SaveStatus) => setStatus((p) => ({ ...p, [id]: s }));
   const [salvos, setSalvos] = useState<Set<string>>(new Set());
-  const pendente = campos.some((c: CampoFaltante) => !salvos.has(c.id)) || Object.values(status).includes('salvando');
+  // Carregando conta como pendente (Reenviar clicado antes do campo aparecer falhou de novo, 15/11). Erro de leitura
+  // libera: o worker recusa de novo com a mensagem certa, mas o operador nunca fica sem botão.
+  const pendente = !isError && (isLoading || campos.some((c: CampoFaltante) => !salvos.has(c.id))
+    || Object.values(status).includes('salvando'));
   useEffect(() => { onPendenteChange?.(pendente); }, [pendente, onPendenteChange]);
   const onSalvar = async (id: string, valor: string) => {
     if (!valor.trim()) return;
