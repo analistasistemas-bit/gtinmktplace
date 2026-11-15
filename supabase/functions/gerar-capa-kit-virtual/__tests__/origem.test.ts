@@ -29,6 +29,15 @@ describe('fotosDeOrigem', () => {
       .toEqual({ ok: false, motivo: 'item_inelegivel', itemId: 'MLB1' });
   });
 
+  it('item encerrado (closed) ou inativo com foto válida → item_inelegivel; pausado serve', () => {
+    for (const status of ['closed', 'inactive']) {
+      expect(fotosDeOrigem([item('MLB1', 'MLBU1'), item('MLB2', 'MLBU2', { status })], pedidos))
+        .toEqual({ ok: false, motivo: 'item_inelegivel', itemId: 'MLB2' });
+    }
+    expect(fotosDeOrigem([item('MLB1', 'MLBU1', { status: 'paused' }), item('MLB2', 'MLBU2')], pedidos))
+      .toEqual({ ok: true, urls: [foto(1), foto(2)] });
+  });
+
   it('foto 1 fora do CDN do ML (ou sem foto) → item_inelegivel', () => {
     expect(fotosDeOrigem([item('MLB1', 'MLBU1'), item('MLB2', 'MLBU2', { pictures: [{ secure_url: 'https://evil.com/D_X.jpg' }] })], pedidos))
       .toEqual({ ok: false, motivo: 'item_inelegivel', itemId: 'MLB2' });

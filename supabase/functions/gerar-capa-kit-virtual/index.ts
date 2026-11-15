@@ -304,7 +304,7 @@ async function atender(req: Request, inicio: number): Promise<Response> {
       const nome = rotulos[itemIds.indexOf(leitura.itemId)];
       return leitura.motivo === 'item_divergente'
         ? json({ error: `O anúncio de "${nome}" não corresponde ao produto escolhido. Busque o componente de novo.`, motivo: 'item_divergente' }, 409)
-        : json({ error: `"${nome}" não tem foto utilizável no Mercado Livre (anúncio moderado, inativo ou sem foto). Envie a foto do kit.`, motivo: 'item_inelegivel' }, 409);
+        : json({ error: `"${nome}" não tem foto utilizável no Mercado Livre (anúncio moderado, inativo, encerrado ou sem foto). Envie a foto do kit.`, motivo: 'item_inelegivel' }, 409);
     }
     origemUrls = leitura.urls;
   } catch (e) {

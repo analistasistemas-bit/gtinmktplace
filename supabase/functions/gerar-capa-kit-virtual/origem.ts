@@ -1,7 +1,7 @@
 // Parte pura da edge `gerar-capa-kit-virtual` (ADR-0206): chave do teto + pedido (um ponto só) e foto de origem de
 // cada componente, lida do multiget do ML (`id,status,sub_status,pictures,user_product_id`).
 import { chaveComposicao } from '../_shared/ai/foto-kit-virtual-modo.ts';
-import { moderadosDoBulk } from '../criar-kit-variacao/processar.ts';
+import { parseStatusML } from '../_shared/ml/status.ts';
 import { ehUrlFotoMl } from '../gerar-capa-kit-unidades/capa-ml.ts';
 
 export type ItemPedido = { user_product_id: string; quantidade: number };
@@ -21,26 +21,31 @@ export function mesmoPedido(gravado: unknown, pedido: ItemPedido[]): boolean {
   });
 }
 
-type Corpo = { id?: unknown; status?: unknown; user_product_id?: unknown; pictures?: Array<{ secure_url?: unknown }> };
+type Corpo = { id?: unknown; status?: unknown; sub_status?: unknown; user_product_id?: unknown; pictures?: Array<{ secure_url?: unknown }> };
+
+/** Mesma regra de `avaliar` (`_shared/kit-variacao/galeria-leitura.ts`): só ativo/pausado sem moderação serve de fonte. */
+const fonteLimpa = (b: Corpo) => {
+  const s = parseStatusML({ id: String(b.id), status: String(b.status), sub_status: Array.isArray(b.sub_status) ? b.sub_status : [] }).status;
+  return s === 'ativo' || s === 'pausado';
+};
 
 /** Foto 1 de cada item, na ordem dos pedidos. Item não lido ou de outro `user_product_id` → `item_divergente`;
- *  moderado/inativo ou sem foto 1 do CDN do ML → `item_inelegivel`. */
+ *  fora de ativo/pausado (moderado, inativo, encerrado) ou sem foto 1 do CDN do ML → `item_inelegivel`. */
 export function fotosDeOrigem(entradas: unknown, pedidos: Array<{ userProductId: string; itemId: string }>):
   { ok: true; urls: string[] } | { ok: false; motivo: 'item_divergente' | 'item_inelegivel'; itemId: string } {
   const lista = Array.isArray(entradas) ? entradas : [];
   const corpo = (id: string): Corpo | undefined => lista
     .map((e) => (e ?? {}) as { code?: unknown; body?: Corpo | null })
     .find((e) => e.code === 200 && e.body?.id === id && typeof e.body.status === 'string')?.body ?? undefined;
-  // Leitura conferida ANTES de `moderadosDoBulk`, que lança com item não lido (viraria "ML ilegível").
+  // Leitura conferida antes do status: item não lido é divergência, não inelegibilidade.
   for (const p of pedidos) {
     if (corpo(p.itemId)?.user_product_id !== p.userProductId) return { ok: false, motivo: 'item_divergente', itemId: p.itemId };
   }
-  // Só as entradas já conferidas (200 + status): aqui `moderadosDoBulk` não lança.
-  const moderados = moderadosDoBulk(pedidos.map((p) => p.itemId), pedidos.map((p) => ({ code: 200, body: corpo(p.itemId) })));
   const urls: string[] = [];
   for (const p of pedidos) {
-    const url = corpo(p.itemId)?.pictures?.[0]?.secure_url;
-    if (moderados.has(p.itemId) || !ehUrlFotoMl(url)) return { ok: false, motivo: 'item_inelegivel', itemId: p.itemId };
+    const b = corpo(p.itemId)!;
+    const url = b.pictures?.[0]?.secure_url;
+    if (!fonteLimpa(b) || !ehUrlFotoMl(url)) return { ok: false, motivo: 'item_inelegivel', itemId: p.itemId };
     urls.push(url);
   }
   return { ok: true, urls };
