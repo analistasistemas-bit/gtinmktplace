@@ -1948,7 +1948,7 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__todos">Todos status</SelectItem>
+                  <SelectItem value="__todos">Todos exceto encerrados</SelectItem>
                   <SelectItem value="ativo">Ativo</SelectItem>
                   <SelectItem value="pausado">Pausado</SelectItem>
                   <SelectItem value="encerrado">Encerrado</SelectItem>

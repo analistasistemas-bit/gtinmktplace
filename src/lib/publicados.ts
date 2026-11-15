@@ -455,6 +455,9 @@ export function filtrarPublicados(
     if (f.fornecedor && i.fornecedor !== f.fornecedor) return false;
     if (f.status === 'problema') { if (!i.status || !STATUS_PROBLEMA.has(i.status)) return false; }
     else if (f.status && i.status !== f.status) return false;
+    // "Todos" sem busca esconde encerrados (com venda não podem ser removidos — ADR-0168); busca
+    // digitada ainda os acha (código, foco vindo de pedido), e o filtro "Encerrado" lista todos.
+    else if (!f.status && termosBusca.length === 0 && i.status === 'encerrado') return false;
     if (f.tipo && rotuloTipo(i) !== f.tipo) return false;
     if (f.somenteEncalhados && !ehEncalhado(i)) return false;
     if (f.somenteIncompletos && !i.publicacaoIncompleta) return false;
