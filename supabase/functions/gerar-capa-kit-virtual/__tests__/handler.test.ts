@@ -230,6 +230,16 @@ describe('gerar-capa-kit-virtual', () => {
     semIA();
   });
 
+  it('mesmo item_id em dois componentes → 400 com mensagem própria, antes de qualquer leitura', async () => {
+    const r = await post({ request_id: REQ, componentes: [comp(1), { ...comp(2), item_id: 'MLB1' }] });
+    expect(r.status).toBe(400);
+    expect((await r.json()).error).toBe('O mesmo anúncio aparece em mais de um produto do kit.');
+    expect(f.consultas).toHaveLength(0);
+    expect(f.multigets).toHaveLength(0);
+    expect(f.rpcs).toHaveLength(0);
+    semIA();
+  });
+
   it('item_id fora de familias.ml_item_id e de anuncios_externos_itens (retirado=false) da org → 403 sem RPC, ML nem IA', async () => {
     f.itensOrg = f.itensOrg.map((i) => (i.item_externo_id === 'MLB2' ? { ...i, retirado: true } : i));
     f.familiasOrg.push({ org_id: 'org-2', ml_item_id: 'MLB2' });

@@ -92,19 +92,23 @@ Deno.serve(async (req) => {
 type Registro = Verificacao & { origem_paths?: string[]; previa_path?: string; falha_tecnica?: boolean };
 type Componente = { user_product_id: string; item_id: string; quantidade: number; rotulo: string };
 
-/** Componentes válidos (2..6, `user_product_id` únicos, quantidade 1..10) ou `null`. `rotulo` sai limpo (≤ 80). */
-function lerComponentes(v: unknown): Componente[] | null {
-  if (!Array.isArray(v) || v.length < 2 || v.length > 6) return null;
+const COMPONENTES_INVALIDOS = 'Informe de 2 a 6 produtos diferentes, com quantidade de 1 a 10.';
+/** Componentes válidos (2..6, `user_product_id` e `item_id` únicos, quantidade 1..10) ou a mensagem do 400.
+ *  `rotulo` sai limpo (≤ 80). */
+function lerComponentes(v: unknown): Componente[] | string {
+  if (!Array.isArray(v) || v.length < 2 || v.length > 6) return COMPONENTES_INVALIDOS;
   const out: Componente[] = [];
   for (const c of v) {
     const x = (c && typeof c === 'object' ? c : {}) as Record<string, unknown>;
-    if (typeof x.user_product_id !== 'string' || !USER_PRODUCT.test(x.user_product_id)) return null;
-    if (typeof x.item_id !== 'string' || !ITEM_ML.test(x.item_id)) return null;
-    if (typeof x.quantidade !== 'number' || !Number.isInteger(x.quantidade) || x.quantidade < 1 || x.quantidade > 10) return null;
-    if (typeof x.rotulo !== 'string') return null;
+    if (typeof x.user_product_id !== 'string' || !USER_PRODUCT.test(x.user_product_id)) return COMPONENTES_INVALIDOS;
+    if (typeof x.item_id !== 'string' || !ITEM_ML.test(x.item_id)) return COMPONENTES_INVALIDOS;
+    if (typeof x.quantidade !== 'number' || !Number.isInteger(x.quantidade) || x.quantidade < 1 || x.quantidade > 10) return COMPONENTES_INVALIDOS;
+    if (typeof x.rotulo !== 'string') return COMPONENTES_INVALIDOS;
     out.push({ user_product_id: x.user_product_id, item_id: x.item_id, quantidade: x.quantidade, rotulo: limpar(x.rotulo, 80) });
   }
-  return new Set(out.map((c) => c.user_product_id)).size === out.length ? out : null;
+  if (new Set(out.map((c) => c.user_product_id)).size !== out.length) return COMPONENTES_INVALIDOS;
+  if (new Set(out.map((c) => c.item_id)).size !== out.length) return 'O mesmo anúncio aparece em mais de um produto do kit.';
+  return out;
 }
 
 async function atender(req: Request, inicio: number): Promise<Response> {
@@ -146,7 +150,7 @@ async function atender(req: Request, inicio: number): Promise<Response> {
   const requestId = body.request_id;
   if (typeof requestId !== 'string' || !UUID.test(requestId)) return json({ error: 'request_id inválido.' }, 400);
   const componentes = lerComponentes(body.componentes);
-  if (!componentes) return json({ error: 'Informe de 2 a 6 produtos diferentes, com quantidade de 1 a 10.' }, 400);
+  if (typeof componentes === 'string') return json({ error: componentes }, 400);
   // Pedido e chave do teto saem de um ponto só (origem.ts): a chave deriva dos ids do pedido, sem quantidades.
   const { pedido, composicao } = montarChaveEPedido(componentes);
   // `rotulo` é texto de terceiro (título do anúncio): só em mensagens ao operador, nunca no prompt nem no banco.
