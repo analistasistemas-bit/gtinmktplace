@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { listarFaltantesAtributos } from '@/lib/queries';
 import { useSalvarAtributo } from '@/hooks/useFamiliaMutations';
@@ -11,7 +11,11 @@ const FLASH_MS = 2000;
 
 // Camada 2B (ADR-0052): fallback quando a IA não preencheu um obrigatório. Busca os faltantes
 // COM schema (tipo/valores) e salva inline, com feedback (StatusInline) igual título/descrição.
-export function EditorAtributosFaltantes({ familiaId, loteId = '' }: { familiaId: string; loteId?: string }) {
+/** `onPendenteChange`: true enquanto algum campo ainda não foi gravado — quem publica em seguida (Reenviar do kit)
+ *  espera, senão o worker lê a ficha antes da gravação e falha de novo (revisão Codex, 15/11). */
+export function EditorAtributosFaltantes({ familiaId, loteId = '', onPendenteChange }: {
+  familiaId: string; loteId?: string; onPendenteChange?: (pendente: boolean) => void;
+}) {
   const { data: campos = [], isError } = useQuery({
     queryKey: ['faltantes-atributos', familiaId],
     queryFn: () => listarFaltantesAtributos(familiaId),
@@ -20,11 +24,15 @@ export function EditorAtributosFaltantes({ familiaId, loteId = '' }: { familiaId
   const [status, setStatus] = useState<Record<string, SaveStatus>>({});
 
   const setCampo = (id: string, s: SaveStatus) => setStatus((p) => ({ ...p, [id]: s }));
+  const [salvos, setSalvos] = useState<Set<string>>(new Set());
+  const pendente = campos.some((c: CampoFaltante) => !salvos.has(c.id)) || Object.values(status).includes('salvando');
+  useEffect(() => { onPendenteChange?.(pendente); }, [pendente, onPendenteChange]);
   const onSalvar = async (id: string, valor: string) => {
     if (!valor.trim()) return;
     setCampo(id, 'salvando');
     try {
       await salvar.mutateAsync({ familiaId, atributoId: id, valor });
+      setSalvos((p) => new Set(p).add(id));
       setCampo(id, 'salvo');
       setTimeout(() => setCampo(id, undefined), FLASH_MS);
     } catch {

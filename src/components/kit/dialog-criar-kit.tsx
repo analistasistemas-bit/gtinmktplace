@@ -86,6 +86,9 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
   // a edge devolve os campos, o operador escolhe aqui e a criação é reenviada com os valores.
   const [camposFaltantes, setCamposFaltantes] = useState<CampoFaltante[]>([]);
   const [informados, setInformados] = useState<Record<string, string>>({});
+  // Kit em erro com atributo ainda não gravado no editor: Reenviar espera (revisão Codex, 15/11).
+  const [atributoPendente, setAtributoPendente] = useState<Record<string, boolean>>({});
+  const marcarPendente = useCallback((familiaId: string, p: boolean) => setAtributoPendente((a) => (a[familiaId] === p ? a : { ...a, [familiaId]: p })), []);
   // "Você recebe" de cada kit: o gate nasce fechado e só abre quando o preview informa que a conta
   // está pronta (ou confirmada). Setter estável e sem troca quando o valor não muda (sem loop de render).
   const [podeSeguir, setPodeSeguir] = useState<Record<number, boolean>>({});
@@ -435,7 +438,7 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
                       variant="outline"
                       size="sm"
                       className="ml-auto h-7"
-                      disabled={reenviarMutation.isPending}
+                      disabled={reenviarMutation.isPending || atributoPendente[existente!.familiaId] === true}
                       onClick={() => reenviarMutation.mutate(existente!.familiaId)}
                     >
                       <RotateCw className={cn('mr-1 h-3 w-3', reenviarMutation.isPending && reenviarMutation.variables === existente!.familiaId && 'animate-spin')} />
@@ -444,7 +447,7 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
                   )}
                 </div>
                 {/* Kit não passa pela Revisão: se falhou por obrigatório novo da categoria, o campo aparece aqui. */}
-                {comErro && <div className="pl-6"><EditorAtributosFaltantes familiaId={existente!.familiaId} /></div>}
+                {comErro && <div className="pl-6"><EditorAtributosFaltantes familiaId={existente!.familiaId} onPendenteChange={(p) => marcarPendente(existente!.familiaId, p)} /></div>}
                 </div>
               );
             })}
