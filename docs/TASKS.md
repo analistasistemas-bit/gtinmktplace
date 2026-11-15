@@ -1,5 +1,11 @@
 # PubliAI — Tasks
 
+## Publicados esconde encerrados por padrão — 2026-11-15
+
+Mergeado na `main`: `ae9be4a7`. Só tela: sem migration, sem edge function.
+
+- [x] "Todos exceto encerrados" vira o padrão do filtro de status; busca digitada e o filtro "Encerrado" ainda os mostram. Motivo: anúncio encerrado com venda não pode ser removido (ADR-0168) — apagar a família tiraria o imposto das vendas antigas. Ver nota em ADR-0168 › Consequências.
+
 ## Pós-venda: selo "Vez" relido depois de responder (ADR-0192) — 2026-11-14
 
 Só tela: sem migration, sem edge function.

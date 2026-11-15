@@ -70,6 +70,7 @@ Toast de erro já propaga `json.erro` via `chamarEdge`.
 ## Consequências
 
 - Escape hatch ADR-0019 (“limpar registro morto com venda no histórico”) **fecha** para Remover: produto com `sold_quantity > 0` fica no inventário PubliAI até haver outro fluxo (fora de escopo).
+  - **Nota 2026-11-15:** encerrado com venda continua não removível — apagar a família tira a origem (alíquota de imposto) e o custo não congelado das vendas antigas, e o lucro histórico muda em silêncio (revisão Codex). Saída adotada: Publicados esconde `encerrado` por padrão (`filtrarPublicados`, `main` `ae9be4a7`); busca digitada e o filtro "Encerrado" ainda mostram. Nada é apagado.
 - Tombstone no ML deixa de ser “pausado órfão”; vira `closed`/`deleted` quando a remoção é permitida.
 - Testes obrigatórios: Legacy `sold_quantity=0` fecha+apaga+local; Legacy `>0` nada; UP misto bloqueia; falha ML no meio não apaga local; Republicar regressão intacta.
 

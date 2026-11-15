@@ -9,6 +9,11 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
 
+## 2026-11-15
+
+- **Publicados esconde encerrados** (`main` `ae9be4a7`). Padrão "Todos exceto encerrados"; busca e filtro "Encerrado"
+  ainda mostram. Encerrado com venda segue não removível (apagar a família zera o imposto das vendas antigas — ADR-0168).
+
 ## 2026-11-13
 
 - **Kit vinculado: remover tamanho na etapa 2** (`main` `a481bb69`). Com 2+ kits, cada card da revisão tem "Remover";
