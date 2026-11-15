@@ -1,5 +1,12 @@
 # PubliAI — Tasks
 
+## Cadastro em grade: Avançar sempre clicável — 2026-11-15
+
+Mergeado na `main`: `1d09de2b`. Só tela (`dialog-cadastro-grade.tsx`): sem migration, sem edge function.
+
+- [x] "Avançar"/"Cadastrar" da etapa da grade não trava mais por pendência (só durante o salvamento). O clique leva ao 1º campo faltante na ordem da tela (nome → marca → gênero → origem → valores → grade de tamanhos → cores/tamanhos → matriz), foca, marca `aria-invalid` e avisa por toast no topo (no canto padrão cobria o rodapé).
+- [ ] Mesmo padrão em "Estender grade" e "Cadastrar produto" (ainda travam o botão) — se o Diego pedir.
+
 ## Kit vinculado: obrigatório novo da categoria + motivo da falha na tela (ADR-0151) — 2026-11-15
 
 Sem migration; edge `criar-kit-vinculado` alterada.

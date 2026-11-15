@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-11-13
+atualizado: 2026-11-15
 ---
 
 # Changelog
@@ -11,6 +11,9 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-11-15
 
+- **Cadastro em grade: Avançar sempre clicável** (`main` `1d09de2b`). Com pendência, o clique rola até o 1º campo
+  faltante, foca, marca em vermelho e avisa por toast no topo; nada é salvo. Pendência numa célula leva à grade e o aviso
+  nomeia o SKU. Estender grade e Cadastrar produto continuam com o botão travado.
 - **Publicados esconde encerrados** (`main` `ae9be4a7`). Padrão "Todos exceto encerrados"; busca e filtro "Encerrado"
   ainda mostram. Encerrado com venda segue não removível (apagar a família zera o imposto das vendas antigas — ADR-0168).
 
