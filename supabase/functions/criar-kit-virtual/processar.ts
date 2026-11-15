@@ -128,6 +128,8 @@ function leaseVencido(atualizadoEm: string | null): boolean {
   return Date.now() - t > LEASE_PUBLICANDO_MS;
 }
 
+const MSG_FOTO_INVALIDA = 'A foto do kit não pertence a esta organização. Envie a foto de novo.';
+
 /** Recusas que não custam rede. Rodam ANTES de qualquer escrita ou chamada ao ML. */
 export function validarKitVirtual(input: CriarKitVirtualInput): MotivoCriarKitVirtual | null {
   if (typeof input.chaveCadastro !== 'string' || !input.chaveCadastro.trim()) return 'chave_invalida';
@@ -407,13 +409,14 @@ export async function criarKitVirtual(
 
   // A foto é assinada com a service role: path de outra org (vindo do cliente) vazaria a foto dela
   // para o ML. Recusa ANTES de gravar o path na linha, assinar URL, subir foto ou chamar o ML.
+  let usuarios: Promise<Set<string>> | null = null;
+  const usuariosDaOrg = () => usuarios ??= deps.usuariosDaOrg().then((ids) => new Set(ids));
   if (input.fotoStoragePath !== null) {
-    let usuarios: Set<string>;
-    try { usuarios = new Set(await deps.usuariosDaOrg()); }
-    catch (e) { return { ok: false, motivo: 'falha_leitura', mensagem: e instanceof Error ? e.message : String(e) }; }
-    if (!fotoDaOrg(input.fotoStoragePath, orgId, usuarios)) {
-      return { ok: false, motivo: 'foto_invalida', mensagem: 'A foto do kit não pertence a esta organização. Envie a foto de novo.' };
-    }
+    try {
+      if (!fotoDaOrg(input.fotoStoragePath, orgId, await usuariosDaOrg())) {
+        return { ok: false, motivo: 'foto_invalida', mensagem: MSG_FOTO_INVALIDA };
+      }
+    } catch (e) { return { ok: false, motivo: 'falha_leitura', mensagem: e instanceof Error ? e.message : String(e) }; }
   }
 
   // ── 0. listing_type_id ANTES de qualquer escrita — a linha do kit já nasce com ele ────
@@ -533,6 +536,17 @@ export async function criarKitVirtual(
     if (!path) {
       await marcarErro(deps, kit.id, 'O kit precisa de uma foto própria antes de publicar.');
       return { ok: false, motivo: 'foto_obrigatoria', kitId: kit.id };
+    }
+    // O path pode ser de uma linha gravada antes da checagem de org: confere de novo antes de assinar.
+    let daOrg: boolean;
+    try { daOrg = fotoDaOrg(path, orgId, await usuariosDaOrg()); } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await marcarErro(deps, kit.id, msg);
+      return { ok: false, motivo: 'falha_leitura', mensagem: msg, kitId: kit.id };
+    }
+    if (!daOrg) {
+      await marcarErro(deps, kit.id, MSG_FOTO_INVALIDA);
+      return { ok: false, motivo: 'foto_invalida', mensagem: MSG_FOTO_INVALIDA, kitId: kit.id };
     }
     try {
       const url = await deps.urlAssinadaFoto(path);

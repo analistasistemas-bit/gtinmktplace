@@ -410,6 +410,28 @@ describe('criarKitVirtual', () => {
     }
   });
 
+  it('path JÁ GRAVADO de outra org (linha antiga, sem picture_id): marcarErro + foto_invalida, sem assinar, subir nem chamar o ML', async () => {
+    const st = novoEstado([{ status: 'erro', foto_storage_path: 'org-2/kit-virtual-ia/x.png', foto_ml_picture_id: null }]);
+    const chamadas: string[] = [];
+    const r = await criarKitVirtual(deps(st, {
+      urlAssinadaFoto: async (p) => { chamadas.push('assinar'); return `https://signed/${p}`; },
+      subirFoto: async () => { chamadas.push('subir'); return 'PIC'; },
+      criarKitML: async () => { chamadas.push('ml'); throw new Error('não devia chamar'); },
+    }), inputPadrao({ fotoStoragePath: 'org-1/kit.jpg', fotoMlPictureId: null }));
+    expect(r).toMatchObject({ ok: false, motivo: 'foto_invalida', kitId: 'kit-pre-0' });
+    expect(chamadas).toEqual([]);
+    expect(st.kits[0].status).toEqual('erro');
+    expect(st.kits[0].erro_mensagem).toBeTruthy();
+  });
+
+  it('path JÁ GRAVADO da org sem picture_id: segue e sobe a foto (Refazer/reenvio)', async () => {
+    const st = novoEstado([{ status: 'erro', foto_storage_path: 'user-1/kit-virtual-chave-1/foto.jpg', foto_ml_picture_id: null }]);
+    const subir = vi.fn(async () => 'PIC-NOVA');
+    const r = await criarKitVirtual(deps(st, { subirFoto: subir }), inputPadrao({ fotoStoragePath: null, fotoMlPictureId: null }));
+    expect(r).toMatchObject({ ok: true });
+    expect(subir).toHaveBeenCalledWith('https://signed/user-1/kit-virtual-chave-1/foto.jpg');
+  });
+
   it('travessia no path recusa como foto_invalida', async () => {
     const st = novoEstado();
     const r = await criarKitVirtual(deps(st), inputPadrao({ fotoStoragePath: 'org-1/../org-2/x.jpg' }));
