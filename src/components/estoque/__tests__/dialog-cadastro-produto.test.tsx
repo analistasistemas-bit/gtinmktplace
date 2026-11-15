@@ -84,6 +84,7 @@ vi.mock('@/hooks/useTiposProdutoHabilitados', () => ({
 // ADR-0188: marca própria da org — `marcaOrgMock` controla useMarcaOrg por teste (padrão: sem marca própria).
 const marcaOrgMock = vi.fn(() => ({ data: undefined as { marca_propria: boolean; marca_padrao: string | null } | undefined }));
 vi.mock('@/hooks/useMarcaOrg', () => ({ useMarcaOrg: () => marcaOrgMock() }));
+vi.mock('@/hooks/useFornecedoresOrg', () => ({ useFornecedoresOrg: () => ({ data: [] }) }));
 
 function renderDialogCom(
   props: Partial<{ onFechar: () => void; inicial: CadastroInicial; onCadastrado: () => void }> = {},

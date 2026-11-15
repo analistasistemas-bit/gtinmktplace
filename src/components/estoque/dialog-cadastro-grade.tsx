@@ -23,6 +23,7 @@ import {
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { useMarcaOrg } from '@/hooks/useMarcaOrg';
 import { CampoMarca } from './campo-marca';
+import { CampoFornecedor } from './campo-fornecedor';
 import { useEmpresaFiscal } from '@/hooks/useConfiguracoes';
 import { useTiposProdutoHabilitados } from '@/hooks/useTiposProdutoHabilitados';
 import { UNIDADES_FISCAIS } from '@/lib/fiscal';
@@ -669,10 +670,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
                     <Input id="grade-unidade" value={unidade} onChange={(e) => setUnidade(e.target.value)} />
                   )}
                 </div>
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="grade-fornecedor" className="text-sm font-medium">Fornecedor</label>
-                  <Input id="grade-fornecedor" value={fornecedor} onChange={(e) => setFornecedor(e.target.value)} />
-                </div>
+                <CampoFornecedor id="grade-fornecedor" valor={fornecedor} onChange={setFornecedor} />
                 <CampoMarca id="grade-marca" valor={marca} onChange={setMarcaEditada} obrigatoria={marcaObrigatoria} />
                 <div className="flex flex-col gap-1.5">
                   <span className="flex items-baseline gap-1 text-sm font-medium">

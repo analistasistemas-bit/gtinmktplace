@@ -30,6 +30,7 @@ import type { ClasseIcmsEntrada } from '../../../supabase/functions/_shared/nfe/
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { useMarcaOrg } from '@/hooks/useMarcaOrg';
 import { CampoMarca } from './campo-marca';
+import { CampoFornecedor } from './campo-fornecedor';
 import { useEmpresaFiscal } from '@/hooks/useConfiguracoes';
 import { UNIDADES_FISCAIS } from '@/lib/fiscal';
 import {
@@ -385,10 +386,7 @@ export function DialogCadastroProduto({
                   <Input id="cad-unidade" value={unidade} onChange={(e) => setUnidade(e.target.value)} />
                 )}
               </div>
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="cad-fornecedor" className="text-sm font-medium">Fornecedor</label>
-                <Input id="cad-fornecedor" value={fornecedor} onChange={(e) => setFornecedor(e.target.value)} />
-              </div>
+              <CampoFornecedor id="cad-fornecedor" valor={fornecedor} onChange={setFornecedor} />
 
               <CampoMarca id="cad-marca" valor={marca} onChange={setMarcaEditada} obrigatoria={marcaObrigatoria} />              <div className="flex flex-col gap-1.5">
                 <span className="text-sm font-medium">Origem<span className="text-destructive"> *</span></span>
