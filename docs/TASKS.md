@@ -1,5 +1,13 @@
 # PubliAI — Tasks
 
+## Logo da organização na topbar — 2026-11-15
+
+Spec `docs/superpowers/specs/2026-11-15-logo-org-topbar-design.md`. Migration `20261115113941_logo_org.sql` (colunas + bucket `org-logos`); sem edge function.
+
+- [x] Desktop: logo da org à esquerda da topbar (máx. 28×140 px). Mobile: faixa no menu lateral, abaixo da marca PubliAI. Posição validada com o Grok (centro descartado).
+- [x] Duas versões opcionais (fundo claro / fundo escuro); usa a do tema e cai na outra. Sem logo, ou logo quase quadrada: nome da org ao lado; sem logo: iniciais.
+- [x] Envio em Configurações → Geral → Identidade, só admin da org (PNG/JPG/WEBP até 512 KB).
+
 ## Publicados esconde encerrados por padrão — 2026-11-15
 
 Mergeado na `main`: `ae9be4a7`. Só tela: sem migration, sem edge function.

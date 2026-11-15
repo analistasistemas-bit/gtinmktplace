@@ -33,7 +33,8 @@ agendadas.
 
 `id`, `nome`, `slug` (único), `marca_padrao` (resolve o hard-code `'Avil'` de `atributos.ts`),
 `marca_propria` (ADR-0186/0188: liga o campo Marca no cadastro pelo Estoque, default = `marca_padrao`; editável só pelo super-admin),
-`lote_seq` (contador da numeração de lote por org — ver `lotes.numero_org`), `criado_em`,
+`lote_seq` (contador da numeração de lote por org — ver `lotes.numero_org`),
+`logo_claro_url` / `logo_escuro_url` (URLs públicas do bucket `org-logos`, ambas opcionais; a topbar usa a do tema e cai na outra; migration `20261115113941_logo_org.sql`), `criado_em`,
 `atualizado_em`. RLS: SELECT do membro da própria org; UPDATE só admin da própria org; criação
 só via `service_role` (edge `usuarios`, action `create_org`, restrita a super-admin).
 
@@ -1908,6 +1909,10 @@ no E7** (ADR-0027, D-E7.6). RLS: SELECT quando o dono do path (1º segmento) per
 organização** (`profiles.org_id = current_org_id()`, join por `storage.foldername(name)[1]`);
 INSERT/UPDATE/DELETE continuam "own" (`auth.uid()` == 1º segmento). *Migration `20260527123422`
 + `20260705165828_e7_rls_org.sql`.*
+
+Bucket **`org-logos`** (público, 512 KB, `image/png|jpeg|webp`, sem SVG). Path `{org_id}/{claro|escuro}-{timestamp}.{ext}`.
+Leitura pela URL pública; SELECT/INSERT/UPDATE/DELETE via API só na pasta da própria org (`foldername[1] = current_org_id()`),
+escrita só com `is_admin()`. *Migration `20261115113941_logo_org.sql`.*
 
 ### `cest_oficial` (ADR-0197)
 
