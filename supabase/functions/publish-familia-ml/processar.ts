@@ -204,10 +204,8 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
           llm,
         );
         if (c.faltam.length > 0) {
-          // status 400: definitivo — repetir não muda a resposta da IA nem do ML.
-          throw Object.assign(new Error(
-            `A categoria exige atributo(s) que o PubliAI não conseguiu preencher: ${c.faltam.join(', ')}. Fale com o suporte.`,
-          ), { status: 400 });
+          // Sem `status`: retenta (a IA engole falha de rede e devolve {}); esgotadas as tentativas do QStash, vira erro.
+          throw new Error(`A categoria exige atributo(s) que o PubliAI não conseguiu preencher: ${c.faltam.join(', ')}. Fale com o suporte.`);
         }
         if (c.resolvidos.length > 0) {
           const faltantes = ((familia.atributos_faltantes as string[] | null) ?? []).filter((f) => !c.resolvidos.includes(f));

@@ -1029,9 +1029,12 @@ describe('kit vinculado: obrigatório novo da categoria na publicação/Reenviar
     expect(gravou?.payload.atributos_faltantes).toEqual([]);
   });
 
-  it('IA não resolve → erro em pt-BR com o nome do atributo, sem chamar o ML', async () => {
+  it('IA não resolve → retenta (falha de rede da IA vira {}); esgotado, erro em pt-BR sem chamar o ML (revisão Codex)', async () => {
+    const deps = (admin: never) => baseDeps(admin, { lerSchema: async () => SCHEMA as never, llmParaOrg: () => async () => ({}) });
+    const primeira = await processarFamiliaML(deps(fakeAdmin({ familia: { ...KIT } }).admin), JOB, { tentativas: 0 });
+    expect(primeira.tipo).toBe('retry');
     const { admin } = fakeAdmin({ familia: { ...KIT } });
-    const r = await processarFamiliaML(baseDeps(admin, { lerSchema: async () => SCHEMA as never, llmParaOrg: () => async () => ({}) }), JOB, { tentativas: 0 });
+    const r = await processarFamiliaML(deps(admin), JOB, { tentativas: 10 });
     expect(r.tipo).toBe('erro');
     expect((r as { mensagem: string }).mensagem).toContain('Conservação do produto');
     expect(fakeConnector.chamadas.filter((c) => c.metodo === 'criarAnuncio')).toHaveLength(0);
