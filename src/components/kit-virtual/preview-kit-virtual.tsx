@@ -37,7 +37,7 @@ function Secao({ titulo, icone, acao, children, className }: {
 export function PreviewKitVirtual({
   capa, componentes, titulo, onTituloChange, descricao, onDescricaoChange,
   onRegerar, regerando, textoEditado, tituloPadrao,
-  descontoPct, onDescontoPctChange, precoEstimado, resultado, carregando, avisoKitVinculado,
+  descontoPct, onDescontoPctChange, precoEstimado, resultado, carregando, margemIndisponivel = false, avisoKitVinculado,
 }: {
   /** Conteúdo da seção Capa (capa por IA + upload manual), montado pelo diálogo. */
   capa: ReactNode;
@@ -58,6 +58,8 @@ export function PreviewKitVirtual({
   precoEstimado: number;
   resultado: PreviewKitVirtualResultado | null;
   carregando: boolean;
+  /** O último recálculo falhou (sem resultado): "Margem indisponível" em vez de "Calculando margem…". */
+  margemIndisponivel?: boolean;
   avisoKitVinculado: boolean;
 }) {
   const [confirmando, setConfirmando] = useState(false);
@@ -160,7 +162,7 @@ export function PreviewKitVirtual({
           {carregando ? (
             <div className="flex flex-col gap-1.5"><Skeleton className="h-4 w-2/3" /><Skeleton className="h-4 w-1/2" /></div>
           ) : !resultado ? (
-            <span className="text-muted-foreground">Calculando margem…</span>
+            <span className="text-muted-foreground">{margemIndisponivel ? 'Margem indisponível' : 'Calculando margem…'}</span>
           ) : resultado.margem.ok ? (
             <div className="grid gap-1.5 tabular-nums sm:grid-cols-2">
               <span>Custo total: <strong>{fmtBRL(resultado.margem.custoTotal)}</strong></span>

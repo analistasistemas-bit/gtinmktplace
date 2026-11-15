@@ -839,4 +839,26 @@ describe('DialogCriarKitVirtual — respostas fora de ordem (I3/I4)', () => {
     expect(screen.getByText('No kit: —')).toBeInTheDocument();
     expect(screen.queryByText('R$ 100,00', { selector: 'strong' })).not.toBeInTheDocument();
   });
+
+  it('I4: 0% ok → 5% falha → 0% falha: "No kit" e a margem não reaparecem; mostra "Margem indisponível"', async () => {
+    mockBusca();
+    mockPreview();
+    renderDialog();
+
+    await selecionarDoisComponentes();
+    await avancar();
+    await screen.findByText('No kit: 100');
+
+    previewMock.mockRejectedValueOnce(new Error('margem fora')).mockRejectedValueOnce(new Error('margem fora de novo'));
+    const desconto = screen.getByLabelText('Desconto do kit (%)');
+    fireEvent.change(desconto, { target: { value: '5' } });
+    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1), { timeout: 2000 });
+    fireEvent.change(desconto, { target: { value: '0' } });
+    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(2), { timeout: 2000 });
+
+    expect(screen.queryByText('No kit: 100')).not.toBeInTheDocument();
+    expect(screen.getByText('No kit: —')).toBeInTheDocument();
+    expect(screen.queryByText('R$ 100,00', { selector: 'strong' })).not.toBeInTheDocument();
+    expect(screen.getByText('Margem indisponível')).toBeInTheDocument();
+  });
 });

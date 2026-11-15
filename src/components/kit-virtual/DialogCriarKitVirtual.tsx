@@ -86,6 +86,8 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
   const [gerandoTexto, setGerandoTexto] = useState(false);
   /** Resultado do preview + assinatura financeira do pedido que o gerou (I4). */
   const [previewResultado, setPreviewResultado] = useState<{ r: PreviewKitVirtualResultado; assinaturaMargem: string } | null>(null);
+  /** O último recálculo falhou: o resultado guardado foi descartado e só um sucesso novo o repõe (I4). */
+  const [margemFalhou, setMargemFalhou] = useState(false);
 
   // Assinaturas: a do texto pedido decide geração automática; a da capa (sem ordem) decide o
   // reset da foto; a da margem (ordem + preços + desconto) decide recálculo. As "atuais" filtram
@@ -122,6 +124,7 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
     setFotoFile(null);
     setFotoUrlIA(null);
     setPreviewResultado(null);
+    setMargemFalhou(false);
     setTituloPadrao(false);
     setGerandoTexto(false);
     fotoSeq.current++;
@@ -279,7 +282,10 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
     // mesma abertura e com a assinatura atual — A → B → A deixaria a 1ª resposta de A passar pela assinatura (I3).
     onSuccess: (r, p) => {
       if (p.sessao !== sessaoRef.current) return;
-      if (p.seqMargem === margemSeq.current && p.assinaturaMargem === assinaturaMargemAtual.current) setPreviewResultado({ r, assinaturaMargem: p.assinaturaMargem });
+      if (p.seqMargem === margemSeq.current && p.assinaturaMargem === assinaturaMargemAtual.current) {
+        setPreviewResultado({ r, assinaturaMargem: p.assinaturaMargem });
+        setMargemFalhou(false);
+      }
       // Só um pedido de texto mexe em título/descrição; recálculo de desconto nunca sobrescreve.
       if (p.gerarTexto && p.seq === textoSeq.current && p.assinaturaTexto === assinaturaTextoAtual.current) {
         const desc = r.descricao ?? '';
@@ -291,6 +297,12 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
     },
     onError: (err, p) => {
       if (p.sessao !== sessaoRef.current) return;
+      // Falha do último recálculo invalida o resultado guardado: voltar à assinatura dele não pode
+      // ressuscitar o líquido antigo (0% ok → 5% falha → 0% falha mostraria o 0% de novo).
+      if (p.seqMargem === margemSeq.current) {
+        setPreviewResultado(null);
+        setMargemFalhou(true);
+      }
       // Texto que falhou NÃO volta a ser gerado sozinho (sobrescreveria o que o operador escreveu):
       // o retry é o "Regerar", que confirma se houver edição. A margem tenta de novo no próximo ajuste.
       if (margemPedidaRef.current === p.assinaturaMargem) margemPedidaRef.current = null;
@@ -512,6 +524,7 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
               precoEstimado={precoEstimado}
               resultado={previewAtual}
               carregando={previewMutation.isPending && !previewAtual}
+              margemIndisponivel={margemFalhou}
               avisoKitVinculado={avisoKitVinculado}
             />
             <RecebeAvulsoKitVirtual
