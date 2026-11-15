@@ -772,48 +772,31 @@ describe('DialogCriarKit — preço do kit com a base em promoção', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Avançar' }));
   }
 
-  it('sugere N × preço promocional, não o normal', async () => {
+  it('sugere N × preço normal mesmo com a base em promoção (Diego, 15/11)', async () => {
     invokeMock.mockImplementation(async (fn: string) => (fn === 'preco-avulso-kit' ? promo : { data: null, error: null }));
     renderDialog([], BASE_ML, true);
     await screen.findByText(/Base em promoção/);
     await irAoKit4();
-    expect(screen.getByLabelText('Preço do kit 4')).toHaveValue('255,6');
-  });
-
-  it('promoção que chega depois de marcar o tamanho corrige a sugestão', async () => {
-    const ctl = promoPendente();
-    renderDialog([], BASE_ML, true);
-    await irAoKit4();
     expect(screen.getByLabelText('Preço do kit 4')).toHaveValue('315,6');
-    await act(async () => { ctl.soltar(promo); });
-    await waitFor(() => expect(screen.getByLabelText('Preço do kit 4')).toHaveValue('255,6'));
   });
 
-  it('preço editado à mão não é atropelado pela promoção', async () => {
+  it('a vantagem do comprador compara com o promocional que ele paga hoje', async () => {
+    invokeMock.mockImplementation(async (fn: string) => (fn === 'preco-avulso-kit' ? promo : { data: null, error: null }));
+    renderDialog([], BASE_ML, true);
+    await screen.findByText(/Base em promoção/);
+    await irAoKit4();
+    const bloco = screen.getByRole('group', { name: 'Vantagem do comprador no kit de 4 unidades' });
+    expect(bloco).toHaveTextContent(/R\$\s*255,60/);
+    expect(bloco).toHaveTextContent('Sem vantagem');
+  });
+
+  it('promoção que chega depois não mexe no preço sugerido', async () => {
     const ctl = promoPendente();
     renderDialog([], BASE_ML, true);
     await irAoKit4();
-    const campo = screen.getByLabelText('Preço do kit 4');
-    await userEvent.clear(campo);
-    // Mesmo valor da sugestão normal: digitado à mão continua sendo do operador.
-    await userEvent.type(campo, '315,6');
     await act(async () => { ctl.soltar(promo); });
     await screen.findByText(/Base em promoção/);
-    expect(campo).toHaveValue('315,6');
-  });
-
-  it('desconto depois do preço digitado volta a seguir a promoção', async () => {
-    const ctl = promoPendente();
-    renderDialog([], BASE_ML, true);
-    await irAoKit4();
-    const campo = screen.getByLabelText('Preço do kit 4');
-    await userEvent.clear(campo);
-    await userEvent.type(campo, '300');
-    const desconto = screen.getByLabelText(/desconto.*kit 4/i);
-    await userEvent.clear(desconto);
-    await userEvent.type(desconto, '10');
-    await act(async () => { ctl.soltar(promo); });
-    await waitFor(() => expect(campo).toHaveValue('230,04'));
+    expect(screen.getByLabelText('Preço do kit 4')).toHaveValue('315,6');
   });
 
   it('dialog que fica montado: cada abertura lê a promoção uma vez', async () => {
@@ -835,15 +818,5 @@ describe('DialogCriarKit — preço do kit com a base em promoção', () => {
     await screen.findByText(/Base em promoção/);
     await new Promise((r) => setTimeout(r, 50));
     expect(leituras()).toBe(2);
-  });
-
-  it('"Criar e publicar" espera a leitura da promoção', async () => {
-    const ctl = promoPendente();
-    renderDialog([], BASE_ML, true);
-    await irAoKit4();
-    await new Promise((r) => setTimeout(r, 50));
-    expect(screen.getByRole('button', { name: 'Criar e publicar' })).toBeDisabled();
-    await act(async () => { ctl.soltar(promo); });
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Criar e publicar' })).toBeEnabled());
   });
 });

@@ -86,12 +86,14 @@ export function valorInicialPreview(base: BaseParaKit, titulo: string, descricao
   };
 }
 
-export function PreviewKit({ n, indice, total, base, value, onChange, categoriaMlId, onPodeSeguir, galeria, capaUnidades, onRemover }: {
+export function PreviewKit({ n, indice, total, base, precoUnitarioVigente, value, onChange, categoriaMlId, onPodeSeguir, galeria, capaUnidades, onRemover }: {
   n: number;
   /** Posição na lista quando há vários kits (1-based). Omitir se kit único. */
   indice?: number;
   total?: number;
   base: BaseParaKit;
+  /** O que o comprador paga hoje por 1 unidade (promocional se a base estiver em promoção). Default: base.preco. */
+  precoUnitarioVigente?: number;
   value: KitPreviewValue;
   onChange: (patch: Partial<KitPreviewValue>) => void;
   /** Categoria efetiva do kit (a trocada no dialog, se houver): a tarifa segue ela. */
@@ -288,7 +290,7 @@ export function PreviewKit({ n, indice, total, base, value, onChange, categoriaM
             </div>
           </div>
           <RecebeKit n={n} base={base} value={value} categoriaMlId={categoriaMlId} onPodeSeguir={onPodeSeguir} />
-          <VantagemKit n={n} precoUnitario={base.preco} precoKit={value.preco} />
+          <VantagemKit n={n} precoUnitario={precoUnitarioVigente ?? base.preco} precoKit={value.preco} />
         </div>
       </div>
 

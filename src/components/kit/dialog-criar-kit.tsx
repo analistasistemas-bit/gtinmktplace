@@ -1,7 +1,7 @@
 // ADR-0151 D-2/D-4: gatilho de criação de kit vinculado a partir da tela Publicados.
 // Etapa 1 escolhe os tamanhos; etapa 2 é o preview editável — a revisão inteira do kit,
 // sem passar por process-familia nem por card na Revisão.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -24,7 +24,7 @@ import { uploadFile, buildStoragePath } from '@/lib/storage';
 import { publicarFamilias } from '@/lib/publicar';
 import { cn } from '@/lib/utils';
 import {
-  TAMANHOS_KIT, TITULO_MAX_KIT, tituloDoKit, descricaoDoKit, criarKitVinculado, precoSugeridoDoKit,
+  TAMANHOS_KIT, TITULO_MAX_KIT, tituloDoKit, descricaoDoKit, criarKitVinculado,
   type BaseParaKit, type KitFormValues,
 } from '@/lib/kit';
 import { EtapasKit } from '@/components/kit/etapas-kit';
@@ -101,39 +101,21 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
   // ADR-0205: capa com N unidades por IA. Estado e request_id aqui: o PreviewKit desmonta em "Voltar".
   const capas = useCapasUnidades(familiaBaseId, open);
 
-  // Preço do kit = N × preço vigente da base: em promoção, o promocional (Diego, 15/11 — antes era o "de").
-  // Mesma query do aviso "Base em promoção" (mesma abertura): uma leitura do ML por abertura do dialog.
+  // Preço do kit = N × preço "de" da base (Diego, 15/11 tarde: nunca o promocional, que é temporário).
+  // A promoção lida ao vivo só alimenta o aviso "Base em promoção" e a comparação "Vantagem para o comprador",
+  // que compara com o que o comprador paga hoje no anúncio unitário. Uma leitura do ML por abertura do dialog.
   // Abertura nova a cada reabertura, trocada NO RENDER (não em efeito): a query nunca nasce com a chave velha
   // (dialog que fica montado, ex.: familia-expanded). 1ª abertura: mantém.
   const [sessao, setSessao] = useState(() => ({ aberto: open, abertura: crypto.randomUUID() }));
   if (sessao.aberto !== open) setSessao({ aberto: open, abertura: open ? crypto.randomUUID() : sessao.abertura });
   const abertura = sessao.abertura;
-  /** Tamanhos com preço digitado à mão: a promoção que chega depois não os toca. */
-  const precoManual = useRef(new Set<number>());
   const promoBase = usePrecoAvulsoKit(baseNoMl && open ? familiaBaseId : null, abertura);
   const precoPromo = promoBase.data ? ([...promoBase.data.values()][0]?.promocao ?? null) : null;
-  const baseKit = useMemo(() => (precoPromo != null ? { ...base, preco: precoPromo } : base), [base, precoPromo]);
-  // Promoção que chega depois de marcar o tamanho: corrige só a sugestão intocada (preço digitado fica).
-  useEffect(() => {
-    if (precoPromo == null) return;
-    setValores((prev) => {
-      let mudou = false;
-      const novo = { ...prev };
-      for (const [k, v] of Object.entries(prev)) {
-        const n = Number(k);
-        if (precoManual.current.has(n)) continue;
-        novo[n] = { ...v, preco: precoSugeridoDoKit(precoPromo, n, v.descontoPct) };
-        mudou = true;
-      }
-      return mudou ? novo : prev;
-    });
-  }, [precoPromo]);
 
   // Reset ao abrir: chaves e valores novos por sessão de diálogo (as chaves só trocam
   // depois de sucesso confirmado, nunca durante a edição).
   useEffect(() => {
     if (!open) return;
-    precoManual.current.clear();
     setEtapa('tamanhos');
     setMarcados(new Set());
     setChaves({});
@@ -175,7 +157,7 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
       setChaves((prev) => (prev[n] ? prev : { ...prev, [n]: crypto.randomUUID() }));
       setValores((prev) => (prev[n]
         ? prev
-        : { ...prev, [n]: valorInicialPreview(baseKit, tituloDoKit(base.titulo, n), descricaoDoKit(base.descricao, n, base.titulo), n) }));
+        : { ...prev, [n]: valorInicialPreview(base, tituloDoKit(base.titulo, n), descricaoDoKit(base.descricao, n, base.titulo), n) }));
     }
   }
 
@@ -196,9 +178,7 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
   // requisito de LinhaVariacaoForm.fotoObrigatoria (ADR-0129 D-4).
   const semFotoInvalido = tamanhosMarcados.some((n) => !(valores[n]?.imagemPath || valores[n]?.fotoFile));
   const contaPronta = tamanhosMarcados.every((n) => podeSeguir[n] === true);
-  // Sem a leitura da promoção o preço sugerido ainda é o normal: espera (falha da leitura não bloqueia).
-  const lendoPromocao = baseNoMl && promoBase.isFetching;
-  const podeCriar = tamanhosMarcados.length > 0 && !tituloInvalido && !precoInvalido && !semFotoInvalido && contaPronta && !lendoPromocao;
+  const podeCriar = tamanhosMarcados.length > 0 && !tituloInvalido && !precoInvalido && !semFotoInvalido && contaPronta;
   const categoriaMlIdEfetiva = categoriaOverride?.categoriaMlId ?? base.categoriaMlId;
 
   // Só com a base publicada no ML (senão não há galeria a ler) e na etapa 2; falha da leitura não bloqueia.
@@ -460,7 +440,8 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
                 n={n}
                 indice={i + 1}
                 total={tamanhosMarcados.length}
-                base={baseKit}
+                base={base}
+                precoUnitarioVigente={precoPromo ?? base.preco}
                 value={valores[n]}
                 categoriaMlId={categoriaMlIdEfetiva}
                 onPodeSeguir={aoMudarPodeSeguir}
@@ -486,9 +467,6 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
                 onChange={(patch) => {
                   // Arquivo manual vence a candidata: volta a foto da base e descarta a geração.
                   if (patch.fotoFile) capas.descartar(n);
-                  // Digitado à mão: a promoção que chegar depois não toca. Desconto recalcula: volta a ser sugestão.
-                  if ('descontoPct' in patch) precoManual.current.delete(n);
-                  else if ('preco' in patch) precoManual.current.add(n);
                   setValores((prev) => ({
                     ...prev, [n]: { ...prev[n], ...patch, ...(patch.fotoFile ? { imagemPath: base.fotoPath } : {}) },
                   }));
