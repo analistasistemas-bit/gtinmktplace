@@ -1,6 +1,6 @@
 // Task 6 (capa IA do kit virtual): botão, candidata, reprovada, mudança de composição e teto diário.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GerarCapaKitVirtual, useCapaKitVirtual } from '../gerar-capa-kit-virtual';
 
@@ -42,7 +42,7 @@ describe('GerarCapaKitVirtual', () => {
     rerender(<Harness habilitado={false} />);
     expect(botao()).toBeNull();
     modulos = [];
-    rerender(<Harness key="x" />);
+    rerender(<Harness />);
     expect(botao()).toBeNull();
   });
 
@@ -65,23 +65,53 @@ describe('GerarCapaKitVirtual', () => {
     expect(screen.getByText('Mais de 6 unidades: uma de cada produto')).toBeInTheDocument();
   });
 
-  it('reprovada: mostra os motivos', async () => {
+  it('reprovada: mostra os motivos e nunca oferece "Usar esta foto"', async () => {
     edge.mockResolvedValue(reprovada);
-    render(<Harness />);
+    const onUsar = vi.fn();
+    render(<Harness onUsar={onUsar} />);
     await userEvent.click(botao()!);
     expect(await screen.findByText('Faltou a máscara')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Usar capa gerada do kit' })).toBeNull();
+    expect(onUsar).not.toHaveBeenCalled();
   });
 
-  it('mudar a quantidade após candidata volta a idle com request_id novo', async () => {
-    edge.mockResolvedValue(aprovada);
+  it('geração em voo de composição anterior é descartada ao mudar a quantidade', async () => {
+    let resolver!: (r: typeof aprovada) => void;
+    edge.mockReturnValueOnce(new Promise((res) => { resolver = res; }));
     const { rerender } = render(<Harness qtd={2} />);
     await userEvent.click(botao()!);
-    await screen.findByRole('button', { name: 'Usar capa gerada do kit' });
+    await waitFor(() => expect(edge).toHaveBeenCalledTimes(1));
     rerender(<Harness qtd={3} />);
-    await waitFor(() => expect(botao()).toBeInTheDocument());
+    await act(async () => { resolver(aprovada); });
+    expect(botao()).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Usar capa gerada do kit' })).toBeNull();
+    expect(edge).toHaveBeenCalledTimes(1);
+  });
+
+  it('laço de "proxima": composição mudada durante a 1ª tentativa não chama a edge de novo', async () => {
+    let resolver!: (r: typeof reprovada) => void;
+    edge.mockReturnValueOnce(new Promise((res) => { resolver = res; }));
+    const { rerender } = render(<Harness qtd={2} />);
     await userEvent.click(botao()!);
+    await waitFor(() => expect(edge).toHaveBeenCalledTimes(1));
+    rerender(<Harness qtd={3} />);
+    await act(async () => { resolver({ ...reprovada, tentativa: 1, proxima: true }); });
+    expect(edge).toHaveBeenCalledTimes(1);
+    expect(botao()).toBeInTheDocument();
+  });
+
+  it('mudar a quantidade com geração pendente: novo clique usa request_id diferente do primeiro', async () => {
+    let resolver!: (r: typeof aprovada) => void;
+    edge.mockReturnValueOnce(new Promise((res) => { resolver = res; }));
+    edge.mockResolvedValueOnce(aprovada);
+    const { rerender } = render(<Harness qtd={2} />);
+    await userEvent.click(botao()!);
+    await waitFor(() => expect(edge).toHaveBeenCalledTimes(1));
+    rerender(<Harness qtd={3} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Gerar capa do kit' }));
     await waitFor(() => expect(edge).toHaveBeenCalledTimes(2));
     expect(edge.mock.calls[1][0].requestId).not.toBe(edge.mock.calls[0][0].requestId);
+    await act(async () => { resolver(aprovada); });
   });
 
   it('429 teto_diario: mensagem de teto', async () => {
