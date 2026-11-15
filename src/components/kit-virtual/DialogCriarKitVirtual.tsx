@@ -84,7 +84,8 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
   const [textoBase, setTextoBase] = useState({ titulo: '', descricao: '' });
   const [tituloPadrao, setTituloPadrao] = useState(false);
   const [gerandoTexto, setGerandoTexto] = useState(false);
-  const [previewResultado, setPreviewResultado] = useState<PreviewKitVirtualResultado | null>(null);
+  /** Resultado do preview + assinatura financeira do pedido que o gerou (I4). */
+  const [previewResultado, setPreviewResultado] = useState<{ r: PreviewKitVirtualResultado; assinaturaMargem: string } | null>(null);
 
   // Assinaturas: a do texto pedido decide geração automática; a da capa (sem ordem) decide o
   // reset da foto; a da margem (ordem + preços + desconto) decide recálculo. As "atuais" filtram
@@ -278,7 +279,7 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
     // mesma abertura e com a assinatura atual — A → B → A deixaria a 1ª resposta de A passar pela assinatura (I3).
     onSuccess: (r, p) => {
       if (p.sessao !== sessaoRef.current) return;
-      if (p.seqMargem === margemSeq.current && p.assinaturaMargem === assinaturaMargemAtual.current) setPreviewResultado(r);
+      if (p.seqMargem === margemSeq.current && p.assinaturaMargem === assinaturaMargemAtual.current) setPreviewResultado({ r, assinaturaMargem: p.assinaturaMargem });
       // Só um pedido de texto mexe em título/descrição; recálculo de desconto nunca sobrescreve.
       if (p.gerarTexto && p.seq === textoSeq.current && p.assinaturaTexto === assinaturaTextoAtual.current) {
         const desc = r.descricao ?? '';
@@ -388,6 +389,10 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
       toast.error('Falha ao criar kit', { description: err instanceof Error ? err.message : String(err) });
     },
   });
+
+  // I4: só vale o resultado da composição + preços + quantidades + desconto ATUAIS — durante o recálculo ou
+  // depois de ele falhar, margem e "No kit" somem em vez de mostrar o líquido do desconto anterior.
+  const previewAtual = previewResultado?.assinaturaMargem === assinaturaMargem ? previewResultado.r : null;
 
   const somaComponentes = selecionados.reduce((t, s) => t + s.precoAtualML * s.quantidade, 0);
   const precoEstimado = round2(somaComponentes * (1 - descontoPct / 100));
@@ -505,13 +510,13 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
               descontoPct={descontoPct}
               onDescontoPctChange={setDescontoPct}
               precoEstimado={precoEstimado}
-              resultado={previewResultado}
-              carregando={previewMutation.isPending && !previewResultado}
+              resultado={previewAtual}
+              carregando={previewMutation.isPending && !previewAtual}
               avisoKitVinculado={avisoKitVinculado}
             />
             <RecebeAvulsoKitVirtual
               componentes={selecionados}
-              liquidoKit={previewResultado?.margem.ok ? previewResultado.margem.liquido : null}
+              liquidoKit={previewAtual?.margem.ok ? previewAtual.margem.liquido : null}
             />
             <p className="text-xs text-muted-foreground">O kit vai direto para o Mercado Livre — esta tela é a revisão.</p>
           </div>

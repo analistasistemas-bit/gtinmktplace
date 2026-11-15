@@ -53,6 +53,12 @@ vi.mock('@/hooks/useModulosHabilitados', () => ({ useModulosHabilitados: () => (
 vi.mock('@/hooks/useConfiguracoes', () => ({
   useAliquotas: () => ({ data: undefined, isLoading: false, isError: false }),
 }));
+// I4: expõe o líquido que o diálogo entrega ao card (o card real só mostra "No kit" com tarifa e alíquota).
+vi.mock('@/components/kit-virtual/recebe-avulso-kit-virtual', () => ({
+  RecebeAvulsoKitVirtual: ({ liquidoKit }: { liquidoKit: number | null }) => (
+    <p>{liquidoKit == null ? 'No kit: —' : `No kit: ${liquidoKit}`}</p>
+  ),
+}));
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
@@ -816,4 +822,21 @@ describe('DialogCriarKitVirtual — respostas fora de ordem (I3/I4)', () => {
     expect(screen.getByLabelText('Descrição do kit')).toHaveValue('Descrição A nova.');
   });
 
+  it('I4: mudar o desconto e o recálculo falhar: "No kit" e o líquido não mostram o valor antigo', async () => {
+    mockBusca();
+    mockPreview();
+    renderDialog();
+
+    await selecionarDoisComponentes();
+    await avancar();
+    await screen.findByText('No kit: 100');
+    expect(screen.getByText('R$ 100,00', { selector: 'strong' })).toBeInTheDocument();
+
+    previewMock.mockRejectedValueOnce(new Error('margem fora'));
+    await userEvent.type(screen.getByLabelText('Desconto do kit (%)'), '5');
+    await waitFor(() => expect(toast.error).toHaveBeenCalled(), { timeout: 2000 });
+    expect(screen.queryByText('No kit: 100')).not.toBeInTheDocument();
+    expect(screen.getByText('No kit: —')).toBeInTheDocument();
+    expect(screen.queryByText('R$ 100,00', { selector: 'strong' })).not.toBeInTheDocument();
+  });
 });
