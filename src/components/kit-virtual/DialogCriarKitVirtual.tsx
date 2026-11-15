@@ -39,9 +39,12 @@ import { RecebeAvulsoKitVirtual } from '@/components/kit-virtual/recebe-avulso-k
 type Etapa = 'selecionar' | 'preview';
 const ETAPAS = [{ id: 'selecionar', rotulo: 'Composição' }, { id: 'preview', rotulo: 'Anúncio' }] as const;
 
-/** Produtos + quantidades (sem ordem, igual à capa): mudou → texto e capa novos. */
-const assinaturaComposicao = (s: ComponenteSelecionadoKitVirtual[]) =>
+/** Produtos + quantidades sem ordem (mesmo critério do hook da capa): mudou → capa zerada. */
+const assinaturaCapa = (s: ComponenteSelecionadoKitVirtual[]) =>
   s.map((c) => `${c.candidato.userProductId}:${c.quantidade}`).sort().join('|');
+/** Produtos + quantidades NA ORDEM: o título da edge segue a `ordem` (principal primeiro). */
+const assinaturaTextoDe = (s: ComponenteSelecionadoKitVirtual[]) =>
+  s.map((c) => `${c.candidato.userProductId}:${c.quantidade}`).join('|');
 
 type PedidoPreview = { gerarTexto: boolean; assinaturaTexto: string; assinaturaMargem: string; seq: number };
 
@@ -79,11 +82,14 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
   const [gerandoTexto, setGerandoTexto] = useState(false);
   const [previewResultado, setPreviewResultado] = useState<PreviewKitVirtualResultado | null>(null);
 
-  // Assinaturas: a do texto pedido decide geração automática e reset da capa; a da margem
-  // (ordem + preços + desconto) decide recálculo. As "atuais" filtram respostas que chegam tarde.
-  const assinaturaTexto = assinaturaComposicao(selecionados);
+  // Assinaturas: a do texto pedido decide geração automática; a da capa (sem ordem) decide o
+  // reset da foto; a da margem (ordem + preços + desconto) decide recálculo. As "atuais" filtram
+  // respostas que chegam tarde.
+  const assinaturaTexto = assinaturaTextoDe(selecionados);
   const assinaturaMargem = `${selecionados.map((s) => `${s.candidato.userProductId}:${s.quantidade}:${s.precoAtualML}`).join('|')}#${descontoPct}`;
   const textoPedidoRef = useRef<string | null>(null);
+  /** Composição da foto atual — nunca limpa em erro de texto (senão a reentrada perderia a capa). */
+  const capaComposicaoRef = useRef<string | null>(null);
   const margemPedidaRef = useRef<string | null>(null);
   const assinaturaTextoAtual = useRef(assinaturaTexto);
   const assinaturaMargemAtual = useRef(assinaturaMargem);
@@ -121,7 +127,8 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
       setTitulo(refazerDe.titulo);
       setDescricao(desc);
       setTextoBase({ titulo: refazerDe.titulo, descricao: desc });
-      textoPedidoRef.current = assinaturaComposicao(refazerDe.componentes);
+      textoPedidoRef.current = assinaturaTextoDe(refazerDe.componentes);
+      capaComposicaoRef.current = assinaturaCapa(refazerDe.componentes);
     } else {
       setSelecionados([]);
       setFotoStoragePath(null);
@@ -131,6 +138,7 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
       setDescricao('');
       setTextoBase({ titulo: '', descricao: '' });
       textoPedidoRef.current = null;
+      capaComposicaoRef.current = null;
     }
     // refazerDe só é lido nesta abertura (chave nova de diálogo); incluí-lo nas deps re-rodaria
     // o reset a cada render do pai que passe um objeto inline novo, apagando edição em curso.
@@ -283,7 +291,10 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
 
   function pedirPreview(gerarTexto: boolean) {
     margemPedidaRef.current = assinaturaMargem;
-    if (gerarTexto) setGerandoTexto(true);
+    if (gerarTexto) {
+      textoPedidoRef.current = assinaturaTexto; // vale também para o Regerar
+      setGerandoTexto(true);
+    }
     previewMutation.mutate({
       gerarTexto, assinaturaTexto, assinaturaMargem, seq: gerarTexto ? ++textoSeq.current : textoSeq.current,
       input: {
@@ -304,13 +315,16 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
     });
   }
 
-  // Entrar na etapa 2: composição nova → texto IA (título + descrição, já com a margem) e capa
-  // zerada; só preço/ordem mudou → só a margem; nada mudou → nenhuma chamada.
+  // Entrar na etapa 2: produtos/qtd mudaram → capa zerada; composição ou ordem mudou → texto IA
+  // (título + descrição, já com a margem); só preço mudou → só a margem; nada → nenhuma chamada.
   useEffect(() => {
     if (etapa !== 'preview') return;
-    if (assinaturaTexto !== textoPedidoRef.current) {
-      textoPedidoRef.current = assinaturaTexto;
+    const capaAtual = assinaturaCapa(selecionados);
+    if (capaAtual !== capaComposicaoRef.current) {
+      capaComposicaoRef.current = capaAtual;
       trocarFoto(null, null);
+    }
+    if (assinaturaTexto !== textoPedidoRef.current) {
       setPreviewResultado(null);
       pedirPreview(true);
     } else if (assinaturaMargem !== margemPedidaRef.current) {

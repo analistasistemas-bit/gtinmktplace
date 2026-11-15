@@ -539,6 +539,49 @@ describe('DialogCriarKitVirtual — texto IA automático na etapa 2', () => {
     expect(screen.getByLabelText('Descrição do kit')).toHaveValue('Descrição nova.');
   });
 
+  it('geração falha na entrada → Regerar ok → editar, voltar e avançar: mantém capa e texto editado, sem nova geração', async () => {
+    mockBusca();
+    mockPreview();
+    previewMock.mockRejectedValueOnce(new Error('IA fora'));
+    renderDialog();
+
+    await selecionarDoisComponentes();
+    await avancar();
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    await anexarFoto();
+    await waitFor(() => expect(screen.getByText('✓ enviada')).toBeInTheDocument());
+    await userEvent.click(screen.getByRole('button', { name: 'Regerar' }));
+    await waitFor(() => expect(screen.getByLabelText('Título do kit')).toHaveValue(TITULO_IA));
+    await userEvent.type(screen.getByLabelText('Título do kit'), ' X');
+    const chamadas = previewMock.mock.calls.length;
+
+    await userEvent.click(screen.getByRole('button', { name: 'Voltar' }));
+    await avancar();
+    await esperar(700);
+    expect(screen.getByText('✓ enviada')).toBeInTheDocument();
+    expect(screen.getByLabelText('Título do kit')).toHaveValue(`${TITULO_IA} X`);
+    expect(previewMock.mock.calls.slice(chamadas).some(([i]) => (i as { gerarDescricao: boolean }).gerarDescricao)).toBe(false);
+  });
+
+  it('trocar o principal regera o texto (o título segue a ordem) mas mantém a capa', async () => {
+    mockBusca();
+    mockPreview();
+    renderDialog();
+
+    await selecionarDoisComponentes();
+    await avancar();
+    await anexarFoto();
+    await waitFor(() => expect(screen.getByText('✓ enviada')).toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole('button', { name: 'Voltar' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Tornar principal' }));
+    await avancar();
+
+    await waitFor(() => expect(previewMock).toHaveBeenCalledTimes(2));
+    expect(previewMock).toHaveBeenLastCalledWith(expect.objectContaining({ gerarDescricao: true }));
+    expect(screen.getByText('✓ enviada')).toBeInTheDocument();
+  });
+
   it('tituloGeradoPorIA:false mostra o aviso discreto do título padrão', async () => {
     mockBusca();
     mockPreview({ tituloGeradoPorIA: false });
