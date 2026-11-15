@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AtualizacaoDisponivel } from '../atualizacao-disponivel';
 import { usePwaStore } from '@/stores/pwa-store';
@@ -49,6 +49,33 @@ describe('AtualizacaoDisponivel (selo + aviso do dia, ADR-0153 D4)', () => {
     expect(cartao()).toBeNull();
 
     await user.click(screen.getByRole('button', { name: /nova versão/i }));
+    expect(cartao()).not.toBeNull();
+  });
+
+  it('abrir sozinho não tira o foco de quem está digitando', () => {
+    render(<input aria-label="campo" />);
+    const campo = screen.getByLabelText('campo');
+    campo.focus();
+
+    act(() => usePwaStore.setState({ needRefresh: true, sinalVersao: 1 }));
+    render(<AtualizacaoDisponivel />);
+
+    expect(cartao()).not.toBeNull();
+    expect(document.activeElement).toBe(campo);
+  });
+
+  it('com o app aberto na virada do dia, voltar para a aba reabre o aviso', async () => {
+    const user = userEvent.setup();
+    usePwaStore.setState({ needRefresh: true });
+    render(<AtualizacaoDisponivel />);
+    await user.click(screen.getByRole('button', { name: /agora não/i }));
+    expect(cartao()).toBeNull();
+
+    localStorage.clear(); // equivale a "ainda não avisou no dia novo"
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
     expect(cartao()).not.toBeNull();
   });
 
