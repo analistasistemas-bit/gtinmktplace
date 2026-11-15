@@ -1,5 +1,13 @@
 # PubliAI — Tasks
 
+## Kit vinculado: obrigatório novo da categoria + motivo da falha na tela (ADR-0151) — 2026-11-15
+
+Sem migration; edge `criar-kit-vinculado` alterada.
+
+- [x] Kit 4 de 00000182 (MLB455708) recusado pelo ML: `PRODUCT_CONSERVATION` passou a ser obrigatório depois que a base publicou (12/10) e o kit copiava a ficha da base. Agora, sem troca de categoria, o kit confere os obrigatórios do schema atual; a IA preenche só os ausentes (lista fechada) e, se ainda faltar, a criação é recusada no dialog com o nome do atributo.
+- [x] Publicados: "Kit N (falhou)" mostra o motivo (`erro_mensagem`). O badge "Tem kit vinculado" reconsulta a cada 5 s enquanto há kit em trânsito (congelava no spinner).
+- [ ] Limitação conhecida: schema de categoria fica 30 dias no Redis (`attrs:v2:<cat>`); obrigatório criado pelo ML depois do cache só aparece quando expira.
+
 ## Logo da organização na topbar — 2026-11-15
 
 Spec `docs/superpowers/specs/2026-11-15-logo-org-topbar-design.md`. Migration `20261115113941_logo_org.sql` (colunas + bucket `org-logos`); sem edge function.
