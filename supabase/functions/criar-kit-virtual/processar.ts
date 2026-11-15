@@ -556,13 +556,10 @@ export async function criarKitVirtual(
   // Subir aqui é o último recurso — a propagação da foto no ML é assíncrona (ADR-0033) e um
   // picture_id recém-criado costuma ser recusado no POST por alguns minutos.
   let pictureId = kit.foto_ml_picture_id;
-  if (!pictureId) {
-    const path = kit.foto_storage_path ?? input.fotoStoragePath;
-    if (!path) {
-      await marcarErro(deps, kit.id, 'O kit precisa de uma foto própria antes de publicar.');
-      return { ok: false, motivo: 'foto_obrigatoria', kitId: kit.id };
-    }
-    // O path pode ser de uma linha gravada antes da checagem de org: confere de novo antes de assinar.
+  const path = kit.foto_storage_path ?? input.fotoStoragePath;
+  // O path pode ser de uma linha gravada antes da checagem de org: confere de novo antes de assinar.
+  // Capa IA confere SEMPRE, mesmo com picture_id salvo: sem entrega faturada não publica (I1).
+  if (path && (!pictureId || ehCapaIaKitVirtual(path))) {
     let daOrg: boolean;
     try { daOrg = await fotoAceita(path); } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -572,6 +569,12 @@ export async function criarKitVirtual(
     if (!daOrg) {
       await marcarErro(deps, kit.id, MSG_FOTO_INVALIDA);
       return { ok: false, motivo: 'foto_invalida', mensagem: MSG_FOTO_INVALIDA, kitId: kit.id };
+    }
+  }
+  if (!pictureId) {
+    if (!path) {
+      await marcarErro(deps, kit.id, 'O kit precisa de uma foto própria antes de publicar.');
+      return { ok: false, motivo: 'foto_obrigatoria', kitId: kit.id };
     }
     try {
       const url = await deps.urlAssinadaFoto(path);

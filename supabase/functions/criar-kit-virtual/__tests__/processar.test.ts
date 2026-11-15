@@ -1011,3 +1011,38 @@ describe('criarKitVirtual — retomada com foto trocada (I2)', () => {
     expect(st.kits[0]).toMatchObject({ foto_storage_path: 'org-1/kit.jpg', foto_ml_picture_id: 'PIC-1' });
   });
 });
+
+// I1 (re-revisão): picture_id já salvo não dispensa a cobrança — capa IA gravada sem linha `gerada` não publica.
+describe('criarKitVirtual — capa IA gravada com picture_id já salvo (I1)', () => {
+  const CAPA = 'org-1/kit-virtual-ia/11111111-1111-4111-8111-111111111111.png';
+
+  it('kit em erro, capa IA gravada + picture_id, input sem foto, sem linha gerada: foto_invalida antes do POST', async () => {
+    const st = novoEstado([{ status: 'erro', foto_storage_path: CAPA, foto_ml_picture_id: 'PIC-1' }]);
+    const capaIaGerada = vi.fn(async () => false);
+    const criarKitML = vi.fn();
+    const r = await criarKitVirtual(deps(st, { capaIaGerada, criarKitML }),
+      inputPadrao({ fotoStoragePath: null, fotoMlPictureId: null }));
+    expect(r).toMatchObject({ ok: false, motivo: 'foto_invalida', kitId: 'kit-pre-0' });
+    expect(capaIaGerada).toHaveBeenCalledWith(CAPA);
+    expect(criarKitML).not.toHaveBeenCalled();
+    expect(st.kits[0].status).toEqual('erro');
+  });
+
+  it('mesmo cenário com a linha gerada: publica com o picture_id salvo, sem subir de novo', async () => {
+    const st = novoEstado([{ status: 'erro', foto_storage_path: CAPA, foto_ml_picture_id: 'PIC-1' }]);
+    const subirFoto = vi.fn(async () => 'PIC');
+    const criarKitML = vi.fn(async () => ({ id: 'MLB999', userProductId: 'MLBU999', permalink: 'https://ml/kit', titulo: 'Kit' }));
+    const r = await criarKitVirtual(deps(st, { subirFoto, criarKitML }), inputPadrao({ fotoStoragePath: null, fotoMlPictureId: null }));
+    expect(r).toMatchObject({ ok: true });
+    expect(subirFoto).not.toHaveBeenCalled();
+    expect(criarKitML.mock.calls[0][0].thumbnail.id).toEqual('PIC-1');
+  });
+
+  it('kit já publicado: retorno idempotente sem consultar a cobrança', async () => {
+    const st = novoEstado([{ status: 'publicado', ml_item_id: 'MLB1', foto_storage_path: CAPA, foto_ml_picture_id: 'PIC-1' }]);
+    const capaIaGerada = vi.fn(async () => false);
+    const r = await criarKitVirtual(deps(st, { capaIaGerada }), inputPadrao({ fotoStoragePath: null, fotoMlPictureId: null }));
+    expect(r).toMatchObject({ ok: true, jaExistia: true });
+    expect(capaIaGerada).not.toHaveBeenCalled();
+  });
+});
