@@ -17,6 +17,9 @@ const CLASSES: Record<TipoKit, { tem: string; e?: string }> = {
   virtual: { tem: 'border-info/20 bg-info/10 text-info' },
 };
 
+// Falha vence a cor do tipo: o operador vê o erro na lista sem expandir a linha (Diego, 15/11).
+const FALHA = 'border-destructive/40 bg-destructive/10 text-destructive';
+
 const ICONE_NORMAL = { vinculado: Package, variacao: Layers, virtual: Boxes } as const;
 
 function Icone({ tipo, estado }: { tipo: TipoKit; estado: EstadoKit }) {
@@ -46,7 +49,7 @@ export function BadgesKit({ marcas, className }: { marcas: MarcaKit[]; className
                 onClick={(e) => e.stopPropagation()}
                 className={cn(
                   'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-left text-xs font-medium outline-none sm:whitespace-nowrap focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                  CLASSES[m.tipo][m.papel],
+                  m.estado === 'falha' ? FALHA : CLASSES[m.tipo][m.papel],
                 )}
               >
                 <Icone tipo={m.tipo} estado={m.estado} />

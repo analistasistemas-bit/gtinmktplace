@@ -423,7 +423,7 @@ describe('criarKitVirtual', () => {
     expect(st.kits[0].status).toEqual('erro');
     // humanizarErroML traduz o code `thumbnail` para a mensagem de foto em PT-BR.
     expect(st.kits[0].erro_mensagem).toContain('fotos do anúncio');
-    expect(st.kits[0].erro_mensagem).toContain('thumbnail must not be null');
+    expect(st.kits[0].erro_mensagem).not.toContain('must not be null'); // texto cru do ML só no log (pt-BR, 15/11)
     expect(st.kits[0].ml_item_id).toBeNull();
   });
 

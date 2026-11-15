@@ -701,7 +701,7 @@ Deno.serve(async (req) => {
     // no ML ("does not exist"): limpa os caches efêmeros subidos NESTE attempt p/ o próximo
     // Reenviar re-subir do zero, em vez de martelar o mesmo id morto (espelha update-familia-ml).
     // Escopo: só cores ainda sem `ml_variation_id` — partições já publicadas não perdem o id.
-    if (retentavelFoto || /does not exist|Problema nas fotos/i.test(msg)) {
+    if (retentavelFoto || /does not exist|não existe mais no Mercado Livre|Problema nas fotos/i.test(msg)) {
       await admin.from('variacoes').update({ ml_picture_id: null })
         .eq('familia_id', job.familia_id).is('ml_variation_id', null);
       const limparCapas: Record<string, null> = {};

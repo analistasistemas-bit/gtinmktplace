@@ -66,6 +66,14 @@ describe('BadgesKit', () => {
     expect(botao.querySelector('svg')).toHaveClass('lucide-triangle-alert');
   });
 
+  it('estado falha pinta o selo de vermelho (sinaliza sem abrir a linha)', () => {
+    render(<BadgesKit marcas={[marca({ estado: 'falha' }), marca({ estado: 'normal', papel: 'e' })]} />);
+    const [falha, normal] = screen.getAllByRole('button');
+    expect(falha.className).toContain('text-destructive');
+    expect(falha.className).not.toContain('teal');
+    expect(normal.className).not.toContain('text-destructive');
+  });
+
   it('lista vazia não renderiza nada', () => {
     const { container } = render(<BadgesKit marcas={[]} />);
     expect(container).toBeEmptyDOMElement();

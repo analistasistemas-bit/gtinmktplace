@@ -16,11 +16,21 @@ describe('humanizarErroML', () => {
     expect(msg).not.toContain('Free shipping');
   });
 
-  it('atributo com problema mantém o detalhe do ML', () => {
+  it('atributo com problema → cita o atributo, tudo em pt-BR', () => {
     const json = { message: 'Validation error', cause: [{ type: 'error', code: 'item.attributes.required', message: 'The attribute BRAND is required' }] };
     const msg = humanizarErroML(400, json);
     expect(msg.toLowerCase()).toContain('atributo');
     expect(msg).toContain('BRAND');
+    expect(msg).not.toMatch(/\bThe\b|required/);
+  });
+
+  // Caso real 15/11: kit 4 de 00000182 (MLB455708) — Diego: "toda e qualquer mensagem em português".
+  it('atributos obrigatórios em lista [..] → pt-BR com os códigos, sem o texto em inglês', () => {
+    const json = { message: 'Validation error', cause: [{ type: 'error', code: 'item.attribute.missing_required', message: "The attributes [PRODUCT_CONSERVATION] are required for category MLB455708 and channel marketplace. Check the attribute is present in the attributes list or in all variation's attributes_combination or attributes." }] };
+    const msg = humanizarErroML(400, json);
+    expect(msg).toContain('PRODUCT_CONSERVATION');
+    expect(msg).not.toMatch(/The attributes|required for|channel|Check the/);
+    expect(msg).not.toContain('MLB455708');
   });
 
   it('foto com status ERROR (arquivo pesado) → diz para trocar a imagem por uma menor', () => {
@@ -31,15 +41,33 @@ describe('humanizarErroML', () => {
     expect(msg).toContain('10 MB');
     expect(msg).toMatch(/troque a foto/i);
     expect(msg).toContain('Reenviar');
+    expect(msg).not.toContain('cannot be added');
   });
 
-  it('código desconhecido cai para a mensagem específica do ML (não "Validation error")', () => {
-    const json = { message: 'Validation error', cause: [{ type: 'error', code: 'item.something.weird', message: 'Algo específico aconteceu' }] };
+  it('"does not exist" vira "não existe mais no Mercado Livre" (sinal de ehErroDefinitivoFoto)', () => {
+    const json = { message: 'Validation error', cause: [{ type: 'error', code: 'body.invalid_fields', message: 'Picture 123-MLB does not exist' }] };
+    const msg = humanizarErroML(400, json);
+    expect(msg).toMatch(/^Problema nas fotos/);
+    expect(msg).toContain('não existe mais no Mercado Livre');
+    expect(msg).not.toContain('does not exist');
+  });
+
+  it('código desconhecido com texto em português do ML → mantém o texto', () => {
+    const json = { message: 'Validation error', cause: [{ type: 'error', code: 'item.something.weird', message: 'Algo específico aconteceu com o anúncio' }] };
     expect(humanizarErroML(400, json)).toContain('Algo específico aconteceu');
   });
 
-  it('sem cause usável → usa a message do topo', () => {
-    expect(humanizarErroML(403, { message: 'Forbidden' })).toContain('Forbidden');
+  it('código desconhecido com texto em inglês → mensagem genérica em pt-BR', () => {
+    const json = { message: 'Validation error', cause: [{ type: 'error', code: 'item.something.weird', message: 'Something weird happened' }] };
+    const msg = humanizarErroML(400, json);
+    expect(msg).not.toContain('Something');
+    expect(msg).toContain('Mercado Livre');
+  });
+
+  it('sem cause usável e message do topo em inglês → genérica em pt-BR', () => {
+    const msg = humanizarErroML(403, { message: 'Forbidden' });
+    expect(msg).not.toContain('Forbidden');
+    expect(msg).toContain('403');
   });
 
   it('só warnings (sem erro real) → ainda devolve algo legível', () => {
@@ -47,13 +75,13 @@ describe('humanizarErroML', () => {
     expect(humanizarErroML(400, json).length).toBeGreaterThan(0);
   });
 
-  // Bug real 2026-09-06 (Kit Virtual): `cause` às vezes vem como array de STRINGS puras, não só
-  // de objetos `{code,message,type}` — o diagnóstico do ML se perdia e virava "erro não
-  // especificado" (código assumia sempre objeto: `c.message`/`c.code` numa string são undefined).
-  it('cause como array de STRINGS (ex.: thumbnail.secureUrl) → propaga o texto do ML, não "erro não especificado"', () => {
+  // Bug real 2026-09-06 (Kit Virtual): `cause` às vezes vem como array de STRINGS puras. O texto
+  // cru vai para o log (console.error dentro de humanizarErroML); o usuário vê pt-BR.
+  it('cause como array de STRINGS (ex.: thumbnail.secureUrl) → problema nas fotos, não "erro não especificado"', () => {
     const json = { message: 'Validation failed for one or more fields', error: 'bad_request', cause: ['thumbnail.secureUrl must not be null'] };
     const msg = humanizarErroML(400, json);
-    expect(msg).toContain('thumbnail.secureUrl must not be null');
+    expect(msg).toMatch(/^Problema nas fotos/);
+    expect(msg).not.toContain('must not be null');
     expect(msg).not.toContain('erro não especificado');
   });
 
@@ -66,8 +94,9 @@ describe('humanizarErroML', () => {
       ],
     };
     const msg = humanizarErroML(400, json);
-    expect(msg).toContain('thumbnail.secureUrl must not be null');
+    expect(msg).toContain('fotos');
     expect(msg).toContain('60');
+    expect(msg).not.toContain('does not support');
   });
 
   it('ML sem message nenhuma no topo e sem cause → cai no fallback genérico (não inventa texto)', () => {

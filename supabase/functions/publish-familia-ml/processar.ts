@@ -79,7 +79,7 @@ async function gtinDaUnidadeBase(
 
 /** Erro definitivo de foto cujo picture_id cacheado expirou ou não existe mais no ML. */
 function ehErroDefinitivoFoto(msg: string): boolean {
-  return /does not exist/i.test(msg) || /Problema nas fotos/i.test(msg);
+  return /does not exist|não existe mais no Mercado Livre/i.test(msg) || /Problema nas fotos/i.test(msg);
 }
 
 async function limparCacheFotosFamilia(admin: SupabaseClient, familiaId: string): Promise<void> {

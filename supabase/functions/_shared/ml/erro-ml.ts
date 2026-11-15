@@ -20,35 +20,61 @@ function normalizarCausa(c: string | Causa): Causa {
   return typeof c === 'string' ? { message: c } : c;
 }
 
+// Diego (15/11): toda mensagem ao cliente em pt-BR. O texto cru do ML (quase sempre inglês) nunca
+// entra na mensagem: vai para o log em `humanizarErroML`. Da causa só aproveitamos os códigos de
+// atributo (ex.: PRODUCT_CONSERVATION), que são o que o operador precisa para corrigir.
+
+/** Códigos de atributo citados pelo ML: lista `[A, B]` ou tokens em CAIXA ALTA (sem o id da categoria). */
+function atributosCitados(msg: string): string[] {
+  const lista = /\[([A-Z0-9_,\s]+)\]/.exec(msg);
+  const brutos = lista ? lista[1].split(',') : msg.match(/\b[A-Z][A-Z0-9_]{2,}\b/g) ?? [];
+  return [...new Set(brutos.map((t) => t.trim()).filter((t) => t && !/^MLB\d+$/.test(t)))];
+}
+
+// ponytail: heurística de idioma — acento ou palavra comum em pt. Erra para o genérico, nunca para o inglês.
+const PARECE_PT = /[ãõçáéíóúâêô]|\b(não|foto|anúncio|produto|categoria|preço|envie|novamente)\b/i;
+
 function humanizarCausa(c: Causa): string {
   const code = (c.code ?? '').toLowerCase();
-  const det = c.message ? ` (${c.message})` : '';
+  const msg = c.message ?? '';
   if (code.includes('title') && code.includes('length')) {
     return 'O título passou de 60 caracteres (limite da categoria no Mercado Livre). Encurte o título na revisão.';
   }
-  if (code.includes('title')) return `Problema no título${det}.`;
-  if (code.includes('picture') || code.includes('image') || code.includes('thumbnail')) {
+  if (code.includes('title')) return 'O Mercado Livre recusou o título do anúncio. Revise o título e clique em Reenviar.';
+  // Prefixo "Problema nas fotos" é mantido: ehErroDefinitivoFoto (publish-familia-ml) depende dele para limpar o cache.
+  if (/does not exist/i.test(msg)) {
+    return /picture|image|thumbnail|foto/i.test(msg) || code.includes('picture')
+      ? 'Problema nas fotos do anúncio: uma imagem enviada não existe mais no Mercado Livre. Clique em Reenviar.'
+      : 'Um item enviado não existe mais no Mercado Livre. Clique em Reenviar.';
+  }
+  if (/picture|image|thumbnail/.test(code) || (!code && /picture|image|thumbnail/i.test(msg))) {
     // "has status ERROR": o ML baixou a foto e não conseguiu processar — caso real 08/11 foi PNG de 37 MB.
-    // Prefixo "Problema nas fotos" é mantido: ehErroDefinitivoFoto depende dele para limpar o cache.
-    if (/status ERROR/i.test(c.message ?? '')) {
+    if (/status ERROR/i.test(msg)) {
       // ponytail: status ERROR também cobre falha de download/formato — tamanho é a causa provável, não a única.
-      return `Problema nas fotos do anúncio: o Mercado Livre não conseguiu processar uma das imagens${det}. `
+      return 'Problema nas fotos do anúncio: o Mercado Livre não conseguiu processar uma das imagens. '
         + 'Confira as fotos do produto: se alguma estiver pesada (acima de 10 MB) ou com resolução muito alta, '
         + 'troque a foto por uma menor (até 10 MB, cerca de 2000 px no lado maior); se estiver corrompida ou em formato '
         + 'diferente de JPG/PNG, troque também. Depois clique em Reenviar.';
     }
-    return `Problema nas fotos do anúncio${det}. Verifique as imagens das variações.`;
+    return 'Problema nas fotos do anúncio: o Mercado Livre recusou uma das imagens. Verifique as fotos e clique em Reenviar.';
   }
-  if (code.includes('price')) return `Problema no preço${det}.`;
+  if (code.includes('price')) return 'O Mercado Livre recusou o preço do anúncio. Revise o preço e clique em Reenviar.';
   if (code.includes('gtin') || code.includes('ean')) {
-    return `Problema no código de barras / GTIN${det}.`;
+    return 'O Mercado Livre recusou o código de barras (GTIN). Confira o GTIN do produto e clique em Reenviar.';
   }
-  if (code.includes('attribute')) return `Atributo obrigatório com problema${det}. Revise os atributos da categoria.`;
-  if (code.includes('variation')) return `Problema nas variações (cores)${det}.`;
-  if (code.includes('category')) return `Problema na categoria${det}.`;
-  if (code.includes('description')) return `Problema na descrição${det}.`;
-  if (code.includes('stock') || code.includes('quantity')) return `Problema no estoque${det}.`;
-  return c.message ?? c.code ?? 'erro não especificado';
+  if (code.includes('attribute')) {
+    const ids = atributosCitados(msg);
+    const quais = ids.length ? `: ${ids.join(', ')}` : '';
+    return code.includes('missing') || /required/i.test(msg)
+      ? `A categoria exige atributo(s) que não foram enviados${quais}. Revise os atributos da categoria e clique em Reenviar.`
+      : `O Mercado Livre recusou atributo(s) do anúncio${quais}. Revise os atributos da categoria e clique em Reenviar.`;
+  }
+  if (code.includes('variation')) return 'O Mercado Livre recusou as variações (cores) do anúncio. Revise as variações e clique em Reenviar.';
+  if (code.includes('category')) return 'O Mercado Livre recusou a categoria do anúncio. Revise a categoria e clique em Reenviar.';
+  if (code.includes('description')) return 'O Mercado Livre recusou a descrição do anúncio. Revise a descrição e clique em Reenviar.';
+  if (code.includes('stock') || code.includes('quantity')) return 'O Mercado Livre recusou o estoque do anúncio. Revise o estoque e clique em Reenviar.';
+  if (PARECE_PT.test(msg)) return msg;
+  return 'O Mercado Livre recusou o anúncio por um motivo que o PubliAI ainda não reconhece. O detalhe ficou registrado para o suporte.';
 }
 
 // O ML às vezes recusa o item por um erro TRANSIENTE de processamento de imagem
@@ -119,10 +145,14 @@ export function humanizarErroML(status: number, json: unknown): string {
   const bloqueantes = causes.filter((c) => (c?.type ?? 'error') !== 'warning');
   const usar = bloqueantes.length ? bloqueantes : causes;
 
+  // Texto cru do ML só no log (diagnóstico); o cliente vê pt-BR.
+  if (usar.length || j.message || j.error) console.error('ml_erro_bruto', status, JSON.stringify(json));
   const msgs = [...new Set(usar.map(humanizarCausa).filter(Boolean))];
   if (msgs.length) return msgs.join(' ');
 
-  return j.message ?? j.error ?? `O Mercado Livre recusou (erro ${status}).`;
+  const topo = j.message ?? j.error;
+  if (topo && PARECE_PT.test(topo)) return topo;
+  return `O Mercado Livre recusou (erro ${status}).`;
 }
 
 // ─── Liveness da integração (ADR-0069) ─────────────────────────────────────
