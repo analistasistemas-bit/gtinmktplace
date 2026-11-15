@@ -13,10 +13,10 @@ useAuthStore.getState().hydrate();
 
 // Registro do service worker (ADR-0153, D4). Único lugar do app que importa o virtual module —
 // registerType: 'prompt' não recarrega sozinho, então o estado vai para a pwa-store e quem
-// oferece a troca ao usuário é o componente AtualizacaoDisponivel.
+// oferece a troca ao usuário é o selo AtualizacaoDisponivel, na Topbar.
 const updateSW = registerSW({
   onNeedRefresh() {
-    usePwaStore.getState().setNeedRefresh(true);
+    usePwaStore.getState().avisarVersaoNova();
   },
   onOfflineReady() {
     usePwaStore.getState().setOfflineReady(true);

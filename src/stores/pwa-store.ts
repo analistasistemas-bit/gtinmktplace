@@ -7,6 +7,9 @@ import type { BeforeInstallPromptEvent } from '@/types/before-install-prompt';
 interface PwaState {
   // Service Worker update state
   needRefresh: boolean;
+  // Sobe a cada versão nova detectada (inclusive deploy novo com outra já esperando): repulsa o selo.
+  sinalVersao: number;
+  avisarVersaoNova: () => void;
   offlineReady: boolean;
   updateSW: ((reloadPage?: boolean) => Promise<void>) | null;
   setNeedRefresh: (needRefresh: boolean) => void;
@@ -28,6 +31,8 @@ interface PwaState {
 
 export const usePwaStore = create<PwaState>((set, get) => ({
   needRefresh: false,
+  sinalVersao: 0,
+  avisarVersaoNova: () => set((state) => ({ needRefresh: true, sinalVersao: state.sinalVersao + 1 })),
   offlineReady: false,
   updateSW: null,
   setNeedRefresh: (needRefresh) => set({ needRefresh }),

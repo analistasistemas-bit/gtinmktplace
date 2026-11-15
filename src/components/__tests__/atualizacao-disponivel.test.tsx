@@ -1,50 +1,77 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { AtualizacaoDisponivel } from '../atualizacao-disponivel';
 import { usePwaStore } from '@/stores/pwa-store';
+import { jaAvisouHoje, marcarAvisadoHoje } from '@/lib/aviso-versao-dia';
 
-const toastMock = vi.fn((..._args: unknown[]) => 'toast-id');
-const dismissMock = vi.fn();
-vi.mock('sonner', () => ({
-  toast: Object.assign((...args: unknown[]) => toastMock(...args), {
-    dismiss: (...args: unknown[]) => dismissMock(...args),
-  }),
-}));
-
+beforeEach(() => localStorage.clear());
 afterEach(() => {
   cleanup();
-  usePwaStore.setState({ needRefresh: false, offlineReady: false, updateSW: null });
-  toastMock.mockClear();
-  dismissMock.mockClear();
+  vi.useRealTimers();
+  usePwaStore.setState({ needRefresh: false, offlineReady: false, updateSW: null, sinalVersao: 0 });
 });
 
-describe('AtualizacaoDisponivel', () => {
+const cartao = () => screen.queryByText(/nova versão do publiai pronta/i);
+
+describe('AtualizacaoDisponivel (selo + aviso do dia, ADR-0153 D4)', () => {
   it('não mostra nada enquanto não há versão nova', () => {
     render(<AtualizacaoDisponivel />);
 
-    expect(toastMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /nova versão/i })).toBeNull();
   });
 
-  it('dispara o toast de nova versão, sem duração, quando needRefresh vira true', () => {
+  it('na 1ª vez do dia abre o aviso e marca o dia como avisado', () => {
     usePwaStore.setState({ needRefresh: true });
 
     render(<AtualizacaoDisponivel />);
 
-    expect(toastMock).toHaveBeenCalledTimes(1);
-    const [mensagem, opcoes] = toastMock.mock.calls[0] as [string, { duration: number }];
-    expect(mensagem).toMatch(/nova versão/i);
-    expect(opcoes.duration).toBe(Infinity);
+    expect(cartao()).not.toBeNull();
+    expect(jaAvisouHoje()).toBe(true);
   });
 
-  it('a ação do toast chama updateSW(true), forçando a troca de versão', () => {
-    const updateSW = vi.fn().mockResolvedValue(undefined);
-    usePwaStore.setState({ needRefresh: true, updateSW });
+  it('se já avisou hoje, mostra só o selo, sem abrir o aviso', () => {
+    marcarAvisadoHoje();
+    usePwaStore.setState({ needRefresh: true });
 
     render(<AtualizacaoDisponivel />);
 
-    const [, opcoes] = toastMock.mock.calls[0] as [string, { action: { onClick: () => void } }];
-    opcoes.action.onClick();
+    expect(screen.getByRole('button', { name: /nova versão/i })).toBeTruthy();
+    expect(cartao()).toBeNull();
+  });
+
+  it('"Agora não" recolhe para o selo e clicar no selo reabre', async () => {
+    const user = userEvent.setup();
+    usePwaStore.setState({ needRefresh: true });
+    render(<AtualizacaoDisponivel />);
+
+    await user.click(screen.getByRole('button', { name: /agora não/i }));
+    expect(cartao()).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: /nova versão/i }));
+    expect(cartao()).not.toBeNull();
+  });
+
+  it('"Atualizar agora" chama updateSW(true)', async () => {
+    const user = userEvent.setup();
+    const updateSW = vi.fn().mockResolvedValue(undefined);
+    usePwaStore.setState({ needRefresh: true, updateSW });
+    render(<AtualizacaoDisponivel />);
+
+    await user.click(screen.getByRole('button', { name: /atualizar agora/i }));
 
     expect(updateSW).toHaveBeenCalledWith(true);
+  });
+});
+
+describe('aviso-versao-dia', () => {
+  it('vale só para o dia corrente', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 10, 15, 23, 59));
+    marcarAvisadoHoje();
+    expect(jaAvisouHoje()).toBe(true);
+
+    vi.setSystemTime(new Date(2026, 10, 16, 0, 1));
+    expect(jaAvisouHoje()).toBe(false);
   });
 });

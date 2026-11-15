@@ -7,7 +7,6 @@ import { Toaster } from '@/components/ui/sonner';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { SupportBanner } from '@/components/support-banner';
 import { BannerOffline } from '@/components/banner-offline';
-import { AtualizacaoDisponivel } from '@/components/atualizacao-disponivel';
 import { useSupportStore } from '@/stores/support-store';
 
 export function AppShell() {
@@ -44,7 +43,6 @@ export function AppShell() {
       </Sheet>
 
       <Toaster />
-      <AtualizacaoDisponivel />
     </div>
   );
 }

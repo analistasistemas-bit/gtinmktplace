@@ -17,6 +17,9 @@ export function AdminShell() {
           <span className="text-sm font-semibold">Daludi · Administração da plataforma</span>
         </div>
         <div className="flex items-center gap-1">
+          {/* O super-admin fica horas em /admin, fora do AppShell — sem isto nunca veria o aviso
+              de versão nova (ADR-0153 D4). */}
+          <AtualizacaoDisponivel className="mr-1" />
           <ThemeToggle />
           <UserMenu />
         </div>
@@ -25,9 +28,6 @@ export function AdminShell() {
         <Outlet />
       </main>
       <Toaster />
-      {/* O super-admin fica horas em /admin, fora do AppShell — sem isto nunca veria o aviso
-          de versão nova (ADR-0153 D4). */}
-      <AtualizacaoDisponivel />
     </div>
   );
 }
