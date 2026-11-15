@@ -18,6 +18,8 @@ function rpcNcmPadrao(fn: string, args: { p_codigos: string[] }) {
 }
 
 const cadastrarProdutoMock = vi.fn();
+const toastMock = vi.hoisted(() => ({ warning: vi.fn(), error: vi.fn(), success: vi.fn(), info: vi.fn() }));
+vi.mock('sonner', () => ({ toast: Object.assign(vi.fn(), toastMock) }));
 vi.mock('@/lib/produtos-saldo', () => ({
   cadastrarProduto: (...a: unknown[]) => cadastrarProdutoMock(...a),
   uploadFotoProduto: vi.fn().mockResolvedValue(undefined),
@@ -464,26 +466,41 @@ describe('DialogCadastroGrade — resumo antes de salvar', () => {
   });
 });
 
-// Fix round pós-revisão: com a matriz não pintando mais erro em célula vazia, preço faltando
-// deixou de ter QUALQUER sinal na tela além do botão "Cadastrar" ficar cinza. `title` é o mesmo
-// padrão de `gerador-variacoes.tsx` (`title={bloqueada ? MOTIVO_LIMITE : undefined}`).
-describe('DialogCadastroGrade — motivo do botão travado por preço', () => {
-  it('"Cadastrar" travado só por preço vazio explica o motivo no title', async () => {
+// Desde 2026-11-15 o botão da etapa da grade nunca trava (Diego): com pendência, o clique leva
+// ao primeiro campo faltante na ordem da tela, marca o campo e avisa por toast. Nada é salvo.
+describe('DialogCadastroGrade — Avançar/Cadastrar sempre clicável leva ao campo pendente', () => {
+  it('nome vazio: clique foca o Nome, avisa e não salva', async () => {
+    const user = userEvent.setup();
+    renderGrade();
+    const botao = screen.getByRole('button', { name: 'Cadastrar' });
+    expect(botao).toBeEnabled();
+    await user.click(botao);
+    expect(screen.getByLabelText('Nome')).toHaveFocus();
+    expect(screen.getByLabelText('Nome')).toHaveAttribute('aria-invalid', 'true');
+    expect(toastMock.warning).toHaveBeenCalledWith('Preencha o nome do produto.', { position: 'top-center' });
+    expect(cadastrarProdutoMock).not.toHaveBeenCalled();
+  });
+
+  it('só o preço vazio: clique foca o Preço mínimo e mostra o erro ao lado', async () => {
     const user = userEvent.setup();
     renderGrade();
     await user.type(screen.getByLabelText('Nome'), 'Camiseta');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
     await escolherNoSelect(user, /^Gênero/i, 'masculino');
+    await preencherEmbalagem(user);
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await escolherGrade(user, 'letras');
     await user.click(screen.getByRole('checkbox', { name: 'P' }));
-    const botao = screen.getByRole('button', { name: 'Cadastrar' });
-    expect(botao).toBeDisabled();
-    expect(botao).toHaveAttribute('title', expect.stringMatching(/preço/i));
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+    const preco = screen.getByLabelText('Preço mínimo (líquido)');
+    expect(preco).toHaveFocus();
+    expect(preco).toHaveAttribute('aria-invalid', 'true');
+    expect(toastMock.warning).toHaveBeenCalledWith(expect.stringMatching(/^Preço mínimo \(líquido\) é obrigatório/), expect.anything());
+    expect(cadastrarProdutoMock).not.toHaveBeenCalled();
   });
 
   // Trava de 2026-10-19: produto cadastrado sem peso/medidas não tinha tela para completar depois.
-  it('sem peso e medidas da embalagem, "Cadastrar" trava e explica em texto visível', async () => {
+  it('sem peso e medidas da embalagem, explica em texto visível e o clique foca o Peso', async () => {
     const user = userEvent.setup();
     renderGrade();
     await user.type(screen.getByLabelText('Nome'), 'Camiseta');
@@ -493,17 +510,15 @@ describe('DialogCadastroGrade — motivo do botão travado por preço', () => {
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await escolherGrade(user, 'letras');
     await user.click(screen.getByRole('checkbox', { name: 'P' }));
-    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
     expect(screen.getByText(/Preencha peso e medidas da embalagem — obrigatório em toda a grade/, { selector: 'span' }))
       .toBeInTheDocument();
-    await preencherEmbalagem(user);
-    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+    expect(screen.getByLabelText('Peso')).toHaveFocus();
+    expect(toastMock.warning).toHaveBeenCalledWith(expect.stringMatching(/^Peso: Obrigatório/), expect.anything());
   });
 
-  // Achado Important #1 da revisão final: o `title` do botão é INALCANÇÁVEL — `buttonVariants`
-  // traz `disabled:pointer-events-none`, então o hover nunca acontece no botão travado. O motivo
-  // precisa de texto VISÍVEL. Com o cabeçalho vazio o motivo é o cabeçalho: texto genérico, sem
-  // listar os SKUs (listar os 60 seria o muro vermelho de volta, em forma de texto).
+  // Com o cabeçalho vazio o motivo é o cabeçalho: texto genérico, sem listar os SKUs (listar os
+  // 60 seria o muro vermelho de volta, em forma de texto).
   it('cabeçalho de preço vazio explica o bloqueio em texto visível, sem listar SKU', async () => {
     const user = userEvent.setup();
     renderGrade();
@@ -518,10 +533,9 @@ describe('DialogCadastroGrade — motivo do botão travado por preço', () => {
     expect(screen.queryByText(/Preto · P/, { selector: 'span' })).not.toBeInTheDocument();
   });
 
-  // O cenário REAL do achado: cabeçalho preenchido, o operador esvazia UMA célula e o botão trava
-  // sem nada na tela dizer qual célula é (a borda/texto vermelho da matriz só aparece com valor
-  // não-vazio, pelo fix da Task 9). O texto tem que NOMEAR o SKU.
-  it('célula de preço esvaziada nomeia o SKU que trava o cadastro', async () => {
+  // Cabeçalho preenchido, o operador esvazia UMA célula: o aviso tem que NOMEAR o SKU e o foco
+  // vai para a grade (a célula está numa aba da matriz).
+  it('célula de preço esvaziada: aviso nomeia o SKU e o foco vai para a grade', async () => {
     const user = userEvent.setup();
     renderGrade();
     await user.type(screen.getByLabelText('Nome'), 'Camiseta');
@@ -533,18 +547,18 @@ describe('DialogCadastroGrade — motivo do botão travado por preço', () => {
     await escolherGrade(user, 'letras');
     await user.click(screen.getByRole('checkbox', { name: 'P' }));
     await user.click(screen.getByRole('checkbox', { name: 'M' }));
-    expect(screen.getByRole('button', { name: 'Cadastrar' })).not.toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'Preço' }));
     await user.clear(screen.getByLabelText('Preço mínimo (líquido) de Preto · P'));
-    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
     // `selector: 'span'`: com regex, todo ancestral que CONTÉM o texto também casa.
     const motivo = screen.getByText(/Preto · P/, { selector: 'span' });
-    expect(motivo).toBeInTheDocument();
-    // O SKU que está OK não entra na lista — senão o texto vira o muro vermelho por extenso.
     expect(motivo.textContent).not.toMatch(/Preto · M/);
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+    expect(toastMock.warning).toHaveBeenCalledWith(expect.stringMatching(/Preto · P/), expect.anything());
+    expect(document.activeElement?.id).toBe('grade-matriz');
+    expect(cadastrarProdutoMock).not.toHaveBeenCalled();
   });
 
-  it('preenchendo o preço, "Cadastrar" destrava e o title some', async () => {
+  it('tudo preenchido: clique segue sem aviso', async () => {
     const user = userEvent.setup();
     renderGrade();
     await user.type(screen.getByLabelText('Nome'), 'Camiseta');
@@ -555,9 +569,10 @@ describe('DialogCadastroGrade — motivo do botão travado por preço', () => {
     await user.click(screen.getByRole('checkbox', { name: 'P' }));
     await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
     await preencherEmbalagem(user);
-    const botao = screen.getByRole('button', { name: 'Cadastrar' });
-    expect(botao).not.toBeDisabled();
-    expect(botao).not.toHaveAttribute('title');
+    cadastrarProdutoMock.mockResolvedValueOnce(new Promise(() => {}));
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+    expect(toastMock.warning).not.toHaveBeenCalled();
+    await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalled());
   });
 });
 
@@ -1338,7 +1353,7 @@ describe('DialogCadastroGrade — seletor de grade (ADR-0182)', () => {
     expect(cadastrarProdutoMock.mock.calls[0][0]).toMatchObject({ gradeTamanho: 'infantil', genero: 'meninos' });
   });
 
-  it('sem escolher a grade, Cadastrar fica travado e não há checkbox de tamanho', async () => {
+  it('sem escolher a grade, Cadastrar leva à Grade de tamanhos e não há checkbox de tamanho', async () => {
     const user = userEvent.setup();
     renderGrade();
     expect(screen.queryByRole('checkbox', { name: 'P' })).not.toBeInTheDocument();
@@ -1349,7 +1364,9 @@ describe('DialogCadastroGrade — seletor de grade (ADR-0182)', () => {
     await preencherEmbalagem(user);
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     expect(screen.queryByLabelText(/^Estoque inicial de/)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+    expect(screen.getByRole('combobox', { name: /^Grade de tamanhos/i })).toHaveFocus();
+    expect(cadastrarProdutoMock).not.toHaveBeenCalled();
   });
 
   it('com linhas geradas, trocar Infantil→Calça pede confirmação, limpa as linhas e zera o gênero', async () => {
@@ -1371,7 +1388,7 @@ describe('DialogCadastroGrade — seletor de grade (ADR-0182)', () => {
     expect(screen.getByRole('combobox', { name: /^Gênero/i })).toHaveTextContent('Selecione…');
   });
 
-  it('Infantil + meninos -> Trocar tipo -> Calçado: gênero zera e o botão trava até escolher gênero adulto', async () => {
+  it('Infantil + meninos -> Trocar tipo -> Calçado: gênero zera e o botão leva ao Gênero até escolher gênero adulto', async () => {
     cadastrarProdutoMock.mockResolvedValueOnce({
       loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [],
       variacoes: [{ id: 'v1', codigo: '00000001' }],
@@ -1391,9 +1408,10 @@ describe('DialogCadastroGrade — seletor de grade (ADR-0182)', () => {
     await preencherEmbalagem(user);
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await user.click(screen.getByRole('checkbox', { name: '42' }));
-    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+    expect(screen.getByRole('combobox', { name: /^Gênero/i })).toHaveFocus();
+    expect(cadastrarProdutoMock).not.toHaveBeenCalled();
     await escolherNoSelect(user, /^Gênero/i, 'masculino');
-    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
     await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
     await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));
     expect(cadastrarProdutoMock.mock.calls[0][0]).toMatchObject({ gradeTamanho: 'calcado', genero: 'masculino' });
@@ -1437,7 +1455,9 @@ describe('DialogCadastroGrade — marca própria (ADR-0188)', () => {
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await escolherGrade(user, 'letras');
     await user.click(screen.getByRole('checkbox', { name: 'P' }));
-    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+    expect(campo).toHaveFocus();
+    expect(cadastrarProdutoMock).not.toHaveBeenCalled();
     expect(screen.getByText('Informe a marca.')).toBeInTheDocument();
     await user.type(campo, 'Lacoste');
     await user.click(screen.getByRole('button', { name: 'Cadastrar' }));

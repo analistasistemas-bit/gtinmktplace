@@ -56,6 +56,7 @@ import {
   CAMPOS_NUMERICOS, montarPayload, useCadastroProduto, useSugestaoNcm, type Cadastrado,
 } from '@/components/estoque/use-cadastro-produto';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 const CABECALHO_VAZIO: CamposHerdaveis = {
   preco: '', custo: '', pesoGramas: '', alturaCm: '', larguraCm: '', comprimentoCm: '',
@@ -439,9 +440,8 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
   // nome/origem/gênero vazios já têm asterisco + texto próprios; sem linha nenhuma o botão
   // "Cadastrar" nem existe ainda visível. Preço vazio é o único caso que ficaria mudo.
   //
-  // O `title` do botão NÃO resolve sozinho (achado da revisão final): `buttonVariants` traz
-  // `disabled:pointer-events-none`, então a dica nunca abre no botão travado. Ele fica como
-  // redundância; quem informa é o texto visível renderizado junto do rodapé.
+  // Desde 2026-11-15 o botão não trava mais: o texto visível continua, e o clique em
+  // "Avançar"/"Cadastrar" leva ao campo pendente (`primeiraPendencia`).
   //
   // Duas causas, duas mensagens. Cabeçalho vazio = TODA a grade pendente: listar os 60 SKUs seria
   // o muro vermelho de volta, em forma de texto. Com o cabeçalho válido, o pendente é uma exceção
@@ -458,6 +458,39 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
     pendencia(['preco'], 'o preço mínimo (líquido)'),
     pendencia(['pesoGramas', 'alturaCm', 'larguraCm', 'comprimentoCm'], 'peso e medidas da embalagem'),
   ].filter(Boolean).join(' ') || undefined;
+
+  // Botão da etapa da grade sempre clicável (Diego, 2026-11-15): botão cinza não dizia o que
+  // faltava. Com pendência, o clique leva ao PRIMEIRO campo na ordem da tela, com aviso.
+  // Mesma condição de `podeSalvar` — os dois têm de concordar (fallback final cobre o resto).
+  function primeiraPendencia(): { id: string; aviso: string } | null {
+    if (!nomePai.trim()) return { id: 'grade-nome', aviso: 'Preencha o nome do produto.' };
+    if (marcaObrigatoria && !marca.trim()) return { id: 'grade-marca', aviso: 'Preencha a marca / fabricante.' };
+    if (!genero) return { id: 'grade-genero', aviso: 'Escolha o gênero.' };
+    if (!origem) return { id: 'grade-origem-nacional', aviso: 'Escolha a origem: Nacional ou Importado.' };
+    // Cabeçalho inválido só pendura se alguma linha herda o erro (ou ainda não há linha).
+    const campoCab = (['preco', 'custo', 'pesoGramas', 'alturaCm', 'larguraCm', 'comprimentoCm'] as const)
+      .find((c) => erroCampo(c, cabecalho[c]) && (linhas.length === 0 || resolvidas.some((r) => erroCampo(c, r[c]))));
+    if (campoCab) {
+      const { rotulo } = ROTULOS[campoCab];
+      const erro = erroCampo(campoCab, cabecalho[campoCab]) ?? '';
+      return { id: `grade-cab-${campoCab}`, aviso: erro.startsWith(rotulo) ? erro : `${rotulo}: ${erro}` };
+    }
+    if (!grade) return { id: 'grade-tamanho', aviso: 'Escolha a grade de tamanhos.' };
+    if (linhas.length === 0) return { id: 'grade-variacoes', aviso: 'Marque ao menos uma cor e um tamanho.' };
+    if (!podeSalvar) return { id: 'grade-matriz', aviso: motivoBloqueio ?? 'Corrija os valores destacados na grade.' };
+    return null;
+  }
+
+  function avancar(seguir: () => void) {
+    setTentouSalvar(true);
+    const p = primeiraPendencia();
+    if (!p) { seguir(); return; }
+    const el = document.getElementById(p.id);
+    el?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+    el?.focus({ preventScroll: true });
+    // Topo: no canto padrão (inferior direito) o toast cobria o próprio botão do rodapé.
+    toast.warning(p.aviso, { position: 'top-center' });
+  }
 
   async function submeter() {
     if (!origem || !genero || !grade) return;
@@ -517,6 +550,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
           )}
           <Input
             id={id}
+            aria-invalid={!!erro && tentouSalvar}
             className={cn(prefixo && 'pl-8', sufixo && 'pr-8')}
             value={cabecalho[campo]}
             onChange={(e) => setCabecalho((prev) => ({ ...prev, [campo]: e.target.value }))}
@@ -641,7 +675,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
                   <label htmlFor="grade-nome">Nome</label>
                   <span className="text-destructive" aria-hidden="true">*</span>
                 </span>
-                <Input id="grade-nome" value={nomePai} onChange={(e) => setNomePai(e.target.value)} />
+                <Input id="grade-nome" aria-invalid={tentouSalvar && !nomePai.trim()} value={nomePai} onChange={(e) => setNomePai(e.target.value)} />
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -678,7 +712,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
                     <span className="text-destructive" aria-hidden="true">*</span>
                   </span>
                   <Select value={genero} onValueChange={(v) => setGenero(v as Genero)}>
-                    <SelectTrigger id="grade-genero" className="w-full">
+                    <SelectTrigger id="grade-genero" aria-invalid={tentouSalvar && !genero} className="w-full">
                       <SelectValue placeholder="Selecione…" />
                     </SelectTrigger>
                     <SelectContent>
@@ -694,6 +728,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
                   {(['nacional', 'importado'] as const).map((o) => (
                     <label key={o} className="flex items-center gap-1.5 text-sm">
                       <input
+                        id={`grade-origem-${o}`}
                         type="radio" name="grade-origem" value={o}
                         checked={origem === o}
                         onChange={() => { setOrigem(o); setConfirmacoes((c) => ({ ...c, conferido: false })); }}
@@ -757,7 +792,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
                     disabled={api.salvando}
                     onValueChange={(v) => trocarGrade(v as GradeTamanho)}
                   >
-                    <SelectTrigger id="grade-tamanho" className="w-full">
+                    <SelectTrigger id="grade-tamanho" aria-invalid={tentouSalvar && !grade} className="w-full">
                       <SelectValue placeholder="Selecione…" />
                     </SelectTrigger>
                     <SelectContent>
@@ -767,6 +802,8 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
                 </div>
               )}
 
+              {/* Alvo do foco de "Avançar" sem linha nenhuma (tabIndex -1: focável só por código). */}
+              <div id="grade-variacoes" tabIndex={-1} className="outline-none">
               <GeradorVariacoes
                 gruposTamanho={gruposTamanho}
                 cores={cores}
@@ -779,6 +816,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
                 onMudarCores={mudarCores}
                 onMudarTamanhos={mudarTamanhos}
               />
+              </div>
 
               {/* IRMÃO do GeradorVariacoes, nunca dentro dele: o teste do teto de 60 linhas
                   escopa as consultas ao container "Cores e tamanhos", e o custo de uma consulta
@@ -813,7 +851,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
               )}
 
               {linhas.length > 0 && (
-                <div className="flex flex-col gap-2">
+                <div id="grade-matriz" tabIndex={-1} className="flex flex-col gap-2 outline-none">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">Grade</span>
                     <span className="text-xs text-muted-foreground">
@@ -892,7 +930,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
                 <Button variant="outline" onClick={() => api.comConfirmacao(onFechar)} disabled={api.ocupado}>
                   Cancelar
                 </Button>
-                <Button onClick={() => setEtapaFiscal(true)} disabled={!podeSalvar} title={motivoBloqueio}>
+                <Button onClick={() => avancar(() => setEtapaFiscal(true))}>
                   Avançar
                 </Button>
               </>
@@ -901,7 +939,7 @@ export function DialogCadastroGrade({ aberto, onFechar, inicial, origemNota = fa
                 <Button variant="outline" onClick={() => api.comConfirmacao(onFechar)} disabled={api.ocupado}>
                   Cancelar
                 </Button>
-                <Button onClick={submeter} disabled={!podeSalvar || api.salvando} title={motivoBloqueio}>
+                <Button onClick={() => avancar(() => { void submeter(); })} disabled={api.salvando}>
                   {api.salvando ? rotuloSalvando : 'Cadastrar'}
                 </Button>
               </>
