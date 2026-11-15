@@ -432,6 +432,20 @@ describe('criarKitVirtual', () => {
     expect(subir).toHaveBeenCalledWith('https://signed/user-1/kit-virtual-chave-1/foto.jpg');
   });
 
+  it('prévia REPROVADA da capa IA (-tN) recusa como foto_invalida — no input e no path já gravado', async () => {
+    const previa = 'org-1/kit-virtual-ia/11111111-1111-4111-8111-111111111111-t2.png';
+    const st = novoEstado();
+    const r = await criarKitVirtual(deps(st), inputPadrao({ fotoStoragePath: previa }));
+    expect(r).toMatchObject({ ok: false, motivo: 'foto_invalida' });
+    expect(st.ops).toEqual([]);
+
+    const stGravada = novoEstado([{ status: 'erro', foto_storage_path: previa, foto_ml_picture_id: null }]);
+    const subir = vi.fn(async () => 'PIC');
+    const r2 = await criarKitVirtual(deps(stGravada, { subirFoto: subir }), inputPadrao({ fotoStoragePath: null, fotoMlPictureId: null }));
+    expect(r2).toMatchObject({ ok: false, motivo: 'foto_invalida', kitId: 'kit-pre-0' });
+    expect(subir).not.toHaveBeenCalled();
+  });
+
   it('travessia no path recusa como foto_invalida', async () => {
     const st = novoEstado();
     const r = await criarKitVirtual(deps(st), inputPadrao({ fotoStoragePath: 'org-1/../org-2/x.jpg' }));

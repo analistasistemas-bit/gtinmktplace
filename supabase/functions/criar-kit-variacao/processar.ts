@@ -238,8 +238,11 @@ export function moderadosDoBulk(ids: string[], entradas: unknown): Set<string> {
  */
 const SEGMENTO_FOTO = /^[\w.()-](?:[\w.() -]*[\w.()-])?$/;
 
-/** Prévia de tentativa reprovada pela verificação (`…/kit-variacao-ia/<request>-tN.ext`, não cobrada): nunca vira foto. */
-export const ehPreviaReprovada = (path: string) => /\/kit-variacao-ia\/.+-t\d+\./.test(path);
+/**
+ * Prévia de tentativa reprovada pela verificação (`…/kit-variacao-ia/<request>-tN.ext` ou a capa do kit virtual
+ * `…/kit-virtual-ia/<request>-tN.ext`, não cobrada): nunca vira foto.
+ */
+export const ehPreviaReprovada = (path: string) => /\/kit-(?:variacao|virtual)-ia\/.+-t\d+\./.test(path);
 export function fotoDaOrg(path: string, orgId: string, usuariosDaOrg: Set<string>): boolean {
   const partes = path.split('/');
   if (path.startsWith('/') || partes.length < 2 || partes.some((p) => !SEGMENTO_FOTO.test(p) || /^[. ]+$/.test(p))) return false;

@@ -28,8 +28,8 @@ describe('validarSubirFotoKitVirtual', () => {
     ]) expect(validarSubirFotoKitVirtual({ fotoStoragePath: p }, 'org-1', USUARIOS), p).toBeNull();
   });
 
-  it('recusa path de outra org, de usuário de fora e travessia', () => {
-    for (const p of ['outraOrg/kit-virtual-ia/x.png', 'user-2/kit-virtual-chave-1/foto.jpg', 'org-1/../outraOrg/x.png']) {
+  it('recusa path de outra org, de usuário de fora, travessia e prévia reprovada da capa IA', () => {
+    for (const p of ['org-1/kit-virtual-ia/11111111-1111-4111-8111-111111111111-t2.png', 'outraOrg/kit-virtual-ia/x.png', 'user-2/kit-virtual-chave-1/foto.jpg', 'org-1/../outraOrg/x.png']) {
       expect(validarSubirFotoKitVirtual({ fotoStoragePath: p }, 'org-1', USUARIOS), p).toEqual('path_invalido');
     }
   });

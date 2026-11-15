@@ -27,5 +27,8 @@ describe('fotoDaOrg', () => {
     expect(ehPreviaReprovada('org-1/kit-variacao-ia/11111111-1111-4111-8111-111111111111-t2.png')).toBe(true);
     expect(ehPreviaReprovada('org-1/kit-variacao-ia/11111111-1111-4111-8111-111111111111.png')).toBe(false);
     expect(ehPreviaReprovada('org-1/lote/foto-t2.png')).toBe(false);
+    expect(ehPreviaReprovada('org-1/kit-virtual-ia/11111111-1111-4111-8111-111111111111-t3.jpg')).toBe(true);
+    expect(ehPreviaReprovada('org-1/kit-virtual-ia/11111111-1111-4111-8111-111111111111.jpg')).toBe(false);
+    expect(ehPreviaReprovada('u1/kit-virtual-chave-1/foto-t2.png')).toBe(false);
   });
 });

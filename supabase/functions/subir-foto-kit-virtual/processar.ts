@@ -5,7 +5,7 @@
 //
 // Módulo puro (sem fetch, sem Supabase) para ser testável sem HTTP — mesmo padrão de
 // buscar-componentes-kit-virtual/processar.ts; `index.ts` injeta as implementações reais.
-import { fotoDaOrg } from '../criar-kit-variacao/processar.ts';
+import { ehPreviaReprovada, fotoDaOrg } from '../criar-kit-variacao/processar.ts';
 
 export interface SubirFotoKitVirtualInput {
   fotoStoragePath: string;
@@ -32,7 +32,8 @@ export function validarSubirFotoKitVirtual(
 ): MotivoSubirFotoKitVirtual | null {
   if (typeof input.fotoStoragePath !== 'string' || !input.fotoStoragePath.trim()) return 'path_invalido';
   // A URL é assinada com a service role: path de outra org vazaria a foto dela para o ML.
-  if (!fotoDaOrg(input.fotoStoragePath, orgId, usuariosDaOrg)) return 'path_invalido';
+  // Prévia reprovada da capa IA (`-tN`) também nunca vira foto do kit.
+  if (!fotoDaOrg(input.fotoStoragePath, orgId, usuariosDaOrg) || ehPreviaReprovada(input.fotoStoragePath)) return 'path_invalido';
   return null;
 }
 

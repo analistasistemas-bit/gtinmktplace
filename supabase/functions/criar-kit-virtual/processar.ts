@@ -20,7 +20,7 @@ import type { PayloadKitVirtual, RespostaKitML } from '../_shared/ml/kit-virtual
 import { moduloHabilitadoStrict } from '../_shared/produto/modulo.ts';
 import { exigirFiscalCompletoSePreciso, type FamiliaFiscalRow } from '../_shared/fiscal/gate.ts';
 import { EMBED_MODULOS, kitLigado, skusParticipantes } from '../_shared/kit-variacao/politica.ts';
-import { fotoDaOrg } from '../criar-kit-variacao/processar.ts';
+import { ehPreviaReprovada, fotoDaOrg } from '../criar-kit-variacao/processar.ts';
 
 export interface ComponenteKitVirtual {
   userProductId: string;
@@ -51,7 +51,10 @@ export interface CriarKitVirtualDeps {
   admin: SupabaseClient;
   orgId: string;
   userId: string;
-  /** Ids dos usuários da org (pasta legada do upload manual) — só consultado quando vem `fotoStoragePath`. */
+  /**
+   * Ids dos usuários da org (pasta legada do upload manual) — consultado quando vem `fotoStoragePath` ou quando
+   * a foto ainda precisa subir a partir do path (gravado ou do input); no máximo uma leitura por chamada.
+   */
   usuariosDaOrg(): Promise<string[]>;
   /** URL assinada da foto no storage; `null` quando o path não resolve. */
   urlAssinadaFoto: (path: string) => Promise<string | null>;
@@ -411,9 +414,11 @@ export async function criarKitVirtual(
   // para o ML. Recusa ANTES de gravar o path na linha, assinar URL, subir foto ou chamar o ML.
   let usuarios: Promise<Set<string>> | null = null;
   const usuariosDaOrg = () => usuarios ??= deps.usuariosDaOrg().then((ids) => new Set(ids));
+  // Prévia reprovada da capa IA (`-tN`) nunca vira foto do kit.
+  const fotoAceita = async (path: string) => fotoDaOrg(path, orgId, await usuariosDaOrg()) && !ehPreviaReprovada(path);
   if (input.fotoStoragePath !== null) {
     try {
-      if (!fotoDaOrg(input.fotoStoragePath, orgId, await usuariosDaOrg())) {
+      if (!await fotoAceita(input.fotoStoragePath)) {
         return { ok: false, motivo: 'foto_invalida', mensagem: MSG_FOTO_INVALIDA };
       }
     } catch (e) { return { ok: false, motivo: 'falha_leitura', mensagem: e instanceof Error ? e.message : String(e) }; }
@@ -539,7 +544,7 @@ export async function criarKitVirtual(
     }
     // O path pode ser de uma linha gravada antes da checagem de org: confere de novo antes de assinar.
     let daOrg: boolean;
-    try { daOrg = fotoDaOrg(path, orgId, await usuariosDaOrg()); } catch (e) {
+    try { daOrg = await fotoAceita(path); } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       await marcarErro(deps, kit.id, msg);
       return { ok: false, motivo: 'falha_leitura', mensagem: msg, kitId: kit.id };
