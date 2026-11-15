@@ -184,6 +184,8 @@ describe('DialogCriarKit — botão Reenviar (I-1)', () => {
     const erro = kit(4, 'erro', '2026-08-01T00:00:00Z');
     renderDialog([erro]);
 
+    // Reenviar só libera depois que o editor de faltantes confirma que nada falta (15/11).
+    await waitFor(() => expect(screen.getByRole('button', { name: /Reenviar/i })).toBeEnabled());
     await userEvent.click(screen.getByRole('button', { name: /Reenviar/i }));
 
     await waitFor(() => expect(publicarFamiliasMock).toHaveBeenCalledWith([erro.familiaId]));
@@ -195,6 +197,8 @@ describe('DialogCriarKit — botão Reenviar (I-1)', () => {
     const erro = kit(5, 'erro', '2026-08-01T00:00:00Z');
     renderDialog([erro]);
 
+    // Reenviar só libera depois que o editor de faltantes confirma que nada falta (15/11).
+    await waitFor(() => expect(screen.getByRole('button', { name: /Reenviar/i })).toBeEnabled());
     await userEvent.click(screen.getByRole('button', { name: /Reenviar/i }));
 
     await waitFor(() => expect(toast.warning).toHaveBeenCalledWith(
