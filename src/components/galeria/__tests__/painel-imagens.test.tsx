@@ -474,6 +474,16 @@ describe('PainelImagens: exibição e cobrança', () => {
     await waitFor(() => expect(api.confirmarExibicao).toHaveBeenCalledWith('MLB1', ['i1']));
   });
 
+  it('confirmação ok com o polling já parado: libera o "Aprovar todas" sem recarregar nem relistar', async () => {
+    api.listarImagens.mockResolvedValue(ok(lista([imagem()])));
+    painel();
+    const img = await screen.findByAltText('Capa · Preto');
+    expect(screen.queryByRole('button', { name: /^Aprovar todas/ })).toBeNull();
+    fireEvent.load(img);
+    expect(await screen.findByRole('button', { name: 'Aprovar todas (1)' })).toBeInTheDocument();
+    expect(api.listarImagens).toHaveBeenCalledTimes(1);
+  });
+
   it('confirmação com rede/5xx: o poll seguinte repete até a imagem ficar exibida', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     api.confirmarExibicao.mockResolvedValueOnce(falha(503, 'falha_interna')).mockResolvedValue(ok({ cobradas: 1 }));

@@ -111,8 +111,12 @@ export function PainelImagens({ mlItemId, cor, aoLista, aoFalha }: {
   const confirmar = useCallback((id: string) => {
     if (emVoo.current.has(id)) return;
     emVoo.current.add(id);
-    // Rede/5xx: o listar seguinte repete (a imagem segue `validada` e não `exibida`).
-    void confirmarExibicao(mlItemId, [id]).then((r) => { if (!r.ok) agendarRodada(); }).finally(() => emVoo.current.delete(id));
+    // Rede/5xx: o listar seguinte repete (a imagem segue `validada` e não `exibida`). Ok: marca `exibida` na lista
+    // local, senão com o polling já parado o "Aprovar todas" só aparece ao recarregar a página.
+    void confirmarExibicao(mlItemId, [id]).then((r) => {
+      if (!r.ok) { agendarRodada(); return; }
+      setLista((l) => l && { ...l, imagens: l.imagens.map((i) => (i.id === id ? { ...i, exibida: true } : i)) });
+    }).finally(() => emVoo.current.delete(id));
   }, [mlItemId, agendarRodada]);
 
   /** Guarda a primeira URL de cada imagem e publica a lista. */
