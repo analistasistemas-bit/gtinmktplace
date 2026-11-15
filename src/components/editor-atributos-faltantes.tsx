@@ -16,10 +16,11 @@ const FLASH_MS = 2000;
 export function EditorAtributosFaltantes({ familiaId, loteId = '', onPendenteChange }: {
   familiaId: string; loteId?: string; onPendenteChange?: (pendente: boolean) => void;
 }) {
-  const { data: campos = [], isError, isLoading } = useQuery({
+  const { data, isError, isFetching } = useQuery({
     queryKey: ['faltantes-atributos', familiaId],
     queryFn: () => listarFaltantesAtributos(familiaId),
   });
+  const campos = data ?? [];
   const salvar = useSalvarAtributo(loteId);
   const [status, setStatus] = useState<Record<string, SaveStatus>>({});
 
@@ -27,7 +28,8 @@ export function EditorAtributosFaltantes({ familiaId, loteId = '', onPendenteCha
   const [salvos, setSalvos] = useState<Set<string>>(new Set());
   // Carregando conta como pendente (Reenviar clicado antes do campo aparecer falhou de novo, 15/11). Erro de leitura
   // libera: o worker recusa de novo com a mensagem certa, mas o operador nunca fica sem botão.
-  const pendente = !isError && (isLoading || campos.some((c: CampoFaltante) => !salvos.has(c.id))
+  // Sem dado ainda (inclui rede pausada) ou rebuscando (cache velho ao reabrir) também conta (revisão Grok).
+  const pendente = !isError && (data === undefined || isFetching || campos.some((c: CampoFaltante) => !salvos.has(c.id))
     || Object.values(status).includes('salvando'));
   useEffect(() => { onPendenteChange?.(pendente); }, [pendente, onPendenteChange]);
   const onSalvar = async (id: string, valor: string) => {

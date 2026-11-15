@@ -249,6 +249,13 @@ describe('DialogCriarKit — obrigatório da categoria que só o operador sabe',
     expect(screen.getByRole('button', { name: /Reenviar/i })).toBeDisabled(); // falta escolher
   });
 
+  it('rede pausada (sem dado nem erro): Reenviar continua bloqueado (revisão Grok)', async () => {
+    listarFaltantesMock.mockImplementationOnce(() => new Promise(() => {}));
+    renderDialog([kit(4, 'erro', '2026-11-15T13:00:00Z')]);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.getByRole('button', { name: /Reenviar/i })).toBeDisabled();
+  });
+
   it('kit em erro sem campo faltante: Reenviar libera depois de carregar', async () => {
     renderDialog([kit(4, 'erro', '2026-11-15T13:00:00Z')]);
     await waitFor(() => expect(screen.getByRole('button', { name: /Reenviar/i })).toBeEnabled());
