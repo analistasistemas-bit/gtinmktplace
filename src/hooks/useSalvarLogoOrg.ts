@@ -34,10 +34,16 @@ export function useSalvarLogoOrg() {
         novaUrl = supabase.storage.from(BUCKET_LOGO_ORG).getPublicUrl(caminho).data.publicUrl;
       }
 
-      const { error: errUpd } = await supabase.from('organizations').update(variante === 'claro' ? { logo_claro_url: novaUrl } : { logo_escuro_url: novaUrl }).eq('id', orgId!);
+      const { data: linhas, error: errUpd } = await supabase
+        .from('organizations')
+        .update(variante === 'claro' ? { logo_claro_url: novaUrl } : { logo_escuro_url: novaUrl })
+        .eq('id', orgId!)
+        .select('id');
       if (errUpd) throw errUpd;
+      // 0 linhas = RLS barrou (org efetiva ≠ org do perfil): não fingir que salvou.
+      if (!linhas?.length) throw new Error('Sem permissão para alterar a logo desta organização.');
       // Best-effort: arquivo antigo órfão não quebra nada, só ocupa espaço.
-      if (anterior) await supabase.storage.from(BUCKET_LOGO_ORG).remove([anterior]);
+      if (anterior) await supabase.storage.from(BUCKET_LOGO_ORG).remove([anterior]).catch(() => undefined);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: QK.orgIdentidade(orgId) }),
   });

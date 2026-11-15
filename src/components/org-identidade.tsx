@@ -9,12 +9,13 @@ export function OrgIdentidade({ className }: { className?: string }) {
   const { data } = useOrgIdentidade();
   const { theme } = useTheme();
   const [quebrada, setQuebrada] = useState<string | null>(null);
-  const [simbolo, setSimbolo] = useState(false);
+  // Por URL: ao trocar de tema/logo, não herda o formato da imagem anterior.
+  const [simboloDe, setSimboloDe] = useState<string | null>(null);
   if (!data) return null;
 
   const url = escolherLogo(theme, data.logo_claro_url, data.logo_escuro_url);
   const comLogo = !!url && quebrada !== url;
-  const mostrarNome = !comLogo || simbolo;
+  const mostrarNome = !comLogo || simboloDe === url;
 
   return (
     <div className={cn('flex min-w-0 items-center gap-2', className)}>
@@ -24,7 +25,7 @@ export function OrgIdentidade({ className }: { className?: string }) {
           src={url}
           alt={data.nome}
           className="max-h-7 max-w-[140px] object-contain object-left"
-          onLoad={(e) => setSimbolo(ehSimbolo(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight))}
+          onLoad={(e) => setSimboloDe(ehSimbolo(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight) ? url : null)}
           onError={() => setQuebrada(url)}
         />
       ) : (
