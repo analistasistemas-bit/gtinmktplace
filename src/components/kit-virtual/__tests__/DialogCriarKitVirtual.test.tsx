@@ -563,6 +563,48 @@ describe('DialogCriarKitVirtual — texto IA automático na etapa 2', () => {
     expect(previewMock.mock.calls.slice(chamadas).some(([i]) => (i as { gerarDescricao: boolean }).gerarDescricao)).toBe(false);
   });
 
+  it('composição muda e a IA falha: texto da composição antiga some e "Publicar kit" fica bloqueado mesmo com foto nova', async () => {
+    mockBusca();
+    mockPreview();
+    renderDialog();
+
+    await selecionarDoisComponentes();
+    await avancar();
+    await waitFor(() => expect(screen.getByLabelText('Título do kit')).toHaveValue(TITULO_IA));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Voltar' }));
+    fireEvent.change(screen.getByLabelText('Quantidade de Motosserra Elétrica'), { target: { value: '2' } });
+    previewMock.mockRejectedValueOnce(new Error('IA fora'));
+    await avancar();
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+
+    expect(screen.getByLabelText('Título do kit')).toHaveValue('');
+    expect(screen.getByLabelText('Descrição do kit')).toHaveValue('');
+    await anexarFoto();
+    await waitFor(() => expect(screen.getByText('✓ enviada')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Publicar kit' })).toBeDisabled();
+  });
+
+  it('IA falha na entrada e o operador escreve o texto: voltar e avançar sem mudar nada não gera de novo', async () => {
+    mockBusca();
+    mockPreview();
+    previewMock.mockRejectedValueOnce(new Error('IA fora'));
+    renderDialog();
+
+    await selecionarDoisComponentes();
+    await avancar();
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    await userEvent.type(screen.getByLabelText('Título do kit'), 'Kit manual');
+    await userEvent.type(screen.getByLabelText('Descrição do kit'), 'Descrição manual.');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Voltar' }));
+    await avancar();
+    await esperar(700);
+    expect(previewMock.mock.calls.filter(([i]) => (i as { gerarDescricao: boolean }).gerarDescricao)).toHaveLength(1);
+    expect(screen.getByLabelText('Título do kit')).toHaveValue('Kit manual');
+    expect(screen.getByLabelText('Descrição do kit')).toHaveValue('Descrição manual.');
+  });
+
   it('trocar o principal regera o texto (o título segue a ordem) mas mantém a capa', async () => {
     mockBusca();
     mockPreview();

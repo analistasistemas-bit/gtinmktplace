@@ -279,8 +279,8 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
       }
     },
     onError: (err, p) => {
-      // Falhou: a próxima entrada na etapa 2 (ou o próximo ajuste) tenta de novo.
-      if (p.gerarTexto && textoPedidoRef.current === p.assinaturaTexto) textoPedidoRef.current = null;
+      // Texto que falhou NÃO volta a ser gerado sozinho (sobrescreveria o que o operador escreveu):
+      // o retry é o "Regerar", que confirma se houver edição. A margem tenta de novo no próximo ajuste.
       if (margemPedidaRef.current === p.assinaturaMargem) margemPedidaRef.current = null;
       toast.error('Falha ao calcular o preview do kit', { description: err instanceof Error ? err.message : String(err) });
     },
@@ -325,6 +325,11 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
       trocarFoto(null, null);
     }
     if (assinaturaTexto !== textoPedidoRef.current) {
+      // Texto da composição anterior não pode sobreviver a uma falha da IA (publicaria título errado).
+      setTitulo('');
+      setDescricao('');
+      setTextoBase({ titulo: '', descricao: '' });
+      setTituloPadrao(false);
       setPreviewResultado(null);
       pedirPreview(true);
     } else if (assinaturaMargem !== margemPedidaRef.current) {
