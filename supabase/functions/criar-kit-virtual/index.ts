@@ -14,7 +14,7 @@ import { subirFotoML, buscarSecureUrlFotoML } from '../_shared/ml/fotos.ts';
 import { garantirDescricaoML } from '../_shared/ml/criar-item.ts';
 import { criarKitVirtualML, buscarListingTypeItensML } from '../_shared/ml/kit-virtual.ts';
 import {
-  criarKitVirtual, type ComponenteKitVirtual, type CriarKitVirtualInput, type MotivoCriarKitVirtual,
+  capaIaGeradaNoBanco, criarKitVirtual, type ComponenteKitVirtual, type CriarKitVirtualInput, type MotivoCriarKitVirtual,
 } from './processar.ts';
 
 const BUCKET = 'imagens';
@@ -137,6 +137,7 @@ Deno.serve(async (req) => {
     buscarListingTypeComponentes: (itemIds) => buscarListingTypeItensML(token, itemIds),
     criarKitML: (payload) => criarKitVirtualML(token, payload),
     garantirDescricao: (itemId, texto) => garantirDescricaoML(token, itemId, texto),
+    capaIaGerada: (path) => capaIaGeradaNoBanco(admin, orgId, path),
   }, input);
 
   if (!resultado.ok) {

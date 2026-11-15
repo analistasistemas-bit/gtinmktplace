@@ -65,6 +65,8 @@ export interface CriarKitVirtualDeps {
   buscarListingTypeComponentes: (itemIds: string[]) => Promise<Map<string, string>>;
   criarKitML: (payload: PayloadKitVirtual) => Promise<RespostaKitML>;
   garantirDescricao: (itemId: string, texto: string) => Promise<void>;
+  /** Capa IA (`/kit-virtual-ia/`) com entrega faturada (`kit_variacao_imagens.status='gerada'`) na org. Lança em falha de leitura. */
+  capaIaGerada: (path: string) => Promise<boolean>;
 }
 
 export type MotivoCriarKitVirtual =
@@ -129,6 +131,21 @@ function leaseVencido(atualizadoEm: string | null): boolean {
   // Timestamp ilegível não pode virar uma trava permanente: sem lease legível, trata como vencido.
   if (Number.isNaN(t)) return true;
   return Date.now() - t > LEASE_PUBLICANDO_MS;
+}
+
+/**
+ * I1: o path da capa IA é determinístico (`<org>/kit-virtual-ia/<request>.<ext>`) e o objeto pode existir com a
+ * linha presa em `pendente_upload` (upload terminou depois do timeout, sem entrega faturada). Qualquer path
+ * dessa pasta só vale com a linha `gerada` — uploads manuais (`kit-virtual-<chave>/`) não passam por aqui.
+ */
+export const ehCapaIaKitVirtual = (path: string) => path.includes('/kit-virtual-ia/');
+
+/** Consulta real usada por `criar-kit-virtual` e `subir-foto-kit-virtual`. Erro de leitura lança (falha fechada). */
+export async function capaIaGeradaNoBanco(admin: SupabaseClient, orgId: string, path: string): Promise<boolean> {
+  const { data, error } = await admin.from('kit_variacao_imagens').select('request_id')
+    .eq('org_id', orgId).eq('storage_path', path).eq('status', 'gerada').limit(1);
+  if (error) throw new Error(`kit_variacao_imagens: ${error.message}`);
+  return (data ?? []).length > 0;
 }
 
 const MSG_FOTO_INVALIDA = 'A foto do kit não pertence a esta organização. Envie a foto de novo.';
@@ -414,8 +431,9 @@ export async function criarKitVirtual(
   // para o ML. Recusa ANTES de gravar o path na linha, assinar URL, subir foto ou chamar o ML.
   let usuarios: Promise<Set<string>> | null = null;
   const usuariosDaOrg = () => usuarios ??= deps.usuariosDaOrg().then((ids) => new Set(ids));
-  // Prévia reprovada da capa IA (`-tN`) nunca vira foto do kit.
-  const fotoAceita = async (path: string) => fotoDaOrg(path, orgId, await usuariosDaOrg()) && !ehPreviaReprovada(path);
+  // Prévia reprovada da capa IA (`-tN`) nunca vira foto do kit; a aprovada só com a entrega faturada (I1).
+  const fotoAceita = async (path: string) => fotoDaOrg(path, orgId, await usuariosDaOrg()) && !ehPreviaReprovada(path)
+    && (!ehCapaIaKitVirtual(path) || await deps.capaIaGerada(path));
   if (input.fotoStoragePath !== null) {
     try {
       if (!await fotoAceita(input.fotoStoragePath)) {

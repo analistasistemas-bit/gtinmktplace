@@ -10,6 +10,7 @@ import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { subirFotoML } from '../_shared/ml/fotos.ts';
+import { capaIaGeradaNoBanco } from '../criar-kit-virtual/processar.ts';
 import { subirFotoKitVirtual, type MotivoSubirFotoKitVirtual, type SubirFotoKitVirtualInput } from './processar.ts';
 
 const BUCKET = 'imagens';
@@ -21,6 +22,7 @@ function json(body: unknown, status = 200): Response {
 
 const STATUS_POR_MOTIVO: Record<MotivoSubirFotoKitVirtual, number> = {
   path_invalido: 400,
+  falha_leitura: 500,
   falha_url_assinada: 500,
   falha_upload_ml: 502,
 };
@@ -74,6 +76,7 @@ Deno.serve(async (req) => {
       return data?.signedUrl ?? null;
     },
     subirFoto: (sourceUrl) => subirFotoML(token, sourceUrl),
+    capaIaGerada: (path) => capaIaGeradaNoBanco(admin, orgId, path),
   }, input);
 
   if (!resultado.ok) {

@@ -3,7 +3,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import {
-  criarKitVirtual, montarPayloadKitVirtual, validarKitVirtual, resolverListingTypeKit,
+  criarKitVirtual, montarPayloadKitVirtual, validarKitVirtual, resolverListingTypeKit, capaIaGeradaNoBanco,
   type ComponenteKitVirtual, type CriarKitVirtualDeps, type CriarKitVirtualInput,
 } from '../processar.ts';
 import { criarKitVirtualML } from '../../_shared/ml/kit-virtual.ts';
@@ -170,6 +170,7 @@ function deps(st: EstadoFake, over: Partial<CriarKitVirtualDeps> = {}): CriarKit
     buscarListingTypeComponentes: async (ids: string[]) => new Map(ids.map((id) => [id, 'gold_special'])),
     criarKitML: async () => ({ id: 'MLB999', userProductId: 'MLBU999', permalink: 'https://ml/kit', titulo: 'Kit expandido' }),
     garantirDescricao: async () => {},
+    capaIaGerada: async () => true,
     ...over,
   };
 }
@@ -885,5 +886,89 @@ describe('criarKitVirtual — componente em kit com variação (ADR-0200)', () =
     const { admin, leituras } = adminKit(st, { modulos: [], skuPorUp: { MLBU2: '00000002' }, componentes: ['00000002'] });
     expect(await criarKitVirtual(deps(st, { admin }), inputPadrao())).toMatchObject({ ok: true });
     expect(leituras).toEqual([]);
+  });
+});
+
+// I1: capa IA aprovada (`/kit-virtual-ia/<uuid>.<ext>`) só vira foto do kit com a entrega faturada
+// (`kit_variacao_imagens.status='gerada'`). O objeto pode existir com a linha presa em `pendente_upload`.
+describe('criarKitVirtual — capa IA só com entrega faturada (I1)', () => {
+  const CAPA = 'org-1/kit-virtual-ia/11111111-1111-4111-8111-111111111111.png';
+  type Linha = { org_id: string; storage_path: string; status: string };
+  const fakeLinhas = (linhas: Linha[]) => async (path: string) =>
+    linhas.some((l) => l.org_id === ORG && l.storage_path === path && l.status === 'gerada');
+
+  it('linha gerada: publica com a capa', async () => {
+    const r = await criarKitVirtual(deps(novoEstado(), { capaIaGerada: fakeLinhas([{ org_id: ORG, storage_path: CAPA, status: 'gerada' }]) }),
+      inputPadrao({ fotoStoragePath: CAPA }));
+    expect(r).toMatchObject({ ok: true });
+  });
+
+  for (const [caso, linhas] of [
+    ['pendente_upload', [{ org_id: ORG, storage_path: CAPA, status: 'pendente_upload' }]],
+    ['sem linha', []],
+    ['linha de outra org', [{ org_id: 'org-2', storage_path: CAPA, status: 'gerada' }]],
+  ] as Array<[string, Linha[]]>) {
+    it(`${caso}: foto_invalida antes de gravar, assinar, subir ou chamar o ML`, async () => {
+      const st = novoEstado();
+      const subirFoto = vi.fn(async () => 'PIC');
+      const criarKitML = vi.fn();
+      const r = await criarKitVirtual(deps(st, { capaIaGerada: fakeLinhas(linhas), subirFoto, criarKitML }),
+        inputPadrao({ fotoStoragePath: CAPA, fotoMlPictureId: null }));
+      expect(r).toMatchObject({ ok: false, motivo: 'foto_invalida' });
+      expect(st.ops).toEqual([]);
+      expect(subirFoto).not.toHaveBeenCalled();
+      expect(criarKitML).not.toHaveBeenCalled();
+    });
+  }
+
+  it('path JÁ GRAVADO de capa sem entrega faturada: foto_invalida, sem subir', async () => {
+    const st = novoEstado([{ status: 'erro', foto_storage_path: CAPA, foto_ml_picture_id: null }]);
+    const subirFoto = vi.fn(async () => 'PIC');
+    const r = await criarKitVirtual(deps(st, { capaIaGerada: fakeLinhas([]), subirFoto }),
+      inputPadrao({ fotoStoragePath: null, fotoMlPictureId: null }));
+    expect(r).toMatchObject({ ok: false, motivo: 'foto_invalida', kitId: 'kit-pre-0' });
+    expect(subirFoto).not.toHaveBeenCalled();
+  });
+
+  it('falha ao ler a linha: falha_leitura, nada gravado', async () => {
+    const st = novoEstado();
+    const r = await criarKitVirtual(deps(st, { capaIaGerada: async () => { throw new Error('banco fora'); } }),
+      inputPadrao({ fotoStoragePath: CAPA }));
+    expect(r).toMatchObject({ ok: false, motivo: 'falha_leitura' });
+    expect(st.ops).toEqual([]);
+  });
+
+  it('upload manual: publica sem consultar a capa IA', async () => {
+    const capaIaGerada = vi.fn(async () => false);
+    const r = await criarKitVirtual(deps(novoEstado(), { capaIaGerada }),
+      inputPadrao({ fotoStoragePath: 'user-1/kit-virtual-chave-1/foto.jpg', fotoMlPictureId: null }));
+    expect(r).toMatchObject({ ok: true });
+    expect(capaIaGerada).not.toHaveBeenCalled();
+  });
+});
+
+describe('capaIaGeradaNoBanco (consulta real das duas edges)', () => {
+  function adminLinhas(linhas: Record<string, unknown>[], erro: { message: string } | null = null) {
+    const filtros: Array<[string, unknown]> = [];
+    const chain = {
+      select: () => chain,
+      eq: (col: string, val: unknown) => { filtros.push([col, val]); return chain; },
+      limit: async () => ({ data: erro ? null : linhas.filter((l) => filtros.every(([c, v]) => l[c] === v)), error: erro }),
+    };
+    return { admin: { from: (t: string) => { expect(t).toEqual('kit_variacao_imagens'); return chain; } } as unknown as SupabaseClient, filtros };
+  }
+  const CAPA = 'org-1/kit-virtual-ia/x.png';
+
+  it('filtra por org, path e status gerada', async () => {
+    const linhas = [
+      { org_id: 'org-2', storage_path: CAPA, status: 'gerada' },
+      { org_id: ORG, storage_path: CAPA, status: 'pendente_upload' },
+    ];
+    expect(await capaIaGeradaNoBanco(adminLinhas(linhas).admin, ORG, CAPA)).toBe(false);
+    expect(await capaIaGeradaNoBanco(adminLinhas([...linhas, { org_id: ORG, storage_path: CAPA, status: 'gerada' }]).admin, ORG, CAPA)).toBe(true);
+  });
+
+  it('erro de leitura lança (falha fechada)', async () => {
+    await expect(capaIaGeradaNoBanco(adminLinhas([], { message: 'timeout' }).admin, ORG, CAPA)).rejects.toThrow(/timeout/);
   });
 });

@@ -6,12 +6,13 @@
 // Módulo puro (sem fetch, sem Supabase) para ser testável sem HTTP — mesmo padrão de
 // buscar-componentes-kit-virtual/processar.ts; `index.ts` injeta as implementações reais.
 import { ehPreviaReprovada, fotoDaOrg } from '../criar-kit-variacao/processar.ts';
+import { ehCapaIaKitVirtual } from '../criar-kit-virtual/processar.ts';
 
 export interface SubirFotoKitVirtualInput {
   fotoStoragePath: string;
 }
 
-export type MotivoSubirFotoKitVirtual = 'path_invalido' | 'falha_url_assinada' | 'falha_upload_ml';
+export type MotivoSubirFotoKitVirtual = 'path_invalido' | 'falha_leitura' | 'falha_url_assinada' | 'falha_upload_ml';
 
 export type ResultadoSubirFotoKitVirtual =
   | { ok: true; pictureId: string }
@@ -24,6 +25,8 @@ export interface SubirFotoKitVirtualDeps {
   /** URL assinada da foto no storage; `null` quando o path não resolve. */
   urlAssinadaFoto: (path: string) => Promise<string | null>;
   subirFoto: (sourceUrl: string) => Promise<string>;
+  /** Capa IA (`/kit-virtual-ia/`) com entrega faturada (`kit_variacao_imagens.status='gerada'`) na org. Lança em falha de leitura. */
+  capaIaGerada: (path: string) => Promise<boolean>;
 }
 
 /** Recusa que não custa rede. Roda ANTES de qualquer chamada externa. */
@@ -42,6 +45,15 @@ export async function subirFotoKitVirtual(
 ): Promise<ResultadoSubirFotoKitVirtual> {
   const invalido = validarSubirFotoKitVirtual(input, deps.orgId, deps.usuariosDaOrg);
   if (invalido) return { ok: false, motivo: invalido };
+
+  // I1: capa IA sem entrega faturada (linha presa em `pendente_upload`, ou de outra org) nunca sai do bucket.
+  if (ehCapaIaKitVirtual(input.fotoStoragePath)) {
+    try {
+      if (!await deps.capaIaGerada(input.fotoStoragePath)) return { ok: false, motivo: 'path_invalido' };
+    } catch (e) {
+      return { ok: false, motivo: 'falha_leitura', mensagem: e instanceof Error ? e.message : String(e) };
+    }
+  }
 
   let url: string | null;
   try {
