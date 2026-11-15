@@ -11,6 +11,8 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-11-15
 
+- **Aderir promoção: produto unitário do kit** (`main` `4da759da`, `operacoes-massa` v58). Kit vinculado mostra, abaixo do
+  "Você recebe por venda", o avulso da base com o mesmo desconto %: valor cheio, promoção, lucro, margem e markup.
 - **Cadastro em grade: Avançar sempre clicável** (`main` `1d09de2b`). Com pendência, o clique rola até o 1º campo
   faltante, foca, marca em vermelho e avisa por toast no topo; nada é salvo. Pendência numa célula leva à grade e o aviso
   nomeia o SKU. Estender grade e Cadastrar produto continuam com o botão travado.

@@ -1,5 +1,13 @@
 # PubliAI — Tasks
 
+## Aderir promoção: produto unitário do kit — 2026-11-15
+
+Mergeado na `main`: `4da759da`. Sem migration; edge `operacoes-massa` (v58) deployada.
+
+- [x] Kit vinculado no Aderir: bloco "Produto unitário" abaixo do "Você recebe por venda" com o anúncio avulso da base — valor cheio vivo do ML, promoção com o mesmo desconto % do kit, lucro/margem/markup pela projeção exata (etapa só leitura `unitario_kit`).
+- [ ] Conferir na tela com o kit MLB5563975497 (avulso MLB5563939795).
+- [ ] Base com mais de um anúncio no ML (UP por SKU, partição) não mostra o bloco — definir regra só se aparecer caso real.
+
 ## Kit vinculado em categoria sem formato "Kit"/"Pack" (ADR-0151) — 2026-11-15
 
 Mergeado na `main`: `80bb8f2f`. Sem migration; edges `criar-kit-vinculado` (v55), `criar-kit-variacao` (v17) e `definir-categoria-familia` (v83) deployadas.
