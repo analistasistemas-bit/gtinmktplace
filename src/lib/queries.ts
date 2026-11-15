@@ -45,6 +45,7 @@ export const QK = {
   modulosHabilitados: ['modulos-habilitados'] as const,
   marcaOrg: (orgId: string | null) => ['marca-org', orgId] as const,
   tipoPessoaOrg: (orgId: string | null) => ['tipo-pessoa-org', orgId] as const,
+  orgIdentidade: (orgId: string | null) => ['org-identidade', orgId] as const,
   marcaProduto: (orgId: string | null, codigoPai: string) => ['marca-produto', orgId, codigoPai] as const,
   tiposProdutoHabilitados: ['tipos-produto-habilitados'] as const,
   produtosEstoqueResumo: ['produtos-estoque-resumo'] as const,
