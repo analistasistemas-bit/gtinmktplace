@@ -83,6 +83,13 @@ Criar Kit Virtual                         (1. Composição) (2. Anúncio)
 ```
 Reusar `EtapasKit`, `PreviaCapaUnidades` (ou equivalente), estados `gerando/candidata/reprovada/erro` do `useCapasUnidades`.
 
+### 8.4.1 "Você recebe vendendo avulso" (pedido do Diego, 15/11)
+- Na etapa 2, card por componente: **quanto você recebe vendendo 1 unidade sozinha**, no preço atual dele no ML: preço − comissão − frete − imposto (origem) → recebe; − custo → lucro e margem %.
+- Reuso, sem fórmula nova: `calcularTarifaML` (tarifa oficial: categoria do componente, preço dele, listing type dele, medidas/peso de `variacoes`) + `simularRecebe` (`src/lib/kit-recebe.ts`) + `DetalheRecebe` (mesmo visual do card do vinculado). Alíquota por `useAliquotas` + origem do componente.
+- Estados honestos (ADR-0107): sem custo → mostra recebe e "custo não cadastrado" (sem lucro); tarifa não oficial/indisponível → "indisponível", nunca número inventado; sem medidas → frete indisponível.
+- Linha de comparação: **Σ (recebe avulso × qtd)** vs **líquido do kit** (já calculado no preview). Assim o operador vê se o desconto do kit come mais do que a economia de frete. Limitação conhecida: o líquido do kit usa frete 0 (ADR-0154, estimativa) — a linha avisa isso.
+- Só leitura, sem IA, sem custo; não depende do módulo `imagem_ia`. Entra na **F1**.
+
 ## 8.5 Decisões do autor (calls do Claude, conferir)
 1. **Fatias:** F1 = tela em etapas + capa IA + texto IA (migration da capa). F2 = galeria, só depois do gate de medição; `kits_virtuais.galeria_ml_fotos` entra na migration da F2. Preferência no gate: (a) `pictures` no POST; (b) PUT pós-CREATE só se (a) falhar.
 2. **Chave do teto** = conjunto de `user_product_id` ordenados, **sem quantidades** (trocar 2x→3x não zera o teto).
