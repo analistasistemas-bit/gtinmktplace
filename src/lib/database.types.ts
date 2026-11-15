@@ -1231,9 +1231,9 @@ export type Database = {
         Relationships: []
       }
       kit_variacao_imagens: {
-        Row: { atualizado_em: string; cores: string[] | null; criado_em: string; criado_por: string | null; custo_usd: number | null; familia_base_id: string; id: string; modelo: string; n: number | null; org_id: string; request_id: string; rotulo: string | null; status: string; storage_path: string | null }
-        Insert: { atualizado_em?: string; cores?: string[] | null; criado_em?: string; criado_por?: string | null; custo_usd?: number | null; familia_base_id: string; id?: string; modelo: string; n?: number | null; org_id: string; request_id: string; rotulo?: string | null; status?: string; storage_path?: string | null }
-        Update: { atualizado_em?: string; cores?: string[] | null; criado_em?: string; criado_por?: string | null; custo_usd?: number | null; familia_base_id?: string; id?: string; modelo?: string; n?: number | null; org_id?: string; request_id?: string; rotulo?: string | null; status?: string; storage_path?: string | null }
+        Row: { atualizado_em: string; composicao: string | null; cores: string[] | null; criado_em: string; criado_por: string | null; custo_usd: number | null; familia_base_id: string | null; id: string; modelo: string; n: number | null; org_id: string; pedido: Json | null; request_id: string; rotulo: string | null; status: string; storage_path: string | null }
+        Insert: { atualizado_em?: string; composicao?: string | null; cores?: string[] | null; criado_em?: string; criado_por?: string | null; custo_usd?: number | null; familia_base_id?: string | null; id?: string; modelo: string; n?: number | null; org_id: string; pedido?: Json | null; request_id: string; rotulo?: string | null; status?: string; storage_path?: string | null }
+        Update: { atualizado_em?: string; composicao?: string | null; cores?: string[] | null; criado_em?: string; criado_por?: string | null; custo_usd?: number | null; familia_base_id?: string | null; id?: string; modelo?: string; n?: number | null; org_id?: string; pedido?: Json | null; request_id?: string; rotulo?: string | null; status?: string; storage_path?: string | null }
         Relationships: []
       }
       platform_image_deliveries: {
@@ -5845,6 +5845,18 @@ export type Database = {
       }
       kit_ativacao_liberar: { Args: { p_apagar: boolean; p_dono: string; p_geracao: string; p_org: string }; Returns: boolean }
       registrar_pendencia_kit: { Args: { p_erro: string; p_order: string; p_org: string }; Returns: undefined }
+      kit_capa_virtual_reservar: {
+        Args: {
+          p_composicao: string
+          p_criado_por: string | null
+          p_modelo: string
+          p_org_id: string
+          p_pedido: Json
+          p_request_id: string
+          p_tentativa: number
+        }
+        Returns: string
+      }
       kit_variacao_consumir_previa: {
         Args: { p_base: string; p_chave: string; p_kit: string; p_org: string; p_pecas: number; p_previa: string }
         Returns: Json

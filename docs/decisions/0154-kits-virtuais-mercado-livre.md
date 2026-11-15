@@ -315,3 +315,12 @@ derivado da base (`resolverOrigemEstoque`); origem não resolvida = não reativa
 O kit **continua fora do push de estoque**: só o status é escrito, nunca `quantity`. O
 acoplamento novo é só este, e vive em `sincronizar-estoque/processar.ts`
 (`reativarKitsVirtuais`).
+
+## Emenda 2026-11-15 — capa e título por IA (ADR-0206)
+
+- **Decisão 4:** o título passa a ser gerado por IA ao entrar na etapa 2 (começa com "Kit", até 60
+  caracteres); inválido cai no template atual. A descrição continua por IA.
+- **Decisão 5:** a foto própria continua obrigatória, mas pode ser a capa gerada por IA a partir da foto
+  1 de cada componente, só depois da aprovação humana ("Usar esta foto"). O upload manual continua.
+
+Detalhes, cobrança e teto em [ADR-0206](0206-kit-virtual-capa-ia-texto-recebe.md).
