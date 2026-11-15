@@ -20,6 +20,7 @@ import type { PayloadKitVirtual, RespostaKitML } from '../_shared/ml/kit-virtual
 import { moduloHabilitadoStrict } from '../_shared/produto/modulo.ts';
 import { exigirFiscalCompletoSePreciso, type FamiliaFiscalRow } from '../_shared/fiscal/gate.ts';
 import { EMBED_MODULOS, kitLigado, skusParticipantes } from '../_shared/kit-variacao/politica.ts';
+import { fotoDaOrg } from '../criar-kit-variacao/processar.ts';
 
 export interface ComponenteKitVirtual {
   userProductId: string;
@@ -50,6 +51,8 @@ export interface CriarKitVirtualDeps {
   admin: SupabaseClient;
   orgId: string;
   userId: string;
+  /** Ids dos usuários da org (pasta legada do upload manual) — só consultado quando vem `fotoStoragePath`. */
+  usuariosDaOrg(): Promise<string[]>;
   /** URL assinada da foto no storage; `null` quando o path não resolve. */
   urlAssinadaFoto: (path: string) => Promise<string | null>;
   subirFoto: (sourceUrl: string) => Promise<string>;
@@ -73,6 +76,7 @@ export type MotivoCriarKitVirtual =
   | 'listing_type_indisponivel'
   | 'falha_listing_type'
   | 'foto_obrigatoria'
+  | 'foto_invalida'
   | 'falha_leitura'
   | 'fiscal_componente'
   | 'componente_em_kit_variacao'
@@ -400,6 +404,17 @@ export async function criarKitVirtual(
   if (invalido) return { ok: false, motivo: invalido };
 
   const { admin, orgId } = deps;
+
+  // A foto é assinada com a service role: path de outra org (vindo do cliente) vazaria a foto dela
+  // para o ML. Recusa ANTES de gravar o path na linha, assinar URL, subir foto ou chamar o ML.
+  if (input.fotoStoragePath !== null) {
+    let usuarios: Set<string>;
+    try { usuarios = new Set(await deps.usuariosDaOrg()); }
+    catch (e) { return { ok: false, motivo: 'falha_leitura', mensagem: e instanceof Error ? e.message : String(e) }; }
+    if (!fotoDaOrg(input.fotoStoragePath, orgId, usuarios)) {
+      return { ok: false, motivo: 'foto_invalida', mensagem: 'A foto do kit não pertence a esta organização. Envie a foto de novo.' };
+    }
+  }
 
   // ── 0. listing_type_id ANTES de qualquer escrita — a linha do kit já nasce com ele ────
   // (reivindicarKit) e um default cego (`gold_pro`) é exatamente o bug real 2026-09-06. SEMPRE

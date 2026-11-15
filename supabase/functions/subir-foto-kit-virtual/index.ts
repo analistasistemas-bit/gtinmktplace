@@ -60,7 +60,15 @@ Deno.serve(async (req) => {
     return json({ error: 'Falha ao renovar credencial do Mercado Livre' }, 502);
   }
 
+  const { data: perfis, error: erroPerfis } = await admin.from('profiles').select('id').eq('org_id', orgId);
+  if (erroPerfis) {
+    console.error('subir_foto_kit_virtual_usuarios_falhou', { orgId, erro: erroPerfis.message });
+    return json({ error: 'Falha ao ler os usuários da organização' }, 500);
+  }
+
   const resultado = await subirFotoKitVirtual({
+    orgId,
+    usuariosDaOrg: new Set((perfis ?? []).map((p: { id: string }) => p.id)),
     urlAssinadaFoto: async (path) => {
       const { data } = await admin.storage.from(BUCKET).createSignedUrl(path, TTL_SIGNED);
       return data?.signedUrl ?? null;

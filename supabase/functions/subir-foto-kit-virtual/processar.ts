@@ -5,6 +5,7 @@
 //
 // Módulo puro (sem fetch, sem Supabase) para ser testável sem HTTP — mesmo padrão de
 // buscar-componentes-kit-virtual/processar.ts; `index.ts` injeta as implementações reais.
+import { fotoDaOrg } from '../criar-kit-variacao/processar.ts';
 
 export interface SubirFotoKitVirtualInput {
   fotoStoragePath: string;
@@ -17,21 +18,28 @@ export type ResultadoSubirFotoKitVirtual =
   | { ok: false; motivo: MotivoSubirFotoKitVirtual; mensagem?: string };
 
 export interface SubirFotoKitVirtualDeps {
+  orgId: string;
+  /** Usuários da org (pasta legada do upload manual); a foto só sai do bucket se for da org. */
+  usuariosDaOrg: Set<string>;
   /** URL assinada da foto no storage; `null` quando o path não resolve. */
   urlAssinadaFoto: (path: string) => Promise<string | null>;
   subirFoto: (sourceUrl: string) => Promise<string>;
 }
 
 /** Recusa que não custa rede. Roda ANTES de qualquer chamada externa. */
-export function validarSubirFotoKitVirtual(input: SubirFotoKitVirtualInput): MotivoSubirFotoKitVirtual | null {
+export function validarSubirFotoKitVirtual(
+  input: SubirFotoKitVirtualInput, orgId: string, usuariosDaOrg: Set<string>,
+): MotivoSubirFotoKitVirtual | null {
   if (typeof input.fotoStoragePath !== 'string' || !input.fotoStoragePath.trim()) return 'path_invalido';
+  // A URL é assinada com a service role: path de outra org vazaria a foto dela para o ML.
+  if (!fotoDaOrg(input.fotoStoragePath, orgId, usuariosDaOrg)) return 'path_invalido';
   return null;
 }
 
 export async function subirFotoKitVirtual(
   deps: SubirFotoKitVirtualDeps, input: SubirFotoKitVirtualInput,
 ): Promise<ResultadoSubirFotoKitVirtual> {
-  const invalido = validarSubirFotoKitVirtual(input);
+  const invalido = validarSubirFotoKitVirtual(input, deps.orgId, deps.usuariosDaOrg);
   if (invalido) return { ok: false, motivo: invalido };
 
   let url: string | null;

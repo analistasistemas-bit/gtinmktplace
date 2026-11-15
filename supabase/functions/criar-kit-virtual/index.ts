@@ -36,6 +36,7 @@ const STATUS_POR_MOTIVO: Record<MotivoCriarKitVirtual, number> = {
   listing_type_indisponivel: 400,
   falha_listing_type: 502,
   foto_obrigatoria: 400,
+  foto_invalida: 400,
   falha_leitura: 500,
   fiscal_componente: 400,
   componente_em_kit_variacao: 409,
@@ -122,6 +123,11 @@ Deno.serve(async (req) => {
     admin,
     orgId,
     userId,
+    async usuariosDaOrg() {
+      const { data, error } = await admin.from('profiles').select('id').eq('org_id', orgId);
+      if (error) throw new Error(`usuários da org: ${error.message}`);
+      return (data ?? []).map((p: { id: string }) => p.id);
+    },
     urlAssinadaFoto: async (path) => {
       const { data } = await admin.storage.from(BUCKET).createSignedUrl(path, TTL_SIGNED);
       return data?.signedUrl ?? null;

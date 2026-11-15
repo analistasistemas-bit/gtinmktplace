@@ -163,6 +163,7 @@ function deps(st: EstadoFake, over: Partial<CriarKitVirtualDeps> = {}): CriarKit
     admin: fakeAdmin(st),
     orgId: ORG,
     userId: 'user-1',
+    usuariosDaOrg: async () => ['user-1'],
     urlAssinadaFoto: async (path) => `https://signed/${path}`,
     subirFoto: async () => 'PIC-NOVA',
     buscarSecureUrlFoto: async (pictureId) => `https://secure/${pictureId}`,
@@ -385,6 +386,43 @@ describe('criarKitVirtual', () => {
     expect(r).toMatchObject({ ok: false, motivo: 'falha_foto' });
     expect(criarKitML).not.toHaveBeenCalled();
     expect(st.kits[0].status).toEqual('erro');
+  });
+
+  it('foto de OUTRA org: foto_invalida ANTES de gravar o path, assinar URL, subir foto ou chamar o ML', async () => {
+    const st = novoEstado();
+    const chamadas: string[] = [];
+    const r = await criarKitVirtual(deps(st, {
+      urlAssinadaFoto: async (p) => { chamadas.push('assinar'); return `https://signed/${p}`; },
+      subirFoto: async () => { chamadas.push('subir'); return 'PIC'; },
+      buscarListingTypeComponentes: async (ids) => { chamadas.push('listing'); return new Map(ids.map((id) => [id, 'gold_special'])); },
+      criarKitML: async () => { chamadas.push('ml'); throw new Error('não devia chamar'); },
+    }), inputPadrao({ fotoStoragePath: 'org-2/kit-virtual-ia/x.png', fotoMlPictureId: null }));
+    expect(r).toMatchObject({ ok: false, motivo: 'foto_invalida' });
+    expect(chamadas).toEqual([]);
+    expect(st.ops).toEqual([]);
+    expect(st.kits).toEqual([]);
+  });
+
+  it('foto da org (capa IA e upload manual legado por usuário) passa', async () => {
+    for (const path of ['org-1/kit-virtual-ia/11111111-1111-4111-8111-111111111111.png', 'user-1/kit-virtual-chave-1/Foto_kit.jpg']) {
+      const r = await criarKitVirtual(deps(novoEstado()), inputPadrao({ fotoStoragePath: path }));
+      expect(r, path).toMatchObject({ ok: true });
+    }
+  });
+
+  it('travessia no path recusa como foto_invalida', async () => {
+    const st = novoEstado();
+    const r = await criarKitVirtual(deps(st), inputPadrao({ fotoStoragePath: 'org-1/../org-2/x.jpg' }));
+    expect(r).toMatchObject({ ok: false, motivo: 'foto_invalida' });
+    expect(st.ops).toEqual([]);
+  });
+
+  it('falha ao ler os usuários da org: falha_leitura, nada gravado', async () => {
+    const st = novoEstado();
+    const r = await criarKitVirtual(deps(st, { usuariosDaOrg: async () => { throw new Error('banco fora'); } }),
+      inputPadrao({ fotoStoragePath: 'user-1/kit-virtual-chave-1/foto.jpg' }));
+    expect(r).toMatchObject({ ok: false, motivo: 'falha_leitura' });
+    expect(st.ops).toEqual([]);
   });
 
   it('sem picture_id e sem foto no storage: recusa (foto própria é obrigatória, D-5)', async () => {
