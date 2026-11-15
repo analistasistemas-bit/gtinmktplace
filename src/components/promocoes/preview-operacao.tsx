@@ -21,6 +21,7 @@ import { ErroOperacao, useCriarOperacao, usePodeExecutarOperacao, useSimularPrec
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SEMAFORO_UI } from './contagem-semaforo';
 import { DetalheRecebe } from './detalhe-recebe';
+import { UnitarioKit } from './unitario-kit';
 
 type Exato = ResumoLucro & { preco: number; semaforo: LinhaPreview['semaforo'] };
 interface LinhaEditavel extends LinhaPreview {
@@ -117,7 +118,12 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
   const originalDe = (id: string) => itens.find((i) => i.ml_item_id === id)?.preco_original ?? null;
   const detalhe = (l: LinhaEditavel) => {
     const it = itens.find((i) => i.ml_item_id === l.ml_item_id);
-    return <DetalheRecebe r={l.exato!} preco={l.exato!.preco} original={it?.preco_original ?? null} listingType={it?.listing_type_id} variasCores={(it?.projecao.length ?? 0) > 1} />;
+    return (
+      <>
+        <DetalheRecebe r={l.exato!} preco={l.exato!.preco} original={it?.preco_original ?? null} listingType={it?.listing_type_id} variasCores={(it?.projecao.length ?? 0) > 1} />
+        {acao === 'aderir' && <UnitarioKit mlItemId={l.ml_item_id} preco={l.exato!.preco} original={it?.preco_original ?? null} />}
+      </>
+    );
   };
   const acimaDoOriginal = (l: LinhaEditavel) => acao === 'alterar_preco' && l.preco != null && originalDe(l.ml_item_id) != null && l.preco >= originalDe(l.ml_item_id)!;
   const abaixoDoPiso = (l: LinhaEditavel) => acao !== 'sair' && l.preco != null && l.preco < PRECO_MIN_PROMOCAO;

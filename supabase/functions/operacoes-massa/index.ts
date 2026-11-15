@@ -1,6 +1,7 @@
 // ADR-0174 — operações em massa (aderir/sair de promoções DEAL/SMART, pausar/reativar e reajustar preço — ADR-0178). Modos:
 //  - Usuário (admin ou suporte full): cria a operação a partir da Central e publica { etapa: 'executar' }.
 //  - Usuário, simulação: { etapa: 'simular' } (qualquer membro) devolve o líquido exato num preço escolhido (só leitura).
+//    { etapa: 'unitario_kit' } (qualquer membro): kit vinculado → avulso da base com o mesmo desconto % (só leitura).
 //  - Usuário, reajuste: { etapa: 'preview' } (qualquer membro) grava o rascunho; { etapa: 'confirmar' } (admin/suporte full) publica;
 //    { etapa: 'retomar' } (admin/suporte full) republica a execução de um reajuste executando parado (dedup novo).
 //  - QStash { etapa: 'executar' | 'conferir', operacao_id }: executor com continuação e conferência da saída.
@@ -18,9 +19,10 @@ import { executarStatus, type OperacaoStatusRow } from '../_shared/operacoes/exe
 import { MAX_ITENS, reversaoAlterarValida, validarPedido, type ItemPedido, type LinhaCentral } from '../_shared/operacoes/validar.ts';
 import { reversaoValida, validarPedidoStatus, type ItemPedidoStatus } from '../_shared/operacoes/validar-status.ts';
 import { lerSimular, MAX_SIMULAR, simular } from '../_shared/operacoes/simular.ts';
+import { lerUnitario, MAX_UNITARIO, unitariosDosKits } from '../_shared/operacoes/unitario-kit.ts';
 import { chaveValida, dispensarSugestao, lerSugestao, reativarSugestao, type DepsDispensa, type MarcaSugestao } from '../_shared/operacoes/sugestao.ts';
 import {
-  COLS_CENTRAL, criarProjecaoExata, criarSemaforoExato, dedup, depsExecutar, depsStatus, encerrarComErro, idsDaOrg, linhaCentral, urlOperacoes,
+  COLS_CENTRAL, criarDepsUnitario, criarProjecaoExata, criarSemaforoExato, dedup, depsExecutar, depsStatus, encerrarComErro, idsDaOrg, linhaCentral, urlOperacoes,
 } from '../_shared/operacoes/deps.ts';
 import {
   lerConexaoML, MSG_RECONECTAR, MSG_SEM_CONEXAO, respostaFalhaCriacao, SemConexaoML,
@@ -360,6 +362,7 @@ function usuario(admin: Admin, req: Request, body: string): Promise<Response> {
   if (bruto?.etapa === 'confirmar') return confirmarReajuste(admin, req, bruto);
   if (bruto?.etapa === 'retomar') return retomarReajuste(admin, req, bruto);
   if (bruto?.etapa === 'simular') return simularPrecos(admin, req, bruto);
+  if (bruto?.etapa === 'unitario_kit') return unitarioKit(admin, req, bruto);
   if (bruto?.etapa === 'dispensar_sugestao' || bruto?.etapa === 'reativar_sugestao') return dispensa(admin, req, bruto);
   return criar(admin, req, body);
 }
@@ -424,6 +427,29 @@ async function simularPrecos(admin: Admin, req: Request, bruto: unknown): Promis
     const cx = await conexaoDaOrg(admin, orgId);
     if (!cx) throw new SemConexaoML();
     return json({ itens: await simular(pedido.itens, central, criarProjecaoExata(admin, cx)) });
+  } catch (e) {
+    const r = respostaFalhaCriacao(e);
+    if (!r) throw e;
+    return json({ erro: r.erro }, r.status);
+  }
+}
+
+/** Kit na adesão (qualquer membro): o anúncio avulso da base com o mesmo desconto % do kit. Só leitura. */
+async function unitarioKit(admin: Admin, req: Request, bruto: unknown): Promise<Response> {
+  let orgId: string;
+  try {
+    ({ orgId } = await requireUserOrg(req, { access: 'read' }));
+  } catch (resp) {
+    if (resp instanceof Response) return resp;
+    throw resp;
+  }
+  if (!(await exigirModulo(admin, orgId, 'promocoes'))) return json({ erro: SEM_MODULO }, 403);
+  const pedido = lerUnitario(bruto);
+  if (!pedido) return json({ erro: `Pedido inválido (até ${MAX_UNITARIO} anúncios).` }, 400);
+  try {
+    const cx = await conexaoDaOrg(admin, orgId);
+    if (!cx) throw new SemConexaoML();
+    return json({ itens: await unitariosDosKits(pedido, criarDepsUnitario(admin, cx)) });
   } catch (e) {
     const r = respostaFalhaCriacao(e);
     if (!r) throw e;

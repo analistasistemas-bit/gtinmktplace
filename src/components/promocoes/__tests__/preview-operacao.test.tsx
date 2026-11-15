@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { toast } from 'sonner';
 import { PreviewOperacao } from '../preview-operacao';
-import { useCriarOperacao, usePodeExecutarOperacao } from '@/hooks/useOperacoes';
+import { useCriarOperacao, usePodeExecutarOperacao, useUnitarioKit } from '@/hooks/useOperacoes';
 import type { CorProjetada, ItemPromocao } from '@/lib/promocoes';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
@@ -14,6 +14,7 @@ vi.mock('@/hooks/useOperacoes', async () => {
   return {
     ...actual, useCriarOperacao: vi.fn(), usePodeExecutarOperacao: vi.fn(),
     useSimularPrecos: () => ({ mutateAsync: simularAsync, isPending: false }),
+    useUnitarioKit: vi.fn(() => ({ data: null, isLoading: false })),
   };
 });
 
@@ -91,6 +92,20 @@ describe('Você recebe por venda ao aderir', () => {
     expect(screen.getByText(/Já desconta o frete grátis/)).toHaveTextContent(/−R\$\s16,95/);
     expect(screen.getByText(/preço na campanha/)).toHaveTextContent(/R\$\s134,45 \(−13%\).*R\$\s63,40/);
     expect(screen.getByText(/margem/)).toHaveTextContent(/R\$\s27,88.*21%.*44%/);
+  });
+
+  it('kit vinculado: mostra o produto unitário (avulso da base) com o mesmo desconto, abaixo do card', () => {
+    vi.mocked(useUnitarioKit).mockReturnValue({ data: {
+      ml_item_id: 'MLB1', base_item_id: 'MLB9', unidades: 2, preco_cheio: 45.9, preco: 39.93, pior_semaforo: 'verde',
+      projecao: [cor({ custo: 3.11, comissao_pct: 12, frete: 0, aliquota_pct: 4, liquido: 33.54 })],
+    }, isLoading: false } as never);
+    renderPreview({ acao: 'aderir', tipo: 'DEAL', itens: [tarifado()] });
+    const bloco = screen.getByTestId('unitario-kit');
+    expect(bloco).toHaveTextContent(/Produto unitário.*MLB9/);
+    expect(bloco).toHaveTextContent(/valor cheio R\$\s45,90.*promoção R\$\s39,93 \(−13%\)/);
+    expect(bloco).toHaveTextContent(/lucro R\$\s30,43.*margem 76%.*markup 978%/);
+    expect(vi.mocked(useUnitarioKit)).toHaveBeenCalledWith({ ml_item_id: 'MLB1', preco: 134.45, preco_original: 154.55 });
+    vi.mocked(useUnitarioKit).mockReturnValue({ data: null, isLoading: false } as never);
   });
 
   it('anúncio premium mostra Premium', () => {

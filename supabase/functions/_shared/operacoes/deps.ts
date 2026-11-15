@@ -12,6 +12,8 @@ import type { Aliquotas, LinhaItem, ProjecaoCor, Semaforo } from '../promocoes/t
 import { criarClienteML } from './ml.ts';
 import { semaforoReal, type LinhaCentral, type SemaforoExato } from './validar.ts';
 import type { ProjecaoExata } from './simular.ts';
+import type { DepsUnitario } from './unitario-kit.ts';
+import { caminhoMultiget, comoEnvelopeAntigo } from '../ml/multiget.ts';
 import type { DepsExecutar, ItemRow, OperacaoRow } from './executar.ts';
 import type { DepsLaco } from './laco.ts';
 import type { DepsStatus, OperacaoStatusRow } from './executar-status.ts';
@@ -72,6 +74,39 @@ export function criarProjecaoExata(admin: SupabaseClient, cx: Cx): ProjecaoExata
       preco_min: null, preco_max: null, ml_pct: null, vendedor_pct: null, estoque_min: null, estoque_max: null,
     }, ml, cad, aliq, tarifaEm);
     return { projecao: r.projecao, pior_semaforo: r.pior_semaforo };
+  };
+}
+
+/** Kit vinculado → anúncio avulso da base (unitario-kit.ts). Mesma âncora do kit: família mais recente (ADR-0151). */
+export function criarDepsUnitario(admin: SupabaseClient, cx: Cx): DepsUnitario {
+  const get = criarGetJson(cx.token);
+  const projetar = criarProjecaoExata(admin, cx);
+  return {
+    async baseDoKit(kitItemId) {
+      const { data: kit, error } = await admin.from('familias').select('kit_base_codigo_pai, kit_multiplicador')
+        .eq('org_id', cx.orgId).eq('ml_item_id', kitItemId).not('kit_base_codigo_pai', 'is', null)
+        .order('criado_em', { ascending: false }).limit(1).maybeSingle();
+      falhou('familias (kit)', error);
+      if (!kit?.kit_base_codigo_pai || !(Number(kit.kit_multiplicador) >= 2)) return null;
+      const base = kit.kit_base_codigo_pai as string;
+      const [pai, porSku] = await Promise.all([
+        admin.from('anuncios_externos').select('item_externo_id')
+          .eq('org_id', cx.orgId).eq('canal', 'mercado_livre').eq('codigo_pai', base).not('item_externo_id', 'is', null),
+        admin.from('anuncios_externos_itens').select('item_externo_id, anuncios_externos!inner(codigo_pai)')
+          .eq('org_id', cx.orgId).eq('anuncios_externos.codigo_pai', base).eq('retirado', false).not('item_externo_id', 'is', null),
+      ]);
+      falhou('anuncios_externos (base)', pai.error);
+      falhou('anuncios_externos_itens (base)', porSku.error);
+      const itens = new Set([...(pai.data ?? []), ...(porSku.data ?? [])].map((r) => String(r.item_externo_id)));
+      // ponytail: base com mais de um anúncio (UP por SKU, partição) → sem bloco; escolher qual exigiria regra nova.
+      return itens.size === 1 ? { item_id: [...itens][0], unidades: Number(kit.kit_multiplicador) } : null;
+    },
+    async precoNormal(itemId) {
+      const r = comoEnvelopeAntigo(await get(caminhoMultiget([itemId], 'id,price')), [itemId]) as Record<string, unknown>[];
+      const b = Array.isArray(r) && r[0]?.code === 200 ? r[0].body as Record<string, unknown> : null;
+      return typeof b?.price === 'number' && b.price > 0 ? b.price : null;
+    },
+    projetar: (itemId, preco) => projetar({ ml_item_id: itemId } as LinhaCentral, preco),
   };
 }
 

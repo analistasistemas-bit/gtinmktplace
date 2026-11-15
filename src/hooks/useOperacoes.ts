@@ -7,6 +7,7 @@ import { ehAcaoStatus, type AcaoPromocao, type AcaoStatus, type StatusItemOperac
 import { QK } from '@/lib/queries';
 import type { Ajuste, Confirmacao, FaixaAtacado, ItemPreview } from '@/lib/reajuste';
 import type { ResultadoSimulacao } from '@/lib/promocao-simulacao';
+import type { CorProjetada, SemaforoPromo } from '@/lib/promocoes';
 import { useProfile } from '@/hooks/useProfile';
 import { useSupportStore } from '@/stores/support-store';
 
@@ -178,6 +179,24 @@ export function useCriarOperacao() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: QK_OPERACOES });
       qc.invalidateQueries({ queryKey: ['promocoes'] });
+    },
+  });
+}
+
+export interface UnitarioKit {
+  ml_item_id: string; base_item_id: string; unidades: number;
+  preco_cheio: number; preco: number; projecao: CorProjetada[]; pior_semaforo: SemaforoPromo;
+}
+/** Kit vinculado na adesão: o avulso da base com o mesmo desconto % do kit (null = não é kit ou sem leitura). Só leitura. */
+export function useUnitarioKit(kit: { ml_item_id: string; preco: number; preco_original: number | null } | null) {
+  return useQuery({
+    queryKey: ['promocoes', 'unitario-kit', kit?.ml_item_id, kit && Math.round(kit.preco * 100), kit?.preco_original],
+    enabled: !!kit && kit.preco_original != null && kit.preco_original > 0,
+    staleTime: 60_000, retry: false, refetchOnWindowFocus: false,
+    queryFn: async (): Promise<UnitarioKit | null> => {
+      const { data, error } = await supabase.functions.invoke('operacoes-massa', { body: { etapa: 'unitario_kit', itens: [kit] } });
+      if (error) throw await lerErroEdge(error, 'Não foi possível ler o anúncio unitário.');
+      return (data as { itens: UnitarioKit[] }).itens[0] ?? null;
     },
   });
 }
