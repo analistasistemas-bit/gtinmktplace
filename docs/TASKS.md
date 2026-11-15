@@ -1,5 +1,13 @@
 # PubliAI — Tasks
 
+## Kit vinculado em categoria sem formato "Kit"/"Pack" (ADR-0151) — 2026-11-15
+
+Mergeado na `main`: `80bb8f2f`. Sem migration; edges `criar-kit-vinculado` (v55), `criar-kit-variacao` (v17) e `definir-categoria-familia` (v83) deployadas.
+
+- [x] Coloração (MLB264861) não tem `SALE_FORMAT`; o kit agora grava `UNITS_PER_PACKAGE = N` (tag `pack_multiplier`), `IS_KIT = Sim` e peso líquido × N. Prova por `/items/validate` com a base 00064939 da Hairfly.
+- [ ] Primeiro kit real (Coloração Colore 0.6, kit de 3): conferir "Quantidade de unidades: 3" na ficha do anúncio.
+- [ ] `resolverPack` (promoções) lê só `UNITS_PER_PACK`; nesse kit vale o cadastro do kit — ajustar só se a projeção divergir.
+
 ## Cadastro em grade: Avançar sempre clicável — 2026-11-15
 
 Mergeado na `main`: `1d09de2b`. Só tela (`dialog-cadastro-grade.tsx`): sem migration, sem edge function.

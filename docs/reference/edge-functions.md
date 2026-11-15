@@ -1237,8 +1237,10 @@ falha ao ler `organizations` não libera.
   `base_sem_custo`/`base_sem_peso`/`base_sem_categoria`; 409 `base_multivariacao` (D-10: só
   produto sem cor), `base_e_kit` (kit de kit não existe) ou `kit_duplicado` (multiplicador já
   vivo na base ou repetido na mesma submissão); 400 `categoria_sem_kit` quando a categoria do ML
-  não expõe `SALE_FORMAT=Kit` (`aplicarKitNosAtributos` falha LOUD — não faz o no-op do
-  ADR-0071, porque aqui um no-op publicaria N unidades ao preço de uma).
+  não expõe `SALE_FORMAT` "Kit" nem "Pack" nem o multiplicador `UNITS_PER_PACKAGE` (tag
+  `pack_multiplier`, ex.: Coloração MLB264861 — emendas ADR-0151 de 13/11 e 15/11)
+  (`aplicarKitNosAtributos` falha LOUD — não faz o no-op do ADR-0071, porque aqui um no-op
+  publicaria N unidades ao preço de uma).
   **Não roda `process-familia`** (D-3): `montarFamiliaKit`/`montarVariacaoKit`
   (`processar.ts`) clonam a família-base (`STRIP_FAMILIA_KIT`/`STRIP_VARIACAO_KIT`) já em
   `status='pronto'`, com `custo`/`peso_gramas` × N, `estoque` sempre 0, GTIN nunca herdado
