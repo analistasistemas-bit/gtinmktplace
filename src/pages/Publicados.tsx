@@ -1508,8 +1508,8 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
       familiaId: item.familiaIdVigente ?? item.familiaId,
       codigoPai: item.codigoPai,
       // Preço de venda real (o mesmo da coluna "Preço atual"/"Preço publicado"), não o mínimo
-      // líquido de `variacoes.preco` — ver baseParaKit. Em promoção, o preço "de": o kit não
-      // herda um desconto temporário do anúncio.
+      // líquido de `variacoes.preco` — ver baseParaKit. Em promoção, o DialogCriarKit troca pelo
+      // promocional lido ao vivo do ML (Diego, 15/11); este é o fallback sem promoção.
       precoAtual: item.precoOriginal ?? item.precoAtual ?? item.precoPublicacao,
     });
 

@@ -664,3 +664,47 @@ describe('DialogCriarKit — capa com N unidades (ADR-0205)', () => {
     expect(await screen.findByRole('button', { name: 'Usar capa com 2 unidades' })).toBeInTheDocument();
   });
 });
+
+describe('DialogCriarKit — preço do kit com a base em promoção', () => {
+  const BASE_ML: BaseParaKit = { ...BASE_COM_FOTO, preco: 78.9, custo: 20 };
+  const promo = { data: { pecas: { SKU1: { normal: 78.9, promocao: 63.9, fim_promocao: null } } }, error: null };
+  const promoPendente = () => {
+    const ctl: { soltar: (v: unknown) => void } = { soltar: () => {} };
+    invokeMock.mockImplementation((fn: string) => (fn === 'preco-avulso-kit'
+      ? new Promise((r) => { ctl.soltar = r; }) : Promise.resolve({ data: null, error: null })));
+    return ctl;
+  };
+  async function irAoKit4() {
+    await userEvent.click(screen.getByLabelText('Kit de 4 unidades'));
+    await userEvent.click(screen.getByRole('button', { name: 'Avançar' }));
+  }
+
+  it('sugere N × preço promocional, não o normal', async () => {
+    invokeMock.mockImplementation(async (fn: string) => (fn === 'preco-avulso-kit' ? promo : { data: null, error: null }));
+    renderDialog([], BASE_ML, true);
+    await screen.findByText(/Base em promoção/);
+    await irAoKit4();
+    expect(screen.getByLabelText('Preço do kit 4')).toHaveValue('255,6');
+  });
+
+  it('promoção que chega depois de marcar o tamanho corrige a sugestão', async () => {
+    const ctl = promoPendente();
+    renderDialog([], BASE_ML, true);
+    await irAoKit4();
+    expect(screen.getByLabelText('Preço do kit 4')).toHaveValue('315,6');
+    await act(async () => { ctl.soltar(promo); });
+    await waitFor(() => expect(screen.getByLabelText('Preço do kit 4')).toHaveValue('255,6'));
+  });
+
+  it('preço editado à mão não é atropelado pela promoção', async () => {
+    const ctl = promoPendente();
+    renderDialog([], BASE_ML, true);
+    await irAoKit4();
+    const campo = screen.getByLabelText('Preço do kit 4');
+    await userEvent.clear(campo);
+    await userEvent.type(campo, '300');
+    await act(async () => { ctl.soltar(promo); });
+    await screen.findByText(/Base em promoção/);
+    expect(campo).toHaveValue('300');
+  });
+});

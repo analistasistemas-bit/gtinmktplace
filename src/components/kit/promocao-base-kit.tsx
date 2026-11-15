@@ -8,9 +8,14 @@ import { diaMes, PromocoesFuturas } from '@/components/kit-variacao/referencia-a
 const INDISPONIVEL = 'promoção da base indisponível';
 
 /** `ativo` = base publicada no ML. Base em Revisão não tem anúncio: nada a ler, nada a mostrar. */
-export function PromocaoBaseKit({ familiaBaseId, ativo }: { familiaBaseId: string; ativo: boolean }) {
+export function PromocaoBaseKit({ familiaBaseId, ativo, abertura: aberturaDoDialog }: {
+  familiaBaseId: string; ativo: boolean;
+  /** Mesma abertura do dialog: a query é compartilhada (o preço do kit usa a promoção lida aqui). */
+  abertura?: string;
+}) {
   // Montado só com o dialog aberto: uma leitura nova do ML por abertura.
-  const [abertura] = useState(() => crypto.randomUUID());
+  const [aberturaPropria] = useState(() => crypto.randomUUID());
+  const abertura = aberturaDoDialog ?? aberturaPropria;
   const q = usePrecoAvulsoKit(ativo ? familiaBaseId : null, ativo ? abertura : null);
   if (!ativo) return null;
   if (q.isError) return <p className="text-xs text-muted-foreground">{INDISPONIVEL}</p>;

@@ -1,7 +1,7 @@
 // ADR-0151 D-2/D-4: gatilho de criação de kit vinculado a partir da tela Publicados.
 // Etapa 1 escolhe os tamanhos; etapa 2 é o preview editável — a revisão inteira do kit,
 // sem passar por process-familia nem por card na Revisão.
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -22,11 +22,12 @@ import { uploadFile, buildStoragePath } from '@/lib/storage';
 import { publicarFamilias } from '@/lib/publicar';
 import { cn } from '@/lib/utils';
 import {
-  TAMANHOS_KIT, TITULO_MAX_KIT, tituloDoKit, descricaoDoKit, criarKitVinculado,
+  TAMANHOS_KIT, TITULO_MAX_KIT, tituloDoKit, descricaoDoKit, criarKitVinculado, precoSugeridoDoKit,
   type BaseParaKit, type KitFormValues,
 } from '@/lib/kit';
 import { EtapasKit } from '@/components/kit/etapas-kit';
 import { PromocaoBaseKit } from '@/components/kit/promocao-base-kit';
+import { usePrecoAvulsoKit } from '@/hooks/useKitsVariacao';
 import { GaleriaBaseKit } from '@/components/kit/galeria-base-kit';
 import { useGaleriaBaseKit } from '@/hooks/useGaleriaBaseKit';
 import { idsDaGaleria, type EscolhaGaleria, type GaleriaProposta } from '@/lib/kit-galeria';
@@ -91,10 +92,33 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
   // ADR-0205: capa com N unidades por IA. Estado e request_id aqui: o PreviewKit desmonta em "Voltar".
   const capas = useCapasUnidades(familiaBaseId, open);
 
+  // Preço do kit = N × preço vigente da base: em promoção, o promocional (Diego, 15/11 — antes era o "de").
+  // Mesma query do aviso "Base em promoção" (mesma abertura): uma leitura do ML por abertura do dialog.
+  const [abertura, setAbertura] = useState(() => crypto.randomUUID());
+  const promoBase = usePrecoAvulsoKit(baseNoMl && open ? familiaBaseId : null, abertura);
+  const precoPromo = promoBase.data ? ([...promoBase.data.values()][0]?.promocao ?? null) : null;
+  const baseKit = useMemo(() => (precoPromo != null ? { ...base, preco: precoPromo } : base), [base, precoPromo]);
+  // Promoção que chega depois de marcar o tamanho: corrige só a sugestão intocada (preço digitado fica).
+  useEffect(() => {
+    if (precoPromo == null) return;
+    setValores((prev) => {
+      let mudou = false;
+      const novo = { ...prev };
+      for (const [k, v] of Object.entries(prev)) {
+        const n = Number(k);
+        if (v.preco !== precoSugeridoDoKit(base.preco, n, v.descontoPct)) continue;
+        novo[n] = { ...v, preco: precoSugeridoDoKit(precoPromo, n, v.descontoPct) };
+        mudou = true;
+      }
+      return mudou ? novo : prev;
+    });
+  }, [precoPromo, base.preco]);
+
   // Reset ao abrir: chaves e valores novos por sessão de diálogo (as chaves só trocam
   // depois de sucesso confirmado, nunca durante a edição).
   useEffect(() => {
-    if (!open) return;
+    // Renova ao FECHAR (dialog que fica montado, ex.: familia-expanded): reabrir lê o ML de novo, sem 2ª leitura na 1ª abertura.
+    if (!open) { setAbertura(crypto.randomUUID()); return; }
     setEtapa('tamanhos');
     setMarcados(new Set());
     setChaves({});
@@ -131,7 +155,7 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
       setChaves((prev) => (prev[n] ? prev : { ...prev, [n]: crypto.randomUUID() }));
       setValores((prev) => (prev[n]
         ? prev
-        : { ...prev, [n]: valorInicialPreview(base, tituloDoKit(base.titulo, n), descricaoDoKit(base.descricao, n, base.titulo), n) }));
+        : { ...prev, [n]: valorInicialPreview(baseKit, tituloDoKit(base.titulo, n), descricaoDoKit(base.descricao, n, base.titulo), n) }));
     }
   }
 
@@ -356,7 +380,7 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
           ) : null}
         </div>
 
-        {baseNoMl && <PromocaoBaseKit familiaBaseId={familiaBaseId} ativo />}
+        {baseNoMl && <PromocaoBaseKit familiaBaseId={familiaBaseId} ativo abertura={abertura} />}
 
         {etapa === 'tamanhos' ? (
           <div className="flex flex-col gap-2" role="group" aria-label="Tamanhos do kit">
@@ -403,7 +427,7 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
                 n={n}
                 indice={i + 1}
                 total={tamanhosMarcados.length}
-                base={base}
+                base={baseKit}
                 value={valores[n]}
                 categoriaMlId={categoriaMlIdEfetiva}
                 onPodeSeguir={aoMudarPodeSeguir}
