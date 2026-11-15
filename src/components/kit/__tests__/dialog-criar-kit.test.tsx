@@ -709,6 +709,41 @@ describe('DialogCriarKit — preço do kit com a base em promoção', () => {
     expect(campo).toHaveValue('315,6');
   });
 
+  it('desconto depois do preço digitado volta a seguir a promoção', async () => {
+    const ctl = promoPendente();
+    renderDialog([], BASE_ML, true);
+    await irAoKit4();
+    const campo = screen.getByLabelText('Preço do kit 4');
+    await userEvent.clear(campo);
+    await userEvent.type(campo, '300');
+    const desconto = screen.getByLabelText(/desconto.*kit 4/i);
+    await userEvent.clear(desconto);
+    await userEvent.type(desconto, '10');
+    await act(async () => { ctl.soltar(promo); });
+    await waitFor(() => expect(campo).toHaveValue('230,04'));
+  });
+
+  it('dialog que fica montado: cada abertura lê a promoção uma vez', async () => {
+    invokeMock.mockImplementation(async (fn: string) => (fn === 'preco-avulso-kit' ? promo : { data: null, error: null }));
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const ui = (open: boolean) => (
+      <QueryClientProvider client={qc}>
+        <DialogCriarKit familiaBaseId="familia-base-1" base={BASE_ML} kitsExistentes={[]} open={open} baseNoMl onOpenChange={vi.fn()} />
+      </QueryClientProvider>
+    );
+    const leituras = () => invokeMock.mock.calls.filter((c) => c[0] === 'preco-avulso-kit').length;
+    const { rerender } = render(ui(true));
+    await screen.findByText(/Base em promoção/);
+    expect(leituras()).toBe(1);
+    rerender(ui(false));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(leituras()).toBe(1);
+    rerender(ui(true));
+    await screen.findByText(/Base em promoção/);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(leituras()).toBe(2);
+  });
+
   it('"Criar e publicar" espera a leitura da promoção', async () => {
     const ctl = promoPendente();
     renderDialog([], BASE_ML, true);

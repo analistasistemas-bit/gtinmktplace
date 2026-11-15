@@ -94,8 +94,11 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
 
   // Preço do kit = N × preço vigente da base: em promoção, o promocional (Diego, 15/11 — antes era o "de").
   // Mesma query do aviso "Base em promoção" (mesma abertura): uma leitura do ML por abertura do dialog.
-  const [abertura, setAbertura] = useState(() => crypto.randomUUID());
-  const jaAbriu = useRef(false);
+  // Abertura nova a cada reabertura, trocada NO RENDER (não em efeito): a query nunca nasce com a chave velha
+  // (dialog que fica montado, ex.: familia-expanded). 1ª abertura: mantém.
+  const [sessao, setSessao] = useState(() => ({ aberto: open, abertura: crypto.randomUUID() }));
+  if (sessao.aberto !== open) setSessao({ aberto: open, abertura: open ? crypto.randomUUID() : sessao.abertura });
+  const abertura = sessao.abertura;
   /** Tamanhos com preço digitado à mão: a promoção que chega depois não os toca. */
   const precoManual = useRef(new Set<number>());
   const promoBase = usePrecoAvulsoKit(baseNoMl && open ? familiaBaseId : null, abertura);
@@ -121,9 +124,6 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
   // depois de sucesso confirmado, nunca durante a edição).
   useEffect(() => {
     if (!open) return;
-    // Reabertura de dialog que fica montado (familia-expanded): abertura nova = leitura nova do ML. Na 1ª, mantém (sem 2ª leitura).
-    if (jaAbriu.current) setAbertura(crypto.randomUUID());
-    jaAbriu.current = true;
     precoManual.current.clear();
     setEtapa('tamanhos');
     setMarcados(new Set());
@@ -461,7 +461,9 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
                 onChange={(patch) => {
                   // Arquivo manual vence a candidata: volta a foto da base e descarta a geração.
                   if (patch.fotoFile) capas.descartar(n);
-                  if ('preco' in patch && !('descontoPct' in patch)) precoManual.current.add(n);
+                  // Digitado à mão: a promoção que chegar depois não toca. Desconto recalcula: volta a ser sugestão.
+                  if ('descontoPct' in patch) precoManual.current.delete(n);
+                  else if ('preco' in patch) precoManual.current.add(n);
                   setValores((prev) => ({
                     ...prev, [n]: { ...prev[n], ...patch, ...(patch.fotoFile ? { imagemPath: base.fotoPath } : {}) },
                   }));
