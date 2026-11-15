@@ -52,9 +52,25 @@ describe('humanizarErroML', () => {
     expect(msg).not.toContain('does not exist');
   });
 
-  it('código desconhecido com texto em português do ML → mantém o texto', () => {
-    const json = { message: 'Validation error', cause: [{ type: 'error', code: 'item.something.weird', message: 'Algo específico aconteceu com o anúncio' }] };
-    expect(humanizarErroML(400, json)).toContain('Algo específico aconteceu');
+  it('texto cru do ML nunca volta, nem com acento (revisão Codex: "Café")', () => {
+    const json = { message: 'Validation error', cause: [{ type: 'error', code: 'body.invalid_fields', message: 'Invalid value for field family_name: Café' }] };
+    expect(humanizarErroML(400, json)).not.toContain('Invalid value');
+    expect(humanizarErroML(400, { message: 'Invalid value: Café' })).toEqual('O Mercado Livre recusou (erro 400).');
+  });
+
+  it('foto "does not exist" só na message do topo (sem cause) → mantém o sinal de limpar o cache', () => {
+    const msg = humanizarErroML(400, { message: 'Picture id 123-MLB does not exist' });
+    expect(msg).toMatch(/^Problema nas fotos/);
+    expect(msg).toContain('não existe mais no Mercado Livre');
+  });
+
+  it('atributo: não confunde valor nem tipo com código de atributo (revisão Codex)', () => {
+    const valor = humanizarErroML(400, { cause: [{ type: 'error', code: 'item.attributes.invalid', message: 'Attribute BRAND has invalid value [12345]' }] });
+    expect(valor).toContain('BRAND');
+    expect(valor).not.toContain('12345');
+    const tipo = humanizarErroML(400, { cause: [{ type: 'error', code: 'item.attributes.invalid', message: 'Attribute BRAND must be STRING' }] });
+    expect(tipo).toContain('BRAND');
+    expect(tipo).not.toContain('STRING');
   });
 
   it('código desconhecido com texto em inglês → mensagem genérica em pt-BR', () => {

@@ -24,15 +24,20 @@ function normalizarCausa(c: string | Causa): Causa {
 // entra na mensagem: vai para o log em `humanizarErroML`. Da causa só aproveitamos os códigos de
 // atributo (ex.: PRODUCT_CONSERVATION), que são o que o operador precisa para corrigir.
 
-/** Códigos de atributo citados pelo ML: lista `[A, B]` ou tokens em CAIXA ALTA (sem o id da categoria). */
+/** Códigos de atributo citados pelo ML: lista `[A, B]` só de ids (`attributes [X]`) ou `attribute X`.
+ *  Nunca valores (`invalid value [12345]`) nem palavras soltas em caixa alta (`must be STRING`). */
+const ID_ATRIBUTO = /^[A-Z][A-Z0-9_]*$/;
+const TIPOS = new Set(['STRING', 'NUMBER', 'BOOLEAN', 'LIST', 'ERROR']);
 function atributosCitados(msg: string): string[] {
-  const lista = /\[([A-Z0-9_,\s]+)\]/.exec(msg);
-  const brutos = lista ? lista[1].split(',') : msg.match(/\b[A-Z][A-Z0-9_]{2,}\b/g) ?? [];
-  return [...new Set(brutos.map((t) => t.trim()).filter((t) => t && !/^MLB\d+$/.test(t)))];
+  const ids: string[] = [];
+  for (const m of msg.matchAll(/\b[Aa]ttributes?\s*\[([^\]]*)\]/g)) ids.push(...m[1].split(',').map((t) => t.trim()));
+  for (const m of msg.matchAll(/\b[Aa]ttributes?\s+([A-Z][A-Z0-9_]*)\b/g)) ids.push(m[1]);
+  // Sem "attribute X" (ex.: "BRAND obrigatório"): tokens soltos em caixa alta, menos id de categoria e nome de tipo.
+  if (ids.length === 0) ids.push(...(msg.match(/\b[A-Z][A-Z0-9_]{2,}\b/g) ?? []).filter((t) => !TIPOS.has(t)));
+  return [...new Set(ids.filter((t) => ID_ATRIBUTO.test(t) && !/^MLB\d+$/.test(t)))];
 }
 
-// ponytail: heurística de idioma — acento ou palavra comum em pt. Erra para o genérico, nunca para o inglês.
-const PARECE_PT = /[ãõçáéíóúâêô]|\b(não|foto|anúncio|produto|categoria|preço|envie|novamente)\b/i;
+const GENERICO = 'O Mercado Livre recusou o anúncio por um motivo que o PubliAI ainda não reconhece. O detalhe ficou registrado para o suporte.';
 
 function humanizarCausa(c: Causa): string {
   const code = (c.code ?? '').toLowerCase();
@@ -73,8 +78,7 @@ function humanizarCausa(c: Causa): string {
   if (code.includes('category')) return 'O Mercado Livre recusou a categoria do anúncio. Revise a categoria e clique em Reenviar.';
   if (code.includes('description')) return 'O Mercado Livre recusou a descrição do anúncio. Revise a descrição e clique em Reenviar.';
   if (code.includes('stock') || code.includes('quantity')) return 'O Mercado Livre recusou o estoque do anúncio. Revise o estoque e clique em Reenviar.';
-  if (PARECE_PT.test(msg)) return msg;
-  return 'O Mercado Livre recusou o anúncio por um motivo que o PubliAI ainda não reconhece. O detalhe ficou registrado para o suporte.';
+  return GENERICO;
 }
 
 // O ML às vezes recusa o item por um erro TRANSIENTE de processamento de imagem
@@ -150,9 +154,11 @@ export function humanizarErroML(status: number, json: unknown): string {
   const msgs = [...new Set(usar.map(humanizarCausa).filter(Boolean))];
   if (msgs.length) return msgs.join(' ');
 
+  // Sem `cause`: a `message` do topo passa pela mesma classificação (ex.: foto "does not exist"
+  // precisa do sinal que limpa o cache), mas nunca é devolvida crua.
   const topo = j.message ?? j.error;
-  if (topo && PARECE_PT.test(topo)) return topo;
-  return `O Mercado Livre recusou (erro ${status}).`;
+  const h = topo ? humanizarCausa({ message: topo }) : GENERICO;
+  return h === GENERICO ? `O Mercado Livre recusou (erro ${status}).` : h;
 }
 
 // ─── Liveness da integração (ADR-0069) ─────────────────────────────────────

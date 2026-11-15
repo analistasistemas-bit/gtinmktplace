@@ -7,7 +7,8 @@ export async function subirFotoML(accessToken: string, sourceUrl: string): Promi
     body: JSON.stringify({ source: sourceUrl }),
   });
   if (!resp.ok) {
-    throw new Error(`Falha ao subir foto (${resp.status}): ${await resp.text()}`);
+    console.error('ml_foto_upload_recusado', resp.status, await resp.text()); // corpo cru só no log (pt-BR ao cliente)
+    throw new Error(`Falha ao subir foto (${resp.status}): o Mercado Livre recusou a imagem. Confira a foto e tente de novo.`);
   }
   const json = await resp.json();
   return json.id as string;
@@ -31,7 +32,8 @@ export async function subirFotoMLArquivo(
     signal: AbortSignal.timeout(30_000),
   });
   if (!resp.ok) {
-    const e = new Error(`Falha ao subir foto (${resp.status}): ${await resp.text()}`);
+    console.error('ml_foto_upload_recusado', resp.status, await resp.text());
+    const e = new Error(`Falha ao subir foto (${resp.status}): o Mercado Livre recusou a imagem. Confira a foto e tente de novo.`);
     (e as { status?: number }).status = resp.status;
     throw e;
   }
@@ -54,7 +56,8 @@ export async function buscarSecureUrlFotoML(accessToken: string, pictureId: stri
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!resp.ok) {
-    throw new Error(`Falha ao buscar a foto no Mercado Livre (${resp.status}): ${await resp.text()}`);
+    console.error('ml_foto_leitura_falhou', resp.status, await resp.text());
+    throw new Error(`Falha ao buscar a foto no Mercado Livre (erro ${resp.status}).`);
   }
   const json = await resp.json().catch(() => ({})) as { variations?: { secure_url?: unknown }[] };
   const secureUrl = json.variations?.[0]?.secure_url;
