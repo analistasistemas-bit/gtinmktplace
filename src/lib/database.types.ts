@@ -3697,6 +3697,8 @@ export type Database = {
           id: string
           is_test: boolean
           lote_seq: number
+          logo_claro_url: string | null
+          logo_escuro_url: string | null
           marca_padrao: string | null
           marca_propria: boolean
           modulos_habilitados: string[]
@@ -3714,6 +3716,8 @@ export type Database = {
           id?: string
           is_test?: boolean
           lote_seq?: number
+          logo_claro_url?: string | null
+          logo_escuro_url?: string | null
           marca_padrao?: string | null
           marca_propria?: boolean
           modulos_habilitados?: string[]
@@ -3731,6 +3735,8 @@ export type Database = {
           id?: string
           is_test?: boolean
           lote_seq?: number
+          logo_claro_url?: string | null
+          logo_escuro_url?: string | null
           marca_padrao?: string | null
           marca_propria?: boolean
           modulos_habilitados?: string[]
