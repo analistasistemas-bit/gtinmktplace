@@ -66,6 +66,22 @@ function renderPreview(n: number, inicial: Partial<KitPreviewValue> = {}) {
   );
 }
 
+describe('vantagem para o comprador (15/11)', () => {
+  it('compara com N× o anúncio unitário e mostra a economia em R$ e %', () => {
+    renderPreview(2, { preco: 35.82 }); // 2 × 19,90 = 39,80; economiza 3,98 (10%)
+    const bloco = screen.getByRole('group', { name: 'Vantagem do comprador no kit de 2 unidades' });
+    expect(bloco).toHaveTextContent(/R\$\s*39,80/);
+    expect(bloco).toHaveTextContent(/economiza\s*R\$\s*3,98/);
+    expect(bloco).toHaveTextContent('10% de desconto sobre o avulso');
+  });
+
+  it('kit igual ou mais caro que avulso avisa que não há vantagem', () => {
+    renderPreview(2, { preco: 39.8 });
+    const bloco = screen.getByRole('group', { name: 'Vantagem do comprador no kit de 2 unidades' });
+    expect(bloco).toHaveTextContent('Sem vantagem');
+  });
+});
+
 describe('campos decimais aceitam vírgula (bug 13/11: preço zerava ao digitar "38,")', () => {
   it('preço digitado com vírgula não zera e vale o número', () => {
     renderPreview(3);

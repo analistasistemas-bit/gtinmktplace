@@ -4,7 +4,7 @@ import { useEffect, useState, type ComponentProps, type FocusEvent, type ReactNo
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Trash2 } from 'lucide-react';
+import { AlertTriangle, BadgePercent, Trash2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CampoFoto } from '@/components/estoque/campo-foto';
 import { AtacadoEditor } from '@/components/atacado-editor';
@@ -12,7 +12,7 @@ import { useImageUrl } from '@/hooks/useImageUrl';
 import { fmtBRL, parseNumeroPtBr } from '@/lib/formato';
 import { cn } from '@/lib/utils';
 import type { FaixaAtacado } from '@/lib/atacado';
-import { precoSugeridoDoKit, TITULO_MAX_KIT, type BaseParaKit } from '@/lib/kit';
+import { precoSugeridoDoKit, TITULO_MAX_KIT, vantagemDoKit, type BaseParaKit } from '@/lib/kit';
 import { PISO_MEDIDA_CM } from '@/lib/publicavel';
 import { RecebeKit } from '@/components/kit/recebe-kit';
 
@@ -288,6 +288,7 @@ export function PreviewKit({ n, indice, total, base, value, onChange, categoriaM
             </div>
           </div>
           <RecebeKit n={n} base={base} value={value} categoriaMlId={categoriaMlId} onPodeSeguir={onPodeSeguir} />
+          <VantagemKit n={n} precoUnitario={base.preco} precoKit={value.preco} />
         </div>
       </div>
 
@@ -307,5 +308,45 @@ export function PreviewKit({ n, indice, total, base, value, onChange, categoriaM
         <AtacadoEditor faixas={value.atacado} precoBase={value.preco} onChange={(faixas) => onChange({ atacado: faixas })} />
       </div>
     </section>
+  );
+}
+
+function VantagemKit({ n, precoUnitario, precoKit }: { n: number; precoUnitario: number; precoKit: number }) {
+  const v = vantagemDoKit(precoUnitario, n, precoKit);
+  if (!v) return null;
+  const ganha = v.economia > 0;
+  const pct = Number.isInteger(Number(v.pct.toFixed(1))) ? v.pct.toFixed(0) : v.pct.toFixed(1).replace('.', ',');
+  return (
+    <div role="group" aria-label={`Vantagem do comprador no kit de ${n} unidades`} className="rounded-md border p-2 shadow-sm">
+      <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <BadgePercent className="size-3.5" aria-hidden /> Vantagem para o comprador
+      </div>
+      <dl className="grid grid-cols-2 gap-2 rounded-md border bg-card p-2 text-xs tabular-nums">
+        <div>
+          <dt className="text-muted-foreground">{n}× anúncio unitário ({fmtBRL(precoUnitario)})</dt>
+          <dd className="text-sm font-medium text-muted-foreground">
+            {ganha ? <del className="decoration-muted-foreground/60">{fmtBRL(v.avulso)}</del> : fmtBRL(v.avulso)}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">Kit com {n}</dt>
+          <dd className="text-sm font-semibold text-foreground">{fmtBRL(precoKit)}</dd>
+        </div>
+      </dl>
+      {ganha ? (
+        <p aria-live="polite" className="mt-1.5 text-xs tabular-nums text-success">
+          Comprador economiza <span className="font-semibold">{fmtBRL(v.economia)}</span>
+          {' · '}<span className="font-semibold">{pct}% de desconto</span> sobre o avulso
+        </p>
+      ) : (
+        <p aria-live="polite" className="mt-1.5 flex items-start gap-1 text-xs text-warning">
+          <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden />
+          <span>
+            Sem vantagem: o kit custa {v.economia === 0 ? 'o mesmo que' : `${fmtBRL(-v.economia)} a mais que`} {n} unidades avulsas.
+            {' '}Reduza o preço ou aumente o &quot;Desconto sobre N× unitário (%)&quot; acima.
+          </span>
+        </p>
+      )}
+    </div>
   );
 }

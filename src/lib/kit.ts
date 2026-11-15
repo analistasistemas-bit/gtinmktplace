@@ -101,6 +101,17 @@ export function precoSugeridoDoKit(precoBase: number, n: number, descontoPct = 0
   return Number(liquido.toFixed(2));
 }
 
+/** Quanto o comprador economiza levando o kit em vez de N unidades do anúncio unitário. */
+export function vantagemDoKit(precoUnitario: number, n: number, precoKit: number) {
+  if (!(precoUnitario > 0) || !(precoKit > 0)) return null;
+  const avulso = Number((precoUnitario * n).toFixed(2));
+  const economia = Number((avulso - precoKit).toFixed(2));
+  return { avulso, economia, pct: (economia / avulso) * 100 };
+}
+
+/** Chamada fixa no topo de toda descrição de kit vinculado (pedido do Diego, 15/11). */
+export const CHAMADA_KIT = 'OPORTUNIDADE IMPERDÍVEL!!!';
+
 function temSecaoConteudo(desc: string): boolean {
   return /(?:📦\s*)?(?:O QUE VOCÊ RECEBE|CONTEÚDO DA EMBALAGEM)/i.test(desc);
 }
@@ -112,6 +123,7 @@ function secaoOQueVoceRecebe(n: number, tituloBase: string): string {
 
 export function descricaoDoKit(descricaoBase: string, n: number, tituloBase: string): string {
   let desc = corrigirRotuloQuantidade(descricaoBase).trimEnd();
+  if (desc.startsWith(CHAMADA_KIT)) desc = desc.slice(CHAMADA_KIT.length).trimStart();
   const unidades = unidadesPt(n);
   const kitComUnidades = `Kit com ${unidades}.`;
   const titulo = tituloBase.trim();
@@ -140,7 +152,7 @@ export function descricaoDoKit(descricaoBase: string, n: number, tituloBase: str
   }
 
   const abertura = `Kit com ${unidades} de ${titulo}.\n\n`;
-  return desc.startsWith(abertura) ? desc : `${abertura}${desc}`;
+  return `${CHAMADA_KIT}\n\n${desc.startsWith(abertura) ? desc : `${abertura}${desc}`}`;
 }
 
 /** Campos da família-base usados para pré-preencher o preview (Decisão 4). */

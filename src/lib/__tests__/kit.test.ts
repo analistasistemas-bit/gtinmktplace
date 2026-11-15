@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { tituloDoKit, precoSugeridoDoKit, descricaoDoKit, TITULO_MAX_KIT, contarKitsAguardandoPorPai } from '../kit';
+import { tituloDoKit, precoSugeridoDoKit, descricaoDoKit, vantagemDoKit, CHAMADA_KIT, TITULO_MAX_KIT, contarKitsAguardandoPorPai } from '../kit';
 import type { KitVinculado } from '../queries';
 
 function criarKit(overrides: Partial<KitVinculado> = {}): KitVinculado {
@@ -70,8 +70,15 @@ describe('precoSugeridoDoKit', () => {
 });
 
 describe('descricaoDoKit', () => {
+  it('toda descrição de kit abre com a chamada fixa, uma vez só', () => {
+    const r = descricaoDoKit('Shampoo detox.', 2, 'Shampoo X');
+    expect(r.startsWith(`${CHAMADA_KIT}\n\nKit com 2 unidades de Shampoo X.`)).toBe(true);
+    expect(descricaoDoKit(r, 2, 'Shampoo X').split(CHAMADA_KIT).length - 1).toBe(1);
+  });
+
+
   it('abre citando a quantidade e o título, idempotente', () => {
-    const abertura = 'Kit com 6 unidades de Ampola 3 em 1 10ml.\n\n';
+    const abertura = 'OPORTUNIDADE IMPERDÍVEL!!!\n\nKit com 6 unidades de Ampola 3 em 1 10ml.\n\n';
     const r = descricaoDoKit('Ampola capilar.', 6, 'Ampola 3 em 1 10ml');
     expect(r.startsWith(abertura)).toBe(true);
     const r2 = descricaoDoKit(r, 6, 'Ampola 3 em 1 10ml');
@@ -80,12 +87,12 @@ describe('descricaoDoKit', () => {
 
   it('base que começa com "Kit com 10 agulhas" ainda recebe a abertura', () => {
     const r = descricaoDoKit('Kit com 10 agulhas para costura.', 2, 'Agulha X');
-    expect(r.startsWith('Kit com 2 unidades de Agulha X.\n\n')).toBe(true);
+    expect(r.startsWith('OPORTUNIDADE IMPERDÍVEL!!!\n\nKit com 2 unidades de Agulha X.\n\n')).toBe(true);
   });
 
   it('descrição base vazia: abertura + seção O QUE VOCÊ RECEBE', () => {
     const r = descricaoDoKit('', 3, 'Produto Y');
-    expect(r.startsWith('Kit com 3 unidades de Produto Y.\n\n')).toBe(true);
+    expect(r.startsWith('OPORTUNIDADE IMPERDÍVEL!!!\n\nKit com 3 unidades de Produto Y.\n\n')).toBe(true);
     expect(r).toContain('O QUE VOCÊ RECEBE');
   });
 
@@ -117,7 +124,7 @@ O QUE VOCÊ RECEBE
   it('cria seção O QUE VOCÊ RECEBE quando ausente e nada foi adaptado', () => {
     const r = descricaoDoKit('Fita de boa qualidade.', 4, 'Fita Adesiva Transparente 45mm');
     expect(r).toBe(
-      'Kit com 4 unidades de Fita Adesiva Transparente 45mm.\n\nFita de boa qualidade.\n\n📦 O QUE VOCÊ RECEBE\n\n• 4 unidades de Fita Adesiva Transparente 45mm',
+      'OPORTUNIDADE IMPERDÍVEL!!!\n\nKit com 4 unidades de Fita Adesiva Transparente 45mm.\n\nFita de boa qualidade.\n\n📦 O QUE VOCÊ RECEBE\n\n• 4 unidades de Fita Adesiva Transparente 45mm',
     );
     expect(r).not.toContain('Kit com 4 unidades.');
   });
@@ -221,5 +228,21 @@ describe('contarKitsAguardandoPorPai', () => {
     ]);
     expect(mapa.get('PAI1')).toBe(2);
     expect(mapa.get('PAI2')).toBe(1);
+  });
+});
+
+describe('vantagemDoKit', () => {
+  it('compara com N unidades do anúncio unitário', () => {
+    const v = vantagemDoKit(50, 2, 90)!;
+    expect(v.avulso).toBe(100);
+    expect(v.economia).toBe(10);
+    expect(v.pct).toBeCloseTo(10);
+  });
+  it('kit mais caro que avulso: economia negativa', () => {
+    expect(vantagemDoKit(48.06, 2, 96.5)!.economia).toBe(-0.38);
+  });
+  it('sem preço não calcula', () => {
+    expect(vantagemDoKit(0, 2, 90)).toBeNull();
+    expect(vantagemDoKit(50, 2, 0)).toBeNull();
   });
 });
