@@ -6,6 +6,7 @@ import App from './App';
 import { ThemeProvider } from '@/components/theme-provider';
 import { useAuthStore } from '@/stores/auth-store';
 import { usePwaStore } from '@/stores/pwa-store';
+import { atualizarApp } from '@/lib/atualizar-app';
 import { queryClient } from '@/lib/query-client';
 import './index.css';
 
@@ -14,7 +15,7 @@ useAuthStore.getState().hydrate();
 // Registro do service worker (ADR-0153, D4). Único lugar do app que importa o virtual module —
 // registerType: 'prompt' não recarrega sozinho, então o estado vai para a pwa-store e quem
 // oferece a troca ao usuário é o selo AtualizacaoDisponivel, na Topbar.
-const updateSW = registerSW({
+registerSW({
   onNeedRefresh() {
     usePwaStore.getState().avisarVersaoNova();
   },
@@ -33,7 +34,8 @@ const updateSW = registerSW({
     });
   },
 });
-usePwaStore.getState().setUpdateSW(updateSW);
+// O clique em "Atualizar agora" usa atualizarApp, que recarrega mesmo sem controller (ver lib).
+usePwaStore.getState().setUpdateSW(() => atualizarApp());
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
