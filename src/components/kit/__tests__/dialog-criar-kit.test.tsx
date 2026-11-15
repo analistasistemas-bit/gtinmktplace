@@ -702,9 +702,20 @@ describe('DialogCriarKit — preço do kit com a base em promoção', () => {
     await irAoKit4();
     const campo = screen.getByLabelText('Preço do kit 4');
     await userEvent.clear(campo);
-    await userEvent.type(campo, '300');
+    // Mesmo valor da sugestão normal: digitado à mão continua sendo do operador.
+    await userEvent.type(campo, '315,6');
     await act(async () => { ctl.soltar(promo); });
     await screen.findByText(/Base em promoção/);
-    expect(campo).toHaveValue('300');
+    expect(campo).toHaveValue('315,6');
+  });
+
+  it('"Criar e publicar" espera a leitura da promoção', async () => {
+    const ctl = promoPendente();
+    renderDialog([], BASE_ML, true);
+    await irAoKit4();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.getByRole('button', { name: 'Criar e publicar' })).toBeDisabled();
+    await act(async () => { ctl.soltar(promo); });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Criar e publicar' })).toBeEnabled());
   });
 });
