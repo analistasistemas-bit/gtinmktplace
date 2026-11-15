@@ -25,6 +25,8 @@ import {
   lerFormatoPublicacao, confirmarFormatoPublicacao, formatoRepoSupabase, type FormatoRepo,
 } from '../_shared/ml/formato-publicacao.ts';
 import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
+import { completarObrigatorios, type LlmAtributos } from '../_shared/categoria/completar-obrigatorios.ts';
+import type { AtributoML } from '../_shared/categoria/atributos.ts';
 import { aplicarAtacadoPorItem, type ItemAtacado } from '../_shared/user-products/atacado-por-item.ts';
 import { publicarFamiliaUP, type PublicarFamiliaUPArgs, type ResultadoUP } from '../_shared/user-products/publicar-familia-up.ts';
 import { talvezFinalizarLote } from '../_shared/lote/finalizar.ts';
@@ -58,6 +60,10 @@ export interface ProcessarDeps {
   publicarUP?: (args: PublicarFamiliaUPArgs) => Promise<ResultadoUP>;
   finalizarLote?: (loteId: string) => Promise<void>;
   notificar?: typeof notificarCategoria;
+  /** Kit vinculado: schema atual da categoria e IA para completar obrigatórios novos (testes injetam). */
+  lerSchema?: typeof lerSchemaAtributos;
+  /** IA da org (montada no index.ts — o import do SDK não roda no vitest). Ausente = sem IA: obrigatório novo vira erro. */
+  llmParaOrg?: (orgId: string) => LlmAtributos;
 }
 export interface ProcessarOpts { tentativas: number }
 
@@ -181,6 +187,38 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
 
     // ADR-0135 D-7: fiscal completo antes de QUALQUER escrita no ML (org com módulo).
     const fiscalAtivo = await exigirFiscalCompletoSePreciso(admin, familia);
+
+    // Kit vinculado não passa pela Revisão: a categoria pode ter ganhado obrigatório depois que a base publicou
+    // (PRODUCT_CONSERVATION em MLB455708, 15/11). Completa pela IA e grava antes do gate — é o que faz o Reenviar
+    // de um kit que falhou por isso funcionar. Leitura do schema falhou → segue como antes (o ML responde).
+    if (familia.kit_base_codigo_pai && familia.kit_multiplicador && familia.categoria_ml_id) {
+      let schemaKit: Awaited<ReturnType<typeof lerSchemaAtributos>> = [];
+      try {
+        schemaKit = await (deps.lerSchema ?? lerSchemaAtributos)(await ctx.getToken(), familia.categoria_ml_id as string);
+      } catch (e) { console.warn('kit_schema_indisponivel', String(e)); }
+      if (schemaKit.length > 0) {
+        const llm: LlmAtributos = deps.llmParaOrg?.(familia.org_id as string) ?? (() => Promise.resolve({}));
+        const c = await completarObrigatorios(
+          schemaKit, (familia.atributos_ml as AtributoML[] | null) ?? [],
+          { nome: (familia.titulo_ml ?? familia.nome_pai) as string, descricao: (familia.descricao_ml as string | null) ?? undefined },
+          llm,
+        );
+        if (c.faltam.length > 0) {
+          // status 400: definitivo — repetir não muda a resposta da IA nem do ML.
+          throw Object.assign(new Error(
+            `A categoria exige atributo(s) que o PubliAI não conseguiu preencher: ${c.faltam.join(', ')}. Fale com o suporte.`,
+          ), { status: 400 });
+        }
+        if (c.resolvidos.length > 0) {
+          const faltantes = ((familia.atributos_faltantes as string[] | null) ?? []).filter((f) => !c.resolvidos.includes(f));
+          const { error } = await admin.from('familias')
+            .update({ atributos_ml: c.atributos, atributos_faltantes: faltantes }).eq('id', job.familia_id);
+          if (error) throw new Error(`Não foi possível salvar os atributos do kit: ${error.message}`);
+          familia.atributos_ml = c.atributos;
+          familia.atributos_faltantes = faltantes;
+        }
+      }
+    }
 
     // Gate de atributos obrigatórios. Aviamento conhecido (override) → validador por-tipo (atual);
     // categoria prevista/manual → lista genérica persistida (E3/E4, schema da API); sem categoria → bloqueia.

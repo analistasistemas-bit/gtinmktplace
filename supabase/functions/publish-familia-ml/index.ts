@@ -3,6 +3,8 @@ import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import { processarFamiliaML, type Job } from './processar.ts';
+import { desempatarAtributosLLM } from '../_shared/ai/atributos-llm.ts';
+import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -25,7 +27,10 @@ Deno.serve(async (req) => {
   const tentativas = Number(req.headers.get('Upstash-Retried') ?? '0');
   const json = (obj: unknown) => new Response(JSON.stringify(obj), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-  const r = await processarFamiliaML({ admin, conn }, job, { tentativas });
+  // Kit vinculado: IA completa obrigatório novo da categoria (só é chamada se faltar algo).
+  const llmParaOrg = (orgId: string) => async (...[entrada, alvos]: Parameters<typeof desempatarAtributosLLM>) =>
+    desempatarAtributosLLM(entrada, alvos, await resolverModeloTexto(admin, orgId));
+  const r = await processarFamiliaML({ admin, conn, llmParaOrg }, job, { tentativas });
   switch (r.tipo) {
     case 'familia_inexistente': return new Response('familia não encontrada', { status: 404, headers: corsHeaders });
     case 'ja_publicado': return json({ jaPublicado: true });

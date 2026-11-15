@@ -14,7 +14,7 @@ export function decidirErroCriarAnuncio(erro: ErroCanal, tentativasQstash: numbe
 }
 
 export function mensagemErroFotoRecuperavel(mensagem: string): string {
-  return `${mensagem} As fotos serao reenviadas na proxima tentativa; tente publicar novamente em alguns instantes.`;
+  return `${mensagem} As fotos serão reenviadas na próxima tentativa; tente publicar novamente em alguns instantes.`;
 }
 
 /** Decide se um erro generico lancado por um worker deve ser retentado pelo QStash.

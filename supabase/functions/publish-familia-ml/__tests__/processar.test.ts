@@ -142,6 +142,7 @@ function baseDeps(admin: never, extra: Partial<ProcessarDeps> = {}): ProcessarDe
     admin, conn: fakeConnector as never,
     formatoRepo: fakeFormatoRepo().repo,
     finalizarLote: async () => {},
+    lerSchema: async () => [], // kit vinculado confere o schema atual; padrão dos testes: sem obrigatórios
     ...extra,
   };
 }
@@ -999,5 +1000,61 @@ describe('processarFamiliaML — recusa de foto com a galeria do kit vinculado (
     Object.assign(v, zerou(writes)[0].payload); // o UPDATE chegou na linha
     expect((await processarFamiliaML(deps, JOB, { tentativas: 1 })).tipo).toBe('ok');
     expect(vistos).toEqual([['G1', 'G2'], undefined]);
+  });
+});
+
+
+// 15/11: kit 4 de 00000182 (MLB455708) — Reenviar republicava a ficha velha sem PRODUCT_CONSERVATION.
+describe('kit vinculado: obrigatório novo da categoria na publicação/Reenviar', () => {
+  const SCHEMA = [{
+    id: 'PRODUCT_CONSERVATION', nome: 'Conservação do produto', valueType: 'list', required: true,
+    conditionalRequired: false, allowedUnits: [], tags: [],
+    valores: [{ id: 'V-AMB', nome: 'Temperatura ambiente' }, { id: 'V-REF', nome: 'Refrigerado' }],
+  }];
+  const KIT = {
+    ...FAMILIA_BASE, kit_base_codigo_pai: '00000182', kit_multiplicador: 4,
+    atributos_ml: [{ id: 'BRAND', value_name: 'Ninho' }], atributos_faltantes: ['Conservação do produto'],
+  };
+  beforeEach(() => fakeConnector.reset());
+
+  it('IA preenche, grava na família e publica com o atributo', async () => {
+    const { admin, writes } = fakeAdmin({ familia: { ...KIT } });
+    const llm = vi.fn(async () => ({ PRODUCT_CONSERVATION: 'V-AMB' }));
+    const r = await processarFamiliaML(baseDeps(admin, { lerSchema: async () => SCHEMA as never, llmParaOrg: () => llm }), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    const gravou = writes.find((w) => w.table === 'familias' && 'atributos_ml' in w.payload);
+    const attrs = gravou?.payload.atributos_ml as { id: string; value_id?: string }[];
+    expect(attrs.find((a) => a.id === 'PRODUCT_CONSERVATION')?.value_id).toBe('V-AMB');
+    expect(attrs.find((a) => a.id === 'BRAND')).toBeDefined();
+    expect(gravou?.payload.atributos_faltantes).toEqual([]);
+  });
+
+  it('IA não resolve → erro em pt-BR com o nome do atributo, sem chamar o ML', async () => {
+    const { admin } = fakeAdmin({ familia: { ...KIT } });
+    const r = await processarFamiliaML(baseDeps(admin, { lerSchema: async () => SCHEMA as never, llmParaOrg: () => async () => ({}) }), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('erro');
+    expect((r as { mensagem: string }).mensagem).toContain('Conservação do produto');
+    expect(fakeConnector.chamadas.filter((c) => c.metodo === 'criarAnuncio')).toHaveLength(0);
+  });
+
+  it('ficha completa → não chama a IA', async () => {
+    const { admin } = fakeAdmin({ familia: { ...KIT, atributos_ml: [{ id: 'PRODUCT_CONSERVATION', value_id: 'V-REF' }], atributos_faltantes: [] } });
+    const llm = vi.fn(async () => ({}));
+    const r = await processarFamiliaML(baseDeps(admin, { lerSchema: async () => SCHEMA as never, llmParaOrg: () => llm }), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(llm).not.toHaveBeenCalled();
+  });
+
+  it('leitura do schema falha → publica como antes (o ML responde se faltar)', async () => {
+    const { admin } = fakeAdmin({ familia: { ...KIT, atributos_faltantes: [] } });
+    const r = await processarFamiliaML(baseDeps(admin, { lerSchema: async () => { throw new Error('rede'); } }), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+  });
+
+  it('família comum (não-kit) não lê o schema', async () => {
+    const { admin } = fakeAdmin();
+    const lerSchema = vi.fn(async () => SCHEMA as never);
+    await processarFamiliaML(baseDeps(admin, { lerSchema }), JOB, { tentativas: 0 });
+    expect(lerSchema).not.toHaveBeenCalled();
   });
 });
