@@ -578,3 +578,13 @@ Decisão: quando a IA não resolve um obrigatório do kit, o operador escolhe o 
 - Criação: a edge `criar-kit-vinculado` recusa com `motivo: atributos_faltantes` e devolve `campos`; o diálogo mostra "Complete para criar o kit" e reenvia com `atributos_informados`. O valor só entra em obrigatório ainda vazio e é validado contra o schema da categoria.
 - Publicação e Reenviar: `publish-familia-ml` falha na primeira tentativa (erro definitivo, nada vai ao Mercado Livre), grava `atributos_faltantes` e a mensagem diz o que fazer. O kit em erro mostra o mesmo editor da Revisão ("Complete para publicar", edge `atributos-familia`) no diálogo do kit; escolhido o valor, o Reenviar publica.
 
+## Emenda 2026-11-15 — Categoria sem SALE_FORMAT, com "Quantidade de unidades"
+
+A categoria Coloração (`MLB264861`) não tem `SALE_FORMAT` nenhum. A recusa da Decisão 3 bloqueava o kit de 3 da Hairfly (base `00064939`, MLB5563939795). A quantidade nessa categoria é o atributo `UNITS_PER_PACKAGE` ("Quantidade de unidades", nível ITEM, tag `pack_multiplier`). Ele faz o papel do `UNITS_PER_PACK` de outras categorias: "N unidades do produto deste GTIN". Decisão do Diego (15/11):
+
+- `formatoKitDaCategoria` devolve `'unidades'` quando não há "Kit" nem "Pack" e o schema tem `UNITS_PER_PACKAGE` com a tag `pack_multiplier`. Sem a tag, continua recusando (400).
+- Nesse modo, `aplicarKitNosAtributos` grava `UNITS_PER_PACKAGE` = N (ou base × N quando a base já é pacote, mesma regra do Pack), não grava `SALE_FORMAT`/`UNITS_PER_PACK`, troca `IS_KIT` para Sim se a base o tiver e escala `NET_WEIGHT` como nos outros modos (o kit de catálogo concorrente "Alfaparf Kit 3+3" declara o peso líquido total).
+- `unidadesPorPack` lê `UNITS_PER_PACKAGE` da base quando não há `UNITS_PER_PACK`; `definir-categoria-familia` lê a base também nesse modo.
+- Prova: `POST /items/validate` com a base real (kit de 3, `UNITS_PER_PACKAGE=3`, `IS_KIT=Sim`, GTIN da unidade) devolveu só os warnings de frete `shipping.lost_me1_by_user` e `item.shipping.mandatory_free_shipping`.
+- Fora do escopo: a projeção de promoções (`resolverPack`) lê só `UNITS_PER_PACK`; para esse kit, `unidades` fica nulo e vale o cadastro do kit, como em qualquer categoria em que o ML não informa a quantidade.
+

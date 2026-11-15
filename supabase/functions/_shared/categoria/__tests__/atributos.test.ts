@@ -519,3 +519,40 @@ describe('aplicarKitNosAtributos em categoria só com Unidade/Pack (Lápis MLB43
     expect(() => aplicarKitNosAtributos(soUnidade, base, 3, undefined, 12)).toThrow(/Kit/);
   });
 });
+
+describe('aplicarKitNosAtributos em categoria sem SALE_FORMAT, com UNITS_PER_PACKAGE (Coloração MLB264861, 15/11)', () => {
+  const schemaUnidades: AtributoSchema[] = [
+    { id: 'UNITS_PER_PACKAGE', nome: 'Quantidade de unidades', required: false, conditionalRequired: false, valueType: 'number', valores: [], allowedUnits: [], tags: ['pack_multiplier'] },
+    { id: 'NET_WEIGHT', nome: 'Peso líquido', required: false, conditionalRequired: false, valueType: 'number_unit', valores: [], allowedUnits: [], tags: ['unit_yield'] },
+    { id: 'IS_KIT', nome: 'É kit', required: false, conditionalRequired: false, valueType: 'boolean', valores: [{ id: '242084', nome: 'Não' }, { id: '242085', nome: 'Sim' }], allowedUnits: [], tags: ['hidden'] },
+  ];
+  const base = [{ id: 'GTIN', value_name: '7898497185910' }, { id: 'NET_WEIGHT', value_name: '50 g' }];
+
+  it('formatoKitDaCategoria devolve "unidades" quando só há o multiplicador', () => {
+    expect(formatoKitDaCategoria(schemaUnidades)).toBe('unidades');
+  });
+
+  it('kit de 3 grava UNITS_PER_PACKAGE=3, sem SALE_FORMAT nem UNITS_PER_PACK, e escala o peso líquido', () => {
+    const out = aplicarKitNosAtributos(schemaUnidades, base, 3, 50);
+    expect(out).toContainEqual({ id: 'UNITS_PER_PACKAGE', value_name: '3' });
+    expect(out.some((a) => a.id === 'SALE_FORMAT' || a.id === 'UNITS_PER_PACK')).toBe(false);
+    expect(out).toContainEqual({ id: 'NET_WEIGHT', value_name: '150 g' });
+    expect(out).toContainEqual({ id: 'GTIN', value_name: '7898497185910' });
+  });
+
+  it('base que já é pacote de 2 → kit de 3 declara 6; IS_KIT existente vira Sim', () => {
+    const out = aplicarKitNosAtributos(schemaUnidades, [...base, { id: 'IS_KIT', value_id: '242084' }], 3, undefined, 2);
+    expect(out.filter((a) => a.id === 'UNITS_PER_PACKAGE')).toEqual([{ id: 'UNITS_PER_PACKAGE', value_name: '6' }]);
+    expect(out).toContainEqual({ id: 'IS_KIT', value_id: '242085' });
+  });
+
+  it('unidadesPorPack lê UNITS_PER_PACKAGE da base quando não há UNITS_PER_PACK', () => {
+    expect(unidadesPorPack([{ id: 'UNITS_PER_PACKAGE', value_name: '2' }])).toBe(2);
+  });
+
+  it('multiplicador sem a tag pack_multiplier não habilita kit (continua 400)', () => {
+    const semTag = schemaUnidades.map((s) => (s.id === 'UNITS_PER_PACKAGE' ? { ...s, tags: [] } : s));
+    expect(formatoKitDaCategoria(semTag)).toBeNull();
+    expect(() => aplicarKitNosAtributos(semTag, base, 3)).toThrow(/Kit/);
+  });
+});

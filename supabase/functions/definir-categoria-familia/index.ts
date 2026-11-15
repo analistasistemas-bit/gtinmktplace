@@ -122,7 +122,8 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
       // Emenda ADR-0151 (13/11): em Pack a quantidade é base × N — lida da BASE (mesma org, a família não-kit
       // mais recente do PAI). Sem conseguir ler a base, recusa: assumir N declararia menos conteúdo (36 → 3).
       let unidadesBase: number | undefined;
-      if (formatoKitDaCategoria(schemaKit) === 'pack') {
+      const formatoKit = formatoKitDaCategoria(schemaKit);
+      if (formatoKit === 'pack' || formatoKit === 'unidades') {
         const { data: bases, error: errBase } = familia.kit_base_codigo_pai
           ? await sb.from('familias').select('atributos_ml').eq('org_id', orgId)
             .eq('codigo_pai', familia.kit_base_codigo_pai).is('kit_multiplicador', null)

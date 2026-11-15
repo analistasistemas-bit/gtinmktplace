@@ -369,6 +369,19 @@ export function aplicarKitNosAtributos(
   // Emenda ADR-0151 D-3 (13/11, Lápis MLB430146): categoria sem "Kit" mas com "Pack" vende o kit como
   // Pack — é o que os concorrentes fazem. "Kit" vence quando a categoria tem os dois.
   const tipoFormato = formatoKitDaCategoria(schema);
+  // Emenda 15/11 (Coloração MLB264861): categoria sem SALE_FORMAT conta o kit no multiplicador
+  // `UNITS_PER_PACKAGE` (tag pack_multiplier) — base × N, como no Pack. Nada de SALE_FORMAT/UNITS_PER_PACK.
+  if (tipoFormato === 'unidades') {
+    const qtd = unidadesBase != null && Number.isInteger(unidadesBase) && unidadesBase > 1 ? unidadesBase * n : n;
+    const sim = schema.find((s) => s.id === 'IS_KIT')?.valores.find((v) => normalizar(v.nome) === 'sim')?.id;
+    const comUnidades = [
+      ...atributos.filter((a) => !['SALE_FORMAT', 'UNITS_PER_PACK', 'UNITS_PER_PACKAGE'].includes(a.id))
+        .map((a) => (sim && a.id === 'IS_KIT' ? { id: 'IS_KIT', value_id: sim } : a)),
+      { id: 'UNITS_PER_PACKAGE', value_name: String(qtd) },
+    ];
+    if (pesoBaseGramas == null || !comUnidades.some((a) => a.id === 'NET_WEIGHT')) return comUnidades;
+    return [...comUnidades.filter((a) => a.id !== 'NET_WEIGHT'), { id: 'NET_WEIGHT', value_name: `${fmt(pesoBaseGramas * n)} g` }];
+  }
   const formato = schema.find((s) => s.id === 'SALE_FORMAT')?.valores.find((v) => normalizar(v.nome) === tipoFormato);
   const kit = tipoFormato === 'kit';
   if (!formato) {
@@ -397,15 +410,20 @@ export function aplicarKitNosAtributos(
   ];
 }
 
-/** Formato que o kit usa na categoria: "Kit" se o SALE_FORMAT o oferece, senão "Pack", senão nenhum. */
-export function formatoKitDaCategoria(schema: AtributoSchema[]): 'kit' | 'pack' | null {
+/**
+ * Formato que o kit usa na categoria: "Kit" se o SALE_FORMAT o oferece, senão "Pack"; sem nenhum dos dois,
+ * "unidades" se a categoria tem o multiplicador `UNITS_PER_PACKAGE` (tag pack_multiplier); senão nenhum.
+ */
+export function formatoKitDaCategoria(schema: AtributoSchema[]): 'kit' | 'pack' | 'unidades' | null {
   const nomes = (schema.find((s) => s.id === 'SALE_FORMAT')?.valores ?? []).map((v) => normalizar(v.nome));
-  return nomes.includes('kit') ? 'kit' : nomes.includes('pack') ? 'pack' : null;
+  if (nomes.includes('kit')) return 'kit';
+  if (nomes.includes('pack')) return 'pack';
+  return schema.some((s) => s.id === 'UNITS_PER_PACKAGE' && s.tags.includes('pack_multiplier')) ? 'unidades' : null;
 }
 
-/** UNITS_PER_PACK inteiro dos atributos da BASE (para `aplicarKitNosAtributos(..., unidadesBase)`). */
+/** UNITS_PER_PACK (ou UNITS_PER_PACKAGE) inteiro dos atributos da BASE (para `aplicarKitNosAtributos(..., unidadesBase)`). */
 export function unidadesPorPack(atributos: AtributoML[]): number | undefined {
-  const n = Number(atributos.find((a) => a.id === 'UNITS_PER_PACK')?.value_name);
+  const n = Number((atributos.find((a) => a.id === 'UNITS_PER_PACK') ?? atributos.find((a) => a.id === 'UNITS_PER_PACKAGE'))?.value_name);
   return Number.isInteger(n) && n > 0 ? n : undefined;
 }
 
