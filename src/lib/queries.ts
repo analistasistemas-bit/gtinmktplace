@@ -139,12 +139,14 @@ export interface KitVinculado {
   /** M-0: só preenchido por `fetchKitsDosProdutos` (busca multi-base) — o codigoPai acima é o
    *  do próprio kit (família-clone), não o da base; quem agrupa por produto-base precisa deste. */
   kitBaseCodigoPai?: string;
+  /** Motivo da recusa do ML quando `status='erro'` — só `fetchKitsDoProduto` preenche. */
+  erroMensagem?: string | null;
 }
 
 export async function fetchKitsDoProduto(codigoPai: string): Promise<KitVinculado[]> {
   const { data, error } = await supabase
     .from('familias')
-    .select('id, codigo_pai, kit_multiplicador, status, ml_permalink, ml_item_id, criado_em')
+    .select('id, codigo_pai, kit_multiplicador, status, ml_permalink, ml_item_id, criado_em, erro_mensagem')
     .eq('kit_base_codigo_pai', codigoPai)
     .not('kit_multiplicador', 'is', null)
     .order('kit_multiplicador', { ascending: true });
@@ -157,6 +159,7 @@ export async function fetchKitsDoProduto(codigoPai: string): Promise<KitVinculad
     mlPermalink: r.ml_permalink,
     mlItemId: r.ml_item_id,
     criadoEm: r.criado_em as string,
+    erroMensagem: r.erro_mensagem,
   }));
 }
 

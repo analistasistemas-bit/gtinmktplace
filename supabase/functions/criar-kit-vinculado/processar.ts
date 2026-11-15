@@ -9,7 +9,7 @@ import {
   FALTANTE_ATRIBUTOS_NAO_VALIDADOS, type AtributoML,
 } from '../_shared/categoria/atributos.ts';
 import { resolverAtributosGenericos } from '../_shared/categoria/resolver-atributos-genericos.ts';
-import type { InputAtributos, AtributoAlvo } from '../_shared/ai/atributos-llm-core.ts';
+import { preencherAtributosClosedSet, type InputAtributos, type AtributoAlvo } from '../_shared/ai/atributos-llm-core.ts';
 import type { AtributoSchema } from '../_shared/categoria/schema.ts';
 import { derivarCodigos, codigosJaUsados } from '../_shared/produto/codigos.ts';
 import { gtinOuNull } from '../_shared/produto/gtin.ts';
@@ -511,6 +511,28 @@ export async function criarKitsVinculados(
       // Caminho intocado: mesma categoria/atributos da base, como hoje. tipo_aviamento/
       // atributos_faltantes da base seguem herdados por montarFamiliaKit (clone), sem tocar aqui.
       atributosBase = forcarMarcaDoProduto((base.atributos_ml as AtributoML[] | null) ?? [], base.marca as string | null);
+      // A categoria pode passar a exigir atributo depois que a base publicou (PRODUCT_CONSERVATION em
+      // MLB455708, 15/11): sem isto o ML recusava no publish assíncrono, com o dialog já fechado. A IA
+      // preenche só os obrigatórios ausentes (lista fechada); o resto da ficha da base fica intocado.
+      // SALE_FORMAT/UNITS_PER_PACK fora: aplicarKitNosAtributos os grava logo abaixo.
+      const schemaObrig = schema.filter((s) => s.id !== 'SALE_FORMAT' && s.id !== 'UNITS_PER_PACK');
+      const faltantes = atributosFaltantesGenerico(atributosBase, schemaObrig);
+      if (faltantes.length > 0) {
+        const idsFaltantes = new Set(schemaObrig.filter((s) => faltantes.includes(s.nome)).map((s) => s.id));
+        const llm = deps.llm ?? (() => Promise.resolve({} as Record<string, string>));
+        const preenchidos = await preencherAtributosClosedSet(
+          schema, atributosBase,
+          { nome: base.nome_pai as string, descricao: (base.descricao_pai as string | null) ?? undefined }, llm,
+        );
+        atributosBase = [
+          ...atributosBase.filter((a) => !idsFaltantes.has(a.id)),
+          ...preenchidos.filter((a) => idsFaltantes.has(a.id) && (a.value_id || a.value_name)),
+        ];
+        const aindaFaltam = atributosFaltantesGenerico(atributosBase, schemaObrig);
+        if (aindaFaltam.length > 0) {
+          return { ok: false, motivo: 'atributos_faltantes', mensagem: mensagemFaltantes(aindaFaltam, schema) };
+        }
+      }
     } else {
       const tipo = tipoParaCategoria(categoriaAlvo);
       tipoAviamentoKit = tipo;

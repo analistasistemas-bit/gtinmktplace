@@ -229,7 +229,7 @@ function KitsVinculados({ codigoPai, ativo }: { codigoPai: string; ativo: boolea
         if (k.status === 'erro') {
           return (
             <span key={k.familiaId} className="mr-2 inline-flex items-center gap-1 text-destructive">
-              <AlertTriangle className="h-3 w-3 shrink-0" />Kit {k.multiplicador} (falhou)
+              <AlertTriangle className="h-3 w-3 shrink-0" />Kit {k.multiplicador} (falhou{k.erroMensagem ? `: ${k.erroMensagem}` : ''})
             </span>
           );
         }

@@ -813,6 +813,47 @@ describe('criarKitsVinculados', () => {
     expect(atributos.some((a) => a.id === 'BRAND')).toBe(true);
   });
 
+  // Bug 15/11 (kit 4 de 00000182, MLB455708): a base publicou em 12/10 sem PRODUCT_CONSERVATION;
+  // o ML passou a exigir depois. O kit copiava a ficha da base e só descobria no publish assíncrono.
+  const SCHEMA_COM_OBRIGATORIO_NOVO = [
+    ...SCHEMA_OVERRIDE_COM_KIT,
+    {
+      ...CAMPOS_SCHEMA_PADRAO, id: 'PRODUCT_CONSERVATION', nome: 'Conservação do produto', valueType: 'list',
+      required: true, valores: [{ id: 'V-AMB', nome: 'Temperatura ambiente' }, { id: 'V-REF', nome: 'Refrigerado' }],
+    },
+  ];
+
+  it('sem categoriaOverride: obrigatório novo da categoria ausente na base → IA preenche só ele', async () => {
+    const llm = vi.fn(async () => ({ PRODUCT_CONSERVATION: 'V-AMB' }));
+    const { deps, inserts } = depsFake({ schemaPorCategoria: { 'MLB123': SCHEMA_COM_OBRIGATORIO_NOVO }, llm });
+    const r = await criarKitsVinculados(deps, { familiaBaseId: BASE_ID, kits: [kitPadrao(2)] });
+    expect(r.ok).toBe(true);
+    const atributos = inserts.familias[0].atributos_ml as { id: string; value_id?: string; value_name?: string }[];
+    expect(atributos.find((a) => a.id === 'PRODUCT_CONSERVATION')?.value_id).toBe('V-AMB');
+    expect(atributos.find((a) => a.id === 'NET_WEIGHT')).toBeDefined(); // ficha da base intocada
+    expect(llm).toHaveBeenCalledTimes(1);
+  });
+
+  it('sem categoriaOverride: base já completa → não chama a IA', async () => {
+    const llm = vi.fn(async () => ({}));
+    const { deps } = depsFake({
+      schemaPorCategoria: { 'MLB123': SCHEMA_COM_OBRIGATORIO_NOVO }, llm,
+      atributosMlBase: [{ id: 'SALE_FORMAT', value_id: 'V-UN' }, { id: 'PRODUCT_CONSERVATION', value_id: 'V-REF' }],
+    });
+    const r = await criarKitsVinculados(deps, { familiaBaseId: BASE_ID, kits: [kitPadrao(2)] });
+    expect(r.ok).toBe(true);
+    expect(llm).not.toHaveBeenCalled();
+  });
+
+  it('sem categoriaOverride: obrigatório novo que a IA não resolve → recusa no dialog, sem criar nada', async () => {
+    const { deps, inserts } = depsFake({ schemaPorCategoria: { 'MLB123': SCHEMA_COM_OBRIGATORIO_NOVO } });
+    const r = await criarKitsVinculados(deps, { familiaBaseId: BASE_ID, kits: [kitPadrao(2)] });
+    expect(r.ok).toBe(false);
+    expect(r.motivo).toBe('atributos_faltantes');
+    expect(r.mensagem).toContain('Conservação do produto');
+    expect(inserts.familias).toHaveLength(0);
+  });
+
   it('sem categoriaOverride: continua usando a categoria e os atributos da base (comportamento intocado)', async () => {
     const { deps, inserts } = depsFake({
       schemaPorCategoria: { 'MLB123': SCHEMA_COM_KIT },
