@@ -87,7 +87,7 @@ Deno.serve(async (req) => {
     return json({ error: 'Módulo de estoque não habilitado para esta organização.' }, 403);
   }
 
-  let body: { familia_base_id?: unknown; kits?: unknown; categoria_override?: unknown };
+  let body: { familia_base_id?: unknown; kits?: unknown; categoria_override?: unknown; atributos_informados?: unknown };
   try { body = await req.json(); } catch { return json({ error: 'JSON inválido' }, 400); }
 
   if (typeof body.familia_base_id !== 'string' || !body.familia_base_id) {
@@ -122,6 +122,9 @@ Deno.serve(async (req) => {
     familiaBaseId: body.familia_base_id,
     kits: kitsParseados as KitSolicitado[],
     categoriaOverride,
+    // Valores inválidos são descartados em aplicarInformados (validação contra o schema da categoria).
+    atributosInformados: body.atributos_informados && typeof body.atributos_informados === 'object'
+      ? body.atributos_informados as Record<string, string> : undefined,
   };
   const target = { type: 'familia', id: input.familiaBaseId };
 
@@ -147,7 +150,7 @@ Deno.serve(async (req) => {
   if (!resultado.ok) {
     await auditarOperacaoSuporte(admin, context, target, 'failed');
     return json(
-      { error: resultado.mensagem ?? resultado.motivo, motivo: resultado.motivo },
+      { error: resultado.mensagem ?? resultado.motivo, motivo: resultado.motivo, campos: resultado.campos },
       STATUS_POR_MOTIVO[resultado.motivo ?? ''] ?? 400,
     );
   }

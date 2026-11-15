@@ -568,3 +568,13 @@ A Decisão 3 recusava (400) toda categoria cujo `SALE_FORMAT` não tivesse o val
 - Em Pack, `UNITS_PER_PACK` conta o conteúdo (ex.: "Quantidade de lápis", tag `unit_yield`). Quando a base já é um pack, o kit declara **base × N** (12 lápis × 3 = 36). O número da base é passado explicitamente por quem conhece a base (`criar-kit-vinculado`, `criar-kit-variacao`), nunca lido dos atributos do próprio kit, para não multiplicar duas vezes. `definir-categoria-familia` lê a base pela `kit_base_codigo_pai` (mesma org, família não-kit mais recente) e recusa (409) se não conseguir — nunca assume N em Pack (revisão Codex).
 - Em "Kit" nada muda: `UNITS_PER_PACK = N`.
 - Prova: `POST /items/validate` com a base real da AVIL (02844303, kit de 3, Pack + 36) devolveu só o warning de frete `shipping.lost_me1_by_user`.
+
+## Emenda 2026-11-15 — Obrigatório da categoria que só o operador sabe
+
+A categoria MLB455708 passou a exigir "Conservação do produto" depois que a base publicou. A IA preenche só o que o título e a descrição informam (regra do ADR-0052) e conservação não consta em texto nenhum: medido no modelo real, omitiu 5 de 5 vezes. Retentar não resolve e inventar o valor não é permitido.
+
+Decisão: quando a IA não resolve um obrigatório do kit, o operador escolhe o valor.
+
+- Criação: a edge `criar-kit-vinculado` recusa com `motivo: atributos_faltantes` e devolve `campos`; o diálogo mostra "Complete para criar o kit" e reenvia com `atributos_informados`. O valor só entra em obrigatório ainda vazio e é validado contra o schema da categoria.
+- Publicação e Reenviar: `publish-familia-ml` falha na primeira tentativa (erro definitivo, nada vai ao Mercado Livre), grava `atributos_faltantes` e a mensagem diz o que fazer. O kit em erro mostra o mesmo editor da Revisão ("Complete para publicar", edge `atributos-familia`) no diálogo do kit; escolhido o valor, o Reenviar publica.
+

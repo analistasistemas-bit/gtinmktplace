@@ -11,7 +11,7 @@ const FLASH_MS = 2000;
 
 // Camada 2B (ADR-0052): fallback quando a IA não preencheu um obrigatório. Busca os faltantes
 // COM schema (tipo/valores) e salva inline, com feedback (StatusInline) igual título/descrição.
-export function EditorAtributosFaltantes({ familiaId, loteId }: { familiaId: string; loteId: string }) {
+export function EditorAtributosFaltantes({ familiaId, loteId = '' }: { familiaId: string; loteId?: string }) {
   const { data: campos = [], isError } = useQuery({
     queryKey: ['faltantes-atributos', familiaId],
     queryFn: () => listarFaltantesAtributos(familiaId),

@@ -863,6 +863,45 @@ describe('criarKitsVinculados', () => {
     expect(r.motivo).toBe('atributos_faltantes');
     expect(r.mensagem).toContain('Conservação do produto');
     expect(inserts.familias).toHaveLength(0);
+    // 15/11: a IA nunca resolve o que o texto não informa — o diálogo recebe o campo para o operador escolher.
+    expect(r.campos).toEqual([expect.objectContaining({ id: 'PRODUCT_CONSERVATION', tipo: 'closed' })]);
+    expect(r.campos?.[0].valores.map((v) => v.id)).toEqual(['V-AMB', 'V-REF']);
+  });
+
+  it('sem categoriaOverride: valor escolhido pelo operador entra na ficha e o kit é criado, sem depender da IA', async () => {
+    const { deps, inserts } = depsFake({
+      schemaPorCategoria: { 'MLB123': SCHEMA_COM_OBRIGATORIO_NOVO }, faltantesBase: ['Conservação do produto'],
+    });
+    const r = await criarKitsVinculados(deps, {
+      familiaBaseId: BASE_ID, kits: [kitPadrao(2)], atributosInformados: { PRODUCT_CONSERVATION: 'V-REF' },
+    });
+    expect(r.ok).toBe(true);
+    const attrs = inserts.familias[0].atributos_ml as { id: string; value_id?: string }[];
+    expect(attrs.find((a) => a.id === 'PRODUCT_CONSERVATION')?.value_id).toBe('V-REF');
+    expect(inserts.familias[0].atributos_faltantes).toEqual([]);
+  });
+
+  it('valor informado fora da lista da categoria é descartado (nunca grava dado inválido) e o campo volta a ser pedido', async () => {
+    const { deps, inserts } = depsFake({ schemaPorCategoria: { 'MLB123': SCHEMA_COM_OBRIGATORIO_NOVO } });
+    const r = await criarKitsVinculados(deps, {
+      familiaBaseId: BASE_ID, kits: [kitPadrao(2)], atributosInformados: { PRODUCT_CONSERVATION: 'Congelado' },
+    });
+    expect(r.motivo).toBe('atributos_faltantes');
+    expect(r.campos?.map((c) => c.id)).toEqual(['PRODUCT_CONSERVATION']);
+    expect(inserts.familias).toHaveLength(0);
+  });
+
+  it('valor informado não sobrescreve atributo que a base já tem', async () => {
+    const { deps, inserts } = depsFake({
+      schemaPorCategoria: { 'MLB123': SCHEMA_COM_OBRIGATORIO_NOVO },
+      atributosMlBase: [{ id: 'SALE_FORMAT', value_id: 'V-UN' }, { id: 'PRODUCT_CONSERVATION', value_id: 'V-REF' }],
+    });
+    const r = await criarKitsVinculados(deps, {
+      familiaBaseId: BASE_ID, kits: [kitPadrao(2)], atributosInformados: { PRODUCT_CONSERVATION: 'V-AMB' },
+    });
+    expect(r.ok).toBe(true);
+    const attrs = inserts.familias[0].atributos_ml as { id: string; value_id?: string }[];
+    expect(attrs.find((a) => a.id === 'PRODUCT_CONSERVATION')?.value_id).toBe('V-REF');
   });
 
   it('sem categoriaOverride: continua usando a categoria e os atributos da base (comportamento intocado)', async () => {
@@ -957,7 +996,13 @@ describe('criarKitsVinculados', () => {
     // valores a categoria aceita e o que fazer — sem isso o operador só sabe que "falhou".
     expect(r.mensagem).toContain('Modelo obrigatório');
     expect(r.mensagem).toContain('Opção 1');
-    expect(r.mensagem).toContain('título ou na descrição do produto-base');
+    expect(r.mensagem).toContain('Complete para criar o kit');
+    expect(r.campos?.map((c) => c.id)).toEqual(['MODEL_OBRIGATORIO']);
+
+    const ok = await criarKitsVinculados(deps, { ...input, atributosInformados: { MODEL_OBRIGATORIO: 'V1' } });
+    expect(ok.ok).toBe(true);
+    const attrs = inserts.familias[0].atributos_ml as { id: string; value_id?: string }[];
+    expect(attrs.find((a) => a.id === 'MODEL_OBRIGATORIO')?.value_id).toBe('V1');
   });
 
   it('falha ao validar (schema/IA indisponível) não vira "falta o atributo X" — a mensagem manda tentar de novo', async () => {
@@ -976,7 +1021,8 @@ describe('criarKitsVinculados', () => {
     expect(r.ok).toBe(false);
     expect(r.motivo).toBe('atributos_faltantes');
     expect(r.mensagem).toContain('Tente criar o kit de novo');
-    expect(r.mensagem).not.toContain('título ou na descrição');
+    expect(r.mensagem).not.toContain('não informam');
+    expect(r.campos).toBeUndefined();
     expect(inserts.familias).toHaveLength(0);
   });
 

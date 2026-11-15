@@ -60,9 +60,17 @@ const navigateMock = vi.fn();
 vi.mock('react-router-dom', () => ({ useNavigate: () => navigateMock }));
 
 const buscarCategoriaMLMock = vi.fn();
+const listarFaltantesMock = vi.fn(async (..._args: unknown[]) => [] as unknown[]);
+const salvarAtributoMock = vi.fn(async (..._args: unknown[]) => []);
 vi.mock('@/lib/queries', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/queries')>();
-  return { ...actual, buscarCategoriaML: (...args: unknown[]) => buscarCategoriaMLMock(...args) };
+  return {
+    ...actual,
+    buscarCategoriaML: (...args: unknown[]) => buscarCategoriaMLMock(...args),
+    // Editor de obrigatórios do kit em erro (edge atributos-familia): sem rede; padrão = nada faltando.
+    listarFaltantesAtributos: (...args: unknown[]) => listarFaltantesMock(...args),
+    salvarAtributoFamilia: (...args: unknown[]) => salvarAtributoMock(...args),
+  };
 });
 
 // O caminho completo da categoria vem de um GET público na API do ML — sem mock, cada render
@@ -212,6 +220,58 @@ describe('DialogCriarKit — botão Reenviar (I-1)', () => {
 // ADR-0151 (item 14): kit não passa pela Revisão (D-2/D-4) — o preview É a revisão e confirmar
 // publica direto. O rótulo e o aviso deixam isso explícito ANTES do clique, pra não repetir a
 // surpresa do operador.
+// 15/11 (kit 4 de 00000182, MLB455708): a categoria passou a exigir "Conservação do produto" e a IA nunca
+// preenche (o texto não informa). O kit não passa pela Revisão, então o campo precisa existir aqui.
+describe('DialogCriarKit — obrigatório da categoria que só o operador sabe', () => {
+  const CONSERVACAO = {
+    id: 'PRODUCT_CONSERVATION', nome: 'Conservação do produto', tipo: 'closed' as const,
+    valores: [{ id: '10792872', nome: 'Temperatura ambiente' }, { id: '10092070', nome: 'Refrigerado' }],
+  };
+
+  it('kit em erro mostra o campo faltante (Select do sistema) junto do Reenviar', async () => {
+    listarFaltantesMock.mockResolvedValueOnce([CONSERVACAO]);
+    const k = kit(4, 'erro', '2026-11-15T13:00:00Z');
+    renderDialog([k]);
+    expect(await screen.findByText('Conservação do produto')).toBeInTheDocument();
+    expect(screen.getByText(/Complete para publicar/i)).toBeInTheDocument();
+    expect(screen.getByRole('combobox')).toBeInTheDocument();
+    expect(listarFaltantesMock).toHaveBeenCalledWith(k.familiaId);
+  });
+
+  it('kit já criado sem erro não consulta faltantes', () => {
+    renderDialog([kit(4, 'publicado', '2026-11-15T13:00:00Z')]);
+    expect(listarFaltantesMock).not.toHaveBeenCalled();
+  });
+
+  it('criação recusada por atributo faltante: mostra o campo (Select do sistema) e trava o botão até escolher', async () => {
+    criarKitVinculadoMock.mockResolvedValueOnce({ ok: false, motivo: 'atributos_faltantes', mensagem: 'x', campos: [CONSERVACAO] });
+    renderDialog([], BASE_COM_FOTO);
+    await avancarECriar();
+
+    const grupo = await screen.findByRole('group', { name: 'Complete para criar o kit' });
+    expect(grupo).toHaveTextContent('Conservação do produto');
+    expect(screen.getByRole('combobox', { name: 'Conservação do produto' })).toBeInTheDocument();
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Criar e publicar' })).toBeDisabled();
+    expect(criarKitVinculadoMock.mock.calls[0][0].atributosInformados).toEqual({});
+  });
+
+  it('com o campo preenchido, confirma de novo enviando o valor', async () => {
+    const MODELO = { id: 'MODEL', nome: 'Modelo', tipo: 'texto' as const, valores: [] };
+    criarKitVinculadoMock
+      .mockResolvedValueOnce({ ok: false, motivo: 'atributos_faltantes', mensagem: 'x', campos: [MODELO] })
+      .mockResolvedValueOnce({ ok: true, kits: [], publicacaoOk: true, loteId: null });
+    const { onOpenChange } = renderDialog([], BASE_COM_FOTO);
+    await avancarECriar();
+
+    await userEvent.type(await screen.findByLabelText('Modelo'), 'Zero Lactose');
+    await userEvent.click(screen.getByRole('button', { name: 'Criar e publicar' }));
+    await waitFor(() => expect(criarKitVinculadoMock).toHaveBeenCalledTimes(2));
+    expect(criarKitVinculadoMock.mock.calls[1][0].atributosInformados).toEqual({ MODEL: 'Zero Lactose' });
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+});
+
 describe('DialogCriarKit — etapa de preview deixa explícito que publica direto', () => {
   it('botão de confirmação diz "Criar e publicar" e o aviso de publicação direta aparece', async () => {
     renderDialog([], BASE_COM_FOTO);

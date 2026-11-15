@@ -1029,15 +1029,33 @@ describe('kit vinculado: obrigatório novo da categoria na publicação/Reenviar
     expect(gravou?.payload.atributos_faltantes).toEqual([]);
   });
 
-  it('IA não resolve → retenta (falha de rede da IA vira {}); esgotado, erro em pt-BR sem chamar o ML (revisão Codex)', async () => {
-    const deps = (admin: never) => baseDeps(admin, { lerSchema: async () => SCHEMA as never, llmParaOrg: () => async () => ({}) });
-    const primeira = await processarFamiliaML(deps(fakeAdmin({ familia: { ...KIT } }).admin), JOB, { tentativas: 0 });
-    expect(primeira.tipo).toBe('retry');
-    const { admin } = fakeAdmin({ familia: { ...KIT } });
-    const r = await processarFamiliaML(deps(admin), JOB, { tentativas: 10 });
+  // Causa real (medida 15/11, gpt-6-luna, 5 de 5): o título/descrição do kit não dizem como conservar, então a IA
+  // omite o atributo SEMPRE — resposta real abaixo. Retentar 10× não muda nada: só o operador sabe o valor.
+  const RESPOSTA_REAL_DA_IA = { LINE: 'Zero Lactose', MILK_TYPE: 'Leite em Pó', UNIT_WEIGHT: '700 g', UNITS_PER_PACKAGE: '4' };
+
+  it('IA omite o que o texto não informa → erro definitivo na 1ª tentativa, com o que o operador faz, sem chamar o ML', async () => {
+    const { admin, writes } = fakeAdmin({ familia: { ...KIT } });
+    const deps = baseDeps(admin, { lerSchema: async () => SCHEMA as never, llmParaOrg: () => async () => RESPOSTA_REAL_DA_IA });
+    const r = await processarFamiliaML(deps, JOB, { tentativas: 0 });
     expect(r.tipo).toBe('erro');
-    expect((r as { mensagem: string }).mensagem).toContain('Conservação do produto');
+    const msg = (r as { mensagem: string }).mensagem;
+    expect(msg).toContain('Conservação do produto');
+    expect(msg).toContain('Reenviar');
+    expect(msg).not.toContain('suporte');
+    expect(writes.find((w) => w.table === 'familias' && w.payload.status === 'erro')?.payload.erro_mensagem).toBe(msg);
+    // A Revisão só mostra o editor quando a coluna diz o que falta.
+    expect(writes.some((w) => w.table === 'familias' && JSON.stringify(w.payload.atributos_faltantes) === '["Conservação do produto"]')).toBe(true);
     expect(fakeConnector.chamadas.filter((c) => c.metodo === 'criarAnuncio')).toHaveLength(0);
+  });
+
+  it('operador escolheu o valor (atributos-familia) → Reenviar publica sem depender da IA', async () => {
+    const { admin } = fakeAdmin({ familia: {
+      ...KIT, atributos_ml: [...KIT.atributos_ml, { id: 'PRODUCT_CONSERVATION', value_id: 'V-AMB' }], atributos_faltantes: [],
+    } });
+    const llm = vi.fn(async () => RESPOSTA_REAL_DA_IA);
+    const r = await processarFamiliaML(baseDeps(admin, { lerSchema: async () => SCHEMA as never, llmParaOrg: () => llm }), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(llm).not.toHaveBeenCalled();
   });
 
   it('ficha completa → não chama a IA', async () => {

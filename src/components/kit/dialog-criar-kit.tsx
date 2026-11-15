@@ -9,12 +9,14 @@ import { RotateCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { EditorAtributosFaltantes } from '@/components/editor-atributos-faltantes';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 import { QK, buscarCategoriaML, type KitVinculado } from '@/lib/queries';
 import { useCaminhoCategoria } from '@/hooks/useCaminhoCategoria';
-import type { CategoriaCandidata } from '@/lib/tipos-dominio';
+import type { CampoFaltante, CategoriaCandidata } from '@/lib/tipos-dominio';
 import { supabase } from '@/lib/supabase';
 import { effectiveOrgId, useSupportStore } from '@/stores/support-store';
 import { storageOwnerForUpload } from '@/hooks/useUploadLote';
@@ -80,6 +82,10 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
   const [queryCategoria, setQueryCategoria] = useState('');
   const [candidatosCategoria, setCandidatosCategoria] = useState<CategoriaCandidata[]>([]);
   const [buscandoCategoria, setBuscandoCategoria] = useState(false);
+  // Obrigatório da categoria que nem a ficha da base nem a IA resolvem (ex.: Conservação do produto, 15/11):
+  // a edge devolve os campos, o operador escolhe aqui e a criação é reenviada com os valores.
+  const [camposFaltantes, setCamposFaltantes] = useState<CampoFaltante[]>([]);
+  const [informados, setInformados] = useState<Record<string, string>>({});
   // "Você recebe" de cada kit: o gate nasce fechado e só abre quando o preview informa que a conta
   // está pronta (ou confirmada). Setter estável e sem troca quando o valor não muda (sem loop de render).
   const [podeSeguir, setPodeSeguir] = useState<Record<number, boolean>>({});
@@ -135,7 +141,12 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
     setBuscaCategoriaAberta(false);
     setQueryCategoria('');
     setCandidatosCategoria([]);
+    setCamposFaltantes([]);
+    setInformados({});
   }, [open]);
+
+  // Categoria trocada: os campos pedidos eram da categoria anterior.
+  useEffect(() => { setCamposFaltantes([]); setInformados({}); }, [categoriaOverride]);
 
   async function buscarCategoria() {
     if (!queryCategoria.trim()) return;
@@ -224,10 +235,17 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
         };
       }));
 
-      return criarKitVinculado({ familiaBaseId, kits, categoriaOverride });
+      return criarKitVinculado({ familiaBaseId, kits, categoriaOverride, atributosInformados: informados });
     },
     onSuccess: (r) => {
       if (!r.ok) {
+        if (r.motivo === 'atributos_faltantes' && r.campos?.length) {
+          setCamposFaltantes(r.campos);
+          toast.warning('Falta completar o kit', {
+            description: `A categoria exige: ${r.campos.map((c) => c.nome).join(', ')}. Escolha o valor e confirme de novo.`,
+          });
+          return;
+        }
         toast.error('Falha ao criar kit', {
           description: (r.motivo && MENSAGEM_POR_MOTIVO[r.motivo]) ?? r.mensagem ?? r.motivo ?? 'Motivo não informado.',
         });
@@ -398,7 +416,8 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
               const jaCriado = !!existente;
               const comErro = existente?.status === 'erro';
               return (
-                <div key={n} className="flex items-center gap-2">
+                <div key={n}>
+                <div className="flex items-center gap-2">
                   <Checkbox
                     id={`kit-tamanho-${n}`}
                     checked={marcados.has(n)}
@@ -423,6 +442,9 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
                       Reenviar
                     </Button>
                   )}
+                </div>
+                {/* Kit não passa pela Revisão: se falhou por obrigatório novo da categoria, o campo aparece aqui. */}
+                {comErro && <div className="pl-6"><EditorAtributosFaltantes familiaId={existente!.familiaId} /></div>}
                 </div>
               );
             })}
@@ -473,6 +495,33 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
           </div>
         )}
 
+        {etapa === 'preview' && camposFaltantes.length > 0 && (
+          <div className="flex flex-col gap-2 rounded-md border border-warning/40 p-3" role="group" aria-label="Complete para criar o kit">
+            <p className="text-xs font-medium text-warning">Complete para criar o kit:</p>
+            {camposFaltantes.map((c) => (
+              <div key={c.id} className="flex flex-col gap-0.5">
+                <label htmlFor={`kit-attr-${c.id}`} className="text-xs text-muted-foreground">{c.nome}</label>
+                {c.tipo === 'closed' ? (
+                  <Select value={informados[c.id] ?? ''} onValueChange={(v) => setInformados((p) => ({ ...p, [c.id]: v }))}>
+                    <SelectTrigger id={`kit-attr-${c.id}`} className="h-8 text-xs"><SelectValue placeholder="Escolher" /></SelectTrigger>
+                    <SelectContent>
+                      {c.valores.map((v) => <SelectItem key={v.id} value={v.id}>{v.nome}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    id={`kit-attr-${c.id}`}
+                    className="h-8 text-xs"
+                    placeholder={c.tipo === 'numero' ? (c.unidades?.length ? `nº + ${c.unidades[0].nome}` : 'número') : 'texto'}
+                    value={informados[c.id] ?? ''}
+                    onChange={(e) => setInformados((p) => ({ ...p, [c.id]: e.target.value }))}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
         {etapa === 'preview' && (
           <p className="text-xs text-muted-foreground">
             O kit vai direto para o Mercado Livre — esta tela é a revisão.
@@ -492,7 +541,10 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
               <Button variant="outline" onClick={() => setEtapa('tamanhos')} disabled={mutation.isPending}>
                 Voltar
               </Button>
-              <Button disabled={!podeCriar || lendoGaleria || mutation.isPending} onClick={() => mutation.mutate()}>
+              <Button
+                disabled={!podeCriar || lendoGaleria || mutation.isPending || camposFaltantes.some((c) => !informados[c.id]?.trim())}
+                onClick={() => mutation.mutate()}
+              >
                 {mutation.isPending ? 'Criando…' : 'Criar e publicar'}
               </Button>
             </>

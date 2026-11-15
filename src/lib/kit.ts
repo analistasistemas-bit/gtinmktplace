@@ -4,6 +4,7 @@
 import { supabase } from './supabase';
 import { corpoDoErroDaEdge } from './edge-erro';
 import type { KitVinculado } from './queries';
+import type { CampoFaltante } from './tipos-dominio';
 import { corrigirRotuloQuantidade } from '../../supabase/functions/_shared/ai/unidade.ts';
 
 export const TAMANHOS_KIT = [2, 3, 4, 5, 6] as const;
@@ -187,6 +188,8 @@ export interface ResultadoCriarKit {
   ok: boolean;
   motivo?: string;
   mensagem?: string;
+  /** Só com motivo `atributos_faltantes`: obrigatórios da categoria que o operador escolhe no diálogo. */
+  campos?: CampoFaltante[];
   /** Só presente quando `ok: true` (Task 6, fix I2) — a edge cria os kits e SEPARADAMENTE
    *  tenta encadear a publicação (base já no ar, caminho Publicados). `false` não é erro de
    *  criação: os kits existem, mas o encadeamento falhou e não pode ser escondido atrás de um
@@ -215,6 +218,7 @@ export function contarKitsAguardandoPorPai(kits: KitVinculado[]): Map<string, nu
 export async function criarKitVinculado(p: {
   familiaBaseId: string; kits: KitFormValues[];
   categoriaOverride?: { categoriaMlId: string; categoriaNome: string } | null;
+  atributosInformados?: Record<string, string>;
 }): Promise<ResultadoCriarKit> {
   const { data, error } = await supabase.functions.invoke('criar-kit-vinculado', {
     body: {
@@ -230,6 +234,8 @@ export async function criarKitVinculado(p: {
       categoria_override: p.categoriaOverride
         ? { categoria_ml_id: p.categoriaOverride.categoriaMlId, categoria_nome: p.categoriaOverride.categoriaNome }
         : null,
+      ...(p.atributosInformados && Object.keys(p.atributosInformados).length > 0
+        ? { atributos_informados: p.atributosInformados } : {}),
     },
   });
   if (error) {
@@ -241,6 +247,7 @@ export async function criarKitVinculado(p: {
         ok: false,
         motivo: typeof detalhe.corpo.motivo === 'string' ? detalhe.corpo.motivo : undefined,
         mensagem: typeof detalhe.corpo.error === 'string' ? detalhe.corpo.error : error.message,
+        ...(Array.isArray(detalhe.corpo.campos) ? { campos: detalhe.corpo.campos as CampoFaltante[] } : {}),
       };
     }
     return { ok: false, motivo: 'rede', mensagem: error.message };

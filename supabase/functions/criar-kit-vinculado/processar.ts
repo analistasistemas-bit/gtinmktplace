@@ -11,6 +11,7 @@ import {
 import { resolverAtributosGenericos } from '../_shared/categoria/resolver-atributos-genericos.ts';
 import type { InputAtributos, AtributoAlvo } from '../_shared/ai/atributos-llm-core.ts';
 import { completarObrigatorios } from '../_shared/categoria/completar-obrigatorios.ts';
+import { faltantesEditaveis, validarValorAtributo, type CampoFaltante } from '../_shared/categoria/faltantes-editaveis.ts';
 import type { AtributoSchema } from '../_shared/categoria/schema.ts';
 import { derivarCodigos, codigosJaUsados } from '../_shared/produto/codigos.ts';
 import { gtinOuNull } from '../_shared/produto/gtin.ts';
@@ -80,6 +81,8 @@ export interface CriarKitInput {
   kits: KitSolicitado[];
   /** Categoria do ML diferente da base, escolhida pelo operador. null/ausente → herda da base. */
   categoriaOverride?: { categoriaMlId: string; categoriaNome: string } | null;
+  /** Obrigatórios que o operador escolheu no diálogo (id → valor), quando a IA não resolveu. */
+  atributosInformados?: Record<string, string>;
 }
 
 export interface KitCriado {
@@ -93,6 +96,8 @@ export interface ResultadoCriarKits {
   ok: boolean;
   motivo?: string;
   mensagem?: string;
+  /** Só com motivo `atributos_faltantes`: os campos que o operador preenche no diálogo. */
+  campos?: CampoFaltante[];
   kits?: KitCriado[];
   /**
    * Resultado do encadeamento de publicação (quando a base já está publicada). `resp.ok`
@@ -317,8 +322,8 @@ async function reservarCodigos(
 
 /**
  * Erro do gate de faltantes com o que o operador precisa para agir: além do nome do atributo, os
- * valores que a categoria aceita (quando são poucos e conhecidos) e a saída — o kit não tem tela de
- * "Complete para publicar" como a Revisão (ADR-0151 D-3/D-4), então a mensagem é a única orientação.
+ * valores que a categoria aceita (quando são poucos e conhecidos) e a saída — desde 15/11 o diálogo do
+ * kit mostra os campos (`campos` na resposta, emenda do ADR-0151) e a mensagem aponta para eles.
  * Casa o nome vindo de `atributosFaltantesGenerico` (que devolve `a.nome`, não o id) com o schema;
  * ponytail: em empate de nome pega o primeiro — só afeta quais exemplos são exibidos.
  */
@@ -334,8 +339,34 @@ export function mensagemFaltantes(faltantes: string[], schema: AtributoSchema[])
     return `${nome} (${exemplos}${valores.length > MAX_EXEMPLOS ? ', …' : ''})`;
   }).join('; ');
 
-  return `A categoria escolhida exige atributos que o título e a descrição do produto-base não informam: ${detalhe}. `
-    + 'Inclua essa informação no título ou na descrição do produto-base e tente de novo, ou escolha outra categoria.';
+  return `A categoria exige atributos que o título e a descrição do produto-base não informam: ${detalhe}. `
+    + 'Escolha o valor nos campos "Complete para criar o kit" e confirme de novo.';
+}
+
+// SALE_FORMAT/UNITS_PER_PACK fora: o kit sempre os grava pelo N (aplicarKitNosAtributos).
+const semCamposDoKit = (schema: AtributoSchema[]) => schema.filter((s) => s.id !== 'SALE_FORMAT' && s.id !== 'UNITS_PER_PACK');
+
+/** Obrigatórios vazios que travam o kit, na forma editável (mesmo critério do gate: sem SIZE/GENDER). */
+function camposFaltantes(schema: AtributoSchema[], atributos: AtributoML[]): CampoFaltante[] {
+  const s = semCamposDoKit(schema);
+  const nomes = atributosFaltantesGenerico(atributos, s);
+  return faltantesEditaveis(s, atributos).filter((c) => nomes.includes(c.nome));
+}
+
+/**
+ * 15/11 (PRODUCT_CONSERVATION, MLB455708): a IA só preenche o que o título/descrição informam, e
+ * conservação não consta em texto nenhum — só o operador sabe. Aqui entra o valor que ele escolheu
+ * no diálogo: só obrigatório AINDA vazio (nunca sobrescreve a ficha) e validado contra o schema.
+ */
+export function aplicarInformados(
+  schema: AtributoSchema[], atributos: AtributoML[], informados: Record<string, string> | undefined,
+): AtributoML[] {
+  const novos = camposFaltantes(schema, atributos).flatMap((c) => {
+    const bruto = informados?.[c.id];
+    const a = typeof bruto === 'string' ? validarValorAtributo(schema, c.id, bruto) : null;
+    return a ? [a] : [];
+  });
+  return novos.length > 0 ? [...atributos.filter((a) => !novos.some((n) => n.id === a.id)), ...novos] : atributos;
 }
 
 export async function criarKitsVinculados(
@@ -515,6 +546,9 @@ export async function criarKitsVinculados(
       // atributos_faltantes da base seguem herdados por montarFamiliaKit (clone), sem tocar aqui.
       atributosBase = forcarMarcaDoProduto((base.atributos_ml as AtributoML[] | null) ?? [], base.marca as string | null);
       // Obrigatório novo da categoria (ex.: PRODUCT_CONSERVATION, 15/11): ver completar-obrigatorios.ts.
+      const pedidos = camposFaltantes(schema, atributosBase);
+      atributosBase = aplicarInformados(schema, atributosBase, input.atributosInformados);
+      for (const c of pedidos) if (atributosBase.some((a) => a.id === c.id)) nomesResolvidos.add(c.nome);
       const c = await completarObrigatorios(
         schema, atributosBase,
         { nome: base.nome_pai as string, descricao: (base.descricao_pai as string | null) ?? undefined },
@@ -523,7 +557,10 @@ export async function criarKitsVinculados(
       atributosBase = c.atributos;
       for (const n of c.resolvidos) nomesResolvidos.add(n);
       if (c.faltam.length > 0) {
-        return { ok: false, motivo: 'atributos_faltantes', mensagem: mensagemFaltantes(c.faltam, schema) };
+        return {
+          ok: false, motivo: 'atributos_faltantes', mensagem: mensagemFaltantes(c.faltam, schema),
+          campos: camposFaltantes(schema, c.atributos),
+        };
       }
     } else {
       const tipo = tipoParaCategoria(categoriaAlvo);
@@ -601,7 +638,8 @@ export async function criarKitsVinculados(
       // bloquearia a criação do kit por um faltante que o passo seguinte já resolveria.
       // UNITS_PER_PACK pelo mesmo motivo: aplicarKitNosAtributos grava o N real; a emenda do ADR-0071
       // (2026-10-27) deixa a quantidade faltando quando a base é "Kit" sem contagem no texto.
-      const schemaParaFaltantes = schema.filter((s) => s.id !== 'SALE_FORMAT' && s.id !== 'UNITS_PER_PACK');
+      const schemaParaFaltantes = semCamposDoKit(schema);
+      if (!faltantesSentinela && tipo === 'outro') atributosBase = aplicarInformados(schema, atributosBase, input.atributosInformados);
       faltantesKit = faltantesSentinela
         ?? (tipo !== 'outro' ? [] : atributosFaltantesGenerico(atributosBase, schemaParaFaltantes));
       // Gate LOUD antes de criar qualquer linha (Fable): kit não passa por Revisão (D-3/D-4,
@@ -614,6 +652,7 @@ export async function criarKitsVinculados(
           mensagem: faltantesSentinela
             ? 'Não foi possível validar os atributos desta categoria agora — a consulta ao Mercado Livre ou à IA falhou. Tente criar o kit de novo em instantes.'
             : mensagemFaltantes(faltantesKit, schema),
+          ...(faltantesSentinela ? {} : { campos: camposFaltantes(schema, atributosBase) }),
         };
       }
     }

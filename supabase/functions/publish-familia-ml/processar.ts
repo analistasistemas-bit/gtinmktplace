@@ -204,8 +204,17 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
           llm,
         );
         if (c.faltam.length > 0) {
-          // Sem `status`: retenta (a IA engole falha de rede e devolve {}); esgotadas as tentativas do QStash, vira erro.
-          throw new Error(`A categoria exige atributo(s) que o PubliAI não conseguiu preencher: ${c.faltam.join(', ')}. Fale com o suporte.`);
+          // Definitivo (400), sem retentar: medido em 15/11 com o kit 4 de 00000182 — a IA omite 5 de 5 vezes, porque
+          // conservação não consta no título nem na descrição (e ela não pode inventar). Só o operador sabe: o diálogo
+          // do kit mostra o campo (EditorAtributosFaltantes) e o Reenviar seguinte passa por aqui com a ficha completa.
+          // Grava os faltantes: é o que faz a Revisão (card da categoria) também oferecer o campo. Best-effort.
+          await admin.from('familias').update({ atributos_faltantes: c.faltam }).eq('id', job.familia_id);
+          const err = new Error(
+            `A categoria passou a exigir: ${c.faltam.join(', ')}. Abra o kit no produto-base, escolha o valor em `
+            + '"Complete para publicar" e clique em Reenviar. Nada foi enviado ao Mercado Livre.',
+          ) as Error & { status?: number };
+          err.status = 400;
+          throw err;
         }
         if (c.resolvidos.length > 0) {
           const faltantes = ((familia.atributos_faltantes as string[] | null) ?? []).filter((f) => !c.resolvidos.includes(f));
