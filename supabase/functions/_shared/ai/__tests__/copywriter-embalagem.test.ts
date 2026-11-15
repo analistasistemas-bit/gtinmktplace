@@ -109,3 +109,25 @@ describe('posProcessarDescricao — composição dos guards novos', () => {
     expect(out).toContain('• 1 unidade com 10m');
   });
 });
+
+describe('produto sem variação: IA não pode oferecer opção de cor (Hairfly, 15/11)', () => {
+  const DESC_IA = '🧵 MÁSCARA\n\nTexto.\n\n📦 O QUE VOCÊ RECEBE\n\n• 1 unidade de máscara\n• Cor escolhida no anúncio.\n\nFrase final.';
+
+  it('sem eixo → remove o bullet "… escolhida no anúncio" que a IA escreveu', () => {
+    const out = garantirConteudoEmbalagem(DESC_IA, 'Máscara Mel de Cenoura 250g', 'Máscara capilar', null);
+    expect(out).not.toContain('escolhida no anúncio');
+    expect(out).toContain('• 1 unidade de máscara');
+    expect(out).toContain('Frase final.');
+  });
+
+  it('com eixo → mantém o bullet', () => {
+    const out = garantirConteudoEmbalagem(DESC_IA, 'X', 'Y', ROTULO_COR);
+    expect(out).toContain('• Cor escolhida no anúncio.');
+  });
+
+  it('posProcessarDescricao com variação sem cor → sai sem o bullet', () => {
+    const out = posProcessarDescricao(DESC_IA, 'Máscara Mel de Cenoura 250g', 'Máscara capilar',
+      [{ cor: null, nome: 'Máscara Mel de Cenoura 250g' }] as never);
+    expect(out).not.toContain('escolhida no anúncio');
+  });
+});

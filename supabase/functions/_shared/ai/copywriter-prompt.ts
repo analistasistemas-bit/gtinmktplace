@@ -314,6 +314,9 @@ export function garantirConteudoEmbalagem(
   descricaoPai: string,
   rotuloEixo: string | null,
 ): string {
+  // Sem eixo, o bullet de opção é falso: a IA copia o exemplo do template mesmo com o input
+  // dizendo "NÃO tem variação" (máscaras Hairfly, 15/11: "• Cor escolhida no anúncio").
+  if (!rotuloEixo) descricao = descricao.replace(/^[ \t]*•[^\n]*escolhid[ao] no anúncio\.?[ \t]*\n?/gimu, '');
   if (descricao.includes(SECAO_CONTEUDO)) return descricao;
 
   const textoFonte = `${nomePai}\n${descricaoPai}`;
