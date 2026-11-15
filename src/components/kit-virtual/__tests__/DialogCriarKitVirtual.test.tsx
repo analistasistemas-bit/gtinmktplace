@@ -779,3 +779,41 @@ describe('DialogCriarKitVirtual — capa (IA ↔ upload manual)', () => {
     await act(async () => subidaIA.resolve({ ok: true, pictureId: 'PIC-IA' }));
   });
 });
+
+describe('DialogCriarKitVirtual — respostas fora de ordem (I3/I4)', () => {
+  it('I3: A → B → A: a resposta antiga do 1º pedido de A não sobrescreve o texto revisado', async () => {
+    mockBusca();
+    const a1 = deferido<PreviewKitVirtualResultado>();
+    const b = deferido<PreviewKitVirtualResultado>();
+    const a3 = deferido<PreviewKitVirtualResultado>();
+    previewMock.mockImplementationOnce(() => a1.promise)
+      .mockImplementationOnce(() => b.promise)
+      .mockImplementationOnce(() => a3.promise);
+    renderDialog();
+
+    await selecionarDoisComponentes();
+    await avancar();
+    await waitFor(() => expect(previewMock).toHaveBeenCalledTimes(1));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Voltar' }));
+    fireEvent.change(screen.getByLabelText('Quantidade de Motosserra Elétrica'), { target: { value: '2' } });
+    await avancar();
+    await waitFor(() => expect(previewMock).toHaveBeenCalledTimes(2));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Voltar' }));
+    fireEvent.change(screen.getByLabelText('Quantidade de Motosserra Elétrica'), { target: { value: '1' } });
+    await avancar();
+    await waitFor(() => expect(previewMock).toHaveBeenCalledTimes(3));
+
+    a3.resolve(respostaPreview({ gerarDescricao: true }, { titulo: 'Kit A NOVO', descricao: 'Descrição A nova.' }));
+    await waitFor(() => expect(screen.getByLabelText('Título do kit')).toHaveValue('Kit A NOVO'));
+    await userEvent.clear(screen.getByLabelText('Título do kit'));
+    await userEvent.type(screen.getByLabelText('Título do kit'), 'Kit do operador');
+
+    a1.resolve(respostaPreview({ gerarDescricao: true }, { titulo: 'Kit A VELHO', descricao: 'Descrição A velha.' }));
+    await esperar(50);
+    expect(screen.getByLabelText('Título do kit')).toHaveValue('Kit do operador');
+    expect(screen.getByLabelText('Descrição do kit')).toHaveValue('Descrição A nova.');
+  });
+
+});

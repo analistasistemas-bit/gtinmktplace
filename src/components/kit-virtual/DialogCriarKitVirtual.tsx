@@ -46,7 +46,11 @@ const assinaturaCapa = (s: ComponenteSelecionadoKitVirtual[]) =>
 const assinaturaTextoDe = (s: ComponenteSelecionadoKitVirtual[]) =>
   s.map((c) => `${c.candidato.userProductId}:${c.quantidade}`).join('|');
 
-type PedidoPreview = { gerarTexto: boolean; assinaturaTexto: string; assinaturaMargem: string; seq: number };
+type PedidoPreview = {
+  gerarTexto: boolean; assinaturaTexto: string; assinaturaMargem: string;
+  /** Último pedido de texto / de margem e abertura do diálogo no momento do pedido (I3). */
+  seq: number; seqMargem: number; sessao: number;
+};
 
 export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
   open: boolean;
@@ -96,6 +100,9 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
   assinaturaTextoAtual.current = assinaturaTexto;
   assinaturaMargemAtual.current = assinaturaMargem;
   const textoSeq = useRef(0);
+  const margemSeq = useRef(0);
+  /** Cada abertura incrementa: resposta de uma sessão anterior do diálogo nunca é aplicada. */
+  const sessaoRef = useRef(0);
   /** Cada troca de foto incrementa: upload ao Storage que termina depois de outra troca é ignorado. */
   const fotoSeq = useRef(0);
 
@@ -105,6 +112,7 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
   // composição (sem geração automática ao entrar na etapa 2).
   useEffect(() => {
     if (!open) return;
+    sessaoRef.current++;
     setEtapa('selecionar');
     setChaveCadastro(crypto.randomUUID());
     setSearchText('');
@@ -266,11 +274,13 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
   // ── Preview (texto IA + margem) ───────────────────────────────────────────────────────
   const previewMutation = useMutation({
     mutationFn: (p: PedidoPreview & { input: Parameters<typeof previewKitVirtual>[0] }) => previewKitVirtual(p.input),
-    // Roda para TODA execução (TanStack v5): cada resposta é filtrada pela assinatura do próprio pedido.
+    // Roda para TODA execução (TanStack v5): cada resposta só vale se for o último pedido do seu tipo, na
+    // mesma abertura e com a assinatura atual — A → B → A deixaria a 1ª resposta de A passar pela assinatura (I3).
     onSuccess: (r, p) => {
-      if (p.assinaturaMargem === assinaturaMargemAtual.current) setPreviewResultado(r);
+      if (p.sessao !== sessaoRef.current) return;
+      if (p.seqMargem === margemSeq.current && p.assinaturaMargem === assinaturaMargemAtual.current) setPreviewResultado(r);
       // Só um pedido de texto mexe em título/descrição; recálculo de desconto nunca sobrescreve.
-      if (p.gerarTexto && p.assinaturaTexto === assinaturaTextoAtual.current) {
+      if (p.gerarTexto && p.seq === textoSeq.current && p.assinaturaTexto === assinaturaTextoAtual.current) {
         const desc = r.descricao ?? '';
         setTitulo(r.titulo);
         setDescricao(desc);
@@ -279,13 +289,14 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
       }
     },
     onError: (err, p) => {
+      if (p.sessao !== sessaoRef.current) return;
       // Texto que falhou NÃO volta a ser gerado sozinho (sobrescreveria o que o operador escreveu):
       // o retry é o "Regerar", que confirma se houver edição. A margem tenta de novo no próximo ajuste.
       if (margemPedidaRef.current === p.assinaturaMargem) margemPedidaRef.current = null;
       toast.error('Falha ao calcular o preview do kit', { description: err instanceof Error ? err.message : String(err) });
     },
     onSettled: (_r, _e, p) => {
-      if (p.gerarTexto && p.seq === textoSeq.current) setGerandoTexto(false);
+      if (p.sessao === sessaoRef.current && p.gerarTexto && p.seq === textoSeq.current) setGerandoTexto(false);
     },
   });
 
@@ -297,6 +308,7 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
     }
     previewMutation.mutate({
       gerarTexto, assinaturaTexto, assinaturaMargem, seq: gerarTexto ? ++textoSeq.current : textoSeq.current,
+      seqMargem: ++margemSeq.current, sessao: sessaoRef.current,
       input: {
         componentes: selecionados.map((s, i) => ({
           ordem: i,
