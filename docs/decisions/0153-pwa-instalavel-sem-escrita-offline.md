@@ -96,6 +96,20 @@ de vazamento entre organizações do que o ganho justifica hoje. Decisão do don
 **Rejeitado:** atualização automática. Recarregaria a página no meio de uma revisão de lote, e o
 par "service worker novo + página velha" quebra `lazy()` ao pedir um chunk que não existe mais.
 
+**Emenda 2026-11-15 — forma do aviso.** O toast sem duração ficava parado sobre os botões e, com
+deploys frequentes e a checagem ao voltar o foco, reaparecia o dia todo para os clientes. Passa a ser:
+
+- **Selo "Nova versão"** na Topbar (e no header do admin) enquanto houver versão esperando. Ao
+  surgir, 3 pulsos de halo; depois fica parado. Repete 1 pulso só ao voltar para a aba ou quando
+  chega outro deploy. Sem animação contínua; `prefers-reduced-motion` vê só o ponto.
+- **Aviso aberto** (popover ancorado no selo, "Agora não" / "Atualizar") só na 1ª vez do dia, por
+  aparelho, em que existe versão esperando. "Agora não" ou clique fora recolhe para o selo; no resto
+  do dia, inclusive em deploy novo, só o selo. Clicar no selo reabre o popover.
+- Abrir o popover sozinho não rouba o foco de quem está digitando.
+
+Continua valendo: quem decide é o usuário; fechar e reabrir o app ativa a versão nova sozinho.
+**Rejeitado:** modal central (bloqueia a tela) e bolinha flutuante (volta a cobrir conteúdo).
+
 `render.yaml` passa a enviar `Cache-Control: no-cache` para `/sw.js`, `/index.html` e
 `/site.webmanifest`. O navegador já limita o script do service worker a 24 h; o header derruba para
 zero.
