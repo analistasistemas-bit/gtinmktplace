@@ -834,6 +834,17 @@ describe('criarKitsVinculados', () => {
     expect(llm).toHaveBeenCalledTimes(1);
   });
 
+  it('sem categoriaOverride: obrigatório preenchido pela IA sai dos faltantes herdados da base (revisão Codex)', async () => {
+    const { deps, inserts } = depsFake({
+      schemaPorCategoria: { 'MLB123': SCHEMA_COM_OBRIGATORIO_NOVO },
+      llm: async () => ({ PRODUCT_CONSERVATION: 'V-AMB' }),
+      faltantesBase: ['Conservação do produto', 'Outro faltante'],
+    });
+    const r = await criarKitsVinculados(deps, { familiaBaseId: BASE_ID, kits: [kitPadrao(2)] });
+    expect(r.ok).toBe(true);
+    expect(inserts.familias[0].atributos_faltantes).toEqual(['Outro faltante']);
+  });
+
   it('sem categoriaOverride: base já completa → não chama a IA', async () => {
     const llm = vi.fn(async () => ({}));
     const { deps } = depsFake({

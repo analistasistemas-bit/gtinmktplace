@@ -507,6 +507,8 @@ export async function criarKitsVinculados(
     // `atributos_faltantes` não vazio ainda cria o kit, só trava depois no publish).
     let tipoAviamentoKit: string | undefined;
     let faltantesKit: string[] | undefined;
+    // Obrigatórios que a IA acabou de preencher no caminho sem override: saem dos faltantes herdados.
+    const nomesResolvidos = new Set<string>();
     if (!input.categoriaOverride) {
       // Caminho intocado: mesma categoria/atributos da base, como hoje. tipo_aviamento/
       // atributos_faltantes da base seguem herdados por montarFamiliaKit (clone), sem tocar aqui.
@@ -529,6 +531,7 @@ export async function criarKitsVinculados(
           ...preenchidos.filter((a) => idsFaltantes.has(a.id) && (a.value_id || a.value_name)),
         ];
         const aindaFaltam = atributosFaltantesGenerico(atributosBase, schemaObrig);
+        for (const n of faltantes) if (!aindaFaltam.includes(n)) nomesResolvidos.add(n);
         if (aindaFaltam.length > 0) {
           return { ok: false, motivo: 'atributos_faltantes', mensagem: mensagemFaltantes(aindaFaltam, schema) };
         }
@@ -691,7 +694,7 @@ export async function criarKitsVinculados(
         // emenda 2 ADR-0071) não vale aqui — o N do kit acabou de preenchê-la (revisão Codex).
         const nomeUnits = schema.find((s) => s.id === 'UNITS_PER_PACK')?.nome;
         const herdados = familiaObj.atributos_faltantes;
-        if (Array.isArray(herdados)) familiaObj.atributos_faltantes = herdados.filter((f) => f !== nomeUnits);
+        if (Array.isArray(herdados)) familiaObj.atributos_faltantes = herdados.filter((f) => f !== nomeUnits && !nomesResolvidos.has(f));
       }
       const { data: familiaCriada, error: famErr } = await admin.from('familias')
         .insert(familiaObj).select('id').single();
