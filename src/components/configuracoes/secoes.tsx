@@ -38,7 +38,7 @@ export const SECOES: Secao[] = [
   {
     slug: 'geral',
     titulo: 'Geral',
-    descricao: 'O que aparece no Dashboard.',
+    descricao: 'O que aparece no Dashboard e a logo da empresa.',
     icone: Settings2,
     Componente: SecaoGeral,
   },
