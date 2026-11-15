@@ -4,6 +4,7 @@
 // snake_case só na borda com `supabase.functions.invoke`.
 import { supabase } from './supabase';
 import { erroDaEdge, corpoDoErroDaEdge } from './edge-erro';
+import type { DimensoesFrete } from './tarifa';
 
 // ─── Desconto: 0-1 no ML, 0-100 na tela (D-3 da migration — nunca confundir com as demais
 // colunas `desconto_pct` do projeto, que já são 0-100) ───────────────────────────────────────
@@ -45,6 +46,10 @@ export interface ComponenteCandidatoKitVirtual {
   /** `category_id` do ML, idem. `preview-kit-virtual` exige isto do PRINCIPAL (ordem 0) — sem
    *  ele, o produto não pode liderar a composição (ver DialogCriarKitVirtual). */
   categoriaMlId: string | null;
+  /** `listing_type_id` do item no ML — null quando o candidato não casou com item local. */
+  listingTypeId: string | null;
+  /** Dimensões/peso da MESMA linha local que deu o custo — null sem linha local. */
+  medidas: DimensoesFrete | null;
 }
 
 export interface ResultadoBuscarComponentesKitVirtual {
@@ -68,6 +73,10 @@ interface ComponenteWire {
   kit_multiplicador: number | null;
   preco_atual_ml: number | null;
   categoria_ml_id: string | null;
+  listing_type_id: string | null;
+  medidas: {
+    altura_cm: number | null; largura_cm: number | null; comprimento_cm: number | null; peso_gramas: number | null;
+  } | null;
 }
 
 function componenteFromWire(c: ComponenteWire): ComponenteCandidatoKitVirtual {
@@ -87,6 +96,13 @@ function componenteFromWire(c: ComponenteWire): ComponenteCandidatoKitVirtual {
     kitMultiplicador: c.kit_multiplicador,
     precoAtualML: c.preco_atual_ml,
     categoriaMlId: c.categoria_ml_id,
+    listingTypeId: c.listing_type_id ?? null,
+    medidas: c.medidas
+      ? {
+        alturaCm: c.medidas.altura_cm, larguraCm: c.medidas.largura_cm,
+        comprimentoCm: c.medidas.comprimento_cm, pesoGramas: c.medidas.peso_gramas,
+      }
+      : null,
   };
 }
 

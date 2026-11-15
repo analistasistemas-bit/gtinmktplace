@@ -15,12 +15,12 @@ export async function buscarUserProductIdsML(token: string, itemIds: string[]): 
   const out: ItemBridge[] = [];
   for (let i = 0; i < itemIds.length; i += 20) {
     const bloco = itemIds.slice(i, i + 20);
-    const url = `${API}${caminhoMultiget(bloco, 'id,user_product_id,price,category_id')}`;
+    const url = `${API}${caminhoMultiget(bloco, 'id,user_product_id,price,category_id,listing_type_id')}`;
     const arr = comoEnvelopeAntigo(await mlGet(url, token), bloco);
     if (!Array.isArray(arr)) continue;
     for (const entry of arr as {
       code?: number;
-      body?: { id?: string; user_product_id?: string | null; price?: number | null; category_id?: string | null };
+      body?: { id?: string; user_product_id?: string | null; price?: number | null; category_id?: string | null; listing_type_id?: string | null };
     }[]) {
       if (entry?.code !== 200 || !entry.body?.id) continue;
       out.push({
@@ -28,6 +28,7 @@ export async function buscarUserProductIdsML(token: string, itemIds: string[]): 
         userProductId: entry.body.user_product_id ?? null,
         precoAtualML: typeof entry.body.price === 'number' ? entry.body.price : null,
         categoriaMlId: entry.body.category_id ?? null,
+        listingTypeId: entry.body.listing_type_id ?? null,
       });
     }
   }

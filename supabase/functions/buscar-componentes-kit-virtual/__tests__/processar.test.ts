@@ -248,7 +248,7 @@ describe('escolherVariacaoPorCodigo', () => {
 
   it('resolve a variação pelo par (codigo_pai, sku)', () => {
     const m = escolherVariacaoPorCodigo([linha('00220566', 12.5, 'PAI1', '2026-09-01T00:00:00Z')]);
-    expect(m.get(chaveVariacao('PAI1', '00220566'))).toEqual({ custo: 12.5, origem: 'nacional', kitMultiplicador: null });
+    expect(m.get(chaveVariacao('PAI1', '00220566'))).toEqual({ custo: 12.5, origem: 'nacional', kitMultiplicador: null, medidas: { alturaCm: null, larguraCm: null, comprimentoCm: null, pesoGramas: null } });
   });
 
   // O incidente registrado em docs/reference/edge-functions.md: o código `26705421` existe em duas
@@ -304,7 +304,7 @@ describe('escolherVariacaoPorCodigo', () => {
     const m = escolherVariacaoPorCodigo([
       { codigo: 'X', custo: 7.5, atualizado_em: null, familias: [{ codigo_pai: 'PAI1', origem: 'importado', kit_multiplicador: 3 }] },
     ]);
-    expect(m.get(chaveVariacao('PAI1', 'X'))).toEqual({ custo: 7.5, origem: 'importado', kitMultiplicador: 3 });
+    expect(m.get(chaveVariacao('PAI1', 'X'))).toEqual({ custo: 7.5, origem: 'importado', kitMultiplicador: 3, medidas: { alturaCm: null, larguraCm: null, comprimentoCm: null, pesoGramas: null } });
   });
 
   it('linha sem família não entra no mapa (não há como escopar o código)', () => {
@@ -314,5 +314,40 @@ describe('escolherVariacaoPorCodigo', () => {
 
   it('lista vazia → mapa vazio', () => {
     expect(escolherVariacaoPorCodigo([]).size).toBe(0);
+  });
+});
+
+describe('escolherVariacaoPorCodigo — medidas da MESMA linha vencedora', () => {
+  const linha = (
+    codigo_pai: string, atualizado_em: string | null, altura_cm: number | null, peso_gramas: number | null,
+  ) => ({
+    codigo: 'X', custo: 1, atualizado_em, altura_cm, largura_cm: 10, comprimento_cm: 20, peso_gramas,
+    familias: { codigo_pai, origem: 'nacional' as const, kit_multiplicador: null },
+  });
+
+  it('SKU duplicado em duas famílias: cada codigo_pai fica com as medidas da sua família', () => {
+    const m = escolherVariacaoPorCodigo([linha('PAI_A', '2026-01-10T00:00:00Z', 5, 100), linha('PAI_B', '2026-01-10T00:00:00Z', 9, 900)]);
+    expect(m.get(chaveVariacao('PAI_A', 'X'))?.medidas).toEqual({ alturaCm: 5, larguraCm: 10, comprimentoCm: 20, pesoGramas: 100 });
+    expect(m.get(chaveVariacao('PAI_B', 'X'))?.medidas).toEqual({ alturaCm: 9, larguraCm: 10, comprimentoCm: 20, pesoGramas: 900 });
+  });
+
+  it('re-ingest no mesmo codigo_pai: medidas da linha mais recente (a mesma do custo)', () => {
+    const m = escolherVariacaoPorCodigo([linha('PAI1', '2026-01-10T00:00:00Z', 5, 100), linha('PAI1', '2026-08-30T00:00:00Z', 7, 300)]);
+    expect(m.get(chaveVariacao('PAI1', 'X'))?.medidas).toEqual({ alturaCm: 7, larguraCm: 10, comprimentoCm: 20, pesoGramas: 300 });
+  });
+});
+
+describe('enriquecerComponentes — listingTypeId e medidas', () => {
+  it('copia listingTypeId da ponte e medidas do catálogo; sem item local → null', () => {
+    const medidas = { alturaCm: 1, larguraCm: 2, comprimentoCm: 3, pesoGramas: 4 };
+    const r = enriquecerComponentes(
+      [candidato({ userProductId: 'UP-1' }), candidato({ userProductId: 'UP-2' })],
+      [{ itemId: 'MLB1', userProductId: 'UP-1', precoAtualML: 10, categoriaMlId: 'C', listingTypeId: 'gold_special' }],
+      [{ itemId: 'MLB1', codigo: 'A', codigoPai: 'P', custo: 1, origem: 'nacional', kitMultiplicador: null, medidas }],
+    );
+    expect(r[0].listingTypeId).toBe('gold_special');
+    expect(r[0].medidas).toEqual(medidas);
+    expect(r[1].listingTypeId).toBeNull();
+    expect(r[1].medidas).toBeNull();
   });
 });

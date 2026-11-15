@@ -10,7 +10,7 @@ import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import {
-  buscarComponentesKitVirtual, chaveVariacao, escolherVariacaoPorCodigo, parsePaginaML,
+  buscarComponentesKitVirtual, chaveVariacao, escolherVariacaoPorCodigo, medidasDaLinha, parsePaginaML,
   type BuscarComponentesDeps, type CatalogoLocalItem, type ComponenteEnriquecido,
   type LinhaVariacaoPorCodigo,
 } from './processar.ts';
@@ -45,6 +45,11 @@ async function buscarPaginaML(
 
 // ─── Deps reais: catálogo local ────────────────────────────────────────────
 
+type LinhaVariacaoFamilia = {
+  familia_id: string; codigo: string; custo: number | null;
+  altura_cm: number | null; largura_cm: number | null; comprimento_cm: number | null; peso_gramas: number | null;
+};
+
 async function listarItemIdsLocais(admin: SupabaseClient, orgId: string): Promise<string[]> {
   const [{ data: fams }, { data: itens }] = await Promise.all([
     admin.from('familias').select('ml_item_id').eq('org_id', orgId).not('ml_item_id', 'is', null),
@@ -75,14 +80,14 @@ async function buscarCatalogoLocal(admin: SupabaseClient, orgId: string, itemIds
     };
   const familiaIds = (fams ?? []).map((f) => f.id);
   const { data: variacoesFam } = familiaIds.length
-    ? await admin.from('variacoes').select('familia_id, codigo, custo').eq('org_id', orgId).in('familia_id', familiaIds) as {
-      data: { familia_id: string; codigo: string; custo: number | null }[] | null;
+    ? await admin.from('variacoes').select('familia_id, codigo, custo, altura_cm, largura_cm, comprimento_cm, peso_gramas').eq('org_id', orgId).in('familia_id', familiaIds) as {
+      data: (LinhaVariacaoFamilia)[] | null;
     }
     : { data: [] };
-  const variacoesPorFamilia = new Map<string, { codigo: string; custo: number | null }[]>();
+  const variacoesPorFamilia = new Map<string, LinhaVariacaoFamilia[]>();
   for (const v of variacoesFam ?? []) {
     const arr = variacoesPorFamilia.get(v.familia_id) ?? [];
-    arr.push({ codigo: v.codigo, custo: v.custo });
+    arr.push(v);
     variacoesPorFamilia.set(v.familia_id, arr);
   }
   for (const f of fams ?? []) {
@@ -92,6 +97,7 @@ async function buscarCatalogoLocal(admin: SupabaseClient, orgId: string, itemIds
     catalogo.push({
       itemId: f.ml_item_id, codigo: unica?.codigo ?? null, codigoPai: f.codigo_pai,
       custo: unica?.custo ?? null, origem: f.origem, kitMultiplicador: f.kit_multiplicador,
+      medidas: unica ? medidasDaLinha(unica) : null,
     });
   }
 
@@ -116,7 +122,7 @@ async function buscarCatalogoLocal(admin: SupabaseClient, orgId: string, itemIds
   // paginar com `.range()` (mesma exposição da consulta de famílias acima).
   const { data: variacoesItem } = skus.length
     ? await admin.from('variacoes')
-      .select('codigo, custo, atualizado_em, familias!inner(codigo_pai, origem, kit_multiplicador)')
+      .select('codigo, custo, altura_cm, largura_cm, comprimento_cm, peso_gramas, atualizado_em, familias!inner(codigo_pai, origem, kit_multiplicador)')
       .eq('org_id', orgId).in('codigo', skus) as { data: LinhaVariacaoPorCodigo[] | null }
     : { data: [] };
   const variacaoPorChave = escolherVariacaoPorCodigo(variacoesItem ?? []);
@@ -133,6 +139,7 @@ async function buscarCatalogoLocal(admin: SupabaseClient, orgId: string, itemIds
       custo: variacao?.custo ?? null,
       origem: variacao?.origem ?? null,
       kitMultiplicador: variacao?.kitMultiplicador ?? null,
+      medidas: variacao?.medidas ?? null,
     });
   }
 
@@ -158,6 +165,11 @@ function toWire(c: ComponenteEnriquecido) {
     kit_multiplicador: c.kitMultiplicador,
     preco_atual_ml: c.precoAtualML,
     categoria_ml_id: c.categoriaMlId,
+    listing_type_id: c.listingTypeId,
+    medidas: c.medidas && {
+      altura_cm: c.medidas.alturaCm, largura_cm: c.medidas.larguraCm,
+      comprimento_cm: c.medidas.comprimentoCm, peso_gramas: c.medidas.pesoGramas,
+    },
   };
 }
 

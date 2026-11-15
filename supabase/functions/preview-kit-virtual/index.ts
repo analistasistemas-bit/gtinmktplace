@@ -11,6 +11,7 @@ import { buscarListingPrice, comissaoDe } from '../_shared/ml/listing-prices.ts'
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
 import { posProcessarDescricao } from '../_shared/ai/copywriter-prompt.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
+import { gerarTituloKitViaIA } from '../_shared/ai/titulo-kit-virtual.ts';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { montarPreviewKit, type ComponenteEntrada, type PreviewKitDeps, type PreviewKitInput } from './processar.ts';
 
@@ -154,6 +155,9 @@ Deno.serve(async (req) => {
     buscarComissao: (categoriaMlId, precoKitEstimado) => buscarComissaoML(token, categoriaMlId, precoKitEstimado),
     lerAliquotasOrg: () => lerAliquotasOrg(admin, orgId),
     gerarDescricaoKit: (componentesEntrada, tituloKit) => gerarDescricaoKitViaIA(admin, orgId, componentesEntrada, tituloKit),
+    gerarTituloKit: async (componentesEntrada) =>
+      gerarTituloKitViaIA(await resolverModeloTexto(admin, orgId), [...componentesEntrada]
+        .sort((a, b) => a.ordem - b.ordem).map((c) => ({ titulo: c.titulo, quantidade: c.quantidade }))),
   };
 
   try {
@@ -161,6 +165,7 @@ Deno.serve(async (req) => {
     return json({
       ok: true,
       titulo: resultado.titulo,
+      titulo_gerado_por_ia: resultado.tituloGeradoPorIA,
       desconto_pct: resultado.descontoPct,
       descricao: resultado.descricao,
       descricao_gerada_por_ia: resultado.descricaoGeradaPorIA,

@@ -73,7 +73,7 @@ function candidato(over: Partial<ComponenteCandidatoKitVirtual> = {}): Component
     userProductId: 'UP-A', itemId: 'MLB1', title: 'Motosserra Elétrica', type: 'available',
     thumbnailUrl: null, categoryName: 'Ferramentas', estoque: 20,
     reasons: [], codigo: '00000001', codigoPai: '00000001', custo: 40, origem: 'nacional',
-    kitMultiplicador: null, precoAtualML: 100, categoriaMlId: 'MLB1234', ...over,
+    kitMultiplicador: null, precoAtualML: 100, categoriaMlId: 'MLB1234', listingTypeId: null, medidas: null, ...over,
   };
 }
 

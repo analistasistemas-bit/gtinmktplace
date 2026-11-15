@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buscarUserProductIdsML } from '../leitura-ml.ts';
 afterEach(() => vi.unstubAllGlobals());
 const resp = (b: unknown, status = 200) => new Response(typeof b === 'string' ? b : JSON.stringify(b), { status });
-const CAMPOS = '&attributes=status_code,body.id,body.user_product_id,body.price,body.category_id';
+const CAMPOS = '&attributes=status_code,body.id,body.user_product_id,body.price,body.category_id,body.listing_type_id';
 const ids21 = Array.from({ length: 21 }, (_, i) => `MLB${i}`);
 
 /** fetch que responde por bloco (lista de ids da URL) e registra URL + Bearer. */
@@ -14,7 +14,7 @@ function porBloco(responder: (ids: string[], n: number) => Response) {
   }));
   return chamadas;
 }
-const ok = (id: string) => ({ status_code: 200, body: { id, user_product_id: `UP${id}`, price: 10, category_id: 'MLB1' } });
+const ok = (id: string) => ({ status_code: 200, body: { id, user_product_id: `UP${id}`, price: 10, category_id: 'MLB1', listing_type_id: 'gold_special' } });
 
 describe('buscarUserProductIdsML', () => {
   it('blocos de 20 + 1: URL completa do bulk com os ids exatos de cada bloco e Bearer; 404 sem body fora', async () => {
@@ -25,7 +25,7 @@ describe('buscarUserProductIdsML', () => {
       { url: `https://api.mercadolibre.com/items/bulk?ids=MLB20${CAMPOS}`, auth: 'Bearer tok' },
     ]);
     expect(r.map((x) => x.itemId)).toEqual(ids21.filter((i) => i !== 'MLB3'));
-    expect(r[0]).toEqual({ itemId: 'MLB0', userProductId: 'UPMLB0', precoAtualML: 10, categoriaMlId: 'MLB1' });
+    expect(r[0]).toEqual({ itemId: 'MLB0', userProductId: 'UPMLB0', precoAtualML: 10, categoriaMlId: 'MLB1', listingTypeId: 'gold_special' });
   });
   it('bloco do meio com HTTP 500 (mlGet → null) é pulado e os outros seguem', async () => {
     const ids41 = Array.from({ length: 41 }, (_, i) => `MLB${i}`);
@@ -47,8 +47,8 @@ describe('buscarUserProductIdsML', () => {
       { status_code: 200, body: { id: 'MLB4', user_product_id: 'UP4', price: '10', category_id: 'C' } },
     ]));
     expect(await buscarUserProductIdsML('tok', ['MLB1', 'MLB2', 'MLB3', 'MLB4'])).toEqual([
-      { itemId: 'MLB3', userProductId: null, precoAtualML: null, categoriaMlId: null },
-      { itemId: 'MLB4', userProductId: 'UP4', precoAtualML: null, categoriaMlId: 'C' },
+      { itemId: 'MLB3', userProductId: null, precoAtualML: null, categoriaMlId: null, listingTypeId: null },
+      { itemId: 'MLB4', userProductId: 'UP4', precoAtualML: null, categoriaMlId: 'C', listingTypeId: null },
     ]);
   });
   it('lista vazia → nenhuma chamada', async () => {

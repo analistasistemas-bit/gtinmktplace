@@ -174,3 +174,39 @@ describe('montarPreviewKit — descrição por IA só sob pedido (Decisão 4)', 
       .rejects.toThrow(/gerarDescricaoKit/);
   });
 });
+
+describe('montarPreviewKit — título por IA (só com gerar_descricao)', () => {
+  const gerarDescricaoKit = async () => 'desc';
+
+  it('título válido da IA substitui o template', async () => {
+    const gerarTituloKit = vi.fn(async () => 'Kit Produto 0 + Produto 1');
+    const r = await montarPreviewKit(deps({ gerarDescricaoKit, gerarTituloKit }), input({ gerarDescricao: true }));
+    expect(gerarTituloKit).toHaveBeenCalledTimes(1);
+    expect(r.titulo).toBe('Kit Produto 0 + Produto 1');
+    expect(r.tituloGeradoPorIA).toBe(true);
+  });
+
+  it('título inválido da IA (sem "Kit ") cai no template', async () => {
+    const gerarTituloKit = async () => 'Shampoo e Máscara';
+    const r = await montarPreviewKit(deps({ gerarDescricaoKit, gerarTituloKit }), input({ gerarDescricao: true }));
+    expect(r.titulo).toMatch(/^Kit 2 itens:/);
+    expect(r.tituloGeradoPorIA).toBe(false);
+  });
+
+  it('IA devolve null ou lança: fica o template', async () => {
+    const a = await montarPreviewKit(deps({ gerarDescricaoKit, gerarTituloKit: async () => null }), input({ gerarDescricao: true }));
+    const b = await montarPreviewKit(
+      deps({ gerarDescricaoKit, gerarTituloKit: async () => { throw new Error('x'); } }), input({ gerarDescricao: true }),
+    );
+    expect(a.tituloGeradoPorIA).toBe(false);
+    expect(b.titulo).toMatch(/^Kit 2 itens:/);
+    expect(b.tituloGeradoPorIA).toBe(false);
+  });
+
+  it('gerarDescricao=false não chama gerarTituloKit', async () => {
+    const gerarTituloKit = vi.fn(async () => 'Kit X');
+    const r = await montarPreviewKit(deps({ gerarTituloKit }), input({ gerarDescricao: false }));
+    expect(gerarTituloKit).not.toHaveBeenCalled();
+    expect(r.tituloGeradoPorIA).toBe(false);
+  });
+});

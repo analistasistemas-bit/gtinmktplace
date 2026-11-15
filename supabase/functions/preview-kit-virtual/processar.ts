@@ -6,6 +6,7 @@
 import { round2 } from '../_shared/dinheiro.ts';
 import { calcularMargemKit, type ComponenteKit, type ResultadoMargemKit } from '../_shared/kit-virtual/margem.ts';
 import type { Comissao } from '../_shared/preco/sugerir.ts';
+import { LIMITE_TITULO_KIT, tituloKitValido } from '../_shared/ai/titulo-kit-virtual.ts';
 
 export interface ComponenteEntrada {
   ordem: number;
@@ -46,10 +47,13 @@ export interface PreviewKitDeps {
   lerAliquotasOrg: () => Promise<{ nacional: number; importado: number } | null>;
   /** Só chamada quando `gerarDescricao` é true. */
   gerarDescricaoKit?: (componentes: ComponenteEntrada[], tituloKit: string) => Promise<string>;
+  /** Só chamada com `gerarDescricao` true. `null` (erro/timeout) → fica o template. */
+  gerarTituloKit?: (componentes: ComponenteEntrada[]) => Promise<string | null>;
 }
 
 export interface PreviewKitResultado {
   titulo: string;
+  tituloGeradoPorIA: boolean;
   descontoPct: number;
   descricao: string | null;
   descricaoGeradaPorIA: boolean;
@@ -60,17 +64,8 @@ export interface PreviewKitResultado {
   margem: ResultadoMargemKit;
 }
 
-/**
- * Teto do template de título (Decisão 4) = o teto real do ML (`TITULO_MAX = 60`,
- * `_shared/ai/titulo-montar.ts`).
- *
- * Era 40, reservando 1/3 para a expansão que o exemplo da doc oficial sugere (ela troca
- * *"1 Motosserra"* por *"1 Motosserra Elétrica 2200w 16 Pol"*). **Medido no kit real
- * `MLB5194783047` em 2026-09-06: essa expansão não acontece** — o ML devolveu `title` idêntico ao
- * `family_name` enviado, só capitalizado. A folga não protegia de nada e custava caro: o anúncio
- * publicado saiu como *"Kit 2 Itens: 1 Gel De Sobrancelhas - Me"*, cortado no meio de "Melu".
- */
-export const LIMITE_TITULO_KIT = 60;
+// Teto do título (60 = teto real do ML) e a validação do título da IA vivem em _shared/ai/titulo-kit-virtual.ts.
+export { LIMITE_TITULO_KIT };
 
 /**
  * Template determinístico, sem IA (Decisão 4): `Kit N itens: <título A> + <título B>`.
@@ -96,7 +91,8 @@ function paraComponenteKit(c: ComponenteEntrada): ComponenteKit {
 }
 
 export async function montarPreviewKit(deps: PreviewKitDeps, input: PreviewKitInput): Promise<PreviewKitResultado> {
-  const titulo = gerarTituloKit(input.componentes);
+  let titulo = gerarTituloKit(input.componentes);
+  let tituloGeradoPorIA = false;
   const avisoKitVinculado = input.componentes.some((c) => c.kitMultiplicador != null);
   const frete = input.frete ?? 0;
 
@@ -122,11 +118,22 @@ export async function montarPreviewKit(deps: PreviewKitDeps, input: PreviewKitIn
   let descricao: string | null = null;
   if (input.gerarDescricao) {
     if (!deps.gerarDescricaoKit) throw new Error('gerar_descricao=true exige gerarDescricaoKit injetado');
-    descricao = await deps.gerarDescricaoKit(input.componentes, titulo);
+    // Título e descrição em paralelo; a descrição usa o título do template (a IA do título pode
+    // falhar ou ser reprovada, e a descrição não deve esperar por isso).
+    const [tituloIA, desc] = await Promise.all([
+      deps.gerarTituloKit ? deps.gerarTituloKit(input.componentes).catch(() => null) : Promise.resolve(null),
+      deps.gerarDescricaoKit(input.componentes, titulo),
+    ]);
+    descricao = desc;
+    if (tituloIA !== null && tituloKitValido(tituloIA)) {
+      titulo = tituloIA.trim();
+      tituloGeradoPorIA = true;
+    }
   }
 
   return {
     titulo,
+    tituloGeradoPorIA,
     descontoPct: input.descontoPct,
     descricao,
     descricaoGeradaPorIA: input.gerarDescricao,

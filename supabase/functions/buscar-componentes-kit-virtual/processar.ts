@@ -35,6 +35,16 @@ export interface ItemBridge {
   precoAtualML: number | null;
   /** `category_id` do item no ML. null quando o ML não devolveu (preview-kit-virtual exige isso do principal). */
   categoriaMlId: string | null;
+  /** `listing_type_id` do item no ML. null quando o ML não devolveu. */
+  listingTypeId: string | null;
+}
+
+/** Dimensões/peso da linha local de `variacoes` (mesmo formato de `DimensoesFrete` em `src/lib/tarifa.ts`). */
+export interface MedidasFrete {
+  alturaCm: number | null;
+  larguraCm: number | null;
+  comprimentoCm: number | null;
+  pesoGramas: number | null;
 }
 
 export interface CatalogoLocalItem {
@@ -46,6 +56,8 @@ export interface CatalogoLocalItem {
   origem: 'nacional' | 'importado' | null;
   /** ADR-0154 D-9: não-null quando o componente é ele mesmo um kit vinculado (ADR-0151). */
   kitMultiplicador: number | null;
+  /** Da MESMA linha de `variacoes` que deu o custo. null quando não há linha local. */
+  medidas: MedidasFrete | null;
 }
 
 export interface ComponenteEnriquecido extends CandidatoBrutoML {
@@ -59,6 +71,10 @@ export interface ComponenteEnriquecido extends CandidatoBrutoML {
   precoAtualML: number | null;
   /** Idem. `preview-kit-virtual` exige isto do principal; sem ele, o front não pode liderar com este componente. */
   categoriaMlId: string | null;
+  /** `listing_type_id` do item no ML (ponte). null quando não casou com item local. */
+  listingTypeId: string | null;
+  /** Do catálogo local — null quando o candidato não casou com linha local. */
+  medidas: MedidasFrete | null;
 }
 
 export interface BuscarComponentesDeps {
@@ -123,6 +139,10 @@ export interface FamiliaDaVariacao {
 export interface LinhaVariacaoPorCodigo {
   codigo: string;
   custo: number | null;
+  altura_cm?: number | null;
+  largura_cm?: number | null;
+  comprimento_cm?: number | null;
+  peso_gramas?: number | null;
   atualizado_em: string | null;
   familias: FamiliaDaVariacao | FamiliaDaVariacao[] | null;
 }
@@ -132,6 +152,17 @@ export interface VariacaoResolvida {
   custo: number | null;
   origem: 'nacional' | 'importado' | null;
   kitMultiplicador: number | null;
+  medidas: MedidasFrete;
+}
+
+/** Dimensões/peso de uma linha de `variacoes` (coluna ausente/NULL vira null, nunca 0). */
+export function medidasDaLinha(
+  r: Pick<LinhaVariacaoPorCodigo, 'altura_cm' | 'largura_cm' | 'comprimento_cm' | 'peso_gramas'>,
+): MedidasFrete {
+  const n = (v: number | null | undefined) => (typeof v === 'number' ? v : null);
+  return {
+    alturaCm: n(r.altura_cm), larguraCm: n(r.largura_cm), comprimentoCm: n(r.comprimento_cm), pesoGramas: n(r.peso_gramas),
+  };
 }
 
 /** Chave de resolução do item plano UP: o par (produto, SKU), nunca o SKU sozinho. */
@@ -181,6 +212,7 @@ export function escolherVariacaoPorCodigo(
       custo: r.custo,
       origem: fam?.origem ?? null,
       kitMultiplicador: fam?.kit_multiplicador ?? null,
+      medidas: medidasDaLinha(r),
     });
   }
   return resolvida;
@@ -212,6 +244,8 @@ export function enriquecerComponentes(
       kitMultiplicador: local?.kitMultiplicador ?? null,
       precoAtualML: bridge?.precoAtualML ?? null,
       categoriaMlId: bridge?.categoriaMlId ?? null,
+      listingTypeId: bridge?.listingTypeId ?? null,
+      medidas: local?.medidas ?? null,
     };
   });
 }
