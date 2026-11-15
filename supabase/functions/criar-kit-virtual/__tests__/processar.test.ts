@@ -418,7 +418,8 @@ describe('criarKitVirtual', () => {
       urlAssinadaFoto: async (p) => { chamadas.push('assinar'); return `https://signed/${p}`; },
       subirFoto: async () => { chamadas.push('subir'); return 'PIC'; },
       criarKitML: async () => { chamadas.push('ml'); throw new Error('não devia chamar'); },
-    }), inputPadrao({ fotoStoragePath: 'org-1/kit.jpg', fotoMlPictureId: null }));
+    // Input sem foto: o path gravado é o que vale (foto trocada no input substitui o gravado, I2).
+    }), inputPadrao({ fotoStoragePath: null, fotoMlPictureId: null }));
     expect(r).toMatchObject({ ok: false, motivo: 'foto_invalida', kitId: 'kit-pre-0' });
     expect(chamadas).toEqual([]);
     expect(st.kits[0].status).toEqual('erro');
@@ -970,5 +971,43 @@ describe('capaIaGeradaNoBanco (consulta real das duas edges)', () => {
 
   it('erro de leitura lança (falha fechada)', async () => {
     await expect(capaIaGeradaNoBanco(adminLinhas([], { message: 'timeout' }).admin, ORG, CAPA)).rejects.toThrow(/timeout/);
+  });
+});
+
+// I2: retomada com a mesma chave depois de o operador trocar a foto na tela — path e picture id andam juntos.
+describe('criarKitVirtual — retomada com foto trocada (I2)', () => {
+  it('foto nova no input: publica com o picture id NOVO, não o gravado', async () => {
+    const st = novoEstado([{ status: 'erro', foto_storage_path: 'org-1/kit.jpg', foto_ml_picture_id: 'PIC-1' }]);
+    const criarKitML = vi.fn(async () => ({ id: 'MLB999', userProductId: 'MLBU999', permalink: 'https://ml/kit', titulo: 'Kit' }));
+    const r = await criarKitVirtual(deps(st, { criarKitML }),
+      inputPadrao({ fotoStoragePath: 'org-1/kit-nova.jpg', fotoMlPictureId: 'PIC-NOVA' }));
+    expect(r).toMatchObject({ ok: true });
+    expect(criarKitML.mock.calls[0][0].thumbnail.id).toEqual('PIC-NOVA');
+    expect(st.kits[0]).toMatchObject({ foto_storage_path: 'org-1/kit-nova.jpg', foto_ml_picture_id: 'PIC-NOVA' });
+  });
+
+  it('foto nova sem picture id: sobe a foto nova, nunca reaproveita o picture id da antiga', async () => {
+    const st = novoEstado([{ status: 'erro', foto_storage_path: 'org-1/kit.jpg', foto_ml_picture_id: 'PIC-1' }]);
+    const subirFoto = vi.fn(async () => 'PIC-SUBIDA');
+    const criarKitML = vi.fn(async () => ({ id: 'MLB999', userProductId: 'MLBU999', permalink: 'https://ml/kit', titulo: 'Kit' }));
+    await criarKitVirtual(deps(st, { subirFoto, criarKitML }), inputPadrao({ fotoStoragePath: 'org-1/kit-nova.jpg', fotoMlPictureId: null }));
+    expect(subirFoto).toHaveBeenCalledWith('https://signed/org-1/kit-nova.jpg');
+    expect(criarKitML.mock.calls[0][0].thumbnail.id).toEqual('PIC-SUBIDA');
+  });
+
+  it('mesma foto: reaproveita o picture id já propagado (D-5)', async () => {
+    const st = novoEstado([{ status: 'erro', foto_storage_path: 'org-1/kit.jpg', foto_ml_picture_id: 'PIC-1' }]);
+    const criarKitML = vi.fn(async () => ({ id: 'MLB999', userProductId: 'MLBU999', permalink: 'https://ml/kit', titulo: 'Kit' }));
+    await criarKitVirtual(deps(st, { criarKitML }), inputPadrao({ fotoStoragePath: 'org-1/kit.jpg', fotoMlPictureId: null }));
+    expect(criarKitML.mock.calls[0][0].thumbnail.id).toEqual('PIC-1');
+  });
+
+  it('kit já publicado: reenvio com foto nova não muda nada (idempotente)', async () => {
+    const st = novoEstado([{ status: 'publicado', ml_item_id: 'MLB1', foto_storage_path: 'org-1/kit.jpg', foto_ml_picture_id: 'PIC-1' }]);
+    const criarKitML = vi.fn();
+    const r = await criarKitVirtual(deps(st, { criarKitML }), inputPadrao({ fotoStoragePath: 'org-1/kit-nova.jpg', fotoMlPictureId: 'PIC-NOVA' }));
+    expect(r).toMatchObject({ ok: true, jaExistia: true });
+    expect(criarKitML).not.toHaveBeenCalled();
+    expect(st.kits[0]).toMatchObject({ foto_storage_path: 'org-1/kit.jpg', foto_ml_picture_id: 'PIC-1' });
   });
 });

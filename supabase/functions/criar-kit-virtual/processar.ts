@@ -290,15 +290,17 @@ async function reivindicarKit(
 
   // Linha abandonada (`erro` de um CREATE recusado, ou `publicando` com o lease vencido):
   // reaproveitada. Os campos do diálogo são reescritos — este payload é a intenção mais recente
-  // do operador —, mas as colunas de foto só recebem valor quando ainda estão vazias: o
-  // picture_id já propagado no ML (D-5/ADR-0033) é o ativo mais caro da linha e nunca é
-  // sobrescrito por um payload que veio sem ele.
+  // do operador. Foto TROCADA na tela (path do input ≠ gravado, já validado no início): path e
+  // picture_id vêm JUNTOS do input (null = sobe de novo), senão publicaria a foto antiga (I2).
+  // Mesma foto (ou input sem foto): o picture_id já propagado no ML (D-5/ADR-0033) é o ativo
+  // mais caro da linha e nunca é sobrescrito por um payload que veio sem ele.
+  const fotoTrocada = input.fotoStoragePath !== null && input.fotoStoragePath !== kit.foto_storage_path;
   const { data: atualizado, error: erroUpdate } = await admin.from('kits_virtuais').update({
     titulo: input.titulo,
     descricao: input.descricao,
     desconto_pct: desconto,
-    foto_storage_path: kit.foto_storage_path ?? input.fotoStoragePath,
-    foto_ml_picture_id: kit.foto_ml_picture_id ?? input.fotoMlPictureId,
+    foto_storage_path: fotoTrocada ? input.fotoStoragePath : kit.foto_storage_path ?? input.fotoStoragePath,
+    foto_ml_picture_id: fotoTrocada ? input.fotoMlPictureId : kit.foto_ml_picture_id ?? input.fotoMlPictureId,
     listing_type_id: listingTypeId,
     status: 'publicando',
     erro_mensagem: null,
