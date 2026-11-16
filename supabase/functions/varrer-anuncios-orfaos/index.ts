@@ -8,7 +8,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
-import { resolverConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
+import { resolverConexao, resolverConexaoEstrita, type ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { verificarAssinatura, qstashClient } from '../_shared/queue.ts';
 import { enfileirarEmBlocos } from '../_shared/enfileirar-em-blocos.ts';
 import { enviarTelegram } from '../_shared/notificacoes/telegram.ts';
@@ -94,10 +94,13 @@ async function varrer(admin: ReturnType<typeof adminClient>, conexao: ConexaoCan
 
   const conhecidos = await idsConhecidos(admin, orgId);
   const desconhecidos = todos.filter((id) => !conhecidos.has(id));
-  if (desconhecidos.length === 0) return { orfaos: [] as OrfaoBruto[], total_no_ml: todos.length, truncado };
+  if (desconhecidos.length === 0) return { sem_detalhe: 0, orfaos: [] as OrfaoBruto[], total_no_ml: todos.length, truncado };
 
   const detalhes = await detalharItens(fetch, token, desconhecidos);
   return {
+    // `detalharItens` descarta entradas com erro (500/429 dentro do 200 do multiget): o agendado usa
+    // isso para não confirmar "zero divergências" com um item desconhecido sem detalhe.
+    sem_detalhe: desconhecidos.length - detalhes.length,
     orfaos: detalhes.map((i) => ({
       ml_item_id: i.id, titulo: i.titulo, status: i.status,
       permalink: i.permalink, estoque: i.estoque, sku: i.sku,
@@ -136,12 +139,15 @@ async function modoAgendado(admin: ReturnType<typeof adminClient>, body: string)
   }
 
   const orgId = job.orgId;
-  const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
-  // Conexão sumiu entre o fan-out e o job: nada a varrer, e retry não muda isso.
-  if (!conexao?.contaExternaId) return json({ ok: true, sem_conexao: true });
-
   try {
+    // Estrita: erro de leitura lança (→ 500/retry) em vez de virar "sem conexão" silencioso.
+    const conexao = await resolverConexaoEstrita(admin, orgId, 'mercado_livre');
+    // Conexão sumiu entre o fan-out e o job: nada a varrer, e retry não muda isso.
+    if (!conexao?.contaExternaId) return json({ ok: true, sem_conexao: true });
+
     const r = await varrer(admin, conexao, orgId);
+    // ponytail: item persistentemente sem detalhe esgota os 3 retries e fica só no log.
+    if (r.sem_detalhe > 0) throw new Error(`${r.sem_detalhe} anúncio(s) desconhecido(s) sem detalhe no multiget`);
     const { data: org } = await admin.from('organizations').select('nome').eq('id', orgId).maybeSingle();
     const texto = montarAlertaOrfaos((org?.nome as string | undefined) ?? orgId, r);
     if (!texto) return json({ ok: true, divergencias: 0 });
@@ -150,6 +156,8 @@ async function modoAgendado(admin: ReturnType<typeof adminClient>, body: string)
       Deno.env.get('TELEGRAM_LEADS_CHAT_ID') ?? null,
       texto,
     );
+    // ponytail: mensagem > 4096 chars vai em partes; retry após falha parcial repete as já entregues
+    // (aviso duplicado, inofensivo). Controlar progresso só se isso incomodar na prática.
     if (!enviado) return json({ ok: false, error: 'Falha ao enviar o Telegram' }, 500);
     return json({ ok: true, avisado: true });
   } catch (e) {
@@ -179,7 +187,8 @@ Deno.serve(async (req) => {
   if (!conexao?.contaExternaId) return json({ error: 'Organização sem conexão com o Mercado Livre.' }, 400);
 
   try {
-    return json(await varrer(admin, conexao, orgId));
+    const { sem_detalhe: _semDetalhe, ...resposta } = await varrer(admin, conexao, orgId);
+    return json(resposta);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error('varrer-anuncios-orfaos falhou:', msg);
