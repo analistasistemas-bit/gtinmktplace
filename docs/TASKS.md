@@ -6,7 +6,7 @@ Spec `docs/superpowers/specs/2026-11-16-orfaos-diario-design.md`. `varrer-anunci
 (schedule `0 11 * * *`, 1 job por org com conexão ML) e avisa **só o dono do SaaS** no Telegram da Daludi
 (`TELEGRAM_LEADS_CHAT_ID`) quando há anúncio que saiu do app (grupo vermelho; catálogo, externo e "provável
 Remover" não avisam). Sem divergência, silêncio; repete todo dia enquanto existir. `verify_jwt` → false (JWT
-do app validado à mão, padrão do `monitorar-moderados`). 3 testes novos (`alerta.test.ts`).
+do app validado à mão, padrão do `monitorar-moderados`). 3 testes novos (`alerta.test.ts`). **No ar 16/11** (edge v20, schedule `scd_5qDkzzyJFMmwxhAunNEdf4Em8MUx`; 1º disparo: 5 orgs, todos 200).
 
 ## Atacado em Publicados: selo, filtro e "Atacado (N)" (ADR-0196, emenda 2026-11-15) — 2026-11-15
 

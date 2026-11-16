@@ -212,7 +212,7 @@ referência para auditar e recriar. Mantê-la atualizada ao mexer em qualquer cr
 | `resumo-diario` (ADR-0190) | `0 11 * * *` | *(sem body)* | 1 — scheduleId: `scd_5BZmTcwbjRDRUsmaiUL28CDs27dg` |
 | `notificar-carrinho` (ADR-0190) | `*/5 * * * *` | `{"varrer":true}` | 1 — scheduleId: `scd_53L5dtdTKEUJGpP8rwkTGCyzqLc3` |
 | `telegram-bot` (ADR-0190) | `*/5 * * * *` | `{"varrer":true}` | 1 — scheduleId: `scd_51zTvvr5we53EmcYgemFDjUxntpR` |
-| `varrer-anuncios-orfaos` (2026-11-16) | `0 11 * * *` | *(sem body)* | 3 — scheduleId: *(pendente)* |
+| `varrer-anuncios-orfaos` (2026-11-16) | `0 11 * * *` | *(sem body)* | 3 — scheduleId: `scd_5qDkzzyJFMmwxhAunNEdf4Em8MUx` |
 | `reconciliar-estoque` | `30 12 * * *` | `{}` | 3 |
 | `fechar-mes-plataforma` (ADR-0193 D-10/D-11) | `0 9 1 * *` | `{}` | 3 — `scd_6DQnEroeusFMAa8hdA5215nfZgZk` (criado 2026-11-03; dry_run de 2026-10 validado em prod) |
 | `materializar-metricas` | `0 6 * * *` | *(sem body)* | 3 |[^materializar-metricas-sem-schedule]
