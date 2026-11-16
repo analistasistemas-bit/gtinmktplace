@@ -29,7 +29,7 @@ export interface ResultadoVarredura {
   truncado: boolean;
 }
 
-/** Sob demanda: cada execução gasta ~1 chamada ao ML por 100 anúncios. Nunca em intervalo. */
+/** Sob demanda (este botão) e 1×/dia pelo QStash com aviso ao dono: ~1 chamada ao ML por 100 anúncios. */
 export async function varrerAnunciosOrfaos(): Promise<ResultadoVarredura> {
   const { data, error } = await supabase.functions.invoke('varrer-anuncios-orfaos', { body: {} });
   if (error) throw await erroDaEdge(error);

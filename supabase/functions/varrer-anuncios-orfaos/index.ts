@@ -2,12 +2,17 @@
 // não conhece — os "órfãos" (incidente 2026-09-10, adendo do ADR-0088: um anúncio criado pelo app e
 // depois apagado do banco continuou ativo e vendendo, sem nada no sistema sabendo dele).
 //
-// SOMENTE LEITURA: nenhuma escrita no ML e nenhuma no banco. Sob demanda (o operador clica), nunca
-// em cron — cada execução são ~1 chamada por 100 anúncios mais o multiget.
+// SOMENTE LEITURA: nenhuma escrita no ML e nenhuma no banco. Sob demanda (o operador clica) e 1×/dia
+// pelo QStash (aviso ao dono, ver `modoAgendado`) — cada execução são ~1 chamada por 100 anúncios
+// mais o multiget.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
-import { resolverConexao } from '../_shared/canais/conexao.ts';
+import { resolverConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
+import { verificarAssinatura, qstashClient } from '../_shared/queue.ts';
+import { enfileirarEmBlocos } from '../_shared/enfileirar-em-blocos.ts';
+import { enviarTelegram } from '../_shared/notificacoes/telegram.ts';
+import { montarAlertaOrfaos, type OrfaoBruto } from './alerta.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { listarIdsDoSeller, detalharItens, classificar } from '../_shared/ml/varrer-itens.ts';
 import { paginarTudo } from '../_shared/pagina.ts';
@@ -73,51 +78,108 @@ async function idsConhecidos(admin: ReturnType<typeof adminClient>, orgId: strin
   return conhecidos;
 }
 
+/** A varredura em si (mesmo JSON que o app sempre recebeu). Lança em falha do ML/banco. */
+async function varrer(admin: ReturnType<typeof adminClient>, conexao: ConexaoCanal, orgId: string) {
+  const token = await getValidAccessTokenConexao(conexao);
+  const sellerId = conexao.contaExternaId!;
+
+  // Só `active` e `paused`: anúncio encerrado não vende e listá-lo encheria a varredura de
+  // histórico — além de estourar o teto de 1000 do search em conta antiga.
+  const [ativos, pausados] = await Promise.all([
+    listarIdsDoSeller(fetch, token, sellerId, 'active'),
+    listarIdsDoSeller(fetch, token, sellerId, 'paused'),
+  ]);
+  const truncado = ativos.truncado || pausados.truncado;
+  const todos = [...new Set([...ativos.ids, ...pausados.ids])];
+
+  const conhecidos = await idsConhecidos(admin, orgId);
+  const desconhecidos = todos.filter((id) => !conhecidos.has(id));
+  if (desconhecidos.length === 0) return { orfaos: [] as OrfaoBruto[], total_no_ml: todos.length, truncado };
+
+  const detalhes = await detalharItens(fetch, token, desconhecidos);
+  return {
+    orfaos: detalhes.map((i) => ({
+      ml_item_id: i.id, titulo: i.titulo, status: i.status,
+      permalink: i.permalink, estoque: i.estoque, sku: i.sku,
+      classe: classificar(i),
+      // Pausado com código do app é, quase sempre, resultado ESPERADO de "Remover" — que pausa no
+      // ML e zera o vínculo de propósito (remover-publicado). Marcar aqui evita que a tela
+      // apresente como pendência algo que o próprio operador mandou fazer.
+      provavel_remocao_pelo_app: i.status === 'paused' && classificar(i) === 'perdido_do_app',
+    })),
+    total_no_ml: todos.length,
+    truncado,
+  };
+}
+
+/**
+ * Modo QStash (schedule diário `0 11 * * *`, 08:00 BRT). Corpo vazio → 1 job `{ orgId }` por org com
+ * conexão ML (fan-out por org, ADR-0173). `{ orgId }` → varre e avisa SÓ o dono do SaaS no Telegram
+ * (bot da Daludi) quando há anúncio que saiu do app. Sem divergência, silêncio. Avisa todo dia
+ * enquanto a divergência existir (decisão do Diego, 2026-11-16 — sem tabela de "já avisados").
+ */
+async function modoAgendado(admin: ReturnType<typeof adminClient>, body: string): Promise<Response> {
+  let job: { orgId?: string };
+  try { job = body.trim() ? JSON.parse(body) : {}; } catch { return json({ error: 'Bad JSON' }, 400); }
+
+  if (!job.orgId) {
+    const conexoes = await paginarTudo<{ org_id: string }>((de, ate) =>
+      admin.from('marketplace_connections').select('org_id').eq('canal', 'mercado_livre')
+        .not('conta_externa_id', 'is', null).order('org_id').range(de, ate));
+    const orgs = [...new Set(conexoes.map((c) => c.org_id))];
+    const dia = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+    const url = `${Deno.env.get('SUPABASE_URL')}/functions/v1/varrer-anuncios-orfaos`;
+    await enfileirarEmBlocos(orgs, (orgId) => ({
+      url, body: { orgId }, retries: 3, deduplicationId: `orfaos-diario-${orgId}-${dia}`,
+    }), (msgs) => qstashClient().batchJSON(msgs));
+    return json({ ok: true, publicados: orgs.length });
+  }
+
+  const orgId = job.orgId;
+  const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
+  // Conexão sumiu entre o fan-out e o job: nada a varrer, e retry não muda isso.
+  if (!conexao?.contaExternaId) return json({ ok: true, sem_conexao: true });
+
+  try {
+    const r = await varrer(admin, conexao, orgId);
+    const { data: org } = await admin.from('organizations').select('nome').eq('id', orgId).maybeSingle();
+    const texto = montarAlertaOrfaos((org?.nome as string | undefined) ?? orgId, r);
+    if (!texto) return json({ ok: true, divergencias: 0 });
+    const enviado = await enviarTelegram(
+      Deno.env.get('TELEGRAM_BOT_TOKEN') ?? null,
+      Deno.env.get('TELEGRAM_LEADS_CHAT_ID') ?? null,
+      texto,
+    );
+    if (!enviado) return json({ ok: false, error: 'Falha ao enviar o Telegram' }, 500);
+    return json({ ok: true, avisado: true });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(JSON.stringify({ fn: 'varrer-anuncios-orfaos', modo: 'agendado', orgId, erro: msg }));
+    return json({ ok: false, error: msg }, 500);
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
+
+  const admin = adminClient();
+  // verify_jwt=false (como monitorar-moderados): QStash assina; o app manda JWT, validado à mão.
+  if (req.headers.get('upstash-signature')) {
+    const body = await req.text();
+    if (!(await verificarAssinatura(req, body))) return new Response('Invalid signature', { status: 401, headers: corsHeaders });
+    return modoAgendado(admin, body);
+  }
 
   let orgId: string;
   try { ({ orgId } = await requireUserOrg(req)); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
-  const admin = adminClient();
   const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
   if (!conexao?.contaExternaId) return json({ error: 'Organização sem conexão com o Mercado Livre.' }, 400);
 
   try {
-    const token = await getValidAccessTokenConexao(conexao);
-    const sellerId = conexao.contaExternaId;
-
-    // Só `active` e `paused`: anúncio encerrado não vende e listá-lo encheria a varredura de
-    // histórico — além de estourar o teto de 1000 do search em conta antiga.
-    const [ativos, pausados] = await Promise.all([
-      listarIdsDoSeller(fetch, token, sellerId, 'active'),
-      listarIdsDoSeller(fetch, token, sellerId, 'paused'),
-    ]);
-    const truncado = ativos.truncado || pausados.truncado;
-    const todos = [...new Set([...ativos.ids, ...pausados.ids])];
-
-    const conhecidos = await idsConhecidos(admin, orgId);
-    const desconhecidos = todos.filter((id) => !conhecidos.has(id));
-    if (desconhecidos.length === 0) {
-      return json({ orfaos: [], total_no_ml: todos.length, truncado });
-    }
-
-    const detalhes = await detalharItens(fetch, token, desconhecidos);
-    return json({
-      orfaos: detalhes.map((i) => ({
-        ml_item_id: i.id, titulo: i.titulo, status: i.status,
-        permalink: i.permalink, estoque: i.estoque, sku: i.sku,
-        classe: classificar(i),
-        // Pausado com código do app é, quase sempre, resultado ESPERADO de "Remover" — que pausa no
-        // ML e zera o vínculo de propósito (remover-publicado). Marcar aqui evita que a tela
-        // apresente como pendência algo que o próprio operador mandou fazer.
-        provavel_remocao_pelo_app: i.status === 'paused' && classificar(i) === 'perdido_do_app',
-      })),
-      total_no_ml: todos.length,
-      truncado,
-    });
+    return json(await varrer(admin, conexao, orgId));
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error('varrer-anuncios-orfaos falhou:', msg);

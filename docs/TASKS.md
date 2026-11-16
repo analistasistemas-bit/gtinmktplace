@@ -1,5 +1,13 @@
 # PubliAI — Tasks
 
+## Conferência diária de anúncios órfãos com aviso ao dono — 2026-11-16
+
+Spec `docs/superpowers/specs/2026-11-16-orfaos-diario-design.md`. `varrer-anuncios-orfaos` ganha o modo QStash
+(schedule `0 11 * * *`, 1 job por org com conexão ML) e avisa **só o dono do SaaS** no Telegram da Daludi
+(`TELEGRAM_LEADS_CHAT_ID`) quando há anúncio que saiu do app (grupo vermelho; catálogo, externo e "provável
+Remover" não avisam). Sem divergência, silêncio; repete todo dia enquanto existir. `verify_jwt` → false (JWT
+do app validado à mão, padrão do `monitorar-moderados`). 3 testes novos (`alerta.test.ts`).
+
 ## Atacado em Publicados: selo, filtro e "Atacado (N)" (ADR-0196, emenda 2026-11-15) — 2026-11-15
 
 Só front; sem migration nem edge (reusa o preview/confirmação do reajuste de `operacoes-massa`). Consultor/revisor: Codex (3 rodadas, APROVAR).

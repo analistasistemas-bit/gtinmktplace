@@ -60,7 +60,7 @@
 | inventario | **true** | HTTP (frontend; leituras membro, `salvar`/`confirmar` **admin**) | sim (`salvar` por versão; `confirmar` por movimento com ref do inventário) |
 | criar-kit-vinculado | **true** | HTTP (frontend, **admin**) | sim (idempotência por `chave_cadastro`, 1 por kit) |
 | fotos-base-kit | **true** | HTTP (frontend, **admin**) | sim (só leitura) |
-| varrer-anuncios-orfaos | **true** | HTTP (frontend, **admin**) | sim (só leitura: ML + banco, nada escrito) |
+| varrer-anuncios-orfaos | false | HTTP (frontend, **admin**, JWT manual) ou QStash (schedule diário → 1 job `{orgId}` por org; aviso Telegram só ao dono) | sim (só leitura: ML + banco, nada escrito) |
 | **Preço por Variação (ADR-0161)** ||||
 | migrar-preco-por-variacao | **true** | HTTP (frontend) | sim (dispara migração UPtin no ML) |
 | acompanhar-migracao-pxv | false | QStash worker | sim (polling e finalização de migração) |
@@ -212,6 +212,7 @@ referência para auditar e recriar. Mantê-la atualizada ao mexer em qualquer cr
 | `resumo-diario` (ADR-0190) | `0 11 * * *` | *(sem body)* | 1 — scheduleId: `scd_5BZmTcwbjRDRUsmaiUL28CDs27dg` |
 | `notificar-carrinho` (ADR-0190) | `*/5 * * * *` | `{"varrer":true}` | 1 — scheduleId: `scd_53L5dtdTKEUJGpP8rwkTGCyzqLc3` |
 | `telegram-bot` (ADR-0190) | `*/5 * * * *` | `{"varrer":true}` | 1 — scheduleId: `scd_51zTvvr5we53EmcYgemFDjUxntpR` |
+| `varrer-anuncios-orfaos` (2026-11-16) | `0 11 * * *` | *(sem body)* | 3 — scheduleId: *(pendente)* |
 | `reconciliar-estoque` | `30 12 * * *` | `{}` | 3 |
 | `fechar-mes-plataforma` (ADR-0193 D-10/D-11) | `0 9 1 * *` | `{}` | 3 — `scd_6DQnEroeusFMAa8hdA5215nfZgZk` (criado 2026-11-03; dry_run de 2026-10 validado em prod) |
 | `materializar-metricas` | `0 6 * * *` | *(sem body)* | 3 |[^materializar-metricas-sem-schedule]
@@ -2497,12 +2498,19 @@ pendência seria cobrar do operador algo que ele mesmo mandou fazer.
 > delas ressuscita o falso positivo.
 
 - **Só leitura**: nenhuma escrita no ML nem no banco. Encerrar um órfão é decisão do operador.
-- **Sob demanda** (botão na tela Publicados), nunca em cron: ~1 chamada por 100 anúncios, mais o
+- **Sob demanda** (botão na tela Publicados) e 1×/dia (ver abaixo): ~1 chamada por 100 anúncios, mais o
   multiget dos desconhecidos.
 - **Fail-closed**: erro em qualquer uma das 7 consultas de ids derruba a chamada. Responder com uma
   fonte a menos transformaria anúncios legítimos em falsos órfãos.
 - **Truncado**: acima de 1000 anúncios o `offset` do `items/search` para de andar (a saída seria
   `search_type=scan`); a resposta marca `truncado` e a tela avisa que a varredura foi parcial.
+
+**Execução diária (2026-11-16).** Além do botão, roda 1×/dia pelo QStash (`0 11 * * *`, sem body → 1 job
+`{orgId}` por org com conexão ML, `deduplicationId` por org+dia). O job varre e, se houver
+`perdido_do_app` que não seja "provável Remover", manda **uma** mensagem ao dono do SaaS (bot
+`TELEGRAM_BOT_TOKEN` + `TELEGRAM_LEADS_CHAT_ID`) — nunca às orgs. Sem divergência, nada é enviado; a
+mesma divergência é avisada todo dia até ser resolvida (sem tabela de "já avisados"). Falha de varredura
+ou do Telegram → 500 (retry do QStash). Texto em `varrer-anuncios-orfaos/alerta.ts`.
 
 ## Histórico — `reconciliar-faturamento` sem schedule QStash desde a criação (corrigida)
 
