@@ -50,6 +50,8 @@ export interface LinhaSku {
   imagemPath: string | null;
   codigoPai: string | null;
   nomeFamilia: string | null;
+  /** Tamanho/numeração da variação (catálogo); null sem catálogo ou sem eixo de tamanho. */
+  tamanho?: string | null;
   fornecedor: string | null;
   origem: 'nacional' | 'importado' | null;
   ehKit: boolean;
@@ -156,6 +158,7 @@ export function agregarPorSku(
       imagemPath: g.imagem,
       codigoPai: cat?.codigoPai ?? null,
       nomeFamilia: cat?.nomeFamilia ?? null,
+      tamanho: cat?.tamanho ?? null,
       fornecedor: cat?.fornecedor ?? null,
       origem: cat?.origem ?? null,
       ehKit: cat?.ehKit ?? false,

@@ -122,6 +122,17 @@ describe('agregarPorSku', () => {
     const [l] = agregarPorSku(agruparPorPedido([venda()]), SET, cat, new Set());
     expect([l.titulo, l.nomeFamilia, l.fornecedor, l.estoque, l.origem]).toEqual(['Fita azul', 'Fitas', 'F', 7, 'nacional']);
   });
+
+  it('leva o tamanho do catálogo para a linha (mesma cor em dois tamanhos)', () => {
+    const base = { codigoPai: '000', nomeFamilia: 'Conjunto', nome: 'Est Caranguejo', cor: 'Est Caranguejo',
+      estoque: 1, fornecedor: null, origem: null, ehKit: false, primeiraVenda: null, ultimaVenda: null,
+      kitMultiplicador: null, kitBaseCodigo: null, estoqueKit: null };
+    const cat = new Map([['001', { ...base, codigo: '001', tamanho: '2' }]]);
+    const [l] = agregarPorSku(agruparPorPedido([venda()]), SET, cat, new Set());
+    expect(l.tamanho).toBe('2');
+    const [semCat] = agregarPorSku(agruparPorPedido([venda()]), SET, new Map(), new Set());
+    expect(semCat.tamanho).toBeNull();
+  });
 });
 
 const DIA = 86_400_000;

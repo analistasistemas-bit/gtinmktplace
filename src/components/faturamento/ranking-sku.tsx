@@ -153,6 +153,7 @@ function Nome({ l, recuo = false, selos }: { l: LinhaSku; recuo?: boolean; selos
           )}
         <div className="text-xs text-muted-foreground tabular-nums">
           {l.codigo === SEM_CODIGO ? 'sem código' : l.codigo}
+          {l.tamanho && <> · <span data-testid="sku-tamanho">Tam. {l.tamanho}</span></>}
           {l.m.fonteCusto === 'estimado' && <> · <span title="Sem custo congelado na venda: usa o custo atual do cadastro">custo estimado</span></>}
         </div>
         {selos && <div className="mt-1">{selos}</div>}
