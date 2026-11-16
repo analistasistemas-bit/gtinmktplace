@@ -28,7 +28,7 @@ describe('linkPaginaUP', () => {
 // só o item de familias.ml_item_id (um SKU zerado, pausado pelo ML), com o anúncio vendendo.
 describe('agregarStatusUP', () => {
   const st = (status: 'ativo' | 'pausado' | 'encerrado', estoque: number | null) =>
-    ({ status, estoque, motivo: null, preco: 41.9 });
+    ({ status, estoque, motivo: null, preco: 41.9, precoOriginal: null as number | null });
 
   it('qualquer filho ativo → ativo; estoque é a soma dos filhos', () => {
     const r = agregarStatusUP(st('pausado', 0), [st('pausado', 0), st('ativo', 2), st('ativo', 1)]);
@@ -64,7 +64,24 @@ describe('agregarStatusUP', () => {
     const promo = { ...st('ativo', 1), preco: 66.4, precoOriginal: 69.9 };
     const r = agregarStatusUP(st('ativo', 1), [st('ativo', 1), promo, st('ativo', 1)]);
     expect(r?.variacoesEmPromocao).toEqual({ em: 1, total: 3, semEstoque: 0 });
-    expect(r?.preco).toBe(41.9);
+    expect(r?.preco).toBe(66.4);
+    expect(r?.precoOriginal).toBe(69.9);
+  });
+
+  // Zaven 16/11: short linho com 17 de 32 na Black Friday a R$ 41,45 — "Preço atual" mostrava R$ 71,90
+  // do principal (Amarelo P, zerado, fora da campanha). Vale o menor preço promocional entre os filhos.
+  it('principal fora da promoção → preço atual é o menor preço promocional dos filhos', () => {
+    const fora = { ...st('pausado', 0), preco: 71.9 };
+    const r = agregarStatusUP(fora, [fora, { ...st('ativo', 1), preco: 45, precoOriginal: 71.9 },
+      { ...st('ativo', 1), preco: 41.45, precoOriginal: 71.9 }]);
+    expect(r?.preco).toBe(41.45);
+    expect(r?.precoOriginal).toBe(71.9);
+  });
+
+  it('principal em promoção → mantém o preço dele', () => {
+    const p = { ...st('ativo', 1), preco: 50, precoOriginal: 60 };
+    const r = agregarStatusUP(p, [p, { ...st('ativo', 1), preco: 40, precoOriginal: 60 }]);
+    expect(r?.preco).toBe(50);
   });
 
   // Zaven 03/11: jaqueta com 14 de 18 na 11.11 — os 4 de fora pausados por falta de estoque (o ML não

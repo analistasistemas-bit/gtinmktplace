@@ -508,7 +508,8 @@ describe('Publicados', () => {
     });
 
     // Avil 02/11 (Tecido Ponge): só um irmão na campanha, principal fora → antes não mostrava nada.
-    it('UP: irmão em promoção com o principal fora → selo com a fração, sem preço riscado', () => {
+    // Zaven 16/11: com o principal fora, "Preço atual" mostra o menor preço promocional dos irmãos (com o "de" riscado).
+    it('UP: irmão em promoção com o principal fora → selo com a fração e preço promocional do irmão', () => {
       usePublicadosMock.mockReturnValue({
         data: [itemBase({ mlItemIdsUP: ['MLB1', 'MLB2'] })], isLoading: false, error: null, refetch: vi.fn(),
       });
@@ -522,7 +523,8 @@ describe('Publicados', () => {
       });
       renderTela();
       expect(screen.getByText('Em promoção · 1 de 2 variações')).toBeInTheDocument();
-      expect(document.querySelector('.line-through')).toBeNull();
+      expect(document.querySelector('.line-through')?.textContent).toMatch(/69,90/);
+      expect(screen.getByText(/66,40/)).toBeInTheDocument();
     });
 
     it('primeira carga do status: logo pulsando no lugar da tabela', async () => {

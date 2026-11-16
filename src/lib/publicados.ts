@@ -119,11 +119,16 @@ export interface PublicadoItem {
  * SKU está ativo (o anúncio vende); estoque é a soma. Demais campos (preço, motivo) seguem do item
  * principal — o preço já é rotulado "(1ª cor)" na tela.
  */
-export function agregarStatusUP<S extends { status: StatusPublicado; estoque: number | null; precoOriginal?: number | null }>(
+export function agregarStatusUP<S extends { status: StatusPublicado; estoque: number | null; preco?: number | null; precoOriginal?: number | null }>(
   principal: S | undefined, filhos: S[],
 ): (S & { variacoesEmPromocao?: { em: number; total: number; semEstoque: number } }) | undefined {
   if (filhos.length === 0) return principal;
-  const base = principal ?? filhos[0];
+  // Principal fora da promoção (ex.: zerado) e irmãos dentro: preço/"de" vêm do menor preço promocional
+  // — senão a linha mostra o preço cheio com o selo "Em promoção" (Zaven 16/11, Black Friday).
+  const promoMenor = filhos.filter((f) => f.precoOriginal != null && f.preco != null)
+    .sort((a, b) => (a.preco as number) - (b.preco as number))[0];
+  const p0 = principal ?? filhos[0];
+  const base = p0.precoOriginal == null && promoMenor ? { ...p0, preco: promoMenor.preco, precoOriginal: promoMenor.precoOriginal } : p0;
   const conhecidos = filhos.filter((f) => f.estoque != null);
   // Promoção é por SKU no ML: o principal pode estar fora e um irmão dentro (Avil 02/11, Ponge).
   const em = filhos.filter((f) => f.precoOriginal != null).length;
