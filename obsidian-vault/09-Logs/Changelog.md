@@ -11,6 +11,10 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-11-16
 
+- **Publicados: ações secundárias no menu "⋯"** (`main` `46b8941e`). A coluna Ações fica com ML, Galeria e
+  Pausar/Reativar; Criar kit, Migrar, Tentar catálogo, Corrigir e republicar e Remover vão para "Mais ações". O selo
+  de promoção longo quebra linha. Os ícones não passam mais da borda a partir de 1440 px. Só front.
+
 - **Vendas SKU mostra o tamanho** (`main` `0ce213f6`). Cada SKU traz `código · Tam. X` e, com uma roupa filtrada, a faixa
   "Unidades por tamanho (todas as cores)" responde qual tamanho mais saiu. Só front. Ver ADR-0172.
 

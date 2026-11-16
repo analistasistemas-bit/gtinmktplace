@@ -1,5 +1,13 @@
 # PubliAI — Tasks
 
+## Publicados: ações secundárias no menu "⋯" — 2026-11-16
+
+Só front (`src/pages/Publicados.tsx`); sem migration nem edge. Pedido do Diego: os ícones da coluna Ações passavam da borda da tela.
+
+- [x] Visíveis na linha: ML, Galeria, Pausar/Reativar e "⋯ Mais ações". No menu: Criar kit, Criar kit com variação / Gerenciar kit, Migrar, Tentar catálogo de novo, Corrigir e republicar e Remover (vermelho, separado). Item desabilitado mostra o motivo em texto.
+- [x] Selo "Em promoção · X de Y variações · N sem estoque" quebra linha em vez de alargar a coluna Preço atual. Banner de catálogo aponta para o "menu ⋯ da linha".
+- [x] Testes ajustados (`Publicados.test.tsx`, `publicados-espera.test.tsx`); preflight verde. Medido no app (vite preview, conta VALIDATION): a tabela cabe a 1440 e 1536 px; a 1280 px rola 63 px dentro da própria caixa. No ar 16/11 (main `46b8941e`).
+
 ## Vendas SKU: tamanho no ranking e unidades por tamanho (ADR-0172) — 2026-11-16
 
 Só front; sem migration nem edge (o `tamanho` já vinha de `vendas_sku_catalogo`). Pedido da Zaven: "qual tamanho mais saiu desta roupa".
