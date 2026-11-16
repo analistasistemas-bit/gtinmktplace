@@ -1,5 +1,13 @@
 # PubliAI — Tasks
 
+## Vendas SKU: tamanho no ranking e unidades por tamanho (ADR-0172) — 2026-11-16
+
+Só front; sem migration nem edge (o `tamanho` já vinha de `vendas_sku_catalogo`). Pedido da Zaven: "qual tamanho mais saiu desta roupa".
+
+- [x] Fatia 1: `LinhaSku.tamanho` (do catálogo) e linha de baixo do SKU como `código · Tam. X` — duas variações da mesma estampa deixam de ser indistinguíveis.
+- [x] Fatia 2: com filtro ativo (família ou busca) e 2+ tamanhos, faixa "Unidades por tamanho (todas as cores)" acima do ranking (`unidadesPorTamanho`, maior primeiro). Sem filtro fica oculta (misturaria grades).
+- [x] Testes: `tests/lib/vendas-sku.test.ts` e `aba-vendas-sku.test.tsx`. No ar 16/11 (main `0ce213f6`); conferido pelo Diego no Safari após "Atualizar" do PWA.
+
 ## Conferência diária de anúncios órfãos com aviso ao dono — 2026-11-16
 
 Spec `docs/superpowers/specs/2026-11-16-orfaos-diario-design.md`. `varrer-anuncios-orfaos` ganha o modo QStash

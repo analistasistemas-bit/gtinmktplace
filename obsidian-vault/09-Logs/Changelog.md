@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-11-15
+atualizado: 2026-11-16
 ---
 
 # Changelog
@@ -8,6 +8,11 @@ atualizado: 2026-11-15
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-11-16
+
+- **Vendas SKU mostra o tamanho** (`main` `0ce213f6`). Cada SKU traz `código · Tam. X` e, com uma roupa filtrada, a faixa
+  "Unidades por tamanho (todas as cores)" responde qual tamanho mais saiu. Só front. Ver ADR-0172.
 
 ## 2026-11-15
 
