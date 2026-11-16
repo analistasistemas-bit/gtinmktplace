@@ -486,7 +486,11 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
               {top.map((p, i) => (
                 <li key={p.mlItemId} className="flex items-center gap-3">
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-xs font-semibold text-primary">{i + 1}</span>
-                  <span className="min-w-0 flex-1 truncate text-sm" title={formatarNomeProduto(p.titulo)}>{formatarNomeProduto(p.titulo)}</span>
+                  {p.permalink ? (
+                    <a href={p.permalink} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate text-sm hover:text-primary hover:underline" title={`${formatarNomeProduto(p.titulo)} — abrir no Mercado Livre`}>{formatarNomeProduto(p.titulo)}</a>
+                  ) : (
+                    <span className="min-w-0 flex-1 truncate text-sm" title={formatarNomeProduto(p.titulo)}>{formatarNomeProduto(p.titulo)}</span>
+                  )}
                   <span className="shrink-0 text-xs text-muted-foreground">{fmtInt(p.unidades)} un</span>
                   <span className="shrink-0 text-sm font-medium tabular-nums">{fmtBRL(p.valor)}</span>
                 </li>

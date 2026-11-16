@@ -51,7 +51,7 @@ function fixtureArgs({
     },
     serie: [{ chave: '2026-07-20', rotulo: '20/07', bruto: 0, liquido: 0, pedidos: 0 }],
     top: Array.from({ length: topCount }, (_, i) => ({
-      mlItemId: `MLB${i + 1}`, titulo: `Produto ${i + 1}`, unidades: i + 1, valor: (i + 1) * 10,
+      mlItemId: `MLB${i + 1}`, titulo: `Produto ${i + 1}`, unidades: i + 1, valor: (i + 1) * 10, permalink: null,
     })),
     geografia: {
       porUf: Array.from({ length: ufCount }, (_, i) => ({

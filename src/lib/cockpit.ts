@@ -14,6 +14,8 @@ export interface ProdutoTop {
   titulo: string;
   unidades: number;
   valor: number;
+  /** Mesmo atalho "ML" da tela Publicados (página /up/ em família UP). */
+  permalink: string | null;
 }
 
 /** Top 5 por valor vendido no período, com a mesma conta e o mesmo título do menu Publicados: uma
@@ -32,6 +34,7 @@ export function topProdutos(
     titulo: p.titulo,
     unidades: p.unidadesVendidas ?? 0,
     valor: round2(p.valorVendido ?? 0),
+    permalink: p.mlPermalink ?? null,
   }));
 }
 

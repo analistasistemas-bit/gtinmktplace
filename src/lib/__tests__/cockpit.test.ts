@@ -19,10 +19,10 @@ describe('topProdutos', () => {
 
   it('usa o título de Publicados e soma todos os MLBs da família (uma cor por MLB)', () => {
     const top = topProdutos(
-      [pub({ familiaId: 'fita', mlItemId: 'AMARELO', titulo: 'Fita Natalina Luxo', mlItemIdsUP: ['AMARELO', 'VERMELHO'] })],
+      [pub({ familiaId: 'fita', mlItemId: 'AMARELO', titulo: 'Fita Natalina Luxo', mlItemIdsUP: ['AMARELO', 'VERMELHO'], mlPermalink: 'https://www.mercadolivre.com.br/up/MLBU1' })],
       { AMARELO: { unidades: 1, valor: 30 }, VERMELHO: { unidades: 4, valor: 120.5 } },
     );
-    expect(top).toEqual([{ mlItemId: 'AMARELO', titulo: 'Fita Natalina Luxo', unidades: 5, valor: 150.5 }]);
+    expect(top).toEqual([{ mlItemId: 'AMARELO', titulo: 'Fita Natalina Luxo', unidades: 5, valor: 150.5, permalink: 'https://www.mercadolivre.com.br/up/MLBU1' }]);
   });
 
   it('ordena por valor desc, limita a 5 e ignora anúncio sem venda', () => {
