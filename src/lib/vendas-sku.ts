@@ -396,6 +396,18 @@ export function gerarInsights(p: {
   return out.slice(0, MAX_INSIGHTS);
 }
 
+/** Unidades por tamanho somando todas as cores (responde "qual tamanho mais saiu"). Sem tamanho/sem venda fica fora. */
+export function unidadesPorTamanho(linhas: Pick<LinhaSku, 'tamanho' | 'acc'>[]): { porTamanho: { tamanho: string; unidades: number }[]; total: number } {
+  const m = new Map<string, number>();
+  for (const l of linhas) {
+    if (!l.tamanho || l.acc.unidades <= 0) continue;
+    m.set(l.tamanho, (m.get(l.tamanho) ?? 0) + l.acc.unidades);
+  }
+  const porTamanho = [...m].map(([tamanho, unidades]) => ({ tamanho, unidades }))
+    .sort((a, b) => b.unidades - a.unidades || a.tamanho.localeCompare(b.tamanho, 'pt-BR', { numeric: true }));
+  return { porTamanho, total: porTamanho.reduce((t, x) => t + x.unidades, 0) };
+}
+
 export interface LinhaFamilia { codigoPai: string; nomeFamilia: string | null; acc: AcumuladorSku; m: MetricasSku; filhos: LinhaSku[] }
 
 export function agruparPorFamilia(linhas: LinhaSku[]): LinhaFamilia[] {

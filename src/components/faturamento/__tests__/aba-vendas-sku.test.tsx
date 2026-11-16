@@ -46,6 +46,21 @@ describe('AbaVendasSku', () => {
     expect(screen.getByRole('link', { name: 'Família P · Preto', hidden: true })).toHaveAttribute('href', '/faturamento/sku/A?periodo=mes_atual');
   });
 
+  it('com filtro ativo mostra unidades por tamanho somando as cores, e o tamanho na linha do SKU', () => {
+    const [a, c, b] = dados.linhas;
+    a.tamanho = '2'; c.tamanho = '6'; b.tamanho = '2';
+    try {
+      renderAba();
+      expect(screen.queryByTestId('por-tamanho')).toBeNull(); // sem filtro: mistura produtos, fica oculto
+      expect(screen.getAllByTestId('sku-tamanho').map((e) => e.textContent)).toContain('Tam. 2');
+      fireEvent.change(screen.getByLabelText('Buscar SKU'), { target: { value: 'Família P' } });
+      const itens = screen.getAllByRole('listitem').filter((e) => e.closest('[data-testid="por-tamanho"]'));
+      expect(itens.map((e) => e.textContent)).toEqual(['Tam. 2 · 4 un. (67%)', 'Tam. 6 · 2 un. (33%)']);
+    } finally {
+      a.tamanho = undefined; c.tamanho = undefined; b.tamanho = undefined;
+    }
+  });
+
   it('abre no mês atual', () => {
     renderAba();
     expect(periodos[0]).toEqual({ tipo: 'mes_atual' });

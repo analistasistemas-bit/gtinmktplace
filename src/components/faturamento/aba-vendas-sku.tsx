@@ -16,7 +16,7 @@ import { MES_ATUAL, comPeriodo, periodoDaQuery, rotuloAnterior, type Periodo } f
 import { formatarNomeProduto, normalizarParaBusca } from '@/lib/texto';
 import { useVendasSku } from '@/hooks/useVendasSku';
 import { LinkDossie, RankingSku, type ChaveOrdem } from '@/components/faturamento/ranking-sku';
-import { SEM_CODIGO, agruparPorFamilia, curvaAbc, deltaPp, deltaValor, type Delta, type LinhaSku } from '@/lib/vendas-sku';
+import { SEM_CODIGO, agruparPorFamilia, unidadesPorTamanho, curvaAbc, deltaPp, deltaValor, type Delta, type LinhaSku } from '@/lib/vendas-sku';
 
 // Idioma do app para "sem valor" (o mesmo de fmtMarkup e da aba Vendas).
 const NADA = '—';
@@ -107,6 +107,7 @@ export function AbaVendasSku() {
     familias ? familias.map((f) => ({ ...f.filhos[0], codigo: f.codigoPai, acc: f.acc, m: f.m })) : filtradas, baseAbc,
   ), [familias, filtradas, baseAbc]);
 
+  const tamanhos = useMemo(() => unidadesPorTamanho(filtradas), [filtradas]);
   const filtrosAtivos = !!busca || !!familia || !!fornecedor || !!origem || soSemCusto;
   const limparFiltros = () => { setBusca(''); setFamilia(''); setFornecedor(''); setOrigem(''); setSoSemCusto(false); };
 
@@ -317,6 +318,18 @@ export function AbaVendasSku() {
           {filtrosAtivos && ` de ${fmtInt(dados.linhas.length)}`}
         </span>
       </div>
+
+      {filtrosAtivos && tamanhos.porTamanho.length >= 2 && (
+        <div className="flex flex-wrap items-center gap-1.5 text-xs" role="list" aria-label="Unidades por tamanho" data-testid="por-tamanho">
+          <span className="text-muted-foreground">Unidades por tamanho (todas as cores):</span>
+          {tamanhos.porTamanho.map((t, i) => (
+            <span key={t.tamanho} role="listitem"
+              className={cn('rounded-md border px-2 py-0.5 tabular-nums', i === 0 ? 'border-primary/40 bg-primary/10 font-medium text-foreground' : 'text-muted-foreground')}>
+              Tam. {t.tamanho} · {fmtInt(t.unidades)} un. ({Math.round((t.unidades / tamanhos.total) * 100)}%)
+            </span>
+          ))}
+        </div>
+      )}
 
       <RankingSku linhas={filtradas} familias={familias} tendencias={dados.tendencias} coberturas={dados.coberturas}
         alertas={dados.alertas} abc={abc} ordem={ordem} onOrdem={setOrdem}

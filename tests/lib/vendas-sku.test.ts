@@ -4,7 +4,7 @@ import {
   agregarPorSku, SEM_CODIGO,
   classificarTendencia, coberturaDias, alertasSku, unidadesPorCodigo, metricas, somarAcumuladores,
   calcularKpisSku, deltaValor, deltaPp, curvaAbc, explicarVariacao, gerarInsights, agruparPorFamilia, nomeSku, type LinhaSku,
-  janelaEstendida, montarVendasSku,
+  janelaEstendida, montarVendasSku, unidadesPorTamanho,
 } from '@/lib/vendas-sku';
 import type { Venda, VendaItem } from '@/lib/faturamento';
 import type { CustoResolver } from '@/lib/resumo-vendas';
@@ -429,5 +429,19 @@ describe('SEM_CODIGO fora dos rankings', () => {
   it('explicarVariacao pula a linha sem código', () => {
     const v = explicarVariacao([linha(SEM_CODIGO, 100), linha('a', 10)], []);
     expect(v.map((x) => x.codigo)).toEqual(['a']);
+  });
+});
+
+describe('unidadesPorTamanho', () => {
+  const l = (tamanho: string | null, unidades: number) => ({ tamanho, acc: { unidades } }) as unknown as LinhaSku;
+  it('soma as cores de cada tamanho e ordena do mais vendido', () => {
+    const r = unidadesPorTamanho([l('2', 3), l('6', 2), l('2', 1), l('4', 2), l(null, 9)]);
+    expect(r.porTamanho).toEqual([
+      { tamanho: '2', unidades: 4 }, { tamanho: '4', unidades: 2 }, { tamanho: '6', unidades: 2 },
+    ]);
+    expect(r.total).toBe(8);
+  });
+  it('ignora linhas sem tamanho e sem venda', () => {
+    expect(unidadesPorTamanho([l(null, 3), l('M', 0)]).porTamanho).toEqual([]);
   });
 });
