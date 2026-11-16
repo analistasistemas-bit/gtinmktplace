@@ -8,6 +8,15 @@ import type { PublicadoItem } from '@/lib/publicados';
 import type { Familia } from '@/lib/tipos-dominio';
 import type { MovimentoEstoque } from '@/lib/movimentos-estoque';
 
+// Ações secundárias da linha moram no menu "Mais ações" (Radix): Enter no gatilho abre, item = menuitem.
+function abrirMenuAcoes() {
+  if (screen.queryByRole('menu')) return;
+  const gatilho = screen.queryAllByRole('button', { name: 'Mais ações' })[0];
+  if (gatilho) fireEvent.keyDown(gatilho, { key: 'Enter' });
+}
+const acao = (name: string) => { abrirMenuAcoes(); return screen.getByRole('menuitem', { name }); };
+const acaoOuNull = (name: string) => { abrirMenuAcoes(); return screen.queryByRole('menuitem', { name }); };
+
 const usePublicadosMock = vi.fn();
 const useStatusPublicadosMock = vi.fn();
 const useRemoverPublicadoMock = vi.fn();
@@ -538,7 +547,7 @@ describe('Publicados', () => {
       useFamiliaMock.mockReturnValue({ data: familiaCarregada(), isLoading: false, isError: false });
       comStatus({ preco: 19, precoOriginal: 29.9 });
       renderTela();
-      fireEvent.click(screen.getByRole('button', { name: 'Criar kit' }));
+      fireEvent.click(acao('Criar kit'));
       expect(dialogCriarKitBaseMock).toHaveBeenLastCalledWith(expect.objectContaining({ preco: 29.9 }));
     });
   });
@@ -618,7 +627,7 @@ describe('Publicados', () => {
       </MemoryRouter>,
     );
 
-    const btn = screen.getByRole('button', { name: 'Tentar catálogo de novo' });
+    const btn = acao('Tentar catálogo de novo');
     fireEvent.click(btn);
     expect(mutate).toHaveBeenCalledWith('f1', expect.any(Object));
   });
@@ -636,7 +645,7 @@ describe('Publicados', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.queryByRole('button', { name: 'Tentar catálogo de novo' })).not.toBeInTheDocument();
+    expect(acaoOuNull('Tentar catálogo de novo')).not.toBeInTheDocument();
   });
 
   // Partição >0 de produto dividido herda o familiaId da partição 0: retentar ali agiria no anúncio errado.
@@ -651,7 +660,7 @@ describe('Publicados', () => {
         <Publicados />
       </MemoryRouter>,
     );
-    expect(screen.queryByRole('button', { name: 'Tentar catálogo de novo' })).not.toBeInTheDocument();
+    expect(acaoOuNull('Tentar catálogo de novo')).not.toBeInTheDocument();
   });
 
   describe('permissões em sessão de suporte (mesmo predicado das edges)', () => {
@@ -685,7 +694,7 @@ describe('Publicados', () => {
       sessao('read');
       renderAtivo();
       expect(screen.getByRole('button', { name: 'Pausar' })).toBeDisabled();
-      expect(screen.getByRole('button', { name: 'Remover' })).toBeDisabled();
+      expect(acao('Remover')).toHaveAttribute('aria-disabled', 'true');
     });
 
     it('suporte read: Remover publicação incompleta também desabilitado', () => {
@@ -715,8 +724,8 @@ describe('Publicados', () => {
         data: [itemBase({ qtdVariacoesFamilia: 4, userProducts: true })], isLoading: false, error: null,
       });
       render(<MemoryRouter><Publicados /></MemoryRouter>);
-      expect(screen.getByRole('button', { name: 'Criar kit com variação' })).toBeEnabled();
-      expect(screen.queryByRole('button', { name: 'Gerenciar kit' })).toBeNull();
+      expect(acao('Criar kit com variação')).not.toHaveAttribute('aria-disabled');
+      expect(acaoOuNull('Gerenciar kit')).toBeNull();
     });
 
     it('abre o diálogo com a família canônica do PAI, não com a família (antiga) da linha', async () => {
@@ -725,7 +734,7 @@ describe('Publicados', () => {
         data: [itemBase({ familiaId: 'f-antiga', qtdVariacoesFamilia: 4, userProducts: true })], isLoading: false, error: null,
       });
       render(<MemoryRouter><Publicados /></MemoryRouter>);
-      fireEvent.click(screen.getByRole('button', { name: 'Criar kit com variação' }));
+      fireEvent.click(acao('Criar kit com variação'));
       expect(await screen.findByRole('dialog', { name: 'Criar kit com variação' })).toHaveTextContent('base f-canonica');
       expect(fetchBaseCanonicaIdMock).toHaveBeenCalledWith('01829149');
     });
@@ -740,9 +749,9 @@ describe('Publicados', () => {
         .mockImplementationOnce(() => new Promise((ok) => { liberarLento = ok; }))
         .mockImplementationOnce(async () => 'f-rapido');
       render(<MemoryRouter><Publicados /></MemoryRouter>);
-      const botao = screen.getByRole('button', { name: 'Criar kit com variação' });
-      fireEvent.click(botao);
-      fireEvent.click(botao);
+      // Clique duplo: o menu fecha no 1º select, então o 2º reabre o menu.
+      fireEvent.click(acao('Criar kit com variação'));
+      fireEvent.click(acao('Criar kit com variação'));
       expect(await screen.findByRole('dialog', { name: 'Criar kit com variação' })).toHaveTextContent('base f-rapido');
       liberarLento('f-lento');
       await new Promise((r) => setTimeout(r, 0));
@@ -755,7 +764,7 @@ describe('Publicados', () => {
         data: [itemBase({ qtdVariacoesFamilia: 4, userProducts: true })], isLoading: false, error: null,
       });
       render(<MemoryRouter><Publicados /></MemoryRouter>);
-      expect(screen.queryByRole('button', { name: 'Criar kit com variação' })).toBeNull();
+      expect(acaoOuNull('Criar kit com variação')).toBeNull();
     });
 
     it('a linha do próprio kit ganha "Gerenciar kit" e não vira base de outro kit', () => {
@@ -765,9 +774,9 @@ describe('Publicados', () => {
         data: [itemBase({ qtdVariacoesFamilia: 1, userProducts: true, kitBaseCodigoPai: null })], isLoading: false, error: null,
       });
       render(<MemoryRouter><Publicados /></MemoryRouter>);
-      expect(screen.getByRole('button', { name: 'Gerenciar kit' })).toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: 'Criar kit com variação' })).toBeNull();
-      expect(screen.getByRole('button', { name: 'Criar kit' })).toHaveAttribute('title', 'Este anúncio já é um kit com variação.');
+      expect(acao('Gerenciar kit')).toBeInTheDocument();
+      expect(acaoOuNull('Criar kit com variação')).toBeNull();
+      expect(acao('Criar kit')).toHaveAttribute('title', 'Este anúncio já é um kit com variação.');
     });
 
     it('Encerrar kit: kit encerrado some de Publicados (encerrando ainda aparece)', () => {
@@ -777,11 +786,11 @@ describe('Publicados', () => {
       });
       useKitsVariacaoMock.mockReturnValue({ data: [{ ...kit, status: 'encerrando' }] });
       const { unmount } = render(<MemoryRouter><Publicados /></MemoryRouter>);
-      expect(screen.getByRole('button', { name: 'Gerenciar kit' })).toBeInTheDocument();
+      expect(acao('Gerenciar kit')).toBeInTheDocument();
       unmount();
       useKitsVariacaoMock.mockReturnValue({ data: [{ ...kit, status: 'encerrado' }] });
       render(<MemoryRouter><Publicados /></MemoryRouter>);
-      expect(screen.queryByRole('button', { name: 'Gerenciar kit' })).toBeNull();
+      expect(acaoOuNull('Gerenciar kit')).toBeNull();
     });
   });
 
@@ -869,7 +878,7 @@ describe('Publicados', () => {
           <Publicados />
         </MemoryRouter>,
       );
-      expect(screen.getByRole('button', { name: 'Criar kit' })).toBeEnabled();
+      expect(acao('Criar kit')).not.toHaveAttribute('aria-disabled');
     });
 
     // ADR-0185 D-3: o preview (e o familia_base_id) saem da família vigente, não da mais antiga.
@@ -885,7 +894,7 @@ describe('Publicados', () => {
           <Publicados />
         </MemoryRouter>,
       );
-      fireEvent.click(screen.getByRole('button', { name: 'Criar kit' }));
+      fireEvent.click(acao('Criar kit'));
       expect(useFamiliaMock).toHaveBeenCalledWith('f-nova', true);
     });
 
@@ -901,8 +910,8 @@ describe('Publicados', () => {
           <Publicados />
         </MemoryRouter>,
       );
-      const btn = screen.getByRole('button', { name: 'Criar kit' });
-      expect(btn).toBeDisabled();
+      const btn = acao('Criar kit');
+      expect(btn).toHaveAttribute('aria-disabled', 'true');
       expect(btn).toHaveAttribute('title', 'Kit vinculado exige o módulo Estoque habilitado.');
     });
 
@@ -918,8 +927,8 @@ describe('Publicados', () => {
           <Publicados />
         </MemoryRouter>,
       );
-      const btn = screen.getByRole('button', { name: 'Criar kit' });
-      expect(btn).toBeDisabled();
+      const btn = acao('Criar kit');
+      expect(btn).toHaveAttribute('aria-disabled', 'true');
       expect(btn).toHaveAttribute('title', 'Kit vinculado só existe para produto sem variação de cor.');
     });
 
@@ -939,8 +948,8 @@ describe('Publicados', () => {
           <Publicados />
         </MemoryRouter>,
       );
-      const btn = screen.getByRole('button', { name: 'Criar kit' });
-      expect(btn).toBeDisabled();
+      const btn = acao('Criar kit');
+      expect(btn).toHaveAttribute('aria-disabled', 'true');
       expect(btn).toHaveAttribute('title', 'Kit vinculado só existe para produto sem variação de cor.');
     });
 
@@ -956,8 +965,8 @@ describe('Publicados', () => {
           <Publicados />
         </MemoryRouter>,
       );
-      const btn = screen.getByRole('button', { name: 'Criar kit' });
-      expect(btn).toBeDisabled();
+      const btn = acao('Criar kit');
+      expect(btn).toHaveAttribute('aria-disabled', 'true');
       expect(btn).toHaveAttribute('title', 'Este anúncio já é um kit vinculado.');
     });
   });
@@ -1092,9 +1101,9 @@ describe('Publicados', () => {
 
       expect(screen.queryByRole('button', { name: 'Pausar' })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Reativar' })).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: 'Remover' })).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: 'Corrigir e republicar' })).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: 'Criar kit' })).not.toBeInTheDocument();
+      expect(acaoOuNull('Remover')).not.toBeInTheDocument();
+      expect(acaoOuNull('Corrigir e republicar')).not.toBeInTheDocument();
+      expect(acaoOuNull('Criar kit')).not.toBeInTheDocument();
     });
 
     it('produtos comuns continuam idênticos quando misturados com um kit (armadilha do codigoPai)', () => {
@@ -1113,8 +1122,8 @@ describe('Publicados', () => {
       expect(screen.getByText('Cola Liquida Silicone 250ML')).toBeInTheDocument();
       expect(screen.getByText('01829149')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Pausar' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Remover' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Corrigir e republicar' })).toBeInTheDocument();
+      expect(acao('Remover')).toBeInTheDocument();
+      expect(acao('Corrigir e republicar')).toBeInTheDocument();
       // Kit: linha própria, badge presente.
       expect(screen.getByText('Kit Virtual')).toBeInTheDocument();
     });
@@ -1267,7 +1276,7 @@ describe('Publicados', () => {
           <Publicados />
         </MemoryRouter>,
       );
-      expect(screen.queryByRole('button', { name: BOTAO })).not.toBeInTheDocument();
+      expect(acaoOuNull(BOTAO)).not.toBeInTheDocument();
     });
 
     it('não aparece com uma variação só', () => {
@@ -1282,7 +1291,7 @@ describe('Publicados', () => {
           <Publicados />
         </MemoryRouter>,
       );
-      expect(screen.queryByRole('button', { name: BOTAO })).not.toBeInTheDocument();
+      expect(acaoOuNull(BOTAO)).not.toBeInTheDocument();
     });
 
     // ADR-0161 (J10): produto publicado como VÁRIOS anúncios (split por faixa de preço) não pode
@@ -1300,7 +1309,7 @@ describe('Publicados', () => {
           <Publicados />
         </MemoryRouter>,
       );
-      expect(screen.queryByRole('button', { name: BOTAO })).not.toBeInTheDocument();
+      expect(acaoOuNull(BOTAO)).not.toBeInTheDocument();
     });
 
     it('não aparece em User Products (já é um MLB por SKU)', () => {
@@ -1315,7 +1324,7 @@ describe('Publicados', () => {
           <Publicados />
         </MemoryRouter>,
       );
-      expect(screen.queryByRole('button', { name: BOTAO })).not.toBeInTheDocument();
+      expect(acaoOuNull(BOTAO)).not.toBeInTheDocument();
     });
 
     it.each(['encerrado', 'moderado'] as const)('não aparece com status %s', (status) => {
@@ -1331,7 +1340,7 @@ describe('Publicados', () => {
           <Publicados />
         </MemoryRouter>,
       );
-      expect(screen.queryByRole('button', { name: BOTAO })).not.toBeInTheDocument();
+      expect(acaoOuNull(BOTAO)).not.toBeInTheDocument();
     });
 
     it('aparece para admin com mais de uma variação e status ativo/pausado', () => {
@@ -1346,7 +1355,7 @@ describe('Publicados', () => {
           <Publicados />
         </MemoryRouter>,
       );
-      expect(screen.getByRole('button', { name: BOTAO })).toBeEnabled();
+      expect(acao(BOTAO)).not.toHaveAttribute('aria-disabled');
     });
 
     it('migracaoEmAndamento desabilita Migrar, Pausar e Remover', () => {
@@ -1361,11 +1370,11 @@ describe('Publicados', () => {
           <Publicados />
         </MemoryRouter>,
       );
-      const btnMigrar = screen.getByRole('button', { name: BOTAO });
-      expect(btnMigrar).toBeDisabled();
+      const btnMigrar = acao(BOTAO);
+      expect(btnMigrar).toHaveAttribute('aria-disabled', 'true');
       expect(btnMigrar).toHaveAttribute('title', 'Migração em andamento');
       expect(screen.getByRole('button', { name: 'Pausar' })).toBeDisabled();
-      expect(screen.getByRole('button', { name: 'Remover' })).toBeDisabled();
+      expect(acao('Remover')).toHaveAttribute('aria-disabled', 'true');
     });
 
     it('migracaoEmAndamento desabilita Reativar (status pausado)', () => {
@@ -1398,7 +1407,7 @@ describe('Publicados', () => {
         </MemoryRouter>,
       );
 
-      fireEvent.click(screen.getByRole('button', { name: BOTAO }));
+      fireEvent.click(acao(BOTAO));
       fireEvent.click(screen.getByRole('button', { name: 'Migrar anúncio' }));
 
       expect(mutateAsync).toHaveBeenCalledWith('f-migrar');
@@ -1419,7 +1428,7 @@ describe('Publicados', () => {
         </MemoryRouter>,
       );
 
-      fireEvent.click(screen.getByRole('button', { name: BOTAO }));
+      fireEvent.click(acao(BOTAO));
       fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
 
       expect(mutateAsync).not.toHaveBeenCalled();
@@ -1438,7 +1447,7 @@ describe('Publicados', () => {
         </MemoryRouter>,
       );
 
-      fireEvent.click(screen.getByRole('button', { name: BOTAO }));
+      fireEvent.click(acao(BOTAO));
 
       expect(screen.getByText(/não pode ser desfeita/i)).toBeInTheDocument();
       expect(screen.getByText(/pedidos já feitos continuam no anúncio encerrado/i)).toBeInTheDocument();

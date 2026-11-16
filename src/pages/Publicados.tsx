@@ -1,9 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ComponentType, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { RefreshCw, ExternalLink, Trash2, Pause, Play, PackageOpen, PackagePlus, ArrowUp, ArrowDown, ChevronsUpDown, Wallet, ChevronRight, AlertTriangle, RotateCcw, Boxes, Package, Split, Loader2, Layers, Settings2 } from 'lucide-react';
+import { RefreshCw, ExternalLink, Trash2, Pause, Play, PackageOpen, PackagePlus, ArrowUp, ArrowDown, ChevronsUpDown, Wallet, ChevronRight, AlertTriangle, RotateCcw, Boxes, Package, Split, Loader2, Layers, Settings2, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
 import { CarregandoMarca } from '@/components/ui/carregando-marca';
@@ -405,6 +412,23 @@ const CONTEUDO_ML = (
   </>
 );
 
+/** Item do menu "Mais ações". Item desabilitado não mostra tooltip, então o motivo também vai em texto. */
+function ItemAcao({ icone: Icone, rotulo, motivo, ...props }: {
+  icone: ComponentType;
+  rotulo: string;
+  motivo?: string | null;
+} & ComponentProps<typeof DropdownMenuItem>) {
+  return (
+    <DropdownMenuItem aria-label={rotulo} title={motivo ?? undefined} {...props}>
+      <Icone />
+      <span className="flex flex-col">
+        <span>{rotulo}</span>
+        {motivo && <span className="text-xs text-muted-foreground">{motivo}</span>}
+      </span>
+    </DropdownMenuItem>
+  );
+}
+
 const SELO_MODO: Record<'classico' | 'premium', { label: string; cls: string }> = {
   classico: { label: 'Clássico', cls: 'border-border bg-muted text-muted-foreground' },
   premium: { label: 'Premium', cls: 'border-primary/30 bg-primary/10 text-primary' },
@@ -549,8 +573,9 @@ function LinhaTabela({
               {(item.precoOriginal != null || item.variacoesEmPromocao) && (
                 <span className="mt-1 flex flex-col items-start gap-1">
                   {item.precoOriginal != null && <span className="text-xs text-muted-foreground line-through">{fmtBRL(item.precoOriginal)}</span>}
-                  <StatusPill tone="success">
-                    Em promoção
+                  {/* Detalhe longo ("17 de 20 variações · 3 sem estoque") quebra linha em vez de alargar a coluna. */}
+                  <StatusPill tone="success" className="block max-w-44 whitespace-normal">
+                    Em&nbsp;promoção
                     {item.variacoesEmPromocao && item.variacoesEmPromocao.em < item.variacoesEmPromocao.total
                       && ` · ${item.variacoesEmPromocao.em} de ${item.variacoesEmPromocao.total} variações`
                         + (item.variacoesEmPromocao.semEstoque > 0 ? ` · ${item.variacoesEmPromocao.semEstoque} sem estoque` : '')}
@@ -585,7 +610,7 @@ function LinhaTabela({
         <div className="absolute right-2 top-0">
           <SeloModo listingType={item.listingType} />
         </div>
-        <div className="grid grid-cols-[repeat(4,auto)] items-center justify-start justify-items-start gap-1 pt-4">
+        <div className="flex flex-nowrap items-center gap-1 pt-4">
           <Button
             asChild
             variant="ghost"
@@ -601,46 +626,10 @@ function LinhaTabela({
             )}
           </Button>
 
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label="Criar kit"
-            title={motivoCriarKitDesabilitado ?? 'Criar kit vinculado'}
-            className="h-7 px-2 text-xs"
-            disabled={!!motivoCriarKitDesabilitado}
-            onClick={(e) => { e.stopPropagation(); onCriarKit(item); }}
-          >
-            <PackagePlus className="h-3 w-3" />
-          </Button>
 
           <BotaoGaleria temImagemIA={temImagemIA} mlItemId={item.mlItemId} />
 
-          {temKitVariacao && !kitVariacao && temVariacaoDeCor && (
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-label="Criar kit com variação"
-              title={motivoKitVariacaoDesabilitado ?? 'Criar kit com variação (cores combinadas)'}
-              className="h-7 px-2 text-xs"
-              disabled={!!motivoKitVariacaoDesabilitado}
-              onClick={(e) => { e.stopPropagation(); onCriarKitVariacao(item.codigoPai); }}
-            >
-              <Layers className="h-3 w-3" />
-            </Button>
-          )}
 
-          {kitVariacao && (
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-label="Gerenciar kit"
-              title="Gerenciar kit"
-              className="h-7 px-2 text-xs"
-              onClick={(e) => { e.stopPropagation(); onGerenciarKit(kitVariacao); }}
-            >
-              <Settings2 className="h-3 w-3" />
-            </Button>
-          )}
 
           {/* `!item.produtoDividido` (ADR-0161 J10): produto publicado como vários anúncios não pode
               migrar — a adoção zeraria o vínculo das cores que vivem nas outras partições. A edge
@@ -648,19 +637,6 @@ function LinhaTabela({
           {/* UP (ADR-0088) já tem um MLB por SKU — não há o que migrar e a edge recusaria. */}
           {isAdmin && temVariacaoDeCor && podeAlternar && !item.produtoDividido && !item.userProducts && (
             <AlertDialog open={migrarAberto} onOpenChange={setMigrarAberto}>
-              <AlertDialogTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  aria-label="Migrar para preço por variação"
-                  title={migracaoAtiva ? 'Migração em andamento' : 'Migrar para preço por variação'}
-                  className="h-7 px-2 text-xs"
-                  disabled={migracaoAtiva}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <Split className="h-3 w-3" />
-                </Button>
-              </AlertDialogTrigger>
               <AlertDialogContent processando={migrando} destrutivo rotuloProcessando="Migrando anúncio" onClick={(e) => e.stopPropagation()}>
                 <AlertDialogHeader>
                   <AlertDialogTitle>Migrar para preço por variação?</AlertDialogTitle>
@@ -784,36 +760,52 @@ function LinhaTabela({
             </AlertDialog>
           )}
 
-          {/* Partição >0: o worker de catálogo só opera a partição 0 (TODO de opt-in por partição em
-              publicar-split-ml) — o clique retentaria o anúncio errado. */}
-          {item.catalogRetentavel && !item.particaoSplit && (
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-label="Tentar catálogo de novo"
-              title={!isAdmin ? 'Somente administradores podem retentar o vínculo de catálogo' : 'Tentar catálogo de novo'}
-              className="h-7 px-2 text-xs"
-              disabled={!isAdmin || retentandoCatalogo}
-              onClick={(e) => { e.stopPropagation(); onRetentarCatalogo(item.familiaId); }}
-            >
-              <RefreshCw className="h-3 w-3" />
-            </Button>
-          )}
-
-          <AlertDialog open={republicarAberto} onOpenChange={setRepublicarAberto}>
-            <AlertDialogTrigger asChild>
+          {/* Ações secundárias no menu "⋯" (overflow-menu): a linha não estoura a largura da tela.
+              Os diálogos de confirmação desta célula são controlados pelo estado; o menu só os abre. */}
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
                 size="sm"
-                aria-label="Corrigir e republicar"
-                title="Corrigir e republicar"
+                aria-label="Mais ações"
+                title="Mais ações"
                 className="h-7 px-2 text-xs"
-                disabled={!isAdmin || republicando || migracaoAtiva}
                 onClick={(e) => e.stopPropagation()}
               >
-                <RotateCcw className="h-3 w-3" />
+                <MoreHorizontal className="h-4 w-4" />
               </Button>
-            </AlertDialogTrigger>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64" onClick={(e) => e.stopPropagation()}>
+              <ItemAcao icone={PackagePlus} rotulo="Criar kit" motivo={motivoCriarKitDesabilitado}
+                disabled={!!motivoCriarKitDesabilitado} onSelect={() => onCriarKit(item)} />
+              {temKitVariacao && !kitVariacao && temVariacaoDeCor && (
+                <ItemAcao icone={Layers} rotulo="Criar kit com variação" motivo={motivoKitVariacaoDesabilitado}
+                  disabled={!!motivoKitVariacaoDesabilitado} onSelect={() => onCriarKitVariacao(item.codigoPai)} />
+              )}
+              {kitVariacao && (
+                <ItemAcao icone={Settings2} rotulo="Gerenciar kit" onSelect={() => onGerenciarKit(kitVariacao)} />
+              )}
+              {/* Mesma condição do diálogo Migrar acima (ADR-0161 J10, ADR-0088). */}
+              {isAdmin && temVariacaoDeCor && podeAlternar && !item.produtoDividido && !item.userProducts && (
+                <ItemAcao icone={Split} rotulo="Migrar para preço por variação" motivo={migracaoAtiva ? 'Migração em andamento' : undefined}
+                  disabled={migracaoAtiva} onSelect={() => setMigrarAberto(true)} />
+              )}
+              {/* Partição >0: o worker de catálogo só opera a partição 0 (TODO de opt-in por partição em
+                  publicar-split-ml) — o clique retentaria o anúncio errado. */}
+              {item.catalogRetentavel && !item.particaoSplit && (
+                <ItemAcao icone={RefreshCw} rotulo="Tentar catálogo de novo"
+                  motivo={!isAdmin ? 'Somente administradores podem retentar o vínculo de catálogo' : undefined}
+                  disabled={!isAdmin || retentandoCatalogo} onSelect={() => onRetentarCatalogo(item.familiaId)} />
+              )}
+              <ItemAcao icone={RotateCcw} rotulo="Corrigir e republicar"
+                disabled={!isAdmin || republicando || migracaoAtiva} onSelect={() => setRepublicarAberto(true)} />
+              <DropdownMenuSeparator />
+              <ItemAcao icone={Trash2} rotulo="Remover" variant="destructive"
+                disabled={removendo || migracaoAtiva || somenteLeitura} onSelect={() => setRemoverAberto(true)} />
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <AlertDialog open={republicarAberto} onOpenChange={setRepublicarAberto}>
             <AlertDialogContent processando={republicando} rotuloProcessando="Republicando anúncio" onClick={(e) => e.stopPropagation()}>
               <AlertDialogHeader>
                 <AlertDialogTitle>Corrigir e republicar?</AlertDialogTitle>
@@ -845,19 +837,6 @@ function LinhaTabela({
           </AlertDialog>
 
           <AlertDialog open={removerAberto} onOpenChange={setRemoverAberto}>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                aria-label="Remover"
-                title="Remover"
-                className="h-7 px-2 text-xs text-destructive hover:text-destructive"
-                disabled={removendo || migracaoAtiva || somenteLeitura}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <Trash2 className="h-3 w-3" />
-              </Button>
-            </AlertDialogTrigger>
             <AlertDialogContent processando={removendo} destrutivo rotuloProcessando="Removendo anúncio" onClick={(e) => e.stopPropagation()}>
               <AlertDialogHeader>
                 <AlertDialogTitle>Remover do sistema?</AlertDialogTitle>
@@ -1830,7 +1809,7 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
         </button>
       )}
 
-      {/* Catálogo pendente (ADR-0021, adendo 2026-09-11): os que exibem o botão ↻ na linha. Tom
+      {/* Catálogo pendente (ADR-0021, adendo 2026-09-11): os que exibem "Tentar catálogo de novo" no menu ⋯ da linha. Tom
           `info`, abaixo dos outros dois: não é risco de venda perdida nem moderação — é vínculo que
           dá para tentar de novo. Sem este atalho o botão só era achado varrendo a lista linha a
           linha, e foi assim que o Centrum ficou um mês em `sem_produto` com o catálogo já ativo no
@@ -1847,12 +1826,12 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
         >
           <RefreshCw className="h-4 w-4 shrink-0" />
           <span>
-            {/* O texto muda para não-admin: o botão ↻ da linha fica desabilitado para ele, então
+            {/* O texto muda para não-admin: o item do menu ⋯ fica desabilitado para ele, então
                 prometer "tente de novo" seria frustração desenhada. Saber que existe algo a pedir
                 continua valendo — por isso o banner aparece para todos. */}
             {totalSemCatalogo === 1
-              ? `1 anúncio sem vínculo de catálogo — ${isAdmin ? 'dá para tentar de novo (botão ↻ na linha)' : 'peça a um administrador para tentar de novo'}. Clique para ver.`
-              : `${totalSemCatalogo} anúncios sem vínculo de catálogo — ${isAdmin ? 'dá para tentar de novo (botão ↻ na linha)' : 'peça a um administrador para tentar de novo'}. Clique para ver.`}
+              ? `1 anúncio sem vínculo de catálogo — ${isAdmin ? 'dá para tentar de novo (menu ⋯ da linha)' : 'peça a um administrador para tentar de novo'}. Clique para ver.`
+              : `${totalSemCatalogo} anúncios sem vínculo de catálogo — ${isAdmin ? 'dá para tentar de novo (menu ⋯ da linha)' : 'peça a um administrador para tentar de novo'}. Clique para ver.`}
           </span>
           {filtro.somenteSemCatalogo && <span className="font-medium">• filtrando</span>}
         </button>

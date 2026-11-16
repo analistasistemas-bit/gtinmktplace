@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import Publicados from '@/pages/Publicados';
@@ -532,7 +532,10 @@ describe.each(casos)('$nome — segura aberto e dispara uma vez', ({ abrir, conf
     const { rerender } = renderPublicados();
     const linhas = screen.getAllByRole('row').length;
 
-    await userEvent.click(screen.getByRole('button', { name: abrir }));
+    // Migrar/Corrigir/Remover moram no menu "Mais ações"; os demais seguem como botão na linha.
+    const direto = screen.queryByRole('button', { name: abrir });
+    if (!direto) fireEvent.keyDown(screen.getByRole('button', { name: 'Mais ações' }), { key: 'Enter' });
+    await userEvent.click(direto ?? screen.getByRole('menuitem', { name: abrir }));
     await userEvent.click(screen.getByRole('button', { name: confirmar }));
 
     mockPendente(mutateAsync, true);
