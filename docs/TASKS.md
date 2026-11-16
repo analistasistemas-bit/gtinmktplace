@@ -1,5 +1,18 @@
 # PubliAI — Tasks
 
+## Kit Virtual: capa IA, texto IA e recebe avulso (fatia 1, ADR-0206) — 2026-11-15
+
+Spec `docs/superpowers/specs/2026-11-15-kit-virtual-capa-ia-galeria-design.md`. Migration `20261115211040_kit_virtual_capa_ia.sql` **no ar 15/11**. Edges entram no deploy desta entrega (`gerar-capa-kit-virtual` nova; `preview-kit-virtual`, `buscar-componentes-kit-virtual`, `subir-foto-kit-virtual`, `criar-kit-virtual` alteradas) — versão pós-deploy a confirmar.
+
+- [x] Criar Kit Virtual em 2 etapas (Composição → Anúncio) no visual do kit vinculado.
+- [x] Capa por IA da composição (2..6 produtos distintos), verificação por visão fail-closed, aprovação humana ("Usar esta foto"), teto de 6 tentativas/24 h por (org, composição).
+- [x] Título e descrição por IA ao entrar na etapa 2 (título "Kit...", até 60 caracteres; inválido cai no template).
+- [x] Card "você recebe vendendo avulso" por componente (reuso de `calcularTarifaML` + `simularRecebe`).
+- [x] Foto só da própria org, prévia reprovada recusada e capa IA exige linha `gerada` (cobrada).
+- [ ] 1ª rodada real com 2, 3 e 6 itens (registrar no ADR-0206; status segue PROPOSTO até lá).
+- [ ] Medir o título IA no modelo real (prompt de copy: medir antes de confiar).
+- [ ] Fatia 2 (galeria das fotos 2-7): depende de teste de `pictures` na API de kits no ML, só com OK do Diego.
+
 ## Aderir promoção: produto unitário do kit — 2026-11-15
 
 Mergeado na `main`: `4da759da`. Sem migration; edge `operacoes-massa` (v58) deployada.

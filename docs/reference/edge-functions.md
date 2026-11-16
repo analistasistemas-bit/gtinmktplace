@@ -70,6 +70,7 @@
 | criar-kit-virtual | **true** | HTTP (frontend, **admin**) | sim (idempotência por `chave_cadastro`) |
 | encerrar-kit-virtual | **true** | HTTP (frontend, **admin**) | sim (kit já `closed` responde sucesso) |
 | subir-foto-kit-virtual | **true** | HTTP (frontend, **admin**) | sim (upload puro, sem escrita em banco) |
+| gerar-capa-kit-virtual | **true** | HTTP (frontend, **admin**, módulo `imagem_ia`) | sim (por `request_id` em `kit_variacao_imagens`) |
 | **Kit com variação (ADR-0200) — implementado na branch, módulo `kit_variacao` desligado** ||||
 | criar-kit-variacao | **true** | HTTP (frontend, **admin**, módulo `kit_variacao`) | sim (idempotência por `chave_cadastro` + `pedido_hash`) |
 | gerenciar-kit-variacao | **true** | HTTP (frontend, **admin**, módulo `kit_variacao`) | sim (`chave_cadastro` + `pedido_hash` + CAS de `kits_variacao.versao`) |
@@ -1341,11 +1342,10 @@ produto.
   exatamente 1 variação (best-effort, D-12). Resposta `{ ok: true, elegiveis: [...],
   inelegiveis: [...] }`, cada item com `user_product_id, item_id, title, type, thumbnail_url,
   category_name, estoque, reasons, codigo, codigo_pai, custo, origem, kit_multiplicador,
-  preco_atual_ml, categoria_ml_id`. Inelegíveis aparecem **com o motivo** do ML
+  preco_atual_ml, categoria_ml_id, listing_type_id` e as medidas do item (ADR-0206, alimentam o frete do card "recebe avulso"). Inelegíveis aparecem **com o motivo** do ML
   (`COMPONENT_NOT_MIGRATED_TO_UP`, `OUT_OF_STOCK_ERROR`, `LOGISTIC_TYPE_MISMATCH` etc.) — nunca
   escondidos (D-12). 409 `sem_conexao_ml` sem credencial.
-- **preview-kit-virtual** (D-4/6/7/15) — monta título (template, sem IA — o ML expande sozinho,
-  D-4), rateio proporcional do preço por componente, margem (união discriminada `{ok:true,...}`
+- **preview-kit-virtual** (D-4/6/7/15; ADR-0206) — monta título (template; com `gerar_texto: true` o título nasce por IA junto da descrição, "Kit..." até 60 caracteres, inválido cai no template; o recálculo usa `gerar_texto: false` e nunca sobrescreve texto), rateio proporcional do preço por componente, margem (união discriminada `{ok:true,...}`
   ou `{ok:false, faltando:[...]}`, nunca um `0%`/`—` silencioso, D-6) e, sob pedido
   (`gerar_descricao: true`), descrição por IA reusando `gerarCopy`/`posProcessarDescricao` da
   esteira de copy do app (D-4). Read-only. Body `{ componentes: [{user_product_id, quantidade,
@@ -1363,7 +1363,7 @@ produto.
   `subir-foto-kit-virtual` não rodou antes ou falhou) e chama `POST /items/kits`. 400 por
   payload inválido (`chave_invalida`, `titulo_invalido`, `componentes_invalidos`,
   `componente_duplicado`, `quantidade_invalida`, `desconto_invalido`, `desconto_divergente`,
-  `foto_obrigatoria` — D-5, kit não publica sem foto própria) ou `ml_recusou`; 500/502 em falha
+  `foto_obrigatoria` — D-5, kit não publica sem foto própria; ADR-0206: foto só da org, prévia reprovada recusada, capa IA exige linha `gerada`) ou `ml_recusou`; 500/502 em falha
   de leitura/escrita local, criação do kit, criação dos componentes ou upload de foto. Sucesso:
   `{ ok: true, kit_id, ml_item_id, ml_user_product_id, ml_permalink, ja_existia }`. **A revisão
   humana exigida pelo projeto é o preview do próprio diálogo** — não existe card na tela Revisão
@@ -1382,7 +1382,9 @@ produto.
   em seguida. Sem escrita em banco — o diálogo guarda o `picture_id` devolvido e manda em
   `criar-kit-virtual`, que mantém o upload como fallback se esta chamada falhar. Body
   `{ foto_storage_path }`. Resposta `{ ok: true, picture_id }`. 400 `path_invalido`, 500
-  `falha_url_assinada`, 502 `falha_upload_ml`.
+  `falha_url_assinada`, 502 `falha_upload_ml`. ADR-0206: recusa foto de outra org (o path precisa ser da org) e prévia
+  reprovada da capa IA (`ehPreviaReprovada`).
+- **gerar-capa-kit-virtual** (ADR-0206, entra no deploy da entrega) — capa por IA juntando 2..6 produtos distintos do Kit Virtual. POST `{ request_id, componentes: [{ user_product_id, quantidade }] }`, quantidade 1..10. Admin (ou suporte `full`) + módulo `imagem_ia` (`verify_jwt=true`). A foto 1 de cada componente é lida no servidor (item da org; fechado, moderado ou sem foto → 409 com o nome). Reserva pela RPC `kit_capa_virtual_reservar`: teto de 6 tentativas por (org, composição) em 24 h, acima disso 429 `teto_diario`; mesmo `request_id` com pedido diferente → 409 `pedido_diferente`. Σ quantidades ≤ 6 mostra todas as unidades, acima uma de cada produto. Verificação por visão fail-closed; cobrança só em `gerada` (`image_unit_cents`). Caminho `${orgId}/kit-virtual-ia/${requestId}.${ext}`. A foto só vira foto do kit após "Usar esta foto".
 
 **Mudança em `status-publicados` (emenda ADR-0170, 2026-10-20):** todo anúncio ML não-kit ganha
 uma leitura de `GET /items/{id}/sale_price` (`_shared/ml/sale-price.ts`, `lerSalePriceML`, timeout
