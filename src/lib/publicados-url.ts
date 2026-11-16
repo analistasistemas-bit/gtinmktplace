@@ -29,6 +29,7 @@ export function estadoParaParams(e: EstadoPublicados): URLSearchParams {
   if (e.filtro.somenteIncompletos) p.set('incompletos', '1');
   if (e.filtro.somenteSemCatalogo) p.set('semcatalogo', '1');
   if (e.filtro.kit) p.set('comkit', e.filtro.kit);
+  if (e.filtro.atacado) p.set('atacado', e.filtro.atacado);
   if (e.ord) {
     p.set('ord', e.ord.coluna);
     p.set('dir', e.ord.dir);
@@ -58,6 +59,8 @@ export function paramsParaEstado(p: URLSearchParams): EstadoPublicados {
   const comkit = p.get('comkit');
   if (comkit === '1') filtro.kit = 'variacao';
   else if (comkit && KITS_VALIDOS.includes(comkit)) filtro.kit = comkit as FiltroKit;
+  const atacado = p.get('atacado');
+  if (atacado === 'com' || atacado === 'sem') filtro.atacado = atacado;
 
   const ord: OrdenacaoPublicados | null =
     ordCol && (COLUNAS as string[]).includes(ordCol)

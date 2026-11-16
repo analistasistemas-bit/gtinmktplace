@@ -24,4 +24,12 @@ describe('BarraSelecaoPublicados', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Alterar preço (5)' }));
     expect(onReajustar).toHaveBeenCalled();
   });
+  it('Atacado conta produtos e só aparece com onAtacado', async () => {
+    const onAtacado = vi.fn();
+    const { rerender } = render(<BarraSelecaoPublicados ativos={3} pausados={0} {...props} />);
+    expect(screen.queryByRole('button', { name: /Atacado/ })).toBeNull();
+    rerender(<BarraSelecaoPublicados ativos={3} pausados={0} {...props} produtosAtacado={2} onAtacado={onAtacado} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Atacado (2)' }));
+    expect(onAtacado).toHaveBeenCalled();
+  });
 });

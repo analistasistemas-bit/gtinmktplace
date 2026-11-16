@@ -47,7 +47,7 @@ import { useGaleriaPendentes } from '@/hooks/useGaleriaPendentes';
 import { CanalBadge } from '@/components/canal-badge';
 import { BadgesKit } from '@/components/badge-kit';
 import { useKitsVinculadosOrg } from '@/hooks/useKitsVinculadosOrg';
-import type { FiltroKit, MarcaKit } from '@/lib/publicados';
+import type { FiltroAtacado, FiltroKit, MarcaKit } from '@/lib/publicados';
 import { MovimentosEstoque } from '@/components/movimentos-estoque';
 import { CatalogoEmRisco } from '@/components/catalogo-em-risco';
 import { agruparCatalogoRisco, filtrarCatalogForewarning } from '@/lib/catalogo-risco';
@@ -103,6 +103,9 @@ import { BarraSelecaoPublicados } from '@/components/operacoes/barra-selecao-pub
 import { PreviewStatus } from '@/components/operacoes/preview-status';
 import { DialogReajuste } from '@/components/operacoes/dialog-reajuste';
 import { PreviewReajuste } from '@/components/operacoes/preview-reajuste';
+import { DialogAtacado } from '@/components/operacoes/dialog-atacado';
+import { SeloAtacadoBadge } from '@/components/selo-atacado';
+import { planejarAtacado } from '@/lib/atacado-publicados';
 import type { PedidoPreviewReajuste } from '@/hooks/useOperacoes';
 
 // ============================================================================
@@ -391,6 +394,8 @@ interface LinhaProps {
   selecionado: boolean;
   onSelecionar: (v: boolean) => void;
   motivoNaoSelecionavel: string | null;
+  /** ADR-0196 emenda 2026-11-15: abre o editor de atacado só deste produto. */
+  onEditarAtacado: (item: PublicadoItem) => void;
 }
 
 const CONTEUDO_ML = (
@@ -421,7 +426,7 @@ function LinhaTabela({
   temModuloEstoque, onCriarKit, onMigrarPrecoPorVariacao, migrando,
   temKitVariacao, kitVariacao, kitsVariacaoDaBase, marcasKit, onCriarKitVariacao, onGerenciarKit, focoKit,
   temImagemIA,
-  selecionado, onSelecionar, motivoNaoSelecionavel: motivoSelecao,
+  selecionado, onSelecionar, motivoNaoSelecionavel: motivoSelecao, onEditarAtacado,
 }: LinhaProps) {
   // Expansão persistida (sobrevive a ordenar/filtrar/paginar, que remonta a linha), como o sort.
   // Chave por anúncio (mlItemId): familiaId é compartilhado entre anúncios split (ADR-0048).
@@ -508,6 +513,13 @@ function LinhaTabela({
             <div className="mt-1 flex flex-wrap items-center gap-1">
               <CanalBadge canal={item.canal ?? 'mercado_livre'} />
               <BadgesKit marcas={marcasKit} />
+              {item.atacado && (
+                <SeloAtacadoBadge
+                  selo={item.atacado} ehKit={!!item.kitBaseCodigoPai}
+                  precoBase={item.precoOriginal ?? item.precoAtual ?? (item.precoPublicacao || null)}
+                  onEditar={() => onEditarAtacado(item)}
+                />
+              )}
             </div>
           </div>
         </div>
@@ -1641,6 +1653,10 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
   // I5: reajuste vale para ativos e pausados. UP manda a FAMÍLIA (o servidor expande em todos os SKUs);
   // Legacy manda o MLB (a família expandiria partições do split que não foram selecionadas).
   const [reajuste, setReajuste] = useState<{ pedido: PedidoPreviewReajuste | null } | null>(null);
+  // ADR-0196 emenda 2026-11-15: linhas do "Atacado (N)" (seleção) ou do clique no selo (uma linha).
+  const [atacadoAlvo, setAtacadoAlvo] = useState<PublicadoItem[] | null>(null);
+  const planoSelecaoAtacado = useMemo(() => planejarAtacado(itensSelecionados, merged), [itensSelecionados, merged]);
+  const planoAtacado = useMemo(() => (atacadoAlvo ? planejarAtacado(atacadoAlvo, merged) : null), [atacadoAlvo, merged]);
   const pedidoReajuste = (): Omit<PedidoPreviewReajuste, 'ajuste'> => {
     const alvo = itensSelecionados.filter((i) => i.status === 'ativo' || i.status === 'pausado');
     return {
@@ -1999,6 +2015,22 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
                 </SelectContent>
               </Select>
             </div>
+
+            <div className="w-full sm:w-auto">
+              <Select
+                value={filtro.atacado ?? '__todos'}
+                onValueChange={(v) => setFiltro((f) => ({ ...f, atacado: v === '__todos' ? null : (v as FiltroAtacado) }))}
+              >
+                <SelectTrigger className="h-8 w-full min-w-0 text-sm sm:w-[170px]" aria-label="Filtrar por atacado">
+                  <SelectValue placeholder="Atacado" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__todos">Todos atacados</SelectItem>
+                  <SelectItem value="com">Com atacado</SelectItem>
+                  <SelectItem value="sem">Sem atacado</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <FiltrosAtivos filtro={filtroDaTela} onRemover={removerFiltro} onLimpar={limparFiltros} />
@@ -2090,6 +2122,7 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
                         selecionado={selecao.has(item.mlItemId)}
                         onSelecionar={(v) => setSelecao((s) => { const n = new Set(s); if (v) n.add(item.mlItemId); else n.delete(item.mlItemId); return n; })}
                         motivoNaoSelecionavel={motivoNaoSelecionavel(item)}
+                        onEditarAtacado={(i) => setAtacadoAlvo([i])}
                       />
                     )
                   ))
@@ -2104,6 +2137,8 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
             onPausar={() => setPreviewAcao('pausar')}
             onReativar={() => setPreviewAcao('reativar')}
             onReajustar={() => setReajuste({ pedido: null })}
+            produtosAtacado={planoSelecaoAtacado.produtos.length}
+            onAtacado={() => setAtacadoAlvo(itensSelecionados)}
             onLimpar={() => setSelecao(new Set())}
           />
 
@@ -2136,6 +2171,17 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
               onVerPreview={(ajuste) => setReajuste({ pedido: { ...pedidoReajuste(), ajuste } })}
             />
           )}
+          {planoAtacado && (
+            <DialogAtacado
+              plano={planoAtacado}
+              precoBase={atacadoAlvo?.length === 1 ? (atacadoAlvo[0].precoOriginal ?? atacadoAlvo[0].precoAtual ?? null) : null}
+              onFechar={() => setAtacadoAlvo(null)}
+              onVerPreview={(faixas) => {
+                setReajuste({ pedido: { familias: [], ml_item_ids: [], ajuste: null, atacado: Object.fromEntries(planoAtacado.familias.map((f) => [f, faixas])) } });
+                setAtacadoAlvo(null);
+              }}
+            />
+          )}
           {reajuste?.pedido && (
             <PreviewReajuste
               pedido={reajuste.pedido}
@@ -2145,7 +2191,7 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
                 setReajuste(null);
                 setSelecao(new Set());
                 setAcompanhando(id);
-                toast.success('Alteração de preço iniciada', { action: { label: 'Ver em Operações', onClick: () => irParaOperacoes() } });
+                toast.success(reajuste.pedido?.atacado && !reajuste.pedido.ajuste ? 'Atacado em execução' : 'Alteração de preço iniciada', { action: { label: 'Ver em Operações', onClick: () => irParaOperacoes() } });
               }}
             />
           )}

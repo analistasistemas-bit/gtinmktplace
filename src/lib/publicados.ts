@@ -1,3 +1,4 @@
+import type { SeloAtacado } from './atacado-publicados';
 import type { TipoAviamento } from './tipos-dominio';
 import { normalizarParaBusca } from './texto';
 import type { KitVinculado } from './queries';
@@ -100,6 +101,8 @@ export interface PublicadoItem {
   /** Linha de partição >0 de produto dividido (ADR-0048): herda o `familiaId` da partição 0, então
    *  ações por família (ex.: retentar catálogo) agiriam no anúncio errado. */
   particaoSplit?: boolean;
+  /** ADR-0196 emenda 2026-11-15: configuração de atacado do produto (PubliAI, não o ML). Ausente = sem atacado. */
+  atacado?: SeloAtacado;
   /** ADR-0185: família publicada mais nova do grupo (a `familiaId` é a mais antiga, publicação
    *  original). Ações que copiam dados do produto (Criar kit) usam esta. */
   familiaIdVigente?: string;
@@ -291,7 +294,11 @@ export interface FiltroPublicados {
   somenteSemCatalogo?: boolean;
   /** Filtro por kits: qualquer marca, um tipo (papel "tem" ou "é") ou nenhuma marca. */
   kit?: FiltroKit | null;
+  /** 'com' = qualquer selo de atacado (faixas, por cor ou entre lotes). */
+  atacado?: FiltroAtacado | null;
 }
+
+export type FiltroAtacado = 'com' | 'sem';
 
 export type FiltroKit = 'qualquer' | TipoKit | 'sem';
 
@@ -462,6 +469,7 @@ export function filtrarPublicados(
     if (f.somenteEncalhados && !ehEncalhado(i)) return false;
     if (f.somenteIncompletos && !i.publicacaoIncompleta) return false;
     if (f.somenteSemCatalogo && !i.catalogRetentavel) return false;
+    if (f.atacado && (f.atacado === 'com') !== !!i.atacado) return false;
     if (f.kit && kits) {
       const marcas = kits.get(i.codigoPai) ?? [];
       const ok = f.kit === 'sem' ? marcas.length === 0

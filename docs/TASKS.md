@@ -1,5 +1,16 @@
 # PubliAI — Tasks
 
+## Atacado em Publicados: selo, filtro e "Atacado (N)" (ADR-0196, emenda 2026-11-15) — 2026-11-15
+
+Só front; sem migration nem edge (reusa o preview/confirmação do reajuste de `operacoes-massa`). Consultor/revisor: Codex (3 rodadas, APROVAR).
+
+- [x] Selo "Atacado · N faixas" na linha (configuração do PubliAI em todos os lotes; tooltip com valores estimados), "Atacado por cor" e "Atacado entre lotes" só informativos.
+- [x] Filtro Com/Sem atacado (`?atacado=com|sem`).
+- [x] Botão "Atacado (N)" na barra (N = produtos elegíveis) e clique no selo: cria/edita até 5 faixas → preview "Só atacado" → confirmação de admin. Fora: Kit Virtual, inativo, por cor, entre lotes, publicação incompleta e produto misto UP + partição Legacy.
+- [x] Validado no app (vite preview, conta VALIDATION com atacado injetado): selo, tooltip, filtro, barra e preview real no servidor.
+- [ ] 1ª aplicação real numa conta com anúncio não-catálogo: conferir as faixas no ML.
+- [ ] Remover todas as faixas por Publicados (o pedido `[]` é recusado hoje) — só se pedirem.
+
 ## Kit Virtual: capa IA, texto IA e recebe avulso (fatia 1, ADR-0206) — 2026-11-15
 
 Spec `docs/superpowers/specs/2026-11-15-kit-virtual-capa-ia-galeria-design.md`. Migration `20261115211040_kit_virtual_capa_ia.sql` **no ar 15/11**. Edges entram no deploy desta entrega (`gerar-capa-kit-virtual` nova; `preview-kit-virtual`, `buscar-componentes-kit-virtual`, `subir-foto-kit-virtual`, `criar-kit-virtual` alteradas) — versão pós-deploy a confirmar.

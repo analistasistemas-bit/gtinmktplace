@@ -156,6 +156,8 @@ export function PreviewReajuste({ pedido, familiaPorPai, onFechar, onCriada }: {
   const confirmar = useConfirmarReajuste();
   const podeExecutar = usePodeExecutarOperacao();
   const reverter = !!pedido.origem_id;
+  // ADR-0196 emenda 2026-11-15: "Atacado (N)" — o diálogo já definiu as faixas; o preço base não muda.
+  const soAtacadoPedido = !reverter && !pedido.ajuste && !!pedido.atacado;
 
   const [resp, setResp] = useState<RespostaPreviewReajuste | null>(null);
   const [erroPreview, setErroPreview] = useState<ErroOperacao | null>(null);
@@ -296,7 +298,7 @@ export function PreviewReajuste({ pedido, familiaPorPai, onFechar, onCriada }: {
     }
   }
 
-  const titulo = tituloOperacao({ acao: 'reajustar', promocao_nome: null, promocao_id: null, origem_id: pedido.origem_id ?? null }, incluidos.length);
+  const titulo = soAtacadoPedido ? `Atacado em ${anuncios(incluidos.length)}` : tituloOperacao({ acao: 'reajustar', promocao_nome: null, promocao_id: null, origem_id: pedido.origem_id ?? null }, incluidos.length);
   const tituloDe = (id: string) => { const i = itens.find((x) => x.ml_item_id === id); return i ? nomeItem(i) : id; };
 
   return (
@@ -305,7 +307,7 @@ export function PreviewReajuste({ pedido, familiaPorPai, onFechar, onCriada }: {
         <SheetHeader>
           <SheetTitle className="pr-8">{titulo}</SheetTitle>
           <SheetDescription>
-            {reverter ? 'Volta ao preço de antes do reajuste.' : pedido.ajuste ? (pedido.ajuste.tipo === 'definir' ? formatarAjuste(pedido.ajuste) : `Ajuste ${formatarAjuste(pedido.ajuste)}`) : null}
+            {reverter ? 'Volta ao preço de antes do reajuste.' : soAtacadoPedido ? 'Só atacado: o preço base não muda.' : pedido.ajuste ? (pedido.ajuste.tipo === 'definir' ? formatarAjuste(pedido.ajuste) : `Ajuste ${formatarAjuste(pedido.ajuste)}`) : null}
             {restanteS != null && !expirado && (
               <> · Expira em {Math.floor(restanteS / 60)}:{String(restanteS % 60).padStart(2, '0')}</>
             )}
@@ -335,7 +337,7 @@ export function PreviewReajuste({ pedido, familiaPorPai, onFechar, onCriada }: {
             </div>
           )}
 
-          {resp?.operacao_id && !reverter && (
+          {resp?.operacao_id && !reverter && !soAtacadoPedido && (
             <p className="text-sm text-muted-foreground">
               O preço novo fica fixado nestas cores: o re-ingest deixa de recalcular o preço delas por custo.
             </p>
@@ -347,7 +349,7 @@ export function PreviewReajuste({ pedido, familiaPorPai, onFechar, onCriada }: {
             </ul>
           )}
 
-          {!reverter && editadasSemItem.map((fid) => (
+          {!reverter && !soAtacadoPedido && editadasSemItem.map((fid) => (
             <EditorAtacado
               key={fid} pai={paiDaFamilia(fid)} valor={atacado[fid]} desabilitado={ocupado}
               n={itens.filter((x) => x.codigo_pai === paiDaFamilia(fid)).length} versao={`${resp?.operacao_id}-${versaoInput}`}
@@ -361,7 +363,7 @@ export function PreviewReajuste({ pedido, familiaPorPai, onFechar, onCriada }: {
                 const cores = coresDe(i);
                 const pior = i.avaliacao ? piorCor(cores) : null;
                 const familiaId = familiaPorPai?.[i.codigo_pai];
-                const mostraEditor = !reverter && !!familiaId && donoEditor.get(i.codigo_pai) === i.ml_item_id;
+                const mostraEditor = !reverter && !soAtacadoPedido && !!familiaId && donoEditor.get(i.codigo_pai) === i.ml_item_id;
                 const aberto = abertos.has(i.ml_item_id);
                 return (
                   <li key={i.ml_item_id} className="flex flex-col gap-2 p-3">
@@ -478,7 +480,7 @@ export function PreviewReajuste({ pedido, familiaPorPai, onFechar, onCriada }: {
           )}
           {resp?.operacao_id && (podeExecutar ? (
             <Button onClick={executar} disabled={!podeConfirmar}>
-              {reverter ? 'Reverter' : 'Alterar'} {anuncios(incluidos.length)}
+              {reverter ? 'Reverter' : soAtacadoPedido ? 'Aplicar em' : 'Alterar'} {anuncios(incluidos.length)}
             </Button>
           ) : (
             <p className="text-sm text-muted-foreground">Só administradores executam.</p>

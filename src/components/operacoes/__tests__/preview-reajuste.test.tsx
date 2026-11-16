@@ -389,4 +389,21 @@ describe('PreviewReajuste', () => {
       expect(screen.queryByText(/Ajuste Definir/)).not.toBeInTheDocument();
     });
   });
+
+  it('só atacado (botão Atacado): sem editor interno, sem aviso de preço fixado, título e botão próprios', async () => {
+    const pedido = { familias: [], ml_item_ids: [], ajuste: null, atacado: { F1: [{ min_unidades: 3, desconto_pct: 5 }] } };
+    const i = item('MLB1', {
+      preco: 10, passos: [{ tipo: 'faixas', anterior: [], alvo: [{ min_unidades: 3, preco: 9.5 }], config: null, estado: 'pendente' }] as never,
+      faixas_alvo: [{ min_unidades: 3, preco: 9.5 }], atacado_config: [{ min_unidades: 3, desconto_pct: 5 }],
+    });
+    previewMut.mockResolvedValue({ operacao_id: 'OP1', itens: [i], expira_em: expira() });
+    render(<PreviewReajuste pedido={pedido} familiaPorPai={{ P1: 'F1' }} onFechar={() => {}} onCriada={() => {}} />);
+    expect(await screen.findByText('Só atacado: o preço base não muda.')).toBeInTheDocument();
+    expect(previewMut).toHaveBeenCalledWith(pedido);
+    expect(screen.getByText('Atacado em 1 anúncio')).toBeInTheDocument();
+    expect(screen.queryByText(/re-ingest deixa de recalcular/)).toBeNull();
+    expect(screen.queryByText('Desconto de atacado da família')).toBeNull();
+    expect(screen.getByText(/3\+ un\.: nova faixa → R\$\s9,50/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Aplicar em 1 anúncio' })).toBeEnabled();
+  });
 });

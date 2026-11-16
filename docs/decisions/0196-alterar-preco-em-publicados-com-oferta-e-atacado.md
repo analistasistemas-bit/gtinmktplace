@@ -184,3 +184,23 @@ retomadas de saga e a migração para User Products (`MIGRADO_PARA_UP`) só é d
 
 **Deploy pendente:** `publicar-familias`, `reconciliar-convergencia-up`, `update-familia-ml` (usa `atualizar-familia-up.ts`)
 e as demais funções que importam `conexao.ts`; conferir o grafo de imports e as versões pós-deploy.
+
+## Emenda 2026-11-15 — Atacado direto em Publicados (selo, filtro e "Atacado (N)")
+
+**Decisão (Diego, 2026-11-15; consultor Codex):** Publicados mostra e edita o atacado sem passar pela Revisão.
+
+- **Selo** na linha, ao lado dos de canal e kit: `Atacado · N faixas`, neutro. Reflete a configuração do PubliAI
+  (todos os lotes do produto, como `atacadoDoProduto`), não o ML: o tooltip diz "valores estimados — confira no ML".
+  `atacado_status` não entra: a conclusão do reajuste (`reajuste_atacado_concluir`) não o atualiza, e um erro antigo
+  apareceria como falha atual. Cor com configuração própria → `Atacado por cor`; lotes divergentes →
+  `Atacado entre lotes`; os dois só se ajustam na Revisão.
+- **Filtro** Com/Sem atacado (`?atacado=com|sem`). "Com" = produto com faixas, por cor ou divergente.
+- **Botão `Atacado (N)`** na barra de seleção, N = produtos elegíveis deduplicados por `codigo_pai`. Abre o editor de
+  faixas (cria ou edita, até 5) e reusa o preview/confirmação/execução/reversão do reajuste com
+  `{ ajuste: null, atacado: { familia_id: faixas } }`. **Sem backend novo**: o servidor já expande o produto inteiro,
+  cria faixas sem vivas e avalia a margem com imposto, comissão e frete. Clicar no selo abre o mesmo editor para um produto.
+- Prejuízo segue a regra do reajuste: 🔴/⚪ entram desmarcados e exigem a confirmação. A família é a unidade: desmarcar
+  um anúncio dela recusa a confirmação.
+- Fora no v1, com motivo no editor: Kit Virtual, anúncio que não está ativo/pausado, atacado por cor ou entre lotes, e
+  **produto misto UP + partição Legacy** (a expansão de `deps.ts` ignora as partições Legacy quando acha UP).
+- Remover todas as faixas fica fora (o pedido com `[]` é recusado em `pedido.ts`).

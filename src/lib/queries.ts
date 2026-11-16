@@ -22,6 +22,7 @@ import { parseAnomalias, parseMudancaEstrutural } from './tipos-dominio';
 import type { FaixaAtacado } from './atacado';
 import type { PublicadoItem, StatusPublicado } from './publicados';
 import { dedupePublicados, fiscalDoKitVirtual, linkPaginaUP } from './publicados';
+import { selosAtacado, type SeloAtacado } from './atacado-publicados';
 import {
   catalogStatusRetentavelEmEspelho,
   familiaTemCatalogoRetentavel,
@@ -1223,6 +1224,18 @@ async function carregarItensUpRetentaveisPorCodigo(
   return out;
 }
 
+/** ADR-0196 emenda 2026-11-15: selo de atacado por produto. Todos os lotes (inclusive sem MLB), como o servidor;
+ *  null não muda a configuração, então só as linhas com atacado. RLS limita à org. */
+async function fetchSelosAtacado(): Promise<Map<string, SeloAtacado>> {
+  const [lotes, cores] = await Promise.all([
+    buscarTodasPaginas<{ codigo_pai: string; atacado: unknown }>((de, ate) => supabase.from('familias')
+      .select('codigo_pai, atacado').not('atacado', 'is', null).order('id').range(de, ate) as never),
+    buscarTodasPaginas<{ familias: { codigo_pai: string } }>((de, ate) => supabase.from('variacoes')
+      .select('familias!inner(codigo_pai)').not('atacado', 'is', null).order('id').range(de, ate) as never),
+  ]);
+  return selosAtacado(lotes, cores.map((c) => c.familias.codigo_pai));
+}
+
 export async function fetchPublicados(): Promise<PublicadoItem[]> {
   const { data, error } = await supabase
     .from('familias')
@@ -1237,7 +1250,7 @@ export async function fetchPublicados(): Promise<PublicadoItem[]> {
   // ADR-0161: quais produtos estão migrando para preço por variação. Durante a migração o ML recusa
   // qualquer alteração no anúncio, então a tela desabilita migrar/pausar/reativar/remover — as edge
   // functions também recusam (J13), mas deixar o botão clicável só entregaria um erro evitável.
-  const [anunciosPorPai, itensUp] = await Promise.all([fetchAnunciosPorCodigoPai(codigosPai), fetchItensAtivosUP(codigosPai, { propagarErro: true })]);
+  const [anunciosPorPai, itensUp, selos] = await Promise.all([fetchAnunciosPorCodigoPai(codigosPai), fetchItensAtivosUP(codigosPai, { propagarErro: true }), fetchSelosAtacado()]);
   const paisMigrando = new Set(
     [...anunciosPorPai.entries()]
       .filter(([, lista]) => lista.some(
@@ -1265,6 +1278,7 @@ export async function fetchPublicados(): Promise<PublicadoItem[]> {
       produtoDividido: (anunciosPorPai.get(r.codigo_pai) ?? []).length > 1,
       userProducts: (itensUp.get(r.codigo_pai)?.length ?? 0) > 0,
       mlItemIdsUP: itensUp.get(r.codigo_pai)?.map((i) => i.itemId),
+      atacado: selos.get(r.codigo_pai),
     })),
   );
 
@@ -1360,7 +1374,8 @@ export async function fetchPublicados(): Promise<PublicadoItem[]> {
 
   const incompletas = await fetchPublicacoesIncompletas(new Set(rows.map((r) => r.codigo_pai)));
 
-  return [...comContagem, ...extras, ...kits, ...incompletas];
+  // Incompleta também tem produto: sem o selo, o filtro "Sem atacado" a contaria errado.
+  return [...comContagem, ...extras, ...kits, ...incompletas.map((i) => ({ ...i, atacado: selos.get(i.codigoPai) }))];
 }
 
 /**

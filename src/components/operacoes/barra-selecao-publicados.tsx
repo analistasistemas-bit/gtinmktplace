@@ -1,8 +1,10 @@
-// ADR-0174 emenda 2026-10-04 — barra fixa da seleção na tela Publicados (+ I5: reajuste de preço).
+// ADR-0174 emenda 2026-10-04 — barra fixa da seleção na tela Publicados (+ I5: reajuste de preço; + atacado, ADR-0196).
 import { Button } from '@/components/ui/button';
 
-export function BarraSelecaoPublicados({ ativos, pausados, onPausar, onReativar, onReajustar, onLimpar }: {
+export function BarraSelecaoPublicados({ ativos, pausados, produtosAtacado, onPausar, onReativar, onReajustar, onAtacado, onLimpar }: {
   ativos: number; pausados: number; onPausar: () => void; onReativar: () => void; onReajustar: () => void; onLimpar: () => void;
+  /** ADR-0196 emenda 2026-11-15: produtos elegíveis, deduplicados. Sem `onAtacado` o botão some. */
+  produtosAtacado?: number; onAtacado?: () => void;
 }) {
   const total = ativos + pausados;
   if (total === 0) return null;
@@ -13,6 +15,7 @@ export function BarraSelecaoPublicados({ ativos, pausados, onPausar, onReativar,
         <Button size="sm" onClick={onPausar} disabled={ativos === 0}>Pausar {ativos}</Button>
         <Button size="sm" variant="outline" onClick={onReativar} disabled={pausados === 0}>Reativar {pausados}</Button>
         <Button size="sm" variant="outline" onClick={onReajustar}>Alterar preço ({total})</Button>
+        {onAtacado && <Button size="sm" variant="outline" onClick={onAtacado}>Atacado ({produtosAtacado ?? 0})</Button>}
         <Button size="sm" variant="ghost" onClick={onLimpar}>Limpar</Button>
       </div>
     </div>
