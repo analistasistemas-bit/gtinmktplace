@@ -410,3 +410,14 @@ supabase functions list
 - Mensagem de objeto duplicado do storage-js 2.110.0 em runtime.
 - Validação de runtime na org Zaven (importar, distribuir, reimportar, desfazer, duas abas) com
   screenshots, antes do merge.
+
+## Deploy pós-merge — Reposição e pedido de compra (ADR-0207)
+
+Ordem obrigatória (lição do ADR-0134):
+
+1. **Edge `usuarios` primeiro**, antes do `db push`: ela passa a conhecer a chave de menu `reposicao` (`MENU_KEYS`), o módulo (`MODULOS_VALIDOS`) e a categoria. Com a edge antiga no ar, editar permissão de um usuário **apaga** a chave recém-acrescentada de `allowed_menus`.
+2. `supabase db push` (3 migrations `2026111*_reposicao*.sql`); validar com `npm run db:check`.
+3. Edges: `reposicao`, `reposicao-diaria` (`verify_jwt=false`), `entrada-estoque`, `importar-nota-compra`, `desfazer-nota-compra`. A mudança em `_shared/notificacoes/categorias.ts` força o redeploy de **todas** as edges que a importam; conferir a versão ativa de cada uma.
+4. Criar o schedule QStash da `reposicao-diaria` (`30 11 * * *`, sem body) e registrar o scheduleId em `docs/reference/edge-functions.md`.
+5. Só então a main (o front chama a edge e lê as tabelas novas).
+6. Ligar o módulo na org piloto e validar (ver `operacoes-rotineiras.md`).

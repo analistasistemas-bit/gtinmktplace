@@ -1,6 +1,7 @@
 // Miolo da entrada de mercadoria, com dependências injetadas para ser testável sem Deno —
 // mesmo arranjo de `ajustar-estoque/processar.ts`, do qual isto é o espelho para a entrada.
 import { refDoItem, type ItemEntrada } from './validar.ts';
+import { mensagemErroPedido } from '../_shared/reposicao/erro-pedido.ts';
 
 export interface ResultadoItem {
   codigo: string;
@@ -24,11 +25,29 @@ export async function processarEntrada(
     orgId: string; userId: string; itens: ItemEntrada[]; unico: boolean;
     documento: string | null; observacao: string | null; ref: string;
   },
-): Promise<{ resultados: ResultadoItem[]; pushOk: boolean }> {
+): Promise<{ resultados: ResultadoItem[]; pushOk: boolean; erro?: string }> {
   const resultados: ResultadoItem[] = [];
   const produtos = new Set<string>();
 
-  for (const item of p.itens) {
+  // ADR-0207 §16: com pedido, a submissão inteira é UMA transação (`registrar_entrada_lote`): qualquer recusa
+  // desfaz todas as cores e vira 400. `validarEntrada` garante um pedido só por submissão.
+  const pedido = p.itens.find((i) => i.pedidoCompraId)?.pedidoCompraId;
+  if (pedido) {
+    const { data, error } = await deps.rpc('registrar_entrada_lote', {
+      p_org: p.orgId, p_doc: p.documento, p_obs: p.observacao, p_criado_por: p.userId, p_pedido_compra: pedido,
+      p_itens: p.itens.map((i) => ({
+        codigo: i.codigo, quantidade: i.quantidade, custo: i.custo, ref: refDoItem(p.ref, i.codigo, p.unico),
+        com_pedido: !!i.pedidoCompraId,
+      })),
+    });
+    if (error) return { resultados: [], pushOk: true, erro: mensagemErroPedido(error.message) };
+    for (const r of data as Array<{ codigo: string; codigo_pai: string | null; estoque: number | null; duplicada: boolean }>) {
+      if (r.codigo_pai) produtos.add(r.codigo_pai);
+      resultados.push({ codigo: r.codigo, estoque: r.estoque, duplicada: r.duplicada });
+    }
+  }
+
+  for (const item of pedido ? [] : p.itens) {
     const ref = refDoItem(p.ref, item.codigo, p.unico);
     const { data, error } = await deps.rpc('registrar_entrada', {
       p_org: p.orgId, p_codigo: item.codigo, p_qtd: item.quantidade,
@@ -73,4 +92,20 @@ export async function processarEntrada(
   }
 
   return { resultados, pushOk };
+}
+
+/**
+ * Corpo e status HTTP da resposta. Formato antigo preservado inteiro (uma cor): `estoque`/`duplicada` no topo E o
+ * 400 quando a RPC recusa — o cliente antigo trata erro pelo status, não por um campo no corpo. Uma aba já aberta
+ * durante o deploy continua funcionando. Lote: erro é POR ITEM (o operador precisa ver o que não entrou).
+ */
+export function respostaEntrada(
+  r: { resultados: ResultadoItem[]; pushOk: boolean; erro?: string }, unico: boolean,
+): { status: number; body: unknown } {
+  // Recusa da entrada vinculada a pedido: nada foi gravado, 400 nos dois formatos.
+  if (r.erro) return { status: 400, body: { error: r.erro } };
+  if (!unico) return { status: 200, body: r };
+  const primeiro = r.resultados[0];
+  if (primeiro?.erro) return { status: 400, body: { error: primeiro.erro } };
+  return { status: 200, body: { estoque: primeiro?.estoque ?? null, duplicada: primeiro?.duplicada === true, pushOk: r.pushOk } };
 }

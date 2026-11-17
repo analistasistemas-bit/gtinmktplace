@@ -14,6 +14,7 @@ export const CATEGORIAS_NOTIFICACAO = [
   'estoque',
   'vendas_gerencial',
   'resumo_diario',
+  'reposicao',
 ] as const;
 
 export type CategoriaNotificacao = (typeof CATEGORIAS_NOTIFICACAO)[number];

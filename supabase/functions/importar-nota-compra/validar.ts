@@ -4,6 +4,7 @@ import {
   chaveNfeValida, cfopAceito, conciliarItens, quantidadeEmEstoque, erroDistribuicao,
 } from '../_shared/nfe/regras.ts';
 import type { DecisaoImportacao, ItemConciliado, NotaCompraLida } from '../_shared/nfe/tipos.ts';
+import { UUID_RE } from '../_shared/reposicao/erro-pedido.ts';
 
 const TETO_XML = 1_048_576;
 const ehTexto = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
@@ -26,8 +27,14 @@ function decisoesValidas(v: unknown): DecisaoImportacao[] | null {
 
 export function validarImportacao(
   body: unknown, cnpjOrg: string,
-): { ok: true; nota: NotaCompraLida; itens: ItemConciliado[]; decisoes: DecisaoImportacao[]; xml: string; divergenciaTotal: number } | { ok: false; erro: string } {
-  const b = (body ?? {}) as { xml?: unknown; decisoes?: unknown };
+): { ok: true; nota: NotaCompraLida; itens: ItemConciliado[]; decisoes: DecisaoImportacao[]; xml: string; divergenciaTotal: number;
+       pedidoCompraId?: string; vincularCnpj?: true } | { ok: false; erro: string } {
+  const b = (body ?? {}) as { xml?: unknown; decisoes?: unknown; pedidoCompraId?: unknown; vincularCnpj?: unknown };
+  // ADR-0207 §16: pedido de compra que a nota baixa (opcional). Sem ele, nada muda.
+  const pedidoCompraId = b.pedidoCompraId;
+  if (pedidoCompraId != null && !(typeof pedidoCompraId === 'string' && UUID_RE.test(pedidoCompraId))) {
+    return { ok: false, erro: 'Pedido de compra inválido.' };
+  }
   if (typeof b.xml !== 'string') return { ok: false, erro: 'Envie o XML da nota.' };
   if (b.xml.length > TETO_XML) return { ok: false, erro: 'O XML passa de 1 MB.' };
   const decisoes = decisoesValidas(b.decisoes);
@@ -66,5 +73,10 @@ export function validarImportacao(
     const e = erroDistribuicao(q.quantidade, d.distribuicao);
     if (e) return { ok: false, erro: `Item ${item.nItem}: ${e}` };
   }
-  return { ok: true, nota, itens: conc.itens, decisoes, xml: b.xml, divergenciaTotal: conc.divergenciaTotal };
+  return {
+    ok: true, nota, itens: conc.itens, decisoes, xml: b.xml, divergenciaTotal: conc.divergenciaTotal,
+    ...(pedidoCompraId ? { pedidoCompraId } : {}),
+    // Confirmação explícita do operador: o fornecedor sem CNPJ do pedido passa a ter o CNPJ do emitente.
+    ...(pedidoCompraId && b.vincularCnpj === true ? { vincularCnpj: true as const } : {}),
+  };
 }

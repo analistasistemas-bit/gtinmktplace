@@ -6,7 +6,7 @@
 // são as edges `cadastrar-produto` e `entrada-estoque`, que recusam org sem o módulo com 403.
 import type { MenuKey } from './menus';
 
-export type ModuloId = 'estoque' | 'pulse' | 'fiscal' | 'promocoes' | 'ads' | 'extensao' | 'kit_variacao' | 'imagem_ia';
+export type ModuloId = 'estoque' | 'pulse' | 'fiscal' | 'promocoes' | 'ads' | 'extensao' | 'kit_variacao' | 'imagem_ia' | 'reposicao';
 
 export interface Modulo {
   id: ModuloId;
@@ -60,6 +60,12 @@ export const MODULOS: Modulo[] = [
     id: 'imagem_ia',
     nome: 'Imagem por IA',
     descricao: 'Fotos de anúncio criadas por IA, cobradas por imagem',
+  },
+  {
+    id: 'reposicao',
+    nome: 'Reposição',
+    descricao: 'Sugestão de compra por SKU e pedido de compra ao fornecedor, para loja sem ERP (ADR-0207).',
+    menu: 'reposicao',
   },
 ];
 

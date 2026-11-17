@@ -61,6 +61,7 @@
 | criar-kit-vinculado | **true** | HTTP (frontend, **admin**) | sim (idempotência por `chave_cadastro`, 1 por kit) |
 | fotos-base-kit | **true** | HTTP (frontend, **admin**) | sim (só leitura) |
 | varrer-anuncios-orfaos | false | HTTP (frontend, **admin**, JWT manual) ou QStash (schedule diário → 1 job `{orgId}` por org; aviso Telegram só ao dono) | sim (só leitura: ML + banco, nada escrito) |
+| reposicao | **true** | HTTP (frontend; `GET` e ações de membro; `aprovar`, `salvar_config` e `definir_multiplo` **admin**; gate `reposicao`) | sim (`aprovar` por `ref` em `ref_aprovacao`; demais por estado/chave única) |
 | **Preço por Variação (ADR-0161)** ||||
 | migrar-preco-por-variacao | **true** | HTTP (frontend) | sim (dispara migração UPtin no ML) |
 | acompanhar-migracao-pxv | false | QStash worker | sim (polling e finalização de migração) |
@@ -108,6 +109,7 @@
 | **Notificação gerencial e bot (ADR-0190)** ||||
 | notificar-carrinho | false | QStash worker (job `{orgId, chave}`) + schedule `*/5` com `{"varrer":true}` | sim (linha `notificacao_carrinho` + reserva por chave/chat; no máximo 1 mensagem por carrinho) |
 | resumo-diario | false | QStash schedule `0 11 * * *` (sem body) → 1 job `{orgId, dia}` por org | sim (chave por dia) |
+| reposicao-diaria | false | QStash schedule `30 11 * * *` (sem body) → 1 job `{orgId, dia}` por org com módulo `reposicao`; grava `reposicao_fotos` e notifica `reposicao` (ADR-0207) | sim (pk da foto + chave `reposicao:<org>:<dia>`) |
 | telegram-bot | false | webhook do Telegram (header `X-Telegram-Bot-Api-Secret-Token`) + QStash worker + schedule `*/5` com `{"varrer":true}` | sim (PK `bot_id, update_id`; lease de 60 s) |
 | **Pulse (ADR-0119)** ||||
 | pulse-coletar | false | HTTP (JWT manual) ou QStash schedule (legado) **ou** QStash fan-out por org atrás de `FANOUT_PULSE` (ADR-0173, ativo em produção desde 28/09) | sim (upsert por dia; `preco_caiu` uma vez por produto/par de preços/dia UTC; posse + CAS do cursor no modo fan-out) |
@@ -210,6 +212,7 @@ referência para auditar e recriar. Mantê-la atualizada ao mexer em qualquer cr
 | `reconciliar-faturamento` | `0 * * * *` | *(sem body)* | 3 |
 | `notificar-liberacao` | `0 11 * * *` | *(sem body)* | 3 |
 | `resumo-diario` (ADR-0190) | `0 11 * * *` | *(sem body)* | 1 — scheduleId: `scd_5BZmTcwbjRDRUsmaiUL28CDs27dg` |
+| `reposicao-diaria` (ADR-0207) | `30 11 * * *` | *(sem body)* | 3 — scheduleId: a criar no deploy |
 | `notificar-carrinho` (ADR-0190) | `*/5 * * * *` | `{"varrer":true}` | 1 — scheduleId: `scd_53L5dtdTKEUJGpP8rwkTGCyzqLc3` |
 | `telegram-bot` (ADR-0190) | `*/5 * * * *` | `{"varrer":true}` | 1 — scheduleId: `scd_51zTvvr5we53EmcYgemFDjUxntpR` |
 | `varrer-anuncios-orfaos` (2026-11-16) | `0 11 * * *` | *(sem body)* | 3 — scheduleId: `scd_5qDkzzyJFMmwxhAunNEdf4Em8MUx` |
@@ -1125,6 +1128,11 @@ falha ao ler `organizations` não libera.
   **Lote (2026-09-03):** aceita `{ itens: [{codigo, quantidade, custo?}], documento?, ref }` além
   do formato de uma cor (`{codigo, quantidade, …}`, que segue valendo e continua devolvendo 400 no
   erro). Miolo em `processar.ts` + `validar.ts`, testáveis sem Deno — espelho do `ajustar-estoque`.
+  **Pedido de compra (ADR-0207 §16):** `pedidoCompraId?` (uuid) no corpo de uma cor ou **por item** no
+  lote (um pedido só por submissão). Com pedido, a submissão inteira vai numa chamada a
+  `registrar_entrada_lote` (uma transação: trava o pedido primeiro, `registrar_entrada` por cor com
+  `com_pedido`); qualquer recusa desfaz todas as cores e vira 400 em pt-BR (`_shared/reposicao/erro-pedido.ts`),
+  e o push só sai depois do sucesso. Sem pedido, o caminho por cor fica idêntico ao de antes.
   **`ref` por item** (`entrada:{ref}:{codigo}`); a cor única mantém a ref histórica
   `entrada:{ref}`, porque mudar o formato faria um retry de submissão antiga somar o saldo de
   novo. Erro é por item (o diálogo fica aberto mostrando o que não entrou) e sai **um** push por
@@ -1275,6 +1283,9 @@ falha ao ler `organizations` não libera.
   privado `notas-compra` (endereçado por `xml_sha256`; reenvio idêntico = `ja_existia`, não
   sobrescreve) e chama a RPC `importar_nota_compra` (transação única: nota, itens, distribuição,
   vínculos de fornecedor e `registrar_entrada_nota_pendente` com ref `nfe:{chave}:{nItem}:{codigo}`).
+  **Pedido de compra (ADR-0207 §16):** `pedidoCompraId?` (uuid) opcional vira `p_pedido_compra`; a RPC
+  recusa (400 em pt-BR) pedido de outro CNPJ, sem SKU da nota ou fora de aprovado/enviado/parcial/recebido,
+  antes de lançar estoque. Sem ele, args e resposta idênticos aos de antes.
   Chave já importada responde "já importada" sem somar de novo. Push de estoque enfileirado por
   `codigo_pai`; `{ pushOk }` no corpo. Variante `{ reenviarPush: { chave } }` só reenfileira o push
   ("Reenviar estoque"). 400 com `{ error }` em validação/regra.
@@ -1306,6 +1317,32 @@ falha ao ler `organizations` não libera.
 - **gerar-capa-kit-unidades** (ADR-0205, em branch, não deployada) — capa do kit vinculado com N unidades por IA. POST `{ request_id, familia_base_id, n }`, `n` 2..6. Admin (ou suporte `full`) + módulo `imagem_ia` (`verify_jwt=true`, entrada em `supabase/config.toml`). A foto da base é lida no servidor. Reserva a tentativa pela RPC `kit_capa_unidades_reservar`: teto de 6 tentativas por (org, base, n) em 24 h, acima disso 429 `teto_diario`. Verificação por visão fail-closed (`_shared/ai/foto-kit-unidades.ts`: `montarPedidoUnidades`, `avaliarUnidades`, `verificarUnidades`; `visaoJson` exportada de `foto-kit-fiel.ts`). Persiste em `kit_variacao_imagens` (linha com `n`) e reaproveita a cobrança existente por imagem aprovada. A foto só entra no kit após o operador clicar "Usar esta foto".
 - **criar-kit-vinculado** (ADR-0205) — recusa `imagemPath` de fora da org (400 `foto_nao_autorizada`, `fotoDaOrg`), só quando difere da capa herdada.
 - **Deploy da capa com N unidades (ADR-0205):** `supabase db push` das 2 migrations ANTES; depois `gerar-capa-kit-unidades` (nova), `gerar-foto-kit`, `criar-kit-vinculado`, `criar-kit-variacao` (+ fecho de `_shared/galeria/referencias.ts` e `foto-kit-fiel.ts`); conferir a versão ativa.
+
+### Reposição (ADR-0207) — código pronto, deploy pendente
+
+- **reposicao** — `verify_jwt = true`, gate `reposicao` (403 sem o módulo, em leitura e escrita).
+  `GET` monta a tela: `lerDados` (`_shared/reposicao/dados.ts`, **6 fontes**, sem consulta por
+  SKU/dia/pedido; só páginas de 1000 a mais) → `calcularReposicao` (`calculo.ts`) → `{ config, resultado, skus, familias, naoRepor,
+  rascunhos, pedidos }` (tipos em `_shared/reposicao/tipos.ts`, importáveis pelo front). Sem
+  `reposicao_config` → `config: null` e listas vazias. `POST { action, ... }` (`acoes.ts`):
+  `salvar_config`, `salvar_rascunho` (cria fornecedor por `nome_normalizado`; avisa in-app todo
+  admin ativo, categoria `reposicao`, chave `rascunho:<pedidoId>:<dia>`), `aprovar` (**admin** ou
+  suporte `full`; idempotente por `ref` em `ref_aprovacao`; sem data, previsto = hoje + prazo),
+  `marcar_enviado`, `editar_pedido` (409 se o pedido teve qualquer recebimento, mesmo desfeito),
+  `encerrar_saldo`/`reabrir_saldo`, `nao_repor`/`remover_nao_repor`. Rascunho, edição e saldo são
+  RPCs atômicas (`20261117004919_reposicao_acoes.sql`: `reposicao_salvar_rascunho`,
+  `reposicao_editar_pedido`, `reposicao_encerrar_saldo`, `reposicao_reabrir_saldo`; definer, só
+  `service_role`): travam o pedido primeiro (mesma ordem do recebimento), validam, mudam os itens e
+  recalculam o status com `reposicao_recalcular_status`. Erro da RPC: P0002 → 404, 23514 → 409,
+  22023 → 400. `salvar_rascunho` com `pedidoId` recusa (409) se o pedido deixou de ser rascunho.
+  Fontes da entrada: `estoque_movimentos` desde o início da janela **até agora** (`estoqueInicio` do
+  dia = saldo após o último movimento anterior; sem nenhum, `estoque_anterior` do primeiro; sem
+  movimento, `variacoes.estoque`); venda = `abs(coalesce(quantidade_pedida, quantidade))`, menos o
+  par `estorno_venda` de mesma referência; preço de `ml_vendas_itens` por `order:codigo`; venda de kit
+  vinculado (baixada na base) volta ao SKU do kit, em kits, com saldo do kit = base ÷ unidades; SKU por
+  código = família mais recente que o contém (nome/múltiplo da mais recente por `codigo_pai`); KitLink
+  pela composição do kit com variação → transferência 1:1 → kit vinculado com base de 1 SKU.
+  Pendente na Task 9: medir CPU do `GET` na DSA (> 1,5 s → issue antes da fase 2).
 
 ### Kit Virtual (ADR-0154)
 

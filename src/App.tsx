@@ -29,6 +29,7 @@ const Promocoes = lazy(() => import('@/pages/Promocoes'));
 const PromocaoDetalhe = lazy(() => import('@/pages/PromocaoDetalhe'));
 const SkuDossie = lazy(() => import('@/pages/SkuDossie'));
 const Estoque = lazy(() => import('@/pages/Estoque'));
+const Reposicao = lazy(() => import('@/pages/Reposicao'));
 const Pulse = lazy(() => import('@/pages/Pulse'));
 const Vitrine = lazy(() => import('@/pages/Vitrine'));
 const Ads = lazy(() => import('@/pages/Ads'));
@@ -76,6 +77,7 @@ export function AppRoutes() {
             <Route path="/faturamento/sku/:codigo" element={<SkuDossie />} />
             <Route path="/faturamento/sku/familia/:codigoPai" element={<SkuDossie />} />
             <Route path="/estoque" element={<Estoque />} />
+            <Route path="/reposicao" element={<Reposicao />} />
             <Route path="/pulse" element={<Pulse />} />
             <Route path="/vitrine" element={<Vitrine />} />
             <Route path="/ads" element={<Ads />} />

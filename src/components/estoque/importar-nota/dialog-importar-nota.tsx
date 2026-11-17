@@ -5,6 +5,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useEmpresaFiscal } from '@/hooks/useConfiguracoes';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { useTiposProdutoHabilitados } from '@/hooks/useTiposProdutoHabilitados';
@@ -23,6 +27,7 @@ import { EtapaArquivo, type Recusa } from './etapa-arquivo';
 import { EtapaItens } from './etapa-itens';
 import { EtapaDistribuicao } from './etapa-distribuicao';
 import { EtapaResumo } from './etapa-resumo';
+import { CampoPedido, pedidosDaNota, pedidosQueRecebem, preSelecaoNota, useRecebimentoPedido } from '@/components/reposicao/recebimento-pedido';
 
 const TITULOS = ['Arquivo da nota', 'Produtos', 'Distribuição', 'Resumo'];
 
@@ -49,6 +54,10 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
   // "Cadastrar produto novo" (ADR-0181 D-4/D-10). `inicial` é snapshot ESTÁVEL, montado no clique.
   const [cadastro, setCadastro] = useState<{ nItem: number; modo: 'grade' | 'simples'; inicial: CadastroInicial } | null>(null);
   const { data: tiposProduto, isLoading: carregandoTipos } = useTiposProdutoHabilitados();
+  // ADR-0207 §16: pedido que a nota baixa. `undefined` = o operador não mexeu → vale a pré-seleção pelo CNPJ.
+  const recebimento = useRecebimentoPedido(aberto);
+  const [escolhaPedido, setEscolhaPedido] = useState<string | null | undefined>(undefined);
+  const [confirmarCnpj, setConfirmarCnpj] = useState(false);
 
   const { data: resumo, isLoading: carregandoProdutos, isError: erroProdutos } = useQuery({
     queryKey: QK.produtosEstoqueResumo, queryFn: fetchProdutosEstoqueResumo, enabled: aberto, staleTime: 180_000,
@@ -60,6 +69,7 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
     leitura.current = { geracao: leitura.current.geracao + 1, chave: null };
     setConferirFalhou(false); setConferindo(false);
     setEtapa(0); setE(null); setRecusa(null); setErroLeitura(null); setLendo(false); setCadastro(null);
+    setEscolhaPedido(undefined); setConfirmarCnpj(false);
   }, [aberto]);
 
   function cadastrarNovo(nItem: number, modo: 'grade' | 'simples') {
@@ -117,7 +127,7 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
     leitura.current.chave = null;
     const atual = () => leitura.current.geracao === geracao;
     setConferirFalhou(false); setConferindo(false);
-    setLendo(true); setE(null); setRecusa(null); setErroLeitura(null);
+    setLendo(true); setE(null); setRecusa(null); setErroLeitura(null); setEscolhaPedido(undefined);
     try {
       const xml = await file.text();
       if (!atual()) return;
@@ -144,9 +154,21 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
     }
   }
 
+  // Pedidos abertos com algum SKU da distribuição; pré-seleciona o do fornecedor do CNPJ emitente (o operador troca).
+  // Pedido de fornecedor com outro CNPJ nem aparece (a nota de B nunca baixa A).
+  const opcoesPedido = pedidosDaNota(
+    pedidosQueRecebem(recebimento.pedidos, e ? e.decisoes.flatMap((d) => d.distribuicao.map((l) => l.codigo)) : []),
+    e?.nota.emitenteCnpj ?? '');
+  const pedidoId = escolhaPedido === undefined ? (e ? preSelecaoNota(opcoesPedido, e.nota.emitenteCnpj) : null) : escolhaPedido;
+  const pedidoSel = opcoesPedido.find((p) => p.id === pedidoId) ?? null;
+  const pedidoNota = pedidoSel?.id ?? null;
+
   const confirmar = useMutation({
-    mutationFn: () => importarNotaCompra(payload(e!)),
-    onSuccess: (r) => {
+    mutationFn: ({ pedido, vincularCnpj }: { pedido: string | null; vincularCnpj: boolean }) => importarNotaCompra({
+      ...payload(e!), ...(pedido ? { pedidoCompraId: pedido } : {}), ...(pedido && vincularCnpj ? { vincularCnpj: true as const } : {}),
+    }),
+    onSuccess: (r, { pedido }) => {
+      if (pedido && !r.duplicada) void recebimento.aposEntrada(pedido);
       const n = e!.nota;
       const unidades = e!.decisoes.reduce((s, d) => s + d.distribuicao.reduce((t, l) => t + (l.travada ? 0 : l.quantidade), 0), 0);
       qc.invalidateQueries({ queryKey: QK.produtosEstoqueResumo });
@@ -171,6 +193,7 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
   const podeAvancar = etapa === 0 ? !!e && !recusa && !aguardando : !!e && !bloqueio;
 
   return (
+    <>
     <Dialog open={aberto} onOpenChange={(o) => { if (!o && !confirmar.isPending) onFechar(); }}>
       <DialogContent className="sm:max-w-5xl">
         <DialogHeader>
@@ -194,6 +217,9 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
             <EtapaDistribuicao e={e} atualizar={(f) => setE((s) => (s ? f(s) : s))} />
           )}
           {etapa === 3 && e && <EtapaResumo e={e} produtos={produtos} irPara={setEtapa} />}
+          {etapa === 3 && semPendencias && opcoesPedido.length > 0 && (
+            <div className="mt-4"><CampoPedido opcoes={opcoesPedido} valor={pedidoNota} onChange={setEscolhaPedido} /></div>
+          )}
         </div>
 
         <DialogFooter>
@@ -202,7 +228,12 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
           {etapa < 3 ? (
             <Button onClick={() => setEtapa(etapa + 1)} disabled={!podeAvancar}>Avançar</Button>
           ) : (
-            <Button onClick={() => confirmar.mutate()} disabled={!semPendencias || !!aguardando || confirmar.isPending}>
+            <Button
+              onClick={() => (pedidoSel && !pedidoSel.fornecedor.cnpj
+                ? setConfirmarCnpj(true)
+                : confirmar.mutate({ pedido: pedidoNota, vincularCnpj: false }))}
+              disabled={!semPendencias || !!aguardando || confirmar.isPending}
+            >
               {confirmar.isPending ? 'Importando…' : 'Confirmar'}
             </Button>
           )}
@@ -211,6 +242,23 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
         {/* DENTRO do DialogContent da importação: na árvore React do assistente, o Radix trata o
             cadastro como camada aninhada — como irmão, um clique nele contaria como "fora" e
             fecharia a importação (que zera o estado no fechamento). */}
+        {/* Fornecedor do pedido sem CNPJ: a nota grava o CNPJ do emitente nele para sempre — só com confirmação. */}
+        <AlertDialog open={confirmarCnpj && !!pedidoSel && !!e} onOpenChange={setConfirmarCnpj}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Identificar o fornecedor pelo CNPJ?</AlertDialogTitle>
+              <AlertDialogDescription>
+                O fornecedor {pedidoSel?.fornecedor.nome} passa a ser identificado pelo CNPJ {e?.nota.emitenteCnpj} ({e?.nota.emitenteNome}). Confirmar?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Voltar</AlertDialogCancel>
+              <AlertDialogAction onClick={() => { setConfirmarCnpj(false); confirmar.mutate({ pedido: pedidoNota, vincularCnpj: true }); }}>
+                Confirmar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
         <DialogCadastroProduto
           aberto={cadastro?.modo === 'simples'} onFechar={() => setCadastro(null)}
           inicial={cadastro?.modo === 'simples' ? cadastro.inicial : undefined} origemNota
@@ -224,5 +272,7 @@ export function DialogImportarNota({ aberto, onFechar, onVerNota }: {
         />
       </DialogContent>
     </Dialog>
+    {recebimento.dialogoSaldo}
+    </>
   );
 }

@@ -350,6 +350,7 @@ O resultado declara a proveniência de cada modalidade: **oficial** (comissão e
 Frete desconhecido nunca vira zero; zero exige confirmação explícita. Sem categoria, token ou API,
 o formulário permanece utilizável e avisa que o cálculo não é oficial. Sensibilidades de custo,
 preço e frete e o preço para a margem-alvo são derivados localmente pelo mesmo motor financeiro.
+- **Reposição e pedido de compra** (ADR-0207, módulo `reposicao`): para loja sem ERP. O cálculo (demanda por SKU, curva da família, projeção diária, quantidade e urgência) é um **módulo puro** em `supabase/functions/_shared/reposicao/` (`calculo.ts`), importado pela edge `reposicao` e pelo front, de modo que a tela e a rotina diária nunca divergem. A edge lê 6 fontes sem consulta por SKU, calcula e devolve a tela; ações (rascunho, aprovar, enviar, editar, encerrar saldo) são RPCs atômicas. O **recebimento é atômico com a entrada de estoque**: `entrada-estoque` e `importar-nota-compra` aceitam `pedidoCompraId` e baixam o pedido na mesma transação do movimento (`registrar_entrada`/`importar_nota_compra`); desfazer a nota desfaz a baixa. A `reposicao-diaria` (QStash) grava a foto diária e avisa só o que piorou.
 
 ## PWA: instalável, sem escrita offline (ADR-0153)
 

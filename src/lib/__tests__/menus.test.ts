@@ -21,3 +21,10 @@ describe('Canais como seção de Configurações', () => {
     expect(pathForMenu('canais')).toBe('/configuracoes/canais');
   });
 });
+
+describe('menu reposicao (ADR-0207)', () => {
+  it('fica logo depois de estoque e a rota pertence a ele', () => {
+    expect(MENU_KEYS.indexOf('reposicao' as never)).toBe(MENU_KEYS.indexOf('estoque') + 1);
+    expect(menuKeyForPath('/reposicao')).toBe('reposicao');
+  });
+});

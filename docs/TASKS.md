@@ -1,5 +1,16 @@
 # PubliAI — Tasks
 
+## Reposição de estoque e pedido de compra (ADR-0207) — 2026-11-17
+
+Branch `feat/reposicao`. Spec `docs/superpowers/specs/2026-11-16-reposicao-design.md`, plano `docs/superpowers/plans/2026-11-16-reposicao.md`. **Status: implementado, aguardando deploy e validação na loja piloto (Zaven).** Nada no ar: 3 migrations, edges e schedule pendentes (ordem em `docs/how-to/deploy-e-migrations.md`).
+
+- [x] Módulo puro de cálculo `_shared/reposicao/` (demanda, curva, tendência, projeção, quantidade, urgência) + edge `reposicao` (GET e ações) + `reposicao-diaria` (foto e resumo).
+- [x] Migrations: 7 tabelas, `familias.multiplo_compra`, RPCs de recebimento e de ações, categoria `reposicao`, módulo e menu.
+- [x] Recebimento vinculado em `entrada-estoque` e `importar-nota-compra` (`pedidoCompraId`), desfazer nota desfaz a baixa.
+- [x] Front: página Reposição, rascunho, aprovação, texto WhatsApp, recebimento e saldo parcial.
+- [ ] Deploy: `usuarios` antes do `db push`; schedule QStash `30 11 * * *`; medir CPU do `GET` na DSA (> 1,5 s vira issue antes da fase 2).
+- [ ] Validação real na Zaven e recalibração dos limites com a foto diária após 60 dias.
+
 ## Kit Virtual: capa IA com produto que já é conjunto (ADR-0206) — 2026-11-16
 
 Edge `gerar-capa-kit-virtual` (importa `_shared/ai/foto-kit-virtual.ts`); sem migration. Incidente Hairfly: Kit Shampoo+Condicionador Tanox (foto com 2 frascos) + Máscara saía na capa com 1 frasco só, e a visão aprovava.

@@ -427,6 +427,8 @@ export async function registrarEntrada(p: {
   documento?: string | null; observacao?: string | null;
   /** uuid gerado UMA vez por submissão do formulário — não regenerar no retry. */
   ref: string;
+  /** ADR-0207 §16: pedido de compra que esta entrada baixa. Ausente = entrada de sempre. */
+  pedidoCompraId?: string;
 }): Promise<ResultadoEntrada> {
   const { data, error } = await supabase.functions.invoke('entrada-estoque', { body: p });
   if (error) throw await erroDaEdge(error);
@@ -449,7 +451,8 @@ export interface ResultadoEntradaLote {
 /** Entrada em VÁRIAS cores do mesmo produto numa submissão. Documento e custo valem para todos
  *  os itens (mesma nota); a edge deriva uma referência de idempotência por SKU. */
 export async function registrarEntradaLote(p: {
-  itens: Array<{ codigo: string; quantidade: number; custo?: number | null }>;
+  /** `pedidoCompraId` POR ITEM (ADR-0207 §16): só nas cores que estão no pedido escolhido. */
+  itens: Array<{ codigo: string; quantidade: number; custo?: number | null; pedidoCompraId?: string }>;
   documento?: string | null;
   /** uuid gerado UMA vez por submissão do formulário — não regenerar no retry. */
   ref: string;

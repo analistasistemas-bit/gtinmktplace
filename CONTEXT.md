@@ -212,3 +212,98 @@ Decisão do operador de que uma imagem gerada serve. Só guarda a imagem na gale
 **Aplicar galeria**:
 Comando explícito de um administrador da organização que envia as imagens aprovadas de uma galeria da cor ao anúncio publicado, guardando as fotos anteriores para reverter. Tem dois modos: substituir (padrão; a capa gerada vira a primeira foto) ou adicionar depois das fotos atuais, recusado antes do envio quando passa do limite de fotos da categoria.
 _Evitar_: publicar galeria (publicar é criar o anúncio).
+
+## Reposição de estoque
+
+**Reposição**:
+Compra de mercadoria ao fornecedor para recompor o estoque da organização antes que um produto acabe. O sistema sugere o que e quanto comprar; quem decide e faz o pedido é o cliente.
+_Evitar_: recompra (que é o cliente final comprando de novo, Vendas SKU), reabastecimento.
+
+**Prazo de reposição**:
+Dias entre fazer o pedido ao fornecedor e a mercadoria entrar no estoque. Um único valor por organização, valendo para todos os fornecedores.
+_Evitar_: lead time como termo de tela, prazo de entrega do marketplace.
+
+**Cobertura desejada**:
+Quantos dias de venda a organização quer ter em estoque depois que a reposição chega. Um único valor por organização.
+_Evitar_: estoque mínimo (que é quantidade, não dias).
+
+**Dia disponível**:
+Dia em que o produto tinha estoque e anúncio ativo no canal. Dia zerado, pausado, moderado ou antes da primeira publicação não conta.
+_Evitar_: dia com estoque (estoque sem anúncio no ar não vende).
+
+**Velocidade de venda**:
+Unidades vendidas (menos cancelamentos) por dia disponível, nos últimos 60 dias ou no histórico que existir, incluindo as unidades que saíram dentro de kits vendidos. Devolução não desconta: se a peça volta vendável, entra no estoque. A ruptura não esconde a demanda, porque dias sem estoque ficam fora da conta.
+_Evitar_: média diária (dividida por dias corridos), giro.
+
+**Curva da família**:
+Participação de cada cor e de cada tamanho na velocidade de venda da família, medida por dia disponível para quem esgotou não parecer vender pouco. O produto passa da curva para a própria velocidade aos poucos, conforme acumula vendas, e a soma dos produtos sempre bate com a venda da família. Produto sem variação é família de um item só.
+_Evitar_: grade (que é o conjunto de tamanhos, não a participação nas vendas), mix.
+
+**Pouco histórico**:
+Situação do produto que ainda depende, ao menos em parte, da curva da família por ter poucas vendas próprias. Quando é boa parte da loja (organização nova), a tela mostra um aviso único com o percentual de produtos ainda estimados pela família.
+_Evitar_: sem dados, inconclusivo, "confiável a partir de".
+
+**Tendência de venda**:
+Comparação, na família, entre a velocidade recente (últimos 14 dias disponíveis) e a de base (60 dias), sem os dias em oferta. Acelerando: a recente supera a base em 30% ou mais, com pelo menos 5 vendas recentes. Esfriando: a recente fica 30% ou mais abaixo, quando a base esperava ao menos 5 vendas no período. Nos dois casos a sugestão usa a média das duas velocidades, e a tela mostra o ajuste no pedido. Só existe com pelo menos 28 dias de histórico.
+_Evitar_: sazonalidade (que exige comparar com o mesmo período do ano anterior).
+
+**Dia atípico**:
+Dia em que uma família vendeu mais de 3 vezes a mediana dos seus dias com venda, e pelo menos 4 unidades. Entra na velocidade de venda limitado a esse teto, e a tela informa o pico limitado.
+_Evitar_: venda em promoção.
+
+**Venda em oferta**:
+Venda feita a um preço pelo menos 15% abaixo do preço alto habitual daquele produto na janela (o percentil 75 dos seus preços de venda). Conta na velocidade, mas não na tendência, para uma campanha longa (Black Friday) não parecer aceleração.
+_Evitar_: promoção (o critério é o preço da venda, não a participação numa campanha), venda desconsiderada.
+
+**Estoque de segurança**:
+Folga acima da venda média da família, para o produto não faltar quando a venda do período sair acima da média. Calculada para a família inteira e repartida entre os produtos que precisam de compra; não é um número que a organização digita.
+_Evitar_: estoque mínimo.
+
+**Sugestão de reposição**:
+O que o sistema propõe comprar, produto a produto: o necessário para a cobertura desejada depois que o pedido chega, mais o estoque de segurança, menos o estoque que vai sobrar até lá e o que chega depois. A projeção é dia a dia: venda perdida enquanto o produto está zerado não consome a mercadoria a caminho. A organização aprova como veio ou altera; a sugestão sozinha não compra nada.
+_Evitar_: pedido (a sugestão vira pedido só depois de aprovada).
+
+**Não repor**:
+Marca da organização num produto, cor ou família que não será mais comprado. Sai da sugestão de reposição e da curva da família.
+_Evitar_: excluir, desativar (o produto continua vendendo o que tem).
+
+**Pedido de compra**:
+Sugestão de reposição aprovada por um administrador da organização, com fornecedor, itens, quantidades e data prevista de chegada (hoje mais o prazo de reposição, editável). Passa por rascunho (compartilhado entre os membros), aprovado, enviado ao fornecedor, parcial e recebido, ou saldo encerrado. Pode ser editado até o primeiro recebimento. O sistema não envia ao fornecedor; a organização copia o texto.
+_Evitar_: nota de compra (documento fiscal do fornecedor, que registra a entrada).
+
+**A caminho**:
+Quantidade de um produto em pedidos de compra ainda não recebidos. É descontada da sugestão de reposição para o mesmo item não ser pedido duas vezes.
+_Evitar_: em trânsito, pendente.
+
+**Recebimento do pedido**:
+Baixa de um pedido de compra escolhido na entrada de compra no estoque. A nota de compra já sugere o pedido aberto do fornecedor que a emitiu; a entrada manual pergunta de qual pedido veio, ou nenhum. Na entrega parcial, a organização diz se o restante ainda vem. Ajuste e estorno de venda não baixam pedido; desfazer a nota desfaz a baixa.
+_Evitar_: conferência.
+
+**Pedido atrasado**:
+Pedido de compra com saldo a receber depois da data prevista de chegada. Gera alerta, mas o saldo continua a caminho.
+
+**Encerrar saldo**:
+Decisão da organização de que o restante de um pedido não vai chegar. O saldo deixa de estar a caminho e o produto volta a entrar na sugestão de reposição.
+_Evitar_: cancelar pedido (que desfaria também o que já chegou).
+
+**Dias de estoque**:
+Quantos dias até o estoque do produto zerar na projeção, contando as chegadas dos pedidos a caminho.
+_Evitar_: cobertura (que é a meta da organização, não a situação do produto).
+
+**Urgência de reposição**:
+Faixa de cada produto tirada da mesma projeção da sugestão. Ruptura: estoque zerado e com venda. Vai faltar: zera antes de o pedido feito hoje chegar. Pedir agora: há quantidade a comprar. Em dia: nada a comprar.
+_Evitar_: estoque baixo, estoque crítico, excesso (fora da primeira versão).
+
+**Resumo de reposição**:
+Aviso diário (app e Telegram) só com o que entrou em Ruptura, Vai faltar ou Pedir agora desde o aviso anterior, mais pedidos atrasados e rascunho esperando aprovação. Produto já avisado não se repete; sem novidade, não há aviso.
+
+**Fornecedor**:
+Quem vende a mercadoria para a organização, com CNPJ opcional (que liga as notas de compra aos pedidos). Agrupa um ou mais nomes da coluna FORNECEDOR da planilha (que às vezes traz a marca, com grafias diferentes). Cada pedido de compra é de um fornecedor só.
+_Evitar_: marca (o fornecedor pode vender várias marcas), emitente (termo da nota fiscal).
+
+**Múltiplo de compra**:
+Quantidade em que o fornecedor vende um produto (caixa de 12, por exemplo); padrão 1. O total da família é arredondado para cima até o múltiplo e repartido entre os produtos; a tela mostra a quantidade antes do arredondamento.
+_Evitar_: pedido mínimo (valor ou quantidade mínima do pedido inteiro, que não é controlado).
+
+**Módulo Reposição**:
+Recurso ligado por organização na Central de controle, pensado para quem não tem ERP. Todo membro vê a reposição e monta rascunhos; só administrador da organização aprova o pedido de compra.

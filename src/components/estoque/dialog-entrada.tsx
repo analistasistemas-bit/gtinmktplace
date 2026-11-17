@@ -27,6 +27,7 @@ import {
   montarOpcoesSku,
 } from '@/lib/dialog-entrada-busca';
 import { rotuloVariacao } from '@/lib/rotulo-variacao';
+import { CampoPedido, pedidosQueRecebem, useRecebimentoPedido } from '@/components/reposicao/recebimento-pedido';
 
 function rotuloComCodigo(v: { codigo: string; cor: string | null; nome: string | null; tamanho?: string | null }): string {
   const complemento = rotuloVariacao(v);
@@ -48,6 +49,9 @@ export function DialogEntrada({ aberto, onFechar, skuInicial, codigoPaiInicial }
   const [custo, setCusto] = useState('');
   const [documento, setDocumento] = useState('');
   const [ref, setRef] = useState(() => crypto.randomUUID());
+  // ADR-0207 §16: "De qual pedido?" (só com o módulo reposicao). Manual começa em "Nenhum".
+  const [pedidoId, setPedidoId] = useState<string | null>(null);
+  const recebimento = useRecebimentoPedido(aberto);
 
   const modoLista = !!codigoPaiInicial;
 
@@ -75,6 +79,7 @@ export function DialogEntrada({ aberto, onFechar, skuInicial, codigoPaiInicial }
     setQuantidades({});
     setCusto('');
     setDocumento('');
+    setPedidoId(null);
   }, [aberto, skuInicial, codigoPaiInicial]);
 
   const todasOpcoes = useMemo(() => montarOpcoesSku(skus), [skus]);
@@ -84,6 +89,15 @@ export function DialogEntrada({ aberto, onFechar, skuInicial, codigoPaiInicial }
     () => skus.find((s) => s.codigo === codigo),
     [skus, codigo],
   );
+
+  // Pedidos abertos com o SKU (picker) ou com alguma cor do produto (lista). Pedido escolhido que saiu da lista
+  // (outro SKU no picker) deixa de valer: nunca baixa um pedido que o operador não está vendo.
+  const opcoesPedido = useMemo(
+    () => pedidosQueRecebem(recebimento.pedidos, modoLista ? variacoes.map((v) => v.codigo) : codigo ? [codigo] : []),
+    [recebimento.pedidos, modoLista, variacoes, codigo],
+  );
+  const pedido = opcoesPedido.find((p) => p.id === pedidoId) ?? null;
+  const codigosDoPedido = new Set(pedido?.itens.map((i) => i.codigo) ?? []);
 
   const custoNum = parseNumeroPtBr(custo);
   const custoInvalido = custoNum !== null && !(custoNum > 0);
@@ -127,7 +141,11 @@ export function DialogEntrada({ aberto, onFechar, skuInicial, codigoPaiInicial }
       if (modoLista) {
         return {
           lote: await registrarEntradaLote({
-            itens: aLancar.map((l) => ({ codigo: l.v.codigo, quantidade: l.qtd as number, custo: custoNum })),
+            // O pedido vai só nas cores que estão nele; as outras entram sem baixa (como na nota de compra).
+            itens: aLancar.map((l) => ({
+              codigo: l.v.codigo, quantidade: l.qtd as number, custo: custoNum,
+              ...(pedido && codigosDoPedido.has(l.v.codigo) ? { pedidoCompraId: pedido.id } : {}),
+            })),
             documento: documento.trim() || null,
             ref,
           }),
@@ -137,6 +155,7 @@ export function DialogEntrada({ aberto, onFechar, skuInicial, codigoPaiInicial }
         unico: await registrarEntrada({
           codigo, quantidade: qtdNum, custo: custoNum,
           documento: documento.trim() || null, ref,
+          ...(pedido ? { pedidoCompraId: pedido.id } : {}),
         }),
       };
     },
@@ -156,6 +175,9 @@ export function DialogEntrada({ aberto, onFechar, skuInicial, codigoPaiInicial }
           toast.error(`Não foi possível dar entrada: ${falhos.map((i) => `${i.codigo} (${i.erro})`).join('; ')}`);
           return;
         }
+        if (pedido && r.lote.resultados.some((i) => !i.duplicada && codigosDoPedido.has(i.codigo))) {
+          void recebimento.aposEntrada(pedido.id);
+        }
         if (!r.lote.pushOk) {
           toast.warning('Saldo atualizado. A sincronização com os marketplaces falhou e será refeita automaticamente em até 24h.');
         } else {
@@ -166,6 +188,7 @@ export function DialogEntrada({ aberto, onFechar, skuInicial, codigoPaiInicial }
       }
 
       const u = r.unico!;
+      if (pedido && !u.duplicada) void recebimento.aposEntrada(pedido.id);
       if (!u.pushOk) {
         toast.warning('Saldo atualizado. A sincronização com os marketplaces falhou e será refeita automaticamente em até 24h.');
       } else if (u.duplicada) {
@@ -183,6 +206,7 @@ export function DialogEntrada({ aberto, onFechar, skuInicial, codigoPaiInicial }
   });
 
   return (
+    <>
     <Dialog open={aberto} onOpenChange={(o) => !o && onFechar()}>
       <DialogContent
         processando={mutation.isPending}
@@ -291,6 +315,8 @@ export function DialogEntrada({ aberto, onFechar, skuInicial, codigoPaiInicial }
             </div>
           </div>
 
+          {opcoesPedido.length > 0 && <CampoPedido opcoes={opcoesPedido} valor={pedido?.id ?? null} onChange={setPedidoId} />}
+
           <div className="flex flex-col gap-1.5">
             <label htmlFor="entrada-doc" className="text-sm font-medium">Documento (opcional)</label>
             <Input
@@ -322,5 +348,7 @@ export function DialogEntrada({ aberto, onFechar, skuInicial, codigoPaiInicial }
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    {recebimento.dialogoSaldo}
+    </>
   );
 }

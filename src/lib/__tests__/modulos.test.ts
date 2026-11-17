@@ -39,3 +39,11 @@ describe('menusDeModulosDesabilitados', () => {
     expect(menusDeModulosDesabilitados(['promocoes'])).not.toContain('promocoes');
   });
 });
+
+describe('módulo reposicao (ADR-0207)', () => {
+  it('tem menu próprio reposicao', () => {
+    expect(MODULOS.find((x) => x.id === 'reposicao')?.menu).toBe('reposicao');
+    expect(menusDeModulosDesabilitados(['estoque'])).toContain('reposicao');
+    expect(menusDeModulosDesabilitados(['reposicao'])).not.toContain('reposicao');
+  });
+});

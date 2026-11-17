@@ -12,7 +12,7 @@ import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { enfileirarSincronizacaoEstoque } from '../_shared/queue.ts';
 import { validarEntrada } from './validar.ts';
-import { processarEntrada } from './processar.ts';
+import { processarEntrada, respostaEntrada } from './processar.ts';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -36,6 +36,8 @@ Deno.serve(async (req) => {
   let body: {
     codigo?: string; quantidade?: number; custo?: number | null; itens?: unknown;
     documento?: string | null; observacao?: string | null; ref?: string;
+    /** ADR-0207 §16: pedido de compra que esta entrada baixa (formato de uma cor; no lote vai por item). */
+    pedidoCompraId?: unknown;
   };
   try { body = await req.json(); } catch { return json({ error: 'JSON inválido' }, 400); }
 
@@ -75,14 +77,6 @@ Deno.serve(async (req) => {
     admin, context, { type: 'variacao', id: validacao.itens.map((i) => i.codigo).join(',') }, 'succeeded',
   );
 
-  // Formato antigo preservado inteiro (uma cor): `estoque`/`duplicada` no topo E o 400 quando a
-  // RPC recusa — o cliente antigo trata erro pelo status, não por um campo no corpo. Uma aba já
-  // aberta durante o deploy continua funcionando.
-  if (validacao.unico) {
-    const primeiro = r.resultados[0];
-    if (primeiro?.erro) return json({ error: primeiro.erro }, 400);
-    return json({ estoque: primeiro?.estoque ?? null, duplicada: primeiro?.duplicada === true, pushOk: r.pushOk });
-  }
-  // Lote: erro é POR ITEM (o operador precisa ver o que não entrou), como no ajuste.
-  return json(r);
+  const resp = respostaEntrada(r, validacao.unico);
+  return json(resp.body, resp.status);
 });

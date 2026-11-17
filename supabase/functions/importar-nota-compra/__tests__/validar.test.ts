@@ -17,6 +17,13 @@ describe('validarImportacao', () => {
     expect(r.nota.itens).toHaveLength(2);
     expect(r.itens[0].qCom).toBe(35);
   });
+  it('vincularCnpj só passa como true e só com pedido', () => {
+    const PED = '3f2a9c1e-8b7d-4e6f-9a01-23456789abcd';
+    const v = (extra: object) => validarImportacao({ xml: XML, decisoes: dec, ...extra }, CNPJ) as { vincularCnpj?: true };
+    expect(v({ pedidoCompraId: PED, vincularCnpj: true }).vincularCnpj).toBe(true);
+    expect(v({ pedidoCompraId: PED, vincularCnpj: 'true' })).not.toHaveProperty('vincularCnpj');
+    expect(v({ vincularCnpj: true })).not.toHaveProperty('vincularCnpj');
+  });
   it('corpo malformado não lança: devolve erro', () => {
     for (const b of [null, {}, { xml: 1 }, { xml: XML, decisoes: 'x' }, { xml: XML, decisoes: [{ nItem: 'a' }] }]) {
       expect(validarImportacao(b, CNPJ).ok).toBe(false);

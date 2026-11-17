@@ -1,0 +1,367 @@
+// Spec 2026-11-16-reposicao §2–§7 (Task 6): tela de Sugestões com o mapa da grade.
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { RespostaReposicao, SkuTela } from '../../../../supabase/functions/_shared/reposicao/tipos';
+import { calcularReposicao, type SugestaoSku } from '../../../../supabase/functions/_shared/reposicao/calculo';
+
+const acoes = {
+  salvarConfig: vi.fn(), salvarRascunho: vi.fn(), aprovar: vi.fn(), marcarEnviado: vi.fn(), editarPedido: vi.fn(),
+  encerrarSaldo: vi.fn(), reabrirSaldo: vi.fn(), naoRepor: vi.fn(), removerNaoRepor: vi.fn(), definirMultiplo: vi.fn(),
+};
+const estado: { data: RespostaReposicao | undefined; isError: boolean; admin: boolean } = { data: undefined, isError: false, admin: true };
+vi.mock('@/hooks/useReposicao', async (orig) => ({
+  ...(await orig<typeof import('@/hooks/useReposicao')>()),
+  useReposicao: () => ({ data: estado.data, isLoading: false, isError: estado.isError, error: null, refetch: vi.fn(), pendente: false, ...acoes }),
+}));
+vi.mock('@/hooks/useFotosProduto', () => ({ useFotosProduto: () => ({ data: undefined }) }));
+vi.mock('@/hooks/useOperacoes', async (orig) => ({
+  ...(await orig<typeof import('@/hooks/useOperacoes')>()),
+  usePodeExecutarOperacao: () => estado.admin,
+}));
+
+import Reposicao from '@/pages/Reposicao';
+
+function sug(p: Partial<SugestaoSku> & { codigo: string; codigoPai: string }): SugestaoSku {
+  return {
+    propria: 0.2, diasDisponiveis: 40, unidades: 8, w: 1, usada: 0.2, picoLimitadoEm: [], vendasEmOferta: 0,
+    estoqueHoje: 2, v: 0.25, aCaminho: 0, chegaEm: null, diasDeEstoque: 8, pedirAntesMultiplo: 4, pedir: 4,
+    urgencia: 'pedir_agora', poucoHistorico: false, ...p,
+  };
+}
+function tela(p: Partial<SkuTela> & { codigo: string; codigoPai: string }): SkuTela {
+  return { cor: null, corHex: null, tamanho: null, custo: 10, preco: 50, naoReporId: null, ...p };
+}
+
+function base(): RespostaReposicao {
+  return {
+    config: { prazo: 15, cobertura: 30 },
+    resultado: {
+      pctEstimadoPelaFamilia: 0.2,
+      familias: [
+        { codigoPai: 'SHORT', pedir: 9, pedirAntesMultiplo: 9, tendencia: { fator: 1.2, variacaoVendas: 0.4 }, urgencia: 'pedir_agora' },
+        { codigoPai: 'CALCA', pedir: 6, pedirAntesMultiplo: 6, tendencia: null, urgencia: 'ruptura' },
+        { codigoPai: 'CINTO', pedir: 0, pedirAntesMultiplo: 0, tendencia: null, urgencia: 'em_dia' },
+      ],
+      skus: [
+        sug({ codigo: 'S1', codigoPai: 'SHORT', estoqueHoje: 2, pedir: 4 }),
+        sug({ codigo: 'S2', codigoPai: 'SHORT', estoqueHoje: 0, pedir: 3, poucoHistorico: true, w: 0.5 }),
+        sug({ codigo: 'S3', codigoPai: 'SHORT', estoqueHoje: 4, pedir: 0, urgencia: 'em_dia' }),
+        sug({ codigo: 'S4', codigoPai: 'SHORT', estoqueHoje: 1, pedir: 2 }),
+        sug({ codigo: 'C1', codigoPai: 'CALCA', estoqueHoje: 0, pedir: 6, urgencia: 'ruptura', v: 1 }),
+        sug({ codigo: 'K1', codigoPai: 'CINTO', estoqueHoje: 9, pedir: 0, urgencia: 'em_dia' }),
+      ],
+    },
+    skus: [
+      tela({ codigo: 'S1', codigoPai: 'SHORT', cor: 'Preto', corHex: '#000000', tamanho: 'P' }),
+      tela({ codigo: 'S2', codigoPai: 'SHORT', cor: 'Preto', corHex: '#000000', tamanho: 'M' }),
+      tela({ codigo: 'S3', codigoPai: 'SHORT', cor: 'Cáqui', corHex: '#c3b091', tamanho: 'P' }),
+      tela({ codigo: 'S4', codigoPai: 'SHORT', cor: 'Cáqui', corHex: '#c3b091', tamanho: 'M', naoReporId: 'nr-1' }),
+      tela({ codigo: 'C1', codigoPai: 'CALCA', cor: 'Marrom', tamanho: '42' }),
+      tela({ codigo: 'K1', codigoPai: 'CINTO' }),
+    ],
+    familias: [
+      { codigoPai: 'SHORT', nome: 'Short Bermuda Mauricinho', fornecedor: { id: 'f1', nome: 'Fornecedor A' }, multiplo: 1 },
+      { codigoPai: 'CALCA', nome: 'Calça Sarja Masculina', fornecedor: { id: 'f1', nome: 'Fornecedor A' }, multiplo: 1 },
+      { codigoPai: 'CINTO', nome: 'Cinto Couro', fornecedor: { id: 'f2', nome: 'COURO SUL' }, multiplo: 1 },
+    ],
+    naoRepor: [{ id: 'nr-1', escopo: 'sku', codigoPai: 'SHORT', codigo: 'S4', cor: null }],
+    rascunhos: [],
+    pedidos: [],
+  };
+}
+
+function renderTela(rota = '/reposicao') {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter initialEntries={[rota]}>
+        <Reposicao />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+beforeEach(() => {
+  estado.data = base();
+  estado.isError = false;
+  estado.admin = true;
+  for (const f of Object.values(acoes)) f.mockReset().mockResolvedValue({ ok: true });
+});
+afterEach(cleanup);
+
+describe('Reposição — sugestões', () => {
+  it('sem config: só o painel de 2 campos com a frase do exemplo', () => {
+    estado.data = { config: null, resultado: null, skus: [], familias: [], naoRepor: [], rascunhos: [], pedidos: [] };
+    renderTela();
+    expect(screen.getByLabelText('Prazo de reposição (dias)')).toHaveValue(15);
+    expect(screen.getByLabelText('Cobertura desejada (dias)')).toHaveValue(30);
+    expect(screen.getByText('Com 15 e 30: um produto que vende 1 por dia pede para durar 30 dias depois que a compra chega, mais uma folga.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Ruptura/ })).toBeNull();
+  });
+
+  it('salvar a config manda prazo e cobertura', async () => {
+    estado.data = { config: null, resultado: null, skus: [], familias: [], naoRepor: [], rascunhos: [], pedidos: [] };
+    renderTela();
+    fireEvent.change(screen.getByLabelText('Prazo de reposição (dias)'), { target: { value: '20' } });
+    expect(screen.getByText(/^Com 20 e 30:/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+    expect(acoes.salvarConfig).toHaveBeenCalledWith({ prazo: 20, cobertura: 30 });
+  });
+
+  it('membro não admin: painel de config só leitura, com a dica (inicial e "Ajustar")', async () => {
+    estado.admin = false;
+    estado.data = { config: null, resultado: null, skus: [], familias: [], naoRepor: [], rascunhos: [], pedidos: [] };
+    renderTela();
+    expect(screen.getByLabelText('Prazo de reposição (dias)')).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Salvar' })).toBeNull();
+    expect(screen.getByText('Só administrador altera o prazo e a cobertura.')).toBeInTheDocument();
+    cleanup();
+    estado.data = base();
+    renderTela();
+    await userEvent.click(screen.getByRole('button', { name: 'Ajustar' }));
+    expect(await screen.findByLabelText('Cobertura desejada (dias)')).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Salvar' })).toBeNull();
+  });
+
+  it('"Compra em múltiplos de": admin grava inteiro 1..1000 (Enter + blur = um envio); inválido volta; membro só lê', async () => {
+    estado.data!.familias[0]!.multiplo = 6;
+    renderTela('/reposicao?produto=SHORT');
+    const campo = screen.getByLabelText('Compra em múltiplos de');
+    expect(campo).toHaveValue(6);
+    await userEvent.clear(campo);
+    await userEvent.type(campo, '0');
+    fireEvent.blur(campo);
+    expect(acoes.definirMultiplo).not.toHaveBeenCalled();
+    expect(campo).toHaveValue(6);
+    await userEvent.clear(campo);
+    await userEvent.type(campo, '12{Enter}');
+    fireEvent.blur(campo);
+    expect(acoes.definirMultiplo).toHaveBeenCalledTimes(1);
+    expect(acoes.definirMultiplo).toHaveBeenCalledWith({ codigoPai: 'SHORT', multiplo: 12 });
+    cleanup();
+    estado.admin = false;
+    renderTela('/reposicao?produto=SHORT');
+    expect(screen.queryByLabelText('Compra em múltiplos de')).toBeNull();
+    expect(screen.getByText('Compra em múltiplos de 6.')).toBeInTheDocument();
+  });
+
+  it('"Já está no rascunho": pelo id do fornecedor; sem id, pelo nome normalizado', () => {
+    const rascunho = (id: string, nome: string) => ({
+      id: `r-${id}`, fornecedor: { id, nome, cnpj: null }, status: 'rascunho' as const, previstoPara: null, atrasado: false,
+      salvoPor: null, salvoEm: null, aprovadoPor: null, enviadoEm: null, alteradoPor: null, alteradoEm: null,
+      itens: [{ codigo: 'S1', codigoPai: 'SHORT', quantidade: 4, sugerida: 4, recebida: 0, encerrado: false, codigoFornecedor: null }],
+    });
+    // id igual, nome com outra caixa/espaço/acento: é o mesmo fornecedor
+    estado.data!.rascunhos = [rascunho('f1', 'FORNECEDÓR   a')];
+    renderTela('/reposicao?produto=SHORT');
+    expect(screen.getByText('Já está no rascunho de Fornecedor A.')).toBeInTheDocument();
+    cleanup();
+    // mesmo nome, id diferente: outro fornecedor
+    estado.data!.rascunhos = [rascunho('f9', 'Fornecedor A')];
+    renderTela('/reposicao?produto=SHORT');
+    expect(screen.queryByText(/Já está no rascunho/)).toBeNull();
+    cleanup();
+    // família sem cadastro (id null): pelo nome normalizado
+    estado.data!.familias[0]!.fornecedor = { id: null, nome: 'Fornecedor A' };
+    estado.data!.rascunhos = [rascunho('f7', ' fornecedor  á ')];
+    renderTela('/reposicao?produto=SHORT');
+    expect(screen.getByText('Já está no rascunho de Fornecedor A.')).toBeInTheDocument();
+  });
+
+  it('pctEstimadoPelaFamilia > 0,5: faixa da loja e sem venda perdida', () => {
+    estado.data!.resultado!.pctEstimadoPelaFamilia = 0.92;
+    renderTela();
+    expect(screen.getByText('92% dos produtos ainda estimados pela família: a loja tem poucas vendas.')).toBeInTheDocument();
+    expect(screen.queryByText(/venda perdida/i)).toBeNull();
+  });
+
+  it('fora da fase do aviso: card Ruptura mostra a venda perdida por dia (v × preço)', () => {
+    renderTela();
+    const card = screen.getByRole('button', { name: /^Ruptura/ });
+    expect(within(card).getByText(/R\$\s?50,00\/dia de venda perdida/)).toBeInTheDocument();
+  });
+
+  it('card clicado filtra a lista', async () => {
+    renderTela();
+    expect(screen.getByText('Short Bermuda Mauricinho')).toBeInTheDocument();
+    expect(screen.getByText('Calça Sarja Masculina')).toBeInTheDocument();
+    const card = screen.getByRole('button', { name: /^Ruptura/ });
+    await userEvent.click(card);
+    expect(card).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByText('Short Bermuda Mauricinho')).toBeNull();
+    expect(screen.getByText('Calça Sarja Masculina')).toBeInTheDocument();
+  });
+
+  it('?urgencia=ruptura entra já filtrado', () => {
+    renderTela('/reposicao?urgencia=ruptura');
+    expect(screen.queryByText('Short Bermuda Mauricinho')).toBeNull();
+    expect(screen.getByRole('button', { name: /^Ruptura/ })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('?produto=<codigo_pai> abre expandido, com célula "2 · pedir 4" e aria-label completo', () => {
+    renderTela('/reposicao?produto=SHORT');
+    const grid = screen.getByRole('grid');
+    expect(within(grid).getByText('2 · pedir 4')).toBeInTheDocument();
+    expect(within(grid).getByText('4')).toBeInTheDocument();
+    const cel = within(grid).getByRole('button', { name: /^Preto, P:/ });
+    expect(cel).toHaveAccessibleName('Preto, P: estoque 2, pedir 4, Pedir agora');
+  });
+
+  it('célula de curva: aria-label e popover dizem que é estimado pela família', async () => {
+    renderTela('/reposicao?produto=SHORT');
+    const cel = screen.getByRole('button', { name: /^Preto, M:/ });
+    expect(cel.getAttribute('aria-label')).toMatch(/estimado pelas outras cores e tamanhos/);
+    await userEvent.click(cel);
+    expect(await screen.findByText('Estimado pelas outras cores e tamanhos deste produto.')).toBeInTheDocument();
+  });
+
+  it('popover declara o limite das pausas', async () => {
+    renderTela('/reposicao?produto=SHORT');
+    await userEvent.click(screen.getByRole('button', { name: /^Preto, P:/ }));
+    expect(await screen.findByText('Pausas do anúncio ainda não entram na conta.')).toBeInTheDocument();
+  });
+
+  it('"Por quê" com fator 1,2 e variação 0,4', () => {
+    renderTela('/reposicao?produto=SHORT');
+    expect(screen.getByText(/pedido \+20% \(vendas subiram 40% nas últimas 2 semanas\)/)).toBeInTheDocument();
+  });
+
+  it('produto sem variação não renderiza mapa', async () => {
+    renderTela('/reposicao?produto=CINTO');
+    expect(screen.getByText('Cinto Couro')).toBeInTheDocument();
+    expect(screen.queryByRole('grid')).toBeNull();
+  });
+
+  it('Não repor: célula riscada e "Remover" chama removerNaoRepor(id)', async () => {
+    renderTela('/reposicao?produto=SHORT');
+    const cel = screen.getByRole('button', { name: /^Cáqui, M:/ });
+    expect(cel).toHaveAttribute('data-nao-repor', 'true');
+    expect(cel.className).toMatch(/line-through/);
+    expect(cel).toHaveAccessibleName(/Não repor/);
+    await userEvent.click(cel);
+    await userEvent.click(await screen.findByRole('button', { name: 'Remover' }));
+    expect(acoes.removerNaoRepor).toHaveBeenCalledWith('nr-1');
+  });
+
+  it('família inteira em Não repor (Em dia) continua aberta e reversível na mesma tela', async () => {
+    const d = estado.data!;
+    d.naoRepor.push({ id: 'nr-f', escopo: 'familia', codigoPai: 'CINTO', codigo: null, cor: null });
+    d.skus = d.skus.map((s) => (s.codigo === 'K1' ? { ...s, naoReporId: 'nr-f' } : s));
+    renderTela();
+    expect(screen.queryByText('Cinto Couro')).toBeNull();
+    cleanup();
+    renderTela('/reposicao?urgencia=em_dia');
+    await userEvent.click(screen.getByRole('button', { name: /Cinto Couro/ }));
+    await userEvent.click(screen.getByRole('button', { name: /^Ruptura/ })); // troca o filtro com a linha aberta
+    expect(screen.getByText('Calça Sarja Masculina')).toBeInTheDocument();
+    expect(screen.getByText('Produto marcado como Não repor.')).toBeInTheDocument();
+    await userEvent.click(screen.getAllByRole('button', { name: 'Remover' })[0]);
+    expect(acoes.removerNaoRepor).toHaveBeenCalledWith('nr-f');
+  });
+
+  it('Não repor ▾ "Este SKU" usa a última célula aberta', async () => {
+    renderTela('/reposicao?produto=SHORT');
+    await userEvent.click(screen.getByRole('button', { name: /^Preto, P:/ }));
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(screen.getByRole('button', { name: /^Não repor/ }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Este SKU (Preto · P)' }));
+    expect(acoes.naoRepor).toHaveBeenCalledWith({ escopo: 'sku', codigoPai: 'SHORT', codigo: 'S1' });
+  });
+
+  it('número do card em foreground e ícone colorido (contraste; cor na borda e no ícone)', () => {
+    renderTela();
+    const card = screen.getByRole('button', { name: /^Pedir agora/ });
+    const numero = within(card).getByText(/SKUs?$/);
+    expect(numero.className).toMatch(/text-foreground/);
+    expect(numero.className).not.toMatch(/text-warning/);
+    expect(card.querySelector('svg')?.getAttribute('class')).toMatch(/text-warning/);
+  });
+
+  it('popover de célula em Não repor não mostra pill de urgência', async () => {
+    renderTela('/reposicao?produto=SHORT');
+    await userEvent.click(screen.getByRole('button', { name: /^Cáqui, M:/ }));
+    const dialogo = await screen.findByRole('dialog');
+    expect(within(dialogo).queryByText('Pedir agora')).toBeNull();
+    expect(within(dialogo).getByText(/Não repor/)).toBeInTheDocument();
+  });
+
+  it('Home/End vão para a primeira/última célula da linha', async () => {
+    renderTela('/reposicao?produto=SHORT');
+    screen.getByRole('button', { name: /^Preto, P:/ }).focus();
+    await userEvent.keyboard('{End}');
+    expect(screen.getByRole('button', { name: /^Preto, M:/ })).toHaveFocus();
+    await userEvent.keyboard('{Home}');
+    expect(screen.getByRole('button', { name: /^Preto, P:/ })).toHaveFocus();
+  });
+
+  it('erro de refetch com dados na tela: aviso discreto, dados continuam', () => {
+    estado.isError = true;
+    renderTela();
+    expect(screen.getByText('Não foi possível atualizar agora — mostrando os últimos dados.')).toBeInTheDocument();
+    expect(screen.getByText('Short Bermuda Mauricinho')).toBeInTheDocument();
+  });
+
+  it('setas movem o foco pela grade', async () => {
+    renderTela('/reposicao?produto=SHORT');
+    const p = screen.getByRole('button', { name: /^Preto, P:/ });
+    p.focus();
+    await userEvent.keyboard('{ArrowRight}');
+    expect(screen.getByRole('button', { name: /^Preto, M:/ })).toHaveFocus();
+    await userEvent.keyboard('{ArrowUp}'); // cores A→Z: Cáqui fica acima de Preto
+    expect(screen.getByRole('button', { name: /^Cáqui, M:/ })).toHaveFocus();
+  });
+
+  it('Adicionar ao pedido salva o rascunho do fornecedor só com o que tem a pedir e não está em Não repor', async () => {
+    renderTela('/reposicao?produto=SHORT');
+    await userEvent.click(screen.getByRole('button', { name: 'Adicionar ao pedido' }));
+    expect(acoes.salvarRascunho).toHaveBeenCalledWith({
+      fornecedorNome: 'Fornecedor A',
+      itens: [
+        { codigo: 'S1', codigoPai: 'SHORT', quantidade: 4, sugerida: 4 },
+        { codigo: 'S2', codigoPai: 'SHORT', quantidade: 3, sugerida: 3 },
+      ],
+    });
+  });
+
+  it('tudo em dia: "Nada para pedir hoje."', () => {
+    const d = estado.data!;
+    d.resultado!.familias = d.resultado!.familias.map((f) => ({ ...f, pedir: 0, urgencia: 'em_dia' }));
+    d.resultado!.skus = d.resultado!.skus.map((s) => ({ ...s, pedir: 0, urgencia: 'em_dia' }));
+    renderTela();
+    expect(screen.getByText('Nada para pedir hoje.')).toBeInTheDocument();
+  });
+
+  it('2 SKUs com alvo fracionado: o popover mostra o mesmo número da célula e explica a folga', async () => {
+    // v = 0,05 nos dois, estoque 0: falta 1,5 cada; Λ = 3 → folga 2 → alvos 2,5 e 2,5; o maior resto dá 3 a um e 2 ao outro.
+    const dia = (n: number) => new Date(Date.UTC(2026, 10, 16 + n)).toISOString().slice(0, 10);
+    const movs = ['S1', 'S2'].flatMap((codigo) => Array.from({ length: 60 }, (_, i) => ({
+      dia: dia(-60 + i), codigo, vendidas: i % 20 === 19 ? 1 : 0, precos: [], estoqueInicio: 1,
+    })));
+    const r = calcularReposicao({
+      hoje: dia(0), prazo: 15, cobertura: 30, kits: [], pedidosAbertos: [], multiploPorFamilia: {}, movs,
+      skus: ['S1', 'S2'].map((codigo, i) => ({ codigo, codigoPai: 'SHORT', cor: 'Preto', tamanho: i ? 'M' : 'P', estoqueHoje: 0, publicadoEm: '2026-01-01', naoRepor: false, ehKit: false })),
+    });
+    expect(r.skus.map((x) => x.pedir).sort()).toEqual([2, 3]);
+    expect(r.skus.every((x) => x.pedirAntesMultiplo === 3)).toBe(true); // o número antigo do popover
+    const d = estado.data!;
+    d.resultado = { ...r, familias: [...r.familias, ...d.resultado!.familias.filter((f) => f.codigoPai !== 'SHORT')] };
+    d.resultado.skus = [...r.skus, ...base().resultado!.skus.filter((x) => x.codigoPai !== 'SHORT')];
+    d.skus = d.skus.filter((x) => x.codigo !== 'S3' && x.codigo !== 'S4');
+    renderTela('/reposicao?produto=SHORT');
+    for (const x of r.skus) {
+      const nome = x.codigo === 'S1' ? /^Preto, P:/ : /^Preto, M:/;
+      const cel = screen.getByRole('button', { name: nome });
+      expect(cel).toHaveTextContent(`0 · pedir ${x.pedir}`);
+      await userEvent.click(cel);
+      const popover = await screen.findByRole('dialog');
+      expect(popover).toHaveTextContent(x.pedir === 3
+        ? 'Pela média, faltam 2 para durar 30 dias; peça 3: 1 a mais de folga, para não faltar se vender um pouco acima da média.'
+        : 'Para durar 30 dias, peça 2.');
+      expect(popover).not.toHaveTextContent(/precisa de 3/);
+      await userEvent.keyboard('{Escape}');
+    }
+  });
+});

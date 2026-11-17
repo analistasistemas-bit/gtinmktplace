@@ -1,10 +1,10 @@
 // E6b (ADR-0094): tela do módulo Estoque — saldo por produto, entrada de mercadoria e
 // trilha de auditoria dos movimentos.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Boxes, Plus, PackagePlus, Grid3x3, FileUp } from 'lucide-react';
+import { Boxes, Plus, PackagePlus, Grid3x3, FileUp, ShoppingCart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -23,6 +23,7 @@ import { ProdutoCard, CabecalhoProdutos, type AlvoEntrada } from '@/components/e
 import { BarraFiltrosEstoque } from '@/components/estoque/barra-filtros-estoque';
 import { ResumoEstoqueKpis } from '@/components/estoque/resumo-estoque';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
+import { urgenciaDoProduto, useReposicao } from '@/hooks/useReposicao';
 import { useTiposProdutoHabilitados } from '@/hooks/useTiposProdutoHabilitados';
 import { useEmpresaFiscal } from '@/hooks/useConfiguracoes';
 import { useTipoPessoaOrg } from '@/hooks/useTipoPessoaOrg';
@@ -51,6 +52,10 @@ const RESUMO_VAZIO: ResumoEstoque = {
 export default function Estoque() {
   const qc = useQueryClient();
   const { data: modulos, isLoading: modulosLoading } = useModulosHabilitados();
+  // ADR-0207: uma leitura (cacheada, a mesma da tela de Reposição) para os selos da página inteira;
+  // org sem o módulo não busca nada e vê o Estoque como antes.
+  const temReposicao = !!modulos?.includes('reposicao');
+  const { data: reposicao } = useReposicao({ enabled: temReposicao, staleTime: 5 * 60_000 });
   // ADR-0135 D-9 (fix round 1, I1): regime da org pro filtro fiscalPendente bater com o gate
   // real (`camposFiscaisFaltantes`); `undefined` enquanto a query não resolveu.
   const { data: empresaFiscal } = useEmpresaFiscal();
@@ -200,6 +205,11 @@ export default function Estoque() {
               </Tooltip>
               </TooltipProvider>
             )}
+            {temReposicao && (
+              <Button variant="outline" asChild>
+                <Link to="/reposicao"><ShoppingCart className="mr-2 h-4 w-4" />Reposição</Link>
+              </Button>
+            )}
             {temTipoProduto && (
               <Button variant="outline" onClick={() => setGradeAberta(true)}>
                 <Grid3x3 className="mr-2 h-4 w-4" />
@@ -261,6 +271,7 @@ export default function Estoque() {
                 coresSemVinculo={coresSemVinculoMap.get(p.codigoPai)}
                 onPreencherFiscal={mostrarFiscal ? (produto) => setFiscalAberto(produto.familiaId ?? null) : undefined}
                 fiscalPendente={mostrarFiscal ? produtoFiscalPendente(p, regimeOrg) : false}
+                urgencia={temReposicao ? urgenciaDoProduto(reposicao, p.codigoPai) : undefined}
               />
             ))}
             {lista.length === 0 && (

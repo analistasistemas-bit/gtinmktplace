@@ -1,7 +1,9 @@
 // Validação pura do corpo de `entrada-estoque`. Sem import de Deno de propósito — assim roda no
 // vitest do frontend, como `ajustar-estoque/validar.ts`, do qual isto é o espelho.
+import { UUID_RE } from '../_shared/reposicao/erro-pedido.ts';
 
-export interface ItemEntrada { codigo: string; quantidade: number; custo: number | null }
+/** `pedidoCompraId` (ADR-0207 §16) só aparece quando veio: sem ele, o item é o de sempre. */
+export interface ItemEntrada { codigo: string; quantidade: number; custo: number | null; pedidoCompraId?: string }
 
 /** Teto do ML (ADR-0048, capar-estoque.ts). */
 export const TETO_SALDO = 99999;
@@ -25,11 +27,11 @@ export function refDoItem(ref: string, codigo: string, unico: boolean): string {
  * porque é o que qualquer aba já aberta continua enviando.
  */
 export function validarEntrada(
-  body: { codigo?: unknown; quantidade?: unknown; custo?: unknown; itens?: unknown },
+  body: { codigo?: unknown; quantidade?: unknown; custo?: unknown; itens?: unknown; pedidoCompraId?: unknown },
 ): { ok: true; itens: ItemEntrada[]; unico: boolean } | { ok: false; erro: string } {
   const bruto = Array.isArray(body.itens)
     ? body.itens
-    : [{ codigo: body.codigo, quantidade: body.quantidade, custo: body.custo }];
+    : [{ codigo: body.codigo, quantidade: body.quantidade, custo: body.custo, pedidoCompraId: body.pedidoCompraId }];
   const unico = !Array.isArray(body.itens);
 
   if (bruto.length === 0) return { ok: false, erro: 'Informe ao menos um SKU.' };
@@ -37,7 +39,7 @@ export function validarEntrada(
   const itens: ItemEntrada[] = [];
   const vistos = new Set<string>();
   for (const cru of bruto) {
-    const c = cru as { codigo?: unknown; quantidade?: unknown; custo?: unknown };
+    const c = cru as { codigo?: unknown; quantidade?: unknown; custo?: unknown; pedidoCompraId?: unknown };
     const codigo = String(c?.codigo ?? '').trim();
     if (!codigo) return { ok: false, erro: 'Informe o SKU.' };
     if (vistos.has(codigo)) return { ok: false, erro: `SKU repetido na lista: ${codigo}.` };
@@ -54,7 +56,15 @@ export function validarEntrada(
     if (custo !== null && !(custo > 0)) {
       return { ok: false, erro: `Custo de ${codigo}, quando informado, deve ser maior que zero.` };
     }
-    itens.push({ codigo, quantidade, custo });
+    // Lote: o pedido é POR ITEM — a cor que não está no pedido entra sem baixa (como na nota de compra).
+    if (c?.pedidoCompraId != null && !(typeof c.pedidoCompraId === 'string' && UUID_RE.test(c.pedidoCompraId))) {
+      return { ok: false, erro: 'Pedido de compra inválido.' };
+    }
+    itens.push(c?.pedidoCompraId == null ? { codigo, quantidade, custo } : { codigo, quantidade, custo, pedidoCompraId: c.pedidoCompraId });
+  }
+  // Com pedido, a submissão vira uma transação só (`registrar_entrada_lote`), que baixa UM pedido.
+  if (new Set(itens.map((i) => i.pedidoCompraId).filter(Boolean)).size > 1) {
+    return { ok: false, erro: 'Uma entrada baixa um pedido só.' };
   }
   return { ok: true, itens, unico };
 }

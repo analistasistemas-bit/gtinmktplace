@@ -109,6 +109,9 @@ verify_jwt = true
 # ADR-0181 D-11 — desfazer/cancelar importação de NF-e de compra (admin).
 [functions.desfazer-nota-compra]
 verify_jwt = true
+# ADR-0207 — Reposição: GET da tela e ações do pedido de compra (JWT do app, gate reposicao; aprovar só admin).
+[functions.reposicao]
+verify_jwt = true
 # ADR-0110: ajuste/zeragem de saldo. Chamada pelo APP com o JWT do admin.
 [functions.ajustar-estoque]
 verify_jwt = true
@@ -208,6 +211,9 @@ verify_jwt = false
 verify_jwt = false
 # ADR-0190 D-6: resumo diário às 08:00 BRT (schedule + job por org) — QStash.
 [functions.resumo-diario]
+verify_jwt = false
+# ADR-0207: foto diária e resumo de reposição às 08:30 BRT — QStash.
+[functions.reposicao-diaria]
 verify_jwt = false
 # ADR-0190 D-8: bot de comandos (webhook do Telegram com secret próprio + worker/varredura QStash).
 [functions.telegram-bot]

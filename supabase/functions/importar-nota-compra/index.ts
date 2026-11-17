@@ -86,7 +86,8 @@ Deno.serve(async (req) => {
       },
       enfileirar: enfileirarSincronizacaoEstoque,
     }, { orgId, userId, nota: v.nota, itens: v.itens, decisoes: v.decisoes, xml: v.xml,
-         sha256: await sha256(v.xml), divergenciaTotal: v.divergenciaTotal });
+         sha256: await sha256(v.xml), divergenciaTotal: v.divergenciaTotal, pedidoCompraId: v.pedidoCompraId,
+         vincularCnpj: v.vincularCnpj });
     await auditarOperacaoSuporte(admin, ctx, { type: 'nota_compra', id: v.nota.chave }, 'succeeded');
     return json(r);
   } catch (e) {

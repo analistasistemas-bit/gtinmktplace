@@ -56,7 +56,13 @@ export async function listarNotasCompra(): Promise<NotaCompraResumo[]> {
   }));
 }
 
-export async function importarNotaCompra(b: { xml: string; decisoes: DecisaoImportacao[]; aceitarDivergenciaTotal: boolean }):
+export async function importarNotaCompra(b: {
+  xml: string; decisoes: DecisaoImportacao[]; aceitarDivergenciaTotal: boolean;
+  /** ADR-0207 §16: pedido de compra que a nota baixa. Ausente = importação de sempre. */
+  pedidoCompraId?: string;
+  /** Confirmação do operador: o fornecedor sem CNPJ do pedido passa a ter o CNPJ do emitente. */
+  vincularCnpj?: true;
+}):
   Promise<{ notaId: string; duplicada: boolean; pushOk: boolean }> {
   const { data, error } = await supabase.functions.invoke('importar-nota-compra', { body: b });
   if (error) throw await erroDaEdge(error);

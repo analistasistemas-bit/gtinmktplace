@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
@@ -792,5 +792,31 @@ describe('ProdutoCard — marca por produto (ADR-0188)', () => {
   it('sem marca própria não consulta o estado da marca', () => {
     renderCard(publicado);
     expect(fetchMarcaProdutoMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProdutoCard — selo de urgência da Reposição (ADR-0207)', () => {
+  function renderComSelo(urgencia?: 'ruptura' | 'vai_faltar' | 'pedir_agora' | 'em_dia' | null) {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter><ProdutoCard produto={produto} canais={[]} onDarEntrada={vi.fn()} urgencia={urgencia} /></MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+
+  it('selo leva à Reposição com o produto expandido', () => {
+    renderComSelo('vai_faltar');
+    const selo = screen.getByRole('link', { name: /Vai faltar/ });
+    expect(selo).toHaveAttribute('href', '/reposicao?produto=00000004');
+    expect(selo.className).toMatch(/min-h-11/);
+  });
+
+  it('sem urgência (sem o módulo) ou em dia: sem selo', () => {
+    renderComSelo(undefined);
+    expect(screen.queryByRole('link', { name: /Ruptura|Vai faltar|Pedir agora/ })).not.toBeInTheDocument();
+    cleanup();
+    renderComSelo('em_dia');
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 });

@@ -11,7 +11,7 @@ import { registrarWebhookTelegram } from '../_shared/notificacoes/gerencial/regi
 
 // Espelho de src/lib/menus.ts. Divergir daqui faz `allowed_menus` sanitizar e descartar
 // silenciosamente a permissão do menu novo.
-const MENU_KEYS = ['dashboard', 'lotes', 'revisao', 'publicados', 'promocoes', 'estoque', 'pulse', 'vitrine', 'ads', 'faturamento', 'financeiro', 'viabilidade', 'canais', 'configuracoes'];
+const MENU_KEYS = ['dashboard', 'lotes', 'revisao', 'publicados', 'promocoes', 'estoque', 'reposicao', 'pulse', 'vitrine', 'ads', 'faturamento', 'financeiro', 'viabilidade', 'canais', 'configuracoes'];
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

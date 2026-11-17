@@ -38,6 +38,9 @@ import {
   urlFotoMl, type ProdutoComSaldo, type ProdutoEstoqueResumo, type VariacaoComSaldo,
 } from '@/lib/produtos-saldo';
 import { formatarNomeProduto } from '@/lib/texto';
+import { StatusPill } from '@/components/ui/status-pill';
+import { ROTULO_URGENCIA, TOM_URGENCIA } from '@/components/reposicao/por-que';
+import type { Urgencia } from '../../../supabase/functions/_shared/reposicao/calculo';
 
 /** Acima deste limite a lista de variações no expand usa virtualização. */
 export const VARIACOES_VIRTUAL_THRESHOLD = 50;
@@ -152,7 +155,7 @@ function CelulaSaldo({ saldo }: { saldo: number }) {
 
 export function ProdutoCard({
   produto, canais, onDarEntrada, onAjustar, onExcluir, onAdicionarVariacao, statusUpdate,
-  loteRevisaoId, coresSemVinculo, onPreencherFiscal, fiscalPendente,
+  loteRevisaoId, coresSemVinculo, onPreencherFiscal, fiscalPendente, urgencia,
 }: {
   produto: ProdutoEstoqueResumo;
   canais: string[];
@@ -178,6 +181,9 @@ export function ProdutoCard({
   /** Calculado pela página (`produtoFiscalPendente`, depende do regime tributário da org — não
    *  é um campo do resumo). Fix round 1 (I1): deixou de vir embutido no `produto`. */
   fiscalPendente?: boolean;
+  /** ADR-0207: urgência de reposição da família. A página só passa com o módulo `reposicao`;
+   *  `em_dia`/ausente não mostra selo. */
+  urgencia?: Urgencia | null;
 }) {
   const qc = useQueryClient();
   const [aberto, setAberto] = useState(false);
@@ -374,6 +380,15 @@ export function ProdutoCard({
           >
             Reenviar
           </Button>
+        )}
+        {urgencia && urgencia !== 'em_dia' && (
+          <Link
+            to={`/reposicao?produto=${encodeURIComponent(produto.codigoPai)}`}
+            aria-label={`${ROTULO_URGENCIA[urgencia]}: ver reposição de ${nomePai}`}
+            className="flex min-h-11 shrink-0 items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-0"
+          >
+            <StatusPill tone={TOM_URGENCIA[urgencia]} className="transition-opacity hover:opacity-80">{ROTULO_URGENCIA[urgencia]}</StatusPill>
+          </Link>
         )}
         {statusUpdate === 'erro' && loteRevisaoId && (
           <Button asChild variant="outline" size="sm" className="h-7 shrink-0 px-2">

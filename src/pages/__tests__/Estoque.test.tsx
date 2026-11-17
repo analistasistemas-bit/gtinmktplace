@@ -34,8 +34,23 @@ const resumoMock: ResumoEstoqueRpc = {
 // sem afetar os demais testes deste arquivo.
 const fetchCanaisPorProdutoMock = vi.fn(() => Promise.resolve(new Map<string, string[]>()));
 
+const modulosMock = vi.fn(() => ({ data: ['estoque'], isLoading: false }));
 vi.mock('@/hooks/useModulosHabilitados', () => ({
-  useModulosHabilitados: () => ({ data: ['estoque'], isLoading: false }),
+  useModulosHabilitados: () => modulosMock(),
+}));
+// ADR-0207 (Task 8): uma leitura da Reposição para a página inteira, só com o módulo `reposicao`.
+const reposicaoEnabled: (boolean | undefined)[] = [];
+const reposicaoStale: (number | undefined)[] = [];
+vi.mock('@/hooks/useReposicao', async (orig) => ({
+  ...(await orig<typeof import('@/hooks/useReposicao')>()),
+  useReposicao: (o: { enabled?: boolean; staleTime?: number } = {}) => {
+    reposicaoEnabled.push(o.enabled);
+    reposicaoStale.push(o.staleTime);
+    return {
+      data: o.enabled ? { resultado: { familias: [{ codigoPai: '00000004', urgencia: 'ruptura' }] } } : undefined,
+      encerrarSaldo: vi.fn(),
+    };
+  },
 }));
 // O botão "Cadastrar com grade" depende do tipo de produto habilitado (ADR-0166). Sem mock,
 // `useTiposProdutoHabilitados` iria à rede real (supabase.rpc). Default = org SEM tipo, que é
@@ -309,5 +324,27 @@ describe('Estoque — pacote do contador por tipo de pessoa', () => {
     renderEstoque();
     await screen.findByText('Protetor Solar');
     expect(screen.queryByText('Pacote do contador')).not.toBeInTheDocument();
+  });
+});
+
+describe('Estoque — portas de entrada da Reposição (ADR-0207)', () => {
+  afterEach(() => { modulosMock.mockReturnValue({ data: ['estoque'], isLoading: false }); reposicaoEnabled.length = 0; });
+
+  it('sem o módulo: nem botão, nem selo, nem leitura da Reposição', async () => {
+    renderEstoque();
+    await screen.findByText('Protetor Solar');
+    expect(screen.queryByRole('link', { name: /Reposição/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Ruptura/ })).not.toBeInTheDocument();
+    expect(reposicaoEnabled.some(Boolean)).toBe(false);
+  });
+
+  it('com o módulo: botão "Reposição" no cabeçalho e selo que leva a ?produto=', async () => {
+    modulosMock.mockReturnValue({ data: ['estoque', 'reposicao'], isLoading: false });
+    renderEstoque();
+    await screen.findByText('Protetor Solar');
+    expect(screen.getByRole('link', { name: 'Reposição' })).toHaveAttribute('href', '/reposicao');
+    expect(screen.getByRole('link', { name: /Ruptura/ })).toHaveAttribute('href', '/reposicao?produto=00000004');
+    // Selo é indicativo: cache de 5 min no Estoque, sem refazer o cálculo a cada minuto.
+    expect(reposicaoStale).toContain(5 * 60_000);
   });
 });

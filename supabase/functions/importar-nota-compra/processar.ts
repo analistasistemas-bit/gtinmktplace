@@ -1,6 +1,7 @@
 // ADR-0181 D-3/D-4 — miolo da importação, dependências injetadas.
 import { custoAquisicaoUnit } from '../_shared/nfe/regras.ts';
 import type { DecisaoImportacao, ItemConciliado, NotaCompraLida } from '../_shared/nfe/tipos.ts';
+import { mensagemErroPedido } from '../_shared/reposicao/erro-pedido.ts';
 
 export interface DepsImportacao {
   notaExistente(orgId: string, chave: string): Promise<{ status: string } | null>;
@@ -32,7 +33,8 @@ export function montarItensRpc(itens: ItemConciliado[], decisoes: DecisaoImporta
 export async function processarImportacao(
   deps: DepsImportacao,
   p: { orgId: string; userId: string; nota: NotaCompraLida; itens: ItemConciliado[];
-       decisoes: DecisaoImportacao[]; xml: string; sha256: string; divergenciaTotal: number },
+       decisoes: DecisaoImportacao[]; xml: string; sha256: string; divergenciaTotal: number; pedidoCompraId?: string;
+       vincularCnpj?: boolean },
 ): Promise<{ notaId: string; duplicada: boolean; pushOk: boolean }> {
   const existente = await deps.notaExistente(p.orgId, p.nota.chave);
   if (existente && existente.status !== 'importada') {
@@ -54,8 +56,12 @@ export async function processarImportacao(
       divergencia_total_aceita: p.divergenciaTotal === 0 ? null : p.divergenciaTotal,
     },
     p_itens: montarItensRpc(p.itens, p.decisoes),
+    // ADR-0207 §16: só com pedido (CNPJ, SKU e status validados na RPC, antes de lançar estoque). Sem ele, os
+    // args são os de sempre (a RPC antiga de 4 args continua servindo).
+    ...(p.pedidoCompraId ? { p_pedido_compra: p.pedidoCompraId } : {}),
+    ...(p.pedidoCompraId && p.vincularCnpj ? { p_vincular_cnpj: true } : {}),
   });
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(mensagemErroPedido(error.message));
   const r = data as { nota_id: string; duplicada: boolean; codigos_pai: string[] };
 
   let pushOk = true;

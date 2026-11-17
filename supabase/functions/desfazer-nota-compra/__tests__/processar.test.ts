@@ -22,3 +22,18 @@ describe('processarDesfazer', () => {
     await expect(processarDesfazer(d, { orgId: 'o', userId: 'u', notaId: 'n', status: 'desfeita' })).rejects.toThrow(/saldo/);
   });
 });
+
+// ADR-0207 §16: desfazer a nota desfaz a baixa do pedido DENTRO da RPC (`desfazer_nota_compra` chama
+// `reposicao_desfazer_recebimentos`; "recebida volta" provado em supabase/tests/reposicao.sql). A edge não muda:
+// mesmos args e nenhuma chamada extra.
+describe('processarDesfazer — pedido de compra', () => {
+  it('uma única RPC, com os args de sempre (a baixa do pedido é desfeita lá dentro)', async () => {
+    const chamadas: Array<{ nome: string; args: Record<string, unknown> }> = [];
+    const d: DepsDesfazer = {
+      rpc: async (nome, args) => { chamadas.push({ nome, args }); return { data: { codigos_pai: [], ja_estava: false }, error: null }; },
+      enfileirar: async () => 'm',
+    };
+    await processarDesfazer(d, { orgId: 'o', userId: 'u', notaId: 'n', status: 'desfeita' });
+    expect(chamadas).toEqual([{ nome: 'desfazer_nota_compra', args: { p_org: 'o', p_user: 'u', p_nota_id: 'n', p_status: 'desfeita' } }]);
+  });
+});

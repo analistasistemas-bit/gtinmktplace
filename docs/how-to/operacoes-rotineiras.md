@@ -532,3 +532,11 @@ A tela mostra a mensagem real da função. Causas comuns:
 - **"email rate limit exceeded"** (400) → estourou o `rate_limit_email_sent` da hora (ver acima).
 - Para ver o status real no servidor: `get_logs` (service `edge-function`) mostra o código HTTP
   de `/usuarios`; `get_logs` (service `auth`) mostra os eventos `mail.send`/`user_invited`.
+
+## Reposição: ligar o módulo e operar a rotina diária (ADR-0207)
+
+1. **Ligar para a org:** Central de controle → organização → módulos → `Reposição`. O item "Reposição" aparece no menu, abaixo de Estoque, para quem tem a chave `reposicao` em `allowed_menus` (editar em Usuários).
+2. **Configurar:** na 1ª abertura, um admin da org informa **prazo de reposição** e **cobertura desejada** (dias, valem para todos os fornecedores). Depois só admin altera (`salvar_config`). Sem configuração a tela fica vazia e a rotina diária ignora a org.
+3. **Múltiplo de compra** do produto: só admin, na linha do produto.
+4. **Reexecutar a `reposicao-diaria`** de uma org/dia: ver o runbook [reposicao-diaria.md](../runbooks/reposicao-diaria.md). É idempotente; dia diferente de hoje é ignorado.
+5. Quem recebe o aviso: categoria `reposicao` em Configurações > Notificações (app e Telegram).

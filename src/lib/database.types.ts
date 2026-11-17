@@ -776,6 +776,7 @@ export type Database = {
           kit_multiplicador: number | null
           lote_id: string
           marca: string | null
+          multiplo_compra: number
           ml_item_id: string | null
           ml_permalink: string | null
           mudanca_estrutural: Json | null
@@ -867,6 +868,7 @@ export type Database = {
           kit_multiplicador?: number | null
           lote_id: string
           marca?: string | null
+          multiplo_compra?: number
           ml_item_id?: string | null
           ml_permalink?: string | null
           mudanca_estrutural?: Json | null
@@ -958,6 +960,7 @@ export type Database = {
           kit_multiplicador?: number | null
           lote_id?: string
           marca?: string | null
+          multiplo_compra?: number
           ml_item_id?: string | null
           ml_permalink?: string | null
           mudanca_estrutural?: Json | null
@@ -4470,6 +4473,246 @@ export type Database = {
           },
         ]
       }
+      fornecedores: {
+        Row: {
+          cnpj: string | null
+          criado_em: string
+          id: string
+          nome: string
+          nome_normalizado: string
+          org_id: string
+        }
+        Insert: {
+          cnpj?: string | null
+          criado_em?: string
+          id?: string
+          nome: string
+          nome_normalizado: string
+          org_id: string
+        }
+        Update: {
+          cnpj?: string | null
+          criado_em?: string
+          id?: string
+          nome?: string
+          nome_normalizado?: string
+          org_id?: string
+        }
+        Relationships: []
+      }
+      pedidos_compra: {
+        Row: {
+          alterado_em: string | null
+          alterado_por: string | null
+          aprovado_em: string | null
+          aprovado_por: string | null
+          criado_em: string
+          criado_por: string | null
+          enviado_em: string | null
+          fornecedor_id: string
+          id: string
+          org_id: string
+          previsto_para: string | null
+          ref_aprovacao: string | null
+          salvo_em: string | null
+          salvo_por: string | null
+          status: string
+        }
+        Insert: {
+          alterado_em?: string | null
+          alterado_por?: string | null
+          aprovado_em?: string | null
+          aprovado_por?: string | null
+          criado_em?: string
+          criado_por?: string | null
+          enviado_em?: string | null
+          fornecedor_id: string
+          id?: string
+          org_id: string
+          previsto_para?: string | null
+          ref_aprovacao?: string | null
+          salvo_em?: string | null
+          salvo_por?: string | null
+          status?: string
+        }
+        Update: {
+          alterado_em?: string | null
+          alterado_por?: string | null
+          aprovado_em?: string | null
+          aprovado_por?: string | null
+          criado_em?: string
+          criado_por?: string | null
+          enviado_em?: string | null
+          fornecedor_id?: string
+          id?: string
+          org_id?: string
+          previsto_para?: string | null
+          ref_aprovacao?: string | null
+          salvo_em?: string | null
+          salvo_por?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
+      pedidos_compra_itens: {
+        Row: {
+          codigo: string
+          codigo_pai: string
+          encerrado: boolean
+          org_id: string
+          pedido_id: string
+          quantidade: number
+          recebida: number
+          sugerida: number | null
+        }
+        Insert: {
+          codigo: string
+          codigo_pai: string
+          encerrado?: boolean
+          org_id: string
+          pedido_id: string
+          quantidade: number
+          recebida?: number
+          sugerida?: number | null
+        }
+        Update: {
+          codigo?: string
+          codigo_pai?: string
+          encerrado?: boolean
+          org_id?: string
+          pedido_id?: string
+          quantidade?: number
+          recebida?: number
+          sugerida?: number | null
+        }
+        Relationships: []
+      }
+      pedidos_compra_recebimentos: {
+        Row: {
+          codigo: string
+          criado_em: string
+          desfeito_em: string | null
+          id: string
+          org_id: string
+          pedido_id: string
+          quantidade: number
+          referencia_externa: string
+        }
+        Insert: {
+          codigo: string
+          criado_em?: string
+          desfeito_em?: string | null
+          id?: string
+          org_id: string
+          pedido_id: string
+          quantidade: number
+          referencia_externa: string
+        }
+        Update: {
+          codigo?: string
+          criado_em?: string
+          desfeito_em?: string | null
+          id?: string
+          org_id?: string
+          pedido_id?: string
+          quantidade?: number
+          referencia_externa?: string
+        }
+        Relationships: []
+      }
+      reposicao_config: {
+        Row: {
+          atualizado_em: string
+          atualizado_por: string | null
+          cobertura_dias: number
+          org_id: string
+          prazo_dias: number
+        }
+        Insert: {
+          atualizado_em?: string
+          atualizado_por?: string | null
+          cobertura_dias: number
+          org_id: string
+          prazo_dias: number
+        }
+        Update: {
+          atualizado_em?: string
+          atualizado_por?: string | null
+          cobertura_dias?: number
+          org_id?: string
+          prazo_dias?: number
+        }
+        Relationships: []
+      }
+      reposicao_fotos: {
+        Row: {
+          codigo: string
+          codigo_pai: string
+          dia: string
+          estoque: number | null
+          org_id: string
+          sugestao: number | null
+          urgencia: string | null
+          velocidade: number | null
+          w: number | null
+        }
+        Insert: {
+          codigo: string
+          codigo_pai: string
+          dia: string
+          estoque?: number | null
+          org_id: string
+          sugestao?: number | null
+          urgencia?: string | null
+          velocidade?: number | null
+          w?: number | null
+        }
+        Update: {
+          codigo?: string
+          codigo_pai?: string
+          dia?: string
+          estoque?: number | null
+          org_id?: string
+          sugestao?: number | null
+          urgencia?: string | null
+          velocidade?: number | null
+          w?: number | null
+        }
+        Relationships: []
+      }
+      reposicao_nao_repor: {
+        Row: {
+          codigo: string | null
+          codigo_pai: string
+          cor: string | null
+          criado_em: string
+          criado_por: string | null
+          escopo: string
+          id: string
+          org_id: string
+        }
+        Insert: {
+          codigo?: string | null
+          codigo_pai: string
+          cor?: string | null
+          criado_em?: string
+          criado_por?: string | null
+          escopo: string
+          id?: string
+          org_id: string
+        }
+        Update: {
+          codigo?: string | null
+          codigo_pai?: string
+          cor?: string | null
+          criado_em?: string
+          criado_por?: string | null
+          escopo?: string
+          id?: string
+          org_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           allowed_menus: string[]
@@ -5805,7 +6048,14 @@ export type Database = {
         Returns: undefined
       }
       importar_nota_compra: {
-        Args: { p_itens: Json; p_nota: Json; p_org: string; p_user: string }
+        Args: {
+          p_itens: Json
+          p_nota: Json
+          p_org: string
+          p_pedido_compra?: string
+          p_user: string
+          p_vincular_cnpj?: boolean
+        }
         Returns: Json
       }
       inventario_calcular: {
@@ -6347,6 +6597,20 @@ export type Database = {
           titulo: string
         }[]
       }
+      reposicao_desfazer_recebimentos: {
+        Args: { p_org: string; p_refs: string[] }
+        Returns: number
+      }
+      reposicao_receber: {
+        Args: {
+          p_codigo: string
+          p_org: string
+          p_pedido: string
+          p_quantidade: number
+          p_ref: string
+        }
+        Returns: Json
+      }
       registrar_entrada: {
         Args: {
           p_codigo: string
@@ -6355,6 +6619,7 @@ export type Database = {
           p_doc: string
           p_obs: string
           p_org: string
+          p_pedido_compra?: string
           p_qtd: number
           p_ref: string
         }

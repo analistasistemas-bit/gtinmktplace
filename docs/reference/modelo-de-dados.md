@@ -2025,3 +2025,23 @@ responde apenas sobre `seller_id` que o chamador já descobriu pela ponte do cat
   alcança; quem chama é a edge `pulse-analise-secoes237` com `adminClient()`.
 - `pulse_vendedores` mantém `org_id` e RLS; nenhuma policy foi alterada.
 - Índice `pulse_vendedores_seller_dia_idx (seller_id, dia)` acompanha a função.
+
+## Reposição e pedido de compra (ADR-0207)
+
+> Migrations `20261116231928_reposicao.sql`, `20261117004919_reposicao_acoes.sql`, `20261117020908_reposicao_entrada_lote.sql`. Código pronto, **deploy pendente**.
+
+Todas as tabelas novas têm RLS: `select` só da própria org (`org_id = current_org_id()`); `anon` e `authenticated` sem escrita (revoke all + grant select). Escrita só por `service_role` (edge `reposicao`) e pelas RPCs abaixo.
+
+- `reposicao_config` — PK `org_id`; `prazo_dias` (1–180), `cobertura_dias` (1–365), `atualizado_por/em`. Sem linha = módulo ainda não configurado.
+- `familias.multiplo_compra` — `int not null default 1`, `check >= 1`. Múltiplo de compra do produto; só admin muda (ação `definir_multiplo`).
+- `fornecedores` — `id`, `org_id`, `nome`, `nome_normalizado` (caixa e acento), `cnpj` opcional (14 dígitos); `unique (org_id, nome_normalizado)` e `unique (id, org_id)` (alvo das FKs compostas).
+- `reposicao_nao_repor` — `escopo` (`sku`/`cor`/`familia`) + `codigo_pai` e chave do escopo; sai da sugestão e da curva.
+- `pedidos_compra` — `fornecedor_id` (FK composta com `org_id`), `status` (`rascunho`, `aprovado`, `enviado`, `parcial`, `recebido`, `saldo_encerrado`), `previsto_para`, auditoria (`criado_por`, `salvo_*`, `aprovado_*`, `enviado_em`, `alterado_*`), `ref_aprovacao` único (idempotência do aprovar). Índice único parcial: **um rascunho por (org, fornecedor)**.
+- `pedidos_compra_itens` — PK `(pedido_id, codigo)`; `quantidade > 0`, `sugerida`, `recebida` (`check between 0 and quantidade`: excedente entra no estoque e fecha o item, saldo nunca negativo), `encerrado`.
+- `pedidos_compra_recebimentos` — um registro por baixa: `quantidade` (o que entrou no estoque, pode passar do pedido), `referencia_externa` = a do movimento de estoque (`unique (org_id, referencia_externa)`, idempotência), `desfeito_em`.
+- `reposicao_fotos` — PK `(org_id, dia, codigo)`: `estoque`, `velocidade`, `w`, `sugestao`, `urgencia`. Foto diária para comparar previsto × vendido; gravada pela `reposicao-diaria`.
+- Categoria `reposicao` nas 2 CHECKs (`notificacoes_categoria_check`, `profiles_telegram_categorias_validas`). Módulo `reposicao` em `organizations.modulos_habilitados`; chave de menu `reposicao` em `allowed_menus`.
+
+**RPCs novas** (definer, só `service_role`; travam o pedido primeiro, depois fornecedor, depois variações): `reposicao_recalcular_status`, `reposicao_receber` (baixa no pedido), `reposicao_desfazer_recebimentos`, `reposicao_validar_pedido`, `reposicao_salvar_rascunho`, `reposicao_editar_pedido`, `reposicao_encerrar_saldo`, `reposicao_reabrir_saldo` e `registrar_entrada_lote` (várias cores numa transação, com pedido).
+
+**Assinaturas alteradas:** `registrar_entrada(..., p_pedido_compra uuid default null)`; `importar_nota_compra(p_org, p_user, p_nota, p_itens, p_pedido_compra uuid default null, p_vincular_cnpj boolean default false)`; `desfazer_nota_compra` agora desfaz também a baixa no pedido. Sem os parâmetros novos o comportamento é o anterior.

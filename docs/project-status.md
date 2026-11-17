@@ -2,7 +2,11 @@
 
 > Documento vivo. Este e o retrato curto do estado atual do projeto. Historico detalhado fica em `project-history.md`.
 
-**Ultima atualizacao:** 2026-11-11
+**Ultima atualizacao:** 2026-11-17
+
+## Reposição e pedido de compra (ADR-0207): implementado, aguardando deploy e validação
+
+Código completo na branch `worktree-reposicao-design`. **Não está no ar:** 3 migrations, edges `reposicao`/`reposicao-diaria` (e alteradas `entrada-estoque`, `importar-nota-compra`, `desfazer-nota-compra`, `usuarios`) e schedule QStash pendentes. Piloto: Zaven. ADR PROPOSTO até a validação real. Deploy: `docs/how-to/deploy-e-migrations.md`; rotina: `docs/runbooks/reposicao-diaria.md`.
 
 ## Galeria da cor por IA (ADR-0201): implementada, aguardando validação real
 
