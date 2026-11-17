@@ -148,7 +148,7 @@ export function MapaGrade({ familia, ctx, selecionado, onSelecionar }: {
                             </>
                           ) : completar ? (
                             <>
-                              <span className="text-caption md:text-sm md:text-muted-foreground dark:text-foreground/70">{fmtInt(s.sug.estoqueHoje)}</span>
+                              <span className="text-caption md:text-sm md:text-muted-foreground dark:text-foreground/70 md:dark:text-foreground/70">{fmtInt(s.sug.estoqueHoje)}</span>
                               <span className="rounded bg-muted px-1 text-caption text-muted-foreground ring-1 ring-inset ring-border md:ml-1.5">completar +{fmtInt(s.sug.completarGrade)}</span>
                             </>
                           ) : fmtInt(s.sug.estoqueHoje)}

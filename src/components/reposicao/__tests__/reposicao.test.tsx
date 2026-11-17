@@ -448,6 +448,21 @@ describe('Reposição: sugestões', () => {
       expect(screen.getByRole('list', { name: 'Legenda do mapa' })).not.toHaveTextContent('nunca comprado');
     });
 
+    it('popover aberto pelo teclado não foca "Incluir no pedido" (Enter duplo não inclui); Escape devolve o foco à célula', async () => {
+      const user = userEvent.setup();
+      renderTela('/reposicao?produto=SHORT');
+      const cel = screen.getByRole('button', { name: /^Preto, G:/ });
+      cel.focus();
+      await user.keyboard('{Enter}');
+      const popover = await screen.findByRole('dialog');
+      const incluir = within(popover).getByRole('button', { name: 'Incluir no pedido' });
+      expect(document.activeElement).not.toBe(incluir);
+      await user.keyboard('{Escape}');
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(document.activeElement).toBe(cel);
+      expect(acoes.salvarRascunho).not.toHaveBeenCalled();
+    });
+
     it('cards e "Adicionar ao pedido" ignoram o completar', async () => {
       renderTela('/reposicao?produto=SHORT');
       await userEvent.click(screen.getByRole('button', { name: 'Adicionar ao pedido' }));
