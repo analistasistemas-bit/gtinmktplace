@@ -1,6 +1,6 @@
 // Elemento-assinatura (spec §3.4): a prancheta do representante: cor por linha, tamanho por
 // coluna, "estoque +N" escrito na célula (o +N, a compra, é o que manda). Navegável por setas (roving tabindex).
-import { useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Asterisk } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmtInt } from '@/lib/formato';
@@ -54,6 +54,19 @@ export function MapaGrade({ familia, ctx, selecionado, onSelecionar }: {
   // Família toda estimada (o aviso já diz): asterisco em toda célula vira ruído; a legenda avisa uma vez.
   const todasEstimadas = familia.skus.every((s) => s.sug.poucoHistorico);
 
+  // Celular: a grade rola na horizontal; o esmaecido à direita avisa que há mais tamanhos até chegar ao fim.
+  const rolagem = useRef<HTMLDivElement>(null);
+  const [temMais, setTemMais] = useState(false);
+  const checarRolagem = () => {
+    const el = rolagem.current;
+    setTemMais(!!el && el.scrollWidth - el.clientWidth - el.scrollLeft > 1);
+  };
+  useEffect(() => {
+    checarRolagem();
+    window.addEventListener('resize', checarRolagem);
+    return () => window.removeEventListener('resize', checarRolagem);
+  }, []);
+
   const focar = (k: string) => { setAtiva(k); refs.current.get(k)?.focus(); };
   const mover = (e: KeyboardEvent, r: number, c: number) => {
     if (e.key === 'Home' || e.key === 'End') {
@@ -74,7 +87,8 @@ export function MapaGrade({ familia, ctx, selecionado, onSelecionar }: {
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="w-fit max-w-full overflow-x-auto rounded-lg border border-border">
+      <div className="relative w-fit max-w-full">
+      <div ref={rolagem} onScroll={checarRolagem} className="max-w-full overflow-x-auto rounded-lg border border-border">
         <table role="grid" aria-label={`Mapa da grade de ${familia.nome}`} className="border-separate border-spacing-0 text-sm">
           <thead>
             <tr role="row">
@@ -140,6 +154,8 @@ export function MapaGrade({ familia, ctx, selecionado, onSelecionar }: {
             ))}
           </tbody>
         </table>
+      </div>
+      {temMais && <div data-indicador-rolagem aria-hidden className="pointer-events-none absolute inset-y-px right-px w-8 rounded-r-lg bg-gradient-to-l from-card to-transparent" />}
       </div>
       <ul className="flex flex-wrap gap-x-4 gap-y-1 text-caption" aria-label="Legenda do mapa">
         <li className="flex items-center gap-1.5"><span aria-hidden className="h-3 w-3 rounded-sm border border-border bg-danger/15 shadow-[inset_3px_0_0_var(--color-danger)] dark:bg-danger/25" />Ruptura ou Vai faltar</li>

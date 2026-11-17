@@ -227,9 +227,37 @@ describe('Reposição: sugestões', () => {
     expect(within(screen.getByRole('button', { name: /^Ruptura/ })).getByText('1 SKU')).toHaveClass('text-h2', 'text-foreground');
   });
 
-  it('tendência sem valor: ponto discreto com nome acessível, não "-"', () => {
-    renderTela();
-    expect(screen.getAllByRole('img', { name: 'sem tendência' }).length).toBeGreaterThan(0);
+  it('vazio uniforme: o mesmo ponto discreto em todas as colunas, cada um com nome acessível; nenhum "-"', () => {
+    renderTela('/reposicao?urgencia=em_dia');
+    for (const nome of ['sem tendência', 'nada a caminho', 'nada a pedir']) {
+      const vazios = screen.getAllByRole('img', { name: nome });
+      expect(vazios.length).toBeGreaterThan(0);
+      for (const v of vazios) { expect(v).toHaveTextContent('·'); expect(v).toHaveClass('text-muted-foreground'); }
+    }
+    expect(screen.queryByText('-')).toBeNull();
+  });
+
+  it('grade com overflow: esmaecido na borda direita até rolar ao fim', () => {
+    const proto = HTMLElement.prototype;
+    const orig = { sw: Object.getOwnPropertyDescriptor(proto, 'scrollWidth'), cw: Object.getOwnPropertyDescriptor(proto, 'clientWidth') };
+    Object.defineProperty(proto, 'scrollWidth', { configurable: true, get: () => 500 });
+    Object.defineProperty(proto, 'clientWidth', { configurable: true, get: () => 300 });
+    try {
+      const { container } = renderTela('/reposicao?produto=SHORT');
+      expect(container.querySelector('[data-indicador-rolagem]')).not.toBeNull();
+      const rolagem = screen.getByRole('grid').parentElement!;
+      rolagem.scrollLeft = 200;
+      fireEvent.scroll(rolagem);
+      expect(container.querySelector('[data-indicador-rolagem]')).toBeNull();
+    } finally {
+      if (orig.sw) Object.defineProperty(proto, 'scrollWidth', orig.sw); else delete (proto as unknown as Record<string, unknown>).scrollWidth;
+      if (orig.cw) Object.defineProperty(proto, 'clientWidth', orig.cw); else delete (proto as unknown as Record<string, unknown>).clientWidth;
+    }
+  });
+
+  it('grade sem overflow: sem esmaecido', () => {
+    const { container } = renderTela('/reposicao?produto=SHORT');
+    expect(container.querySelector('[data-indicador-rolagem]')).toBeNull();
   });
 
   it('asterisco só quando parte da família é estimada; família toda estimada troca a legenda', () => {

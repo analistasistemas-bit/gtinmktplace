@@ -78,6 +78,11 @@ function Pill({ f }: { f: FamiliaVisao }) {
 }
 
 /** Valor com rótulo só no celular (no desktop o cabeçalho da coluna rotula). */
+/** Célula sem valor: um ponto discreto ("-" leria como negativo), com o que falta dito ao leitor de tela. */
+function Vazio({ nome }: { nome: string }) {
+  return <span role="img" aria-label={nome} className="text-muted-foreground">·</span>;
+}
+
 function Dado({ rotulo, children, className }: { rotulo: string; children: React.ReactNode; className?: string }) {
   return (
     <span className={cn('flex flex-col tabular-nums md:block md:text-right', className)}>
@@ -177,14 +182,11 @@ export function ListaFamilias({ familias, expandidos, onAlternar, ctx, acoes, ra
                 <span className="col-start-3 row-start-1 md:col-auto md:row-auto"><Pill f={f} /></span>
                 <span className="col-span-3 truncate text-muted-foreground md:col-auto md:row-start-1 md:col-start-3">{f.fornecedor.nome || 'Sem fornecedor'}</span>
                 <span className="col-span-3 grid grid-cols-4 gap-2 md:contents">
-                  <Dado rotulo="Tendência">
-                    {/* "-" leria como negativo. */}
-                    {f.tendencia ? pctSinal(f.tendencia.fator - 1) : <span role="img" aria-label="sem tendência" className="text-muted-foreground">·</span>}
-                  </Dado>
-                  <Dado rotulo="Dias de estoque">{f.diasDeEstoque === null ? '-' : `${fmtInt(f.diasDeEstoque)} d`}</Dado>
-                  <Dado rotulo="A caminho">{f.aCaminho ? `${fmtInt(f.aCaminho)} un.` : '-'}</Dado>
+                  <Dado rotulo="Tendência">{f.tendencia ? pctSinal(f.tendencia.fator - 1) : <Vazio nome="sem tendência" />}</Dado>
+                  <Dado rotulo="Dias de estoque">{f.diasDeEstoque === null ? <Vazio nome="sem previsão" /> : `${fmtInt(f.diasDeEstoque)} d`}</Dado>
+                  <Dado rotulo="A caminho">{f.aCaminho ? `${fmtInt(f.aCaminho)} un.` : <Vazio nome="nada a caminho" />}</Dado>
                   <Dado rotulo="Sugestão" className="font-medium">
-                    {f.pedir ? <>{fmtInt(f.pedir)} un. <span className="block text-caption md:inline">{fmtBRL(f.valor)}</span></> : '-'}
+                    {f.pedir ? <>{fmtInt(f.pedir)} un. <span className="block text-caption md:inline">{fmtBRL(f.valor)}</span></> : <Vazio nome="nada a pedir" />}
                   </Dado>
                 </span>
               </button>
