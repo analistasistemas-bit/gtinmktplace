@@ -57,9 +57,8 @@
 - Produces: tabela `public.aliquotas_vigencia(id uuid pk default gen_random_uuid(), org_id uuid not null references public.organizations(id) on delete cascade, vigente_desde timestamptz not null, nacional_pct numeric not null, importado_pct numeric not null, uf_empresa text null, interna_pct numeric null, criado_em timestamptz default now())`, unique `(org_id, vigente_desde)`, índice `(org_id, vigente_desde desc)`.
   - `on delete cascade` segue o padrão de `configuracoes` (`20260722085311_adr86_configuracoes_pk_org_id_e_seed.sql:37`).
 
-- [ ] **Step 1: Confirmar com o Diego antes de escrever o backfill.**
-  - Pergunta: qual era a alíquota de "Venda dentro do estado (PE)" antes da troca de 17/11, 09:40? A premissa é **4%**.
-  - Sem resposta, **não seguir** com o backfill da Daludi.
+- [x] **Step 1: Valores antigos da Daludi confirmados pelo Diego em 17/11.**
+  - Antes da troca de 17/11, 09:40: nacional 4%, importado 0%, PE (dentro do estado) **4%**.
 
 - [ ] **Step 2: Medir em produção (somente leitura, SQL via Management API, ver memória `reference_ops`).**
   - Rodar: `select o.id, o.name, c.aliquota_nacional_pct, c.aliquota_importado_pct, c.uf_empresa, c.aliquota_interna_pct from public.configuracoes c join public.organizations o on o.id=c.org_id where c.aliquotas_confirmadas_em is not null;`
@@ -87,7 +86,7 @@
   6. Backfill de cada org com `aliquotas_confirmadas_em is not null`, com valores fixos (não lidos na hora):
      - Linha `vigente_desde = '1970-01-01T00:00:00Z'` com os valores atuais.
      - **Exceto a Daludi**, que recebe duas linhas:
-       - `1970-01-01T00:00:00Z`: nacional 4, importado 0, uf `PE`, interna `<valor confirmado no Step 1>`;
+       - `1970-01-01T00:00:00Z`: nacional 4, importado 0, uf `PE`, interna 4;
        - `2026-11-17T12:40:00Z`: nacional 6.5, importado 0, uf `PE`, interna 6.5.
      - Usar `on conflict do nothing`, para a migration ser idempotente.
 

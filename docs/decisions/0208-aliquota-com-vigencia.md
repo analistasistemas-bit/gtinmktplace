@@ -43,7 +43,7 @@ O custo do produto já é congelado por venda (ADR-0109). O imposto não é.
 6. **Backfill**
    - Cada org com alíquota confirmada recebe uma vigência `1970-01-01` com os valores atuais.
    - Daludi Shop recebe duas:
-     - `1970-01-01`: nacional 4, importado 0, PE / interna 4 (*a confirmar com o Diego*);
+     - `1970-01-01`: nacional 4, importado 0, PE / interna 4 (confirmado pelo Diego em 17/11);
      - `2026-11-17T12:40:00Z` (09:40 em Brasília, informado pelo Diego): os valores atuais.
    - Valores fixos na migration, que aborta se a configuração atual da Daludi divergir.
    - Não usar `atualizado_em`: ele muda em qualquer save e vem do relógio do cliente.
