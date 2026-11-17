@@ -7,12 +7,14 @@
 **Architecture:**
 - Tabela nova `aliquotas_vigencia`, alimentada por trigger em `configuracoes`.
 - `montarAliquotaResolver` recebe as vigências e o resolver passa a receber a data da venda.
-- `fetchAliquotas` (front) e `loadConfigState` (edges) carregam as vigências. As 9 telas que usam `useAliquotas` não mudam.
+- `fetchAliquotas` (front) e `loadConfigState` (edges) carregam as vigências. No caminho feliz o objeto segue para `montarAliquotaResolver`. Se a leitura falhar, as telas e hooks de venda não calculam imposto (Task 3). A precificação não muda.
 - A precificação (publicar, calculadora, kits, promoções) continua usando a alíquota atual.
 
 **Tech Stack:** Postgres/Supabase (migration + trigger + RLS), TypeScript compartilhado front/Deno (`supabase/functions/_shared/platform-admin/`), React Query, vitest.
 
 **Spec:** `docs/decisions/0208-aliquota-com-vigencia.md` (ler antes de começar).
+
+**Revisão 2026-11-17 (Gemini 4 Carbon):** três bloqueios aplicados neste texto. O trigger não grava a linha de seed 8/16. Falha ao ler vigências, nas telas de venda, não usa 8/16 nem dado em cache. O Review Focus separa lista vazia de erro de leitura.
 
 **Classificação:** CRÍTICA, porque mexe em dado financeiro e cria migration.
 - Revisão independente obrigatória antes do merge: subagente Opus effort high, ou `codex exec -m gpt-6.1-sol -c model_reasoning_effort=high -s read-only … < /dev/null`, com modelo diferente do autor.
@@ -41,7 +43,9 @@
 
 1. **Venda exatamente no instante da troca** (`data === vigente_desde`): usa a vigência nova (`<=`). Teste na Task 2.
 2. **Mesmo instante em fusos diferentes** (`2026-11-17T09:40:00-03:00` e `…12:40:00Z`): mesmo resultado. Teste na Task 2.
-3. **Org sem nenhuma vigência** (vigências não carregaram ou lista vazia): mesmo número de hoje. Teste na Task 2.
+3. **Lista vazia não é falha de leitura.**
+   - Lista vazia (`vigencias: []`, org que nunca confirmou): mesmo número de hoje, as alíquotas atuais. Teste na Task 2.
+   - Vigências que não carregaram (erro de leitura): nunca a alíquota atual e nunca 8/16. No front, `fetchAliquotas` lança e as telas de venda não montam o resolver (Task 3). Nas edges, `configErrored` (Task 4).
 4. **Mês fechado da Central/relatório não muda** quando a alíquota de hoje muda. Teste na Task 4, pelo `taxConfigStamp` e pelo cálculo do mês com duas vigências.
 5. **Salvar sem mudar valor** não cria vigência nova. Também conta para o save que só muda `aliquotas_confirmadas_em`. Teste SQL na Task 1.
 
@@ -67,7 +71,7 @@
   - Se os valores atuais forem outros, **parar e perguntar ao Diego**.
   - **Corte fixo: `2026-11-17T12:40:00Z`** (09:40 em Brasília, informado pelo Diego). Nunca usar `atualizado_em`: ele muda em qualquer save de configuração e vem do relógio do cliente (`queries.ts:820,867`).
   - Copiar as policies SELECT atuais de `configuracoes`: `select policyname, roles, qual from pg_policies where tablename='configuracoes';`. A nova tabela replica a leitura, inclusive o acesso de platform admin se houver.
-  - Copiar também o padrão de função `security definer` já usado nas migrations: `search_path = ''`, nomes qualificados e `revoke execute … from public`.
+  - Copiar também o padrão de função `security definer` já usado nas migrations: `search_path = ''`, nomes qualificados e `revoke all on function … from public, anon, authenticated`.
 
 - [ ] **Step 3: Escrever a migration**, nesta ordem:
   1. Create table, unique e índice.
@@ -76,9 +80,13 @@
      - O revoke cobre o `TRUNCATE`, que ignora RLS (`20260927084615_vendas_sku_trafego.sql:53`). Só o trigger escreve.
   3. Função `public.registrar_vigencia_aliquota()`:
      - `security definer`, `set search_path = ''`, nomes qualificados (`public.…`).
-     - `revoke execute on function … from public;`.
-     - Em INSERT, ou em UPDATE onde `(aliquota_nacional_pct, aliquota_importado_pct, uf_empresa, aliquota_interna_pct)` IS DISTINCT FROM `OLD`, e com `NEW.aliquota_nacional_pct` e `NEW.aliquota_importado_pct` não nulos:
-       `insert into public.aliquotas_vigencia (org_id, vigente_desde, …) values (NEW.org_id, date_trunc('milliseconds', clock_timestamp()), …) on conflict (org_id, vigente_desde) do update set …`.
+     - `revoke all on function public.registrar_vigencia_aliquota() from public, anon, authenticated;`.
+     - O seed `trg_seed_configuracoes_org` insere `configuracoes (org_id)` com default 8/16 e `aliquotas_confirmadas_em` NULL (`20260722085311_adr86_configuracoes_pk_org_id_e_seed.sql:50`). Essa linha **não** vira vigência.
+     - Grava uma linha só quando as três condições abaixo são verdadeiras:
+       - `NEW.aliquotas_confirmadas_em IS NOT NULL`;
+       - `NEW.aliquota_nacional_pct IS NOT NULL` e `NEW.aliquota_importado_pct IS NOT NULL`;
+       - e uma destas: `TG_OP = 'INSERT'`, ou `OLD.aliquotas_confirmadas_em IS NULL` (primeira confirmação, mesmo que os quatro campos continuem 8/16), ou `(NEW.aliquota_nacional_pct, NEW.aliquota_importado_pct, NEW.uf_empresa, NEW.aliquota_interna_pct) IS DISTINCT FROM (OLD.…)` .
+     - `insert into public.aliquotas_vigencia (…) values (NEW.org_id, date_trunc('milliseconds', clock_timestamp()), …) on conflict (org_id, vigente_desde) do update set …`.
      - O `do update` só acontece com dois saves no mesmo milissegundo. Nesse caso vale o último, que é o valor efetivo daquele instante.
      - Saves concorrentes da mesma org se serializam pelo lock da linha de `configuracoes`. O `clock_timestamp()`, avaliado no AFTER trigger depois do lock, segue essa ordem.
   4. Trigger `trg_configuracoes_vigencia_aliquota after insert or update on public.configuracoes for each row execute function …`.
@@ -96,15 +104,18 @@
 
   ```sql
   -- org de teste: <tst> (criada no begin, some no rollback)
-  insert into public.configuracoes (org_id, user_id, aliquota_nacional_pct, aliquota_importado_pct, aliquotas_confirmadas_em) values ('<tst>', '<qualquer user>', 4, 0, now());
-  select count(*) from public.aliquotas_vigencia where org_id='<tst>';  -- esperado: 1 (insert)
-  -- (a) update sem mudança de valor não cria linha
+  -- NÃO inserir em configuracoes: trg_seed_configuracoes_org já criou a linha 8/16 sem confirmação.
+  select count(*) from public.aliquotas_vigencia where org_id='<tst>';  -- esperado: 0 (seed não confirmado)
+  -- (a) primeira confirmação, mantendo 8/16, cria 1 linha
   update public.configuracoes set aliquotas_confirmadas_em = now() where org_id = '<tst>';
   select count(*) from public.aliquotas_vigencia where org_id='<tst>';  -- esperado: 1
-  -- (b) mudança de valor cria linha nova
+  -- (b) update sem mudança de valor não cria linha
+  update public.configuracoes set aliquotas_confirmadas_em = now() where org_id = '<tst>';
+  select count(*) from public.aliquotas_vigencia where org_id='<tst>';  -- esperado: 1
+  -- (c) mudança de valor cria linha nova
   update public.configuracoes set aliquota_nacional_pct = 6.5 where org_id = '<tst>';
   select count(*) from public.aliquotas_vigencia where org_id='<tst>';  -- esperado: 2
-  -- (c) authenticated não escreve
+  -- (d) authenticated não escreve
   set local role authenticated; insert into public.aliquotas_vigencia (org_id, vigente_desde, nacional_pct, importado_pct) values ('<tst>', now(), 1, 1);  -- esperado: ERROR permission denied
   rollback;
   ```
@@ -187,7 +198,16 @@
   - `src/lib/detalhe-vendas.ts:195`
   - `supabase/functions/_shared/notificacoes/gerencial/resultado.ts:78,81`
   - `src/hooks/useVendasSku.ts:35` (`aliqR(it, v.uf)` em `origemNaoResolvida`)
-- Modify: `src/lib/queries.ts` `fetchAliquotas` (≈ linha 785), para devolver também `vigencias: VigenciaAliquota[]`
+- Modify: `src/lib/queries.ts` `fetchAliquotas` (≈ linha 785), para devolver também `vigencias: VigenciaAliquota[]`. Hoje o `select` de `configuracoes` descarta `error` (linha 792): passar a lançar.
+- Modify, só no caminho de **venda**, o erro de `useAliquotas`. Com `isError`, não calcular imposto:
+  - `src/components/faturamento/aba-vendas.tsx`
+  - `src/components/faturamento/aba-geografia.tsx`
+  - `src/pages/DetalheVendas.tsx`
+  - `src/pages/DetalheFinanceiro.tsx`
+  - `src/pages/Dashboard.tsx`
+  - `src/hooks/useSkuDossie.ts`
+  - `src/hooks/useVendasSku.ts` (a linha do `montarAliquotaResolver` usa `aliquotas ?? { nacional: 8, importado: 16 }` antes de `baseFiscal` acusar `aliquotas_erro`)
+  - `src/hooks/useResumoVendas.ts` (em refetch com erro, `data ??` ainda entrega o cache)
 - Test: os testes existentes de `pedidos-faturamento`, `detalhe-vendas` e `gerencial/__tests__/resultado.test.ts` precisam continuar verdes. Acrescentar 1 caso em `resultado.test.ts`.
 
 **Interfaces:**
@@ -195,9 +215,14 @@
 - Produces: `fetchAliquotas(): Promise<{ nacional; importado; confirmada; ufEmpresa; internaPct; vigencias: VigenciaAliquota[] }>`.
   - Lê `aliquotas_vigencia` filtrado por `org_id = effectiveOrgId()`.
   - Mapeia `vigente_desde → vigenteDesde`.
-  - Erro na leitura das vigências → **lançar** o erro (React Query mostra o estado de erro).
-  - Nunca devolver `[]` em caso de falha: isso reaplicaria a alíquota atual às vendas antigas.
+  - Erro na leitura de `configuracoes` **ou** de `aliquotas_vigencia` → **lançar** o erro. `if (error) throw error` nos dois selects.
+  - Nunca devolver `[]`, 8/16, nem as alíquotas atuais em caso de falha: isso reaplicaria imposto errado às vendas antigas.
   - Lista vazia de verdade (org sem confirmação) → `[]`.
+  - Telas e hooks de venda, quando `useAliquotas().isError`:
+    - não passar `aliquotas ?? { nacional: 8, importado: 16 }`;
+    - não passar o `data` antigo que o React Query guarda num refetch com erro;
+    - não montar o resolver; a tela mostra o erro e não exibe imposto.
+  - Precificação (calculadora, kits, publicar, `process-familia`) fica fora: continua com a alíquota atual.
 
 - [ ] **Step 1: Teste que falha** em `resultado.test.ts`:
   - Duas vendas iguais, uma em 2026-11-16 e outra em 2026-11-18.
@@ -206,8 +231,9 @@
 - [ ] **Step 2:** `pnpm vitest run supabase/functions/_shared/notificacoes/gerencial/__tests__/resultado.test.ts` → FAIL.
 - [ ] **Step 3: Implementar.**
   - Passar `v.date_closed ?? v.date_created` em todos os chamadores. Rodar `pnpm build` para o `tsc` apontar algum que faltou.
-  - Atualizar `fetchAliquotas`.
-  - `useAliquotas` e as 9 telas não mudam: o objeto já segue direto para `montarAliquotaResolver`.
+  - Atualizar `fetchAliquotas` (lança se `configuracoes` ou `aliquotas_vigencia` falharem; devolve `vigencias`).
+  - No caminho feliz, o objeto segue direto para `montarAliquotaResolver`. Não há prop nova.
+  - No `isError` das telas e hooks de venda listados acima, não montar o resolver. Estender o teste de `useVendasSku` que já cobre `isError`: o imposto não pode sair de `{ nacional: 8, importado: 16 }` nem de um `data` antigo. Em `useResumoVendas`, `isError` entrega `null` ao resolver, ignorando cache.
 - [ ] **Step 4:** `pnpm build` sem erro. Os arquivos de teste citados → PASS.
 - [ ] **Step 5: Commit** — `feat(imposto): vendas usam a alíquota vigente na data (front + gerencial)`
 
