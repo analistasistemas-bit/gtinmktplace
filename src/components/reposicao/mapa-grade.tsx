@@ -35,9 +35,10 @@ function eixosDaGrade(skus: SkuVisao[]) {
   return { ...e, celulas, hex, codigosDaCor };
 }
 
-function rotuloCelula(cor: string, tam: string, s: SkuVisao): string {
+function rotuloCelula(cor: string, tam: string, s: SkuVisao, corFora: boolean): string {
   const partes = [`${rotuloCor(cor)}, ${rotuloTam(tam)}: estoque ${fmtInt(s.sug.estoqueHoje)}`];
-  if (s.tela.naoReporId) partes.push('Não repor');
+  if (corFora) partes.push('Fora de linha');
+  else if (s.tela.naoReporId) partes.push('Não repor');
   else if (s.sug.completarGrade > 0) partes.push(`completar ${fmtInt(s.sug.completarGrade)}`, 'nunca comprado');
   else {
     if (s.sug.pedir > 0) partes.push(`pedir ${fmtInt(s.sug.pedir)}`);
@@ -140,7 +141,7 @@ export function MapaGrade({ familia, ctx, selecionado, onSelecionar, coresForaDe
                           tabIndex={ativa === k ? 0 : -1}
                           onFocus={() => setAtiva(k)}
                           onKeyDown={(e) => mover(e, r, c)}
-                          aria-label={rotuloCelula(cor, tam, s)}
+                          aria-label={rotuloCelula(cor, tam, s, fora(cor))}
                           data-nao-repor={nao ? 'true' : undefined}
                           className={cn(
                             'relative flex h-11 w-full min-w-[4.5rem] flex-col items-center justify-center whitespace-nowrap px-2 leading-tight tabular-nums outline-none transition-colors md:min-w-[6.5rem] md:flex-row md:px-3',

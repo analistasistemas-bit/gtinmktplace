@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-const acoes = { foraDeLinha: vi.fn(), removerNaoRepor: vi.fn() };
+const acoes = { foraDeLinha: vi.fn(), removerNaoRepor: vi.fn(), refetch: vi.fn() };
 const estado = { pendente: false };
 vi.mock('@/hooks/useReposicao', async (orig) => ({
   ...(await orig<typeof import('@/hooks/useReposicao')>()),
@@ -28,6 +28,7 @@ function abrir(i: Info = info(), onOpenChange = vi.fn()) {
 beforeEach(() => {
   acoes.foraDeLinha.mockReset().mockResolvedValue({});
   acoes.removerNaoRepor.mockReset().mockResolvedValue({});
+  acoes.refetch.mockReset().mockResolvedValue({});
   estado.pendente = false;
   vi.mocked(toast.success).mockClear();
 });
@@ -44,7 +45,7 @@ describe('DialogForaDeLinha', () => {
   it('marcar cor: confirmação mostra as unidades do rascunho; Confirmar chama foraDeLinha e avisa', async () => {
     abrir();
     await userEvent.click(screen.getByRole('button', { name: 'Marcar a cor Preto fora de linha' }));
-    const conf = screen.getByRole('group', { name: 'Confirmar fora de linha' });
+    const conf = screen.getByRole('status', { name: 'Confirmar fora de linha' });
     expect(conf).toHaveTextContent('Preto sai das sugestões de compra, e 12 un. saem do rascunho de pedido.');
     expect(conf).toHaveTextContent('O estoque que sobra continua à venda; o anúncio no Mercado Livre não muda.');
     expect(conf).toHaveTextContent('As quantidades das outras cores serão recalculadas.');
@@ -57,7 +58,7 @@ describe('DialogForaDeLinha', () => {
   it('produto inteiro: sem frase das outras cores; rascunho 0 omite a parte do rascunho', async () => {
     abrir(info({ rascunho: () => ({ unidades: 0, rascunhos: 0 }) }));
     await userEvent.click(screen.getByRole('button', { name: 'Marcar o produto inteiro fora de linha' }));
-    const conf = screen.getByRole('group', { name: 'Confirmar fora de linha' });
+    const conf = screen.getByRole('status', { name: 'Confirmar fora de linha' });
     expect(conf.textContent).toMatch(/^O produto inteiro sai das sugestões de compra\. O estoque/);
     expect(conf).not.toHaveTextContent('outras cores');
     await userEvent.click(within(conf).getByRole('button', { name: 'Confirmar' }));
@@ -68,14 +69,35 @@ describe('DialogForaDeLinha', () => {
     abrir();
     await userEvent.click(screen.getByRole('button', { name: 'Marcar a cor Preto fora de linha' }));
     await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
-    expect(screen.queryByRole('group', { name: 'Confirmar fora de linha' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('status', { name: 'Confirmar fora de linha' })).not.toBeInTheDocument();
     expect(acoes.foraDeLinha).not.toHaveBeenCalled();
   });
 
-  it('cor já marcada: selo e "Voltar à linha" chama removerNaoRepor(id)', async () => {
+  it('abrir refaz a leitura da reposição (contagem do rascunho fresca)', () => {
+    abrir();
+    expect(acoes.refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('confirmação aberta: foco no Confirmar e todos os outros Marcar/Voltar desabilitados', async () => {
+    abrir();
+    await userEvent.click(screen.getByRole('button', { name: 'Marcar a cor Preto fora de linha' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirmar' })).toHaveFocus());
+    for (const n of ['Marcar o produto inteiro fora de linha', 'Marcar a cor Preto fora de linha', 'Voltar a cor Azul à linha']) {
+      expect(screen.getByRole('button', { name: n })).toBeDisabled();
+    }
+  });
+
+  it('cor já marcada: selo; "Voltar à linha" avisa que o rascunho não volta e só então chama removerNaoRepor(id)', async () => {
     abrir();
     expect(screen.getByText('Fora de linha')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Voltar a cor Azul à linha' }));
+    const conf = screen.getByRole('status', { name: 'Confirmar fora de linha' });
+    expect(conf).toHaveTextContent('Azul volta às sugestões de compra. Os itens que saíram do rascunho de pedido não voltam para ele.');
+    expect(acoes.removerNaoRepor).not.toHaveBeenCalled();
+    for (const n of ['Marcar o produto inteiro fora de linha', 'Marcar a cor Preto fora de linha', 'Voltar a cor Azul à linha']) {
+      expect(screen.getByRole('button', { name: n })).toBeDisabled();
+    }
+    await userEvent.click(within(conf).getByRole('button', { name: 'Confirmar' }));
     expect(acoes.removerNaoRepor).toHaveBeenCalledWith('m-azul');
     expect(toast.success).toHaveBeenCalledWith('Azul voltou à linha');
   });
@@ -98,10 +120,15 @@ describe('DialogForaDeLinha', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('carregando: botões desabilitados', () => {
+  it('carregando: botões desabilitados, "Salvando…" na região de status e botão em andamento com aria-busy', async () => {
+    const el = () => <DialogForaDeLinha open onOpenChange={vi.fn()} codigoPai="P1" nome="Short Bermuda" info={info()} />;
+    const { rerender } = render(el());
+    await userEvent.click(screen.getByRole('button', { name: 'Marcar a cor Preto fora de linha' }));
     estado.pendente = true;
-    abrir();
-    expect(screen.getByRole('button', { name: 'Marcar a cor Preto fora de linha' })).toBeDisabled();
+    rerender(el());
+    expect(screen.getByRole('status', { name: 'Confirmar fora de linha' })).toHaveTextContent('Salvando…');
+    expect(screen.getByRole('button', { name: 'Confirmar' })).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Voltar a cor Azul à linha' })).toBeDisabled();
   });
 

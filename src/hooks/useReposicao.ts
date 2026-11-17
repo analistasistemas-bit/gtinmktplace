@@ -126,6 +126,8 @@ export interface FamiliaVisao {
   temGrade: boolean;
   skus: SkuVisao[];
   naoReporFamiliaId: string | null;
+  /** Cores com marca de escopo `cor` (marca de tamanho só risca a célula). */
+  coresMarcadas: string[];
 }
 export interface CardFaixa { skus: number; produtos: number }
 export interface Visao {
@@ -178,6 +180,7 @@ export function montarVisao(data: RespostaReposicao, hoje: string): Visao {
       temGrade: skus.some((s) => s.tela.cor || s.tela.tamanho),
       skus,
       naoReporFamiliaId: data.naoRepor.find((n) => n.escopo === 'familia' && n.codigoPai === rf.codigoPai)?.id ?? null,
+      coresMarcadas: data.naoRepor.filter((n) => n.escopo === 'cor' && n.codigoPai === rf.codigoPai && n.cor).map((n) => n.cor!),
     }];
   });
   familias.sort((a, b) => ORDEM_URGENCIA.indexOf(a.urgencia) - ORDEM_URGENCIA.indexOf(b.urgencia)
@@ -205,12 +208,12 @@ export function montarVisao(data: RespostaReposicao, hoje: string): Visao {
   };
 }
 
-/** Cores (texto exato) com todos os SKUs marcados: a linha da cor está fora de linha (marca de cor ou de cada tamanho). */
+/** Cores fora de linha: marca de escopo `cor` (ou de produto, que vale para todas). Marca de tamanho (`sku`) só risca a célula. */
 export function coresForaDeLinha(f: FamiliaVisao): Set<string> {
-  const cores = new Set(f.skus.map((s) => s.tela.cor).filter((c): c is string => !!c));
-  return new Set([...cores].filter((c) => f.skus.filter((s) => s.tela.cor === c).every((s) => !!s.tela.naoReporId)));
+  if (f.naoReporFamiliaId) return new Set(f.skus.map((s) => s.tela.cor).filter((c): c is string => !!c));
+  return new Set(f.coresMarcadas);
 }
-/** Escondida por padrão na Reposição: marca de produto, ou nenhuma linha de cor visível. */
+/** Escondida por padrão na Reposição: marca de produto, ou todas as linhas de cor fora de linha. */
 export function familiaForaDeLinha(f: FamiliaVisao): boolean {
   if (f.naoReporFamiliaId) return true;
   const fora = coresForaDeLinha(f);

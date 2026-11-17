@@ -401,11 +401,42 @@ describe('Reposição: sugestões', () => {
       expect(cel.className).toMatch(/line-through/);
     });
 
-    it('família sem nenhuma linha visível (todas as cores fora de linha) não aparece', () => {
+    it('família sem nenhuma linha visível (todas as cores com marca de cor) não aparece', () => {
       const d = estado.data!;
-      d.skus = d.skus.map((x) => (x.codigoPai === 'SHORT' ? { ...x, naoReporId: 'nr-c' } : x));
+      for (const cor of ['Preto', 'Cáqui']) d.naoRepor.push({ id: `nr-${cor}`, escopo: 'cor', codigoPai: 'SHORT', codigo: null, cor });
+      d.skus = d.skus.map((x) => (x.codigoPai === 'SHORT' ? { ...x, naoReporId: `nr-${x.cor}` } : x));
       renderTela();
       expect(screen.queryByText('Short Bermuda Mauricinho')).toBeNull();
+    });
+
+    it('marca de tamanho na única célula de uma cor: linha e família continuam visíveis, riscadas', () => {
+      const d = estado.data!;
+      d.naoRepor.push({ id: 'nr-c1', escopo: 'sku', codigoPai: 'CALCA', codigo: 'C1', cor: null });
+      d.skus = d.skus.map((x) => (x.codigo === 'C1' ? { ...x, naoReporId: 'nr-c1' } : x));
+      renderTela('/reposicao?produto=CALCA');
+      const cel = screen.getByRole('button', { name: /^Marrom, 42:/ });
+      expect(cel.className).toMatch(/line-through/);
+      expect(cel).toHaveAccessibleName(/Não repor/);
+      expect(cel).not.toHaveAccessibleName(/Fora de linha/);
+    });
+
+    it('todas as células de uma cor marcadas por tamanho: a cor continua visível', () => {
+      const d = estado.data!;
+      d.naoRepor.push({ id: 'nr-s3', escopo: 'sku', codigoPai: 'SHORT', codigo: 'S3', cor: null });
+      d.skus = d.skus.map((x) => (x.codigo === 'S3' ? { ...x, naoReporId: 'nr-s3' } : x)); // S4 (Cáqui M) já é marca de SKU
+      renderTela('/reposicao?produto=SHORT');
+      expect(screen.getByRole('button', { name: /^Cáqui, P:/ }).className).toMatch(/line-through/);
+      expect(screen.getByRole('button', { name: /^Cáqui, M:/ }).className).toMatch(/line-through/);
+      expect(screen.queryByText('Fora de linha')).toBeNull();
+    });
+
+    it('cor com marca de cor: o nome acessível da célula diz "Fora de linha", não "Não repor"', async () => {
+      marcarCor();
+      renderTela('/reposicao?produto=SHORT');
+      await userEvent.click(screen.getByRole('switch', { name: 'Mostrar fora de linha' }));
+      const cel = screen.getByRole('button', { name: /^Preto, P:/ });
+      expect(cel).toHaveAccessibleName(/Fora de linha/);
+      expect(cel).not.toHaveAccessibleName(/Não repor/);
     });
   });
 
