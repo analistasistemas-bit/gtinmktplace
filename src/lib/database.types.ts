@@ -39,6 +39,47 @@ export type Database = {
   }
   public: {
     Tables: {
+      aliquotas_vigencia: {
+        Row: {
+          criado_em: string | null
+          id: string
+          importado_pct: number
+          interna_pct: number | null
+          nacional_pct: number
+          org_id: string
+          uf_empresa: string | null
+          vigente_desde: string
+        }
+        Insert: {
+          criado_em?: string | null
+          id?: string
+          importado_pct: number
+          interna_pct?: number | null
+          nacional_pct: number
+          org_id: string
+          uf_empresa?: string | null
+          vigente_desde: string
+        }
+        Update: {
+          criado_em?: string | null
+          id?: string
+          importado_pct?: number
+          interna_pct?: number | null
+          nacional_pct?: number
+          org_id?: string
+          uf_empresa?: string | null
+          vigente_desde?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "aliquotas_vigencia_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       anuncios_externos: {
         Row: {
           atacado_erro: string | null
