@@ -1,6 +1,7 @@
 // Ações POST da Reposição (ADR-0207 §13, §15, §16). Escrita só por aqui, com service role (as tabelas
 // têm só SELECT para `authenticated`). `db` injetado para teste sem Deno.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+import { paginarTudo } from '../_shared/pagina.ts';
 import { familiaMaisRecente, normalizarNome, somarDias } from '../_shared/reposicao/dados.ts';
 import type { StatusPedido } from '../_shared/reposicao/tipos.ts';
 
@@ -11,7 +12,11 @@ export interface CtxAcao {
   /** ISO do instante da ação. */
   agora: string;
 }
-export interface DepsAcao { db: SupabaseClient; moduloHabilitado(): Promise<boolean> }
+export interface DepsAcao {
+  db: SupabaseClient; moduloHabilitado(): Promise<boolean>;
+  /** Só teste: página menor que o teto do PostgREST (padrão do paginarTudo). */
+  tamanhoPagina?: number;
+}
 export interface RespostaAcao { status: number; body: Record<string, unknown> }
 
 interface Item { codigo: string; codigo_pai: string; quantidade: number; sugerida: number | null; recebida: number; encerrado: boolean }
@@ -81,24 +86,27 @@ export async function processarAcao(deps: DepsAcao, ctx: CtxAcao, corpo: unknown
     return (ex as { id: string } | null)?.id ?? null;
   };
 
-  /** Zera, nos rascunhos da org, os itens do produto (ou só da cor, pelo texto exato da variação da família mais
-   * recente, como no cálculo). Atômico por rascunho (RPC, sob lock); entre rascunhos, não. */
+  /** Zera, nos rascunhos da org, os itens do produto (ou só da cor). Atômico por rascunho (RPC, sob lock); entre
+   * rascunhos, não. `removidos` é ESTIMATIVA pela leitura feita antes do lock (não exata sob concorrência):
+   * `rascunhos` = pedidos processados pela RPC, `unidades` = soma lida dos itens zerados neles. */
   const tirarDosRascunhos = async (id: string | null, codigoPai: string, cor: string | null): Promise<RespostaAcao> => {
     const removidos = { rascunhos: 0, unidades: 0 };
-    const { data: ps, error: pErr } = await db.from('pedidos_compra').select('id, fornecedor_id').eq('org_id', o).eq('status', 'rascunho');
-    falhou('ler rascunhos', pErr);
-    const pedidos = (ps ?? []) as { id: string; fornecedor_id: string }[];
+    const tam = deps.tamanhoPagina;
+    const pedidos = await paginarTudo<{ id: string; fornecedor_id: string }>((de, ate) => db.from('pedidos_compra')
+      .select('id, fornecedor_id').eq('org_id', o).eq('status', 'rascunho').order('id').range(de, ate), tam);
     if (!pedidos.length) return ok({ id, removidos });
-    const { data: is, error: iErr } = await db.from('pedidos_compra_itens').select('pedido_id, codigo, quantidade')
-      .eq('org_id', o).eq('codigo_pai', codigoPai).in('pedido_id', pedidos.map((p) => p.id));
-    falhou('ler itens dos rascunhos', iErr);
-    let itens = (is ?? []) as { pedido_id: string; codigo: string; quantidade: number }[];
+    let itens = await paginarTudo<{ pedido_id: string; codigo: string; quantidade: number }>((de, ate) => db.from('pedidos_compra_itens')
+      .select('pedido_id, codigo, quantidade').eq('org_id', o).eq('codigo_pai', codigoPai)
+      .in('pedido_id', pedidos.map((p) => p.id)).order('pedido_id').order('codigo').range(de, ate), tam);
     if (cor !== null && itens.length) {
-      const { data: vs, error: vErr } = await db.from('variacoes').select('codigo, cor, familias!inner(id, criado_em)')
-        .eq('org_id', o).in('codigo', [...new Set(itens.map((i) => i.codigo))]);
-      falhou('ler variações', vErr);
-      const porCodigo = new Map<string, { cor: string | null; familias: { id: string; criado_em: string } }>();
-      for (const v of (vs ?? []) as unknown as { codigo: string; cor: string | null; familias: { id: string; criado_em: string } }[]) {
+      // Cor do SKU = a da variação da família mais recente DESTE produto que o contém (regra de dados.ts). SKU sem
+      // variação no produto ou com cor null fica fora da limpeza por cor; o escopo família o alcança.
+      type V = { codigo: string; cor: string | null; familias: { id: string; criado_em: string } };
+      const vs = await paginarTudo<V>((de, ate) => db.from('variacoes')
+        .select('codigo, cor, familias!inner(id, criado_em, codigo_pai)').eq('org_id', o).eq('familias.codigo_pai', codigoPai)
+        .in('codigo', [...new Set(itens.map((i) => i.codigo))]).order('id').range(de, ate) as unknown as PromiseLike<{ data: V[] | null }>, tam);
+      const porCodigo = new Map<string, V>();
+      for (const v of vs) {
         const atual = porCodigo.get(v.codigo);
         if (!atual || familiaMaisRecente(v.familias, atual.familias)) porCodigo.set(v.codigo, v);
       }
@@ -111,7 +119,8 @@ export async function processarAcao(deps: DepsAcao, ctx: CtxAcao, corpo: unknown
         p_org: o, p_pedido: p.id, p_fornecedor: p.fornecedor_id, p_usuario: ctx.userId, p_previsto: null, p_mudar_previsto: false,
         p_itens: doPedido.map((i) => ({ codigo: i.codigo, codigo_pai: codigoPai, quantidade: 0, sugerida: null })),
       });
-      if (error?.code === '23514') continue; // aprovado no meio: pedido aprovado nunca muda (§24)
+      // Aprovado no meio (23514: pedido aprovado nunca muda, §24) ou sumiu/esvaziou (P0002): nada a fazer nele.
+      if (error?.code === '23514' || error?.code === 'P0002') continue;
       if (error) return erroRpc(error) ?? falhar('fora de linha', error);
       removidos.rascunhos++;
       removidos.unidades += doPedido.reduce((s, i) => s + i.quantidade, 0);
