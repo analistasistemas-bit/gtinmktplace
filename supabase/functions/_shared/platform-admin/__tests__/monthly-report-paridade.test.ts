@@ -31,7 +31,7 @@ const catRow = (mlItemId: string, varId: number, custo: number, peso: number, or
   atualizado_em: '2026-01-01', familias: { ml_item_id: mlItemId, origem },
 });
 const maps = montarMapasCusto([catRow('MLB1', 1, 25, 300), catRow('MLB2', 2, 15, 100), catRow('MLB4', 4, 12, 200, 'importado')]);
-const ctx: ContextoCalculo = { maps, rates: { nacional: 8, importado: 16, ufEmpresa: 'CE', internaPct: 8 }, custosOk: true, configOk: true };
+const ctx: ContextoCalculo = { maps, rates: { nacional: 8, importado: 16, ufEmpresa: 'CE', internaPct: 8, vigencias: [] }, custosOk: true, configOk: true };
 
 const cat = (codigo: string, codigoPai: string): CatalogoSku => ({
   codigo, codigoPai, nomeFamilia: `Fam ${codigoPai}`, nome: null, cor: null, tamanho: null, estoque: 0, fornecedor: null,

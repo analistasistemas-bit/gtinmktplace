@@ -2,6 +2,7 @@ import type { MetricsWarning, OrgMetrics } from './types.ts';
 import { calcularResumo, type ResumoVendas } from './sales-summary.ts';
 import {
   montarAliquotaResolver, montarCustoResolver, montarMapasCusto, montarPesoResolver, type MapasCusto,
+  type VigenciaAliquota,
 } from './sales-costs.ts';
 import { comCustoCongelado, type CustoCongeladoRow, type Venda, type VendaItem } from './sales-types.ts';
 import type { JanelaIso } from '../notificacoes/gerencial/janelas.ts';
@@ -164,7 +165,11 @@ function rangeSales(sales: Venda[], start: string, end: string): Venda[] {
   });
 }
 
-export type Rates = { nacional: number; importado: number; ufEmpresa: string | null; internaPct: number | null };
+/** `vigencias` (ADR-0208): histórico de `aliquotas_vigencia`; venda antiga usa a vigente na data dela. */
+export type Rates = {
+  nacional: number; importado: number; ufEmpresa: string | null; internaPct: number | null;
+  vigencias: VigenciaAliquota[];
+};
 
 function summarize(
   sales: Venda[], maps: MapasCusto | undefined, rates: Rates | null,
@@ -184,35 +189,61 @@ function cents(value: number): number { return Math.round(value * 100); }
 // Perf FASE 3 (ADR-0159): configuração tributária é lida UMA vez por chamada (não muda por mês) e
 // reaproveitada tanto pelos meses ao vivo quanto por `materializeMonth`/`resolveMonth` abaixo.
 // ---------------------------------------------------------------------------------------------
-type ConfigState = { configAvailable: boolean; rates: Rates | null; configErrored: boolean; errorMessage: string | null };
+export type ConfigState = { configAvailable: boolean; rates: Rates | null; configErrored: boolean; errorMessage: string | null };
 
-async function loadConfigState(db: MetricsDb, orgId: string): Promise<ConfigState> {
-  const configResult = await readPages(() => db.from('configuracoes')
-    .select('org_id,aliquota_nacional_pct,aliquota_importado_pct,uf_empresa,aliquota_interna_pct,aliquotas_confirmadas_em')
-    .eq('org_id', orgId).order('org_id', { ascending: true }));
+export async function loadConfigState(db: MetricsDb, orgId: string): Promise<ConfigState> {
+  const [configResult, vigResult] = await Promise.all([
+    readPages(() => db.from('configuracoes')
+      .select('org_id,aliquota_nacional_pct,aliquota_importado_pct,uf_empresa,aliquota_interna_pct,aliquotas_confirmadas_em')
+      .eq('org_id', orgId).order('org_id', { ascending: true })),
+    // ADR-0208: ordem total (`vigente_desde`, `id`) — a ordem das linhas não pode mudar o carimbo.
+    readPages(() => db.from('aliquotas_vigencia')
+      .select('id,vigente_desde,nacional_pct,importado_pct,uf_empresa,interna_pct')
+      .eq('org_id', orgId)
+      .order('vigente_desde', { ascending: true }).order('id', { ascending: true })),
+  ]);
+  // ADR-0208: falha ao ler as vigências NUNCA cai na alíquota atual (reaplicaria a nova às vendas
+  // antigas). Marca `configErrored`: mês fechado não é materializado e o gerencial fica sem lucro.
+  if (vigResult.error) console.error('[metrics-repository] aliquotas_vigencia:', vigResult.error.message);
+  const errors = [configResult.error, vigResult.error].filter((e): e is { message: string } => e != null);
+  const vigOk = !vigResult.error;
   // ADR-0158 §6: alíquota nunca é presumida. Sem linha em `configuracoes`, sem
   // `aliquotas_confirmadas_em` ou sem as alíquotas, o markup sai `null` — jamais 8/16 % (ADR-0055).
   const config = configResult.error ? null : configResult.rows.find((row) => row.org_id === orgId) ?? null;
-  const configAvailable = !configResult.error && config != null && config.aliquotas_confirmadas_em != null
+  const configAvailable = vigOk && !configResult.error && config != null && config.aliquotas_confirmadas_em != null
     && config.aliquota_nacional_pct != null && config.aliquota_importado_pct != null;
+  const vigencias: VigenciaAliquota[] = vigResult.rows.map((row) => ({
+    vigenteDesde: String(row.vigente_desde),
+    nacional: Number(row.nacional_pct), importado: Number(row.importado_pct),
+    ufEmpresa: typeof row.uf_empresa === 'string' ? row.uf_empresa : null,
+    internaPct: row.interna_pct != null ? Number(row.interna_pct) : null,
+  }));
   const rates: Rates | null = configAvailable && config != null
     ? {
       nacional: Number(config.aliquota_nacional_pct), importado: Number(config.aliquota_importado_pct),
       ufEmpresa: typeof config.uf_empresa === 'string' ? config.uf_empresa : null,
       internaPct: config.aliquota_interna_pct != null ? Number(config.aliquota_interna_pct) : null,
+      vigencias,
     }
     : null;
-  return { configAvailable, rates, configErrored: !!configResult.error, errorMessage: configResult.error?.message ?? null };
+  return {
+    configAvailable, rates, configErrored: errors.length > 0,
+    errorMessage: errors.length > 0 ? errors.map((e) => e.message).join('; ') : null,
+  };
 }
 
 /** Assinatura da config usada no cálculo — grava na linha (`tax_config_stamp`) e invalida o cache
- *  se mudar. `'unconfirmed'` cobre tanto "sem confirmação" quanto "leitura falhou": nos dois casos
- *  o cálculo ao vivo também produz `markup: null`, então servir uma linha antiga com esse carimbo
- *  nunca diverge do que o cálculo ao vivo daria hoje. */
-function taxConfigStamp(configState: ConfigState): string {
+ *  se mudar. Assina as alíquotas atuais E a lista de vigências (ADR-0208): mês fechado recalculado
+ *  dá o mesmo número, e vigência nova invalida o cache. `'unconfirmed'` cobre tanto "sem
+ *  confirmação" quanto "leitura falhou": nos dois casos o cálculo ao vivo também produz
+ *  `markup: null`, então servir uma linha antiga com esse carimbo nunca diverge do cálculo de hoje. */
+export function taxConfigStamp(configState: ConfigState): string {
   if (!configState.configAvailable || !configState.rates) return 'unconfirmed';
   const r = configState.rates;
-  return JSON.stringify([r.nacional, r.importado, r.ufEmpresa, r.internaPct]);
+  return JSON.stringify([
+    r.nacional, r.importado, r.ufEmpresa, r.internaPct,
+    r.vigencias.map((v) => [v.vigenteDesde, v.nacional, v.importado, v.ufEmpresa, v.internaPct]),
+  ]);
 }
 
 type MonthComputed = {

@@ -39,7 +39,7 @@ const maps = montarMapasCusto([
   catRow('MLB1', 1, 25, 300), catRow('MLB2', 2, 15, 100), catRow('MLB4', 4, 12, 200, 'importado'),
 ]);
 const ctx: ContextoCalculo = {
-  maps, rates: { nacional: 8, importado: 16, ufEmpresa: 'CE', internaPct: 8 }, custosOk: true, configOk: true,
+  maps, rates: { nacional: 8, importado: 16, ufEmpresa: 'CE', internaPct: 8, vigencias: [] }, custosOk: true, configOk: true,
 };
 
 /** Lucro do pedido como a tela calcula (Detalhe da venda → cascata). */

@@ -248,12 +248,12 @@ describe('readOrgMetrics', () => {
 /** Componentes v2 (ADR-0193) de uma linha do cache. */
 const V2: Row = { cache_version: 2, units: 7, net_cents: 400_000, tax_cents: 40_000, cost_cents: 200_000, profit_cents: 160_000,
   covered_gross_cents: 555_500, item_gross_cents: 555_500, excluded_items: 0,
-  v2_source_count: 1, v2_source_max_updated_at: '2026-06-10T12:00:00-03:00', v2_tax_config_stamp: '[8,16,"CE",8]' };
+  v2_source_count: 1, v2_source_max_updated_at: '2026-06-10T12:00:00-03:00', v2_tax_config_stamp: '[8,16,"CE",8,[]]' };
 
 describe('cache de meses fechados (FASE 3)', () => {
   // Carimbo da config padrão do módulo (nacional 8, importado 16, UF CE, interna 8) — mesmo formato
-  // que `taxConfigStamp` grava (`JSON.stringify([nacional, importado, ufEmpresa, internaPct])`).
-  const stamp = '[8,16,"CE",8]';
+  // que `taxConfigStamp` grava (`JSON.stringify([nacional, importado, ufEmpresa, internaPct, vigencias])`).
+  const stamp = '[8,16,"CE",8,[]]';
   const now = new Date('2026-10-15T12:00:00-03:00');
   const junSale = sale('sale-jun', '2026-06-10T12:00:00-03:00'); // bruto R$ 100 → 10 000 centavos ao vivo
 
@@ -384,7 +384,7 @@ describe('materializeMonth (paridade com readOrgMetrics, FASE 3.2)', () => {
 describe('materializeRecentMonths (job de pré-aquecimento, FASE 3.4)', () => {
   it('materializa o que está ausente/inválido e pula o que já está válido', async () => {
     const now = new Date('2026-10-15T12:00:00-03:00');
-    const stamp = '[8,16,"CE",8]';
+    const stamp = '[8,16,"CE",8,[]]';
     const db = dbFor(base({
       ml_vendas: { rows: [sale('sale-1', '2026-07-10T12:00:00-03:00')] },
       // 2026-08 já tem linha válida de um mês sem vendas — não deve materializar de novo. A RPC real

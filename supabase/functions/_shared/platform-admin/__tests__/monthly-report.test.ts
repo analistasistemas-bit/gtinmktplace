@@ -32,7 +32,7 @@ const catRow = (mlItemId: string, varId: number, custo: number, peso: number, or
 });
 const ctx: ContextoCalculo = {
   maps: montarMapasCusto([catRow('MLB1', 1, 25, 300), catRow('MLB2', 2, 15, 100)]),
-  rates: { nacional: 8, importado: 16, ufEmpresa: 'CE', internaPct: 8 }, custosOk: true, configOk: true,
+  rates: { nacional: 8, importado: 16, ufEmpresa: 'CE', internaPct: 8, vigencias: [] }, custosOk: true, configOk: true,
 };
 const AGORA = new Date('2026-11-02T12:00:00-03:00');
 

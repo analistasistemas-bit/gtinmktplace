@@ -20,7 +20,7 @@ const catRow = (i: number) => ({
 function sintetico() {
   const ctx: ContextoCalculo = {
     maps: montarMapasCusto(Array.from({ length: SKUS }, (_, i) => catRow(i))),
-    rates: { nacional: 8, importado: 16, ufEmpresa: 'CE', internaPct: 8 }, custosOk: true, configOk: true,
+    rates: { nacional: 8, importado: 16, ufEmpresa: 'CE', internaPct: 8, vigencias: [] }, custosOk: true, configOk: true,
   };
   const vendas: Venda[] = Array.from({ length: VENDAS }, (_, n) => {
     const nItens = 2 + (n % 2);
