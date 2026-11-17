@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
@@ -41,13 +41,14 @@ vi.mock('@/hooks/useModulosHabilitados', () => ({
 // ADR-0207 (Task 8): uma leitura da Reposição para a página inteira, só com o módulo `reposicao`.
 const reposicaoEnabled: (boolean | undefined)[] = [];
 const reposicaoStale: (number | undefined)[] = [];
+let reposicaoNaoRepor: unknown[] = [];
 vi.mock('@/hooks/useReposicao', async (orig) => ({
   ...(await orig<typeof import('@/hooks/useReposicao')>()),
   useReposicao: (o: { enabled?: boolean; staleTime?: number } = {}) => {
     reposicaoEnabled.push(o.enabled);
     reposicaoStale.push(o.staleTime);
     return {
-      data: o.enabled ? { resultado: { familias: [{ codigoPai: '00000004', urgencia: 'ruptura' }] }, familias: [{ codigoPai: '00000004' }], skus: [], naoRepor: [], rascunhos: [] } : undefined,
+      data: o.enabled ? { resultado: { familias: [{ codigoPai: '00000004', urgencia: 'ruptura' }] }, familias: [{ codigoPai: '00000004' }], skus: [], naoRepor: reposicaoNaoRepor, rascunhos: [] } : undefined,
       encerrarSaldo: vi.fn(),
     };
   },
@@ -328,7 +329,7 @@ describe('Estoque — pacote do contador por tipo de pessoa', () => {
 });
 
 describe('Estoque — portas de entrada da Reposição (ADR-0207)', () => {
-  afterEach(() => { modulosMock.mockReturnValue({ data: ['estoque'], isLoading: false }); reposicaoEnabled.length = 0; });
+  afterEach(() => { modulosMock.mockReturnValue({ data: ['estoque'], isLoading: false }); reposicaoEnabled.length = 0; reposicaoNaoRepor = []; });
 
   it('sem o módulo: nem botão, nem selo, nem leitura da Reposição', async () => {
     renderEstoque();
@@ -349,5 +350,19 @@ describe('Estoque — portas de entrada da Reposição (ADR-0207)', () => {
     for (const selo of selos) expect(selo).toHaveAttribute('href', '/reposicao?produto=00000004');
     // Selo é indicativo: cache de 5 min no Estoque, sem refazer o cálculo a cada minuto.
     expect(reposicaoStale).toContain(5 * 60_000);
+  });
+
+  it('produto com marca de produto (fora de linha): sem pílula de urgência; só com marca de cor, a pílula fica', async () => {
+    modulosMock.mockReturnValue({ data: ['estoque', 'reposicao'], isLoading: false });
+    reposicaoNaoRepor = [{ id: 'nr-f', escopo: 'familia', codigoPai: '00000004', codigo: null, cor: null }];
+    renderEstoque();
+    await screen.findByText('Protetor Solar');
+    expect(screen.queryByRole('link', { name: /Ruptura/ })).not.toBeInTheDocument();
+    expect(screen.getAllByText('Fora de linha').length).toBeGreaterThan(0);
+    cleanup();
+    reposicaoNaoRepor = [{ id: 'nr-c', escopo: 'cor', codigoPai: '00000004', codigo: null, cor: 'Azul' }];
+    renderEstoque();
+    await screen.findByText('Protetor Solar');
+    expect(screen.getAllByRole('link', { name: /Ruptura/ })).toHaveLength(2);
   });
 });

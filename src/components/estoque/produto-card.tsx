@@ -337,7 +337,6 @@ export function ProdutoCard({
 
   const coresFora = foraDeLinha?.cores.filter((c) => c.marcaId).length ?? 0;
   const rotuloFora = foraDeLinha?.familiaId ? 'Fora de linha' : coresFora ? `${coresFora} ${coresFora === 1 ? 'cor fora de linha' : 'cores fora de linha'}` : null;
-  const seloFora = (onde: string) => rotuloFora && <StatusPill tone="neutral" className={cn('shrink-0', onde)}>{rotuloFora}</StatusPill>;
 
   const seloUrgencia = (onde: string) => urgencia && urgencia !== 'em_dia' && (
     <Link
@@ -369,6 +368,8 @@ export function ProdutoCard({
             <div className="min-w-0">
               <div className="truncate text-sm font-medium leading-tight">{nomePai}</div>
               <div className="truncate font-mono text-xs leading-tight text-muted-foreground">{produto.codigoPai}</div>
+              {/* Linha própria: ao lado da pílula de urgência o selo fazia o nome truncar. */}
+              {rotuloFora && <div className="pt-0.5"><StatusPill tone="neutral">{rotuloFora}</StatusPill></div>}
               {/* ADR-0129 D-11: sinaliza o lote de "Adicionar variação" desta tela mesmo antes de
                   expandir o card — pareado com o sino de notificação no fim do processamento. */}
               {statusUpdate && (
@@ -402,7 +403,6 @@ export function ProdutoCard({
             </Button>
           )}
           {seloUrgencia('hidden sm:flex')}
-          {seloFora('hidden sm:inline-flex')}
           {statusUpdate === 'erro' && loteRevisaoId && (
             <Button asChild variant="outline" size="sm" className="h-7 shrink-0 px-2">
               <Link to={`/revisao/${loteRevisaoId}`} aria-label={`Revisar atualização de ${nomePai}`}>
@@ -417,7 +417,6 @@ export function ProdutoCard({
           {/* Celular: o selo desce para baixo do nome, senão espreme o nome até sobrar uma letra. ml-20 = seta (1rem) +
               foto small (2,5rem) + 2 gaps de 0,75rem: alinha com o texto do nome. */}
           {seloUrgencia('ml-20 flex w-fit sm:hidden')}
-          {seloFora('ml-20 w-fit sm:hidden')}
         </div>
 
         <div className={cn(CELULA_MD, 'text-right text-sm tabular-nums text-muted-foreground')}>
@@ -589,6 +588,13 @@ export function ProdutoCard({
               <TabsTrigger value="movimentos">Movimentos</TabsTrigger>
             </TabsList>
             <TabsContent value="variacoes">
+              {/* O ⋯ da linha é só de md para cima; no celular o item "Fora de linha" mora aqui (só com o módulo). */}
+              {foraDeLinha && (
+                <Button variant="outline" className="mb-2 h-11 md:hidden" onClick={() => setForaAberto(true)}>
+                  <Ban className="mr-2 h-3.5 w-3.5" />
+                  Fora de linha…
+                </Button>
+              )}
               <div className="overflow-hidden rounded-lg border bg-background">
                 <CabecalhoVariacoes />
                 {variacoesLoading ? (

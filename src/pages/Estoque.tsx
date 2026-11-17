@@ -271,7 +271,8 @@ export default function Estoque() {
                 coresSemVinculo={coresSemVinculoMap.get(p.codigoPai)}
                 onPreencherFiscal={mostrarFiscal ? (produto) => setFiscalAberto(produto.familiaId ?? null) : undefined}
                 fiscalPendente={mostrarFiscal ? produtoFiscalPendente(p, regimeOrg) : false}
-                urgencia={temReposicao ? urgenciaDoProduto(reposicao, p.codigoPai) : undefined}
+                // Produto fora de linha (marca de produto) não mostra Ruptura/Vai faltar/Pedir agora.
+                urgencia={temReposicao && !foraDeLinhaDoProduto(reposicao, p.codigoPai)?.familiaId ? urgenciaDoProduto(reposicao, p.codigoPai) : undefined}
                 foraDeLinha={temReposicao ? foraDeLinhaDoProduto(reposicao, p.codigoPai) : undefined}
               />
             ))}

@@ -859,6 +859,31 @@ describe('ProdutoCard — fora de linha (ADR-0207, emenda 23–24)', () => {
     expect(screen.queryByText(/fora de linha/i)).not.toBeInTheDocument();
   });
 
+  it('selo em linha própria, na coluna do nome (não ao lado da pílula de urgência)', () => {
+    renderFora(info({ familiaId: 'f1', cores }));
+    const selo = screen.getByText('Fora de linha');
+    expect(selo.closest('button')).toHaveTextContent('Protetor Solar');
+    expect(screen.getAllByText('Fora de linha')).toHaveLength(1);
+  });
+
+  it('celular: o ⋯ segue hidden md:flex; o botão "Fora de linha…" mora no painel expandido, só com a prop', async () => {
+    fetchVariacoesProdutoMock.mockResolvedValue([]);
+    renderFora(info({ cores }));
+    expect(screen.getByLabelText(/Mais ações/).className).toContain('hidden');
+    expect(screen.queryByRole('button', { name: 'Fora de linha…' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getAllByRole('button', { expanded: false })[0]!);
+    const btn = await screen.findByRole('button', { name: 'Fora de linha…' });
+    expect(btn.className).toMatch(/h-11/);
+    expect(btn.className).toMatch(/md:hidden/);
+    await userEvent.click(btn);
+    expect(await screen.findByRole('dialog', { name: /Fora de linha · / })).toBeInTheDocument();
+    cleanup();
+    renderFora(undefined);
+    await userEvent.click(screen.getAllByRole('button', { expanded: false })[0]!);
+    await screen.findByRole('tab', { name: /Variações/ });
+    expect(screen.queryByRole('button', { name: 'Fora de linha…' })).not.toBeInTheDocument();
+  });
+
   it('item "Fora de linha…" do menu ⋯ abre o diálogo', async () => {
     renderFora(info({ cores }));
     await userEvent.click(screen.getByRole('button', { name: /Mais ações/ }));
