@@ -92,7 +92,7 @@ export function PopoverCelula({ s, familia, ctx, titulo, children, onAbrir }: {
   return (
     <Popover onOpenChange={(o) => { if (o) onAbrir?.(); }}>
       <PopoverTrigger asChild>{children}</PopoverTrigger>
-      <PopoverContent className="w-80" align="center" onOpenAutoFocus={(e) => e.preventDefault()}>
+      <PopoverContent className="w-80" align="center" onOpenAutoFocus={(e) => { e.preventDefault(); (e.currentTarget as HTMLElement).focus(); }}>
         <div className="mb-3 flex items-center justify-between gap-2">
           <p className="font-medium">{titulo}</p>
           {s.tela.naoReporId ? null : s.sug.completarGrade > 0

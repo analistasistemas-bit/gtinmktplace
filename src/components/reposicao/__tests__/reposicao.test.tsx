@@ -456,7 +456,16 @@ describe('Reposição: sugestões', () => {
       await user.keyboard('{Enter}');
       const popover = await screen.findByRole('dialog');
       const incluir = within(popover).getByRole('button', { name: 'Incluir no pedido' });
+      // (a) foco no painel, não no botão
       expect(document.activeElement).not.toBe(incluir);
+      expect(document.activeElement).toBe(popover);
+      // (b) Enter logo após abrir não aciona nada
+      await user.keyboard('{Enter}');
+      expect(acoes.salvarRascunho).not.toHaveBeenCalled();
+      // (c) o primeiro Tab cai no primeiro controle do painel
+      await user.tab();
+      expect(document.activeElement).toBe(incluir);
+      // (d) Escape fecha e devolve o foco à célula
       await user.keyboard('{Escape}');
       expect(screen.queryByRole('dialog')).toBeNull();
       expect(document.activeElement).toBe(cel);
