@@ -297,6 +297,40 @@ describe('completar grade (emenda 17/11): SKU nunca movimentado', () => {
     expect(calcularReposicao(familia(true, { naoRepor: true })).skus.find((s) => s.codigo === 'N')!.completarGrade).toBe(0);
   });
 
+  const quatro = (n: Record<string, unknown>, extraMovs: (e: EntradaCalculo) => void = () => {}): EntradaCalculo => {
+    const skus = [sku('A', 'Preto', 'P'), sku('B', 'Preto', 'M'), sku('C', 'Azul', 'P'), sku('D', 'Azul', 'M'), sku('N', 'X', 'X', { nuncaMovimentado: true, ...n })];
+    const movs = [...['A', 'B', 'C', 'D'].flatMap((c) => movsComV(c, 0.1)), ...movsComV('N', 0).map((m) => ({ ...m, estoqueInicio: 0 }))];
+    const e = { hoje: HOJE, prazo: PRAZO, cobertura: COB, skus, movs, kits: [], pedidosAbertos: [], multiploPorFamilia: {} };
+    extraMovs(e);
+    return e;
+  };
+  const completarDe = (e: EntradaCalculo) => calcularReposicao(e).skus.find((s) => s.codigo === 'N')!.completarGrade;
+
+  it('dimensão sem valor (null) usa a média 1/n: 2 cores × 2 tamanhos, vFamília 0,4, cobertura 30 → 3', () => {
+    expect(completarDe(quatro({ cor: null, tamanho: null }))).toBe(3); // ½ × ½ × 0,4 × 30
+    // os elegíveis não mudam com o null do SKU nunca movimentado
+    const com = calcularReposicao(quatro({ cor: null, tamanho: null }));
+    const sem = calcularReposicao({ ...quatro({}), skus: quatro({}).skus.filter((s) => s.codigo !== 'N'), movs: quatro({}).movs.filter((m) => m.codigo !== 'N') });
+    for (const c of ['A', 'B', 'C', 'D']) expect(com.skus.find((s) => s.codigo === c)!.v).toBe(sem.skus.find((s) => s.codigo === c)!.v);
+  });
+
+  it('cor encalhada (14+ dias disponíveis sem venda) → completarGrade 0, sem mínimo de 1', () => {
+    // C e D (Azul) com 60 dias disponíveis e nenhuma venda: share medido 0 = encalhe comprovado
+    const e = quatro({ cor: 'Azul', tamanho: 'G' }, (x) => { x.movs = x.movs.map((m) => (m.codigo === 'C' || m.codigo === 'D' ? { ...m, vendidas: 0 } : m)); });
+    expect(completarDe(e)).toBe(0);
+  });
+
+  it('família com vendas e valor novo (< 14 dias disponíveis) → mínimo 1', () => {
+    // C e D (Azul) publicados há 5 dias, sem venda: Azul é valor novo (share 1/2), não encalhe
+    const e = quatro({ cor: 'Azul', tamanho: 'G' }, (x) => {
+      x.skus = x.skus.map((s) => (s.codigo === 'C' || s.codigo === 'D' ? { ...s, publicadoEm: addDias(HOJE, -5) } : s));
+      x.movs = x.movs.map((m) => (m.codigo === 'C' || m.codigo === 'D' ? { ...m, vendidas: 0 } : m));
+    });
+    // ½ (Azul novo) × ½ (G ausente) × 0,2 × 30 = 1,5 → 2; com cobertura 1, 0,05 → mínimo 1
+    expect(completarDe(e)).toBe(2);
+    expect(completarDe({ ...e, cobertura: 1 })).toBe(1);
+  });
+
   it('SKU que teve estoque e zerou (com movimento) continua Ruptura', () => {
     const r = calcularReposicao(entrada(1, 0)).skus[0];
     expect(r.urgencia).toBe('ruptura');

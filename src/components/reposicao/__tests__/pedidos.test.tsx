@@ -218,6 +218,14 @@ describe('Reposição: rascunho e pedido', () => {
     expect(b.ref).toBe(a.ref);
   });
 
+  it('primeiro pedido: unidades de "Completar grade" incluídas à mão contam como estimadas (4 medidas + 3 → 43%)', async () => {
+    estado.data!.resultado!.skus = estado.data!.resultado!.skus.map((s) => (s.codigo === 'S2'
+      ? { ...s, poucoHistorico: false, w: 0, v: 0, pedir: 0, unidades: 0, urgencia: 'em_dia' as const, completarGrade: 3 } : s));
+    const { user, sheet } = await abrirRascunho();
+    await user.click(within(sheet).getByRole('button', { name: 'Aprovar pedido' }));
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('43% das quantidades ainda são estimadas pela família');
+  });
+
   it('org que já tem pedido aprovado: aprova direto, sem confirmação', async () => {
     estado.data!.pedidos = [pedido('p0', 'recebido', [item('S1', 1)])];
     const { user, sheet } = await abrirRascunho();

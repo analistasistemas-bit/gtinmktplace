@@ -131,6 +131,17 @@ describe('montarEntrada', () => {
     expect(e.movs.filter((m) => m.codigo === 'B')).toHaveLength(60);
   });
 
+  it('nuncaMovimentado: anteriores paginados (> 1000), código só na 2ª página sai como movimentado', async () => {
+    const antigos = Array.from({ length: 1000 }, () => mov('X', 'venda', '2026-08-01T15:00:00Z'));
+    const admin = fakeAdmin(base({
+      variacoes: [vari('A', F), vari('B', F)],
+      estoque_movimentos: [...antigos, mov('B', 'entrada', '2026-08-02T15:00:00Z')],
+    }));
+    const e = await montarEntrada(admin, ORG, HOJE) as EntradaCalculo;
+    expect(admin.consultas.filter((t: string) => t === 'estoque_movimentos')).toHaveLength(3); // janela + 2 páginas
+    expect(new Map(e.skus.map((s) => [s.codigo, s.nuncaMovimentado]))).toEqual(new Map([['A', true], ['B', false]]));
+  });
+
   it('venda com quantidade_pedida 5 e quantidade −2 conta 5', async () => {
     const e = await entrada(base({ estoque_movimentos: [venda('A', '222', '2026-11-01T15:00:00Z', 5, 2)] }));
     expect(dia(e, 'A', '2026-11-01').vendidas).toBe(5);

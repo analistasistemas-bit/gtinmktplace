@@ -220,13 +220,15 @@ export function calcularVelocidades(e: EntradaCalculo): {
     const vFam = el.reduce((a, s) => a + porSku.get(s.codigo)!.propria, 0);
     if (el.length && vFam > 0) {
       // valor (cor/tamanho) com < 14 dias disponíveis somados é "novo": share = 1 / nº de valores
-      const shares = (chave: (s: SkuEntrada) => string | null) => {
+      // `completar`: estimativa à parte do SKU nunca movimentado — dimensão sem valor (null) ou valor que nenhum
+      // elegível tem usa a média 1/n. Valor medido com share 0 (14+ dias sem venda) é encalhe: fica 0, sem mínimo.
+      const shares = (chave: (s: SkuEntrada) => string | null, completar = false) => {
         const prop = somaPor(el, chave, (s) => porSku.get(s.codigo)!.propria);
         const dias = somaPor(el, chave, (s) => porSku.get(s.codigo)!.diasDisponiveis);
         const n = [...prop.keys()].filter((k) => k !== null).length;
         return (s: SkuEntrada) => {
           const k = chave(s);
-          if (k === null) return 1;
+          if (k === null) return completar && n ? 1 / n : 1;
           // Valor que só o SKU nunca movimentado tem: share médio (sem nenhum valor entre os elegíveis, 1).
           if (!dias.has(k)) return n ? 1 / n : 1;
           return dias.get(k)! < 14 ? 1 / n : prop.get(k)! / vFam;
@@ -242,7 +244,9 @@ export function calcularVelocidades(e: EntradaCalculo): {
       });
       const somaBruta = bruta.reduce((a, b) => a + b, 0);
       el.forEach((s, i) => { porSku.get(s.codigo)!.usada = somaBruta > 0 ? (bruta[i] * vFam) / somaBruta : 0; });
-      for (const s of todos) if (completaGrade(s) && !s.naoRepor) curvaCompletar.set(s.codigo, shareCor(s) * shareTam(s) * vFam);
+      const corC = shares((s) => s.cor, true);
+      const tamC = shares((s) => s.tamanho, true);
+      for (const s of todos) if (completaGrade(s) && !s.naoRepor) curvaCompletar.set(s.codigo, corC(s) * tamC(s) * vFam);
     }
     tendenciaPorFamilia.set(pai, tendencia(skus, disp, diretas, kitPorBase, diasOferta.get(pai) ?? new Set()));
   }

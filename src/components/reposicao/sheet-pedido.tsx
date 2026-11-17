@@ -82,8 +82,8 @@ function Corpo({ pedido, data, hoje, acoes }: { pedido: PedidoDTO; data: Respost
     const q = inteiro(qtd[l.item.codigo] ?? '') ?? 0;
     return { un: a.un + q, valor: a.valor + q * (l.custo ?? 0), semCusto: a.semCusto + (l.custo === null ? 1 : 0) };
   }, { un: 0, valor: 0, semCusto: 0 });
-  // Das unidades DESTE pedido, quanto vem de SKU ainda estimado pela família (w < 1).
-  const estimado = new Set((data.resultado?.skus ?? []).filter((s) => s.poucoHistorico).map((s) => s.codigo));
+  // Das unidades DESTE pedido, quanto vem de SKU ainda estimado pela família (w < 1 ou Completar grade incluído à mão).
+  const estimado = new Set((data.resultado?.skus ?? []).filter((s) => s.poucoHistorico || s.completarGrade > 0).map((s) => s.codigo));
   const unEstimadas = linhas.reduce((a, l) => a + (estimado.has(l.item.codigo) ? inteiro(qtd[l.item.codigo] ?? '') ?? 0 : 0), 0);
   const pctEstimado = total.un ? Math.round((unEstimadas / total.un) * 100) : 0;
 
