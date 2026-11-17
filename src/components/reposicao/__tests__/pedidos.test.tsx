@@ -191,7 +191,41 @@ describe('Reposição: rascunho e pedido', () => {
     expect(within(sheet).getByText('Só administrador aprova o pedido')).toBeInTheDocument();
   });
 
+  it('primeiro pedido da org: confirmação obrigatória e só aprova depois, com a mesma ref', async () => {
+    estado.data!.resultado!.pctEstimadoPelaFamilia = 0.62;
+    const { user, sheet } = await abrirRascunho();
+    await user.click(within(sheet).getByRole('button', { name: 'Aprovar pedido' }));
+    const alerta = await screen.findByRole('alertdialog', { name: 'Primeiro pedido de compra' });
+    expect(alerta).toHaveTextContent('7 un.');
+    expect(alerta).toHaveTextContent('62% das quantidades ainda são estimadas pela família — confira antes de mandar ao fornecedor');
+    expect(alerta).toHaveTextContent('Fornecedor A');
+    expect(alerta).toHaveTextContent('O PubliAI não envia nada: você copia o texto e manda.');
+    expect(acoes.aprovar).not.toHaveBeenCalled();
+    await user.click(within(alerta).getByRole('button', { name: 'Voltar e conferir' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(acoes.aprovar).not.toHaveBeenCalled();
+    // falha de rede na 1ª confirmação: a retentativa (confirmada de novo) usa a mesma ref da submissão
+    acoes.aprovar.mockRejectedValueOnce(new Error('Não foi possível falar com o servidor.'));
+    for (let i = 0; i < 2; i++) {
+      await user.click(within(sheet).getByRole('button', { name: 'Aprovar pedido' }));
+      await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Aprovar mesmo assim' }));
+    }
+    expect(acoes.aprovar).toHaveBeenCalledTimes(2);
+    const [a, b] = acoes.aprovar.mock.calls.map((c) => c[0]);
+    expect(a).toEqual({ pedidoId: 'r1', ref: expect.any(String) });
+    expect(b.ref).toBe(a.ref);
+  });
+
+  it('org que já tem pedido aprovado: aprova direto, sem confirmação', async () => {
+    estado.data!.pedidos = [pedido('p0', 'recebido', [item('S1', 1)])];
+    const { user, sheet } = await abrirRascunho();
+    await user.click(within(sheet).getByRole('button', { name: 'Aprovar pedido' }));
+    expect(acoes.aprovar).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
   it('aprovar reaproveita a mesma ref na retentativa', async () => {
+    estado.data!.pedidos = [pedido('p0', 'recebido', [item('S1', 1)])];
     acoes.aprovar.mockRejectedValueOnce(new Error('Não foi possível falar com o servidor.'));
     const { user, sheet } = await abrirRascunho();
     await user.click(within(sheet).getByRole('button', { name: 'Aprovar pedido' }));

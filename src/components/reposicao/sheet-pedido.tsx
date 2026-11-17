@@ -4,6 +4,10 @@
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Check, Copy, Send } from 'lucide-react';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -65,6 +69,9 @@ function Corpo({ pedido, data, hoje, acoes }: { pedido: PedidoDTO; data: Respost
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState<null | 'salvar' | 'aprovar' | 'copiar' | 'enviar'>(null);
   const [copiado, setCopiado] = useState(false);
+  // Primeiro pedido da org (nenhum fora de rascunho): confirmação obrigatória antes de aprovar (emenda 17/11).
+  const primeiroPedido = !data.pedidos.some((p) => p.status !== 'rascunho');
+  const [confirmando, setConfirmando] = useState(false);
 
   // Pedido aprovado só muda por quem aprova (a edge recusa o membro com 403).
   const editavel = EDITAVEL.has(status) && (status === 'rascunho' || podeAprovar);
@@ -92,12 +99,13 @@ function Corpo({ pedido, data, hoje, acoes }: { pedido: PedidoDTO; data: Respost
     else await acoes.editarPedido({ pedidoId: pedido.id, previstoPara: previsto, itens: linhas.map((l) => ({ codigo: l.item.codigo, quantidade: inteiro(qtd[l.item.codigo]!)! })) });
     toast.success(status === 'rascunho' ? 'Rascunho salvo.' : 'Pedido alterado.');
   });
-  const aprovar = () => rodar('aprovar', async () => {
+  const aprovarDeFato = () => rodar('aprovar', async () => {
     if (sujo) await salvarRascunho();
     await acoes.aprovar({ pedidoId: pedido.id, ref });
     setAprovadoAgora(true);
     toast.success('Pedido aprovado. Copie o texto para mandar ao fornecedor.');
   });
+  const aprovar = () => (primeiroPedido ? setConfirmando(true) : aprovarDeFato());
   const marcarEnviado = () => acoes.marcarEnviado({ pedidoId: pedido.id }).then(() => setEnviadoAgora(true));
   const texto = textoWhatsApp(pedido, data.skus, data.familias);
   const copiar = () => rodar('copiar', async () => {
@@ -227,6 +235,25 @@ function Corpo({ pedido, data, hoje, acoes }: { pedido: PedidoDTO; data: Respost
           )}
         </div>
       </SheetFooter>
+      <AlertDialog open={confirmando} onOpenChange={setConfirmando}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Primeiro pedido de compra</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="flex flex-col gap-2">
+                <p>{fmtInt(total.un)} un. para {pedido.fornecedor.nome}.</p>
+                {/* ponytail: percentual da loja toda (o mesmo do aviso), não só dos itens deste pedido. */}
+                <p>{Math.round((data.resultado?.pctEstimadoPelaFamilia ?? 0) * 100)}% das quantidades ainda são estimadas pela família — confira antes de mandar ao fornecedor.</p>
+                <p>O PubliAI não envia nada: você copia o texto e manda.</p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="h-11 md:h-9">Voltar e conferir</AlertDialogCancel>
+            <AlertDialogAction className="h-11 md:h-9" onClick={aprovarDeFato}>Aprovar mesmo assim</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
