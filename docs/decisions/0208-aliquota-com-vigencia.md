@@ -1,6 +1,6 @@
 # ADR-0208 — Alíquota de imposto com vigência (mudança vale só daqui pra frente)
 
-Status: PROPOSTO (2026-11-17) — caminho escolhido pelo Diego no brainstorming · Relaciona: ADR-0055 (imposto por origem), ADR-0086 (confirmação de alíquota), ADR-0109 (custo congelado na venda), ADR-0112 (alíquota interna por UF), ADR-0159 (cache de mês fechado / `tax_config_stamp`), ADR-0193 (relatório mensal recalcula) · Plano: `docs/superpowers/plans/2026-11-17-aliquota-vigencia.md`
+Status: PROPOSTO (2026-11-17) — caminho escolhido pelo Diego no brainstorming; plano revisado pelo Codex GPT 6.1 Sol (high), 8 achados aplicados · Relaciona: ADR-0055 (imposto por origem), ADR-0086 (confirmação de alíquota), ADR-0109 (custo congelado na venda), ADR-0112 (alíquota interna por UF), ADR-0159 (cache de mês fechado / `tax_config_stamp`), ADR-0193 (relatório mensal recalcula) · Plano: `docs/superpowers/plans/2026-11-17-aliquota-vigencia.md`
 
 ## Contexto
 Em 17/11/2026, às 09:40 (horário de Brasília), a Daludi Shop mudou a alíquota nacional de 4% para 6,5%. Todas as vendas passadas passaram a mostrar imposto de 6,5%.
@@ -22,13 +22,18 @@ O custo do produto já é congelado por venda (ADR-0109). O imposto não é.
    - Colunas: `org_id`, `vigente_desde timestamptz`, `nacional_pct`, `importado_pct`, `uf_empresa`, `interna_pct`.
    - Uma linha por mudança. Ninguém edita: só leitura por RLS da org. Não há insert, update nem delete pelo cliente.
 2. **Gravação por trigger em `configuracoes`**
-   - `AFTER INSERT OR UPDATE`: quando uma das 4 colunas de alíquota muda (`IS DISTINCT FROM`), insere uma linha com `vigente_desde = now()`.
+   - `AFTER INSERT OR UPDATE`: quando uma das 4 colunas de alíquota muda (`IS DISTINCT FROM`), insere uma linha com `vigente_desde = date_trunc('milliseconds', clock_timestamp())`.
+   - Não usa `now()`, que é o início da transação e fica fora de ordem em saves concorrentes.
+   - Tabela sem privilégio de escrita para `anon` e `authenticated`.
    - Fica num ponto só, sem tocar no app, e cobre qualquer caminho de escrita.
 3. **Leitura no resolver**
    - `AliquotaResolver` passa a receber a data da venda: `(item, uf, data)`.
    - `impostoDoItem` passa a receber `data`. Os chamadores passam `date_closed ?? date_created`, a mesma data que define o mês da venda (`sales-summary.ts`).
    - `montarAliquotaResolver` aceita `vigencias` opcionais junto das alíquotas atuais e escolhe a vigência mais recente com `vigente_desde <= data`.
-   - Sem vigências, ou sem data, valem as alíquotas atuais, como hoje.
+   - Sem vigências (org nunca confirmou), ou sem data, valem as alíquotas atuais, como hoje.
+   - **Falha ao ler as vigências nunca cai na alíquota atual**, porque reaplicaria a nova às vendas antigas:
+     - o front lança o erro;
+     - as edges marcam `configErrored`, sem materializar o mês e sem lucro no gerencial.
    - Data anterior à primeira vigência: vale a vigência mais antiga.
 4. **Onde as vigências entram**
    - `fetchAliquotas` devolve `vigencias`, e as 9 telas não mudam.
@@ -39,7 +44,9 @@ O custo do produto já é congelado por venda (ADR-0109). O imposto não é.
    - Cada org com alíquota confirmada recebe uma vigência `1970-01-01` com os valores atuais.
    - Daludi Shop recebe duas:
      - `1970-01-01`: nacional 4, importado 0, PE / interna 4 (*a confirmar com o Diego*);
-     - `configuracoes.atualizado_em` (≈ 2026-11-17 12:40 UTC): os valores atuais.
+     - `2026-11-17T12:40:00Z` (09:40 em Brasília, informado pelo Diego): os valores atuais.
+   - Valores fixos na migration, que aborta se a configuração atual da Daludi divergir.
+   - Não usar `atualizado_em`: ele muda em qualquer save e vem do relógio do cliente.
 
 ## Alternativas descartadas
 - **Gravar a alíquota em cada venda**, no `venda_item_custo`, no momento do sync. Exige que o sync resolva origem e UF. Venda sem produto casado continua recalculando ao vivo. Uma alíquota digitada errado fica presa na venda. O usuário escolheu a vigência.

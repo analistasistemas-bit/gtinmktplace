@@ -22,8 +22,16 @@
 
 - Migration **só** via `supabase migration new aliquotas_vigencia` + `supabase db push`. Validar com `npm run db:check`. Nunca `apply_migration` nem o painel (ADR-0043).
 - Imposto nunca é presumido em silêncio (ADR-0055/0086). Sem config confirmada continua `null`. A vigência não cria default.
-- Data da venda para a vigência = `date_closed ?? date_created`: a mesma que define o mês (`sales-summary.ts:233`).
-- Regra de escolha: a vigência mais recente com `vigente_desde <= data`. Se a data for anterior a todas, vale a mais antiga. Sem lista de vigências, ou com `data == null`, valem as alíquotas atuais (comportamento de hoje).
+- Data da venda para a vigência = `date_closed ?? date_created`.
+  - As consultas de vendas já filtram por `date_closed` (`src/lib/faturamento.ts:25`, `metrics-repository.ts:735`), então na prática é sempre `date_closed`. O `?? date_created` é só defesa.
+  - Comparação sempre por `Date.parse` (instante absoluto). UTC e `-03:00` do mesmo instante dão o mesmo resultado.
+- Regra de escolha: a vigência mais recente com `vigente_desde <= data`. Se a data for anterior a todas, vale a mais antiga.
+- **Histórico vazio ≠ leitura com falha** (Codex, CRÍTICO).
+  - Lista vazia: org que nunca confirmou a alíquota. Valem as alíquotas atuais, como hoje.
+  - Falha na leitura das vigências **nunca** cai na alíquota atual, porque isso reaplicaria 6,5% às vendas antigas:
+    - no front, `fetchAliquotas` lança o erro;
+    - nas edges, `configErrored = true`, o que impede materializar o mês e o envio gerencial com lucro.
+- Precisão do instante: o trigger grava `date_trunc('milliseconds', clock_timestamp())`, nunca `now()`, que é o início da transação e fica fora de ordem em saves concorrentes. Isso combina com a precisão de `Date.parse`.
 - ADR-0112 continua igual dentro de cada vigência: a alíquota interna só vale com `uf_empresa` e `interna_pct` preenchidos, e sobrepõe nacional e importado.
 - Testes: `pnpm test` exige `.env.test`. Na worktree, copiar `.env.local` e `.env.test` do checkout principal e fazer `pnpm install` real, nunca symlink de `node_modules`.
 - `pnpm test -- arquivo` roda a suíte toda. Para rodar um arquivo só, usar `pnpm vitest run <arquivo>`.
@@ -32,7 +40,7 @@
 ## Review Focus
 
 1. **Venda exatamente no instante da troca** (`data === vigente_desde`): usa a vigência nova (`<=`). Teste na Task 2.
-2. **Venda com `date_closed` null**: usa `date_created`. Teste na Task 3, pelo `impostoDaVenda`.
+2. **Mesmo instante em fusos diferentes** (`2026-11-17T09:40:00-03:00` e `…12:40:00Z`): mesmo resultado. Teste na Task 2.
 3. **Org sem nenhuma vigência** (vigências não carregaram ou lista vazia): mesmo número de hoje. Teste na Task 2.
 4. **Mês fechado da Central/relatório não muda** quando a alíquota de hoje muda. Teste na Task 4, pelo `taxConfigStamp` e pelo cálculo do mês com duas vigências.
 5. **Salvar sem mudar valor** não cria vigência nova. Também conta para o save que só muda `aliquotas_confirmadas_em`. Teste SQL na Task 1.
@@ -46,42 +54,59 @@
 - Modify: `src/lib/database.types.ts`: adicionar `aliquotas_vigencia` (Row, Insert, Update) seguindo o formato das outras tabelas.
 
 **Interfaces:**
-- Produces: tabela `public.aliquotas_vigencia(id uuid pk default gen_random_uuid(), org_id uuid not null references organizacoes, vigente_desde timestamptz not null, nacional_pct numeric not null, importado_pct numeric not null, uf_empresa text null, interna_pct numeric null, criado_em timestamptz default now())`, unique `(org_id, vigente_desde)`, índice `(org_id, vigente_desde desc)`.
-  - Conferir o nome real da tabela de orgs em `20260705165828_e7_rls_org.sql`.
+- Produces: tabela `public.aliquotas_vigencia(id uuid pk default gen_random_uuid(), org_id uuid not null references public.organizations(id) on delete cascade, vigente_desde timestamptz not null, nacional_pct numeric not null, importado_pct numeric not null, uf_empresa text null, interna_pct numeric null, criado_em timestamptz default now())`, unique `(org_id, vigente_desde)`, índice `(org_id, vigente_desde desc)`.
+  - `on delete cascade` segue o padrão de `configuracoes` (`20260722085311_adr86_configuracoes_pk_org_id_e_seed.sql:37`).
 
 - [ ] **Step 1: Confirmar com o Diego antes de escrever o backfill.**
   - Pergunta: qual era a alíquota de "Venda dentro do estado (PE)" antes da troca de 17/11, 09:40? A premissa é **4%**.
   - Sem resposta, **não seguir** com o backfill da Daludi.
 
 - [ ] **Step 2: Medir em produção (somente leitura, SQL via Management API, ver memória `reference_ops`).**
-  - Rodar: `select o.id, o.nome, c.aliquota_nacional_pct, c.aliquota_importado_pct, c.uf_empresa, c.aliquota_interna_pct, c.atualizado_em from configuracoes c join organizacoes o on o.id=c.org_id where c.aliquotas_confirmadas_em is not null;`
-  - Esperado: a Daludi Shop aparece com nacional 6.5 e `atualizado_em` ≈ `2026-11-17 12:40 UTC`. Anotar o `org_id`.
-  - Se `atualizado_em` não estiver nessa faixa (houve outro save depois), usar `2026-11-17T12:40:00Z` como corte.
-  - Copiar as policies SELECT atuais de `configuracoes`: `select policyname, qual from pg_policies where tablename='configuracoes';`. A nova tabela replica a leitura, inclusive o acesso de platform admin se houver.
+  - Rodar: `select o.id, o.name, c.aliquota_nacional_pct, c.aliquota_importado_pct, c.uf_empresa, c.aliquota_interna_pct from public.configuracoes c join public.organizations o on o.id=c.org_id where c.aliquotas_confirmadas_em is not null;`
+    - Conferir o nome da coluna de nome em `20260705163656_e7_organizations.sql`.
+  - Esperado: a Daludi Shop aparece com nacional 6.5, importado 0, `PE`, interna 6.5. Anotar o `org_id`.
+  - Se os valores atuais forem outros, **parar e perguntar ao Diego**.
+  - **Corte fixo: `2026-11-17T12:40:00Z`** (09:40 em Brasília, informado pelo Diego). Nunca usar `atualizado_em`: ele muda em qualquer save de configuração e vem do relógio do cliente (`queries.ts:820,867`).
+  - Copiar as policies SELECT atuais de `configuracoes`: `select policyname, roles, qual from pg_policies where tablename='configuracoes';`. A nova tabela replica a leitura, inclusive o acesso de platform admin se houver.
+  - Copiar também o padrão de função `security definer` já usado nas migrations: `search_path = ''`, nomes qualificados e `revoke execute … from public`.
 
 - [ ] **Step 3: Escrever a migration**, nesta ordem:
   1. Create table, unique e índice.
-  2. `enable row level security`. Só policy de SELECT, igual à de `configuracoes`. Sem policy de insert, update ou delete: só o trigger escreve.
+  2. `enable row level security`. Só policy de SELECT, igual à de `configuracoes`.
+     - Privilégios explícitos: `revoke all on public.aliquotas_vigencia from anon, authenticated;` + `grant select on public.aliquotas_vigencia to authenticated;`.
+     - O revoke cobre o `TRUNCATE`, que ignora RLS (`20260927084615_vendas_sku_trafego.sql:53`). Só o trigger escreve.
   3. Função `public.registrar_vigencia_aliquota()`:
-     - `security definer`, `set search_path = public`.
+     - `security definer`, `set search_path = ''`, nomes qualificados (`public.…`).
+     - `revoke execute on function … from public;`.
      - Em INSERT, ou em UPDATE onde `(aliquota_nacional_pct, aliquota_importado_pct, uf_empresa, aliquota_interna_pct)` IS DISTINCT FROM `OLD`, e com `NEW.aliquota_nacional_pct` e `NEW.aliquota_importado_pct` não nulos:
-       `insert into aliquotas_vigencia (org_id, vigente_desde, …) values (NEW.org_id, now(), …) on conflict (org_id, vigente_desde) do update set …`.
-  4. Trigger `trg_configuracoes_vigencia_aliquota after insert or update on configuracoes for each row execute function …`.
-  5. Backfill de cada org com `aliquotas_confirmadas_em is not null`:
+       `insert into public.aliquotas_vigencia (org_id, vigente_desde, …) values (NEW.org_id, date_trunc('milliseconds', clock_timestamp()), …) on conflict (org_id, vigente_desde) do update set …`.
+     - O `do update` só acontece com dois saves no mesmo milissegundo. Nesse caso vale o último, que é o valor efetivo daquele instante.
+     - Saves concorrentes da mesma org se serializam pelo lock da linha de `configuracoes`. O `clock_timestamp()`, avaliado no AFTER trigger depois do lock, segue essa ordem.
+  4. Trigger `trg_configuracoes_vigencia_aliquota after insert or update on public.configuracoes for each row execute function …`.
+  5. **Pré-condição** (aborta a migration se falhar): `do $$ … if not exists (select 1 from public.configuracoes where org_id='<daludi>' and aliquota_nacional_pct=6.5 and aliquota_importado_pct=0 and uf_empresa='PE' and aliquota_interna_pct=6.5) then raise exception 'ADR-0208: config da Daludi divergiu do medido'; end if; … $$;`
+  6. Backfill de cada org com `aliquotas_confirmadas_em is not null`, com valores fixos (não lidos na hora):
      - Linha `vigente_desde = '1970-01-01T00:00:00Z'` com os valores atuais.
-     - **Exceto a Daludi** (pelo `org_id` medido no Step 2), que recebe `1970-01-01` com nacional 4, importado 0, uf `PE`, interna `<valor confirmado no Step 1>`.
-     - Depois, para a Daludi, uma linha em `<corte do Step 2>` com os valores atuais.
+     - **Exceto a Daludi**, que recebe duas linhas:
+       - `1970-01-01T00:00:00Z`: nacional 4, importado 0, uf `PE`, interna `<valor confirmado no Step 1>`;
+       - `2026-11-17T12:40:00Z`: nacional 6.5, importado 0, uf `PE`, interna 6.5.
      - Usar `on conflict do nothing`, para a migration ser idempotente.
 
-- [ ] **Step 4: Teste SQL em transação desfeita em produção** (memória `reference_teste_sql_sem_docker`): `begin;` → aplicar o corpo da migration → testar → `rollback;`.
+- [ ] **Step 4: Teste SQL em transação desfeita** (memória `reference_teste_sql_sem_docker`): `begin;` → aplicar o corpo da migration → testar → `rollback;`.
+  - **Não tocar em org real.** Criar dentro da transação uma org de teste em `public.organizations` (com as colunas obrigatórias) e a linha dela em `configuracoes`.
+  - Testar contra essa org:
 
   ```sql
+  -- org de teste: <tst> (criada no begin, some no rollback)
+  insert into public.configuracoes (org_id, user_id, aliquota_nacional_pct, aliquota_importado_pct, aliquotas_confirmadas_em) values ('<tst>', '<qualquer user>', 4, 0, now());
+  select count(*) from public.aliquotas_vigencia where org_id='<tst>';  -- esperado: 1 (insert)
   -- (a) update sem mudança de valor não cria linha
-  update configuracoes set aliquotas_confirmadas_em = now() where org_id = '<daludi>';
-  select count(*) from aliquotas_vigencia where org_id='<daludi>';  -- esperado: 2
-  -- (b) mudança de valor cria linha com vigente_desde = now()
-  update configuracoes set aliquota_nacional_pct = 7 where org_id = '<daludi>';
-  select count(*) from aliquotas_vigencia where org_id='<daludi>';  -- esperado: 3
+  update public.configuracoes set aliquotas_confirmadas_em = now() where org_id = '<tst>';
+  select count(*) from public.aliquotas_vigencia where org_id='<tst>';  -- esperado: 1
+  -- (b) mudança de valor cria linha nova
+  update public.configuracoes set aliquota_nacional_pct = 6.5 where org_id = '<tst>';
+  select count(*) from public.aliquotas_vigencia where org_id='<tst>';  -- esperado: 2
+  -- (c) authenticated não escreve
+  set local role authenticated; insert into public.aliquotas_vigencia (org_id, vigente_desde, nacional_pct, importado_pct) values ('<tst>', now(), 1, 1);  -- esperado: ERROR permission denied
   rollback;
   ```
 
@@ -98,6 +123,8 @@
 
 **Files:**
 - Modify: `supabase/functions/_shared/platform-admin/sales-summary.ts:29` (tipo `AliquotaResolver`) e `:126-135` (`impostoDoItem`, `impostoDaVenda`)
+- Modify: `supabase/functions/_shared/platform-admin/sales-types.ts:80`
+  - Ali existe uma **segunda** declaração de `AliquotaResolver`. Unificar: manter uma só e reexportar a outra, para os contratos não divergirem.
 - Modify: `supabase/functions/_shared/platform-admin/sales-costs.ts:122-140` (`montarAliquotaResolver`)
 - Test: `src/lib/__tests__/aliquota-vigencia.test.ts` (novo, no mesmo estilo de `src/lib/__tests__/aliquota-interna-uf.test.ts`, que deve continuar passando)
 
@@ -134,6 +161,8 @@
   it('data anterior a todas as vigências usa a mais antiga', () => { /* vigências começando em 2026-01-01, data 2025 → nacional da mais antiga */ });
   it('sem vigências usa as alíquotas atuais', () =>
     expect(montarAliquotaResolver(mapas, { nacional: 8, importado: 16 })(item({}), 'SP', '2020-01-01T00:00:00Z')).toBe(8));
+  it('mesmo instante em -03:00 e em UTC dá o mesmo resultado', () =>
+    expect(montarAliquotaResolver(mapas, vig)(item({}), 'SP', '2026-11-17T09:40:00-03:00')).toBe(6.5));
   it('data null usa as alíquotas atuais', () =>
     expect(montarAliquotaResolver(mapas, vig)(item({}), 'SP', null)).toBe(6.5));
   it('impostoDoItem aplica a alíquota da data', () =>
@@ -158,6 +187,7 @@
   - `src/lib/pedidos-faturamento.ts:200-201` (as duas chamadas: `impostoDoItem` e `aliquotaResolver?.(it, uf)`; a data do pedido tem que chegar ao `itensFlat`)
   - `src/lib/detalhe-vendas.ts:195`
   - `supabase/functions/_shared/notificacoes/gerencial/resultado.ts:78,81`
+  - `src/hooks/useVendasSku.ts:35` (`aliqR(it, v.uf)` em `origemNaoResolvida`)
 - Modify: `src/lib/queries.ts` `fetchAliquotas` (≈ linha 785), para devolver também `vigencias: VigenciaAliquota[]`
 - Test: os testes existentes de `pedidos-faturamento`, `detalhe-vendas` e `gerencial/__tests__/resultado.test.ts` precisam continuar verdes. Acrescentar 1 caso em `resultado.test.ts`.
 
@@ -166,7 +196,9 @@
 - Produces: `fetchAliquotas(): Promise<{ nacional; importado; confirmada; ufEmpresa; internaPct; vigencias: VigenciaAliquota[] }>`.
   - Lê `aliquotas_vigencia` filtrado por `org_id = effectiveOrgId()`.
   - Mapeia `vigente_desde → vigenteDesde`.
-  - Erro na leitura das vigências → `vigencias: []` (cai no comportamento de hoje). Nunca derrubar a tela.
+  - Erro na leitura das vigências → **lançar** o erro (React Query mostra o estado de erro).
+  - Nunca devolver `[]` em caso de falha: isso reaplicaria a alíquota atual às vendas antigas.
+  - Lista vazia de verdade (org sem confirmação) → `[]`.
 
 - [ ] **Step 1: Teste que falha** em `resultado.test.ts`:
   - Duas vendas iguais, uma em 2026-11-16 e outra em 2026-11-18.
@@ -199,7 +231,12 @@
   - (b) `calcularMes` de out/2026 com vigências `[1970: 4%, 2026-11-17: 6,5%]` dá o mesmo imposto que com `[1970: 4%]` só.
 - [ ] **Step 2:** rodar → FAIL.
 - [ ] **Step 3: Implementar.**
-  - Erro ao ler vigências → `vigencias: []` e log. Não marcar `configErrored`, porque a alíquota atual continua válida.
+  - Erro ao ler vigências → `configAvailable = false`, `configErrored = true`, `rates = null`, e log.
+  - Com isso:
+    - o mês fechado não é materializado (`metrics-repository.ts:500` já exige `!configErrored`);
+    - o gerencial sai com `configOk: false` (lucro indisponível);
+    - a alíquota atual nunca é aplicada em silêncio.
+  - Acrescentar o teste (c) no Step 1: falha na leitura de `aliquotas_vigencia` → `configErrored === true` e `rates === null`.
 - [ ] **Step 4:** `pnpm vitest run supabase/functions/_shared/platform-admin` → PASS.
 - [ ] **Step 5: Commit** — `feat(imposto): Central e relatório mensal usam alíquota vigente (ADR-0208)`
 
