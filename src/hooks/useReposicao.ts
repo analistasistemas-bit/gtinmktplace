@@ -205,6 +205,18 @@ export function montarVisao(data: RespostaReposicao, hoje: string): Visao {
   };
 }
 
+/** Cores (texto exato) com todos os SKUs marcados: a linha da cor está fora de linha (marca de cor ou de cada tamanho). */
+export function coresForaDeLinha(f: FamiliaVisao): Set<string> {
+  const cores = new Set(f.skus.map((s) => s.tela.cor).filter((c): c is string => !!c));
+  return new Set([...cores].filter((c) => f.skus.filter((s) => s.tela.cor === c).every((s) => !!s.tela.naoReporId)));
+}
+/** Escondida por padrão na Reposição: marca de produto, ou nenhuma linha de cor visível. */
+export function familiaForaDeLinha(f: FamiliaVisao): boolean {
+  if (f.naoReporFamiliaId) return true;
+  const fora = coresForaDeLinha(f);
+  return fora.size > 0 && f.skus.every((s) => !!s.tela.cor && fora.has(s.tela.cor));
+}
+
 /** Filtro da lista. Card e filtro usam a MESMA regra (família com ≥ 1 SKU na faixa), senão o número não bate com a lista. */
 export type FiltroUrgencia = 'precisa' | 'ruptura' | 'vai_faltar' | 'pedir_agora' | 'em_dia' | 'comprar';
 export function passaUrgencia(f: FamiliaVisao, filtro: FiltroUrgencia): boolean {

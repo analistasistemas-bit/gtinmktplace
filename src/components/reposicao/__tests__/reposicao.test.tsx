@@ -330,29 +330,83 @@ describe('Reposição: sugestões', () => {
     expect(acoes.removerNaoRepor).toHaveBeenCalledWith('nr-1');
   });
 
-  it('família inteira em Não repor (Em dia) continua aberta e reversível na mesma tela', async () => {
-    const d = estado.data!;
-    d.naoRepor.push({ id: 'nr-f', escopo: 'familia', codigoPai: 'CINTO', codigo: null, cor: null });
-    d.skus = d.skus.map((s) => (s.codigo === 'K1' ? { ...s, naoReporId: 'nr-f' } : s));
-    renderTela();
-    expect(screen.queryByText('Cinto Couro')).toBeNull();
-    cleanup();
-    renderTela('/reposicao?urgencia=em_dia');
-    await userEvent.click(screen.getByRole('button', { name: /Cinto Couro/ }));
-    await userEvent.click(screen.getByRole('button', { name: /^Ruptura/ })); // troca o filtro com a linha aberta
-    expect(screen.getByText('Calça Sarja Masculina')).toBeInTheDocument();
-    expect(screen.getByText('Produto marcado como Não repor.')).toBeInTheDocument();
-    await userEvent.click(screen.getAllByRole('button', { name: 'Remover' })[0]);
-    expect(acoes.removerNaoRepor).toHaveBeenCalledWith('nr-f');
+  it('Detalhe não tem mais o menu "Não repor ▾"', () => {
+    renderTela('/reposicao?produto=SHORT');
+    expect(screen.queryByRole('button', { name: /^Não repor/ })).toBeNull();
   });
 
-  it('Não repor ▾ "Este SKU" usa a última célula aberta', async () => {
+  it('popover da célula: "Não repor este tamanho" marca só o SKU; célula marcada não oferece', async () => {
     renderTela('/reposicao?produto=SHORT');
     await userEvent.click(screen.getByRole('button', { name: /^Preto, P:/ }));
-    await userEvent.keyboard('{Escape}');
-    await userEvent.click(screen.getByRole('button', { name: /^Não repor/ }));
-    await userEvent.click(await screen.findByRole('menuitem', { name: 'Este SKU (Preto · P)' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Não repor este tamanho' }));
     expect(acoes.naoRepor).toHaveBeenCalledWith({ escopo: 'sku', codigoPai: 'SHORT', codigo: 'S1' });
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(screen.getByRole('button', { name: /^Cáqui, M:/ }));
+    await screen.findByRole('dialog');
+    expect(screen.queryByRole('button', { name: 'Não repor este tamanho' })).toBeNull();
+  });
+
+  describe('fora de linha (marcado no Estoque)', () => {
+    const marcarFamilia = () => {
+      const d = estado.data!;
+      d.naoRepor.push({ id: 'nr-f', escopo: 'familia', codigoPai: 'CALCA', codigo: null, cor: null });
+      d.skus = d.skus.map((x) => (x.codigoPai === 'CALCA' ? { ...x, naoReporId: 'nr-f' } : x));
+    };
+    const marcarCor = () => {
+      const d = estado.data!;
+      d.naoRepor.push({ id: 'nr-c', escopo: 'cor', codigoPai: 'SHORT', codigo: null, cor: 'Preto' });
+      d.skus = d.skus.map((x) => (x.codigoPai === 'SHORT' && x.cor === 'Preto' ? { ...x, naoReporId: 'nr-c' } : x));
+    };
+
+    it('marca de produto: some da lista; o filtro o mostra esmaecido, com selo e "Abrir no Estoque"', async () => {
+      marcarFamilia();
+      renderTela();
+      expect(screen.queryByText('Calça Sarja Masculina')).toBeNull();
+      await userEvent.click(screen.getByRole('switch', { name: 'Mostrar fora de linha' }));
+      const linha = screen.getByText('Calça Sarja Masculina').closest('li')!;
+      expect(linha.className).toMatch(/opacity-60/);
+      expect(within(linha).getByText('Fora de linha')).toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: /Calça Sarja Masculina/ }));
+      expect(within(linha).getByRole('link', { name: 'Abrir no Estoque' })).toHaveAttribute('href', '/estoque');
+      expect(within(linha).queryByRole('button', { name: 'Remover' })).toBeNull(); // a Reposição não desmarca
+    });
+
+    it('cor marcada: a linha some do mapa; com o filtro aparece esmaecida com selo', async () => {
+      marcarCor();
+      renderTela('/reposicao?produto=SHORT');
+      const grade = screen.getByRole('grid');
+      expect(within(grade).queryByRole('button', { name: /^Preto,/ })).toBeNull();
+      expect(within(grade).getByRole('button', { name: /^Cáqui, P:/ })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Abrir no Estoque' })).toBeInTheDocument();
+      await userEvent.click(screen.getByRole('switch', { name: 'Mostrar fora de linha' }));
+      const g2 = screen.getByRole('grid');
+      expect(within(g2).getByRole('button', { name: /^Preto, P:/ })).toBeInTheDocument();
+      expect(within(g2).getByText('Fora de linha')).toBeInTheDocument();
+      expect(within(g2).getByText('Fora de linha').closest('tr')!.className).toMatch(/opacity-60/);
+    });
+
+    it('cor marcada: os cards não contam o que está fora de linha', () => {
+      renderTela();
+      const card = () => within(screen.getByRole('button', { name: /^Pedir agora/ }));
+      expect(card().getByText('2 SKUs')).toBeInTheDocument(); // S1 e S2 (Preto); S4 já está em Não repor
+      cleanup();
+      marcarCor();
+      renderTela();
+      expect(card().getByText('0 SKUs')).toBeInTheDocument();
+    });
+
+    it('SKU avulso marcado continua na grade, riscado', () => {
+      renderTela('/reposicao?produto=SHORT');
+      const cel = screen.getByRole('button', { name: /^Cáqui, M:/ });
+      expect(cel.className).toMatch(/line-through/);
+    });
+
+    it('família sem nenhuma linha visível (todas as cores fora de linha) não aparece', () => {
+      const d = estado.data!;
+      d.skus = d.skus.map((x) => (x.codigoPai === 'SHORT' ? { ...x, naoReporId: 'nr-c' } : x));
+      renderTela();
+      expect(screen.queryByText('Short Bermuda Mauricinho')).toBeNull();
+    });
   });
 
   it('número do card em foreground e ícone colorido (contraste; cor na borda e no ícone)', () => {

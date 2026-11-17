@@ -11,6 +11,8 @@ export interface CtxCalculo {
   prazo: number; cobertura: number; hoje: string; onRemoverNaoRepor: (id: string) => void; pendente?: boolean;
   /** "Incluir no pedido" do SKU nunca comprado: põe o `completarGrade` no rascunho do fornecedor. */
   onIncluirCompletar?: (familia: FamiliaVisao, s: SkuVisao) => void;
+  /** "Não repor este tamanho" (só SKU avulso; produto e cor vão por "Fora de linha" no Estoque). */
+  onNaoRepor?: (s: SkuVisao) => void;
 }
 
 const ESCOPO_NAO_REPOR = { sku: 'este SKU', cor: 'esta cor', familia: 'este produto' } as const;
@@ -46,8 +48,14 @@ export function CalculoSku({ s, familia, ctx }: { s: SkuVisao; familia: FamiliaV
       </dl>}
       {s.tela.naoReporId ? (
         <div className="flex items-center justify-between gap-2 rounded-md bg-muted px-2 py-1.5">
-          <span>Não repor{s.naoReporEscopo ? ` (${ESCOPO_NAO_REPOR[s.naoReporEscopo]})` : ''}.</span>
-          <Button size="sm" variant="outline" className="h-11 md:h-7" disabled={ctx.pendente} onClick={() => ctx.onRemoverNaoRepor(s.tela.naoReporId!)}>Remover</Button>
+          <span>
+            {s.naoReporEscopo === 'sku' || !s.naoReporEscopo ? 'Não repor' : 'Fora de linha'}
+            {s.naoReporEscopo ? ` (${ESCOPO_NAO_REPOR[s.naoReporEscopo]})` : ''}.
+            {s.naoReporEscopo && s.naoReporEscopo !== 'sku' && ' Volta à linha pelo Estoque.'}
+          </span>
+          {(s.naoReporEscopo === 'sku' || !s.naoReporEscopo) && (
+            <Button size="sm" variant="outline" className="h-11 md:h-7" disabled={ctx.pendente} onClick={() => ctx.onRemoverNaoRepor(s.tela.naoReporId!)}>Remover</Button>
+          )}
         </div>
       ) : completar ? (
         <div className="flex flex-col gap-2">
@@ -74,6 +82,11 @@ export function CalculoSku({ s, familia, ctx }: { s: SkuVisao; familia: FamiliaV
                   {' '}peça {fmtInt(sug.pedir)}: {fmtInt(folga)} a mais {caixa ? 'de folga e para fechar a caixa' : 'de folga'}, para não faltar se vender um pouco acima da média.
                 </>}
         </p>
+      )}
+      {!s.tela.naoReporId && ctx.onNaoRepor && (
+        <Button size="sm" variant="outline" className="h-11 self-start md:h-8" disabled={ctx.pendente} onClick={() => ctx.onNaoRepor!(s)}>
+          Não repor este tamanho
+        </Button>
       )}
       {caixa && !s.tela.naoReporId && (
         <p className="leading-relaxed">

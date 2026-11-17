@@ -1,12 +1,10 @@
 // Spec §3.3 a §3.4: uma linha por família; expandida mostra o mapa da grade, o "Por quê" e as ações.
 import { useId, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { StatusPill } from '@/components/ui/status-pill';
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { FotoCapaFamilia } from '@/components/foto-capa-familia';
 import { useFotosProduto } from '@/hooks/useFotosProduto';
 import { useQueryClient } from '@tanstack/react-query';
@@ -15,7 +13,7 @@ import { montarFotoResolver } from '@/lib/fotos-produto';
 import type { VendaItem } from '@/lib/faturamento';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { cn } from '@/lib/utils';
-import type { FamiliaVisao } from '@/hooks/useReposicao';
+import { coresForaDeLinha, familiaForaDeLinha, type FamiliaVisao } from '@/hooks/useReposicao';
 import type { PedidoDTO } from '../../../supabase/functions/_shared/reposicao/tipos';
 import { normalizarNome } from '../../../supabase/functions/_shared/reposicao/calculo';
 import { MapaGrade } from './mapa-grade';
@@ -24,7 +22,6 @@ import { fmtDia, pctSinal, PorQue, ROTULO_URGENCIA, TOM_URGENCIA } from './por-q
 
 export interface AcoesLista {
   adicionar: (f: FamiliaVisao) => void;
-  naoRepor: (p: { escopo: 'sku' | 'cor' | 'familia'; codigoPai: string; codigo?: string; cor?: string }) => void;
   /** Só admin (vale para toda compra do produto); ausente = só leitura. */
   definirMultiplo?: (p: { codigoPai: string; multiplo: number }) => void;
 }
@@ -95,13 +92,19 @@ function Dado({ rotulo, children, className }: { rotulo: string; children: React
   );
 }
 
-function Detalhe({ f, ctx, acoes, rascunho }: { f: FamiliaVisao; ctx: CtxCalculo; acoes: AcoesLista; rascunho: PedidoDTO | undefined }) {
+/** A Reposição só obedece "fora de linha"; quem marca e desmarca é o Estoque. */
+const AbrirNoEstoque = () => (
+  <Link to="/estoque" className="inline-flex min-h-11 items-center text-sm font-medium text-primary underline-offset-4 hover:underline md:min-h-0">Abrir no Estoque</Link>
+);
+
+function Detalhe({ f, ctx, acoes, rascunho, mostrarForaDeLinha }: {
+  f: FamiliaVisao; ctx: CtxCalculo; acoes: AcoesLista; rascunho: PedidoDTO | undefined; mostrarForaDeLinha: boolean;
+}) {
   const [sel, setSel] = useState<string | null>(null);
-  const skuSel = f.skus.find((s) => s.tela.codigo === sel);
+  const foraCores = coresForaDeLinha(f);
   const itens = f.skus.filter((s) => s.sug.pedir > 0 && !s.tela.naoReporId);
   const semFornecedor = !f.fornecedor.nome.trim();
   const noRascunho = rascunho?.itens.some((i) => i.codigoPai === f.codigoPai);
-  const descSel = skuSel ? [skuSel.tela.cor, skuSel.tela.tamanho].filter(Boolean).join(' · ') : '';
 
   const adicionar = (
     <Button className="h-11 sm:h-9" disabled={!itens.length || semFornecedor || ctx.pendente} onClick={() => acoes.adicionar(f)}>
@@ -111,39 +114,17 @@ function Detalhe({ f, ctx, acoes, rascunho }: { f: FamiliaVisao; ctx: CtxCalculo
   return (
     <div className="flex flex-col gap-4 border-t border-border bg-muted/20 px-3 py-4 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-top-1 motion-safe:duration-200 motion-safe:ease-out md:pl-[4.25rem]">
       {f.temGrade
-        ? <MapaGrade familia={f} ctx={ctx} selecionado={sel} onSelecionar={setSel} />
+        ? <MapaGrade familia={f} ctx={ctx} selecionado={sel} onSelecionar={setSel} coresForaDeLinha={foraCores} ocultarForaDeLinha={!mostrarForaDeLinha} />
         : <div className="max-w-sm"><CalculoSku s={f.skus[0]} familia={f} ctx={ctx} /></div>}
       <PorQue familia={f} />
-      {f.naoReporFamiliaId && (
-        <div className="flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground">Produto marcado como Não repor.</span>
-          <Button size="sm" variant="outline" className="h-11 md:h-7" disabled={ctx.pendente} onClick={() => ctx.onRemoverNaoRepor(f.naoReporFamiliaId!)}>Remover</Button>
+      {(f.naoReporFamiliaId || foraCores.size > 0) && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+          <span className="text-muted-foreground">{f.naoReporFamiliaId ? 'Produto fora de linha.' : 'Há cores fora de linha neste produto.'}</span>
+          <AbrirNoEstoque />
         </div>
       )}
       <div className="flex flex-wrap items-center gap-2">
         {adicionar}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="h-11 sm:h-9">Não repor <ChevronDown className="h-4 w-4" aria-hidden /></Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            {f.temGrade && (
-              <>
-                <DropdownMenuItem disabled={!skuSel || !!skuSel.tela.naoReporId}
-                  onSelect={() => skuSel && acoes.naoRepor({ escopo: 'sku', codigoPai: f.codigoPai, codigo: skuSel.tela.codigo })}>
-                  {skuSel ? `Este SKU (${descSel})` : 'Este SKU (escolha uma célula)'}
-                </DropdownMenuItem>
-                <DropdownMenuItem disabled={!skuSel?.tela.cor}
-                  onSelect={() => skuSel?.tela.cor && acoes.naoRepor({ escopo: 'cor', codigoPai: f.codigoPai, cor: skuSel.tela.cor })}>
-                  {skuSel?.tela.cor ? `Esta cor (${skuSel.tela.cor})` : 'Esta cor (escolha uma célula)'}
-                </DropdownMenuItem>
-              </>
-            )}
-            <DropdownMenuItem disabled={!!f.naoReporFamiliaId} onSelect={() => acoes.naoRepor({ escopo: 'familia', codigoPai: f.codigoPai })}>
-              Este produto
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
         {semFornecedor && <span className="text-caption">Produto sem fornecedor cadastrado.</span>}
         {noRascunho && <span className="text-caption">Já está no rascunho de {f.fornecedor.nome}.</span>}
       </div>
@@ -152,9 +133,11 @@ function Detalhe({ f, ctx, acoes, rascunho }: { f: FamiliaVisao; ctx: CtxCalculo
   );
 }
 
-export function ListaFamilias({ familias, expandidos, onAlternar, ctx, acoes, rascunhos }: {
+export function ListaFamilias({ familias, expandidos, onAlternar, ctx, acoes, rascunhos, mostrarForaDeLinha = false }: {
   familias: FamiliaVisao[]; expandidos: ReadonlySet<string>; onAlternar: (codigoPai: string) => void;
   ctx: CtxCalculo; acoes: AcoesLista; rascunhos: PedidoDTO[];
+  /** Filtro "Mostrar fora de linha": o que está fora de linha aparece esmaecido, com selo. */
+  mostrarForaDeLinha?: boolean;
 }) {
   return (
     <div className="overflow-hidden rounded-xl bg-card shadow-sm ring-1 ring-foreground/5">
@@ -166,8 +149,9 @@ export function ListaFamilias({ familias, expandidos, onAlternar, ctx, acoes, ra
         {familias.map((f) => {
           const aberto = expandidos.has(f.codigoPai);
           const Seta = aberto ? ChevronDown : ChevronRight;
+          const fora = familiaForaDeLinha(f);
           return (
-            <li key={f.codigoPai} id={`familia-${f.codigoPai}`}>
+            <li key={f.codigoPai} id={`familia-${f.codigoPai}`} className={cn(fora && 'opacity-60')}>
               <button
                 type="button"
                 aria-expanded={aberto}
@@ -182,7 +166,9 @@ export function ListaFamilias({ familias, expandidos, onAlternar, ctx, acoes, ra
                   <Seta className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                   <span className="truncate font-medium">{f.nome}</span>
                 </span>
-                <span className="col-start-3 row-start-1 md:col-auto md:row-auto"><Pill f={f} /></span>
+                <span className="col-start-3 row-start-1 md:col-auto md:row-auto">
+                  {fora ? <StatusPill tone="neutral">Fora de linha</StatusPill> : <Pill f={f} />}
+                </span>
                 <span className="col-span-3 truncate text-muted-foreground md:col-auto md:row-start-1 md:col-start-3">{f.fornecedor.nome || 'Sem fornecedor'}</span>
                 <span className="col-span-3 grid grid-cols-4 gap-2 md:contents">
                   <Dado rotulo="Tendência">{f.tendencia ? pctSinal(f.tendencia.fator - 1) : <Vazio nome="sem tendência" />}</Dado>
@@ -193,7 +179,7 @@ export function ListaFamilias({ familias, expandidos, onAlternar, ctx, acoes, ra
                   </Dado>
                 </span>
               </button>
-              {aberto && <Detalhe f={f} ctx={ctx} acoes={acoes} rascunho={rascunhoDaFamilia(f, rascunhos)} />}
+              {aberto && <Detalhe f={f} ctx={ctx} acoes={acoes} rascunho={rascunhoDaFamilia(f, rascunhos)} mostrarForaDeLinha={mostrarForaDeLinha} />}
             </li>
           );
         })}

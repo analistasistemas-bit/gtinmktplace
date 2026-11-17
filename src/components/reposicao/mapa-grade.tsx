@@ -7,6 +7,7 @@ import { fmtInt } from '@/lib/formato';
 import { chaveGrade, ordenarEixos } from '@/lib/cadastro-grade';
 import { NUMERACOES_CALCADO, TAMANHOS_CALCA, TAMANHOS_INFANTIL, TAMANHOS_ROUPA } from '@/lib/tamanhos';
 import type { FamiliaVisao, SkuVisao } from '@/hooks/useReposicao';
+import { StatusPill } from '@/components/ui/status-pill';
 import { BotaoCor } from './botao-cor';
 import { PopoverCelula, type CtxCalculo } from './popover-celula';
 import { ROTULO_URGENCIA } from './por-que';
@@ -46,10 +47,15 @@ function rotuloCelula(cor: string, tam: string, s: SkuVisao): string {
   return partes.join(', ');
 }
 
-export function MapaGrade({ familia, ctx, selecionado, onSelecionar }: {
+export function MapaGrade({ familia, ctx, selecionado, onSelecionar, coresForaDeLinha, ocultarForaDeLinha }: {
   familia: FamiliaVisao; ctx: CtxCalculo; selecionado: string | null; onSelecionar: (codigo: string) => void;
+  /** Cores com todos os SKUs marcados (fora de linha). */
+  coresForaDeLinha?: ReadonlySet<string>;
+  /** true = a linha da cor fora de linha some do mapa; false = aparece esmaecida com o selo. */
+  ocultarForaDeLinha?: boolean;
 }) {
-  const { cores, tamanhos, celulas, hex, codigosDaCor } = eixosDaGrade(familia.skus);
+  const fora = (c: string) => !!coresForaDeLinha?.has(c);
+  const { cores, tamanhos, celulas, hex, codigosDaCor } = eixosDaGrade(ocultarForaDeLinha ? familia.skus.filter((s) => !fora(s.tela.cor ?? '')) : familia.skus);
   const refs = useRef(new Map<string, HTMLButtonElement>());
   const primeira = cores.flatMap((c) => tamanhos.map((t) => [c, t] as const)).find(([c, t]) => celulas.has(chaveGrade(c, t)));
   const [escolhida, setAtiva] = useState<string | null>(null);
@@ -108,9 +114,12 @@ export function MapaGrade({ familia, ctx, selecionado, onSelecionar }: {
           </thead>
           <tbody>
             {cores.map((cor, r) => (
-              <tr key={cor} role="row" className="[&:last-child>*]:border-b-0">
+              <tr key={cor} role="row" className={cn('[&:last-child>*]:border-b-0', fora(cor) && 'opacity-60')}>
                 <th role="rowheader" scope="row" className="sticky left-0 z-10 whitespace-nowrap border-b border-r border-border bg-card px-3 text-left font-medium">
-                  <BotaoCor cor={cor} corHex={hex.get(cor) ?? null} codigos={codigosDaCor.get(cor) ?? []} />
+                  <span className="flex items-center gap-2">
+                    <BotaoCor cor={cor} corHex={hex.get(cor) ?? null} codigos={codigosDaCor.get(cor) ?? []} />
+                    {fora(cor) && <StatusPill tone="neutral" className="shrink-0">Fora de linha</StatusPill>}
+                  </span>
                 </th>
                 {tamanhos.map((tam, c) => {
                   const k = chaveGrade(cor, tam);

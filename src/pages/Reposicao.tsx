@@ -9,11 +9,12 @@ import { Input } from '@/components/ui/input';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { diaBRT } from '@/lib/calendario-brt';
 import { usePodeExecutarOperacao } from '@/hooks/useOperacoes';
-import { montarVisao, passaUrgencia, useReposicao, type FamiliaVisao, type FiltroUrgencia, type SkuVisao } from '@/hooks/useReposicao';
+import { coresForaDeLinha, familiaForaDeLinha, montarVisao, passaUrgencia, useReposicao, type FamiliaVisao, type FiltroUrgencia, type SkuVisao } from '@/hooks/useReposicao';
 import { AvisoLoja } from '@/components/reposicao/aviso-loja';
 import { CardsUrgencia } from '@/components/reposicao/cards-urgencia';
 import { ConfigInicial } from '@/components/reposicao/config-inicial';
@@ -49,6 +50,8 @@ export default function Reposicao() {
   const [aba, setAba] = useState('sugestoes');
   const [busca, setBusca] = useState('');
   const [fornecedor, setFornecedor] = useState(TODOS);
+  // Fora de linha (marcado no Estoque) fica escondido; o filtro mostra tudo esmaecido, só para consulta.
+  const [mostrarFora, setMostrarFora] = useState(false);
   const [urgencia, setUrgencia] = useState<FiltroUrgencia>(() => (ehFiltro(params.get('urgencia')) ? params.get('urgencia') as FiltroUrgencia : 'precisa'));
   const [expandidos, setExpandidos] = useState<Set<string>>(() => new Set(produto ? [produto] : []));
   const [ajustando, setAjustando] = useState(false);
@@ -65,13 +68,14 @@ export default function Reposicao() {
   const lista = useMemo(() => {
     if (!visao) return [];
     const q = busca.trim().toLocaleLowerCase('pt-BR');
-    // Linha aberta fica na lista: Não repor pode levar a família a "Em dia", e a reversão é na mesma tela.
-    return visao.familias.filter((f) => f.codigoPai === produto || expandidos.has(f.codigoPai) || (
-      passaUrgencia(f, urgencia)
+    // Linha aberta fica na lista: Não repor (tamanho) pode levar a família a "Em dia", e a reversão é na mesma tela.
+    // Fora de linha não: só aparece com o filtro, que o mostra qualquer que seja a urgência escolhida.
+    return visao.familias.filter((f) => mostrarFora || !familiaForaDeLinha(f)).filter((f) => f.codigoPai === produto || expandidos.has(f.codigoPai) || (
+      (passaUrgencia(f, urgencia) || (mostrarFora && (familiaForaDeLinha(f) || coresForaDeLinha(f).size > 0)))
       && (fornecedor === TODOS || f.fornecedor.nome === fornecedor)
       && (!q || f.nome.toLocaleLowerCase('pt-BR').includes(q) || f.codigoPai.includes(q) || f.skus.some((s) => s.tela.codigo.includes(q)))
     ));
-  }, [visao, busca, fornecedor, urgencia, produto, expandidos]);
+  }, [visao, busca, fornecedor, urgencia, produto, expandidos, mostrarFora]);
 
   const alternar = (pai: string) => setExpandidos((s) => {
     const n = new Set(s);
@@ -92,7 +96,6 @@ export default function Reposicao() {
         toast.success(`Adicionado ao rascunho de ${f.fornecedor.nome}.`);
       } catch (e) { falhou(e); }
     },
-    naoRepor: async (p) => { try { await r.naoRepor(p); } catch (e) { falhou(e); } },
     definirMultiplo: admin ? async (p) => {
       try { await r.definirMultiplo(p); toast.success('Múltiplo de compra salvo.'); } catch (e) { falhou(e); }
     } : undefined,
@@ -109,6 +112,9 @@ export default function Reposicao() {
   const ctx = {
     prazo: r.data?.config?.prazo ?? 0, cobertura: r.data?.config?.cobertura ?? 0, hoje, pendente: r.pendente,
     onRemoverNaoRepor: async (id: string) => { try { await r.removerNaoRepor(id); } catch (e) { falhou(e); } },
+    onNaoRepor: async (s: SkuVisao) => {
+      try { await r.naoRepor({ escopo: 'sku', codigoPai: s.tela.codigoPai, codigo: s.tela.codigo }); } catch (e) { falhou(e); }
+    },
     onIncluirCompletar: async (f: FamiliaVisao, s: SkuVisao) => {
       const n = s.sug.completarGrade;
       try {
@@ -130,7 +136,7 @@ export default function Reposicao() {
   } else if (!config || !visao) {
     corpo = <ConfigInicial onSalvar={salvarConfig} salvando={r.pendente} somenteLeitura={!admin} />;
   } else {
-    const filtrado = urgencia !== 'precisa' || fornecedor !== TODOS || busca.trim() !== '';
+    const filtrado = urgencia !== 'precisa' || fornecedor !== TODOS || busca.trim() !== '' || mostrarFora;
     corpo = (
       <Tabs value={aba} onValueChange={setAba} className="flex flex-col gap-5">
         {r.isError && (
@@ -168,10 +174,14 @@ export default function Reposicao() {
                   {Object.entries(FILTROS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
                 </SelectContent>
               </Select>
+              <div className="flex min-h-11 items-center gap-2 text-sm md:min-h-9">
+                <Switch id="mostrar-fora-de-linha" checked={mostrarFora} onCheckedChange={setMostrarFora} />
+                <label htmlFor="mostrar-fora-de-linha">Mostrar fora de linha</label>
+              </div>
               <span className="text-caption md:ml-auto">Ordenado por urgência</span>
             </div>
             {lista.length ? (
-              <ListaFamilias familias={lista} expandidos={expandidos} onAlternar={alternar} ctx={ctx} acoes={acoes} rascunhos={r.data.rascunhos} />
+              <ListaFamilias familias={lista} expandidos={expandidos} onAlternar={alternar} ctx={ctx} acoes={acoes} rascunhos={r.data.rascunhos} mostrarForaDeLinha={mostrarFora} />
             ) : filtrado ? (
               <EmptyState title="Nenhum produto com esse filtro." />
             ) : (
