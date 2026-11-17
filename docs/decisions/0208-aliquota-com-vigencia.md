@@ -1,6 +1,6 @@
 # ADR-0208 — Alíquota de imposto com vigência (mudança vale só daqui pra frente)
 
-Status: PROPOSTO (2026-11-17) — caminho escolhido pelo Diego no brainstorming; plano revisado pelo Codex GPT 6.1 Sol (high), 8 achados aplicados · Relaciona: ADR-0055 (imposto por origem), ADR-0086 (confirmação de alíquota), ADR-0109 (custo congelado na venda), ADR-0112 (alíquota interna por UF), ADR-0159 (cache de mês fechado / `tax_config_stamp`), ADR-0193 (relatório mensal recalcula) · Plano: `docs/superpowers/plans/2026-11-17-aliquota-vigencia.md`
+Status: ACEITO (2026-11-17) — `8f94d0c0` tabela, `bd98e952` resolver, `02e219c2` chamadores do front, `c07c5650` edges e carimbo de cache. Caminho escolhido pelo Diego no brainstorming; plano revisado pelo Codex GPT 6.1 Sol (high), 8 achados aplicados. Merge na `main` e deploy das edges ainda não feitos. · Relaciona: ADR-0055 (imposto por origem), ADR-0086 (confirmação de alíquota), ADR-0109 (custo congelado na venda), ADR-0112 (alíquota interna por UF), ADR-0159 (cache de mês fechado / `tax_config_stamp`), ADR-0193 (relatório mensal recalcula) · Plano: `docs/superpowers/plans/2026-11-17-aliquota-vigencia.md`
 
 ## Contexto
 Em 17/11/2026, às 09:40 (horário de Brasília), a Daludi Shop mudou a alíquota nacional de 4% para 6,5%. Todas as vendas passadas passaram a mostrar imposto de 6,5%.

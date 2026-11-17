@@ -1,5 +1,16 @@
 # PubliAI — Tasks
 
+## Alíquota com vigência (ADR-0208) — 2026-11-17
+
+Branch `worktree-imposto-vigencia`. Spec `docs/decisions/0208-aliquota-com-vigencia.md`. Migration `20261117141732_aliquotas_vigencia.sql` já aplicada. O imposto da venda usa a alíquota vigente na data; publicar, calculadora, kits e promoções continuam na alíquota atual.
+
+- [x] Tabela `aliquotas_vigencia`, trigger e backfill (`8f94d0c0`). Daludi Shop: `1970-01-01` a 4% e `2026-11-17T12:40:00Z` a 6,5%.
+- [x] Resolver escolhe a vigência pela data da venda (`bd98e952`).
+- [x] Telas de venda e o gerencial passam a data (`02e219c2`).
+- [x] Central, relatório mensal e `tax_config_stamp` (`c07c5650`). Falha ao ler as vigências não cai na alíquota atual.
+- [x] Aviso em Configurações → Fiscal, no card "Imposto por origem": a mudança vale para vendas a partir do save; vendas anteriores mantêm a alíquota da época.
+- [ ] Merge na `main` e deploy das edges que importam `platform-admin` ou `notificacoes/gerencial`. Sem esse deploy, a Central, o relatório e o Telegram ainda calculam com o código antigo.
+
 ## Reposição de estoque e pedido de compra (ADR-0207) — 2026-11-17
 
 Branch `feat/reposicao`. Spec `docs/superpowers/specs/2026-11-16-reposicao-design.md`, plano `docs/superpowers/plans/2026-11-16-reposicao.md`. **Status: no ar em 17/11** (main fdb30add + polimento visual). 3 migrations aplicadas, `usuarios` antes do `db push`, 49 edges redeployadas, schedule QStash `scd_4p1BMbhgML2WiFa8eTb3Fq6CXC6b`. Módulo ligado na Zaven (prazo 15, cobertura 30).

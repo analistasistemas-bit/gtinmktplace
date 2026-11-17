@@ -206,3 +206,12 @@ describe('Operação fiscal conforme o regime', () => {
     expect(screen.getAllByText('0 de 1')).toHaveLength(2);     // Operação (origin_type) + Emissão
   });
 });
+
+describe('Aviso de vigência (ADR-0208)', () => {
+  it('diz que a mudança vale para vendas a partir do save', () => {
+    renderSecao();
+    expect(screen.getByText(
+      'Mudanças valem para vendas a partir do momento em que você salvar. Vendas anteriores mantêm a alíquota da época.',
+    )).toBeInTheDocument();
+  });
+});

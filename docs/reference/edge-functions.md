@@ -198,6 +198,8 @@ ou com a validação `(count, atualizado_em, tax_config_stamp)` invalidada. Sem 
 sistema continua correto — o read-through de `readOrgMetrics` materializa sob demanda no primeiro
 acesso — ele só evita que esse primeiro acesso pague o cálculo completo.
 
+`tax_config_stamp` assina também a lista de `aliquotas_vigencia` ([ADR-0208](../decisions/0208-aliquota-com-vigencia.md)). O imposto da venda na Central, no relatório mensal e no Telegram gerencial usa a vigência da data da venda (`date_closed`, ou `date_created`). Falha ao ler as vigências marca `configErrored`: o mês não é materializado e o gerencial sai sem lucro. A alíquota atual não é aplicada em silêncio. Publicar, calculadora, kits e promoções continuam na alíquota atual.
+
 
 ## Schedules do QStash (cron + body)
 

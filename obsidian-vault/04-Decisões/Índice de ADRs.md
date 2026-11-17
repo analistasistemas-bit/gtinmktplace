@@ -1,6 +1,6 @@
 ---
 tags: [adr, indice]
-atualizado: 2026-11-03
+atualizado: 2026-11-17
 ---
 
 # Índice de ADRs
@@ -222,6 +222,7 @@ Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.
 | 0205 | [Kit vinculado: capa por IA com N unidades](../../docs/decisions/0205-kit-vinculado-capa-ia-n-unidades.md) — **Proposto**. Edge `gerar-capa-kit-unidades` (n 2..6), verificação por visão fail-closed, aprovação humana ("Usar esta foto"), cobrança igual ao kit com variação, teto de 6 tentativas/24 h por (org, base, n) via RPC `kit_capa_unidades_reservar`. Qualidade de N cópias nunca medida. Relaciona ADR-0151, ADR-0200, ADR-0203 e ADR-0204. |
 | 0206 | [Kit Virtual: capa por IA, título por IA e recebe avulso](../../docs/decisions/0206-kit-virtual-capa-ia-texto-recebe.md) — **Proposto**. Edge `gerar-capa-kit-virtual`, linha de composição em `kit_variacao_imagens`, teto de 6 tentativas/24 h por (org, composição) via RPC `kit_capa_virtual_reservar`, título por IA com fallback no template e card "você recebe vendendo avulso" por componente. Emenda ADR-0154 (Decisões 4 e 5). Qualidade nunca medida. |
 | 0207 | [Reposição de estoque e pedido de compra (orgs sem ERP)](../../docs/decisions/0207-reposicao-de-estoque-e-pedido-de-compra.md) — **Aceito** (no ar 17/11). Módulo `reposicao`: sugestão por SKU, pedido de compra aprovado por admin, recebimento vinculado à entrada/nota. |
+| 0208 | [Alíquota de imposto com vigência](../../docs/decisions/0208-aliquota-com-vigencia.md) — **Aceito (2026-11-17)**. A mudança vale para vendas a partir do save; vendas anteriores usam a alíquota da data (`aliquotas_vigencia`). Precificação segue na alíquota atual. Schema aplicado; merge e deploy das edges ainda pendentes. |
 
 **Emendas de 2026-10-26/27 (lote Hairfly):** ADR-0020 — comissão do ML indisponível não cai mais no piso: retry de 429/5xx e, esgotado, família em `erro` sem preço (main `f29fc85b`). ADR-0044 — em categoria do ML sem `COLOR`, cor que só o Vision achou vira `'Outra'` e sai de título, seção de cores e prosa da descrição (main `0f4b572b`, `f29fc85b`). ADR-0071 — emenda 1 (Kit sem contagem → Unidade, main `b4d570da`) foi **substituída** no mesmo dia: o ML ligou o "Pós Química" Unidade/1 a uma ficha de catálogo `flex` Kit/2 e a página ficou "indisponível". Emenda 2 (main `9a179bac`): Kit sem quantidade deixa o atributo faltando e a Revisão pede ao operador; `vincular-catalogo` alerta por Telegram quando o ML cria o item já como catálogo e a ficha diverge. Emenda 3 (main `6f7ed9b3`): "Kit" da IA só com prova no texto (kit, quantidade, " + " no nome); shampoo e condicionador no nome é sempre kit; kit vinculado grava "É kit" Sim. Ingest normaliza cabeçalho da planilha (espaço/caixa) e aborta coluna repetida (main `b6c9cc19`).
 

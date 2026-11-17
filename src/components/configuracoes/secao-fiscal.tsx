@@ -254,6 +254,9 @@ export function SecaoFiscal() {
         descricao="Alíquota aplicada conforme a origem do produto (nacional ou importado)."
         aviso={
           <>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              Mudanças valem para vendas a partir do momento em que você salvar. Vendas anteriores mantêm a alíquota da época.
+            </p>
             {aliquotas && !aliquotas.confirmada && (
               <div className="mt-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2">
                 <p className="text-xs font-medium text-warning">Alíquotas não confirmadas</p>

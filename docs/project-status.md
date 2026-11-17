@@ -4,6 +4,10 @@
 
 **Ultima atualizacao:** 2026-11-17
 
+## Alíquota com vigência (ADR-0208): schema no ar, código na branch
+
+Migration `20261117141732_aliquotas_vigencia.sql` aplicada. A venda passa a usar a alíquota vigente na data; uma mudança em Configurações não reescreve vendas anteriores. Precificação (publicar, calculadora, kits, promoções) continua na alíquota atual. Implementado na branch `worktree-imposto-vigencia` (`8f94d0c0`, `bd98e952`, `02e219c2`, `c07c5650`). Ainda não está na `main` e as edges não foram redeployadas: até o deploy, Central, relatório mensal e Telegram seguem no código anterior.
+
 ## Reposição e pedido de compra (ADR-0207): no ar desde 17/11/2026
 
 Em produção (main fdb30add + polimento visual). 3 migrations aplicadas; edges `reposicao` e `reposicao-diaria` no ar (e `entrada-estoque`, `importar-nota-compra`, `usuarios` atualizadas, 49 redeploys pela categoria nova); resumo diário agendado às 08:30 BRT (`scd_4p1BMbhgML2WiFa8eTb3Fq6CXC6b`). Módulo `reposicao` ligado na loja piloto (Zaven), prazo 15 e cobertura 30 dias. Números validados com dados reais (cálculo conferido contra o ledger; tela igual ao cálculo) e validação visual em navegador (desktop/mobile, claro/escuro). ADR ACEITO. Pendências: 1º pedido real com o Diego; antes de ligar DSA/Daludi Shop, medir CPU do `GET`, validade/lote e sazonalidade. Deploy: `docs/how-to/deploy-e-migrations.md`; rotina: `docs/runbooks/reposicao-diaria.md`; tutorial: `docs/tutorials/fazer-pedido-de-compra-pela-reposicao.md`.
@@ -248,7 +252,7 @@ módulo de estoque operável. Ordem cronológica.
   reinsere** os itens a cada sync do pedido. O congelamento mora dentro de `upsertVenda`, com o
   resolver como campo **obrigatório** de `opts` — o TypeScript quebra a compilação de qualquer um
   dos 4 callers que esqueça. Backfill pelo lote mais recente anterior à venda (`fonte = 'backfill'`,
-  aproximação assumida). **Comissão, frete e imposto continuam dinâmicos.**
+  aproximação assumida). **Comissão e frete continuam dinâmicos.** O imposto da venda deixa de ser reescrito por uma alíquota nova: a leitura usa a vigência da data (ADR-0208).
 - **Faturamento — paginação, alíquota exibida e Viabilidade acionável (2026-08-08).** Perguntas e
   Mensagens ganharam abas de status e busca paginada (paginação clampada, erro tratado); o
   percentual do imposto passou a aparecer ao lado do valor no detalhe do pedido (só no desktop) e vem

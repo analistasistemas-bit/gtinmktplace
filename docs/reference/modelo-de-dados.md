@@ -189,6 +189,17 @@ refinado; "salvar as alíquotas em Configurações = confirmar"), `desconto_conc
 `ai_model_texto`/`ai_model_imagem` (ADR-0074) e `telegram_*`. `telegram_bot_id bigint unique` (ADR-0190): id do bot, gravado só pelo servidor (trigger `configuracoes_proteger_bot_id` barra cliente e zera o id ao trocar `telegram_bot_token`). `desconto_pct` ficou órfã (ADR-0162 —
 desconto visual descartado).
 RLS: leitura por membro da org, escrita só admin. Leituras no backend sempre por `org_id`.
+A linha guarda a alíquota **atual**. O histórico de cada mudança está em `aliquotas_vigencia` (ADR-0208).
+
+### `aliquotas_vigencia` — histórico da alíquota (ADR-0208)
+
+Uma linha por mudança confirmada. A apuração da venda usa esta tabela; publicar, calculadora, kits e promoções continuam na alíquota atual de `configuracoes`.
+
+Colunas: `id` (uuid, pk, `gen_random_uuid()`), `org_id` (FK `organizations`, `on delete cascade`), `vigente_desde` (timestamptz), `nacional_pct`, `importado_pct`, `uf_empresa` (text, null), `interna_pct` (numeric, null), `criado_em`. Único `(org_id, vigente_desde)`. Índice `(org_id, vigente_desde desc)`.
+
+O trigger `trg_configuracoes_vigencia_aliquota` (`registrar_vigencia_aliquota`, `AFTER INSERT OR UPDATE` em `configuracoes`) insere quando a org já confirmou as alíquotas e uma das quatro colunas muda (`IS DISTINCT FROM`). `vigente_desde` é `date_trunc('milliseconds', clock_timestamp())`. O seed 8/16 sem confirmação não vira linha. `anon` e `authenticated` não têm insert, update nem delete; `authenticated` tem `SELECT`, com RLS de membro da org (a mesma de `configuracoes`).
+
+A venda usa a vigência mais recente com `vigente_desde` menor ou igual a `date_closed` (ou `date_created`). Data anterior à primeira vigência usa a mais antiga. Sem vigências, ou sem data, valem as alíquotas atuais. Migration `20261117141732_aliquotas_vigencia.sql`.
 
 ## Acesso e usuários (ADR-0047 + ADR-0027)
 
@@ -250,7 +261,7 @@ ml_vendas ──► ml_devolucoes (por order_id)
 ml_perguntas        (independente, respondível pelo app)
 ml_moderacao        (1 linha aberta por item moderado)
 ml_webhook_eventos  (dedup de webhooks; org_id NULLABLE — eventos de vendedor desconhecido)
-configuracoes (1 por org)
+configuracoes (1 por org) ──< aliquotas_vigencia (1 por mudança, ADR-0208)
 ```
 
 Todas as 12 tabelas de domínio + `ml_webhook_eventos` têm `org_id` (FK organizations, indexado);
