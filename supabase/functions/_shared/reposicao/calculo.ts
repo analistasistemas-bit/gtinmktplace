@@ -1,10 +1,11 @@
 // Cálculo puro da Reposição (ADR-0207). Sem imports: carregado por Deno (edge) e Vite (front).
 // Datas são strings YYYY-MM-DD já em BRT; aritmética sempre em UTC.
 
-/** `publicadoEm` é YYYY-MM-DD já em BRT. */
+/** `publicadoEm` é YYYY-MM-DD já em BRT. `nuncaMovimentado`: nenhum movimento de estoque, em data nenhuma
+ * (emenda 17/11 do ADR-0207): fica fora da curva e da reescala e só ganha o `completarGrade`. */
 export interface SkuEntrada {
   codigo: string; codigoPai: string; cor: string | null; tamanho: string | null;
-  estoqueHoje: number; publicadoEm: string | null; naoRepor: boolean; ehKit: boolean;
+  estoqueHoje: number; publicadoEm: string | null; naoRepor: boolean; ehKit: boolean; nuncaMovimentado: boolean;
 }
 /** `dia` é YYYY-MM-DD já em BRT. No máximo UMA linha por (codigo, dia); duplicata lança erro. */
 export interface MovDia {
@@ -70,6 +71,8 @@ function somaPor<T>(xs: T[], chave: (x: T) => string | null, valor: (x: T) => nu
 export function calcularVelocidades(e: EntradaCalculo): {
   porSku: Map<string, VelocidadeSku>;
   tendenciaPorFamilia: Map<string, TendenciaFamilia | null>;
+  /** Velocidade pela curva sozinha (shareCor × shareTam × vFamília) do SKU nunca movimentado elegível. */
+  curvaCompletar: Map<string, number>;
 } {
   const fim = diaNum(e.hoje) - 1;
   const ini = fim - JANELA + 1;
@@ -205,7 +208,10 @@ export function calcularVelocidades(e: EntradaCalculo): {
 
   // 5-6. curva, mistura e reescala (por família, só elegíveis)
   const tendenciaPorFamilia = new Map<string, TendenciaFamilia | null>();
-  for (const [pai, skus] of porFamilia) {
+  const curvaCompletar = new Map<string, number>();
+  for (const [pai, todos] of porFamilia) {
+    // Nunca movimentado: fora de tudo (curva, reescala, tendência), como se não existisse na família.
+    const skus = todos.filter((s) => !s.nuncaMovimentado);
     const el = skus.filter((s) => !s.naoRepor);
     const vFam = el.reduce((a, s) => a + porSku.get(s.codigo)!.propria, 0);
     if (el.length && vFam > 0) {
@@ -217,6 +223,8 @@ export function calcularVelocidades(e: EntradaCalculo): {
         return (s: SkuEntrada) => {
           const k = chave(s);
           if (k === null) return 1;
+          // Valor que só o SKU nunca movimentado tem: share médio (sem nenhum valor entre os elegíveis, 1).
+          if (!dias.has(k)) return n ? 1 / n : 1;
           return dias.get(k)! < 14 ? 1 / n : prop.get(k)! / vFam;
         };
       };
@@ -230,11 +238,12 @@ export function calcularVelocidades(e: EntradaCalculo): {
       });
       const somaBruta = bruta.reduce((a, b) => a + b, 0);
       el.forEach((s, i) => { porSku.get(s.codigo)!.usada = somaBruta > 0 ? (bruta[i] * vFam) / somaBruta : 0; });
+      for (const s of todos) if (s.nuncaMovimentado && !s.naoRepor) curvaCompletar.set(s.codigo, shareCor(s) * shareTam(s) * vFam);
     }
     tendenciaPorFamilia.set(pai, tendencia(skus, disp, diretas, kitPorBase, diasOferta.get(pai) ?? new Set()));
   }
 
-  return { porSku, tendenciaPorFamilia };
+  return { porSku, tendenciaPorFamilia, curvaCompletar };
 }
 
 // 7. tendência da família (só com ≥ 28 dias disponíveis; dias com oferta fora das duas janelas)
@@ -271,6 +280,8 @@ export type Urgencia = 'ruptura' | 'vai_faltar' | 'pedir_agora' | 'em_dia';
 export interface SugestaoSku extends VelocidadeSku {
   codigoPai: string; estoqueHoje: number; v: number; aCaminho: number; chegaEm: string | null;
   diasDeEstoque: number | null; pedirAntesMultiplo: number; pedir: number; urgencia: Urgencia; poucoHistorico: boolean;
+  /** "Completar grade" do SKU nunca movimentado (fora do `pedir` e do total da família); 0 nos demais. */
+  completarGrade: number;
 }
 export interface ResultadoReposicao {
   skus: SugestaoSku[];
@@ -356,7 +367,7 @@ export function fecharFamilia(
 }
 
 export function calcularReposicao(e: EntradaCalculo): ResultadoReposicao {
-  const { porSku, tendenciaPorFamilia } = calcularVelocidades(e);
+  const { porSku, tendenciaPorFamilia, curvaCompletar } = calcularVelocidades(e);
   const hojeN = diaNum(e.hoje);
   // Vendeu nos últimos 30 dias (direto ou por um kit que o contém): um passe só sobre os movimentos.
   const venderam30 = new Set<string>();
@@ -382,12 +393,12 @@ export function calcularReposicao(e: EntradaCalculo): ResultadoReposicao {
     const fator = tendenciaPorFamilia.get(pai)?.fator ?? 1;
     const proj = lista.map((s) => {
       const vel = porSku.get(s.codigo)!;
-      const v = vel.usada * fator;
+      const v = s.nuncaMovimentado ? 0 : vel.usada * fator;
       const pedidos = pedidosPor.get(s.codigo) ?? [];
       return { s, vel, v, pedidos, p: projetarSku({ v, estoqueHoje: s.estoqueHoje, pedidos, hoje: e.hoje, prazo: e.prazo, cobertura: e.cobertura }) };
     });
     const fechado = fecharFamilia(
-      proj.map((x) => ({ codigo: x.s.codigo, v: x.v, falta: x.p.falta, vendeu30: vendeu30.has(x.s.codigo), ePrazo: x.p.E[e.prazo], naoRepor: x.s.naoRepor })),
+      proj.map((x) => ({ codigo: x.s.codigo, v: x.v, falta: x.p.falta, vendeu30: vendeu30.has(x.s.codigo), ePrazo: x.p.E[e.prazo], naoRepor: x.s.naoRepor || x.s.nuncaMovimentado })),
       e.cobertura, e.multiploPorFamilia[pai] ?? 1,
     );
     const doPai: SugestaoSku[] = proj.map(({ s, vel, v, pedidos, p }) => {
@@ -395,10 +406,12 @@ export function calcularReposicao(e: EntradaCalculo): ResultadoReposicao {
       const vaiFaltar = v > EPS && p.E.slice(1, e.prazo).some((x) => x <= EPS);
       const urgencia: Urgencia = s.estoqueHoje <= EPS && v > EPS ? 'ruptura' : vaiFaltar ? 'vai_faltar' : pedir > 0 ? 'pedir_agora' : 'em_dia';
       const datas = pedidos.map((o) => o.previstoPara).sort();
+      const curva = curvaCompletar.get(s.codigo) ?? 0;
       return {
         ...vel, codigoPai: pai, estoqueHoje: s.estoqueHoje, v,
         aCaminho: pedidos.reduce((a, o) => a + o.saldo, 0), chegaEm: datas[0] ?? null,
-        diasDeEstoque: p.diasDeEstoque, pedirAntesMultiplo: antesSku, pedir, urgencia, poucoHistorico: vel.w < 1,
+        diasDeEstoque: p.diasDeEstoque, pedirAntesMultiplo: antesSku, pedir, urgencia, poucoHistorico: !s.nuncaMovimentado && vel.w < 1,
+        completarGrade: curva > EPS ? Math.max(1, Math.ceil(curva * e.cobertura - EPS)) : 0,
       };
     });
     skus.push(...doPai);

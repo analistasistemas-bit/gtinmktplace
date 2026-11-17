@@ -7,7 +7,11 @@ import type { FamiliaVisao, SkuVisao } from '@/hooks/useReposicao';
 import { projetarSku } from '../../../supabase/functions/_shared/reposicao/calculo';
 import { fmtDia, fraseVelocidade, ROTULO_URGENCIA, TOM_URGENCIA } from './por-que';
 
-export interface CtxCalculo { prazo: number; cobertura: number; hoje: string; onRemoverNaoRepor: (id: string) => void; pendente?: boolean }
+export interface CtxCalculo {
+  prazo: number; cobertura: number; hoje: string; onRemoverNaoRepor: (id: string) => void; pendente?: boolean;
+  /** "Incluir no pedido" do SKU nunca comprado: põe o `completarGrade` no rascunho do fornecedor. */
+  onIncluirCompletar?: (familia: FamiliaVisao, s: SkuVisao) => void;
+}
 
 const ESCOPO_NAO_REPOR = { sku: 'este SKU', cor: 'esta cor', familia: 'este produto' } as const;
 
@@ -42,6 +46,18 @@ export function CalculoSku({ s, familia, ctx }: { s: SkuVisao; familia: FamiliaV
         <div className="flex items-center justify-between gap-2 rounded-md bg-muted px-2 py-1.5">
           <span>Não repor{s.naoReporEscopo ? ` (${ESCOPO_NAO_REPOR[s.naoReporEscopo]})` : ''}.</span>
           <Button size="sm" variant="outline" className="h-11 md:h-7" disabled={ctx.pendente} onClick={() => ctx.onRemoverNaoRepor(s.tela.naoReporId!)}>Remover</Button>
+        </div>
+      ) : sug.completarGrade > 0 ? (
+        <div className="flex flex-col gap-2">
+          <p className="leading-relaxed">
+            Este tamanho/cor nunca foi comprado. Sugestão para completar a grade: {fmtInt(sug.completarGrade)}. Não entra no pedido sozinho.
+          </p>
+          {ctx.onIncluirCompletar && (
+            <Button size="sm" variant="outline" className="h-11 self-start md:h-8" disabled={ctx.pendente || !familia.fornecedor.nome.trim()}
+              onClick={() => ctx.onIncluirCompletar!(familia, s)}>
+              Incluir no pedido
+            </Button>
+          )}
         </div>
       ) : (
         <p className="leading-relaxed">

@@ -64,7 +64,7 @@ function sug(p: Partial<SugestaoSku> & { codigo: string }): SugestaoSku {
   return {
     codigoPai: 'A', propria: 0, diasDisponiveis: 30, unidades: 3, w: 1, usada: 0, picoLimitadoEm: [], vendasEmOferta: 0,
     estoqueHoje: 0, v: 1, aCaminho: 0, chegaEm: null, diasDeEstoque: 0, pedirAntesMultiplo: 0, pedir: 0,
-    urgencia: 'em_dia', poucoHistorico: false, ...p,
+    urgencia: 'em_dia', poucoHistorico: false, completarGrade: 0, ...p,
   };
 }
 const tela = (codigo: string, naoReporId: string | null = null) =>

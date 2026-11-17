@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { montarResumo, gravarFoto, deveProcessar } from '../resumo';
-import type { ResultadoReposicao, SugestaoSku, Urgencia } from '../calculo';
+import { calcularReposicao, type ResultadoReposicao, type SugestaoSku, type Urgencia } from '../calculo';
 import type { PedidoDTO } from '../tipos';
 
 const sku = (codigo: string, urgencia: Urgencia, extra: Partial<SugestaoSku> = {}): SugestaoSku =>
@@ -49,6 +49,23 @@ describe('montarResumo', () => {
     expect(t).toContain('Calça Sarja · Marrom Escuro: 42, 44');
     expect(t).toContain('Calça Sarja · Preto: 46');
     expect(t).toContain('/#/reposicao?urgencia=ruptura');
+  });
+});
+
+describe('completar grade (emenda 17/11)', () => {
+  it('SKU nunca movimentado nunca entra no resumo, mesmo sem foto anterior', () => {
+    const dias = Array.from({ length: 60 }, (_, i) => new Date(Date.UTC(2026, 10, 16 - 60 + i)).toISOString().slice(0, 10));
+    const sk = (codigo: string, nunca: boolean) => ({ codigo, codigoPai: 'P1', cor: 'Preto', tamanho: codigo, estoqueHoje: 0,
+      publicadoEm: '2026-01-01', naoRepor: false, ehKit: false, nuncaMovimentado: nunca });
+    const r = calcularReposicao({
+      hoje: '2026-11-16', prazo: 15, cobertura: 30, skus: [sk('42', false), sk('44', true)], kits: [], pedidosAbertos: [], multiploPorFamilia: {},
+      movs: [...dias.map((dia, i) => ({ dia, codigo: '42', vendidas: i % 10 ? 0 : 1, precos: [], estoqueInicio: 3 })),
+        ...dias.map((dia) => ({ dia, codigo: '44', vendidas: 0, precos: [], estoqueInicio: 0 }))],
+    });
+    expect(r.skus.find((s) => s.codigo === '44')!.completarGrade).toBeGreaterThan(0);
+    const t = montarResumo(r.skus, ant(), [], 0, catalogo)!;
+    expect(t).toContain('42');
+    expect(t).not.toContain('44');
   });
 });
 

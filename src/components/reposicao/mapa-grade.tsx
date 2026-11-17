@@ -34,6 +34,7 @@ function eixosDaGrade(skus: SkuVisao[]) {
 function rotuloCelula(cor: string, tam: string, s: SkuVisao): string {
   const partes = [`${rotuloCor(cor)}, ${rotuloTam(tam)}: estoque ${fmtInt(s.sug.estoqueHoje)}`];
   if (s.tela.naoReporId) partes.push('Não repor');
+  else if (s.sug.completarGrade > 0) partes.push(`completar ${fmtInt(s.sug.completarGrade)}`, 'nunca comprado');
   else {
     if (s.sug.pedir > 0) partes.push(`pedir ${fmtInt(s.sug.pedir)}`);
     partes.push(ROTULO_URGENCIA[s.urgencia]);
@@ -119,6 +120,8 @@ export function MapaGrade({ familia, ctx, selecionado, onSelecionar }: {
                   }
                   const nao = !!s.tela.naoReporId;
                   const comprar = !nao && s.sug.pedir > 0;
+                  // Nunca comprado (emenda 17/11): estimativa à parte, sem cor de urgência e fora do pedido.
+                  const completar = !nao && s.sug.completarGrade > 0;
                   return (
                     <td key={tam} role="gridcell" aria-selected={selecionado === s.tela.codigo} className="border-b border-r border-border p-0 last:border-r-0">
                       <PopoverCelula s={s} familia={familia} ctx={ctx} titulo={`${rotuloCor(cor)} · ${rotuloTam(tam)}`} onAbrir={() => onSelecionar(s.tela.codigo)}>
@@ -143,6 +146,11 @@ export function MapaGrade({ familia, ctx, selecionado, onSelecionar }: {
                               <span className="text-caption font-normal md:text-sm md:text-muted-foreground dark:text-foreground/70 md:dark:text-foreground/70">{fmtInt(s.sug.estoqueHoje)}</span>
                               <span className="font-semibold text-foreground md:ml-1.5">+{fmtInt(s.sug.pedir)}</span>
                             </>
+                          ) : completar ? (
+                            <>
+                              <span>{fmtInt(s.sug.estoqueHoje)}</span>
+                              <span className="rounded bg-muted px-1 text-caption text-muted-foreground md:ml-1.5">completar +{fmtInt(s.sug.completarGrade)}</span>
+                            </>
                           ) : fmtInt(s.sug.estoqueHoje)}
                           {s.sug.poucoHistorico && !todasEstimadas && <Asterisk aria-hidden className="absolute right-1 top-1 h-3 w-3 text-muted-foreground" />}
                         </button>
@@ -162,6 +170,9 @@ export function MapaGrade({ familia, ctx, selecionado, onSelecionar }: {
         <li className="flex items-center gap-1.5"><span aria-hidden className="h-3 w-3 rounded-sm border border-border bg-warning/15 dark:bg-warning/20" />Pedir agora</li>
         <li className="flex items-center gap-1.5"><span aria-hidden className="h-3 w-3 rounded-sm border border-border" />Em dia</li>
         <li><span className="font-semibold text-foreground">+N</span> = comprar N</li>
+        {familia.skus.some((s) => !s.tela.naoReporId && s.sug.completarGrade > 0) && (
+          <li><span className="rounded bg-muted px-1 text-muted-foreground">completar +N</span> = nunca comprado</li>
+        )}
         {todasEstimadas
           ? <li>Todas estimadas pela família</li>
           : <li className="flex items-center gap-1.5"><Asterisk aria-hidden className="h-3 w-3" />Estimado pela família</li>}

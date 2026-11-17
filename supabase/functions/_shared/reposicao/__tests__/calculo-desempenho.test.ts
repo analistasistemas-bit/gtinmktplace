@@ -32,7 +32,7 @@ function lojaGrande(): EntradaCalculo {
       const codigo = `${pai}-${i}`;
       e.skus.push({
         codigo, codigoPai: pai, cor: cores[i % 2], tamanho: tams[i >> 1], estoqueHoje: Math.floor(r() * 20),
-        publicadoEm: r() < 0.1 ? addDias(HOJE, -20) : '2026-01-01', naoRepor: r() < 0.02, ehKit: false,
+        publicadoEm: r() < 0.1 ? addDias(HOJE, -20) : '2026-01-01', naoRepor: r() < 0.02, ehKit: false, nuncaMovimentado: false,
       });
       const taxa = r() * 1.5;
       for (let d = 0; d < 60; d++) {
@@ -44,7 +44,7 @@ function lojaGrande(): EntradaCalculo {
     }
     if (f % 20 === 0) {
       const kit = `K${f}`;
-      e.skus.push({ codigo: kit, codigoPai: `KP${f}`, cor: null, tamanho: null, estoqueHoje: 0, publicadoEm: '2026-01-01', naoRepor: false, ehKit: true });
+      e.skus.push({ codigo: kit, codigoPai: `KP${f}`, cor: null, tamanho: null, estoqueHoje: 0, publicadoEm: '2026-01-01', naoRepor: false, ehKit: true, nuncaMovimentado: false });
       e.kits.push({ kitCodigo: kit, baseCodigo: `${pai}-0`, unidadesPorKit: 2 });
       for (let d = 0; d < 60; d++) {
         e.movs.push({ dia: addDias(HOJE, -60 + d), codigo: kit, vendidas: r() < 0.2 ? 1 : 0, precos: [], estoqueInicio: 3 });

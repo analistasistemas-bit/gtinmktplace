@@ -28,7 +28,7 @@ function sug(p: Partial<SugestaoSku> & { codigo: string; codigoPai: string }): S
   return {
     propria: 0.2, diasDisponiveis: 40, unidades: 8, w: 1, usada: 0.2, picoLimitadoEm: [], vendasEmOferta: 0,
     estoqueHoje: 2, v: 0.25, aCaminho: 0, chegaEm: null, diasDeEstoque: 8, pedirAntesMultiplo: 4, pedir: 4,
-    urgencia: 'pedir_agora', poucoHistorico: false, ...p,
+    urgencia: 'pedir_agora', poucoHistorico: false, completarGrade: 0, ...p,
   };
 }
 function tela(p: Partial<SkuTela> & { codigo: string; codigoPai: string }): SkuTela {
@@ -405,6 +405,45 @@ describe('Reposição: sugestões', () => {
     expect(screen.getByText('Nada para pedir hoje.')).toBeInTheDocument();
   });
 
+  describe('completar grade (SKU nunca comprado)', () => {
+    beforeEach(() => {
+      const d = estado.data!;
+      d.skus.push(tela({ codigo: 'S5', codigoPai: 'SHORT', cor: 'Preto', corHex: '#000000', tamanho: 'G' }));
+      d.resultado!.skus.push(sug({
+        codigo: 'S5', codigoPai: 'SHORT', estoqueHoje: 0, v: 0, pedir: 0, pedirAntesMultiplo: 0, urgencia: 'em_dia',
+        unidades: 0, w: 0, diasDisponiveis: 0, completarGrade: 2,
+      }));
+    });
+
+    it('célula mostra o estoque e o chip "completar +N" sem cor de urgência; legenda explica', () => {
+      renderTela('/reposicao?produto=SHORT');
+      const cel = screen.getByRole('button', { name: /^Preto, G:/ });
+      expect(cel).toHaveTextContent('0completar +2');
+      expect(cel).not.toHaveClass('bg-danger/15');
+      expect(cel).not.toHaveClass('bg-warning/15');
+      expect(cel).toHaveAccessibleName('Preto, G: estoque 0, completar 2, nunca comprado');
+      expect(screen.getByRole('list', { name: 'Legenda do mapa' })).toHaveTextContent('completar +N = nunca comprado');
+    });
+
+    it('popover explica e "Incluir no pedido" põe o SKU com N no rascunho do fornecedor', async () => {
+      renderTela('/reposicao?produto=SHORT');
+      await userEvent.click(screen.getByRole('button', { name: /^Preto, G:/ }));
+      const popover = await screen.findByRole('dialog');
+      expect(popover).toHaveTextContent('Este tamanho/cor nunca foi comprado. Sugestão para completar a grade: 2. Não entra no pedido sozinho.');
+      await userEvent.click(within(popover).getByRole('button', { name: 'Incluir no pedido' }));
+      expect(acoes.salvarRascunho).toHaveBeenCalledWith({
+        fornecedorNome: 'Fornecedor A', itens: [{ codigo: 'S5', codigoPai: 'SHORT', quantidade: 2, sugerida: 2 }],
+      });
+    });
+
+    it('cards e "Adicionar ao pedido" ignoram o completar', async () => {
+      renderTela('/reposicao?produto=SHORT');
+      await userEvent.click(screen.getByRole('button', { name: 'Adicionar ao pedido' }));
+      const itens = acoes.salvarRascunho.mock.calls[0][0].itens as { codigo: string }[];
+      expect(itens.map((i) => i.codigo)).not.toContain('S5');
+    });
+  });
+
   it('2 SKUs com alvo fracionado: o popover mostra o mesmo número da célula e explica a folga', async () => {
     // v = 0,05 nos dois, estoque 0: falta 1,5 cada; Λ = 3 → folga 2 → alvos 2,5 e 2,5; o maior resto dá 3 a um e 2 ao outro.
     const dia = (n: number) => new Date(Date.UTC(2026, 10, 16 + n)).toISOString().slice(0, 10);
@@ -413,7 +452,7 @@ describe('Reposição: sugestões', () => {
     })));
     const r = calcularReposicao({
       hoje: dia(0), prazo: 15, cobertura: 30, kits: [], pedidosAbertos: [], multiploPorFamilia: {}, movs,
-      skus: ['S1', 'S2'].map((codigo, i) => ({ codigo, codigoPai: 'SHORT', cor: 'Preto', tamanho: i ? 'M' : 'P', estoqueHoje: 0, publicadoEm: '2026-01-01', naoRepor: false, ehKit: false })),
+      skus: ['S1', 'S2'].map((codigo, i) => ({ codigo, codigoPai: 'SHORT', cor: 'Preto', tamanho: i ? 'M' : 'P', estoqueHoje: 0, publicadoEm: '2026-01-01', naoRepor: false, ehKit: false, nuncaMovimentado: false })),
     });
     expect(r.skus.map((x) => x.pedir).sort()).toEqual([2, 3]);
     expect(r.skus.every((x) => x.pedirAntesMultiplo === 3)).toBe(true); // o número antigo do popover

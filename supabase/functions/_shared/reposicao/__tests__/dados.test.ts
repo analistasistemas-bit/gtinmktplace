@@ -116,6 +116,20 @@ describe('montarEntrada', () => {
     expect(dia(e, 'A', '2026-09-17').estoqueInicio).toBe(0);
   });
 
+  it('nuncaMovimentado: sem movimento algum; movimento na janela ou só antes dela conta como movimentado', async () => {
+    const e = await entrada(base({
+      variacoes: [vari('A', F, { estoque: 3 }), vari('B', F), vari('C', F)],
+      estoque_movimentos: [
+        venda('A', '1', '2026-11-01T15:00:00Z', 1, 4),
+        mov('B', 'entrada', '2026-07-01T15:00:00Z', { quantidade: 2, estoque_anterior: 0, estoque_resultante: 2 }), // antes da janela
+      ],
+    }));
+    const por = new Map(e.skus.map((s) => [s.codigo, s.nuncaMovimentado]));
+    expect(por).toEqual(new Map([['A', false], ['B', false], ['C', true]]));
+    // o movimento antes da janela não vira MovDia (a janela continua de 60 dias)
+    expect(e.movs.filter((m) => m.codigo === 'B')).toHaveLength(60);
+  });
+
   it('venda com quantidade_pedida 5 e quantidade −2 conta 5', async () => {
     const e = await entrada(base({ estoque_movimentos: [venda('A', '222', '2026-11-01T15:00:00Z', 5, 2)] }));
     expect(dia(e, 'A', '2026-11-01').vendidas).toBe(5);

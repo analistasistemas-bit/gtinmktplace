@@ -32,7 +32,7 @@ function movsComV(codigo: string, v: number): MovDia[] {
 function entrada(v: number, estoque: number, pedidos: PedidoAberto[] = [], codigo = 'A1'): EntradaCalculo {
   return {
     hoje: HOJE, prazo: PRAZO, cobertura: COB,
-    skus: [{ codigo, codigoPai: 'P', cor: null, tamanho: null, estoqueHoje: estoque, publicadoEm: '2026-01-01', naoRepor: false, ehKit: false }],
+    skus: [{ codigo, codigoPai: 'P', cor: null, tamanho: null, estoqueHoje: estoque, publicadoEm: '2026-01-01', naoRepor: false, ehKit: false, nuncaMovimentado: false }],
     movs: movsComV(codigo, v), kits: [], pedidosAbertos: pedidos, multiploPorFamilia: {},
   };
 }
@@ -235,5 +235,66 @@ describe('quantidade', () => {
     expect(r.skus.find((s) => s.codigo === 'A1')!.pedir).toBe(36);
     const f = fecharFamilia([{ codigo: 'X', v: 1, falta: 30, vendeu30: true, ePrazo: 0, naoRepor: true }], COB, 1);
     expect(f.get('X')!.pedir).toBe(0);
+  });
+});
+
+describe('completar grade (emenda 17/11): SKU nunca movimentado', () => {
+  const sku = (codigo: string, cor: string, tamanho: string, extra: Record<string, unknown> = {}) => ({
+    codigo, codigoPai: 'P', cor, tamanho, estoqueHoje: 0, publicadoEm: '2026-01-01', naoRepor: false, ehKit: false,
+    nuncaMovimentado: false, ...extra,
+  });
+  /** A e B vendem; N nunca teve movimento (MovDia sem venda e saldo 0, como monta o dados.ts). */
+  function familia(comN: boolean, extraN: Record<string, unknown> = {}): EntradaCalculo {
+    const skus = [sku('A', 'Preto', 'P', { estoqueHoje: 1 }), sku('B', 'Preto', 'M')];
+    const movs = [...movsComV('A', 0.1), ...movsComV('B', 0.05)];
+    if (comN) {
+      skus.push(sku('N', 'Azul', 'G', { nuncaMovimentado: true, ...extraN }));
+      movs.push(...movsComV('N', 0).map((m) => ({ ...m, estoqueInicio: 0 })));
+    }
+    return { hoje: HOJE, prazo: PRAZO, cobertura: COB, skus, movs, kits: [], pedidosAbertos: [], multiploPorFamilia: {} };
+  }
+
+  it('fora da curva e da reescala: pedir 0, em_dia, completarGrade ≥ 1; os outros SKUs não mudam', () => {
+    const com = calcularReposicao(familia(true));
+    const sem = calcularReposicao(familia(false));
+    const n = com.skus.find((s) => s.codigo === 'N')!;
+    expect(n.pedir).toBe(0);
+    expect(n.v).toBe(0);
+    expect(n.urgencia).toBe('em_dia');
+    // cor e tamanho novos: share médio (1/1 × 1/2) × vFamília 0,15 × 30 = 2,25 → 3
+    expect(n.completarGrade).toBe(3);
+    for (const c of ['A', 'B']) {
+      const a = com.skus.find((s) => s.codigo === c)!;
+      const b = sem.skus.find((s) => s.codigo === c)!;
+      expect(a.v).toBe(b.v);
+      expect(a.pedir).toBe(b.pedir);
+      expect(a.urgencia).toBe(b.urgencia);
+      expect(a.completarGrade).toBe(0);
+    }
+    expect(com.familias[0].pedir).toBe(sem.familias[0].pedir);
+    expect(com.familias[0].urgencia).toBe(sem.familias[0].urgencia);
+    expect(com.familias[0].pedir).toBe(com.skus.reduce((a, s) => a + s.pedir, 0)); // sem o completarGrade
+  });
+
+  it('mesmo com estoque de planilha (dias disponíveis), não entra na curva', () => {
+    const com = calcularReposicao(familia(true, { estoqueHoje: 4 }));
+    const sem = calcularReposicao(familia(false));
+    for (const c of ['A', 'B']) expect(com.skus.find((s) => s.codigo === c)!.v).toBe(sem.skus.find((s) => s.codigo === c)!.v);
+    expect(com.skus.find((s) => s.codigo === 'N')!.urgencia).toBe('em_dia');
+  });
+
+  it('valor existente entre os elegíveis usa o share dele; família sem venda dá 0; Não repor dá 0', () => {
+    // N em Preto (share 1) e tamanho P (share de A = 0,1 / 0,15): 1 × 2/3 × 0,15 × 30 = 3
+    expect(calcularReposicao(familia(true, { cor: 'Preto', tamanho: 'P' })).skus.find((s) => s.codigo === 'N')!.completarGrade).toBe(3);
+    const parada = familia(true);
+    parada.movs = parada.movs.map((m) => ({ ...m, vendidas: 0 }));
+    expect(calcularReposicao(parada).skus.find((s) => s.codigo === 'N')!.completarGrade).toBe(0);
+    expect(calcularReposicao(familia(true, { naoRepor: true })).skus.find((s) => s.codigo === 'N')!.completarGrade).toBe(0);
+  });
+
+  it('SKU que teve estoque e zerou (com movimento) continua Ruptura', () => {
+    const r = calcularReposicao(entrada(1, 0)).skus[0];
+    expect(r.urgencia).toBe('ruptura');
+    expect(r.completarGrade).toBe(0);
   });
 });

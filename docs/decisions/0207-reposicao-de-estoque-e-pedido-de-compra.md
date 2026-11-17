@@ -60,6 +60,10 @@ Medido em produção (16/11): Zaven tem vendas no ML só desde 03/11 (72 vendas,
 19. **Fornecedor como cadastro da org:** agrupa nomes da coluna FORNECEDOR normalizados por caixa e acento; CNPJ opcional. Junção manual de nomes (aba Fornecedores) fica para a fase DSA/Daludi Shop. Um pedido = um fornecedor. `vinculos_fornecedor` aparece no texto do pedido quando existir.
 20. **Módulo `reposicao` por org** na Central, incluso no plano por ora. Item próprio no menu, logo abaixo de Estoque.
 
+### Emenda 17/11 (consultor)
+21. **Completar grade:** SKU sem nenhum movimento de estoque (em data nenhuma) fica fora da curva da família e da reescala, como se não fosse elegível: velocidade 0, pedido 0 e Em dia para todos os fins (cards, filtros, urgência da família, venda perdida, resumo diário). Recebe à parte a estimativa `completarGrade` = max(1, ⌈share da cor × share do tamanho × velocidade da família × cobertura⌉), com os shares e a velocidade da família dos SKUs elegíveis (cor ou tamanho que só ele tem usa o share médio 1/n daquela dimensão; família sem venda dá 0), sem mudar o número de nenhum outro SKU. O total da família nunca inclui essa estimativa; ela só entra no rascunho quando a organização clica "Incluir no pedido" no mapa da grade. SKU que já teve estoque e zerou continua Ruptura (item 14).
+22. **Primeiro pedido da org:** o primeiro "Aprovar pedido" (org sem nenhum pedido fora de rascunho) pede confirmação com o total de unidades, o percentual ainda estimado pela família e o fornecedor, lembrando que o PubliAI não envia nada. Sem teto em R$.
+
 ## Condição para a fase 2 (DSA e Daludi Shop)
 Antes de ligar o módulo nessas orgs: **validade e lote** (cosmético/saúde comprado para 30 dias pode vencer) e **sazonalidade** pelo mesmo período do ano anterior (DSA tem vendas desde 2017).
 

@@ -291,8 +291,12 @@ Quantos dias até o estoque do produto zerar na projeção, contando as chegadas
 _Evitar_: cobertura (que é a meta da organização, não a situação do produto).
 
 **Urgência de reposição**:
-Faixa de cada produto tirada da mesma projeção da sugestão. Ruptura: estoque zerado e com venda. Vai faltar: zera antes de o pedido feito hoje chegar. Pedir agora: há quantidade a comprar. Em dia: nada a comprar.
+Faixa de cada produto tirada da mesma projeção da sugestão. Ruptura: estoque zerado de produto que já teve estoque e vende. Vai faltar: zera antes de o pedido feito hoje chegar. Pedir agora: há quantidade a comprar. Em dia: nada a comprar.
 _Evitar_: estoque baixo, estoque crítico, excesso (fora da primeira versão).
+
+**Completar grade**:
+Quantidade estimada para um tamanho ou cor publicado que nunca foi comprado (nenhum movimento de estoque, em data nenhuma). Sai só da curva da família, sem mexer na conta dos produtos que vendem: o produto fica Em dia, fora do pedido, dos cards e do resumo diário, e a quantidade aparece à parte no mapa da grade até a organização incluí-la no pedido.
+_Evitar_: ruptura (que exige ter tido estoque).
 
 **Resumo de reposição**:
 Aviso diário (app e Telegram) só com o que entrou em Ruptura, Vai faltar ou Pedir agora desde o aviso anterior, mais pedidos atrasados e rascunho esperando aprovação. Produto já avisado não se repete; sem novidade, não há aviso.

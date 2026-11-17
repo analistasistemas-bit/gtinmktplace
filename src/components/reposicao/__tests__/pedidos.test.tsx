@@ -32,7 +32,7 @@ function sug(p: Partial<SugestaoSku> & { codigo: string; codigoPai: string }): S
   return {
     propria: 0.2, diasDisponiveis: 40, unidades: 8, w: 1, usada: 0.2, picoLimitadoEm: [], vendasEmOferta: 0,
     estoqueHoje: 2, v: 0.25, aCaminho: 0, chegaEm: null, diasDeEstoque: 8, pedirAntesMultiplo: 4, pedir: 4,
-    urgencia: 'pedir_agora', poucoHistorico: false, ...p,
+    urgencia: 'pedir_agora', poucoHistorico: false, completarGrade: 0, ...p,
   };
 }
 const tela = (p: Partial<SkuTela> & { codigo: string; codigoPai: string }): SkuTela =>

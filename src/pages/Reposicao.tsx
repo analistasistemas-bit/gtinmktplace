@@ -13,7 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { diaBRT } from '@/lib/calendario-brt';
 import { usePodeExecutarOperacao } from '@/hooks/useOperacoes';
-import { montarVisao, passaUrgencia, useReposicao, type FamiliaVisao, type FiltroUrgencia } from '@/hooks/useReposicao';
+import { montarVisao, passaUrgencia, useReposicao, type FamiliaVisao, type FiltroUrgencia, type SkuVisao } from '@/hooks/useReposicao';
 import { AvisoLoja } from '@/components/reposicao/aviso-loja';
 import { CardsUrgencia } from '@/components/reposicao/cards-urgencia';
 import { ConfigInicial } from '@/components/reposicao/config-inicial';
@@ -109,6 +109,13 @@ export default function Reposicao() {
   const ctx = {
     prazo: r.data?.config?.prazo ?? 0, cobertura: r.data?.config?.cobertura ?? 0, hoje, pendente: r.pendente,
     onRemoverNaoRepor: async (id: string) => { try { await r.removerNaoRepor(id); } catch (e) { falhou(e); } },
+    onIncluirCompletar: async (f: FamiliaVisao, s: SkuVisao) => {
+      const n = s.sug.completarGrade;
+      try {
+        await r.salvarRascunho({ fornecedorNome: f.fornecedor.nome, itens: [{ codigo: s.tela.codigo, codigoPai: f.codigoPai, quantidade: n, sugerida: n }] });
+        toast.success(`Adicionado ao rascunho de ${f.fornecedor.nome}.`);
+      } catch (e) { falhou(e); }
+    },
   };
 
   const config = r.data?.config;

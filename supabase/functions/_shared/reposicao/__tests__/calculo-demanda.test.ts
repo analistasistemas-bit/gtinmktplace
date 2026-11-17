@@ -21,7 +21,7 @@ function ultimosDias(n: number): string[] {
 function sku(codigo: string, extra: Partial<SkuEntrada> = {}): SkuEntrada {
   return {
     codigo, codigoPai: 'P', cor: null, tamanho: null, estoqueHoje: 5,
-    publicadoEm: '2026-01-01', naoRepor: false, ehKit: false, ...extra,
+    publicadoEm: '2026-01-01', naoRepor: false, ehKit: false, nuncaMovimentado: false, ...extra,
   };
 }
 function mov(dia: string, codigo: string, vendidas: number, extra: Partial<MovDia> = {}): MovDia {
