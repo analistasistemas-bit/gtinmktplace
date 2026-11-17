@@ -12,6 +12,7 @@ Branch `feat/reposicao`. Spec `docs/superpowers/specs/2026-11-16-reposicao-desig
 - [x] Números validados com dados reais da Zaven: 0 violações das regras do ADR; 1 SKU conferido à mão contra o ledger; tela = cálculo (células, linha, Sheet, cards, texto do WhatsApp).
 - [x] Validação visual em navegador real (1440/375, claro/escuro) + auditoria de design e polimento.
 - [ ] Medir CPU do `GET` na DSA antes da fase 2 (> 1,5 s vira issue); validade/lote e sazonalidade antes de ligar DSA/Daludi Shop.
+- [x] Recomendações do consultor (17/11): "Completar grade" para SKU que nunca teve estoque nem movimento (fora da curva, do pedido e do aviso; o lojista inclui) e confirmação obrigatória no 1º "Aprovar" da org. No ar (main 221a1304); validado com dados reais: só a família afetada mudou, as demais idênticas, 0 violações.
 - [ ] 1º pedido real com o Diego; recalibrar limites com a foto diária após 60 dias.
 
 ## Kit Virtual: capa IA com produto que já é conjunto (ADR-0206) — 2026-11-16
