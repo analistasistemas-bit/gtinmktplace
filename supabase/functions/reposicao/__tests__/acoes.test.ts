@@ -19,8 +19,8 @@ type Rpc = (args: Linha) => { data: unknown; error: { code?: string; message: st
 function fakeDb(t: Record<string, Linha[]>, rpcs: Record<string, Rpc> = {}) {
   let seq = 0;
   const chamadas: Array<{ nome: string; args: Linha }> = [];
-  // Cada consulta executada com os filtros eq (para provar o filtro de org).
-  const consultas: Array<{ tabela: string; op: string; eqs: Record<string, unknown> }> = [];
+  // Cada consulta executada com os filtros eq, as chaves de ordem e o cursor (gt), para provar filtro de org e chaves.
+  const consultas: Array<{ tabela: string; op: string; eqs: Record<string, unknown>; orders: string[]; gts: string[] }> = [];
   const viola = (tabela: string, r: Linha, ignorar?: Linha) => (UNICOS[tabela] ?? []).some((cols) => COALESCE.has(tabela)
     ? (t[tabela] ?? []).some((x) => x !== ignorar && cols.every((c) => (x[c] ?? '') === (r[c] ?? '')))
     : cols.every((c) => r[c] != null) && (t[tabela] ?? []).some((x) => x !== ignorar && cols.every((c) => x[c] === r[c])));
@@ -30,6 +30,8 @@ function fakeDb(t: Record<string, Linha[]>, rpcs: Record<string, Rpc> = {}) {
     consultas,
     /** Teto do PostgREST simulado (linhas por select). */
     teto: Infinity,
+    /** Gancho chamado antes de cada consulta (simula escrita concorrente entre páginas). */
+    antes: null as null | ((tabela: string, op: string) => void),
     rpc: async (nome: string, args: Linha) => { chamadas.push({ nome, args }); return rpcs[nome] ? rpcs[nome](args) : { data: null, error: null }; },
     from: (tabela: string) => {
       t[tabela] ??= [];
@@ -37,12 +39,23 @@ function fakeDb(t: Record<string, Linha[]>, rpcs: Record<string, Rpc> = {}) {
       const preds: Array<(r: Linha) => boolean> = [];
       const eqs: Record<string, unknown> = {};
       let faixa: [number, number] | null = null;
+      let limite = Infinity;
+      const orders: string[] = [];
+      const gts: string[] = [];
       const run = () => {
-        consultas.push({ tabela, op, eqs });
+        db.antes?.(tabela, op);
+        consultas.push({ tabela, op, eqs, orders, gts });
+        if (consultas.length > 500) throw new Error('fake: consultas demais (laço de paginação?)');
         const alvo = () => t[tabela].filter((r) => preds.every((p) => p(r)));
         if (op === 'select') {
-          const d = alvo();
-          return { data: faixa ? d.slice(faixa[0], Math.min(faixa[1] + 1, faixa[0] + db.teto)) : d.slice(0, db.teto), error: null };
+          // order de verdade (asc, estável), depois offset/limit e o teto do servidor.
+          const d = alvo().sort((a, b) => {
+            for (const k of orders) { const x = String(val(a, k)); const y = String(val(b, k)); if (x !== y) return x < y ? -1 : 1; }
+            return 0;
+          });
+          const de = faixa ? faixa[0] : 0;
+          const n = Math.min(faixa ? faixa[1] - faixa[0] + 1 : Infinity, limite, db.teto);
+          return { data: d.slice(de, de + n), error: null };
         }
         if (op === 'delete') { const fora = alvo(); t[tabela] = t[tabela].filter((r) => !fora.includes(r)); return { data: fora, error: null }; }
         if (op === 'update') {
@@ -74,9 +87,15 @@ function fakeDb(t: Record<string, Linha[]>, rpcs: Record<string, Rpc> = {}) {
         in: (k: string, vs: unknown[]) => { preds.push((r) => vs.includes(val(r, k))); return c; },
         is: (k: string, v: unknown) => { preds.push((r) => (val(r, k) ?? null) === v); return c; },
         range: (de: number, ate: number) => { faixa = [de, ate]; return c; },
-        order: () => c,
-        limit: () => c,
-        maybeSingle: async () => { const r = run(); return { data: r.data?.[0] ?? null, error: r.error }; },
+        gt: (k: string, v: unknown) => { gts.push(k); preds.push((r) => String(val(r, k)) > String(v)); return c; },
+        order: (k: string) => { orders.push(k); return c; },
+        limit: (n: number) => { limite = n; return c; },
+        // Como o supabase-js: mais de uma linha é erro de cardinalidade.
+        maybeSingle: async () => {
+          const r = run();
+          if ((r.data?.length ?? 0) > 1) return { data: null, error: { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' } };
+          return { data: r.data?.[0] ?? null, error: r.error };
+        },
         single: async () => { const r = run(); return r.error ? r : { data: r.data?.[0] ?? null, error: null }; },
         then: (res: any, rej: any) => Promise.resolve(run()).then(res, rej),
       };
@@ -297,6 +316,7 @@ describe('fora_de_linha', () => {
   const P2 = '00000000-0000-4000-8000-000000000002';
   const P3 = '00000000-0000-4000-8000-000000000003';
   const P4 = '00000000-0000-4000-8000-000000000004';
+  const P5 = '00000000-0000-4000-8000-000000000005';
   const PX = '00000000-0000-4000-8000-0000000000ff';
   const fam = (id: string, codigo_pai: string, criado_em: string) => ({ id, codigo_pai, criado_em });
   const item = (pedido_id: string, codigo: string, codigo_pai: string, quantidade: number, org_id = ORG) =>
@@ -318,37 +338,38 @@ describe('fora_de_linha', () => {
   };
   // Rascunhos P1 (fo1), P2 (fo2), P4 (fo3); P3 aprovado; PX rascunho de outra org com o mesmo produto e cor.
   // SKU-X: Branco em PA, reutilizado como Preto em família MAIS RECENTE de PB.
+  // Tudo inserido FORA da ordem das chaves: o resultado só sai certo se a leitura ordenar de verdade.
   function base(envolver: (real: Rpc, t: Record<string, Linha[]>) => Rpc = (real) => real) {
     const t: Record<string, Linha[]> = {
       pedidos_compra: [
-        { id: P1, org_id: ORG, fornecedor_id: 'fo1', status: 'rascunho' },
-        { id: P2, org_id: ORG, fornecedor_id: 'fo2', status: 'rascunho' },
-        { id: P3, org_id: ORG, fornecedor_id: 'fo1', status: 'aprovado' },
-        { id: P4, org_id: ORG, fornecedor_id: 'fo3', status: 'rascunho' },
         { id: PX, org_id: 'org-2', fornecedor_id: 'fx', status: 'rascunho' },
+        { id: P4, org_id: ORG, fornecedor_id: 'fo3', status: 'rascunho' },
+        { id: P3, org_id: ORG, fornecedor_id: 'fo1', status: 'aprovado' },
+        { id: P2, org_id: ORG, fornecedor_id: 'fo2', status: 'rascunho' },
+        { id: P1, org_id: ORG, fornecedor_id: 'fo9', status: 'rascunho' },
       ],
       pedidos_compra_itens: [
-        item(P1, 'PA-PRE-P', 'PA', 3), item(P1, 'PA-PRE-M', 'PA', 2), item(P1, 'PA-BRA-P', 'PA', 5), item(P1, 'PB-PRE-P', 'PB', 7),
-        item(P1, 'SKU-X', 'PA', 1),
-        item(P2, 'PA-PRE-G', 'PA', 4),
-        item(P3, 'PA-PRE-P', 'PA', 9),
-        item(P4, 'PA-PRE-P', 'PA', 1), item(P4, 'PA-BRA-M', 'PA', 2),
         item(PX, 'PA-PRE-P', 'PA', 6, 'org-2'),
+        item(P4, 'PA-PRE-P', 'PA', 1), item(P4, 'PA-BRA-M', 'PA', 2),
+        item(P3, 'PA-PRE-P', 'PA', 9),
+        item(P2, 'PA-PRE-G', 'PA', 4),
+        item(P1, 'SKU-X', 'PA', 1), item(P1, 'PB-PRE-P', 'PB', 7), item(P1, 'PA-PRE-P', 'PA', 3), item(P1, 'PA-BRA-P', 'PA', 5),
+        item(P1, 'PA-PRE-M', 'PA', 2),
       ],
       variacoes: [
-        // família antiga dizia outra cor para PA-PRE-M; vale a mais recente do produto (regra do cálculo)
-        { id: 'v1', org_id: ORG, codigo: 'PA-PRE-M', cor: 'Branco', familias: fam('f-velha', 'PA', '2026-01-01T00:00:00Z') },
-        { id: 'v2', org_id: ORG, codigo: 'PA-PRE-M', cor: 'Preto', familias: fam('f-nova', 'PA', '2026-06-01T00:00:00Z') },
-        { id: 'v3', org_id: ORG, codigo: 'PA-PRE-P', cor: 'Preto', familias: fam('f-nova', 'PA', '2026-06-01T00:00:00Z') },
-        { id: 'v4', org_id: ORG, codigo: 'PA-PRE-G', cor: 'Preto', familias: fam('f-nova', 'PA', '2026-06-01T00:00:00Z') },
-        { id: 'v5', org_id: ORG, codigo: 'PA-BRA-P', cor: 'Branco', familias: fam('f-nova', 'PA', '2026-06-01T00:00:00Z') },
-        { id: 'v6', org_id: ORG, codigo: 'PA-BRA-M', cor: 'Branco', familias: fam('f-nova', 'PA', '2026-06-01T00:00:00Z') },
-        { id: 'v7', org_id: ORG, codigo: 'SKU-X', cor: 'Branco', familias: fam('f-nova', 'PA', '2026-06-01T00:00:00Z') },
-        { id: 'v8', org_id: ORG, codigo: 'SKU-X', cor: 'Preto', familias: fam('f-pb', 'PB', '2026-09-01T00:00:00Z') },
-        { id: 'v9', org_id: ORG, codigo: 'PB-PRE-P', cor: 'Preto', familias: fam('f-pb', 'PB', '2026-09-01T00:00:00Z') },
+        { id: 'vx2', org_id: 'org-2', codigo: 'PA-PRE-P', cor: 'Preto', familias: fam('f-x', 'PA', '2026-09-01T00:00:00Z') },
         // outra org: mesmo código com outra cor não pode influenciar
         { id: 'vx1', org_id: 'org-2', codigo: 'PA-BRA-P', cor: 'Preto', familias: fam('f-x', 'PA', '2026-09-01T00:00:00Z') },
-        { id: 'vx2', org_id: 'org-2', codigo: 'PA-PRE-P', cor: 'Preto', familias: fam('f-x', 'PA', '2026-09-01T00:00:00Z') },
+        { id: 'v9', org_id: ORG, codigo: 'PB-PRE-P', cor: 'Preto', familias: fam('f-pb', 'PB', '2026-09-01T00:00:00Z') },
+        { id: 'v8', org_id: ORG, codigo: 'SKU-X', cor: 'Preto', familias: fam('f-pb', 'PB', '2026-09-01T00:00:00Z') },
+        { id: 'v7', org_id: ORG, codigo: 'SKU-X', cor: 'Branco', familias: fam('f-nova', 'PA', '2026-06-01T00:00:00Z') },
+        { id: 'v6', org_id: ORG, codigo: 'PA-BRA-M', cor: 'Branco', familias: fam('f-nova', 'PA', '2026-06-01T00:00:00Z') },
+        { id: 'v5', org_id: ORG, codigo: 'PA-BRA-P', cor: 'Branco', familias: fam('f-nova', 'PA', '2026-06-01T00:00:00Z') },
+        { id: 'v4', org_id: ORG, codigo: 'PA-PRE-G', cor: 'Preto', familias: fam('f-nova', 'PA', '2026-06-01T00:00:00Z') },
+        { id: 'v3', org_id: ORG, codigo: 'PA-PRE-P', cor: 'Preto', familias: fam('f-nova', 'PA', '2026-06-01T00:00:00Z') },
+        // família antiga dizia outra cor para PA-PRE-M; vale a mais recente do produto (regra do cálculo)
+        { id: 'v2', org_id: ORG, codigo: 'PA-PRE-M', cor: 'Preto', familias: fam('f-nova', 'PA', '2026-06-01T00:00:00Z') },
+        { id: 'v1', org_id: ORG, codigo: 'PA-PRE-M', cor: 'Branco', familias: fam('f-velha', 'PA', '2026-01-01T00:00:00Z') },
       ],
       reposicao_nao_repor: [],
     };
@@ -358,8 +379,9 @@ describe('fora_de_linha', () => {
   const COR = { action: 'fora_de_linha', escopo: 'cor', codigoPai: 'PA', cor: 'Preto' };
   const FAM = { action: 'fora_de_linha', escopo: 'familia', codigoPai: 'PA' };
   const zerados = (db: any) => db.chamadas.map((c: { args: Linha }) => [c.args.p_pedido, c.args.p_itens.map((i: Linha) => i.codigo)]);
-  const codigos = (db: any, pedido: string) => db.t.pedidos_compra_itens.filter((i: Linha) => i.pedido_id === pedido).map((i: Linha) => i.codigo);
-  const pedidos = (db: any) => db.t.pedidos_compra.map((p: Linha) => p.id);
+  const codigos = (db: any, pedido: string) => db.t.pedidos_compra_itens.filter((i: Linha) => i.pedido_id === pedido).map((i: Linha) => i.codigo).sort();
+  const pedidos = (db: any) => db.t.pedidos_compra.map((p: Linha) => p.id).sort();
+  const leituras = (db: any, tabela: string) => db.consultas.filter((q: { tabela: string; op: string }) => q.tabela === tabela && q.op === 'select');
 
   it('escopo cor: marca com cor e codigo nulo; tira só a cor do produto e apaga o rascunho que esvazia', async () => {
     const db = base();
@@ -368,10 +390,11 @@ describe('fora_de_linha', () => {
     expect(db.t.reposicao_nao_repor).toHaveLength(1);
     expect(db.t.reposicao_nao_repor[0]).toMatchObject({ org_id: ORG, escopo: 'cor', codigo_pai: 'PA', cor: 'Preto', codigo: null, criado_por: 'u-membro' });
     expect(r.body).toEqual({ ok: true, id: db.t.reposicao_nao_repor[0].id, removidos: { rascunhos: 3, unidades: 10 } });
-    expect(zerados(db)).toEqual([[P1, ['PA-PRE-P', 'PA-PRE-M']], [P2, ['PA-PRE-G']], [P4, ['PA-PRE-P']]]);
+    // pedidos pela ordem de id, itens pela ordem de codigo (inseridos ao contrário)
+    expect(zerados(db)).toEqual([[P1, ['PA-PRE-M', 'PA-PRE-P']], [P2, ['PA-PRE-G']], [P4, ['PA-PRE-P']]]);
     expect(db.chamadas[0].args).toEqual({
-      p_org: ORG, p_pedido: P1, p_fornecedor: 'fo1', p_usuario: 'u-membro', p_previsto: null, p_mudar_previsto: false,
-      p_itens: [{ codigo: 'PA-PRE-P', codigo_pai: 'PA', quantidade: 0, sugerida: null }, { codigo: 'PA-PRE-M', codigo_pai: 'PA', quantidade: 0, sugerida: null }],
+      p_org: ORG, p_pedido: P1, p_fornecedor: 'fo9', p_usuario: 'u-membro', p_previsto: null, p_mudar_previsto: false,
+      p_itens: [{ codigo: 'PA-PRE-M', codigo_pai: 'PA', quantidade: 0, sugerida: null }, { codigo: 'PA-PRE-P', codigo_pai: 'PA', quantidade: 0, sugerida: null }],
     });
     // SKU-X é Preto só no outro produto: fica. P2 esvaziou e foi apagado. P3 (aprovado) e PX (outra org) intactos.
     expect(codigos(db, P1)).toEqual(['PA-BRA-P', 'PB-PRE-P', 'SKU-X']);
@@ -381,22 +404,69 @@ describe('fora_de_linha', () => {
     expect(codigos(db, PX)).toEqual(['PA-PRE-P']);
   });
 
-  it('pagina as leituras: mesmo resultado com teto de 2 linhas por página', async () => {
+  it('pagina por cursor de chave: mesmo resultado com 2 linhas por página; ordem e cursor nas chaves únicas', async () => {
     const db = base();
     db.teto = 2;
     const r = await processarAcao({ ...deps(db), tamanhoPagina: 2 }, membro, COR);
     expect(r.body).toMatchObject({ removidos: { rascunhos: 3, unidades: 10 } });
-    expect(zerados(db)).toEqual([[P1, ['PA-PRE-P', 'PA-PRE-M']], [P2, ['PA-PRE-G']], [P4, ['PA-PRE-P']]]);
+    expect(zerados(db)).toEqual([[P1, ['PA-PRE-M', 'PA-PRE-P']], [P2, ['PA-PRE-G']], [P4, ['PA-PRE-P']]]);
+    const chaves = (tabela: string) => leituras(db, tabela).map((q: { orders: string[]; gts: string[] }) => [q.orders, q.gts]);
+    expect(chaves('pedidos_compra')).toEqual([[['id'], []], [['id'], ['id']]]);
+    // 7 variações do produto nos códigos lidos → páginas 2+2+2+1
+    expect(chaves('variacoes')).toEqual([[['id'], []], [['id'], ['id']], [['id'], ['id']], [['id'], ['id']]]);
+    for (const [o, g] of chaves('pedidos_compra_itens')) { expect(o).toEqual(['codigo']); expect(g.every((k: string) => k === 'codigo')).toBe(true); }
+    expect(chaves('pedidos_compra_itens').some(([, g]: string[][]) => g.length)).toBe(true);
+  });
+
+  it('corrida: rascunho aprovado entre a 1ª e a 2ª página não faz pular os seguintes', async () => {
+    const db = base();
+    db.teto = 2;
+    let paginas = 0;
+    db.antes = (tabela: string, op: string) => {
+      if (tabela === 'pedidos_compra' && op === 'select' && ++paginas === 2) db.t.pedidos_compra.find((p: Linha) => p.id === P1).status = 'aprovado';
+    };
+    const r = await processarAcao({ ...deps(db), tamanhoPagina: 2 }, membro, COR);
+    expect(r.status).toBe(200);
+    // P1 virou aprovado (23514, intocado); P2 e P4 processados — com offset, P4 seria pulado
+    expect(zerados(db).map((z: unknown[]) => z[0])).toEqual([P1, P2, P4]);
+    expect(r.body).toMatchObject({ removidos: { rascunhos: 2, unidades: 5 } });
+    expect(codigos(db, P4)).toEqual(['PA-BRA-M']);
+    expect(codigos(db, P1)).toContain('PA-PRE-P');
+  });
+
+  it('cor pela família mais recente do produto que contém o SKU: exclusiva de família antiga, ordem inversa e empate', async () => {
+    const db = base();
+    db.t.pedidos_compra.push({ id: P5, org_id: ORG, fornecedor_id: 'fo5', status: 'rascunho' });
+    db.t.pedidos_compra_itens.push(
+      item(P5, 'PA-R1', 'PA', 1), item(P5, 'PA-NEG', 'PA', 1), item(P5, 'PA-GG', 'PA', 1), item(P5, 'PA-EMP', 'PA', 1),
+    );
+    const velha = fam('f-velha', 'PA', '2026-01-01T00:00:00Z');
+    const nova = fam('f-nova', 'PA', '2026-06-01T00:00:00Z');
+    db.t.variacoes.push(
+      // só na família antiga (não na mais nova do produto): Preto vale
+      { id: 'va00', org_id: ORG, codigo: 'PA-GG', cor: 'Preto', familias: velha },
+      // chegam em ordem inversa (a mais nova primeiro): "última linha vence" erraria
+      { id: 'va01', org_id: ORG, codigo: 'PA-R1', cor: 'Preto', familias: nova },
+      { id: 'va02', org_id: ORG, codigo: 'PA-R1', cor: 'Branco', familias: velha },
+      { id: 'va03', org_id: ORG, codigo: 'PA-NEG', cor: 'Branco', familias: nova },
+      { id: 'va04', org_id: ORG, codigo: 'PA-NEG', cor: 'Preto', familias: velha },
+      // mesma data: desempata pelo id da família (f-emp-b > f-emp-a)
+      { id: 'va05', org_id: ORG, codigo: 'PA-EMP', cor: 'Branco', familias: fam('f-emp-a', 'PA', '2026-03-01T00:00:00Z') },
+      { id: 'va06', org_id: ORG, codigo: 'PA-EMP', cor: 'Preto', familias: fam('f-emp-b', 'PA', '2026-03-01T00:00:00Z') },
+    );
+    await processarAcao(deps(db), membro, COR);
+    expect(zerados(db).find((z: unknown[]) => z[0] === P5)).toEqual([P5, ['PA-EMP', 'PA-GG', 'PA-R1']]);
+    expect(codigos(db, P5)).toEqual(['PA-NEG']);
   });
 
   it('todas as leituras filtram a org (pedido, item, variação)', async () => {
     const db = base();
     await processarAcao(deps(db), membro, COR);
-    const lidas = db.consultas.filter((q: { tabela: string; op: string }) =>
-      q.op === 'select' && ['pedidos_compra', 'pedidos_compra_itens', 'variacoes'].includes(q.tabela));
-    expect(new Set(lidas.map((q: { tabela: string }) => q.tabela))).toEqual(new Set(['pedidos_compra', 'pedidos_compra_itens', 'variacoes']));
-    for (const q of lidas) expect(q.eqs.org_id).toBe(ORG);
-    expect(lidas.find((q: { tabela: string }) => q.tabela === 'pedidos_compra').eqs.status).toBe('rascunho');
+    for (const tabela of ['pedidos_compra', 'pedidos_compra_itens', 'variacoes']) {
+      expect(leituras(db, tabela).length).toBeGreaterThan(0);
+      for (const q of leituras(db, tabela)) expect(q.eqs.org_id).toBe(ORG);
+    }
+    expect(leituras(db, 'pedidos_compra')[0].eqs.status).toBe('rascunho');
   });
 
   it('idempotente: 23505 devolve o mesmo id e o retry não acha mais nada', async () => {
@@ -413,12 +483,13 @@ describe('fora_de_linha', () => {
     let quebrar = true;
     const db = base((real) => (a) => (a.p_pedido === P2 && quebrar ? { data: null, error: { code: '57014', message: 'timeout' } } : real(a)));
     await expect(processarAcao(deps(db), membro, COR)).rejects.toThrow('timeout');
+    const marca = db.t.reposicao_nao_repor[0].id;
     expect(db.t.reposicao_nao_repor).toHaveLength(1);
     expect(codigos(db, P1)).toEqual(['PA-BRA-P', 'PB-PRE-P', 'SKU-X']);
     expect(codigos(db, P2)).toEqual(['PA-PRE-G']);
     quebrar = false;
     const r = await processarAcao(deps(db), membro, COR);
-    expect(r.body).toMatchObject({ removidos: { rascunhos: 2, unidades: 5 } });
+    expect(r.body).toEqual({ ok: true, id: marca, removidos: { rascunhos: 2, unidades: 5 } });
     expect(zerados(db).slice(2)).toEqual([[P2, ['PA-PRE-G']], [P4, ['PA-PRE-P']]]);
     expect(db.t.reposicao_nao_repor).toHaveLength(1);
     expect(pedidos(db)).toEqual([P1, P3, P4, PX]);
@@ -430,12 +501,13 @@ describe('fora_de_linha', () => {
     const r = await processarAcao(deps(db), membro, FAM);
     expect(r.body).toMatchObject({ removidos: { rascunhos: 3, unidades: 18 } });
     expect(db.t.reposicao_nao_repor[0]).toMatchObject({ escopo: 'familia', codigo_pai: 'PA', codigo: null, cor: null });
-    expect(zerados(db)).toEqual([[P1, ['PA-PRE-P', 'PA-PRE-M', 'PA-BRA-P', 'SKU-X']], [P2, ['PA-PRE-G']], [P4, ['PA-PRE-P', 'PA-BRA-M']]]);
+    expect(zerados(db)).toEqual([[P1, ['PA-BRA-P', 'PA-PRE-M', 'PA-PRE-P', 'SKU-X']], [P2, ['PA-PRE-G']], [P4, ['PA-BRA-M', 'PA-PRE-P']]]);
     expect(pedidos(db)).toEqual([P1, P3, PX]);
     expect(codigos(db, P1)).toEqual(['PB-PRE-P']);
-    // de novo: a marca família (codigo e cor nulos) não duplica
-    await processarAcao(deps(db), membro, FAM);
+    // de novo: a marca família (codigo e cor nulos) não duplica e devolve o mesmo id
+    const b = await processarAcao(deps(db), membro, FAM);
     expect(db.t.reposicao_nao_repor).toHaveLength(1);
+    expect((b.body as { id: string }).id).toBe((r.body as { id: string }).id);
   });
 
   it('aprovado no meio (23514) e rascunho que sumiu (P0002) são ignorados sem abortar nem contar', async () => {
@@ -460,13 +532,16 @@ describe('fora_de_linha', () => {
     expect(db.chamadas).toHaveLength(0);
   });
 
-  it('nao_repor por SKU grava o código e não limpa rascunho', async () => {
+  it('nao_repor por SKU grava o código, o retry devolve o id DAQUELE SKU e não limpa rascunho', async () => {
     const db = base();
-    const r = await processarAcao(deps(db), membro, { action: 'nao_repor', escopo: 'sku', codigoPai: 'PA', codigo: 'PA-PRE-P' });
-    expect(r.body).toEqual({ ok: true, id: db.t.reposicao_nao_repor[0].id });
+    const sku = (codigo: string) => processarAcao(deps(db), membro, { action: 'nao_repor', escopo: 'sku', codigoPai: 'PA', codigo });
+    const p = await sku('PA-PRE-P');
+    expect(p.body).toEqual({ ok: true, id: db.t.reposicao_nao_repor[0].id });
     expect(db.t.reposicao_nao_repor[0]).toMatchObject({ escopo: 'sku', codigo_pai: 'PA', codigo: 'PA-PRE-P', cor: null });
-    await processarAcao(deps(db), membro, { action: 'nao_repor', escopo: 'sku', codigoPai: 'PA', codigo: 'PA-PRE-M' });
-    await processarAcao(deps(db), membro, { action: 'nao_repor', escopo: 'sku', codigoPai: 'PA', codigo: 'PA-PRE-P' });
+    const m = await sku('PA-PRE-M');
+    expect((m.body as { id: string }).id).not.toBe((p.body as { id: string }).id);
+    expect((await sku('PA-PRE-P')).body).toEqual(p.body);
+    expect((await sku('PA-PRE-M')).body).toEqual(m.body);
     expect(db.t.reposicao_nao_repor).toHaveLength(2);
     expect(db.chamadas).toHaveLength(0);
   });

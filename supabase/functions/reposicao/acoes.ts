@@ -1,7 +1,6 @@
 // Ações POST da Reposição (ADR-0207 §13, §15, §16). Escrita só por aqui, com service role (as tabelas
 // têm só SELECT para `authenticated`). `db` injetado para teste sem Deno.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { paginarTudo } from '../_shared/pagina.ts';
 import { familiaMaisRecente, normalizarNome, somarDias } from '../_shared/reposicao/dados.ts';
 import type { StatusPedido } from '../_shared/reposicao/tipos.ts';
 
@@ -14,8 +13,12 @@ export interface CtxAcao {
 }
 export interface DepsAcao {
   db: SupabaseClient; moduloHabilitado(): Promise<boolean>;
-  /** Só teste: página menor que o teto do PostgREST (padrão do paginarTudo). */
+  /** Só teste: página menor que o teto do PostgREST (padrão 1000). */
   tamanhoPagina?: number;
+}
+/** O pedaço do query builder do PostgREST que a leitura por cursor usa. */
+interface Consulta extends PromiseLike<{ data: unknown[] | null; error: { message: string } | null }> {
+  order(coluna: string): Consulta; gt(coluna: string, valor: string): Consulta; limit(n: number): Consulta;
 }
 export interface RespostaAcao { status: number; body: Record<string, unknown> }
 
@@ -86,25 +89,44 @@ export async function processarAcao(deps: DepsAcao, ctx: CtxAcao, corpo: unknown
     return (ex as { id: string } | null)?.id ?? null;
   };
 
+  /** Lê tudo em páginas por CURSOR de chave única (`order` + `gt`), não por offset: linha que muda ou sai entre
+   * páginas (rascunho aprovado no meio) não faz pular as seguintes. Página = teto do PostgREST. */
+  const lerPorChave = async <T>(onde: string, chave: string, montar: () => unknown): Promise<T[]> => {
+    const tam = deps.tamanhoPagina ?? 1000;
+    const todas: T[] = [];
+    for (let ultima: string | null = null; ;) {
+      let q = (montar() as Consulta).order(chave);
+      if (ultima !== null) q = q.gt(chave, ultima);
+      const { data, error } = await q.limit(tam);
+      falhou(`ler ${onde}`, error);
+      const lote = (data ?? []) as T[];
+      todas.push(...lote);
+      if (lote.length < tam) return todas;
+      ultima = String((lote[lote.length - 1] as Record<string, unknown>)[chave]);
+    }
+  };
+
   /** Zera, nos rascunhos da org, os itens do produto (ou só da cor). Atômico por rascunho (RPC, sob lock); entre
    * rascunhos, não. `removidos` é ESTIMATIVA pela leitura feita antes do lock (não exata sob concorrência):
    * `rascunhos` = pedidos processados pela RPC, `unidades` = soma lida dos itens zerados neles. */
   const tirarDosRascunhos = async (id: string | null, codigoPai: string, cor: string | null): Promise<RespostaAcao> => {
     const removidos = { rascunhos: 0, unidades: 0 };
-    const tam = deps.tamanhoPagina;
-    const pedidos = await paginarTudo<{ id: string; fornecedor_id: string }>((de, ate) => db.from('pedidos_compra')
-      .select('id, fornecedor_id').eq('org_id', o).eq('status', 'rascunho').order('id').range(de, ate), tam);
+    const pedidos = await lerPorChave<{ id: string; fornecedor_id: string }>('rascunhos', 'id', () => db.from('pedidos_compra')
+      .select('id, fornecedor_id').eq('org_id', o).eq('status', 'rascunho'));
     if (!pedidos.length) return ok({ id, removidos });
-    let itens = await paginarTudo<{ pedido_id: string; codigo: string; quantidade: number }>((de, ate) => db.from('pedidos_compra_itens')
-      .select('pedido_id, codigo, quantidade').eq('org_id', o).eq('codigo_pai', codigoPai)
-      .in('pedido_id', pedidos.map((p) => p.id)).order('pedido_id').order('codigo').range(de, ate), tam);
+    // Por rascunho (um por fornecedor), cursor em `codigo`: (pedido_id, codigo) é único.
+    let itens: { pedido_id: string; codigo: string; quantidade: number }[] = [];
+    for (const p of pedidos) {
+      itens = itens.concat(await lerPorChave<typeof itens[number]>('itens', 'codigo', () => db.from('pedidos_compra_itens')
+        .select('pedido_id, codigo, quantidade').eq('org_id', o).eq('pedido_id', p.id).eq('codigo_pai', codigoPai)));
+    }
     if (cor !== null && itens.length) {
       // Cor do SKU = a da variação da família mais recente DESTE produto que o contém (regra de dados.ts). SKU sem
       // variação no produto ou com cor null fica fora da limpeza por cor; o escopo família o alcança.
       type V = { codigo: string; cor: string | null; familias: { id: string; criado_em: string } };
-      const vs = await paginarTudo<V>((de, ate) => db.from('variacoes')
-        .select('codigo, cor, familias!inner(id, criado_em, codigo_pai)').eq('org_id', o).eq('familias.codigo_pai', codigoPai)
-        .in('codigo', [...new Set(itens.map((i) => i.codigo))]).order('id').range(de, ate) as unknown as PromiseLike<{ data: V[] | null }>, tam);
+      const vs = await lerPorChave<V>('variações', 'id', () => db.from('variacoes')
+        .select('id, codigo, cor, familias!inner(id, criado_em, codigo_pai)').eq('org_id', o).eq('familias.codigo_pai', codigoPai)
+        .in('codigo', [...new Set(itens.map((i) => i.codigo))]));
       const porCodigo = new Map<string, V>();
       for (const v of vs) {
         const atual = porCodigo.get(v.codigo);
