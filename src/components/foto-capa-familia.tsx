@@ -17,13 +17,26 @@ export function FotoCapaFamilia({ capaUrl, tamanho, renovar }: Props) {
   const classe = CLASSE_FOTO[tamanho];
   const [falhou, setFalhou] = useState(false);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  // Uma renovação e um fetch por montagem: sem isso, URL que falha sempre viraria laço.
+  const [baixar, setBaixar] = useState(false);
+  // Uma renovação por montagem: sem isso, URL que falha sempre viraria laço.
   const renovou = useRef(false);
-  const tentouFetch = useRef(false);
 
   // URL nova (troca de foto ou renovação) merece nova chance de carregar.
-  useEffect(() => { setFalhou(false); setBlobUrl(null); }, [capaUrl]);
-  useEffect(() => () => { if (blobUrl) URL.revokeObjectURL(blobUrl); }, [blobUrl]);
+  useEffect(() => { setFalhou(false); setBlobUrl(null); setBaixar(false); }, [capaUrl]);
+
+  // Fallback por fetch. O blob nasce e é revogado dentro do mesmo efeito, e `vivo` descarta a resposta
+  // que chega depois de desmontar ou de a URL mudar (nem vaza blob nem pisa no estado novo).
+  // Limite conhecido: se a renovação falhar ou devolver a mesma URL, este efeito não roda e fica o placeholder.
+  useEffect(() => {
+    if (!baixar || !capaUrl) return;
+    let vivo = true;
+    let criada: string | null = null;
+    fetch(capaUrl)
+      .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.blob(); })
+      .then((b) => { if (!vivo) return; criada = URL.createObjectURL(b); setBlobUrl(criada); setFalhou(false); })
+      .catch(() => { if (vivo) setFalhou(true); });
+    return () => { vivo = false; if (criada) URL.revokeObjectURL(criada); };
+  }, [baixar, capaUrl]);
 
   const aoFalhar = () => {
     if (renovar && !renovou.current) {
@@ -32,18 +45,11 @@ export function FotoCapaFamilia({ capaUrl, tamanho, renovar }: Props) {
       renovar();
       return;
     }
-    if (renovar && capaUrl && !tentouFetch.current) {
-      tentouFetch.current = true;
-      fetch(capaUrl)
-        .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.blob(); })
-        .then((b) => { setBlobUrl(URL.createObjectURL(b)); setFalhou(false); })
-        .catch(() => setFalhou(true));
-      return;
-    }
+    if (renovar && !baixar) { setBaixar(true); return; }
     setFalhou(true);
   };
 
-  if (!capaUrl || falhou) {
+  if (!capaUrl || falhou || (baixar && !blobUrl)) {
     return (
       <div
         data-testid="capa-placeholder"
