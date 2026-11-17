@@ -35,7 +35,7 @@ export function SecaoGeral() {
 
       <SettingsGroup
         titulo="Identidade"
-        descricao="Logo da empresa no topo do app. PNG, JPG ou WEBP até 512 KB, de preferência com fundo transparente."
+        descricao="Logo da empresa no topo do app. Formato horizontal, ideal 560 × 112 px (proporção 5:1; aparece com até 28 px de altura). PNG, JPG ou WEBP até 512 KB, de preferência com fundo transparente."
         aviso={!podeEditarEmpresa && <AvisoLeitura>Só um administrador da organização altera a logo.</AvisoLeitura>}
       >
         <LinhaLogo variante="claro" titulo="Logo para fundo claro" descricao="Usada no tema claro." pode={podeEditarEmpresa} />
