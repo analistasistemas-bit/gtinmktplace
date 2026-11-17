@@ -24,7 +24,16 @@ const dados: VendasSku = {
   historicoDesde: '2026-06-02T12:00:00Z',
 };
 const periodos = vi.hoisted(() => [] as unknown[]);
-vi.mock('@/hooks/useVendasSku', () => ({ useVendasSku: (p: unknown) => { periodos.push(p); return { dados, isLoading: false, isFetching: false, refetch: vi.fn() }; } }));
+const hook = vi.hoisted(() => ({
+  baseFiscal: null as null | { ok: false; motivo: 'aliquotas_erro' },
+  refetch: vi.fn(),
+}));
+vi.mock('@/hooks/useVendasSku', () => ({
+  useVendasSku: (p: unknown) => {
+    periodos.push(p);
+    return { dados, baseFiscal: hook.baseFiscal, isLoading: false, isFetching: false, refetch: hook.refetch };
+  },
+}));
 
 const renderAba = (url = '/faturamento?aba=sku') => render(
   <QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[url]}><AbaVendasSku /></MemoryRouter></QueryClientProvider>,
@@ -99,6 +108,25 @@ describe('AbaVendasSku', () => {
     expect(screen.getByRole('link', { name: /Família P \(4 variações\)/ })).toHaveAttribute('href', '/faturamento/sku/familia/P?periodo=mes_atual');
     fireEvent.click(screen.getByRole('button', { name: /Mostrar variações de Família P/ }));
     expect(screen.getAllByTestId('sku-titulo').map((e) => e.textContent)).toContain('Produto A');
+  });
+
+  it('erro de alíquota: alerta e não mostra lucro, markup, margem nem curva ABC', () => {
+    hook.baseFiscal = { ok: false, motivo: 'aliquotas_erro' };
+    hook.refetch.mockClear();
+    try {
+      renderAba();
+      expect(screen.getByRole('alert')).toHaveTextContent(/imposto não foi calculado/i);
+      expect(screen.queryByText('R$ 45,00')).toBeNull();
+      expect(screen.queryByText('R$ 30,00')).toBeNull();
+      expect(screen.queryByText('+60%')).toBeNull();
+      expect(screen.queryByText('30,0%')).toBeNull();
+      expect(screen.queryByText(/metade do lucro/i)).toBeNull();
+      expect(screen.queryByTitle('Classe A da curva ABC')).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+      expect(hook.refetch).toHaveBeenCalled();
+    } finally {
+      hook.baseFiscal = null;
+    }
   });
 
   it('abrir a conta de um filho não fecha a família', () => {

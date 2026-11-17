@@ -16,7 +16,7 @@ import { MES_ATUAL, comPeriodo, periodoDaQuery, rotuloAnterior, type Periodo } f
 import { formatarNomeProduto, normalizarParaBusca } from '@/lib/texto';
 import { useVendasSku } from '@/hooks/useVendasSku';
 import { LinkDossie, RankingSku, type ChaveOrdem } from '@/components/faturamento/ranking-sku';
-import { SEM_CODIGO, agruparPorFamilia, unidadesPorTamanho, curvaAbc, deltaPp, deltaValor, type Delta, type LinhaSku } from '@/lib/vendas-sku';
+import { SEM_CODIGO, agruparPorFamilia, unidadesPorTamanho, curvaAbc, deltaPp, deltaValor, type Delta, type LinhaSku, type MetricasSku } from '@/lib/vendas-sku';
 
 // Idioma do app para "sem valor" (o mesmo de fmtMarkup e da aba Vendas).
 const NADA = '—';
@@ -31,6 +31,11 @@ const valorOrdem = (l: Pick<LinhaSku, 'acc' | 'm'>, k: ChaveOrdem): number =>
 const TODOS = '__todos__';
 const SELECT = 'max-w-full text-xs';
 const BOTAO = 'h-7 px-2.5 text-xs';
+
+/** Alíquota ilegível: o lucro saiu com imposto 0. A tela não pode mostrar esse número. */
+function semLucroDeImposto(m: MetricasSku): MetricasSku {
+  return { ...m, lucro: null, lucroPorUnidade: null, markup: null, margemSVenda: null };
+}
 
 function Carregando() {
   return (
@@ -81,7 +86,8 @@ export function AbaVendasSku() {
   const [porFamilia, setPorFamilia] = useState(false);
   const [baseAbc, setBaseAbc] = useState<'lucro' | 'bruto'>('lucro');
   const [ordem, setOrdem] = useState<ChaveOrdem>('lucro');
-  const { dados, isLoading, isFetching, isError, refetch } = useVendasSku(periodo);
+  const { dados, baseFiscal, isLoading, isFetching, isError, refetch } = useVendasSku(periodo);
+  const aliquotasErro = baseFiscal != null && !baseFiscal.ok && baseFiscal.motivo === 'aliquotas_erro';
 
   const opcoes = useMemo(() => {
     const ls = dados?.linhas ?? [];
@@ -97,11 +103,14 @@ export function AbaVendasSku() {
         && (!fornecedor || l.fornecedor === fornecedor)
         && (!origem || l.origem === origem)
         && (!soSemCusto || l.m.fonteCusto === 'sem_custo' || l.m.fonteCusto === 'parcial'))
+      .map((l) => (aliquotasErro ? { ...l, m: semLucroDeImposto(l.m) } : l))
       .sort((a, b) => valorOrdem(b, ordem) - valorOrdem(a, ordem) || a.codigo.localeCompare(b.codigo));
-  }, [dados, busca, familia, fornecedor, origem, soSemCusto, ordem]);
+  }, [dados, busca, familia, fornecedor, origem, soSemCusto, ordem, aliquotasErro]);
   const familias = useMemo(() => (porFamilia
-    ? agruparPorFamilia(filtradas).sort((a, b) => valorOrdem(b, ordem) - valorOrdem(a, ordem) || a.codigoPai.localeCompare(b.codigoPai))
-    : null), [filtradas, porFamilia, ordem]);
+    ? agruparPorFamilia(filtradas)
+      .map((f) => (aliquotasErro ? { ...f, m: semLucroDeImposto(f.m) } : f))
+      .sort((a, b) => valorOrdem(b, ordem) - valorOrdem(a, ordem) || a.codigoPai.localeCompare(b.codigoPai))
+    : null), [filtradas, porFamilia, ordem, aliquotasErro]);
   // ABC na linha que a tabela mostra: família quando agrupado, variação quando não.
   const abc = useMemo(() => curvaAbc(
     familias ? familias.map((f) => ({ ...f.filhos[0], codigo: f.codigoPai, acc: f.acc, m: f.m })) : filtradas, baseAbc,
@@ -150,17 +159,36 @@ export function AbaVendasSku() {
     );
   }
 
-  const { kpis, kpisAnterior: ka } = dados;
+  const { kpis: kpisBrutos, kpisAnterior: kaBrutos } = dados;
+  const kpis = aliquotasErro
+    ? { ...kpisBrutos, lucro: null, markup: null, margemSVenda: null, concentracaoTop5: null }
+    : kpisBrutos;
+  const ka = aliquotasErro
+    ? { ...kaBrutos, lucro: null, markup: null, margemSVenda: null }
+    : kaBrutos;
+  const insights = aliquotasErro
+    ? dados.insights.filter((ins) => !/lucro|prejuízo/i.test(ins.texto))
+    : dados.insights;
+  const variacoes = aliquotasErro ? [] : dados.variacoes;
   const rot = rotuloAnterior(periodo);
   const semCusto = dados.linhas.filter((l) => l.m.fonteCusto === 'sem_custo');
   const parciais = dados.linhas.filter((l) => l.m.fonteCusto === 'parcial');
   const brutoSemCusto = [...semCusto, ...parciais].reduce((s, l) => s + l.acc.bruto - l.acc.brutoComCusto, 0);
   const totalLinhas = familias ? familias.length : filtradas.length;
-  const nPrejuizo = dados.linhas.filter((l) => l.codigo !== SEM_CODIGO && l.m.lucro != null && l.m.lucro < 0).length;
+  const nPrejuizo = aliquotasErro ? 0 : dados.linhas.filter((l) => l.codigo !== SEM_CODIGO && l.m.lucro != null && l.m.lucro < 0).length;
 
   return (
     <div className="space-y-4">
       {seletor}
+
+      {aliquotasErro && (
+        <div role="alert" className="flex flex-wrap items-center gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          <p className="min-w-0 flex-1">
+            Falha ao ler as alíquotas de imposto. O imposto não foi calculado, então lucro, markup, margem e a curva ABC não são exibidos.
+          </p>
+          <Button variant="outline" size="sm" onClick={() => { void refetch(); }}>Tentar de novo</Button>
+        </div>
+      )}
 
       {(semCusto.length > 0 || parciais.length > 0) && (
         <button
@@ -208,12 +236,12 @@ export function AbaVendasSku() {
           tom={kpis.pctBrutoCustoReal != null && kpis.pctBrutoCustoReal < 0.8 ? 'warning' : 'info'} value={pct(kpis.pctBrutoCustoReal)} />
       </div>
 
-      {(dados.insights.length > 0 || dados.variacoes.length > 0) && (
+      {(insights.length > 0 || variacoes.length > 0) && (
         <div className="grid gap-3 lg:grid-cols-2">
-          {dados.insights.length > 0 && (
+          {insights.length > 0 && (
             <Painel icone={Lightbulb} titulo="Leituras do período">
               <ul className="space-y-1.5 text-sm">
-                {dados.insights.map((ins) => (
+                {insights.map((ins) => (
                   <li key={ins.texto} className="flex gap-2">
                     <span className="mt-2 size-1.5 shrink-0 rounded-full bg-primary/60" aria-hidden />
                     {!ins.skus?.length ? ins.texto : (
@@ -242,10 +270,10 @@ export function AbaVendasSku() {
               </ul>
             </Painel>
           )}
-          {dados.variacoes.length > 0 && (
+          {variacoes.length > 0 && (
             <Painel icone={TrendingUp} titulo={`Quem explica a variação do lucro (${rot})`}>
               <ul className="space-y-2 text-sm">
-                {dados.variacoes.map((v) => (
+                {variacoes.map((v) => (
                   <li key={v.codigo} className="min-w-0">
                     <div className="flex items-baseline gap-2">
                       <LinkDossie to={`/faturamento/sku/${encodeURIComponent(v.codigo)}`} className="min-w-0 truncate">
@@ -265,7 +293,7 @@ export function AbaVendasSku() {
                       {/* Barra ∝ |Δ| do maior da lista: mostra quem pesa sem precisar comparar os valores. */}
                       <span className="h-1 w-20 shrink-0 overflow-hidden rounded-full bg-muted" aria-hidden>
                         <span className={cn('block h-full rounded-full', v.delta < 0 ? 'bg-destructive/70' : 'bg-success/70')}
-                          style={{ width: `${Math.max(4, (Math.abs(v.delta) / Math.abs(dados.variacoes[0].delta)) * 100)}%` }} />
+                          style={{ width: `${Math.max(4, (Math.abs(v.delta) / Math.abs(variacoes[0].delta)) * 100)}%` }} />
                       </span>
                     </div>
                   </li>

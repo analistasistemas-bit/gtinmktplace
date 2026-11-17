@@ -103,7 +103,7 @@ const [metrica, setMetrica] = useState<'faturamento' | MetricaGrafico>('faturame
   const janelaAnt = useMemo(() => janelaAnterior(janela, periodo), [janela, periodo]);
   const delta = (atual: number, anterior: number) => deltaCom(atual, anterior, rotuloAnterior(periodo));
 
-  const { resumo: r, isFetching, error, canonicoPronto } = useResumoVendas(janela, canalAtivo);
+  const { resumo: r, isFetching, erroMensagem, canonicoPronto } = useResumoVendas(janela, canalAtivo);
   const { resumo: rAnt } = useResumoVendas(janelaAnt, canalAtivo);
   const vendasRaw = useVendas(janela, 'todos', canalAtivo); // mesma chave de cache do useResumoVendas → sem request extra
   const vendasRawAnt = useVendas(janelaAnt, 'todos', canalAtivo); // idem (já buscado pelo rAnt) → delta por pacote
@@ -259,7 +259,7 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
                           valor: fmtBRL(kpisPedidos.liquido),
                           delta: delta(kpisPedidos.liquido, kpisPedidosAnt.liquido).texto,
                           tendencia: delta(kpisPedidos.liquido, kpisPedidosAnt.liquido).trend,
-                          auxiliar: mostrarLucro && r.margem != null ? `lucro ${fmtBRL(r.lucro)}` : undefined,
+                          auxiliar: mostrarLucro && r.margem != null && r.lucro != null ? `lucro ${fmtBRL(r.lucro)}` : undefined,
                         },
                         {
                           label: 'Markup no período',
@@ -335,9 +335,9 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
         );
       })()}
 
-      {error && (
+      {erroMensagem && (
         <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
-          Falha ao ler as vendas. As métricas podem estar incompletas.
+          {erroMensagem} As métricas podem estar incompletas.
         </div>
       )}
 
@@ -388,7 +388,7 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
           value={fmtBRL(kpisPedidos.liquido)}
           delta={delta(kpisPedidos.liquido, kpisPedidosAnt.liquido).texto}
           deltaTrend={delta(kpisPedidos.liquido, kpisPedidosAnt.liquido).trend}
-          hint={mostrarLucro && r.margem != null ? `lucro ${fmtBRL(r.lucro)}` : undefined}
+          hint={mostrarLucro && r.margem != null && r.lucro != null ? `lucro ${fmtBRL(r.lucro)}` : undefined}
         />
         <KpiCard
           label="Markup no período" icon={TrendingUp} loading={carregando}

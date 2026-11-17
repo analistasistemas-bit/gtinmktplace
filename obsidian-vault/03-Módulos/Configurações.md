@@ -1,6 +1,6 @@
 ---
 tags: [modulo, configuracoes]
-atualizado: 2026-08-28
+atualizado: 2026-11-17
 ---
 
 # Configurações
@@ -93,8 +93,8 @@ ser gravado a cada blur, e `config-telegram.test.tsx` trava esse contrato.
   - **Escopo: só apuração pós-venda.** Preço sugerido, gross-up (`_shared/preco/sugerir.ts`),
     `etiquetaParaMinimo` e o "Você recebe por venda" continuam na alíquota por origem — o anúncio
     tem preço único para o país e a UF do comprador só existe depois do pedido.
-  - Imposto e markup não são persistidos (são derivados na leitura), então ligar o parâmetro
-    **recalcula todo o histórico exibido** sem backfill.
+  - Imposto e markup não são persistidos (são derivados na leitura). A alíquota salva vale
+    daquele momento em diante; vendas passadas mantêm a alíquota da data delas (ADR-0208).
   - **Em produção (2026-08-11):** org **Avil** com `uf_empresa = PE` e `aliquota_interna_pct = 1`
     (72 pedidos entregues em PE no histórico); org DSA segue sem o parâmetro.
 - **Desconto sobre concorrência** — `desconto_concorrencia_pct` (default 5%), por org

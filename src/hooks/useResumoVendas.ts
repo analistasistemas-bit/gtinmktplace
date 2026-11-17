@@ -8,6 +8,17 @@ import { aliquotasDeVenda, montarCustoResolver, montarPesoResolver, montarAliquo
 import type { Janela } from '@/lib/metricas';
 import type { CanalAtivo } from '@/lib/canal-ativo';
 
+/** Nomeia a leitura que falhou. Vendas ok + alíquota/custo em erro não pode dizer "falha ao ler as vendas". */
+export function mensagemFalhaLeitura(falhas: { vendas: boolean; aliquotas: boolean; custos: boolean }): string | null {
+  const partes: string[] = [];
+  if (falhas.vendas) partes.push('as vendas');
+  if (falhas.aliquotas) partes.push('as alíquotas de imposto');
+  if (falhas.custos) partes.push('os custos');
+  if (partes.length === 0) return null;
+  const lista = partes.length === 1 ? partes[0] : `${partes.slice(0, -1).join(', ')} e ${partes[partes.length - 1]}`;
+  return `Falha ao ler ${lista}.`;
+}
+
 /**
  * Resumo financeiro do período a partir da tabela ml_vendas (fonte única — ADR-0038). Os menus
  * Faturamento, Financeiro e Publicados consomem isto, então mostram o mesmo número.
@@ -17,6 +28,8 @@ export function useResumoVendas(janela: Janela, canal: CanalAtivo = 'todos'): {
   isFetching: boolean;
   refetch: () => void;
   error: boolean;
+  /** Frase da leitura que falhou (`null` sem erro). Não atribui falha de alíquota ou custo às vendas. */
+  erroMensagem: string | null;
   dataUpdatedAt: number;
   /** O mapa canônico já assentou (sucesso ou erro)? Só `resumo.porItem` depende dele — enquanto
    *  for false, as vendas do anúncio de catálogo ainda estão na chave do MLB de catálogo, não na
@@ -41,22 +54,32 @@ export function useResumoVendas(janela: Janela, canal: CanalAtivo = 'todos'): {
     () => aliquotasDeVenda({ data: aliquotasQ.data, isError: aliquotasQ.isError }),
     [aliquotasQ.data, aliquotasQ.isError],
   );
-  const resumo = useMemo(
-    () => calcularResumo(
+  const fiscalIndisponivel = aliquotasQ.isError || custosQ.isError;
+  const resumo = useMemo(() => {
+    const calculado = calcularResumo(
       vendasQ.data ?? [],
       montarCustoResolver(custosQ.data),
       montarPesoResolver(custosQ.data),
       undefined,
       montarAliquotaResolver(custosQ.data, aliquotas),
       canonicoQ.data,
-    ),
-    [vendasQ.data, custosQ.data, aliquotas, canonicoQ.data],
-  );
+    );
+    // Central zera markup quando a config não está disponível. Aqui o mesmo: lucro/markup/margem
+    // calculados com imposto 0 não podem sair como se o imposto tivesse sido aplicado (ADR-0208).
+    if (!fiscalIndisponivel) return calculado;
+    return { ...calculado, markup: null, margem: null, lucro: null };
+  }, [vendasQ.data, custosQ.data, aliquotas, canonicoQ.data, fiscalIndisponivel]);
+  const falhas = { vendas: vendasQ.isError, aliquotas: aliquotasQ.isError, custos: custosQ.isError };
   return {
     resumo,
     isFetching: vendasQ.isFetching,
-    refetch: () => { vendasQ.refetch(); },
-    error: vendasQ.isError || custosQ.isError || aliquotasQ.isError,
+    refetch: () => {
+      void vendasQ.refetch();
+      void custosQ.refetch();
+      void aliquotasQ.refetch();
+    },
+    error: falhas.vendas || falhas.custos || falhas.aliquotas,
+    erroMensagem: mensagemFalhaLeitura(falhas),
     dataUpdatedAt: vendasQ.dataUpdatedAt,
     // isError conta como assentado: sem o mapa, `porItem` volta ao comportamento de antes (vendas
     // de catálogo na chave do MLB de catálogo) em vez de a coluna ficar "—" para sempre.

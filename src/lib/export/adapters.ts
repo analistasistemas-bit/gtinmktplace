@@ -192,7 +192,7 @@ interface PublicadosArgs {
   /** Líquido recebido no período (banner "você recebe" na tela). */
   liquido: number;
   markupPct: number | null;
-  lucro: number;
+  lucro: number | null;
   filtro: FiltroPublicados;
   periodo: Periodo;
   config: ExportConfig;

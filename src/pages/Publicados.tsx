@@ -1308,7 +1308,7 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
   // Fonte única dos KPIs: tabela ml_vendas (ADR-0038) — mesmo número que Faturamento e Financeiro.
   // Via useResumoVendas (não calcularResumo direto): é ele que passa o mapa canônico, sem o qual as
   // vendas do anúncio de catálogo somem da linha do anúncio dono (ver anuncio-canonico.ts).
-  const { resumo, isFetching: fetchingMetricas, error: erroVendas, refetch: refetchMetricas, canonicoPronto } = useResumoVendas(janela, canalAtivo);
+  const { resumo, isFetching: fetchingMetricas, erroMensagem, refetch: refetchMetricas, canonicoPronto } = useResumoVendas(janela, canalAtivo);
   const markupPct = resumo.markup;
 
   // Estado da tela (filtro/ordenação/página/tamanho) vive na URL: ao abrir um
@@ -1899,7 +1899,7 @@ function AbaAnuncios({ abas }: { abas: ReactNode }) {
             periodo={periodo}
             onPeriodo={setPeriodo}
             carregando={fetchingMetricas}
-            aviso={erroVendas ? 'Não foi possível ler as vendas. Tente Atualizar.' : null}
+            aviso={erroMensagem ? `${erroMensagem} Tente Atualizar.` : null}
             markupPct={markupPct}
             lucro={resumo.lucro}
             somenteEncalhados={filtro.somenteEncalhados}

@@ -5,8 +5,10 @@ import { renderHook } from '@testing-library/react';
 import { montarMapasCusto } from '@/lib/custos';
 import type { Venda, VendaItem } from '@/lib/faturamento';
 
-const { aliqQ, vendasFake } = vi.hoisted(() => ({
-  aliqQ: { data: undefined as unknown, isError: false },
+const { aliqQ, custosQ, vendasRefetch, vendasFake } = vi.hoisted(() => ({
+  aliqQ: { data: undefined as unknown, isError: false, refetch: vi.fn() },
+  custosQ: { isError: false, refetch: vi.fn() },
+  vendasRefetch: vi.fn(),
   vendasFake: { atual: [] as unknown[] },
 }));
 
@@ -16,9 +18,9 @@ const mapas = montarMapasCusto([
 ]);
 
 vi.mock('../useVendas', () => ({
-  useVendas: () => ({ data: vendasFake.atual, isFetching: false, isError: false, dataUpdatedAt: 0, refetch: vi.fn() }),
+  useVendas: () => ({ data: vendasFake.atual, isFetching: false, isError: false, dataUpdatedAt: 0, refetch: vendasRefetch }),
 }));
-vi.mock('../useCustos', () => ({ useCustos: () => ({ data: mapas, isError: false }) }));
+vi.mock('../useCustos', () => ({ useCustos: () => ({ data: mapas, isError: custosQ.isError, refetch: custosQ.refetch }) }));
 vi.mock('@/hooks/useConfiguracoes', () => ({ useAliquotas: () => aliqQ }));
 vi.mock('../useAnuncioCanonico', () => ({ useAnuncioCanonico: () => ({ data: undefined, isSuccess: true, isError: false }) }));
 
@@ -36,7 +38,14 @@ const janela = { desde: '2026-10-01T00:00:00.000Z', ate: '2026-10-31T23:59:59.99
 const lucro = () => renderHook(() => useResumoVendas(janela)).result.current;
 
 describe('useResumoVendas — erro nas alíquotas (ADR-0208)', () => {
-  beforeEach(() => { vendasFake.atual = [venda]; });
+  beforeEach(() => {
+    vendasFake.atual = [venda];
+    Object.assign(aliqQ, { data: undefined, isError: false });
+    custosQ.isError = false;
+    vendasRefetch.mockClear();
+    custosQ.refetch.mockClear();
+    aliqQ.refetch.mockClear();
+  });
 
   it('com alíquota carregada: imposto entra no lucro (100 − 4 − 40 = 56)', () => {
     Object.assign(aliqQ, { data: { nacional: 4, importado: 16 }, isError: false });
@@ -51,17 +60,40 @@ describe('useResumoVendas — erro nas alíquotas (ADR-0208)', () => {
     expect(lucro().resumo.lucro).toBe(56);
   });
 
-  it('isError sem data: sem imposto (100 − 40 = 60), nunca o 8% de fallback (52)', () => {
+  it('isError sem data: não publica lucro, markup nem margem (imposto 0 não vira resultado)', () => {
     Object.assign(aliqQ, { data: undefined, isError: true });
     const r = lucro();
-    expect(r.resumo.lucro).toBe(60);
+    expect(r.resumo.lucro).toBeNull();
+    expect(r.resumo.markup).toBeNull();
+    expect(r.resumo.margem).toBeNull();
     expect(r.error).toBe(true);
+    expect(r.erroMensagem).toBe('Falha ao ler as alíquotas de imposto.');
   });
 
-  it('isError com data antigo (refetch falhou): ignora o cache — sem imposto (60), não 56', () => {
+  it('isError com data antigo (refetch falhou): também não publica lucro com o cache', () => {
     Object.assign(aliqQ, { data: { nacional: 4, importado: 16 }, isError: true });
     const r = lucro();
-    expect(r.resumo.lucro).toBe(60);
-    expect(r.error).toBe(true);
+    expect(r.resumo.lucro).toBeNull();
+    expect(r.resumo.markup).toBeNull();
+    expect(r.resumo.margem).toBeNull();
+    expect(r.erroMensagem).toBe('Falha ao ler as alíquotas de imposto.');
+  });
+
+  it('erro nos custos: não publica lucro e a mensagem nomeia os custos, não as vendas', () => {
+    Object.assign(aliqQ, { data: { nacional: 4, importado: 16 }, isError: false });
+    custosQ.isError = true;
+    const r = lucro();
+    expect(r.resumo.lucro).toBeNull();
+    expect(r.resumo.markup).toBeNull();
+    expect(r.resumo.margem).toBeNull();
+    expect(r.erroMensagem).toBe('Falha ao ler os custos.');
+  });
+
+  it('refetch refaz vendas, custos e alíquotas', () => {
+    Object.assign(aliqQ, { data: { nacional: 4, importado: 16 }, isError: false });
+    lucro().refetch();
+    expect(vendasRefetch).toHaveBeenCalledTimes(1);
+    expect(custosQ.refetch).toHaveBeenCalledTimes(1);
+    expect(aliqQ.refetch).toHaveBeenCalledTimes(1);
   });
 });

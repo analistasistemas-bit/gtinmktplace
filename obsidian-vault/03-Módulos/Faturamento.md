@@ -1,6 +1,6 @@
 ---
 tags: [modulo, faturamento]
-atualizado: 2026-09-15
+atualizado: 2026-11-17
 ---
 
 # Faturamento
@@ -83,16 +83,18 @@ vendido. Duas correções recentes definem o comportamento atual:
 - **Custo vigente** é resolvido pela cadeia `variação → anúncio → GTIN → código`, com desempate
   pela linha **mais recente** (`atualizado_em`, ADR-0108) — antes era pelo maior custo, o que
   escondia toda redução de custo enquanto a linha antiga existisse.
-- **Comissão, frete e imposto continuam dinâmicos** — o markup histórico ainda oscila se a
-  alíquota mudar.
+- **Comissão e frete continuam dinâmicos.** O imposto da venda usa a alíquota vigente na data
+  dela (ADR-0208): uma alíquota salva vale daquele momento em diante; vendas passadas mantêm a
+  alíquota da data delas.
 
 ## Imposto
 
 - Alíquota por origem da família: 8% nacional / 16% importado (ADR-0055), org-scoped e com gate
   LOUD de confirmação (ADR-0086).
 - **Alíquota interna por UF da empresa** (ADR-0112, 2026-08-11): pedido entregue na `uf_empresa`
-  paga `aliquota_interna_pct`, que **sobrepõe** a origem. Derivado na leitura, sem persistência —
-  ligar o parâmetro recalcula todo o histórico exibido. Ver [[Configurações]].
+  paga `aliquota_interna_pct`, que **sobrepõe** a origem. Derivado na leitura, sem persistência.
+  Salvar o parâmetro vale daquele momento em diante; vendas passadas mantêm a alíquota da data
+  delas (ADR-0208). Ver [[Configurações]].
 - O percentual do imposto aparece ao lado do valor no detalhe do pedido (só no desktop) e vem do
   **resolver**, não do imposto arredondado.
 

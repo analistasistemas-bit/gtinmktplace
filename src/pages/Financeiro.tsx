@@ -21,7 +21,7 @@ export default function Financeiro() {
   const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
   const { canal: canalAtivo, setCanal, habilitados } = useCanalAtivo();
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
-  const { resumo: r, isFetching, refetch, error, dataUpdatedAt } = useResumoVendas(janela, canalAtivo);
+  const { resumo: r, isFetching, refetch, erroMensagem, dataUpdatedAt } = useResumoVendas(janela, canalAtivo);
   const janelaAnt = useMemo(() => janelaAnterior(janela, periodo), [janela, periodo]);
   const { resumo: rAnt } = useResumoVendas(janelaAnt, canalAtivo);
 
@@ -78,9 +78,9 @@ export default function Financeiro() {
 
       <CanalTabs canal={canalAtivo} onCanal={setCanal} habilitados={habilitados} className="mb-3" />
 
-      {error && (
+      {erroMensagem && (
         <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
-          Falha ao ler as vendas. Clique em Atualizar para tentar de novo.
+          {erroMensagem} Clique em Atualizar para tentar de novo.
         </div>
       )}
 

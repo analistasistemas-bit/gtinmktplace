@@ -65,8 +65,9 @@ export interface ResumoVendas {
   ticket: number;
   /** Markup do período: (líquido − imposto − custo) ÷ custo, só sobre vendas com custo. null = sem custo. */
   markup: number | null;
-  /** Lucro do período (líquido − imposto − custo) das vendas com custo. */
-  lucro: number;
+  /** Lucro do período (líquido − imposto − custo) das vendas com custo.
+   *  null quando o custo ou a alíquota não puderam ser lidos — não publicar lucro sem imposto. */
+  lucro: number | null;
   /** Σ líquido das vendas já liberadas (money_release_date no passado). */
   liberado: number;
   /** Σ líquido das vendas ainda a liberar (money_release_date no futuro). */
