@@ -121,20 +121,46 @@ export function montarPesoResolver(m: MapasCusto | undefined): PesoResolver {
  *  possivelmente errado (imposto nunca defaulta em silêncio). */
 export function montarAliquotaResolver(
   m: MapasCusto | undefined,
-  aliquotas: { nacional: number; importado: number; ufEmpresa?: string | null; internaPct?: number | null } | null,
+  aliquotas: AliquotasComVigencia | null,
 ): AliquotaResolver {
-  return (item, uf) => {
+  // Ordena uma vez (não por chamada), por instante, desc: a 1ª com início <= venda é a vigente.
+  // Date.parse, não comparação de strings — offsets diferentes (-03:00 vs Z) não ordenam como texto.
+  const vigencias = (aliquotas?.vigencias ?? [])
+    .map((v) => ({ v, t: Date.parse(v.vigenteDesde) }))
+    .filter((x) => Number.isFinite(x.t))
+    .sort((a, b) => b.t - a.t);
+  return (item, uf, data) => {
     if (!aliquotas) return null;
+    // Vigência em vigor na data da venda (ADR-0208). Sem lista, sem data ou data inválida → atuais.
+    // Data anterior a todas as vigências → a mais antiga.
+    let taxas: Omit<AliquotasComVigencia, 'vigencias'> = aliquotas;
+    const tVenda = data == null ? NaN : Date.parse(data);
+    if (vigencias.length > 0 && Number.isFinite(tVenda)) {
+      taxas = (vigencias.find((x) => x.t <= tVenda) ?? vigencias[vigencias.length - 1]).v;
+    }
     // Venda dentro do estado da empresa: a alíquota interna sobrepõe nacional E importado.
-    const ufEmpresa = aliquotas.ufEmpresa ?? null;
-    const internaPct = aliquotas.internaPct ?? null;
+    const ufEmpresa = taxas.ufEmpresa ?? null;
+    const internaPct = taxas.internaPct ?? null;
     if (ufEmpresa != null && internaPct != null && uf != null
         && uf.trim().toUpperCase() === ufEmpresa.trim().toUpperCase()) {
       return internaPct;
     }
     const origem = resolverProduto(m, item)?.origem;
-    if (origem === 'importado') return aliquotas.importado;
-    if (origem === 'nacional') return aliquotas.nacional;
+    if (origem === 'importado') return taxas.importado;
+    if (origem === 'nacional') return taxas.nacional;
     return null;
   };
 }
+
+/** Alíquotas em vigor a partir de `vigenteDesde` (ADR-0208, tabela `aliquotas_vigencia`). */
+export type VigenciaAliquota = {
+  vigenteDesde: string; nacional: number; importado: number;
+  ufEmpresa: string | null; internaPct: number | null;
+};
+
+/** Alíquotas atuais + histórico de vigências (opcional: sem ele, vale só o atual). */
+export type AliquotasComVigencia = {
+  nacional: number; importado: number;
+  ufEmpresa?: string | null; internaPct?: number | null;
+  vigencias?: VigenciaAliquota[];
+};

@@ -77,4 +77,5 @@ export function comCustoCongelado(venda: Venda & { custos?: CustoCongeladoRow[] 
 
 export type CustoResolver = (item: VendaItem) => number | null;
 export type PesoResolver = (item: VendaItem) => number | null;
-export type AliquotaResolver = (item: VendaItem, uf: string | null) => number | null;
+// Declaração única em sales-summary.ts (evita contratos divergentes).
+export type { AliquotaResolver } from './sales-summary.ts';
