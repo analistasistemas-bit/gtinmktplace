@@ -198,10 +198,12 @@ describe('Reposição: rascunho e pedido', () => {
     const { user, sheet } = await abrirRascunho();
     await user.click(within(sheet).getByRole('button', { name: 'Aprovar pedido' }));
     const alerta = await screen.findByRole('alertdialog', { name: 'Primeiro pedido de compra' });
-    expect(alerta).toHaveTextContent('7 un.');
-    expect(alerta).toHaveTextContent('43% das quantidades ainda são estimadas pela família — confira antes de mandar ao fornecedor');
+    expect(alerta).toHaveTextContent(/7 un\. · R\$\s70,00 para Fornecedor A\./);
+    expect(alerta).toHaveTextContent('43% das quantidades ainda são estimadas pela família. Confira antes de mandar ao fornecedor.');
     expect(alerta).toHaveTextContent('Fornecedor A');
     expect(alerta).toHaveTextContent('O PubliAI não envia nada: você copia o texto e manda.');
+    expect(within(alerta).getByText('43%')).toHaveClass('font-semibold', 'text-warning');
+    expect(within(alerta).queryByRole('button', { name: 'Aprovar mesmo assim' })).toBeNull();
     expect(acoes.aprovar).not.toHaveBeenCalled();
     await user.click(within(alerta).getByRole('button', { name: 'Voltar e conferir' }));
     expect(screen.queryByRole('alertdialog')).toBeNull();
@@ -210,7 +212,7 @@ describe('Reposição: rascunho e pedido', () => {
     acoes.aprovar.mockRejectedValueOnce(new Error('Não foi possível falar com o servidor.'));
     for (let i = 0; i < 2; i++) {
       await user.click(within(sheet).getByRole('button', { name: 'Aprovar pedido' }));
-      await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Aprovar mesmo assim' }));
+      await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Aprovar pedido' }));
     }
     expect(acoes.aprovar).toHaveBeenCalledTimes(2);
     const [a, b] = acoes.aprovar.mock.calls.map((c) => c[0]);

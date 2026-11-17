@@ -148,8 +148,8 @@ export function MapaGrade({ familia, ctx, selecionado, onSelecionar }: {
                             </>
                           ) : completar ? (
                             <>
-                              <span>{fmtInt(s.sug.estoqueHoje)}</span>
-                              <span className="rounded bg-muted px-1 text-caption text-muted-foreground md:ml-1.5">completar +{fmtInt(s.sug.completarGrade)}</span>
+                              <span className="text-caption md:text-sm md:text-muted-foreground dark:text-foreground/70">{fmtInt(s.sug.estoqueHoje)}</span>
+                              <span className="rounded bg-muted px-1 text-caption text-muted-foreground ring-1 ring-inset ring-border md:ml-1.5">completar +{fmtInt(s.sug.completarGrade)}</span>
                             </>
                           ) : fmtInt(s.sug.estoqueHoje)}
                           {s.sug.poucoHistorico && !todasEstimadas && <Asterisk aria-hidden className="absolute right-1 top-1 h-3 w-3 text-muted-foreground" />}
@@ -171,7 +171,7 @@ export function MapaGrade({ familia, ctx, selecionado, onSelecionar }: {
         <li className="flex items-center gap-1.5"><span aria-hidden className="h-3 w-3 rounded-sm border border-border" />Em dia</li>
         <li><span className="font-semibold text-foreground">+N</span> = comprar N</li>
         {familia.skus.some((s) => !s.tela.naoReporId && s.sug.completarGrade > 0) && (
-          <li><span className="rounded bg-muted px-1 text-muted-foreground">completar +N</span> = nunca comprado</li>
+          <li><span className="rounded bg-muted px-1 text-muted-foreground ring-1 ring-inset ring-border">completar +N</span> = nunca comprado</li>
         )}
         {todasEstimadas
           ? <li>Todas estimadas pela família</li>

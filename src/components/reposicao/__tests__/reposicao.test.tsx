@@ -430,6 +430,9 @@ describe('Reposição: sugestões', () => {
       await userEvent.click(screen.getByRole('button', { name: /^Preto, G:/ }));
       const popover = await screen.findByRole('dialog');
       expect(popover).toHaveTextContent('Este tamanho/cor nunca foi comprado. Sugestão para completar a grade: 2. Não entra no pedido sozinho.');
+      expect(within(popover).getByText('Nunca comprado')).toHaveAttribute('data-tone', 'neutral');
+      expect(within(popover).queryByText('Em dia')).toBeNull();
+      expect(within(popover).queryByText('Vendidos (60 dias)')).toBeNull(); // sem as linhas zeradas
       await userEvent.click(within(popover).getByRole('button', { name: 'Incluir no pedido' }));
       expect(acoes.salvarRascunho).toHaveBeenCalledWith({
         fornecedorNome: 'Fornecedor A', itens: [{ codigo: 'S5', codigoPai: 'SHORT', quantidade: 2, sugerida: 2 }],

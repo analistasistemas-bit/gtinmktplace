@@ -245,15 +245,19 @@ function Corpo({ pedido, data, hoje, acoes }: { pedido: PedidoDTO; data: Respost
             <AlertDialogTitle>Primeiro pedido de compra</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="flex flex-col gap-2">
-                <p>{fmtInt(total.un)} un. para {pedido.fornecedor.nome}.</p>
-                <p>{pctEstimado}% das quantidades ainda são estimadas pela família — confira antes de mandar ao fornecedor.</p>
+                <p>
+                  <span className="font-medium tabular-nums">{fmtInt(total.un)} un. · <ValorPedido valor={total.valor} semCusto={total.semCusto} /></span>
+                  {' '}para {pedido.fornecedor.nome}.
+                </p>
+                {/* text-warning sobre bg-popover: 5,4:1 claro, 9,4:1 escuro (≥ 4,5). */}
+                <p><span className="font-semibold text-warning tabular-nums">{pctEstimado}%</span> das quantidades ainda são estimadas pela família. Confira antes de mandar ao fornecedor.</p>
                 <p>O PubliAI não envia nada: você copia o texto e manda.</p>
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel className="h-11 md:h-9">Voltar e conferir</AlertDialogCancel>
-            <AlertDialogAction className="h-11 md:h-9" onClick={aprovarDeFato}>Aprovar mesmo assim</AlertDialogAction>
+            <AlertDialogAction className="h-11 md:h-9" onClick={aprovarDeFato}>Aprovar pedido</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

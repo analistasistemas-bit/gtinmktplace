@@ -25,6 +25,8 @@ export function CalculoSku({ s, familia, ctx }: { s: SkuVisao; familia: FamiliaV
   const falta = Math.max(0, Math.ceil(proj.falta - 1e-9));
   const folga = sug.pedir - falta;
   const caixa = familia.multiplo > 1 && familia.pedir !== familia.pedirAntesMultiplo;
+  // Nunca comprado: as linhas da conta seriam todas zero; fica só a explicação.
+  const completar = !s.tela.naoReporId && sug.completarGrade > 0;
   const linhas: [string, string][] = [
     ['Estoque', fmtInt(sug.estoqueHoje)],
     ['Vendidos (60 dias)', fmtInt(Math.round(sug.unidades))],
@@ -34,20 +36,20 @@ export function CalculoSku({ s, familia, ctx }: { s: SkuVisao; familia: FamiliaV
   ];
   return (
     <div className="flex flex-col gap-3 text-sm">
-      <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
+      {!completar && <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
         {linhas.map(([k, v]) => (
           <div key={k} className="contents">
             <dt className="text-muted-foreground">{k}</dt>
             <dd className="text-right font-medium tabular-nums">{v}</dd>
           </div>
         ))}
-      </dl>
+      </dl>}
       {s.tela.naoReporId ? (
         <div className="flex items-center justify-between gap-2 rounded-md bg-muted px-2 py-1.5">
           <span>Não repor{s.naoReporEscopo ? ` (${ESCOPO_NAO_REPOR[s.naoReporEscopo]})` : ''}.</span>
           <Button size="sm" variant="outline" className="h-11 md:h-7" disabled={ctx.pendente} onClick={() => ctx.onRemoverNaoRepor(s.tela.naoReporId!)}>Remover</Button>
         </div>
-      ) : sug.completarGrade > 0 ? (
+      ) : completar ? (
         <div className="flex flex-col gap-2">
           <p className="leading-relaxed">
             Este tamanho/cor nunca foi comprado. Sugestão para completar a grade: {fmtInt(sug.completarGrade)}. Não entra no pedido sozinho.
@@ -93,7 +95,9 @@ export function PopoverCelula({ s, familia, ctx, titulo, children, onAbrir }: {
       <PopoverContent className="w-80" align="center">
         <div className="mb-3 flex items-center justify-between gap-2">
           <p className="font-medium">{titulo}</p>
-          {!s.tela.naoReporId && <StatusPill tone={TOM_URGENCIA[s.urgencia]}>{ROTULO_URGENCIA[s.urgencia]}</StatusPill>}
+          {s.tela.naoReporId ? null : s.sug.completarGrade > 0
+            ? <StatusPill tone="neutral">Nunca comprado</StatusPill>
+            : <StatusPill tone={TOM_URGENCIA[s.urgencia]}>{ROTULO_URGENCIA[s.urgencia]}</StatusPill>}
         </div>
         <CalculoSku s={s} familia={familia} ctx={ctx} />
       </PopoverContent>
