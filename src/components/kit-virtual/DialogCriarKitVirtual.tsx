@@ -163,6 +163,15 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
     enabled: open,
   });
 
+  // Busca sem filtro (a que roda ao abrir) sem nenhum elegível e tudo recusado por categoria
+  // (DISABLED_DOMAIN do ML — roupa/moda): a conta não tem o que pôr em Kit Virtual, avisa já.
+  // Com filtro não esconde a busca, senão o operador de catálogo misto ficaria preso.
+  const inelegiveisBusca = buscaQuery.data?.inelegiveis ?? [];
+  const categoriaBloqueada = !searchTextAplicado
+    && buscaQuery.data?.elegiveis.length === 0
+    && inelegiveisBusca.length > 0
+    && inelegiveisBusca.every((c) => c.reasons.some((r) => r.id.startsWith('DISABLED_DOMAIN')));
+
   // ── Composição ────────────────────────────────────────────────────────────────────────
   function adicionar(c: ComponenteCandidatoKitVirtual) {
     setSelecionados((prev) => {
@@ -474,7 +483,15 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
 
         <EtapasKit atual={etapa} etapas={ETAPAS} />
 
-        {etapa === 'selecionar' ? (
+        {etapa === 'selecionar' && categoriaBloqueada ? (
+          <div role="alert" className="flex flex-col gap-1 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
+            <p className="font-medium">O Mercado Livre não aceita Kit Virtual na categoria dos seus produtos.</p>
+            <p className="text-xs">
+              Roupas e moda não podem ser vendidas em Kit Virtual. Para montar kit de roupa com todos os
+              tamanhos, use <strong>Criar kit</strong> na linha do anúncio (kit com variação).
+            </p>
+          </div>
+        ) : etapa === 'selecionar' ? (
           <div className="flex flex-col gap-4">
             <ListaComponentesKitVirtual
               searchText={searchText}

@@ -192,6 +192,27 @@ describe('DialogCriarKitVirtual — inelegíveis', () => {
   });
 });
 
+describe('DialogCriarKitVirtual — categoria bloqueada pelo ML (DISABLED_DOMAIN)', () => {
+  const ROUPA = (n: number) => ({
+    ...INELEGIVEL, userProductId: `UP-ROUPA-${n}`, title: `Calça Jeans ${n}`,
+    reasons: [{ id: 'DISABLED_DOMAIN', message: 'É de uma categoria não permitida para venda em kit.' }],
+  });
+
+  it('avisa ao abrir quando nenhum produto pode e todos são de categoria bloqueada', async () => {
+    mockBusca([], [ROUPA(36), ROUPA(38)]);
+    renderDialog();
+    expect(await screen.findByText(/não aceita Kit Virtual/i)).toBeInTheDocument();
+    expect(screen.queryByText(/não podem entrar no kit/)).not.toBeInTheDocument();
+  });
+
+  it('não avisa quando há produto elegível', async () => {
+    mockBusca([PRODUTO_A], [ROUPA(36)]);
+    renderDialog();
+    await screen.findByText('Motosserra Elétrica');
+    expect(screen.queryByText(/não aceita Kit Virtual/i)).not.toBeInTheDocument();
+  });
+});
+
 describe('DialogCriarKitVirtual — seleção fora de 2..6', () => {
   it('com 1 componente selecionado, "Avançar" fica desabilitado', async () => {
     mockBusca();
