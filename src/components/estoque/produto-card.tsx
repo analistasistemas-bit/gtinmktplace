@@ -5,7 +5,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ChevronRight, ClipboardCheck, ExternalLink, MoreVertical, PackageMinus, PackagePlus, Plus, Receipt, Tag, Trash2 } from 'lucide-react';
+import { Ban, ChevronRight, ClipboardCheck, ExternalLink, MoreVertical, PackageMinus, PackagePlus, Plus, Receipt, Tag, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
@@ -29,6 +29,8 @@ import { useMarcaOrg } from '@/hooks/useMarcaOrg';
 import { useOrgEfetivaId } from '@/hooks/useOrgEfetivaId';
 import { useProfile } from '@/hooks/useProfile';
 import { DialogEditarMarca } from '@/components/estoque/dialog-editar-marca';
+import { DialogForaDeLinha } from '@/components/estoque/dialog-fora-de-linha';
+import type { foraDeLinhaDoProduto } from '@/hooks/useReposicao';
 import { atualizarMarcaFamilia, fetchMarcaProduto } from '@/lib/marca-produto';
 import { urlAnuncioML } from '@/lib/ml-status';
 import { cn } from '@/lib/utils';
@@ -155,7 +157,7 @@ function CelulaSaldo({ saldo }: { saldo: number }) {
 
 export function ProdutoCard({
   produto, canais, onDarEntrada, onAjustar, onExcluir, onAdicionarVariacao, statusUpdate,
-  loteRevisaoId, coresSemVinculo, onPreencherFiscal, fiscalPendente, urgencia,
+  loteRevisaoId, coresSemVinculo, onPreencherFiscal, fiscalPendente, urgencia, foraDeLinha,
 }: {
   produto: ProdutoEstoqueResumo;
   canais: string[];
@@ -184,10 +186,13 @@ export function ProdutoCard({
   /** ADR-0207: urgência de reposição da família. A página só passa com o módulo `reposicao`;
    *  `em_dia`/ausente não mostra selo. */
   urgencia?: Urgencia | null;
+  /** Emenda 23–24 do ADR-0207: marcas "fora de linha" do produto. A página só passa com o módulo `reposicao`. */
+  foraDeLinha?: ReturnType<typeof foraDeLinhaDoProduto>;
 }) {
   const qc = useQueryClient();
   const [aberto, setAberto] = useState(false);
   const [editandoMarca, setEditandoMarca] = useState(false);
+  const [foraAberto, setForaAberto] = useState(false);
   const painelId = useId();
   const nomePai = formatarNomeProduto(produto.nomePai) || produto.nomePai;
   const { data: capaUrl } = useImageUrl(produto.capaStoragePath);
@@ -330,6 +335,10 @@ export function ProdutoCard({
     onAjustar(mergeProdutoComVariacoes(produto, vars));
   }
 
+  const coresFora = foraDeLinha?.cores.filter((c) => c.marcaId).length ?? 0;
+  const rotuloFora = foraDeLinha?.familiaId ? 'Fora de linha' : coresFora ? `${coresFora} ${coresFora === 1 ? 'cor fora de linha' : 'cores fora de linha'}` : null;
+  const seloFora = (onde: string) => rotuloFora && <StatusPill tone="neutral" className={cn('shrink-0', onde)}>{rotuloFora}</StatusPill>;
+
   const seloUrgencia = (onde: string) => urgencia && urgencia !== 'em_dia' && (
     <Link
       to={`/reposicao?produto=${encodeURIComponent(produto.codigoPai)}`}
@@ -393,6 +402,7 @@ export function ProdutoCard({
             </Button>
           )}
           {seloUrgencia('hidden sm:flex')}
+          {seloFora('hidden sm:inline-flex')}
           {statusUpdate === 'erro' && loteRevisaoId && (
             <Button asChild variant="outline" size="sm" className="h-7 shrink-0 px-2">
               <Link to={`/revisao/${loteRevisaoId}`} aria-label={`Revisar atualização de ${nomePai}`}>
@@ -407,6 +417,7 @@ export function ProdutoCard({
           {/* Celular: o selo desce para baixo do nome, senão espreme o nome até sobrar uma letra. ml-20 = seta (1rem) +
               foto small (2,5rem) + 2 gaps de 0,75rem: alinha com o texto do nome. */}
           {seloUrgencia('ml-20 flex w-fit sm:hidden')}
+          {seloFora('ml-20 w-fit sm:hidden')}
         </div>
 
         <div className={cn(CELULA_MD, 'text-right text-sm tabular-nums text-muted-foreground')}>
@@ -489,7 +500,7 @@ export function ProdutoCard({
               </a>
             </Button>
           )}
-          {(onExcluir || onAdicionarVariacao || podeEditarMarca) && (
+          {(onExcluir || onAdicionarVariacao || podeEditarMarca || foraDeLinha) && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -506,6 +517,12 @@ export function ProdutoCard({
                   <DropdownMenuItem onSelect={() => setEditandoMarca(true)}>
                     <Tag className="mr-2 h-3.5 w-3.5" />
                     Editar marca
+                  </DropdownMenuItem>
+                )}
+                {foraDeLinha && (
+                  <DropdownMenuItem onSelect={() => setForaAberto(true)}>
+                    <Ban className="mr-2 h-3.5 w-3.5" />
+                    Fora de linha…
                   </DropdownMenuItem>
                 )}
                 {onAdicionarVariacao && (
@@ -546,6 +563,10 @@ export function ProdutoCard({
           )}
         </div>
       </div>
+
+      {foraDeLinha && foraAberto && (
+        <DialogForaDeLinha open onOpenChange={setForaAberto} codigoPai={produto.codigoPai} nome={nomePai} info={foraDeLinha} />
+      )}
 
       {podeEditarMarca && (
         <DialogEditarMarca

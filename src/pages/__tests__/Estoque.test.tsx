@@ -47,7 +47,7 @@ vi.mock('@/hooks/useReposicao', async (orig) => ({
     reposicaoEnabled.push(o.enabled);
     reposicaoStale.push(o.staleTime);
     return {
-      data: o.enabled ? { resultado: { familias: [{ codigoPai: '00000004', urgencia: 'ruptura' }] } } : undefined,
+      data: o.enabled ? { resultado: { familias: [{ codigoPai: '00000004', urgencia: 'ruptura' }] }, familias: [{ codigoPai: '00000004' }], skus: [], naoRepor: [], rascunhos: [] } : undefined,
       encerrarSaldo: vi.fn(),
     };
   },

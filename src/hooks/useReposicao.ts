@@ -64,6 +64,8 @@ export function useReposicao(opts: { enabled?: boolean; staleTime?: number } = {
     reabrirSaldo: (p: { pedidoId: string; codigos?: string[] }) => acao('reabrir_saldo')(p),
     naoRepor: (p: { escopo: 'sku' | 'cor' | 'familia'; codigoPai: string; codigo?: string; cor?: string }) => acao('nao_repor')(p),
     removerNaoRepor: (id: string) => acao('remover_nao_repor')({ id }),
+    // Só o Estoque marca "fora de linha" (produto ou cor); tira dos rascunhos os itens afetados.
+    foraDeLinha: (p: { escopo: 'familia' | 'cor'; codigoPai: string; cor?: string }) => acao('fora_de_linha')(p),
     definirMultiplo: (p: { codigoPai: string; multiplo: number }) => acao('definir_multiplo')(p),
   };
 }
@@ -71,6 +73,34 @@ export function useReposicao(opts: { enabled?: boolean; staleTime?: number } = {
 /** Selo do card do Estoque (Task 8). */
 export function urgenciaDoProduto(data: RespostaReposicao | undefined, codigoPai: string): Urgencia | null {
   return data?.resultado?.familias.find((f) => f.codigoPai === codigoPai)?.urgencia ?? null;
+}
+
+/** Fora de linha de um produto (Estoque): marca de família, cores com a marca de escopo `cor` e quanto do
+ *  rascunho a marcação tiraria. null = produto fora da resposta. */
+export function foraDeLinhaDoProduto(data: RespostaReposicao | undefined, codigoPai: string) {
+  if (!data?.familias.some((f) => f.codigoPai === codigoPai)) return null;
+  const skus = data.skus.filter((s) => s.codigoPai === codigoPai);
+  const marcas = data.naoRepor.filter((n) => n.codigoPai === codigoPai);
+  const cores: { cor: string; corHex: string | null; marcaId: string | null }[] = [];
+  for (const s of skus) {
+    if (!s.cor || cores.some((c) => c.cor === s.cor)) continue;
+    cores.push({ cor: s.cor, corHex: s.corHex, marcaId: marcas.find((n) => n.escopo === 'cor' && n.cor === s.cor)?.id ?? null });
+  }
+  const corPor = new Map(skus.map((s) => [s.codigo, s.cor]));
+  return {
+    familiaId: marcas.find((n) => n.escopo === 'familia')?.id ?? null,
+    cores,
+    rascunho: (escopo: 'familia' | 'cor', cor?: string) => {
+      let unidades = 0; let rascunhos = 0;
+      for (const r of data.rascunhos) {
+        const afetados = r.itens.filter((i) => i.codigoPai === codigoPai && (escopo === 'familia' || corPor.get(i.codigo) === cor));
+        if (!afetados.length) continue;
+        rascunhos += 1;
+        unidades += afetados.reduce((a, i) => a + i.quantidade, 0);
+      }
+      return { unidades, rascunhos };
+    },
+  };
 }
 
 // ---------- visão da tela (pura) ----------

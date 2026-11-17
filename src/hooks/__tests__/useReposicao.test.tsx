@@ -9,7 +9,7 @@ import type { SugestaoSku } from '../../../supabase/functions/_shared/reposicao/
 const m = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock('@/lib/supabase', () => ({ supabase: { functions: { invoke: m.invoke } } }));
 
-const { montarVisao, useReposicao } = await import('../useReposicao');
+const { montarVisao, useReposicao, foraDeLinhaDoProduto } = await import('../useReposicao');
 
 const VAZIO: RespostaReposicao = { config: null, resultado: null, skus: [], familias: [], naoRepor: [], rascunhos: [], pedidos: [] };
 
@@ -105,5 +105,41 @@ describe('montarVisao', () => {
 
   it('chegaEm da família = menor data entre os SKUs em ruptura', () => {
     expect(montarVisao(dados(), '2026-11-16').familias[0].chegaEm).toBe('2026-12-01');
+  });
+});
+
+describe('foraDeLinhaDoProduto', () => {
+  const sku = (codigo: string, codigoPai: string, cor: string | null, corHex: string | null = null) => ({ codigo, codigoPai, cor, corHex, tamanho: null, custo: 1, preco: 2, naoReporId: null });
+  const dados = (): RespostaReposicao => ({
+    ...VAZIO,
+    skus: [sku('A1', 'P1', 'Preto', '#000'), sku('A2', 'P1', 'Preto', '#000'), sku('A3', 'P1', 'Azul'), sku('B1', 'P2', 'Preto')],
+    familias: [{ codigoPai: 'P1', nome: 'Prod 1', fornecedor: { id: null, nome: 'F' }, multiplo: 1 }],
+    naoRepor: [
+      { id: 'nf', escopo: 'familia', codigoPai: 'P2', codigo: null, cor: null },
+      { id: 'nc', escopo: 'cor', codigoPai: 'P1', codigo: null, cor: 'Azul' },
+      { id: 'nc2', escopo: 'cor', codigoPai: 'P2', codigo: null, cor: 'Preto' },
+    ],
+    rascunhos: [
+      { id: 'r1', itens: [{ codigo: 'A1', codigoPai: 'P1', quantidade: 5 }, { codigo: 'A3', codigoPai: 'P1', quantidade: 2 }] },
+      { id: 'r2', itens: [{ codigo: 'A2', codigoPai: 'P1', quantidade: 3 }, { codigo: 'B1', codigoPai: 'P2', quantidade: 9 }] },
+    ] as unknown as RespostaReposicao['rascunhos'],
+  });
+
+  it('produto fora da resposta: null', () => {
+    expect(foraDeLinhaDoProduto(dados(), 'X')).toBeNull();
+    expect(foraDeLinhaDoProduto(undefined, 'P1')).toBeNull();
+  });
+
+  it('cores distintas, marca da cor só do próprio produto, sem marca de família', () => {
+    const r = foraDeLinhaDoProduto(dados(), 'P1')!;
+    expect(r.familiaId).toBeNull();
+    expect(r.cores).toEqual([{ cor: 'Preto', corHex: '#000', marcaId: null }, { cor: 'Azul', corHex: null, marcaId: 'nc' }]);
+  });
+
+  it('rascunho: unidades e rascunhos afetados por escopo', () => {
+    const r = foraDeLinhaDoProduto(dados(), 'P1')!;
+    expect(r.rascunho('familia')).toEqual({ unidades: 10, rascunhos: 2 });
+    expect(r.rascunho('cor', 'Preto')).toEqual({ unidades: 8, rascunhos: 2 });
+    expect(r.rascunho('cor', 'Azul')).toEqual({ unidades: 2, rascunhos: 1 });
   });
 });

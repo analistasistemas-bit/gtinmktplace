@@ -824,3 +824,45 @@ describe('ProdutoCard — selo de urgência da Reposição (ADR-0207)', () => {
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 });
+
+describe('ProdutoCard — fora de linha (ADR-0207, emenda 23–24)', () => {
+  const info = (p: { familiaId?: string | null; cores?: { cor: string; corHex: string | null; marcaId: string | null }[] } = {}) => ({
+    familiaId: p.familiaId ?? null, cores: p.cores ?? [], rascunho: () => ({ unidades: 0, rascunhos: 0 }),
+  });
+  function renderFora(foraDeLinha?: ReturnType<typeof info>) {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter><ProdutoCard produto={produto} canais={[]} onDarEntrada={vi.fn()} foraDeLinha={foraDeLinha} /></MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+  const cores = [{ cor: 'Preto', corHex: null, marcaId: 'm1' }, { cor: 'Azul', corHex: null, marcaId: 'm2' }, { cor: 'Verde', corHex: null, marcaId: null }];
+
+  it('sem a prop: sem selo e sem menu', () => {
+    renderFora(undefined);
+    expect(screen.queryByText(/fora de linha/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Mais ações/ })).not.toBeInTheDocument();
+  });
+
+  it('marca de família: selo "Fora de linha"; só cores marcadas: "N cores fora de linha"; sem marca: nada', () => {
+    renderFora(info({ familiaId: 'f1', cores }));
+    expect(screen.getAllByText('Fora de linha').length).toBeGreaterThan(0);
+    cleanup();
+    renderFora(info({ cores }));
+    expect(screen.getAllByText('2 cores fora de linha').length).toBeGreaterThan(0);
+    cleanup();
+    renderFora(info({ cores: [cores[0]!] }));
+    expect(screen.getAllByText('1 cor fora de linha').length).toBeGreaterThan(0);
+    cleanup();
+    renderFora(info({ cores: [cores[2]!] }));
+    expect(screen.queryByText(/fora de linha/i)).not.toBeInTheDocument();
+  });
+
+  it('item "Fora de linha…" do menu ⋯ abre o diálogo', async () => {
+    renderFora(info({ cores }));
+    await userEvent.click(screen.getByRole('button', { name: /Mais ações/ }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Fora de linha…/ }));
+    expect(await screen.findByRole('dialog', { name: /Fora de linha · / })).toBeInTheDocument();
+  });
+});

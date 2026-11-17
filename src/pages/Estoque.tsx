@@ -23,7 +23,7 @@ import { ProdutoCard, CabecalhoProdutos, type AlvoEntrada } from '@/components/e
 import { BarraFiltrosEstoque } from '@/components/estoque/barra-filtros-estoque';
 import { ResumoEstoqueKpis } from '@/components/estoque/resumo-estoque';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
-import { urgenciaDoProduto, useReposicao } from '@/hooks/useReposicao';
+import { foraDeLinhaDoProduto, urgenciaDoProduto, useReposicao } from '@/hooks/useReposicao';
 import { useTiposProdutoHabilitados } from '@/hooks/useTiposProdutoHabilitados';
 import { useEmpresaFiscal } from '@/hooks/useConfiguracoes';
 import { useTipoPessoaOrg } from '@/hooks/useTipoPessoaOrg';
@@ -272,6 +272,7 @@ export default function Estoque() {
                 onPreencherFiscal={mostrarFiscal ? (produto) => setFiscalAberto(produto.familiaId ?? null) : undefined}
                 fiscalPendente={mostrarFiscal ? produtoFiscalPendente(p, regimeOrg) : false}
                 urgencia={temReposicao ? urgenciaDoProduto(reposicao, p.codigoPai) : undefined}
+                foraDeLinha={temReposicao ? foraDeLinhaDoProduto(reposicao, p.codigoPai) : undefined}
               />
             ))}
             {lista.length === 0 && (
