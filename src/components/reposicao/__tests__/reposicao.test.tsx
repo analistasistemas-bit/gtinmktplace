@@ -174,8 +174,21 @@ describe('Reposição: sugestões', () => {
   it('pctEstimadoPelaFamilia > 0,5: faixa da loja e sem venda perdida', () => {
     estado.data!.resultado!.pctEstimadoPelaFamilia = 0.92;
     renderTela();
-    expect(screen.getByText('92% dos produtos ainda estimados pela família: a loja tem poucas vendas.')).toBeInTheDocument();
+    expect(screen.getByText('92% dos itens que já venderam ainda têm a compra estimada pela família: cada um vendeu pouco até agora.')).toBeInTheDocument();
     expect(screen.queryByText(/venda perdida/i)).toBeNull();
+  });
+
+  it('faixa da loja: botão "i" abre a explicação (limiar de 6) e Esc devolve o foco', async () => {
+    estado.data!.resultado!.pctEstimadoPelaFamilia = 0.92;
+    renderTela();
+    const user = userEvent.setup();
+    const botao = screen.getByRole('button', { name: 'O que é estimado pela família' });
+    await user.click(botao);
+    expect(await screen.findByText(/6 unidades vendidas/)).toBeInTheDocument();
+    expect(screen.getByText(/Pela família:/)).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByText(/6 unidades vendidas/)).toBeNull();
+    expect(botao).toHaveFocus();
   });
 
   it('fora da fase do aviso: card Ruptura mostra a venda perdida por dia (v × preço)', () => {
