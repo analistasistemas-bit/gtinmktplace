@@ -13,7 +13,9 @@ Na primeira abertura, informe o **prazo de reposição** (dias entre pedir e a m
 - Os cards de topo mostram quantos produtos estão em **Ruptura**, **Vai faltar**, **Pedir agora** e **Em dia**.
 - Abra uma família: o mapa de cor × tamanho mostra, em cada célula, estoque, o que pedir e a urgência. Clique na célula para ver o **por que** daquela quantidade (velocidade, curva, folga).
 - Produto com poucas vendas usa a curva da família; a tela diz quantos ainda estão estimados.
-- **Não repor** tira um SKU, cor ou família da sugestão. O **múltiplo de compra** (só admin) arredonda o total da família.
+- **Fora de linha** (marcado no **Estoque**: menu ⋯ do produto → "Fora de linha…") tira um produto inteiro ou uma cor da sugestão. Ela some da Reposição (ligue "Mostrar fora de linha" para vê-la) e os itens dela saem do rascunho; voltar à linha não os devolve. O estoque que sobra continua à venda e o anúncio no ML não muda. As outras cores do produto são recalculadas.
+- **Não repor este tamanho** (no popover da célula) tira só um SKU da sugestão; a linha continua na grade, riscada.
+- O **múltiplo de compra** (só admin) arredonda o total da família.
 
 ## 3. Montar o rascunho
 

@@ -263,8 +263,12 @@ _Evitar_: estoque mínimo.
 O que o sistema propõe comprar, produto a produto: o necessário para a cobertura desejada depois que o pedido chega, mais o estoque de segurança, menos o estoque que vai sobrar até lá e o que chega depois. A projeção é dia a dia: venda perdida enquanto o produto está zerado não consome a mercadoria a caminho. A organização aprova como veio ou altera; a sugestão sozinha não compra nada.
 _Evitar_: pedido (a sugestão vira pedido só depois de aprovada).
 
+**Fora de linha**:
+Marca da organização, feita no Estoque, num produto inteiro ou numa cor de um produto que não será mais comprado. Sai da sugestão, da curva da família, dos cards e do resumo diário da reposição; as outras cores são recalculadas. Os itens afetados saem dos rascunhos de pedido, e voltar à linha não os devolve. O estoque que sobra continua à venda e o anúncio no ML não muda. A cor vale só para aquele produto.
+_Evitar_: descontinuado, excluir, desativar (o produto continua vendendo o que tem).
+
 **Não repor**:
-Marca da organização num produto, cor ou família que não será mais comprado. Sai da sugestão de reposição e da curva da família.
+Marca da organização num SKU (um tamanho de uma cor) que não será mais comprado; é a marca de escopo menor, feita no popover da célula da Reposição. Sai da sugestão e da curva da família, mas a linha continua na grade, riscada. Cor ou produto inteiro é **Fora de linha**.
 _Evitar_: excluir, desativar (o produto continua vendendo o que tem).
 
 **Pedido de compra**:

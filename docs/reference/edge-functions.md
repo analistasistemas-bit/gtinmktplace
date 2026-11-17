@@ -1331,7 +1331,7 @@ falha ao ler `organizations` não libera.
   admin ativo, categoria `reposicao`, chave `rascunho:<pedidoId>:<dia>`), `aprovar` (**admin** ou
   suporte `full`; idempotente por `ref` em `ref_aprovacao`; sem data, previsto = hoje + prazo),
   `marcar_enviado`, `editar_pedido` (409 se o pedido teve qualquer recebimento, mesmo desfeito),
-  `encerrar_saldo`/`reabrir_saldo`, `nao_repor`/`remover_nao_repor`. Rascunho, edição e saldo são
+  `encerrar_saldo`/`reabrir_saldo`, `nao_repor`/`remover_nao_repor`, `fora_de_linha` (emenda 23–24: `{escopo: familia|cor, codigoPai, cor?}`; qualquer membro; insere a marca em `reposicao_nao_repor` e zera os SKUs afetados dos rascunhos da org pela RPC `reposicao_salvar_rascunho`, que apaga o rascunho que ficar vazio; cor casa por texto exato dentro do produto; pedido que deixou de ser rascunho ou sumiu é ignorado; leituras paginadas por cursor de chave; resposta `{id, removidos: {rascunhos, unidades}}` é **estimativa** pela leitura anterior ao lock; falha no meio deixa a marca gravada e o retry é idempotente; voltar à linha = `remover_nao_repor`, que não devolve itens ao rascunho). Rascunho, edição e saldo são
   RPCs atômicas (`20261117004919_reposicao_acoes.sql`: `reposicao_salvar_rascunho`,
   `reposicao_editar_pedido`, `reposicao_encerrar_saldo`, `reposicao_reabrir_saldo`; definer, só
   `service_role`): travam o pedido primeiro (mesma ordem do recebimento), validam, mudam os itens e

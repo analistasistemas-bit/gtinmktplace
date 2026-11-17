@@ -46,7 +46,7 @@ Valores em R$ e quantidades do wireframe são ilustrativos; fornecedores e grade
 │    └───────────────────────────────────────────────┘                              │
 │    Por quê: vende 0,9/dia · pedido +20% (vendas subiram 40% nas últimas 2 semanas)│
 │    · pico de 12/11 limitado · 3 vendas em oferta fora da tendência              │
-│    [Adicionar ao pedido]  [Não repor ▾]                                          │
+│    [Adicionar ao pedido]                                                         │
 ├──────────────────────────────────────────────────────────────────────────────────┤
 │ Rascunho: Fornecedor A 39 un. R$ 1.527 · salvo 16/11 14:02 por Diego  [Revisar ▸]│
 └──────────────────────────────────────────────────────────────────────────────────┘
@@ -86,7 +86,7 @@ Colunas: foto · nome · fornecedor · `StatusPill` da pior urgência entre os S
 
 **Por quê:** frase gerada dos números, nunca IA: velocidade, ajuste da tendência no pedido (e a variação de vendas que o causou), picos limitados, vendas em oferta que ficaram fora da tendência, pedidos a caminho.
 
-**Não repor:** menu com "este SKU", "esta cor", "este produto". Reversível na mesma tela.
+**Fora de linha (emenda 17/11, ADR-0207 §23–24):** o menu "Não repor ▾" saiu. Produto inteiro e cor são marcados **no Estoque** (menu ⋯ do produto → "Fora de linha…"), com confirmação (unidades que saem do rascunho; as outras cores são recalculadas; voltar à linha não devolve itens ao rascunho). Aqui a Reposição só obedece: o produto, ou a cor, some da lista e do mapa e aparece atrás do filtro "Mostrar fora de linha", esmaecido, com selo e "Abrir no Estoque". Um tamanho avulso continua em "Não repor este tamanho" no popover da célula (riscado, sem esconder a linha).
 
 ### 3.5 Rascunho e pedido
 

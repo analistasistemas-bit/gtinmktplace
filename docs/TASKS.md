@@ -25,6 +25,8 @@ Branch `feat/reposicao`. Spec `docs/superpowers/specs/2026-11-16-reposicao-desig
 - [ ] Medir CPU do `GET` na DSA antes da fase 2 (> 1,5 s vira issue); validade/lote e sazonalidade antes de ligar DSA/Daludi Shop.
 - [x] Recomendações do consultor (17/11): "Completar grade" para SKU que nunca teve estoque nem movimento (fora da curva, do pedido e do aviso; o lojista inclui) e confirmação obrigatória no 1º "Aprovar" da org. No ar (main 221a1304); validado com dados reais: só a família afetada mudou, as demais idênticas, 0 violações.
 - [ ] 1º pedido real com o Diego; recalibrar limites com a foto diária após 60 dias.
+- [x] Ajustes do Diego após testar na Zaven (17/11): "i" da faixa explica estimado pela família; foto da cor/estampa na grade (clique abre a imagem); autocura da foto da lista (Safari). No ar (main 7a090d22).
+- [ ] **Fora de linha pelo Estoque** (emenda 23–24 do ADR-0207; plano `docs/superpowers/plans/2026-11-17-reposicao-fora-de-linha.md`): ação `fora_de_linha` na edge `reposicao`, diálogo e selo no Estoque, Reposição esconde e mostra atrás do filtro, o menu "Não repor ▾" sai. Branch `worktree-reposicao-fora-de-linha`; falta revisão final do Codex, validação visual, merge e deploy só da edge `reposicao`.
 
 ## Kit Virtual: capa IA com produto que já é conjunto (ADR-0206) — 2026-11-16
 
