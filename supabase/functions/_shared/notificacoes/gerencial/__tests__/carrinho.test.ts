@@ -40,4 +40,34 @@ describe('decidirEnvioCarrinho', () => {
     expect(decidirEnvioCarrinho({ ...estado([1]), packId: null, chave: '1' }, [1], mais(20)))
       .toEqual({ acao: 'enviar', parcial: null, composicaoIncerta: false });
   });
+
+  describe('resgate de orders que não chegaram (webhook do ML atrasado/perdido)', () => {
+    const r = (ausentes: number[], syncS: number) => ({ ausentes, ultimoSyncEm: mais(syncS).toISOString() });
+
+    it('prazo vencido com order ausente localmente → resgatar e aguardar até último sync + 180 s', () => {
+      expect(decidirEnvioCarrinho(estado([1, 2, 3]), [1, 2], mais(600), r([3], 20)))
+        .toEqual({ acao: 'resgatar', faltantes: [3], delaySeg: 60 });
+      expect(decidirEnvioCarrinho(estado([1, 2, 3]), [1, 2], mais(750), r([3], 20)))
+        .toEqual({ acao: 'resgatar', faltantes: [3], delaySeg: 30 });
+      expect(decidirEnvioCarrinho(estado([1, 2, 3]), [1, 2], mais(780), r([3], 20)))
+        .toEqual({ acao: 'enviar', parcial: { recebidos: 2, total: 3 }, composicaoIncerta: false });
+    });
+
+    it('carrinho conhecido só 27 min depois do pagamento ainda ganha a janela de resgate', () => {
+      expect(decidirEnvioCarrinho(estado([1, 2, 3]), [1, 2], mais(1655), r([3], 1650)))
+        .toEqual({ acao: 'resgatar', faltantes: [3], delaySeg: 60 });
+      expect(decidirEnvioCarrinho(estado([1, 2, 3]), [1, 2], mais(1830), r([3], 1650)))
+        .toEqual({ acao: 'enviar', parcial: { recebidos: 2, total: 3 }, composicaoIncerta: false });
+    });
+
+    it('order presente mas não paga (cancelada) não é resgatada: envia parcial no prazo', () => {
+      expect(decidirEnvioCarrinho(estado([1, 2, 3]), [1, 2], mais(600), r([], 20)))
+        .toEqual({ acao: 'enviar', parcial: { recebidos: 2, total: 3 }, composicaoIncerta: false });
+    });
+
+    it('antes do prazo continua só aguardando', () => {
+      expect(decidirEnvioCarrinho(estado([1, 2, 3]), [1, 2], mais(70), r([3], 20)))
+        .toEqual({ acao: 'aguardar', delaySeg: 60 });
+    });
+  });
 });

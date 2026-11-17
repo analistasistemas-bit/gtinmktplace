@@ -115,6 +115,26 @@ async function composicaoNoWorker(admin: SupabaseClient, orgId: string, packId: 
   }
 }
 
+/** Orders do carrinho já gravadas: `user_id` (dono da conexão ML, exigido pelo sync-venda) e `criado_em`. */
+async function lerSyncLocal(
+  admin: SupabaseClient, orgId: string, e: EstadoCarrinho,
+): Promise<Array<{ order_id: number; user_id: string | null; criado_em: string | null }>> {
+  const q = admin.from('ml_vendas').select('order_id, user_id, criado_em').eq('org_id', orgId);
+  const { data, error } = await (e.packId != null ? q.eq('pack_id', e.packId) : q.eq('order_id', e.orderId));
+  if (error) throw new Error(`ler sync local do carrinho: ${error.message}`);
+  return data ?? [];
+}
+
+/** Resgate (webhook do ML atrasado/perdido): o mesmo job do ml-webhook, então baixa de estoque e
+ *  "Nova venda" saem pelo caminho normal. sync-venda é idempotente; falha só loga (a reconciliação
+ *  horária é o backstop). */
+async function enfileirarSyncFaltantes(orgId: string, userId: string | null, faltantes: number[]): Promise<void> {
+  if (!userId) return;
+  const url = `${Deno.env.get('SUPABASE_URL')}/functions/v1/sync-venda`;
+  await Promise.all(faltantes.map((id) => qstashClient().publishJSON({ url, body: { user_id: userId, order_id: String(id) }, retries: 3 })
+    .catch((err) => console.error(`carrinho ${orgId}: resgate da order ${id}: ${(err as Error).message}`))));
+}
+
 /** Uma execução do job do carrinho. Lança em erro de leitura antes do claim (a edge devolve 500 e
  *  o QStash tenta de novo; a linha segue `aguardando`). */
 export async function processarCarrinho(
@@ -142,10 +162,20 @@ export async function processarCarrinho(
   const db = admin as unknown as MetricsDb;
   const vendas = await lerVendasDoCarrinho(db, orgId, { packId: e.packId, orderId: e.orderId });
   const pagas = vendas.filter((v) => ehFaturavel(v.status)).map((v) => v.order_id);
-  const decisao = decidirEnvioCarrinho(e, pagas, agora);
+  const conhecidas = new Set(vendas.map((v) => Number(v.order_id)));
+  const ausentes = (e.esperadas ?? []).filter((id) => !conhecidas.has(id));
+  const vencido = agora.getTime() - Date.parse(e.primeiroEm) >= PRAZO_CARRINHO_SEG * 1000;
+  const locais = ausentes.length && vencido ? await lerSyncLocal(admin, orgId, e) : [];
+  const ultimoSyncEm = locais.map((l) => l.criado_em).filter((d): d is string => !!d).sort().at(-1) ?? null;
+  const decisao = decidirEnvioCarrinho(e, pagas, agora, locais.length ? { ausentes, ultimoSyncEm } : undefined);
   console.log(JSON.stringify({ fn: 'notificar-carrinho', orgId, chave, decisao }));
+  // Janela de resgate vencida (job atrasado) ou carrinho descartado: a ausente ainda precisa do
+  // sync-venda (estoque, "Nova venda"), só a mensagem gerencial não espera mais por ela.
+  if ((decisao.acao === 'enviar' || decisao.acao === 'descartar') && ausentes.length && locais.length) {
+    await enfileirarSyncFaltantes(orgId, locais.find((l) => l.user_id)?.user_id ?? null, ausentes);
+  }
 
-  if (decisao.acao === 'aguardar') {
+  if (decisao.acao === 'aguardar' || decisao.acao === 'resgatar') {
     // CAS em `tentativas`: retry do QStash e job da varredura na mesma linha não abrem duas cadeias.
     const { data, error: errUpd } = await admin.from(TABELA)
       .update({ tentativas: e.tentativas + 1, atualizado_em: agora.toISOString() })
@@ -153,6 +183,9 @@ export async function processarCarrinho(
       .select('chave');
     if (errUpd) throw new Error(`reagendar carrinho: ${errUpd.message}`);
     if (!data?.length) return 'ignorado';
+    if (decisao.acao === 'resgatar') {
+      await enfileirarSyncFaltantes(orgId, locais.find((l) => l.user_id)?.user_id ?? null, decisao.faltantes);
+    }
     await qstashClient().publishJSON(job(orgId, chave, e.tentativas + 1, decisao.delaySeg));
     return 'aguardando';
   }

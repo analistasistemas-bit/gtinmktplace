@@ -1,5 +1,12 @@
 # PubliAI — Tasks
 
+## Notificação gerencial: resgate de order ausente no carrinho (ADR-0190, emenda 16/11) — 2026-11-16
+
+Edges `notificar-carrinho` e `sync-venda` (importam `_shared/notificacoes/gerencial/carrinho*.ts`); sem migration. Incidente Avil: webhook do ML atrasado 27 min e um perdido → mensagem "parcial: 2 de 3".
+
+- [x] Prazo vencido com order de `esperadas` ausente em `ml_vendas` → `resgatar`: publica `sync-venda` da ausente e espera até o último sync local + 180 s; depois envia parcial como antes.
+- [x] Testes (`carrinho.test.ts`, `carrinho-io.test.ts`).
+
 ## Publicados: ações secundárias no menu "⋯" — 2026-11-16
 
 Só front (`src/pages/Publicados.tsx`); sem migration nem edge. Pedido do Diego: os ícones da coluna Ações passavam da borda da tela.

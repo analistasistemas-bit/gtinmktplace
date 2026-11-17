@@ -33,11 +33,15 @@ type Linha = Record<string, any>;
 interface Op { op: 'select' | 'upsert' | 'update'; row?: Linha; opts?: unknown; patch?: Linha; is: Array<[string, unknown]>; or?: string; range?: [number, number] }
 
 // Tabela notificacao_carrinho em memória: aplica eq/is/lt e devolve as linhas afetadas.
-function fakeAdmin(linhas: Linha[]) {
+function fakeAdmin(linhas: Linha[], vendasLocais: Linha[] = []) {
   const ops: Op[] = [];
   const admin: any = {
     linhas, ops,
     from: (tabela: string) => {
+      if (tabela === 'ml_vendas') {
+        const q: any = { select: () => q, eq: () => q, then: (res: any, rej: any) => Promise.resolve({ data: vendasLocais, error: null }).then(res, rej) };
+        return q;
+      }
       if (tabela !== 'notificacao_carrinho') throw new Error(`tabela inesperada ${tabela}`);
       const st: Op = { op: 'select', is: [] };
       const filtros: Array<(r: Linha) => boolean> = [];
@@ -316,6 +320,46 @@ describe('processarCarrinho', () => {
     expect(await processarCarrinho(admin, ORG, '9000', mais(70))).toBe('aguardando');
     expect(m.resolverConexao).toHaveBeenCalledWith(admin, ORG, 'mercado_livre');
     expect(admin.linhas[0].esperadas).toEqual([1, 2]);
+  });
+
+  it('resgatar: prazo vencido e order ausente → CAS, sync-venda da ausente com o user_id local e reagenda', async () => {
+    m.lerVendasDoCarrinho.mockResolvedValue([venda(1), venda(2)]);
+    const admin = fakeAdmin([linha({ esperadas: [1, 2, 3], tentativas: 0 })],
+      [{ order_id: 1, user_id: 'u-ml', criado_em: mais(1650).toISOString() }, { order_id: 2, user_id: 'u-ml', criado_em: mais(1651).toISOString() }]);
+    expect(await processarCarrinho(admin, ORG, '9000', mais(1655))).toBe('aguardando');
+    expect(admin.linhas[0]).toMatchObject({ tentativas: 1, status: 'aguardando' });
+    expect(m.publishJSON).toHaveBeenCalledWith(expect.objectContaining({
+      url: 'https://proj.supabase.co/functions/v1/sync-venda', body: { user_id: 'u-ml', order_id: '3' }, retries: 3,
+    }));
+    expect(m.publishJSON).toHaveBeenCalledWith(expect.objectContaining({
+      body: { orgId: ORG, chave: '9000' }, delay: 60, deduplicationId: `carrinho-${ORG}-9000-1`,
+    }));
+    expect(m.notificarCategoria).not.toHaveBeenCalled();
+  });
+
+  it('resgatar: falha ao publicar o sync-venda não impede o reagendamento', async () => {
+    m.lerVendasDoCarrinho.mockResolvedValue([venda(1), venda(2)]);
+    m.publishJSON.mockImplementation(async (j: any) => { if (j.url.endsWith('sync-venda')) throw new Error('qstash'); return { messageId: 'm' }; });
+    const admin = fakeAdmin([linha({ esperadas: [1, 2, 3] })], [{ order_id: 1, user_id: 'u-ml', criado_em: mais(20).toISOString() }]);
+    expect(await processarCarrinho(admin, ORG, '9000', mais(600))).toBe('aguardando');
+    expect(m.publishJSON).toHaveBeenCalledWith(expect.objectContaining({ deduplicationId: `carrinho-${ORG}-9000-1` }));
+  });
+
+  it('janela de resgate vencida → envia parcial', async () => {
+    prepararEnvio();
+    m.lerVendasDoCarrinho.mockResolvedValue([venda(1), venda(2)]);
+    const admin = fakeAdmin([linha({ esperadas: [1, 2, 3] })], [{ order_id: 1, user_id: 'u-ml', criado_em: mais(20).toISOString() }]);
+    expect(await processarCarrinho(admin, ORG, '9000', mais(780))).toBe('enviado');
+    expect(m.montarMensagemCarrinho.mock.calls[0][3]).toEqual({ parcial: { recebidos: 2, total: 3 }, composicaoIncerta: false });
+    // Job atrasado além da janela: a ausente ainda vai para o sync-venda (estoque e "Nova venda").
+    expect(m.publishJSON).toHaveBeenCalledWith(expect.objectContaining({ body: { user_id: 'u-ml', order_id: '3' } }));
+  });
+
+  it('descartar com order ausente também enfileira o sync-venda dela', async () => {
+    m.lerVendasDoCarrinho.mockResolvedValue([venda(1, 'cancelled')]);
+    const admin = fakeAdmin([linha({ esperadas: [1, 2] })], [{ order_id: 1, user_id: 'u-ml', criado_em: mais(20).toISOString() }]);
+    expect(await processarCarrinho(admin, ORG, '9000', mais(600))).toBe('descartado');
+    expect(m.publishJSON).toHaveBeenCalledWith(expect.objectContaining({ body: { user_id: 'u-ml', order_id: '2' } }));
   });
 
   it('esperadas null e /packs falha: segue null sem lançar', async () => {
