@@ -25,11 +25,11 @@ export function AvisoLoja({ pct }: { pct: number }) {
               aquele item (cor + tamanho) vendeu.
             </li>
             <li>
-              <strong>Pela família:</strong> com menos de 6, a conta usa o produto inteiro: quanto ele vende no total e quanto cada
-              cor e cada tamanho costuma pesar. Se no produto o M vende o dobro do P, o M recebe o dobro do P.
+              <strong>Pela família:</strong> sem nenhuma venda do item, a conta usa o produto inteiro: quanto ele vende no total e
+              quanto cada cor e cada tamanho costuma pesar. Se no produto o M vende o dobro do P, o M recebe o dobro do P.
             </li>
             <li>
-              <strong>No meio do caminho, mistura os dois:</strong> com 3 vendas, metade vem do item e metade da família. A cada
+              <strong>De 1 a 5 vendas, mistura os dois:</strong> com 3 vendas, metade vem do item e metade da família. A cada
               venda o item pesa mais.
             </li>
           </ul>

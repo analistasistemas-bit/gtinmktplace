@@ -10,8 +10,8 @@ import { normGtin } from '@/lib/gtin';
 
 const rotulo = (c: string) => c || 'Sem cor';
 
-/** Foto do primeiro tamanho da cor que tiver imagem própria (null se nenhum). */
-function useFotoCor(codigos: string[]): string | null {
+/** Foto do primeiro tamanho da cor que tiver imagem própria. `tem` = existe foto cadastrada (a URL assinada pode ainda estar carregando). */
+function useFotoCor(codigos: string[]): { tem: boolean; url: string | null } {
   const { data: fotos } = useFotosProduto();
   const path = useMemo(() => {
     for (const c of codigos) {
@@ -21,11 +21,11 @@ function useFotoCor(codigos: string[]): string | null {
     return null;
   }, [fotos, codigos]);
   const { data: url } = useImageUrl(path);
-  return url ?? null;
+  return { tem: !!path, url: url ?? null };
 }
 
 export function BotaoCor({ cor, corHex, codigos }: { cor: string; corHex: string | null; codigos: string[] }) {
-  const url = useFotoCor(codigos);
+  const { tem, url } = useFotoCor(codigos);
   const nome = rotulo(cor);
   return (
     <Dialog>
@@ -44,7 +44,7 @@ export function BotaoCor({ cor, corHex, codigos }: { cor: string; corHex: string
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>{nome}</DialogTitle>
-          <DialogDescription>Foto cadastrada para esta cor.</DialogDescription>
+          <DialogDescription>{tem ? 'Foto cadastrada para esta cor.' : 'Esta cor não tem foto.'}</DialogDescription>
         </DialogHeader>
         {url ? (
           <div className="flex flex-col items-center gap-3">
@@ -53,6 +53,8 @@ export function BotaoCor({ cor, corHex, codigos }: { cor: string; corHex: string
               <ExternalLink className="h-4 w-4" aria-hidden />Abrir original
             </a>
           </div>
+        ) : tem ? (
+          <p role="status" className="text-sm text-muted-foreground">Carregando foto…</p>
         ) : (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <ImageOff className="h-4 w-4" aria-hidden />Sem foto cadastrada para esta cor.
