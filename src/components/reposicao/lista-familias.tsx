@@ -9,7 +9,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { FotoCapaFamilia } from '@/components/foto-capa-familia';
 import { useFotosProduto } from '@/hooks/useFotosProduto';
-import { useImageUrl } from '@/hooks/useImageUrl';
+import { useQueryClient } from '@tanstack/react-query';
+import { invalidarImagem, useImageUrl } from '@/hooks/useImageUrl';
 import { montarFotoResolver } from '@/lib/fotos-produto';
 import type { VendaItem } from '@/lib/faturamento';
 import { fmtBRL, fmtInt } from '@/lib/formato';
@@ -69,7 +70,9 @@ function Foto({ codigo }: { codigo: string }) {
   // ponytail: o resolver só usa `codigo` aqui (sem anúncio/GTIN na tela de reposição).
   const path = useMemo(() => montarFotoResolver(fotos)({ codigo } as VendaItem), [fotos, codigo]);
   const { data: url } = useImageUrl(path);
-  return <FotoCapaFamilia capaUrl={url ?? null} tamanho="small" />;
+  const qc = useQueryClient();
+  // Autocura: URL assinada guardada que falha (visto no Safari) é descartada e gerada de novo uma vez.
+  return <FotoCapaFamilia capaUrl={url ?? null} tamanho="small" renovar={path ? () => invalidarImagem(qc, path) : undefined} />;
 }
 
 function Pill({ f }: { f: FamiliaVisao }) {
