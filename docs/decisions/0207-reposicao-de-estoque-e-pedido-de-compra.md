@@ -1,6 +1,6 @@
 # ADR-0207 — Reposição de estoque e pedido de compra (orgs sem ERP)
 
-Status: PROPOSTO (2026-11-16) — decisões do grilling com o Diego + revisões Fable 5.2, GPT 6.1 Sol (high) e Grok 4.7 (xhigh) aceitas na íntegra pelo Diego · Relaciona: ADR-0094 (estoque único no app), ADR-0134 (alerta de estoque zerado), ADR-0172 (Vendas SKU), ADR-0181 (entrada por nota de compra), ADR-0200/0205 (kits) · Glossário: `CONTEXT.md`, seção "Reposição de estoque" · Spec: `docs/superpowers/specs/2026-11-16-reposicao-design.md`
+Status: ACEITO (2026-11-17) — no ar em produção (main fdb30add + polimento); números validados com dados reais da loja piloto (conta por SKU conferida à mão contra o ledger; tela = cálculo); 1º pedido real pendente com o Diego · decisões do grilling com o Diego + revisões Fable 5.2, GPT 6.1 Sol (high) e Grok 4.7 (xhigh) aceitas na íntegra pelo Diego · Relaciona: ADR-0094 (estoque único no app), ADR-0134 (alerta de estoque zerado), ADR-0172 (Vendas SKU), ADR-0181 (entrada por nota de compra), ADR-0200/0205 (kits) · Glossário: `CONTEXT.md`, seção "Reposição de estoque" · Spec: `docs/superpowers/specs/2026-11-16-reposicao-design.md`
 
 ## Contexto
 Zaven, DSA e Daludi Shop não têm ERP e refazem compras de cabeça. A Zaven pediu, para a Calça Sarja, saber quais cores e tamanhos repor e quando aumentar o pedido. Vale para qualquer produto, com ou sem grade.

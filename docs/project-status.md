@@ -4,9 +4,9 @@
 
 **Ultima atualizacao:** 2026-11-17
 
-## Reposição e pedido de compra (ADR-0207): implementado, aguardando deploy e validação
+## Reposição e pedido de compra (ADR-0207): no ar desde 17/11/2026
 
-Código completo na branch `worktree-reposicao-design`. **Não está no ar:** 3 migrations, edges `reposicao`/`reposicao-diaria` (e alteradas `entrada-estoque`, `importar-nota-compra`, `desfazer-nota-compra`, `usuarios`) e schedule QStash pendentes. Piloto: Zaven. ADR PROPOSTO até a validação real. Deploy: `docs/how-to/deploy-e-migrations.md`; rotina: `docs/runbooks/reposicao-diaria.md`.
+Em produção (main fdb30add + polimento visual). 3 migrations aplicadas; edges `reposicao` e `reposicao-diaria` no ar (e `entrada-estoque`, `importar-nota-compra`, `usuarios` atualizadas, 49 redeploys pela categoria nova); resumo diário agendado às 08:30 BRT (`scd_4p1BMbhgML2WiFa8eTb3Fq6CXC6b`). Módulo `reposicao` ligado na loja piloto (Zaven), prazo 15 e cobertura 30 dias. Números validados com dados reais (cálculo conferido contra o ledger; tela igual ao cálculo) e validação visual em navegador (desktop/mobile, claro/escuro). ADR ACEITO. Pendências: 1º pedido real com o Diego; antes de ligar DSA/Daludi Shop, medir CPU do `GET`, validade/lote e sazonalidade. Deploy: `docs/how-to/deploy-e-migrations.md`; rotina: `docs/runbooks/reposicao-diaria.md`; tutorial: `docs/tutorials/fazer-pedido-de-compra-pela-reposicao.md`.
 
 ## Galeria da cor por IA (ADR-0201): implementada, aguardando validação real
 

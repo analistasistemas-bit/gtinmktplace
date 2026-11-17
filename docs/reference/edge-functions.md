@@ -212,7 +212,7 @@ referência para auditar e recriar. Mantê-la atualizada ao mexer em qualquer cr
 | `reconciliar-faturamento` | `0 * * * *` | *(sem body)* | 3 |
 | `notificar-liberacao` | `0 11 * * *` | *(sem body)* | 3 |
 | `resumo-diario` (ADR-0190) | `0 11 * * *` | *(sem body)* | 1 — scheduleId: `scd_5BZmTcwbjRDRUsmaiUL28CDs27dg` |
-| `reposicao-diaria` (ADR-0207) | `30 11 * * *` | *(sem body)* | 3 — scheduleId: a criar no deploy |
+| `reposicao-diaria` (ADR-0207) | `30 11 * * *` | *(sem body)* | 3 — scheduleId: `scd_4p1BMbhgML2WiFa8eTb3Fq6CXC6b` |
 | `notificar-carrinho` (ADR-0190) | `*/5 * * * *` | `{"varrer":true}` | 1 — scheduleId: `scd_53L5dtdTKEUJGpP8rwkTGCyzqLc3` |
 | `telegram-bot` (ADR-0190) | `*/5 * * * *` | `{"varrer":true}` | 1 — scheduleId: `scd_51zTvvr5we53EmcYgemFDjUxntpR` |
 | `varrer-anuncios-orfaos` (2026-11-16) | `0 11 * * *` | *(sem body)* | 3 — scheduleId: `scd_5qDkzzyJFMmwxhAunNEdf4Em8MUx` |

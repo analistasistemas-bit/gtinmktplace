@@ -2,14 +2,17 @@
 
 ## Reposição de estoque e pedido de compra (ADR-0207) — 2026-11-17
 
-Branch `feat/reposicao`. Spec `docs/superpowers/specs/2026-11-16-reposicao-design.md`, plano `docs/superpowers/plans/2026-11-16-reposicao.md`. **Status: implementado, aguardando deploy e validação na loja piloto (Zaven).** Nada no ar: 3 migrations, edges e schedule pendentes (ordem em `docs/how-to/deploy-e-migrations.md`).
+Branch `feat/reposicao`. Spec `docs/superpowers/specs/2026-11-16-reposicao-design.md`, plano `docs/superpowers/plans/2026-11-16-reposicao.md`. **Status: no ar em 17/11** (main fdb30add + polimento visual). 3 migrations aplicadas, `usuarios` antes do `db push`, 49 edges redeployadas, schedule QStash `scd_4p1BMbhgML2WiFa8eTb3Fq6CXC6b`. Módulo ligado na Zaven (prazo 15, cobertura 30).
 
 - [x] Módulo puro de cálculo `_shared/reposicao/` (demanda, curva, tendência, projeção, quantidade, urgência) + edge `reposicao` (GET e ações) + `reposicao-diaria` (foto e resumo).
 - [x] Migrations: 7 tabelas, `familias.multiplo_compra`, RPCs de recebimento e de ações, categoria `reposicao`, módulo e menu.
 - [x] Recebimento vinculado em `entrada-estoque` e `importar-nota-compra` (`pedidoCompraId`), desfazer nota desfaz a baixa.
 - [x] Front: página Reposição, rascunho, aprovação, texto WhatsApp, recebimento e saldo parcial.
-- [ ] Deploy: `usuarios` antes do `db push`; schedule QStash `30 11 * * *`; medir CPU do `GET` na DSA (> 1,5 s vira issue antes da fase 2).
-- [ ] Validação real na Zaven e recalibração dos limites com a foto diária após 60 dias.
+- [x] Deploy: `usuarios` antes do `db push`; schedule QStash `30 11 * * *`.
+- [x] Números validados com dados reais da Zaven: 0 violações das regras do ADR; 1 SKU conferido à mão contra o ledger; tela = cálculo (células, linha, Sheet, cards, texto do WhatsApp).
+- [x] Validação visual em navegador real (1440/375, claro/escuro) + auditoria de design e polimento.
+- [ ] Medir CPU do `GET` na DSA antes da fase 2 (> 1,5 s vira issue); validade/lote e sazonalidade antes de ligar DSA/Daludi Shop.
+- [ ] 1º pedido real com o Diego; recalibrar limites com a foto diária após 60 dias.
 
 ## Kit Virtual: capa IA com produto que já é conjunto (ADR-0206) — 2026-11-16
 
