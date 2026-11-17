@@ -4,7 +4,7 @@ const create = vi.fn();
 vi.mock('../client.ts', () => ({ openrouterClient: () => ({ chat: { completions: { create } } }) }));
 vi.mock('../imagem.ts', () => ({ custoImagemUsd: () => 0.0123 }));
 import {
-  avaliarComposicao, chaveComposicao, MAX_UNIDADES_CAPA, modoCapa, montarPedidoComposicao, quantidadesNaCapa, verificarComposicao,
+  avaliarComposicao, chaveComposicao, MAX_UNIDADES_CAPA, modoCapa, montarPedidoComposicao, quantidadesNaCapa, SISTEMA_VERIFICACAO_COMPOSICAO, verificarComposicao,
 } from '../foto-kit-virtual.ts';
 
 const A = (q: number) => ({ rotulo: 'A', quantidade: q });
@@ -48,6 +48,23 @@ describe('avaliarComposicao (fail-closed)', () => {
     const v = avaliarComposicao({ ...okV, produtos_fieis: false, observacao: 'X\u0000\ny'.repeat(100) }, [2, 1]);
     expect(v.motivos.join(' ')).not.toMatch(/[\u0000-\u001f]/);
     expect(v.motivos.join(' ').length).toBeLessThanOrEqual(320);
+  });
+});
+
+describe('produto que é conjunto (ex.: kit shampoo + condicionador)', () => {
+  // Bug 16/11 (Hairfly): referência 1 com 2 frascos virou 1 frasco na capa e a visão aprovou.
+  it('gerador: 1 unidade = conjunto inteiro da referência, com todas as peças', () => {
+    const [instr] = montarPedidoComposicao({ itens: [A(1), { rotulo: 'B', quantidade: 1 }] }).textos;
+    expect(instr).toMatch(/ONE unit of product i is EVERYTHING shown in reference image i/);
+    expect(instr).toMatch(/never drop a piece/);
+    expect(instr).toMatch(/several DIFFERENT items/);
+    expect(instr).toMatch(/same item more than once .* one unit is a single item/);
+  });
+  it('verificador: unidade sem alguma peça da original não conta e não é fiel', () => {
+    expect(SISTEMA_VERIFICACAO_COMPOSICAO).toMatch(/ONE complete unit of product i is the WHOLE set of items shown in its original photo/);
+    expect(SISTEMA_VERIFICACAO_COMPOSICAO).toMatch(/missing any piece .* does not count/);
+    expect(SISTEMA_VERIFICACAO_COMPOSICAO).toMatch(/Pieces of a set belong to product i and are never itens_extras/);
+    expect(SISTEMA_VERIFICACAO_COMPOSICAO).toMatch(/same item from several angles, one unit is one item/);
   });
 });
 

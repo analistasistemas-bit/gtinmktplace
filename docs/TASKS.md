@@ -1,5 +1,13 @@
 # PubliAI — Tasks
 
+## Kit Virtual: capa IA com produto que já é conjunto (ADR-0206) — 2026-11-16
+
+Edge `gerar-capa-kit-virtual` (importa `_shared/ai/foto-kit-virtual.ts`); sem migration. Incidente Hairfly: Kit Shampoo+Condicionador Tanox (foto com 2 frascos) + Máscara saía na capa com 1 frasco só, e a visão aprovava.
+
+- [x] Gerador e verificador: quando a referência mostra itens DIFERENTES vendidos juntos, 1 unidade = o conjunto inteiro; mesmo item em vários ângulos = 1 item; peça de conjunto não é `itens_extras`.
+- [x] Medido no Nano Banana 2.1 com as fotos reais: 12/12 com os 3 itens (antes 0/2); máscara nunca duplicada.
+- [ ] Limite conhecido: a visão ainda aprova capa com peça faltando (contagem de peças testada e descartada, 2/3 falsos aprovados). A conferência humana segue sendo a trava.
+
 ## Notificação gerencial: resgate de order ausente no carrinho (ADR-0190, emenda 16/11) — 2026-11-16
 
 Edges `notificar-carrinho` e `sync-venda` (importam `_shared/notificacoes/gerencial/carrinho*.ts`); sem migration. Incidente Avil: webhook do ML atrasado 27 min e um perdido → mensagem "parcial: 2 de 3".
