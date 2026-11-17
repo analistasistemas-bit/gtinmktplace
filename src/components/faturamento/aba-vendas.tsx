@@ -14,7 +14,7 @@ import { useCoresProduto } from '@/hooks/useCoresProduto';
 import { useAnuncioCanonico } from '@/hooks/useAnuncioCanonico';
 import { useSessionState } from '@/hooks/useSessionState';
 import { useAliquotas } from '@/hooks/useConfiguracoes';
-import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
+import { aliquotasDeVenda, montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
 import { montarFotoResolver } from '@/lib/fotos-produto';
 import { montarCorResolver } from '@/lib/cor-produto';
 import { sincronizarFaturamento, type OrigemVenda } from '@/lib/faturamento';
@@ -176,7 +176,7 @@ export function AbaVendas() {
   const { data: fotos } = useFotosProduto();
   const { data: cores } = useCoresProduto();
   const { data: canonico } = useAnuncioCanonico();
-  const { data: aliquotas } = useAliquotas();
+  const { data: aliquotas, isError: aliquotasErro } = useAliquotas();
 
   // Agrupa por pack/order_id → pedidos; calcula KPIs novos
   const pedidos = useMemo(
@@ -185,10 +185,10 @@ export function AbaVendas() {
       montarCustoResolver(custos),
       montarPesoResolver(custos),
       montarFotoResolver(fotos, canonico),
-      montarAliquotaResolver(custos, aliquotas ?? { nacional: 8, importado: 16 }),
+      montarAliquotaResolver(custos, aliquotasDeVenda({ data: aliquotas, isError: aliquotasErro })),
       montarCorResolver(cores, canonico),
     ),
-    [vendas, custos, fotos, canonico, aliquotas, cores],
+    [vendas, custos, fotos, canonico, aliquotas, aliquotasErro, cores],
   );
   const kpis = useMemo(() => calcularKpisPedidos(pedidos), [pedidos]);
 
@@ -382,6 +382,12 @@ export function AbaVendas() {
           />
         </div>
       </div>
+
+      {aliquotasErro && (
+        <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          Falha ao ler as alíquotas de imposto. O imposto não foi calculado: lucro e markup estão sem imposto. Atualize a página.
+        </div>
+      )}
 
       {/* ── KPIs ── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">

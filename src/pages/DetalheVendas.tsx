@@ -20,7 +20,7 @@ import { useCustos } from '@/hooks/useCustos';
 import { useAnuncioCanonico } from '@/hooks/useAnuncioCanonico';
 import { useSessionState } from '@/hooks/useSessionState';
 import { urlAnuncioML } from '@/lib/ml-status';
-import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
+import { aliquotasDeVenda, montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
 import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { formatarNomeProduto } from '@/lib/texto';
 
@@ -303,17 +303,17 @@ export default function DetalheVendas() {
   // Fonte única dos KPIs: tabela ml_vendas (ADR-0038) — mesmo número do card de Faturamento.
   const { data: vendas = [], isFetching, refetch, isError } = useVendas(janela, 'todos');
   const { data: custos } = useCustos();
-  const { data: aliquotas } = useAliquotas();
+  const { data: aliquotas, isError: aliquotasErro } = useAliquotas();
   const { data: canonico } = useAnuncioCanonico();
   const detalhe = useMemo(
     () => montarDetalheVendas(
       vendas,
       montarCustoResolver(custos),
       montarPesoResolver(custos),
-      montarAliquotaResolver(custos, aliquotas ?? { nacional: 8, importado: 16 }),
+      montarAliquotaResolver(custos, aliquotasDeVenda({ data: aliquotas, isError: aliquotasErro })),
       canonico,
     ),
-    [vendas, custos, aliquotas, canonico],
+    [vendas, custos, aliquotas, aliquotasErro, canonico],
   );
 
   return (
@@ -356,6 +356,12 @@ export default function DetalheVendas() {
       {isError && (
         <div className="mb-4 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
           Não foi possível ler as vendas. Tente Atualizar.
+        </div>
+      )}
+
+      {aliquotasErro && (
+        <div role="alert" className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          Falha ao ler as alíquotas de imposto. O imposto não foi calculado: lucro e markup estão sem imposto. Atualize a página.
         </div>
       )}
 

@@ -6,7 +6,7 @@ import { resolverJanela, type Periodo, type PeriodoDias } from '@/lib/metricas';
 import { useVendas } from '@/hooks/useVendas';
 import { useCustos } from '@/hooks/useCustos';
 import { useAliquotas } from '@/hooks/useConfiguracoes';
-import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
+import { aliquotasDeVenda, montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
 import { agruparPorPedido } from '@/lib/pedidos-faturamento';
 import { agruparPorGeografia } from '@/lib/geografia-vendas';
 import { MapaBrasil } from '@/components/faturamento/mapa-brasil';
@@ -52,7 +52,7 @@ export function AbaGeografia() {
   const { data: vendas, isFetching } = useVendas(janela, 'todos');
 
   const { data: custos } = useCustos();
-  const { data: aliquotas } = useAliquotas();
+  const { data: aliquotas, isError: aliquotasErro } = useAliquotas();
 
   // Mesmos resolvers da aba Vendas: sem custo/imposto o markup por UF não fecha com ela.
   const pedidos = useMemo(
@@ -61,9 +61,9 @@ export function AbaGeografia() {
       montarCustoResolver(custos),
       montarPesoResolver(custos),
       undefined,
-      montarAliquotaResolver(custos, aliquotas ?? { nacional: 8, importado: 16 }),
+      montarAliquotaResolver(custos, aliquotasDeVenda({ data: aliquotas, isError: aliquotasErro })),
     ),
-    [vendas, custos, aliquotas],
+    [vendas, custos, aliquotas, aliquotasErro],
   );
   const geo = useMemo(() => agruparPorGeografia(pedidos), [pedidos]);
   const valores = useMemo(
@@ -85,6 +85,11 @@ export function AbaGeografia() {
 
   return (
     <div className="space-y-4">
+      {aliquotasErro && (
+        <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          Falha ao ler as alíquotas de imposto. O imposto não foi calculado: lucro e markup estão sem imposto. Atualize a página.
+        </div>
+      )}
       {/* Seletor de período + exportar */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1">

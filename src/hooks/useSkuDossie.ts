@@ -8,7 +8,7 @@ import { useAnuncioCanonico } from '@/hooks/useAnuncioCanonico';
 import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { useDevolucoes } from '@/hooks/useDevolucoes';
 import { useCatalogoVendasSku } from '@/hooks/useCatalogoVendasSku';
-import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
+import { aliquotasDeVenda, montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
 import { montarFotoResolver } from '@/lib/fotos-produto';
 import { montarCorResolver } from '@/lib/cor-produto';
 import { agruparPorPedido } from '@/lib/pedidos-faturamento';
@@ -51,7 +51,7 @@ export function useSkuDossie(alvo: AlvoDossie, periodo: Periodo, passo: Passo) {
   const { data: fotos } = useFotosProduto();
   const { data: cores } = useCoresProduto();
   const { data: canonico } = useAnuncioCanonico();
-  const { data: aliquotas } = useAliquotas();
+  const { data: aliquotas, isError: aliquotasErro } = useAliquotas();
   const devQ = useDevolucoes();
   const catQ = useCatalogoVendasSku();
 
@@ -130,13 +130,13 @@ export function useSkuDossie(alvo: AlvoDossie, periodo: Periodo, passo: Passo) {
     const custoR = montarCustoResolver(custos);
     const pesoR = montarPesoResolver(custos);
     const fotoR = montarFotoResolver(fotos, canonico);
-    const aliqR = montarAliquotaResolver(custos, aliquotas ?? { nacional: 8, importado: 16 });
+    const aliqR = montarAliquotaResolver(custos, aliquotasDeVenda({ data: aliquotas, isError: aliquotasErro }));
     const corR = montarCorResolver(cores, canonico);
     return (vs: Venda[]) => agruparPorPedido(vs, custoR, pesoR, fotoR, aliqR, corR);
-  }, [custos, fotos, cores, canonico, aliquotas]);
+  }, [custos, fotos, cores, canonico, aliquotas, aliquotasErro]);
 
   const r = useMemo<{ estado: EstadoDossie; dados: Omit<DossieSku, 'trafego'> | null }>(() => {
-    if (catQ.isError || devQ.isError || vendasQ.isError || extrasQ.isError) return { estado: 'erro', dados: null };
+    if (catQ.isError || devQ.isError || vendasQ.isError || extrasQ.isError || aliquotasErro) return { estado: 'erro', dados: null };
     if (!catQ.data) return { estado: 'carregando', dados: null };
     if (!codigos.length) return { estado: 'nao_encontrado', dados: null }; // família fora do catálogo
     // Espera custos (sem erro) e devoluções como useVendasSku: nada de "sem custo" ou taxa 0 no load.
@@ -147,7 +147,7 @@ export function useSkuDossie(alvo: AlvoDossie, periodo: Periodo, passo: Passo) {
       catalogo: catQ.data, devolucoes: devQ.data, janela, anterior, hoje, hojeAnterior: janelaAnterior(hoje, HOJE_30), intervalos,
       janelaAds, ...extrasQ.data,
     });
-  }, [catQ.isError, devQ.isError, vendasQ.isError, extrasQ.isError, catQ.data, alvoM, codigos, vendasQ.data, extrasQ.data, devQ.data,
+  }, [catQ.isError, devQ.isError, vendasQ.isError, extrasQ.isError, aliquotasErro, catQ.data, alvoM, codigos, vendasQ.data, extrasQ.data, devQ.data,
     custos, custosQ.isError, agrupar, janela, anterior, intervalos, janelaAds, syncFimPronto]);
 
   // 1ª venda da ORG (mínimo do catálogo inteiro, como vendas-sku): a do alvo bloquearia família que só

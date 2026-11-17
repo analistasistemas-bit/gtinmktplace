@@ -39,7 +39,7 @@ import { montarPendencias } from '@/lib/pendencias';
 import { topProdutos, calendarioCaixa, montarAtencao } from '@/lib/cockpit';
 import { agruparPorPedido, calcularKpisPedidos } from '@/lib/pedidos-faturamento';
 import { agruparPorGeografia } from '@/lib/geografia-vendas';
-import { montarAliquotaResolver, montarCustoResolver, montarPesoResolver } from '@/lib/custos';
+import { aliquotasDeVenda, montarAliquotaResolver, montarCustoResolver, montarPesoResolver } from '@/lib/custos';
 
 type Trend = 'up' | 'down' | 'neutral';
 function deltaCom(atual: number, anterior: number, rotulo: string): { texto: string; trend: Trend } {
@@ -108,7 +108,7 @@ const [metrica, setMetrica] = useState<'faturamento' | MetricaGrafico>('faturame
   const vendasRaw = useVendas(janela, 'todos', canalAtivo); // mesma chave de cache do useResumoVendas → sem request extra
   const vendasRawAnt = useVendas(janelaAnt, 'todos', canalAtivo); // idem (já buscado pelo rAnt) → delta por pacote
   const { data: custos } = useCustos();
-  const { data: aliquotas } = useAliquotas();
+  const { data: aliquotas, isError: aliquotasErro } = useAliquotas();
   const { data: mostrarLucro } = useMostrarLucroDashboard();
   const carregando = vendasRaw.isPending;
 
@@ -156,9 +156,9 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
       montarCustoResolver(custos),
       montarPesoResolver(custos),
       undefined,
-      montarAliquotaResolver(custos, aliquotas ?? { nacional: 8, importado: 16 }),
+      montarAliquotaResolver(custos, aliquotasDeVenda({ data: aliquotas, isError: aliquotasErro })),
     ),
-    [vendasRaw.data, custos, aliquotas],
+    [vendasRaw.data, custos, aliquotas, aliquotasErro],
   );
   const kpisPedidos = useMemo(() => calcularKpisPedidos(pedidos), [pedidos]);
   // Devoluções concluídas no período, para o discreto do card de Faturamento Bruto.
@@ -173,9 +173,9 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
       montarCustoResolver(custos),
       montarPesoResolver(custos),
       undefined,
-      montarAliquotaResolver(custos, aliquotas ?? { nacional: 8, importado: 16 }),
+      montarAliquotaResolver(custos, aliquotasDeVenda({ data: aliquotas, isError: aliquotasErro })),
     )),
-    [vendasRawAnt.data, custos, aliquotas],
+    [vendasRawAnt.data, custos, aliquotas, aliquotasErro],
   );
   // Sem o mapa canônico a soma por anúncio sai parcial e depois salta (mesma regra de Publicados).
   const topCarregando = carregando || !canonicoPronto || publicadosPendente;

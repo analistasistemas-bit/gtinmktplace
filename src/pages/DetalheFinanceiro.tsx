@@ -28,7 +28,7 @@ import { calcularResumo } from '@/lib/resumo-vendas';
 import { orderIdsComDevolucaoReal } from '@/lib/devolucoes';
 import { agruparPorPedido, filtrarPedidosFinanceiro, nomeCurtoComprador, nomeExibicaoComprador, pedidoCasaBusca, retidoDoPedido, rotuloNaoFaturavel, totaisFinanceiro, type FiltroFinanceiro, type Pedido } from '@/lib/pedidos-faturamento';
 import { useDevolucoes } from '@/hooks/useDevolucoes';
-import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
+import { aliquotasDeVenda, montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
 import { montarFotoResolver } from '@/lib/fotos-produto';
 import { montarCorResolver } from '@/lib/cor-produto';
 import { labelStatusLiberacao, statusLiberacao, type StatusLiberacao } from '@/lib/status-liberacao';
@@ -268,9 +268,9 @@ export default function DetalheFinanceiro() {
       montarCustoResolver(custosQ.data),
       montarPesoResolver(custosQ.data),
       undefined,
-      montarAliquotaResolver(custosQ.data, aliquotasQ.data ?? { nacional: 8, importado: 16 }),
+      montarAliquotaResolver(custosQ.data, aliquotasDeVenda({ data: aliquotasQ.data, isError: aliquotasQ.isError })),
     ),
-    [vendasQ.data, custosQ.data, aliquotasQ.data],
+    [vendasQ.data, custosQ.data, aliquotasQ.data, aliquotasQ.isError],
   );
   // Tabela por PEDIDO (pack agrupado), igual ao Faturamento, p/ análise detalhada por item.
   const pedidos = useMemo(
@@ -279,10 +279,10 @@ export default function DetalheFinanceiro() {
       montarCustoResolver(custosQ.data),
       montarPesoResolver(custosQ.data),
       montarFotoResolver(fotosQ.data, canonicoQ.data),
-      montarAliquotaResolver(custosQ.data, aliquotasQ.data ?? { nacional: 8, importado: 16 }),
+      montarAliquotaResolver(custosQ.data, aliquotasDeVenda({ data: aliquotasQ.data, isError: aliquotasQ.isError })),
       montarCorResolver(coresQ.data, canonicoQ.data),
     ),
-    [vendasQ.data, custosQ.data, fotosQ.data, canonicoQ.data, aliquotasQ.data, coresQ.data],
+    [vendasQ.data, custosQ.data, fotosQ.data, canonicoQ.data, aliquotasQ.data, aliquotasQ.isError, coresQ.data],
   );
 
   const bruto = r.bruto;
@@ -539,6 +539,12 @@ export default function DetalheFinanceiro() {
       {error && (
         <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
           Falha ao ler as vendas. Clique em Atualizar para tentar de novo.
+        </div>
+      )}
+
+      {aliquotasQ.isError && (
+        <div role="alert" className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          Falha ao ler as alíquotas de imposto. O imposto não foi calculado: lucro e markup estão sem imposto. Atualize a página.
         </div>
       )}
 

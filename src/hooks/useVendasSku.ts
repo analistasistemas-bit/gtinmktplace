@@ -8,7 +8,7 @@ import { useAnuncioCanonico } from '@/hooks/useAnuncioCanonico';
 import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { useDevolucoes } from '@/hooks/useDevolucoes';
 import { useCatalogoVendasSku } from '@/hooks/useCatalogoVendasSku';
-import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
+import { aliquotasDeVenda, montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
 import { montarFotoResolver } from '@/lib/fotos-produto';
 import { montarCorResolver } from '@/lib/cor-produto';
 import { agruparPorPedido } from '@/lib/pedidos-faturamento';
@@ -32,7 +32,7 @@ function origemNaoResolvida(vendas: Venda[], janela: Janela, custoR: CustoResolv
   for (const v of vendas) {
     if (!ehFaturavel(v.status) || !dentroDaJanela(v.date_closed, janela)) continue;
     for (const it of v.itens) {
-      if ((custoR(it) ?? 0) > 0 && aliqR(it, v.uf) == null) codigos.add(it.codigo?.trim() || SEM_CODIGO);
+      if ((custoR(it) ?? 0) > 0 && aliqR(it, v.uf, v.date_closed ?? v.date_created) == null) codigos.add(it.codigo?.trim() || SEM_CODIGO);
     }
   }
   return [...codigos].sort();
@@ -73,8 +73,9 @@ export function useVendasSku(periodo: Periodo, janelaFixa?: Janela, enabled = tr
     const custoR = montarCustoResolver(custos);
     const pesoR = montarPesoResolver(custos);
     const fotoR = montarFotoResolver(fotos, canonico);
-    // Fallback 8/16 mantido para Faturamento/dossiê; o /ads lê `baseFiscal`, que acusa esse fallback.
-    const aliqR = montarAliquotaResolver(custos, aliquotas ?? { nacional: 8, importado: 16 });
+    // 8/16 só cobre o loading (o /ads lê `baseFiscal`, que acusa isso). Em `isError` o resolver não
+    // recebe nada — nem 8/16, nem o `data` antigo de um refetch com falha (ADR-0208).
+    const aliqR = montarAliquotaResolver(custos, aliquotasDeVenda({ data: aliquotas, isError: aliqQ.isError }));
     const corR = montarCorResolver(cores, canonico);
     // Erro antes de "carregando": refetch com falha mantém data antiga, mas a base não está garantida.
     // Por janela (pré-merge I3): venda sem origem só na anterior não bloqueia o resultado atual.

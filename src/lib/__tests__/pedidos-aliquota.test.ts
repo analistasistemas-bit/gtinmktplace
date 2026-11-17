@@ -61,3 +61,25 @@ describe('agruparPorPedido — alíquota por item (ADR-0055)', () => {
     expect(p.itens[0].aliquotaPct).toBe(1);
   });
 });
+
+describe('agruparPorPedido — alíquota vigente na data de CADA order (ADR-0208)', () => {
+  // 4% até 2026-11-17T12:40Z, 6,5% depois.
+  const porData: AliquotaResolver = (_it, _uf, data) => (Date.parse(data ?? '') < Date.parse('2026-11-17T12:40:00Z') ? 4 : 6.5);
+
+  it('pack com duas orders em datas diferentes: cada item usa a data da sua order, não a da 1ª', () => {
+    const [p] = agruparPorPedido([
+      venda({ id: 'a', order_id: 1, pack_id: 9, date_closed: '2026-11-16T10:00:00Z', total_amount: 100,
+        itens: [item({ id: 'a', unit_price: 100 })] }),
+      venda({ id: 'b', order_id: 2, pack_id: 9, date_closed: '2026-11-18T10:00:00Z', total_amount: 100,
+        itens: [item({ id: 'b', unit_price: 100 })] }),
+    ], undefined, undefined, undefined, porData);
+    expect(p.itens.map((i) => [i.imposto, i.aliquotaPct])).toEqual([[4, 4], [6.5, 6.5]]);
+  });
+
+  it('sem date_closed cai em date_created', () => {
+    const [p] = agruparPorPedido([
+      venda({ date_closed: null, date_created: '2026-11-18T10:00:00Z', itens: [item({ unit_price: 100 })] }),
+    ], undefined, undefined, undefined, porData);
+    expect(p.itens[0].aliquotaPct).toBe(6.5);
+  });
+});

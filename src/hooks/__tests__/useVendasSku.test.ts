@@ -260,6 +260,34 @@ describe('useVendasSku — integridade fiscal (ADR-0055: alíquota ausente não 
     limpar();
   });
 
+  it('fiscal: erro nas alíquotas sem dado → imposto 0, nunca o 8/16 (ADR-0208)', () => {
+    preparar([linhaCusto('A', 'nacional')], [venda(1, item('A'))]);
+    Object.assign(aliqQ, { data: undefined, isError: true });
+    const r = render();
+    expect(r.dados!.linhas.find((l) => l.codigo === 'A')!.acc.imposto).toBe(0);
+    expect(r.baseFiscal).toEqual({ ok: false, motivo: 'aliquotas_erro' });
+    limpar();
+  });
+
+  it('fiscal: refetch com erro mantém data antigo → imposto 0, não o do cache', () => {
+    preparar([linhaCusto('A', 'nacional')], [venda(1, item('A'))]);
+    Object.assign(aliqQ, { data: { ...confirmadas, nacional: 4 }, isError: true });
+    const r = render();
+    expect(r.dados!.linhas.find((l) => l.codigo === 'A')!.acc.imposto).toBe(0);
+    expect(r.baseFiscal).toEqual({ ok: false, motivo: 'aliquotas_erro' });
+    limpar();
+  });
+
+  it('fiscal: vigências vão direto ao resolver — venda de 05/10 usa a alíquota da época', () => {
+    preparar([linhaCusto('A', 'nacional')], [venda(1, item('A'))]);
+    Object.assign(aliqQ, { data: { ...confirmadas, nacional: 6.5, vigencias: [
+      { vigenteDesde: '1970-01-01T00:00:00Z', nacional: 4, importado: 16, ufEmpresa: null, internaPct: null },
+      { vigenteDesde: '2026-11-01T00:00:00Z', nacional: 6.5, importado: 16, ufEmpresa: null, internaPct: null },
+    ] } });
+    expect(render().dados!.linhas.find((l) => l.codigo === 'A')!.acc.imposto).toBe(4);
+    limpar();
+  });
+
   it('fiscal: sem dados montados, baseFiscal é null (nada a afirmar)', () => {
     Object.assign(custosQ, { data: undefined, isLoading: true, isError: false });
     expect(render().baseFiscal).toBeNull();

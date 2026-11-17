@@ -75,10 +75,12 @@ export function resultadoPorItem(vendas: Venda[], ctx: ContextoCalculo): Resulta
       // espelha pedidos-faturamento.ts:122 (custoDoItem; o resolver já prefere custo_congelado)
       const unit = custoResolver(it);
       const custo = unit != null && unit > 0 ? round2(unit * it.quantity) : null;
-      const imposto = faturavel ? impostoDoItem(it, aliquotaResolver, v.uf) : 0;
+      // Data da venda de ESTE pedido (não a do 1º do pack): a alíquota vigente muda no tempo (ADR-0208).
+      const dataVenda = v.date_closed ?? v.date_created;
+      const imposto = faturavel ? impostoDoItem(it, aliquotaResolver, v.uf, dataVenda) : 0;
       // diverge de pedidos-faturamento.ts:200 (de propósito): lá alíquota null vira imposto 0 e o
       // pedido segue com lucro; aqui o item fica sem lucro e o carrinho cai em `aliquota_nao_confirmada`.
-      const impostoOk = ctx.configOk && aliquotaResolver != null && aliquotaResolver(it, v.uf) != null;
+      const impostoOk = ctx.configOk && aliquotaResolver != null && aliquotaResolver(it, v.uf, dataVenda) != null;
       // Frete do envio não lido ainda (shipping_id sem frete_vendedor): o líquido gravado não o desconta.
       const freteNaoLido = v.frete_vendedor == null && v.shipping_id != null;
       const liq = liqItens[i];

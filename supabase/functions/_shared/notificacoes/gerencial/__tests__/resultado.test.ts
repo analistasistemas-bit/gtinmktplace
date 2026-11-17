@@ -63,6 +63,21 @@ describe('resultadoCarrinho — fixture calculada à mão', () => {
   });
 });
 
+describe('resultadoPorItem — alíquota vigente na data da venda (ADR-0208)', () => {
+  const rates = { nacional: 6.5, importado: 0, ufEmpresa: 'PE', internaPct: 6.5, vigencias: [
+    { vigenteDesde: '1970-01-01T00:00:00Z', nacional: 4, importado: 0, ufEmpresa: 'PE', internaPct: 4 },
+    { vigenteDesde: '2026-11-17T12:40:00Z', nacional: 6.5, importado: 0, ufEmpresa: 'PE', internaPct: 6.5 },
+  ] };
+  const ctxVig: ContextoCalculo = { ...ctx, rates };
+
+  it('duas vendas iguais, antes e depois da troca: imposto 4 e 6,5', () => {
+    const antes = venda({ id: 'p1', order_id: 101, date_closed: '2026-11-16T10:00:00Z', itens: [item({ id: 'p1i' })] });
+    const depois = venda({ id: 'p2', order_id: 102, date_closed: '2026-11-18T10:00:00Z', itens: [item({ id: 'p2i' })] });
+    const r = resultadoPorItem([antes, depois], ctxVig);
+    expect(r.map((x) => x.imposto)).toEqual([4, 6.5]);
+  });
+});
+
 describe('paridade com cascataDoPedido (Lucro do pedido da tela)', () => {
   const packA = [
     venda({ id: 'a1', order_id: 11, pack_id: 900, shipping_id: 555, total_amount: 60, sale_fee_total: 10,

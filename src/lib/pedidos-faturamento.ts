@@ -164,9 +164,10 @@ export function agruparPorPedido(
     const itensFlat = membros.flatMap((v) => {
       const faturavel = ehFaturavel(v.status);
       // A UF vem da venda, não do pedido: um pack pode agrupar order_ids, e o imposto é resolvido
-      // por venda (ADR-0112).
+      // por venda (ADR-0112). Idem a data: a alíquota vigente é a do dia da venda DESTA order, não
+      // a da 1ª do pack (ADR-0208).
       return v.itens.map((it, i) => ({
-        it, faturavel, uf: v.uf, estorno: i === 0 ? v.estorno ?? 0 : 0,
+        it, faturavel, uf: v.uf, data: v.date_closed ?? v.date_created, estorno: i === 0 ? v.estorno ?? 0 : 0,
         temDevolucao: v.tem_devolucao, orderId: v.order_id, kitItemId: v.kit_item_id,
       }));
     });
@@ -194,11 +195,11 @@ export function agruparPorPedido(
     let custoTotal = 0;
     let temCusto = false;
     let impostoTotal = 0;
-    const itens: ItemPedido[] = itensFlat.map(({ it, faturavel, uf, estorno, temDevolucao, orderId, kitItemId }, i) => {
+    const itens: ItemPedido[] = itensFlat.map(({ it, faturavel, uf, data, estorno, temDevolucao, orderId, kitItemId }, i) => {
       const custo = custoDoItem(it, custoResolver);
       if (faturavel && custo != null) { custoTotal += custo; temCusto = true; }
-      const imposto = faturavel ? impostoDoItem(it, aliquotaResolver, uf) : 0;
-      const aliquotaPct = imposto > 0 ? aliquotaResolver?.(it, uf) ?? null : null;
+      const imposto = faturavel ? impostoDoItem(it, aliquotaResolver, uf, data) : 0;
+      const aliquotaPct = imposto > 0 ? aliquotaResolver?.(it, uf, data) ?? null : null;
       impostoTotal += imposto;
       const liqItem = liqItens[i];
       const liqItemComImposto = round2(liqItem - imposto);

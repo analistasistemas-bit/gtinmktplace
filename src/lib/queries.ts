@@ -4,6 +4,7 @@ import { signedUrl } from './storage';
 import { effectiveOrgId } from '@/stores/support-store';
 import { STATUS_RISCO, type FamiliaRiscoRow } from '@/lib/catalogo-risco';
 import type { Database } from './database.types';
+import type { VigenciaAliquota } from '../../supabase/functions/_shared/platform-admin/sales-costs';
 import type {
   Lote,
   Familia,
@@ -786,12 +787,28 @@ export function normalizarAliquotaInterna(
 export async function fetchAliquotas(): Promise<{
   nacional: number; importado: number; confirmada: boolean;
   ufEmpresa: string | null; internaPct: number | null;
+  /** Histórico de alíquotas (ADR-0208): venda antiga usa a vigente na data dela. `[]` = org nunca confirmou. */
+  vigencias: VigenciaAliquota[];
 }> {
   const orgId = effectiveOrgId();
-  if (!orgId) return { nacional: 8, importado: 16, confirmada: false, ufEmpresa: null, internaPct: null };
-  const { data } = await supabase.from('configuracoes')
+  if (!orgId) return { nacional: 8, importado: 16, confirmada: false, ufEmpresa: null, internaPct: null, vigencias: [] };
+  // Falha em QUALQUER das duas leituras lança: devolver `[]`/8-16/alíquotas atuais reaplicaria o
+  // imposto de hoje às vendas antigas em silêncio (ADR-0208). O erro chega ao `isError` da query.
+  const { data, error } = await supabase.from('configuracoes')
     .select('aliquota_nacional_pct, aliquota_importado_pct, aliquotas_confirmadas_em, uf_empresa, aliquota_interna_pct')
     .eq('org_id', orgId).maybeSingle();
+  if (error) throw error;
+  const { data: vig, error: vigErro } = await supabase.from('aliquotas_vigencia')
+    .select('vigente_desde, nacional_pct, importado_pct, uf_empresa, interna_pct')
+    .eq('org_id', orgId);
+  if (vigErro) throw vigErro;
+  const vigencias: VigenciaAliquota[] = (vig ?? []).map((r) => ({
+    vigenteDesde: r.vigente_desde,
+    nacional: Number(r.nacional_pct),
+    importado: Number(r.importado_pct),
+    ufEmpresa: r.uf_empresa ?? null,
+    internaPct: r.interna_pct != null ? Number(r.interna_pct) : null,
+  }));
   // ADR-0112: a alíquota interna só existe com os DOIS campos preenchidos — meio parâmetro é
   // tratado como parâmetro ausente (cai na regra por origem), nunca como percentual presumido.
   const ufEmpresa = data?.uf_empresa ?? null;
@@ -805,6 +822,7 @@ export async function fetchAliquotas(): Promise<{
     confirmada: data?.aliquotas_confirmadas_em != null,
     ufEmpresa: internaOk ? ufEmpresa : null,
     internaPct: internaOk ? internaPct : null,
+    vigencias,
   };
 }
 

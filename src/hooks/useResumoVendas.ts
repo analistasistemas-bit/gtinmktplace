@@ -4,7 +4,7 @@ import { useCustos } from './useCustos';
 import { useAnuncioCanonico } from './useAnuncioCanonico';
 import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { calcularResumo, type ResumoVendas } from '@/lib/resumo-vendas';
-import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
+import { aliquotasDeVenda, montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
 import type { Janela } from '@/lib/metricas';
 import type { CanalAtivo } from '@/lib/canal-ativo';
 
@@ -33,13 +33,12 @@ export function useResumoVendas(janela: Janela, canal: CanalAtivo = 'todos'): {
   // anúncio irmão legado (mesmo produto publicado no ML como N anúncios) — somam no anúncio dono.
   // Sem o mapa, essas unidades somem da linha do produto em Publicados.
   const canonicoQ = useAnuncioCanonico();
-  // Default 8/16 só cobre o loading inicial (data ainda undefined, sem erro). Em erro real de
-  // aliquotasQ, `data` fica undefined (1ª carga) ou mantém o último valor bom (TanStack Query não
-  // limpa data em refetch com erro) — nos dois casos NÃO aproximamos com 8/16: sem config
-  // resolvida, o resolver de alíquota devolve null (sem imposto) em vez de um número possivelmente
-  // errado (ADR-0055: imposto por origem nunca defaulta em silêncio).
+  // Default 8/16 só cobre o loading inicial (data ainda undefined, sem erro). Em `isError`
+  // o resolver recebe null: nem 8/16 (1ª carga) nem o último `data` bom (TanStack Query não limpa
+  // data em refetch com erro, e as vigências antigas podem ter mudado) — sem config resolvida o
+  // resolver devolve null (sem imposto) em vez de um número possivelmente errado (ADR-0055/0208).
   const aliquotas = useMemo(
-    () => aliquotasQ.data ?? (aliquotasQ.isError ? null : { nacional: 8, importado: 16 }),
+    () => aliquotasDeVenda({ data: aliquotasQ.data, isError: aliquotasQ.isError }),
     [aliquotasQ.data, aliquotasQ.isError],
   );
   const resumo = useMemo(
