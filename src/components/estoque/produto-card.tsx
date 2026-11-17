@@ -347,65 +347,66 @@ export function ProdutoCard({
     )}>
       <div className={cn(GRID_LINHA_PRODUTO, 'px-3 py-2')}>
         <div className="min-w-0">
-        <div className="flex min-w-0 items-center gap-2">
-        <button
-          type="button"
-          aria-expanded={aberto}
-          aria-controls={painelId}
-          onClick={() => setAberto((v) => !v)}
-          className="flex min-w-0 flex-1 items-center gap-3 rounded-md py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <ChevronRight className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', aberto && 'rotate-90')} />
-          <FotoCapaFamilia capaUrl={capa} tamanho="small" />
-          <div className="min-w-0">
-            <div className="truncate text-sm font-medium leading-tight">{nomePai}</div>
-            <div className="truncate font-mono text-xs leading-tight text-muted-foreground">{produto.codigoPai}</div>
-            {/* ADR-0129 D-11: sinaliza o lote de "Adicionar variação" desta tela mesmo antes de
-                expandir o card — pareado com o sino de notificação no fim do processamento. */}
-            {statusUpdate && (
-              <div className={cn(
-                'truncate text-xs leading-tight',
-                statusUpdate === 'atualizando' ? 'text-amber-600 dark:text-amber-500' : 'text-destructive',
-              )}>
-                {statusUpdate === 'atualizando' ? 'Atualizando…' : 'Erro na última atualização'}
-              </div>
-            )}
-            {marcaProduto?.status === 'pendente' && (
-              <div className="truncate text-xs leading-tight text-amber-600 dark:text-amber-500">
-                Enviando marca ao Mercado Livre…
-              </div>
-            )}
-            {marcaProduto?.status === 'erro' && (
-              <div className="truncate text-xs leading-tight text-destructive" title={marcaProduto.erro ?? undefined}>
-                Marca não enviada: {marcaProduto.erro ?? 'erro desconhecido'}
-              </div>
-            )}
-          </div>
-        </button>
-        {podeEditarMarca && marcaProduto?.status === 'erro' && (
-          <Button
-            variant="outline" size="sm" className="h-7 shrink-0 px-2"
-            aria-label={`Reenviar marca de ${nomePai}`}
-            disabled={reenviarMarca.isPending}
-            onClick={() => reenviarMarca.mutate()}
+          <div className="flex min-w-0 items-center gap-2">
+          <button
+            type="button"
+            aria-expanded={aberto}
+            aria-controls={painelId}
+            onClick={() => setAberto((v) => !v)}
+            className="flex min-w-0 flex-1 items-center gap-3 rounded-md py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            Reenviar
-          </Button>
-        )}
-        {seloUrgencia('hidden sm:flex')}
-        {statusUpdate === 'erro' && loteRevisaoId && (
-          <Button asChild variant="outline" size="sm" className="h-7 shrink-0 px-2">
-            <Link to={`/revisao/${loteRevisaoId}`} aria-label={`Revisar atualização de ${nomePai}`}>
-              <ClipboardCheck className="h-3.5 w-3.5 shrink-0" />
-              {/* Mesmo padrão de Entrada/Ajustar: abaixo de md a coluna do produto não comporta
-                  rótulo + nome, e o nome é o que identifica a linha. */}
-              <span className="hidden md:inline">Revisar</span>
-            </Link>
-          </Button>
-        )}
-        </div>
-        {/* Celular: o selo desce para baixo do nome, senão espreme o nome até sobrar uma letra. */}
-        {seloUrgencia('ml-7 flex w-fit sm:hidden')}
+            <ChevronRight className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', aberto && 'rotate-90')} />
+            <FotoCapaFamilia capaUrl={capa} tamanho="small" />
+            <div className="min-w-0">
+              <div className="truncate text-sm font-medium leading-tight">{nomePai}</div>
+              <div className="truncate font-mono text-xs leading-tight text-muted-foreground">{produto.codigoPai}</div>
+              {/* ADR-0129 D-11: sinaliza o lote de "Adicionar variação" desta tela mesmo antes de
+                  expandir o card — pareado com o sino de notificação no fim do processamento. */}
+              {statusUpdate && (
+                <div className={cn(
+                  'truncate text-xs leading-tight',
+                  statusUpdate === 'atualizando' ? 'text-amber-600 dark:text-amber-500' : 'text-destructive',
+                )}>
+                  {statusUpdate === 'atualizando' ? 'Atualizando…' : 'Erro na última atualização'}
+                </div>
+              )}
+              {marcaProduto?.status === 'pendente' && (
+                <div className="truncate text-xs leading-tight text-amber-600 dark:text-amber-500">
+                  Enviando marca ao Mercado Livre…
+                </div>
+              )}
+              {marcaProduto?.status === 'erro' && (
+                <div className="truncate text-xs leading-tight text-destructive" title={marcaProduto.erro ?? undefined}>
+                  Marca não enviada: {marcaProduto.erro ?? 'erro desconhecido'}
+                </div>
+              )}
+            </div>
+          </button>
+          {podeEditarMarca && marcaProduto?.status === 'erro' && (
+            <Button
+              variant="outline" size="sm" className="h-7 shrink-0 px-2"
+              aria-label={`Reenviar marca de ${nomePai}`}
+              disabled={reenviarMarca.isPending}
+              onClick={() => reenviarMarca.mutate()}
+            >
+              Reenviar
+            </Button>
+          )}
+          {seloUrgencia('hidden sm:flex')}
+          {statusUpdate === 'erro' && loteRevisaoId && (
+            <Button asChild variant="outline" size="sm" className="h-7 shrink-0 px-2">
+              <Link to={`/revisao/${loteRevisaoId}`} aria-label={`Revisar atualização de ${nomePai}`}>
+                <ClipboardCheck className="h-3.5 w-3.5 shrink-0" />
+                {/* Mesmo padrão de Entrada/Ajustar: abaixo de md a coluna do produto não comporta
+                    rótulo + nome, e o nome é o que identifica a linha. */}
+                <span className="hidden md:inline">Revisar</span>
+              </Link>
+            </Button>
+          )}
+          </div>
+          {/* Celular: o selo desce para baixo do nome, senão espreme o nome até sobrar uma letra. ml-20 = seta (1rem) +
+              foto small (2,5rem) + 2 gaps de 0,75rem: alinha com o texto do nome. */}
+          {seloUrgencia('ml-20 flex w-fit sm:hidden')}
         </div>
 
         <div className={cn(CELULA_MD, 'text-right text-sm tabular-nums text-muted-foreground')}>

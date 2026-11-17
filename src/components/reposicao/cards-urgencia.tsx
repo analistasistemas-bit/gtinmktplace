@@ -54,7 +54,8 @@ export function CardsUrgencia({ cards, ativo, onFiltro, ocultarVendaPerdida }: {
               <c.icone aria-hidden className={cn('h-4 w-4', c.cor)} />{c.titulo}
             </span>
             {/* Card zerado perde peso: o olho vai para onde há o que pedir. */}
-            <span className={cn('text-h2 tabular-nums', c.vazio ? 'text-muted-foreground' : 'text-foreground')}>{c.numero}</span>
+            {/* Sem cn(): o twMerge lê text-h2 como cor e o derruba junto com a cor do número. */}
+            <span className={`text-h2 tabular-nums ${c.vazio ? 'text-muted-foreground' : 'text-foreground'}`}>{c.numero}</span>
             {c.apoio.map((a) => <span key={a} className="text-caption tabular-nums">{a}</span>)}
           </button>
         );

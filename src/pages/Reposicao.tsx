@@ -183,6 +183,7 @@ export default function Reposicao() {
     // Folga no celular para o botão flutuante "Rascunhos (N)" (só na aba Sugestões) não cobrir a última linha.
     <div className={`flex flex-col gap-4 p-4 sm:p-6 ${aba === 'sugestoes' && r.data?.rascunhos.length ? 'pb-24 md:pb-6' : ''}`}>
         <PageHeader
+          className="mb-0"
           title="Reposição"
           subtitle="O que pedir hoje e quanto, por fornecedor."
           actions={config && (

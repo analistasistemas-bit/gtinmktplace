@@ -120,13 +120,13 @@ export function MapaGrade({ familia, ctx, selecionado, onSelecionar }: {
                             'relative flex h-11 w-full min-w-[4.5rem] flex-col items-center justify-center whitespace-nowrap px-2 leading-tight tabular-nums outline-none transition-colors md:min-w-[6.5rem] md:flex-row md:px-3',
                             'hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
                             nao ? 'bg-muted/50 text-muted-foreground line-through' : FUNDO[s.urgencia],
-                            // Seleção pinta; o anel fica só para o foco do teclado.
-                            selecionado === s.tela.codigo && 'bg-primary/10 font-semibold',
+                            // Seleção = traço embaixo (sem bg: o fundo de urgência fica nos dois temas); anel só no foco.
+                            selecionado === s.tela.codigo && 'after:absolute after:inset-x-2 after:bottom-1 after:h-0.5 after:rounded-full after:bg-primary',
                           )}
                         >
                           {comprar ? (
                             <>
-                              <span className="text-caption font-normal md:text-sm md:text-muted-foreground">{fmtInt(s.sug.estoqueHoje)}</span>
+                              <span className="text-caption font-normal md:text-sm md:text-muted-foreground dark:text-foreground/70 md:dark:text-foreground/70">{fmtInt(s.sug.estoqueHoje)}</span>
                               <span className="font-semibold text-foreground md:ml-1.5">+{fmtInt(s.sug.pedir)}</span>
                             </>
                           ) : fmtInt(s.sug.estoqueHoje)}
@@ -142,8 +142,8 @@ export function MapaGrade({ familia, ctx, selecionado, onSelecionar }: {
         </table>
       </div>
       <ul className="flex flex-wrap gap-x-4 gap-y-1 text-caption" aria-label="Legenda do mapa">
-        <li className="flex items-center gap-1.5"><span aria-hidden className="h-3 w-3 rounded-sm border border-border bg-danger/15 shadow-[inset_3px_0_0_var(--color-danger)]" />Ruptura ou Vai faltar</li>
-        <li className="flex items-center gap-1.5"><span aria-hidden className="h-3 w-3 rounded-sm border border-border bg-warning/15" />Pedir agora</li>
+        <li className="flex items-center gap-1.5"><span aria-hidden className="h-3 w-3 rounded-sm border border-border bg-danger/15 shadow-[inset_3px_0_0_var(--color-danger)] dark:bg-danger/25" />Ruptura ou Vai faltar</li>
+        <li className="flex items-center gap-1.5"><span aria-hidden className="h-3 w-3 rounded-sm border border-border bg-warning/15 dark:bg-warning/20" />Pedir agora</li>
         <li className="flex items-center gap-1.5"><span aria-hidden className="h-3 w-3 rounded-sm border border-border" />Em dia</li>
         <li><span className="font-semibold text-foreground">+N</span> = comprar N</li>
         {todasEstimadas

@@ -212,6 +212,26 @@ describe('Reposição: sugestões', () => {
     expect(screen.getByRole('list', { name: 'Legenda do mapa' })).toHaveTextContent('+N = comprar N');
   });
 
+  it('célula selecionada mantém o fundo de urgência e ganha o marcador (sem trocar o fundo)', async () => {
+    renderTela('/reposicao?produto=SHORT');
+    const cel = screen.getByRole('button', { name: /^Preto, P:/ });
+    await userEvent.click(cel);
+    expect(cel).toHaveClass('bg-warning/15', 'dark:bg-warning/20', 'after:bg-primary', 'after:absolute');
+    expect(cel.className).not.toMatch(/(^|\s)bg-primary\//);
+    expect(screen.getByRole('button', { name: /^Preto, M:/ })).not.toHaveClass('after:bg-primary');
+  });
+
+  it('número do card mantém o tamanho text-h2 junto da cor', () => {
+    renderTela();
+    expect(within(screen.getByRole('button', { name: /^Vai faltar/ })).getByText('0 SKUs')).toHaveClass('text-h2', 'text-muted-foreground');
+    expect(within(screen.getByRole('button', { name: /^Ruptura/ })).getByText('1 SKU')).toHaveClass('text-h2', 'text-foreground');
+  });
+
+  it('tendência sem valor: ponto discreto com nome acessível, não "-"', () => {
+    renderTela();
+    expect(screen.getAllByRole('img', { name: 'sem tendência' }).length).toBeGreaterThan(0);
+  });
+
   it('asterisco só quando parte da família é estimada; família toda estimada troca a legenda', () => {
     renderTela('/reposicao?produto=SHORT');
     const legenda = () => screen.getByRole('list', { name: 'Legenda do mapa' });
