@@ -7,6 +7,7 @@ import { fmtInt } from '@/lib/formato';
 import { chaveGrade, ordenarEixos } from '@/lib/cadastro-grade';
 import { NUMERACOES_CALCADO, TAMANHOS_CALCA, TAMANHOS_INFANTIL, TAMANHOS_ROUPA } from '@/lib/tamanhos';
 import type { FamiliaVisao, SkuVisao } from '@/hooks/useReposicao';
+import { BotaoCor } from './botao-cor';
 import { PopoverCelula, type CtxCalculo } from './popover-celula';
 import { ROTULO_URGENCIA } from './por-que';
 
@@ -28,7 +29,9 @@ function eixosDaGrade(skus: SkuVisao[]) {
   const e = ordenarEixos(new Set(skus.map((s) => s.tela.cor ?? '')), new Set(skus.map((s) => s.tela.tamanho ?? '')), { cores: [], tamanhos: TAMANHOS_CANONICOS });
   const celulas = new Map(skus.map((s) => [chaveGrade(s.tela.cor ?? '', s.tela.tamanho ?? ''), s]));
   const hex = new Map(skus.map((s) => [s.tela.cor ?? '', s.tela.corHex]));
-  return { ...e, celulas, hex };
+  const codigosDaCor = new Map<string, string[]>();
+  for (const s of skus) codigosDaCor.set(s.tela.cor ?? '', [...(codigosDaCor.get(s.tela.cor ?? '') ?? []), s.tela.codigo]);
+  return { ...e, celulas, hex, codigosDaCor };
 }
 
 function rotuloCelula(cor: string, tam: string, s: SkuVisao): string {
@@ -46,7 +49,7 @@ function rotuloCelula(cor: string, tam: string, s: SkuVisao): string {
 export function MapaGrade({ familia, ctx, selecionado, onSelecionar }: {
   familia: FamiliaVisao; ctx: CtxCalculo; selecionado: string | null; onSelecionar: (codigo: string) => void;
 }) {
-  const { cores, tamanhos, celulas, hex } = eixosDaGrade(familia.skus);
+  const { cores, tamanhos, celulas, hex, codigosDaCor } = eixosDaGrade(familia.skus);
   const refs = useRef(new Map<string, HTMLButtonElement>());
   const primeira = cores.flatMap((c) => tamanhos.map((t) => [c, t] as const)).find(([c, t]) => celulas.has(chaveGrade(c, t)));
   const [escolhida, setAtiva] = useState<string | null>(null);
@@ -107,10 +110,7 @@ export function MapaGrade({ familia, ctx, selecionado, onSelecionar }: {
             {cores.map((cor, r) => (
               <tr key={cor} role="row" className="[&:last-child>*]:border-b-0">
                 <th role="rowheader" scope="row" className="sticky left-0 z-10 whitespace-nowrap border-b border-r border-border bg-card px-3 text-left font-medium">
-                  <span className="flex items-center gap-2">
-                    {hex.get(cor) && <span aria-hidden className="h-3 w-3 shrink-0 rounded-full ring-1 ring-foreground/20" style={{ backgroundColor: hex.get(cor)! }} />}
-                    {rotuloCor(cor)}
-                  </span>
+                  <BotaoCor cor={cor} corHex={hex.get(cor) ?? null} codigos={codigosDaCor.get(cor) ?? []} />
                 </th>
                 {tamanhos.map((tam, c) => {
                   const k = chaveGrade(cor, tam);
