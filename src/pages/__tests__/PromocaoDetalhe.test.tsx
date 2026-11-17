@@ -4,7 +4,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import PromocaoDetalhe from '../PromocaoDetalhe';
-import { useItensPromocao, usePromocoes } from '@/hooks/usePromocoes';
+import { useItensPromocao, usePaisPorItem, usePromocoes } from '@/hooks/usePromocoes';
+import { abrirSelect } from '@/test/select';
 import type { ItemPromocao, Promocao } from '@/lib/promocoes';
 
 // supabase.functions é getter (cliente novo a cada acesso): spy não pega — troca só o invoke, mantém o resto.
@@ -18,7 +19,7 @@ vi.mock('@/lib/supabase', async (orig) => {
 });
 
 vi.mock('@/hooks/usePromocoes', () => ({
-  usePromocoes: vi.fn(), useItensPromocao: vi.fn(), usePaisPorItem: () => ({ data: undefined }),
+  usePromocoes: vi.fn(), useItensPromocao: vi.fn(), usePaisPorItem: vi.fn(() => ({ data: undefined })),
 }));
 
 const promo = {
@@ -50,6 +51,24 @@ function renderDetalhe() {
 }
 
 describe('PromocaoDetalhe', () => {
+  it('filtro de produto lista só os produtos do chip de semáforo ativo', async () => {
+    const vermelho = { ...item, ml_item_id: 'MLB2', titulo: 'Outro', pior_semaforo: 'vermelho' } as ItemPromocao;
+    vi.mocked(usePromocoes).mockReturnValue({ data: [promo], isLoading: false } as never);
+    vi.mocked(useItensPromocao).mockReturnValue({ data: [item, vermelho], isLoading: false } as never);
+    vi.mocked(usePaisPorItem).mockReturnValue({ data: new Map([
+      ['MLB1', { codigo_pai: 'A', nome: 'Produto Verde' }], ['MLB2', { codigo_pai: 'B', nome: 'Produto Prejuízo' }],
+    ]) } as never);
+    const user = userEvent.setup();
+    renderDetalhe();
+    await user.click(screen.getAllByRole('button', { name: /^Vale a pena: 1/ })[0]);
+    await abrirSelect(user, 'Filtrar por produto PAI');
+    const opcoes = (await screen.findAllByRole('option')).map((o) => o.textContent);
+    expect(opcoes).toContain('Produto Verde (1)');
+    expect(opcoes).not.toContain('Produto Prejuízo (1)');
+    vi.mocked(usePaisPorItem).mockReturnValue({ data: undefined } as never);
+    cleanup();
+  });
+
   it('carregando os anúncios mostra a logo PubliAI pulsando uma vez só, sem tabela nem blocos cinza', async () => {
     vi.mocked(usePromocoes).mockReturnValue({ data: [promo], isLoading: false } as never);
     vi.mocked(useItensPromocao).mockReturnValue({ data: undefined, isLoading: true } as never);

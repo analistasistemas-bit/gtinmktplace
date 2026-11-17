@@ -150,7 +150,8 @@ export default function PromocaoDetalhe() {
     return s && s.status === i.status ? sobreporSimulacao(i, s) : i;
   }), [itens.data, simulacao]);
   const mapaPais = paisPorItem.data ?? SEM_PAIS;
-  const opcoesDePai = useMemo(() => opcoesPai(filtrarItens(itensVisao, { semaforo: null, participando }), mapaPais), [itensVisao, participando, mapaPais]);
+  // Opções do filtro de produto seguem o chip de semáforo ativo (chip com 0 no PAI escolhido fica desabilitado: o PAI nunca some).
+  const opcoesDePai = useMemo(() => opcoesPai(filtrarItens(itensVisao, { semaforo, participando }), mapaPais), [itensVisao, semaforo, participando, mapaPais]);
   const daAba = useMemo(() => filtrarPorPai(filtrarPorBusca(filtrarItens(itensVisao, { semaforo: null, participando }), busca), mapaPais, pai), [itensVisao, participando, busca, mapaPais, pai]);
   const linhas = useMemo(() => filtrarPorPai(filtrarPorBusca(filtrarItens(itensVisao, { semaforo, participando }), busca), mapaPais, pai), [itensVisao, semaforo, participando, busca, mapaPais, pai]);
   const linhasMobile = useMemo(() => [...linhas].sort((a, b) => PESO[a.pior_semaforo] - PESO[b.pior_semaforo]), [linhas]);
