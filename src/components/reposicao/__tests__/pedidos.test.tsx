@@ -192,12 +192,14 @@ describe('Reposição: rascunho e pedido', () => {
   });
 
   it('primeiro pedido da org: confirmação obrigatória e só aprova depois, com a mesma ref', async () => {
+    // pedido misto: S1 (4 un., medido) + S2 (3 un., estimado pela família) → 3/7 = 43%; o da loja (62%) não entra
     estado.data!.resultado!.pctEstimadoPelaFamilia = 0.62;
+    estado.data!.resultado!.skus = estado.data!.resultado!.skus.map((s) => (s.codigo === 'S2' ? { ...s, poucoHistorico: true, w: 0.5 } : s));
     const { user, sheet } = await abrirRascunho();
     await user.click(within(sheet).getByRole('button', { name: 'Aprovar pedido' }));
     const alerta = await screen.findByRole('alertdialog', { name: 'Primeiro pedido de compra' });
     expect(alerta).toHaveTextContent('7 un.');
-    expect(alerta).toHaveTextContent('62% das quantidades ainda são estimadas pela família — confira antes de mandar ao fornecedor');
+    expect(alerta).toHaveTextContent('43% das quantidades ainda são estimadas pela família — confira antes de mandar ao fornecedor');
     expect(alerta).toHaveTextContent('Fornecedor A');
     expect(alerta).toHaveTextContent('O PubliAI não envia nada: você copia o texto e manda.');
     expect(acoes.aprovar).not.toHaveBeenCalled();

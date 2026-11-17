@@ -436,6 +436,15 @@ describe('Reposição: sugestões', () => {
       });
     });
 
+    it('sem movimento mas com estoque (completarGrade 0): sem chip, célula normal', () => {
+      const s5 = estado.data!.resultado!.skus.find((s) => s.codigo === 'S5')!;
+      Object.assign(s5, { estoqueHoje: 5, completarGrade: 0 });
+      renderTela('/reposicao?produto=SHORT');
+      const cel = screen.getByRole('button', { name: /^Preto, G:/ });
+      expect(cel).toHaveTextContent(/^5$/);
+      expect(screen.getByRole('list', { name: 'Legenda do mapa' })).not.toHaveTextContent('nunca comprado');
+    });
+
     it('cards e "Adicionar ao pedido" ignoram o completar', async () => {
       renderTela('/reposicao?produto=SHORT');
       await userEvent.click(screen.getByRole('button', { name: 'Adicionar ao pedido' }));

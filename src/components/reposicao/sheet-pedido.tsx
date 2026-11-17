@@ -82,6 +82,10 @@ function Corpo({ pedido, data, hoje, acoes }: { pedido: PedidoDTO; data: Respost
     const q = inteiro(qtd[l.item.codigo] ?? '') ?? 0;
     return { un: a.un + q, valor: a.valor + q * (l.custo ?? 0), semCusto: a.semCusto + (l.custo === null ? 1 : 0) };
   }, { un: 0, valor: 0, semCusto: 0 });
+  // Das unidades DESTE pedido, quanto vem de SKU ainda estimado pela família (w < 1).
+  const estimado = new Set((data.resultado?.skus ?? []).filter((s) => s.poucoHistorico).map((s) => s.codigo));
+  const unEstimadas = linhas.reduce((a, l) => a + (estimado.has(l.item.codigo) ? inteiro(qtd[l.item.codigo] ?? '') ?? 0 : 0), 0);
+  const pctEstimado = total.un ? Math.round((unEstimadas / total.un) * 100) : 0;
 
   async function rodar(qual: NonNullable<typeof ocupado>, f: () => Promise<void>) {
     if (ocupado) return; // duplo clique
@@ -242,8 +246,7 @@ function Corpo({ pedido, data, hoje, acoes }: { pedido: PedidoDTO; data: Respost
             <AlertDialogDescription asChild>
               <div className="flex flex-col gap-2">
                 <p>{fmtInt(total.un)} un. para {pedido.fornecedor.nome}.</p>
-                {/* ponytail: percentual da loja toda (o mesmo do aviso), não só dos itens deste pedido. */}
-                <p>{Math.round((data.resultado?.pctEstimadoPelaFamilia ?? 0) * 100)}% das quantidades ainda são estimadas pela família — confira antes de mandar ao fornecedor.</p>
+                <p>{pctEstimado}% das quantidades ainda são estimadas pela família — confira antes de mandar ao fornecedor.</p>
                 <p>O PubliAI não envia nada: você copia o texto e manda.</p>
               </div>
             </AlertDialogDescription>

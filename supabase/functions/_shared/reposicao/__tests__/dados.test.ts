@@ -21,6 +21,7 @@ function fakeAdmin(tabelas: Record<string, Linha[]>) {
         select: () => c,
         eq: (k: string, v: unknown) => { preds.push((r) => r[k] === v); return c; },
         gte: (k: string, v: string) => { preds.push((r) => r[k] != null && Date.parse(r[k]) >= Date.parse(v)); return c; },
+        lt: (k: string, v: string) => { preds.push((r) => r[k] != null && Date.parse(r[k]) < Date.parse(v)); return c; },
         order: () => c,
         range: (a: number, b: number) => { faixa = [a, b]; return c; },
         maybeSingle: async () => ({ data: run().data[0] ?? null, error: null }),
@@ -296,7 +297,7 @@ describe('montarEntrada', () => {
     const a1 = fakeAdmin(base({ variacoes: muitas }));
     await montarEntrada(a1, ORG, HOJE);
     expect(a1.consultas.filter((t: string) => t === 'variacoes')).toHaveLength(3); // 1000 + 1000 + 500
-    expect(a1.consultas).toHaveLength(6 + 2);
+    expect(a1.consultas).toHaveLength(7 + 2);
     // mais pedidos e mais movimentos em mais dias (abaixo de uma página): mesmo número de chamadas
     const ped = (id: string) => ({ id, fornecedor_id: 'fo1', status: 'enviado', previsto_para: '2026-11-30', salvo_por: null, salvo_em: null,
       aprovado_por: null, enviado_em: null, alterado_por: null, alterado_em: null,
@@ -310,7 +311,7 @@ describe('montarEntrada', () => {
     expect(a2.consultas).toHaveLength(a1.consultas.length);
   });
 
-  it('cenário pequeno: 6 chamadas', async () => {
+  it('cenário pequeno: 6 fontes, 7 chamadas (estoque_movimentos: janela + anteriores)', async () => {
     const K = fam('fk', 'PK', { kit_base_codigo_pai: 'P1', kit_multiplicador: 2 });
     const admin = fakeAdmin(base({
       variacoes: [vari('A', F), vari('K', K)],
@@ -318,7 +319,8 @@ describe('montarEntrada', () => {
       ml_vendas: [{ org_id: ORG, date_closed: '2026-11-01T14:00:00Z', order_id: 1, ml_vendas_itens: [{ codigo: 'A', unit_price: '10' }] }],
     }));
     const e = await montarEntrada(admin, ORG, HOJE);
-    expect(admin.consultas).toHaveLength(6);
+    expect(admin.consultas).toHaveLength(7);
+    expect(new Set(admin.consultas).size).toBe(6);
     // a entrada montada é aceita pelo cálculo (sem MovDia duplicado)
     expect(() => calcularReposicao(e as EntradaCalculo)).not.toThrow();
   });

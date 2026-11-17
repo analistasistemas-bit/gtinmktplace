@@ -1,8 +1,9 @@
 // IO da Reposição (ADR-0207): lê o banco da org e monta a `EntradaCalculo` do `calculo.ts` e os DTOs
-// da tela. Seis FONTES, sem N+1: o número de chamadas não cresce com dias, pedidos nem SKUs — só com as
+// da tela. Seis FONTES (a 3 em duas consultas: janela e anteriores), sem N+1: o número de chamadas não cresce com dias, pedidos nem SKUs — só com as
 // páginas de 1000 linhas de uma mesma fonte (`paginarTudo`, teto do PostgREST):
 //   1. organizations + embeds pequenos da org (config, Não repor, fornecedores, vínculos, pedidos+itens)
-//   2. variacoes + familias  3. estoque_movimentos (todo o ledger: a janela + quem já teve movimento)  4. ml_vendas + itens (preços)
+//   2. variacoes + familias  3. estoque_movimentos da janela até agora (+ só `codigo` dos anteriores à janela)
+//   4. ml_vendas + itens (preços)
 //   5. anuncios_externos (1ª publicação)  6. kits_variacao + SKUs + composição
 // Datas: `dia` sempre YYYY-MM-DD em BRT; a janela de 60 dias termina ontem.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
@@ -100,18 +101,16 @@ export async function lerDados(
 
   const ini = somarDias(hoje, -JANELA);
   const desde = `${ini}T00:00:00-03:00`;
-  const [variacoes, movsBrutos, vendas, anuncios, kitsVariacao] = await Promise.all([
+  const [variacoes, movsBrutos, vendas, anuncios, kitsVariacao, anteriores] = await Promise.all([
     // 2.
     // `familias!inner` é muitos-para-um (objeto); o tipo inferido sem schema diz array.
     paginarTudo((de, ate) => admin.from('variacoes')
       .select('codigo, cor, cor_hex, tamanho, estoque, custo, preco, familia_id, familias!inner(id, codigo_pai, nome_pai, fornecedor, multiplo_compra, kit_base_codigo_pai, kit_multiplicador, criado_em)')
       .eq('org_id', orgId).order('id').range(de, ate)).then((r) => r as unknown as VariacaoRow[]),
     // 3. Até agora (não só até ontem): sem isso, um movimento de hoje faria o SKU parecer parado a janela toda.
-    // Sem piso de data: o que vem antes da janela só diz quem já teve algum movimento (`nuncaMovimentado`).
-    // ponytail: lê o ledger inteiro da org (existe desde 07/2026); se pesar, trocar por RPC com distinct codigo antes da janela.
     paginarTudo<MovRow>((de, ate) => admin.from('estoque_movimentos')
       .select('codigo, motivo, quantidade, quantidade_pedida, estoque_anterior, estoque_resultante, referencia_externa, transferencia_id, origem_kit_codigo_pai, criado_em, ordem')
-      .eq('org_id', orgId).order('criado_em').order('id').range(de, ate)),
+      .eq('org_id', orgId).gte('criado_em', desde).order('criado_em').order('id').range(de, ate)),
     // 4. Um dia de folga antes da janela: a order fecha antes de o movimento nascer.
     paginarTudo<{ order_id: number | string; ml_vendas_itens: { codigo: string | null; unit_price: number | string | null }[] }>(
       (de, ate) => admin.from('ml_vendas').select('order_id, ml_vendas_itens(codigo, unit_price)')
@@ -126,6 +125,11 @@ export async function lerDados(
         .select('codigo_pai_kit, kit_variacao_skus(codigo, kit_variacao_componentes(codigo, quantidade))')
         .eq('org_id', orgId).order('id').range(de, ate),
     ),
+    // 3b. Mesma fonte do 3: só `codigo` dos movimentos ANTES da janela, para saber quem já teve movimento
+    // (`nuncaMovimentado`, emenda 17/11). O estoqueInicio não depende deles (sai do 1º movimento da janela).
+    // ponytail: uma linha curta por movimento antigo (paginada, cresce com o ledger); se pesar, RPC com distinct codigo.
+    paginarTudo<{ codigo: string }>((de, ate) => admin.from('estoque_movimentos')
+      .select('codigo').eq('org_id', orgId).lt('criado_em', desde).order('codigo').order('id').range(de, ate)),
   ]);
 
   // Família canônica por codigo_pai = a criada por último (nome, fornecedor e múltiplo de compra; regra de
@@ -152,10 +156,9 @@ export async function lerDados(
   }
 
   // Quem já teve algum movimento de estoque, em qualquer data (emenda 17/11: "Completar grade").
-  const comMovimento = new Set(movsBrutos.map((m) => m.codigo));
-  // Movimentos da janela, em ordem do ledger.
-  const inicioJanela = Date.parse(desde);
-  const movs = movsBrutos.filter((m) => Date.parse(m.criado_em) >= inicioJanela).sort((a, b) =>
+  const comMovimento = new Set([...movsBrutos, ...anteriores].map((m) => m.codigo));
+  // Movimentos em ordem do ledger.
+  const movs = [...movsBrutos].sort((a, b) =>
     Date.parse(a.criado_em) - Date.parse(b.criado_em) || (a.ordem ?? Infinity) - (b.ordem ?? Infinity));
   // Cancelamento = estorno_venda com a mesma referência da venda (sem o prefixo). Pela referência
   // inteira: no kit vinculado o movimento é da base, mas a ref termina no código do kit.

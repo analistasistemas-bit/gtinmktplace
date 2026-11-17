@@ -1,8 +1,9 @@
 // Cálculo puro da Reposição (ADR-0207). Sem imports: carregado por Deno (edge) e Vite (front).
 // Datas são strings YYYY-MM-DD já em BRT; aritmética sempre em UTC.
 
-/** `publicadoEm` é YYYY-MM-DD já em BRT. `nuncaMovimentado`: nenhum movimento de estoque, em data nenhuma
- * (emenda 17/11 do ADR-0207): fica fora da curva e da reescala e só ganha o `completarGrade`. */
+/** `publicadoEm` é YYYY-MM-DD já em BRT. `nuncaMovimentado`: nenhum movimento de estoque, em data nenhuma.
+ * Com estoque hoje 0 é "Completar grade" (emenda 17/11 do ADR-0207): fora da curva e da reescala, só ganha o
+ * `completarGrade`. Com estoque (de planilha, sem movimento) segue a regra normal. */
 export interface SkuEntrada {
   codigo: string; codigoPai: string; cor: string | null; tamanho: string | null;
   estoqueHoje: number; publicadoEm: string | null; naoRepor: boolean; ehKit: boolean; nuncaMovimentado: boolean;
@@ -61,6 +62,9 @@ function percentil(xs: number[], p: number): number {
   const hi = Math.ceil(i);
   return s[lo] + (s[hi] - s[lo]) * (i - lo);
 }
+
+/** Nunca teve estoque nem movimento: "Completar grade". */
+const completaGrade = (s: SkuEntrada) => s.nuncaMovimentado && s.estoqueHoje <= 0;
 
 function somaPor<T>(xs: T[], chave: (x: T) => string | null, valor: (x: T) => number): Map<string | null, number> {
   const m = new Map<string | null, number>();
@@ -211,7 +215,7 @@ export function calcularVelocidades(e: EntradaCalculo): {
   const curvaCompletar = new Map<string, number>();
   for (const [pai, todos] of porFamilia) {
     // Nunca movimentado: fora de tudo (curva, reescala, tendência), como se não existisse na família.
-    const skus = todos.filter((s) => !s.nuncaMovimentado);
+    const skus = todos.filter((s) => !completaGrade(s));
     const el = skus.filter((s) => !s.naoRepor);
     const vFam = el.reduce((a, s) => a + porSku.get(s.codigo)!.propria, 0);
     if (el.length && vFam > 0) {
@@ -238,7 +242,7 @@ export function calcularVelocidades(e: EntradaCalculo): {
       });
       const somaBruta = bruta.reduce((a, b) => a + b, 0);
       el.forEach((s, i) => { porSku.get(s.codigo)!.usada = somaBruta > 0 ? (bruta[i] * vFam) / somaBruta : 0; });
-      for (const s of todos) if (s.nuncaMovimentado && !s.naoRepor) curvaCompletar.set(s.codigo, shareCor(s) * shareTam(s) * vFam);
+      for (const s of todos) if (completaGrade(s) && !s.naoRepor) curvaCompletar.set(s.codigo, shareCor(s) * shareTam(s) * vFam);
     }
     tendenciaPorFamilia.set(pai, tendencia(skus, disp, diretas, kitPorBase, diasOferta.get(pai) ?? new Set()));
   }
@@ -393,12 +397,12 @@ export function calcularReposicao(e: EntradaCalculo): ResultadoReposicao {
     const fator = tendenciaPorFamilia.get(pai)?.fator ?? 1;
     const proj = lista.map((s) => {
       const vel = porSku.get(s.codigo)!;
-      const v = s.nuncaMovimentado ? 0 : vel.usada * fator;
+      const v = completaGrade(s) ? 0 : vel.usada * fator;
       const pedidos = pedidosPor.get(s.codigo) ?? [];
       return { s, vel, v, pedidos, p: projetarSku({ v, estoqueHoje: s.estoqueHoje, pedidos, hoje: e.hoje, prazo: e.prazo, cobertura: e.cobertura }) };
     });
     const fechado = fecharFamilia(
-      proj.map((x) => ({ codigo: x.s.codigo, v: x.v, falta: x.p.falta, vendeu30: vendeu30.has(x.s.codigo), ePrazo: x.p.E[e.prazo], naoRepor: x.s.naoRepor || x.s.nuncaMovimentado })),
+      proj.map((x) => ({ codigo: x.s.codigo, v: x.v, falta: x.p.falta, vendeu30: vendeu30.has(x.s.codigo), ePrazo: x.p.E[e.prazo], naoRepor: x.s.naoRepor || completaGrade(x.s) })),
       e.cobertura, e.multiploPorFamilia[pai] ?? 1,
     );
     const doPai: SugestaoSku[] = proj.map(({ s, vel, v, pedidos, p }) => {
@@ -410,7 +414,7 @@ export function calcularReposicao(e: EntradaCalculo): ResultadoReposicao {
       return {
         ...vel, codigoPai: pai, estoqueHoje: s.estoqueHoje, v,
         aCaminho: pedidos.reduce((a, o) => a + o.saldo, 0), chegaEm: datas[0] ?? null,
-        diasDeEstoque: p.diasDeEstoque, pedirAntesMultiplo: antesSku, pedir, urgencia, poucoHistorico: !s.nuncaMovimentado && vel.w < 1,
+        diasDeEstoque: p.diasDeEstoque, pedirAntesMultiplo: antesSku, pedir, urgencia, poucoHistorico: !completaGrade(s) && vel.w < 1,
         completarGrade: curva > EPS ? Math.max(1, Math.ceil(curva * e.cobertura - EPS)) : 0,
       };
     });

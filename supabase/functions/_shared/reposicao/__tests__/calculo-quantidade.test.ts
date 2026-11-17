@@ -276,11 +276,16 @@ describe('completar grade (emenda 17/11): SKU nunca movimentado', () => {
     expect(com.familias[0].pedir).toBe(com.skus.reduce((a, s) => a + s.pedir, 0)); // sem o completarGrade
   });
 
-  it('mesmo com estoque de planilha (dias disponíveis), não entra na curva', () => {
-    const com = calcularReposicao(familia(true, { estoqueHoje: 4 }));
-    const sem = calcularReposicao(familia(false));
-    for (const c of ['A', 'B']) expect(com.skus.find((s) => s.codigo === c)!.v).toBe(sem.skus.find((s) => s.codigo === c)!.v);
-    expect(com.skus.find((s) => s.codigo === 'N')!.urgencia).toBe('em_dia');
+  it('sem movimento mas com estoque (planilha): regra normal, elegível na curva, completarGrade 0', () => {
+    const e = familia(true, { estoqueHoje: 5 });
+    e.movs = e.movs.map((m) => (m.codigo === 'N' ? { ...m, estoqueInicio: 5 } : m)); // 60 dias disponíveis, 0 venda
+    const r = calcularReposicao(e);
+    const n = r.skus.find((s) => s.codigo === 'N')!;
+    expect(n.completarGrade).toBe(0);
+    expect(n.diasDisponiveis).toBe(60);
+    expect(n.poucoHistorico).toBe(true); // elegível: está na curva (w 0)
+    // a reescala o inclui: a soma das velocidades bate com a família (0,15)
+    expect(r.skus.reduce((a, s) => a + s.usada, 0)).toBeCloseTo(0.15, 9);
   });
 
   it('valor existente entre os elegíveis usa o share dele; família sem venda dá 0; Não repor dá 0', () => {
