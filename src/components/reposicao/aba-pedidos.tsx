@@ -40,10 +40,11 @@ function CardPedido({ p, skus, familias, hoje, acoes, pendente }: {
   const detalheId = `pedido-${p.id}`;
   return (
     <li className={cn('border-l-4 border-l-transparent', p.atrasado && 'border-l-danger')}>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-3 text-sm">
+      {/* Celular: fornecedor numa linha inteira e os metadados quebram embaixo. Desktop largo: colunas fixas, alinhadas entre os pedidos. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-3 text-sm lg:grid lg:grid-cols-[minmax(0,1fr)_13rem_6.5rem_10rem_12rem_auto] lg:items-center">
         <button
           type="button" aria-expanded={aberto} aria-controls={detalheId} onClick={() => setAberto((v) => !v)}
-          className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-0"
+          className="flex min-h-11 min-w-0 basis-full items-center gap-2 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-0 lg:basis-auto lg:flex-1"
         >
           <Seta className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
           <span className="sr-only">Ver itens de {p.fornecedor.nome}</span>
@@ -57,7 +58,14 @@ function CardPedido({ p, skus, familias, hoje, acoes, pendente }: {
         </span>
         <span className="text-caption tabular-nums">{p.previstoPara ? `previsto ${fmtDia(p.previstoPara)}` : 'sem data'}</span>
         <span className="tabular-nums">{fmtInt(t.unidades)} un. · <ValorPedido valor={t.valor} semCusto={t.semCusto} /></span>
-        {p.status !== 'rascunho' && <span className="text-caption tabular-nums">{fmtInt(recebida)} recebidas</span>}
+        {p.status !== 'rascunho' ? (
+          <span className="flex items-center gap-2 text-caption tabular-nums">
+            {`${fmtInt(recebida)} de ${fmtInt(t.unidades)} recebidas`}
+            <span aria-hidden className="h-1 w-16 shrink-0 overflow-hidden rounded-full bg-muted">
+              <span className="block h-full rounded-full bg-success" style={{ width: `${t.unidades ? Math.min(100, (recebida / t.unidades) * 100) : 0}%` }} />
+            </span>
+          </span>
+        ) : <span aria-hidden className="hidden lg:block" />}
         <Button size="sm" variant="outline" className="h-11 md:h-8" aria-label={`${p.status === 'rascunho' ? 'Revisar rascunho' : 'Abrir pedido'} de ${p.fornecedor.nome}`} onClick={() => acoes.onAbrir(p.id)}>
           {p.status === 'rascunho' ? 'Revisar' : 'Abrir'}
         </Button>

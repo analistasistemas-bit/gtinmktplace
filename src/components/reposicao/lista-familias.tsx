@@ -1,4 +1,4 @@
-// Spec §3.3–§3.4: uma linha por família; expandida mostra o mapa da grade, o "Por quê" e as ações.
+// Spec §3.3 a §3.4: uma linha por família; expandida mostra o mapa da grade, o "Por quê" e as ações.
 import { useId, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -152,7 +152,7 @@ export function ListaFamilias({ familias, expandidos, onAlternar, ctx, acoes, ra
     <div className="overflow-hidden rounded-xl bg-card shadow-sm ring-1 ring-foreground/5">
       <div className={cn('hidden border-b border-border bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground', COLUNAS)} aria-hidden>
         <span /><span>Produto</span><span>Fornecedor</span><span>Urgência</span>
-        <span className="text-right">Ajuste</span><span className="text-right">Dias</span><span className="text-right">A caminho</span><span className="text-right">Sugestão</span>
+        <span className="text-right">Tendência</span><span className="text-right">Dias</span><span className="text-right">A caminho</span><span className="text-right">Sugestão</span>
       </div>
       <ul className="divide-y divide-border">
         {familias.map((f) => {
@@ -177,11 +177,11 @@ export function ListaFamilias({ familias, expandidos, onAlternar, ctx, acoes, ra
                 <span className="col-start-3 row-start-1 md:col-auto md:row-auto"><Pill f={f} /></span>
                 <span className="col-span-3 truncate text-muted-foreground md:col-auto md:row-start-1 md:col-start-3">{f.fornecedor.nome || 'Sem fornecedor'}</span>
                 <span className="col-span-3 grid grid-cols-4 gap-2 md:contents">
-                  <Dado rotulo="Ajuste">{f.tendencia ? pctSinal(f.tendencia.fator - 1) : '—'}</Dado>
-                  <Dado rotulo="Dias de estoque">{f.diasDeEstoque === null ? '—' : `${fmtInt(f.diasDeEstoque)} d`}</Dado>
-                  <Dado rotulo="A caminho">{f.aCaminho ? `${fmtInt(f.aCaminho)} un.` : '—'}</Dado>
+                  <Dado rotulo="Tendência">{f.tendencia ? pctSinal(f.tendencia.fator - 1) : '-'}</Dado>
+                  <Dado rotulo="Dias de estoque">{f.diasDeEstoque === null ? '-' : `${fmtInt(f.diasDeEstoque)} d`}</Dado>
+                  <Dado rotulo="A caminho">{f.aCaminho ? `${fmtInt(f.aCaminho)} un.` : '-'}</Dado>
                   <Dado rotulo="Sugestão" className="font-medium">
-                    {f.pedir ? <>{fmtInt(f.pedir)} un. <span className="block text-caption md:inline">{fmtBRL(f.valor)}</span></> : '—'}
+                    {f.pedir ? <>{fmtInt(f.pedir)} un. <span className="block text-caption md:inline">{fmtBRL(f.valor)}</span></> : '-'}
                   </Dado>
                 </span>
               </button>

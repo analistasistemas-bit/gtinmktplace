@@ -1,5 +1,5 @@
-// Elemento-assinatura (spec §3.4): a prancheta do representante — cor por linha, tamanho por
-// coluna, "estoque · pedir N" escrito na célula. Navegável por setas (roving tabindex).
+// Elemento-assinatura (spec §3.4): a prancheta do representante: cor por linha, tamanho por
+// coluna, "estoque +N" escrito na célula (o +N, a compra, é o que manda). Navegável por setas (roving tabindex).
 import { useRef, useState, type KeyboardEvent } from 'react';
 import { Asterisk } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -16,7 +16,13 @@ export const TAMANHOS_CANONICOS = [...new Set<string>([...TAMANHOS_ROUPA, ...TAM
 const rotuloCor = (c: string) => c || 'Sem cor';
 const rotuloTam = (t: string) => t || 'Único';
 
-const FUNDO = { ruptura: 'bg-danger/10', vai_faltar: 'bg-danger/10', pedir_agora: 'bg-warning/10', em_dia: '' } as const;
+// Ruptura ganha o filete à esquerda: a urgência não fica só na cor do fundo.
+const FUNDO = {
+  ruptura: 'bg-danger/15 dark:bg-danger/25 shadow-[inset_3px_0_0_var(--color-danger)]',
+  vai_faltar: 'bg-danger/10 dark:bg-danger/15',
+  pedir_agora: 'bg-warning/15 dark:bg-warning/20',
+  em_dia: '',
+} as const;
 
 function eixosDaGrade(skus: SkuVisao[]) {
   const e = ordenarEixos(new Set(skus.map((s) => s.tela.cor ?? '')), new Set(skus.map((s) => s.tela.tamanho ?? '')), { cores: [], tamanhos: TAMANHOS_CANONICOS });
@@ -45,6 +51,8 @@ export function MapaGrade({ familia, ctx, selecionado, onSelecionar }: {
   const [escolhida, setAtiva] = useState<string | null>(null);
   // Célula ativa que sumiu num refetch (ou nenhuma ainda): volta para a primeira existente.
   const ativa = escolhida && celulas.has(escolhida) ? escolhida : primeira ? chaveGrade(...primeira) : null;
+  // Família toda estimada (o aviso já diz): asterisco em toda célula vira ruído; a legenda avisa uma vez.
+  const todasEstimadas = familia.skus.every((s) => s.sug.poucoHistorico);
 
   const focar = (k: string) => { setAtiva(k); refs.current.get(k)?.focus(); };
   const mover = (e: KeyboardEvent, r: number, c: number) => {
@@ -66,7 +74,7 @@ export function MapaGrade({ familia, ctx, selecionado, onSelecionar }: {
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="max-w-full overflow-x-auto rounded-lg border border-border">
+      <div className="w-fit max-w-full overflow-x-auto rounded-lg border border-border">
         <table role="grid" aria-label={`Mapa da grade de ${familia.nome}`} className="border-separate border-spacing-0 text-sm">
           <thead>
             <tr role="row">
@@ -96,7 +104,7 @@ export function MapaGrade({ familia, ctx, selecionado, onSelecionar }: {
                     return <td key={tam} role="gridcell" aria-disabled="true" className="border-b border-r border-border bg-muted/30 last:border-r-0" />;
                   }
                   const nao = !!s.tela.naoReporId;
-                  const texto = !nao && s.sug.pedir > 0 ? `${fmtInt(s.sug.estoqueHoje)} · pedir ${fmtInt(s.sug.pedir)}` : fmtInt(s.sug.estoqueHoje);
+                  const comprar = !nao && s.sug.pedir > 0;
                   return (
                     <td key={tam} role="gridcell" aria-selected={selecionado === s.tela.codigo} className="border-b border-r border-border p-0 last:border-r-0">
                       <PopoverCelula s={s} familia={familia} ctx={ctx} titulo={`${rotuloCor(cor)} · ${rotuloTam(tam)}`} onAbrir={() => onSelecionar(s.tela.codigo)}>
@@ -109,15 +117,20 @@ export function MapaGrade({ familia, ctx, selecionado, onSelecionar }: {
                           aria-label={rotuloCelula(cor, tam, s)}
                           data-nao-repor={nao ? 'true' : undefined}
                           className={cn(
-                            'relative flex h-11 w-full min-w-[6.5rem] items-center justify-center whitespace-nowrap px-3 tabular-nums outline-none transition-colors',
+                            'relative flex h-11 w-full min-w-[4.5rem] flex-col items-center justify-center whitespace-nowrap px-2 leading-tight tabular-nums outline-none transition-colors md:min-w-[6.5rem] md:flex-row md:px-3',
                             'hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
                             nao ? 'bg-muted/50 text-muted-foreground line-through' : FUNDO[s.urgencia],
-                            !nao && s.sug.pedir > 0 && 'font-semibold',
-                            selecionado === s.tela.codigo && 'ring-2 ring-inset ring-primary',
+                            // Seleção pinta; o anel fica só para o foco do teclado.
+                            selecionado === s.tela.codigo && 'bg-primary/10 font-semibold',
                           )}
                         >
-                          {texto}
-                          {s.sug.poucoHistorico && <Asterisk aria-hidden className="absolute right-1 top-1 h-3 w-3 text-muted-foreground" />}
+                          {comprar ? (
+                            <>
+                              <span className="text-caption font-normal md:text-sm md:text-muted-foreground">{fmtInt(s.sug.estoqueHoje)}</span>
+                              <span className="font-semibold text-foreground md:ml-1.5">+{fmtInt(s.sug.pedir)}</span>
+                            </>
+                          ) : fmtInt(s.sug.estoqueHoje)}
+                          {s.sug.poucoHistorico && !todasEstimadas && <Asterisk aria-hidden className="absolute right-1 top-1 h-3 w-3 text-muted-foreground" />}
                         </button>
                       </PopoverCelula>
                     </td>
@@ -129,10 +142,13 @@ export function MapaGrade({ familia, ctx, selecionado, onSelecionar }: {
         </table>
       </div>
       <ul className="flex flex-wrap gap-x-4 gap-y-1 text-caption" aria-label="Legenda do mapa">
-        <li className="flex items-center gap-1.5"><span aria-hidden className="h-3 w-3 rounded-sm border border-border bg-danger/10" />Ruptura ou Vai faltar</li>
-        <li className="flex items-center gap-1.5"><span aria-hidden className="h-3 w-3 rounded-sm border border-border bg-warning/10" />Pedir agora</li>
+        <li className="flex items-center gap-1.5"><span aria-hidden className="h-3 w-3 rounded-sm border border-border bg-danger/15 shadow-[inset_3px_0_0_var(--color-danger)]" />Ruptura ou Vai faltar</li>
+        <li className="flex items-center gap-1.5"><span aria-hidden className="h-3 w-3 rounded-sm border border-border bg-warning/15" />Pedir agora</li>
         <li className="flex items-center gap-1.5"><span aria-hidden className="h-3 w-3 rounded-sm border border-border" />Em dia</li>
-        <li className="flex items-center gap-1.5"><Asterisk aria-hidden className="h-3 w-3" />Estimado pela família</li>
+        <li><span className="font-semibold text-foreground">+N</span> = comprar N</li>
+        {todasEstimadas
+          ? <li>Todas estimadas pela família</li>
+          : <li className="flex items-center gap-1.5"><Asterisk aria-hidden className="h-3 w-3" />Estimado pela família</li>}
       </ul>
     </div>
   );

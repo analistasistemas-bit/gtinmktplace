@@ -10,11 +10,11 @@ import { StatusPill } from '@/components/ui/status-pill';
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { usePodeExecutarOperacao } from '@/hooks/useOperacoes';
 import type { useReposicao } from '@/hooks/useReposicao';
-import { fmtInt } from '@/lib/formato';
+import { fmtBRL, fmtInt } from '@/lib/formato';
 import { cn } from '@/lib/utils';
 import type { PedidoDTO, RespostaReposicao, StatusPedido } from '../../../supabase/functions/_shared/reposicao/tipos';
 import { fmtQuando, ValorPedido } from './barra-rascunho';
-import { itensOrdenados, textoWhatsApp } from './texto-whatsapp';
+import { itensOrdenados, porProduto, textoWhatsApp } from './texto-whatsapp';
 
 type Acoes = Pick<ReturnType<typeof useReposicao>, 'salvarRascunho' | 'aprovar' | 'marcarEnviado' | 'editarPedido'>;
 
@@ -43,6 +43,7 @@ function Corpo({ pedido, data, hoje, acoes }: { pedido: PedidoDTO; data: Respost
   const status: StatusPedido = enviadoAgora && pedido.status !== 'parcial' && pedido.status !== 'recebido' ? 'enviado'
     : aprovadoAgora && pedido.status === 'rascunho' ? 'aprovado' : pedido.status;
   const linhas = useMemo(() => itensOrdenados(pedido, data.skus, data.familias), [pedido, data.skus, data.familias]);
+  const produtos = useMemo(() => porProduto(linhas), [linhas]);
   const dataInicial = pedido.previstoPara ?? somarDias(hoje, data.config?.prazo ?? 0);
   const [qtd, setQtd] = useState<Record<string, string>>(() => quantidades(pedido));
   const [previsto, setPrevisto] = useState(dataInicial);
@@ -131,39 +132,46 @@ function Corpo({ pedido, data, hoje, acoes }: { pedido: PedidoDTO; data: Respost
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border text-xs font-medium text-muted-foreground">
-              <th className="py-2 text-left font-medium">Item</th>
-              {recebeu && <th className="py-2 text-right font-medium">Recebido</th>}
-              <th className="py-2 text-right font-medium">Quantidade</th>
+              <th scope="col" className="py-2 text-left font-medium">Cor · Tamanho</th>
+              {recebeu && <th scope="col" className="py-2 text-right font-medium">Recebido</th>}
+              <th scope="col" className="py-2 text-right font-medium">Quantidade</th>
+              <th scope="col" className="py-2 pl-3 text-right font-medium">Subtotal</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-border">
-            {linhas.map((l) => {
-              const v = qtd[l.item.codigo] ?? '';
-              const n = inteiro(v);
-              const editada = l.item.sugerida !== null && n !== l.item.sugerida;
-              return (
-                <tr key={l.item.codigo}>
-                  <td className="py-2 pr-2">
-                    <span className="block font-medium">{l.produto}</span>
-                    <span className="text-caption">{[l.cor, l.tamanho].filter(Boolean).join(' · ') || 'Único'}</span>
-                  </td>
-                  {recebeu && <td className="py-2 text-right tabular-nums text-muted-foreground">{fmtInt(l.item.recebida)}</td>}
-                  <td className="py-2 text-right">
-                    <span className="inline-flex items-center justify-end gap-2">
-                      {editavel && editada && <span className="text-caption whitespace-nowrap tabular-nums">sugerida {l.item.sugerida}</span>}
-                      {editavel ? (
-                        <Input
-                          inputMode="numeric" value={v} aria-label={`Quantidade de ${l.rotulo}`} aria-invalid={n === null || undefined}
-                          onChange={(e) => setQtd((q) => ({ ...q, [l.item.codigo]: e.target.value.trim() }))}
-                          className={cn('h-11 w-20 text-right tabular-nums md:h-9', editada && 'bg-primary/10 motion-safe:transition-colors motion-safe:duration-[600ms]')}
-                        />
-                      ) : <span className="tabular-nums">{fmtInt(l.item.quantidade)}</span>}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
+          {/* Prancheta: o produto uma vez (por codigoPai) e embaixo só cor · tamanho. */}
+          {produtos.map((g) => (
+            <tbody key={g.codigoPai} className="divide-y divide-border">
+              <tr>
+                <th scope="rowgroup" colSpan={recebeu ? 4 : 3} className="pt-4 pb-1 text-left text-sm font-semibold">{g.produto}</th>
+              </tr>
+              {g.linhas.map((l) => {
+                const v = qtd[l.item.codigo] ?? '';
+                const n = inteiro(v);
+                const editada = l.item.sugerida !== null && n !== l.item.sugerida;
+                return (
+                  <tr key={l.item.codigo}>
+                    <td className="py-2 pr-2">{[l.cor, l.tamanho].filter(Boolean).join(' · ') || 'Único'}</td>
+                    {recebeu && <td className="py-2 text-right tabular-nums text-muted-foreground">{fmtInt(l.item.recebida)}</td>}
+                    <td className="py-2 text-right">
+                      <span className="inline-flex items-center justify-end gap-2">
+                        {editavel && editada && <span className="text-caption whitespace-nowrap tabular-nums">sugerida {l.item.sugerida}</span>}
+                        {editavel ? (
+                          <Input
+                            inputMode="numeric" value={v} aria-label={`Quantidade de ${l.rotulo}`} aria-invalid={n === null || undefined}
+                            onChange={(e) => setQtd((q) => ({ ...q, [l.item.codigo]: e.target.value.trim() }))}
+                            className={cn('h-11 w-20 text-right tabular-nums md:h-9', editada && 'bg-primary/10 motion-safe:transition-colors motion-safe:duration-[600ms]')}
+                          />
+                        ) : <span className="tabular-nums">{fmtInt(l.item.quantidade)}</span>}
+                      </span>
+                    </td>
+                    <td className="py-2 pl-3 text-right text-caption whitespace-nowrap tabular-nums">
+                      {l.custo === null ? 'sem custo' : fmtBRL((editavel ? n ?? 0 : l.item.quantidade) * l.custo)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          ))}
         </table>
 
         {(status === 'aprovado' || status === 'enviado') && (
@@ -229,7 +237,7 @@ export function SheetPedido({ pedidoId, data, hoje, acoes, onFechar }: {
   const pedido = pedidoId ? [...data.rascunhos, ...data.pedidos].find((p) => p.id === pedidoId) : undefined;
   return (
     <Sheet open={!!pedido} onOpenChange={(o) => { if (!o) onFechar(); }}>
-      <SheetContent className="w-full gap-0 sm:max-w-xl">
+      <SheetContent onOpenAutoFocus={(e) => e.preventDefault()} className="w-full gap-0 sm:max-w-xl">
         {pedido && <Corpo key={pedido.id} pedido={pedido} data={data} hoje={hoje} acoes={acoes} />}
       </SheetContent>
     </Sheet>

@@ -102,7 +102,7 @@ async function abrirRascunho(user = userEvent.setup()) {
   return { user, sheet: await screen.findByRole('dialog', { name: /Fornecedor A/ }) };
 }
 
-describe('Reposição — rascunho e pedido', () => {
+describe('Reposição: rascunho e pedido', () => {
   it('barra mostra o rascunho do fornecedor: unidades, R$, quem salvou e quando', () => {
     renderTela();
     const barra = screen.getByRole('region', { name: 'Rascunhos de pedido' });
@@ -112,9 +112,28 @@ describe('Reposição — rascunho e pedido', () => {
     expect(within(barra).getByText(/salvo 16\/11 14:02 por Diego/)).toBeInTheDocument();
   });
 
-  it('celular: botão flutuante "Pedidos (N)" abre diálogo', () => {
+  it('celular: botão flutuante "Rascunhos (N)" abre diálogo', () => {
     renderTela();
-    expect(screen.getByRole('button', { name: 'Pedidos (1)' })).toHaveAttribute('aria-haspopup', 'dialog');
+    expect(screen.getByRole('button', { name: 'Rascunhos (1)' })).toHaveAttribute('aria-haspopup', 'dialog');
+  });
+
+  it('barra de rascunho só na aba Sugestões (na aba Pedidos o rascunho já está na lista)', async () => {
+    const user = userEvent.setup();
+    renderTela();
+    await user.click(screen.getByRole('tab', { name: 'Pedidos' }));
+    expect(screen.queryByRole('region', { name: 'Rascunhos de pedido' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Rascunhos (1)' })).toBeNull();
+  });
+
+  it('Sheet agrupa por produto: o nome aparece uma vez e cada linha tem só cor · tamanho e subtotal', async () => {
+    const { sheet } = await abrirRascunho();
+    const tabela = within(sheet).getByRole('table');
+    expect(within(tabela).getAllByText('Short Bermuda')).toHaveLength(1);
+    expect(within(tabela).getByRole('rowheader', { name: 'Short Bermuda' })).toBeInTheDocument();
+    expect(within(tabela).getByText('Preto · P')).toBeInTheDocument();
+    expect(within(tabela).getByRole('columnheader', { name: 'Subtotal' })).toBeInTheDocument();
+    expect(within(tabela).getByText(/R\$\s*40,00/)).toBeInTheDocument(); // 4 × R$ 10
+    expect(within(tabela).getByText(/R\$\s*30,00/)).toBeInTheDocument(); // 3 × R$ 10
   });
 
   it('item sem custo: barra e Sheet avisam "· N sem custo" ao lado do R$', async () => {
@@ -192,7 +211,7 @@ describe('Reposição — rascunho e pedido', () => {
     await user.click(screen.getByRole('button', { name: 'Abrir pedido de Fornecedor A' }));
     const sheet = await screen.findByRole('dialog', { name: /Fornecedor A/ });
     await user.click(within(sheet).getByRole('button', { name: 'Copiar para WhatsApp' }));
-    expect(await navigator.clipboard.readText()).toContain('Short Bermuda Preto: P×4 M×2');
+    expect(await navigator.clipboard.readText()).toContain('Short Bermuda\nPreto: P×4 · M×2');
     expect(acoes.marcarEnviado).toHaveBeenCalledWith({ pedidoId: 'p1' });
   });
 
@@ -231,7 +250,7 @@ describe('Reposição — rascunho e pedido', () => {
   });
 });
 
-describe('Reposição — aba Pedidos', () => {
+describe('Reposição: aba Pedidos', () => {
   it('mostra os 6 estados, "Atrasado" e o atraso em dias', async () => {
     estado.data!.pedidos = [
       pedido('p1', 'aprovado', [item('S1', 4)]),
@@ -248,6 +267,7 @@ describe('Reposição — aba Pedidos', () => {
       expect(within(lista).getAllByText(s).length).toBeGreaterThan(0);
     }
     expect(within(lista).getByText('Atrasado · 3 dias')).toBeInTheDocument();
+    expect(within(lista).getByText('2 de 4 recebidas')).toBeInTheDocument();
   });
 
   it('detalhe mostra pedido × recebido e "Reabrir saldo" no item encerrado', async () => {

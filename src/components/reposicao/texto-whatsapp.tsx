@@ -28,23 +28,36 @@ export function itensOrdenados(pedido: PedidoDTO, skus: SkuTela[], familias: Fam
     || ordemTam.indexOf(a.tamanho ?? '') - ordemTam.indexOf(b.tamanho ?? ''));
 }
 
-/** "Calça Sarja Marrom Escuro: 38×2 40×1 42×6 (cód. RS-169)": uma linha por produto e cor. */
-export function textoWhatsApp(pedido: PedidoDTO, skus: SkuTela[], familias: FamiliaTela[]): string {
-  const grupos = new Map<string, { nome: string; cod: string | null; partes: string[]; semGrade: number }>();
-  for (const l of itensOrdenados(pedido, skus, familias)) {
-    // Chave pelo produto (codigoPai), não pelo nome: duas famílias de mesmo nome não se misturam.
-    const chave = `${l.item.codigoPai}\u0000${l.cor ?? ''}`;
-    const nome = [l.produto, l.cor].filter(Boolean).join(' ');
-    const g = grupos.get(chave) ?? { nome, cod: l.item.codigoFornecedor, partes: [], semGrade: 0 };
-    if (l.tamanho) g.partes.push(`${l.tamanho}×${l.item.quantidade}`);
-    else g.semGrade += l.item.quantidade;
-    grupos.set(chave, g);
+/** Linhas já ordenadas, agrupadas por produto (codigoPai, não nome: duas famílias de mesmo nome não se misturam). */
+export function porProduto(linhas: ItemRotulado[]): { codigoPai: string; produto: string; linhas: ItemRotulado[] }[] {
+  const grupos = new Map<string, { codigoPai: string; produto: string; linhas: ItemRotulado[] }>();
+  for (const l of linhas) {
+    const g = grupos.get(l.item.codigoPai) ?? { codigoPai: l.item.codigoPai, produto: l.produto, linhas: [] };
+    g.linhas.push(l);
+    grupos.set(l.item.codigoPai, g);
   }
-  const linhas = [...grupos.values()].map((g) => {
-    const qtd = [...g.partes, ...(g.semGrade ? [String(g.semGrade)] : [])].join(' ');
-    return `${g.nome}: ${qtd}${g.cod ? ` (cód. ${g.cod})` : ''}`;
+  return [...grupos.values()];
+}
+
+/** Prancheta: o produto uma vez ("Calça Sarja (cód. RS-169)") e uma linha por cor ("Marrom Escuro: 38×2 · 40×1").
+ *  Produto sem cor cabe numa linha só ("Cinto Couro: 2"). */
+export function textoWhatsApp(pedido: PedidoDTO, skus: SkuTela[], familias: FamiliaTela[]): string {
+  const blocos = porProduto(itensOrdenados(pedido, skus, familias)).map((p) => {
+    const cores = new Map<string, { partes: string[]; semGrade: number }>();
+    for (const l of p.linhas) {
+      const c = cores.get(l.cor ?? '') ?? { partes: [], semGrade: 0 };
+      if (l.tamanho) c.partes.push(`${l.tamanho}×${l.item.quantidade}`);
+      else c.semGrade += l.item.quantidade;
+      cores.set(l.cor ?? '', c);
+    }
+    const qtd = (c: { partes: string[]; semGrade: number }) => [...c.partes, ...(c.semGrade ? [String(c.semGrade)] : [])].join(' · ');
+    const cod = p.linhas.find((l) => l.item.codigoFornecedor)?.item.codigoFornecedor;
+    const nome = `${p.produto}${cod ? ` (cód. ${cod})` : ''}`;
+    const semCor = cores.get('');
+    if (cores.size === 1 && semCor) return [`${nome}: ${qtd(semCor)}`];
+    return [nome, ...[...cores].map(([cor, c]) => `${cor || 'Sem cor'}: ${qtd(c)}`)];
   });
   const total = pedido.itens.reduce((a, i) => a + i.quantidade, 0);
   const data = pedido.previstoPara ? [`Entrega prevista: ${fmtDia(pedido.previstoPara)}/${pedido.previstoPara.slice(0, 4)}`] : [];
-  return [`Pedido de compra · ${pedido.fornecedor.nome}`, ...data, '', ...linhas, '', `Total: ${total} ${total === 1 ? 'unidade' : 'unidades'}`].join('\n');
+  return [`Pedido de compra · ${pedido.fornecedor.nome}`, ...data, '', ...blocos.flatMap((b) => [...b, '']), `Total: ${total} ${total === 1 ? 'unidade' : 'unidades'}`].join('\n');
 }

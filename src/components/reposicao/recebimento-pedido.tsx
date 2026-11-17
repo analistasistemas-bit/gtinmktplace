@@ -1,4 +1,4 @@
-// ADR-0207 §16 — recebimento do pedido de compra pela entrada manual e pela nota de compra: o campo
+// ADR-0207 §16: recebimento do pedido de compra pela entrada manual e pela nota de compra: o campo
 // "De qual pedido?", a pré-seleção da nota pelo CNPJ emitente e a pergunta "o restante ainda vem?".
 // A baixa em si é do SQL (mesma transação da entrada); aqui só a escolha e o encerramento do saldo.
 import { useState } from 'react';
@@ -16,7 +16,7 @@ const RECEBEM = new Set(['aprovado', 'enviado', 'parcial']);
 const NENHUM = 'nenhum'; // Radix Select não aceita value vazio.
 export const AVISO_SEM_CONFERIR = 'A entrada foi registrada, mas não foi possível conferir o saldo do pedido agora. Veja em Reposição › Pedidos.';
 
-/** Pedidos abertos em que algum dos SKUs ainda tem saldo a receber (não encerrado, recebida < quantidade) —
+/** Pedidos abertos em que algum dos SKUs ainda tem saldo a receber (não encerrado, recebida < quantidade):
  *  mesma regra de `montarPedidosAbertos`. Não filtra por Não repor: pedido já feito continua recebível. */
 export function pedidosQueRecebem(pedidos: PedidoDTO[], codigos: string[]): PedidoDTO[] {
   const set = new Set(codigos);
@@ -30,7 +30,7 @@ export function pedidosDaNota(opcoes: PedidoDTO[], emitenteCnpj: string): Pedido
   return opcoes.filter((p) => !p.fornecedor.cnpj || p.fornecedor.cnpj === cnpj);
 }
 
-/** Nota: o pedido aberto do fornecedor com o CNPJ do emitente — só quando há exatamente um. */
+/** Nota: o pedido aberto do fornecedor com o CNPJ do emitente, só quando há exatamente um. */
 export function preSelecaoNota(opcoes: PedidoDTO[], emitenteCnpj: string): string | null {
   const cnpj = emitenteCnpj.replace(/\D/g, '');
   const doCnpj = opcoes.filter((p) => p.fornecedor.cnpj === cnpj);

@@ -805,11 +805,15 @@ describe('ProdutoCard — selo de urgência da Reposição (ADR-0207)', () => {
     );
   }
 
-  it('selo leva à Reposição com o produto expandido', () => {
+  it('selo leva à Reposição com o produto expandido; no celular desce para baixo do nome', () => {
     renderComSelo('vai_faltar');
-    const selo = screen.getByRole('link', { name: /Vai faltar/ });
-    expect(selo).toHaveAttribute('href', '/reposicao?produto=00000004');
-    expect(selo.className).toMatch(/min-h-11/);
+    const [desktop, celular] = screen.getAllByRole('link', { name: /Vai faltar/ });
+    for (const selo of [desktop!, celular!]) {
+      expect(selo).toHaveAttribute('href', '/reposicao?produto=00000004');
+      expect(selo.className).toMatch(/min-h-11/);
+    }
+    expect(desktop!.className).toMatch(/hidden sm:flex/);
+    expect(celular!.className).toMatch(/sm:hidden/);
   });
 
   it('sem urgência (sem o módulo) ou em dia: sem selo', () => {

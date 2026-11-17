@@ -26,7 +26,7 @@ describe('pedidosQueRecebem', () => {
   });
 
   // ADR-0207: Não repor só tira o SKU da sugestão; o pedido já feito continua recebível. O DTO do pedido nem
-  // carrega Não repor — a lista não pode passar a filtrar por ele.
+  // carrega Não repor: a lista não pode passar a filtrar por ele.
   it('pedido de SKU depois marcado Não repor continua recebível', () => {
     expect(pedidosQueRecebem([pedido('a')], ['S1']).map((p) => p.id)).toEqual(['a']);
   });
@@ -45,7 +45,7 @@ describe('pedidosQueRecebem', () => {
 describe('preSelecaoNota', () => {
   const a = pedido('A', { fornecedor: { id: 'fa', nome: 'A', cnpj: '99888777000166' } });
   const b = pedido('B', { fornecedor: { id: 'fb', nome: 'B', cnpj: '11222333000181' } });
-  it('aceite 4 — pré-seleção escolhe o pedido do fornecedor do CNPJ emitente (B), nunca o de A', () => {
+  it('aceite 4: pré-seleção escolhe o pedido do fornecedor do CNPJ emitente (B), nunca o de A', () => {
     expect(preSelecaoNota([a, b], '11.222.333/0001-81')).toBe('B');
   });
   it('pedido do CNPJ com o SKU encerrado ou completo não é pré-selecionado', () => {

@@ -1,5 +1,5 @@
 // Spec §3.5 e §5: um rascunho por fornecedor, fixo no rodapé (desktop) ou atrás do botão flutuante
-// "Pedidos (N)" (celular). Rascunho é da org: todo membro vê quem salvou e quando.
+// "Rascunhos (N)" (celular). Rascunho é da org: todo membro vê quem salvou e quando.
 import { useState } from 'react';
 import { ChevronRight, ShoppingCart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -68,7 +68,7 @@ export function BarraRascunho({ rascunhos, skus, onRevisar }: { rascunhos: Pedid
         className="fixed right-4 bottom-[max(1rem,env(safe-area-inset-bottom))] z-30 h-12 rounded-full px-5 shadow-lg md:hidden"
         onClick={() => setListaAberta(true)}
       >
-        <ShoppingCart className="h-4 w-4" aria-hidden />Pedidos ({rascunhos.length})
+        <ShoppingCart className="h-4 w-4" aria-hidden />Rascunhos ({rascunhos.length})
       </Button>
       <Sheet open={listaAberta} onOpenChange={setListaAberta}>
         <SheetContent side="bottom" className="max-h-[80dvh] rounded-t-xl md:hidden">

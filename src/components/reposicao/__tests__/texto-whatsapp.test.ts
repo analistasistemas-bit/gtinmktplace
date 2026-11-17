@@ -23,9 +23,9 @@ const pedido = (itens: PedidoItemDTO[]): PedidoDTO => ({
 });
 
 describe('textoWhatsApp', () => {
-  it('agrupa por produto e cor, tamanhos na ordem da grade', () => {
+  it('nome do produto uma vez; uma linha por cor com os tamanhos na ordem da grade', () => {
     const t = textoWhatsApp(pedido([item('A42', 'CALCA', 6), item('A38', 'CALCA', 2), item('A40', 'CALCA', 1)]), skus, familias);
-    expect(t).toContain('Calça Sarja Marrom Escuro: 38×2 40×1 42×6');
+    expect(t).toContain('Calça Sarja\nMarrom Escuro: 38×2 · 40×1 · 42×6');
   });
 
   it('cabeçalho com fornecedor e data, cores A→Z, produto sem grade e total', () => {
@@ -36,10 +36,14 @@ describe('textoWhatsApp', () => {
       'Pedido de compra · Fornecedor A',
       'Entrega prevista: 01/12/2026',
       '',
-      'Calça Sarja Cáqui: 40×5',
-      'Calça Sarja Marrom Escuro: 40×1',
+      'Calça Sarja',
+      'Cáqui: 40×5',
+      'Marrom Escuro: 40×1',
+      '',
       'Cinto Couro: 2',
-      'Short Bermuda Preto: P×4 G×3',
+      '',
+      'Short Bermuda',
+      'Preto: P×4 · G×3',
       '',
       'Total: 15 unidades',
     ]);
@@ -49,12 +53,19 @@ describe('textoWhatsApp', () => {
     const fams = [...familias, { codigoPai: 'CALCA2', nome: 'Calça Sarja', fornecedor: { id: 'f1', nome: 'Fornecedor A' }, multiplo: 1 }];
     const t = textoWhatsApp(pedido([item('A38', 'CALCA', 2, 'RS-1'), item('Z38', 'CALCA2', 5, 'RS-2')]),
       [...skus, sku('Z38', 'CALCA2', 'Marrom Escuro', '38')], fams);
-    expect(t).toContain('Calça Sarja Marrom Escuro: 38×2 (cód. RS-1)');
-    expect(t).toContain('Calça Sarja Marrom Escuro: 38×5 (cód. RS-2)');
+    expect(t).toContain('Calça Sarja (cód. RS-1)\nMarrom Escuro: 38×2');
+    expect(t).toContain('Calça Sarja (cód. RS-2)\nMarrom Escuro: 38×5');
   });
 
   it('inclui o código do fornecedor quando houver', () => {
     const t = textoWhatsApp(pedido([item('A38', 'CALCA', 2, 'RS-169')]), skus, familias);
-    expect(t).toContain('Calça Sarja Marrom Escuro: 38×2 (cód. RS-169)');
+    expect(t).toContain('Calça Sarja (cód. RS-169)\nMarrom Escuro: 38×2');
+  });
+
+  it('produto com tamanho e sem cor: tudo na linha do produto', () => {
+    const t = textoWhatsApp(pedido([item('M', 'MEIA', 2), item('G', 'MEIA', 1)]),
+      [sku('M', 'MEIA', null, 'M'), sku('G', 'MEIA', null, 'G')],
+      [{ codigoPai: 'MEIA', nome: 'Meia', fornecedor: { id: 'f1', nome: 'Fornecedor A' }, multiplo: 1 }]);
+    expect(t).toContain('\nMeia: M×2 · G×1\n');
   });
 });

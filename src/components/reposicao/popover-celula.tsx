@@ -26,7 +26,7 @@ export function CalculoSku({ s, familia, ctx }: { s: SkuVisao; familia: FamiliaV
     ['Vendidos (60 dias)', fmtInt(Math.round(sug.unidades))],
     ['Dias disponíveis', fmtInt(sug.diasDisponiveis)],
     ['Velocidade', `${sug.v.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}/dia`],
-    ['A caminho', sug.aCaminho ? `${fmtInt(sug.aCaminho)}${sug.chegaEm ? `, chega ${fmtDia(sug.chegaEm)}` : ''}` : '—'],
+    ['A caminho', sug.aCaminho ? `${fmtInt(sug.aCaminho)}${sug.chegaEm ? `, chega ${fmtDia(sug.chegaEm)}` : ''}` : 'nada'],
   ];
   return (
     <div className="flex flex-col gap-3 text-sm">

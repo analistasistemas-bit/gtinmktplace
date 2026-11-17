@@ -330,12 +330,23 @@ export function ProdutoCard({
     onAjustar(mergeProdutoComVariacoes(produto, vars));
   }
 
+  const seloUrgencia = (onde: string) => urgencia && urgencia !== 'em_dia' && (
+    <Link
+      to={`/reposicao?produto=${encodeURIComponent(produto.codigoPai)}`}
+      aria-label={`${ROTULO_URGENCIA[urgencia]}: ver reposição de ${nomePai}`}
+      className={cn('min-h-11 shrink-0 items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-0', onde)}
+    >
+      <StatusPill tone={TOM_URGENCIA[urgencia]} className="transition-opacity hover:opacity-80">{ROTULO_URGENCIA[urgencia]}</StatusPill>
+    </Link>
+  );
+
   return (
     <div className={cn(
       'rounded-lg border bg-card transition-colors hover:bg-muted/40',
       aberto && 'bg-muted/40 ring-1 ring-primary/25',
     )}>
       <div className={cn(GRID_LINHA_PRODUTO, 'px-3 py-2')}>
+        <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
         <button
           type="button"
@@ -381,15 +392,7 @@ export function ProdutoCard({
             Reenviar
           </Button>
         )}
-        {urgencia && urgencia !== 'em_dia' && (
-          <Link
-            to={`/reposicao?produto=${encodeURIComponent(produto.codigoPai)}`}
-            aria-label={`${ROTULO_URGENCIA[urgencia]}: ver reposição de ${nomePai}`}
-            className="flex min-h-11 shrink-0 items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-0"
-          >
-            <StatusPill tone={TOM_URGENCIA[urgencia]} className="transition-opacity hover:opacity-80">{ROTULO_URGENCIA[urgencia]}</StatusPill>
-          </Link>
-        )}
+        {seloUrgencia('hidden sm:flex')}
         {statusUpdate === 'erro' && loteRevisaoId && (
           <Button asChild variant="outline" size="sm" className="h-7 shrink-0 px-2">
             <Link to={`/revisao/${loteRevisaoId}`} aria-label={`Revisar atualização de ${nomePai}`}>
@@ -400,6 +403,9 @@ export function ProdutoCard({
             </Link>
           </Button>
         )}
+        </div>
+        {/* Celular: o selo desce para baixo do nome, senão espreme o nome até sobrar uma letra. */}
+        {seloUrgencia('ml-7 flex w-fit sm:hidden')}
         </div>
 
         <div className={cn(CELULA_MD, 'text-right text-sm tabular-nums text-muted-foreground')}>

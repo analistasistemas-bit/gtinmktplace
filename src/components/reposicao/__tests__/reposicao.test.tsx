@@ -1,4 +1,4 @@
-// Spec 2026-11-16-reposicao §2–§7 (Task 6): tela de Sugestões com o mapa da grade.
+// Spec 2026-11-16-reposicao §2 a §7 (Task 6): tela de Sugestões com o mapa da grade.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -92,7 +92,7 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-describe('Reposição — sugestões', () => {
+describe('Reposição: sugestões', () => {
   it('sem config: só o painel de 2 campos com a frase do exemplo', () => {
     estado.data = { config: null, resultado: null, skus: [], familias: [], naoRepor: [], rascunhos: [], pedidos: [] };
     renderTela();
@@ -201,13 +201,36 @@ describe('Reposição — sugestões', () => {
     expect(screen.getByRole('button', { name: /^Ruptura/ })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('?produto=<codigo_pai> abre expandido, com célula "2 · pedir 4" e aria-label completo', () => {
+  it('?produto=<codigo_pai> abre expandido, com célula "2 +4" (estoque e compra) e aria-label completo', () => {
     renderTela('/reposicao?produto=SHORT');
     const grid = screen.getByRole('grid');
-    expect(within(grid).getByText('2 · pedir 4')).toBeInTheDocument();
-    expect(within(grid).getByText('4')).toBeInTheDocument();
     const cel = within(grid).getByRole('button', { name: /^Preto, P:/ });
+    expect(within(cel).getByText('2')).toHaveClass('font-normal');
+    expect(within(cel).getByText('+4')).toHaveClass('font-semibold');
+    expect(within(grid).getByRole('button', { name: /^Cáqui, P:/ })).toHaveTextContent(/^4$/);
     expect(cel).toHaveAccessibleName('Preto, P: estoque 2, pedir 4, Pedir agora');
+    expect(screen.getByRole('list', { name: 'Legenda do mapa' })).toHaveTextContent('+N = comprar N');
+  });
+
+  it('asterisco só quando parte da família é estimada; família toda estimada troca a legenda', () => {
+    renderTela('/reposicao?produto=SHORT');
+    const legenda = () => screen.getByRole('list', { name: 'Legenda do mapa' });
+    expect(screen.getByRole('grid').querySelectorAll('.lucide-asterisk')).toHaveLength(1);
+    expect(legenda()).toHaveTextContent('Estimado pela família');
+    cleanup();
+    estado.data!.resultado!.skus.forEach((x) => { x.poucoHistorico = true; });
+    renderTela('/reposicao?produto=SHORT');
+    expect(screen.getByRole('grid').querySelectorAll('.lucide-asterisk')).toHaveLength(0);
+    expect(legenda()).toHaveTextContent('Todas estimadas pela família');
+  });
+
+  it('cabeçalho da coluna de ajuste diz "Tendência"; ordem fixa é texto, não controle', () => {
+    renderTela();
+    expect(screen.getAllByText('Tendência').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Ajuste')).toBeNull();
+    expect(screen.getByText('Ordenado por urgência')).toBeInTheDocument();
+    expect(within(screen.getByRole('button', { name: /^Vai faltar/ })).getByText('0 SKUs')).toHaveClass('text-muted-foreground');
+    expect(within(screen.getByRole('button', { name: /^Ruptura/ })).getByText('1 SKU')).toHaveClass('text-foreground');
   });
 
   it('célula de curva: aria-label e popover dizem que é estimado pela família', async () => {
@@ -300,7 +323,7 @@ describe('Reposição — sugestões', () => {
   it('erro de refetch com dados na tela: aviso discreto, dados continuam', () => {
     estado.isError = true;
     renderTela();
-    expect(screen.getByText('Não foi possível atualizar agora — mostrando os últimos dados.')).toBeInTheDocument();
+    expect(screen.getByText('Não foi possível atualizar agora; mostrando os últimos dados.')).toBeInTheDocument();
     expect(screen.getByText('Short Bermuda Mauricinho')).toBeInTheDocument();
   });
 
@@ -354,7 +377,7 @@ describe('Reposição — sugestões', () => {
     for (const x of r.skus) {
       const nome = x.codigo === 'S1' ? /^Preto, P:/ : /^Preto, M:/;
       const cel = screen.getByRole('button', { name: nome });
-      expect(cel).toHaveTextContent(`0 · pedir ${x.pedir}`);
+      expect(cel).toHaveTextContent(`0+${x.pedir}`);
       await userEvent.click(cel);
       const popover = await screen.findByRole('dialog');
       expect(popover).toHaveTextContent(x.pedir === 3

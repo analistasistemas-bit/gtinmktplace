@@ -1,4 +1,4 @@
-// ADR-0207 / spec 2026-11-16-reposicao §2–§7: tela de Reposição, aba Sugestões.
+// ADR-0207 / spec 2026-11-16-reposicao §2 a §7: tela de Reposição, aba Sugestões.
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -127,7 +127,7 @@ export default function Reposicao() {
     corpo = (
       <Tabs value={aba} onValueChange={setAba} className="flex flex-col gap-5">
         {r.isError && (
-          <p role="status" className="text-sm text-muted-foreground">Não foi possível atualizar agora — mostrando os últimos dados.</p>
+          <p role="status" className="text-sm text-muted-foreground">Não foi possível atualizar agora; mostrando os últimos dados.</p>
         )}
         <TabsList className="group-data-horizontal/tabs:h-auto md:group-data-horizontal/tabs:h-8">
           <TabsTrigger value="sugestoes" className="min-h-11 md:min-h-0">Sugestões</TabsTrigger>
@@ -149,19 +149,19 @@ export default function Reposicao() {
                   aria-label="Buscar produto" className="h-11 pl-8 md:h-9" />
               </div>
               <Select value={fornecedor} onValueChange={setFornecedor}>
-                <SelectTrigger className="h-11 md:h-9 md:w-52" aria-label="Fornecedor"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-full data-[size=default]:h-11 md:w-52 md:data-[size=default]:h-9" aria-label="Fornecedor"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value={TODOS}>Todos os fornecedores</SelectItem>
                   {visao.fornecedores.map((n) => <SelectItem key={n} value={n}>{n}</SelectItem>)}
                 </SelectContent>
               </Select>
               <Select value={urgencia} onValueChange={(v) => setUrgencia(v as FiltroUrgencia)}>
-                <SelectTrigger className="h-11 md:h-9 md:w-56" aria-label="Urgência"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-full data-[size=default]:h-11 md:w-56 md:data-[size=default]:h-9" aria-label="Urgência"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {Object.entries(FILTROS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <span className="text-caption md:ml-auto">Ordenar: urgência</span>
+              <span className="text-caption md:ml-auto">Ordenado por urgência</span>
             </div>
             {lista.length ? (
               <ListaFamilias familias={lista} expandidos={expandidos} onAlternar={alternar} ctx={ctx} acoes={acoes} rascunhos={r.data.rascunhos} />
@@ -172,15 +172,16 @@ export default function Reposicao() {
             )}
           </>
         )}
-        <BarraRascunho rascunhos={r.data.rascunhos} skus={r.data.skus} onRevisar={setPedidoAberto} />
+        {/* Na aba Pedidos o rascunho já está na lista; a barra só cobriria a dica do último pedido. */}
+        {aba === 'sugestoes' && <BarraRascunho rascunhos={r.data.rascunhos} skus={r.data.skus} onRevisar={setPedidoAberto} />}
         <SheetPedido pedidoId={pedidoAberto} data={r.data} hoje={hoje} acoes={r} onFechar={() => setPedidoAberto(null)} />
       </Tabs>
     );
   }
 
   return (
-    // Folga no celular para o botão flutuante "Pedidos (N)" não cobrir a última linha.
-    <div className={`flex flex-col gap-6 p-4 sm:p-6 ${r.data?.rascunhos.length ? 'pb-24 md:pb-6' : ''}`}>
+    // Folga no celular para o botão flutuante "Rascunhos (N)" (só na aba Sugestões) não cobrir a última linha.
+    <div className={`flex flex-col gap-4 p-4 sm:p-6 ${aba === 'sugestoes' && r.data?.rascunhos.length ? 'pb-24 md:pb-6' : ''}`}>
         <PageHeader
           title="Reposição"
           subtitle="O que pedir hoje e quanto, por fornecedor."

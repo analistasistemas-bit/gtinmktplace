@@ -343,7 +343,10 @@ describe('Estoque — portas de entrada da Reposição (ADR-0207)', () => {
     renderEstoque();
     await screen.findByText('Protetor Solar');
     expect(screen.getByRole('link', { name: 'Reposição' })).toHaveAttribute('href', '/reposicao');
-    expect(screen.getByRole('link', { name: /Ruptura/ })).toHaveAttribute('href', '/reposicao?produto=00000004');
+    // Dois selos: um por faixa de largura (celular embaixo do nome; o outro some via CSS).
+    const selos = screen.getAllByRole('link', { name: /Ruptura/ });
+    expect(selos).toHaveLength(2);
+    for (const selo of selos) expect(selo).toHaveAttribute('href', '/reposicao?produto=00000004');
     // Selo é indicativo: cache de 5 min no Estoque, sem refazer o cálculo a cada minuto.
     expect(reposicaoStale).toContain(5 * 60_000);
   });

@@ -10,25 +10,26 @@ const plural = (n: number, um: string, varios: string) => `${fmtInt(n)} ${n === 
 export function CardsUrgencia({ cards, ativo, onFiltro, ocultarVendaPerdida }: {
   cards: Visao['cards']; ativo: FiltroUrgencia; onFiltro: (f: FiltroUrgencia) => void; ocultarVendaPerdida: boolean;
 }) {
-  const itens: { filtro: FiltroUrgencia; titulo: string; numero: string; apoio: string[]; borda: string; icone: LucideIcon; cor: string }[] = [
+  const itens: { filtro: FiltroUrgencia; titulo: string; numero: string; vazio: boolean; apoio: string[]; borda: string; icone: LucideIcon; cor: string }[] = [
     {
-      filtro: 'ruptura', titulo: 'Ruptura', numero: plural(cards.ruptura.skus, 'SKU', 'SKUs'),
+      filtro: 'ruptura', titulo: 'Ruptura', numero: plural(cards.ruptura.skus, 'SKU', 'SKUs'), vazio: cards.ruptura.skus === 0,
       apoio: [plural(cards.ruptura.produtos, 'produto', 'produtos'),
         ...(!ocultarVendaPerdida && cards.vendaPerdidaDia > 0 ? [`${fmtBRL(cards.vendaPerdidaDia)}/dia de venda perdida`] : [])],
       borda: 'border-l-danger', icone: AlertOctagon, cor: 'text-danger',
     },
     {
-      filtro: 'vai_faltar', titulo: 'Vai faltar', numero: plural(cards.vai_faltar.skus, 'SKU', 'SKUs'),
+      filtro: 'vai_faltar', titulo: 'Vai faltar', numero: plural(cards.vai_faltar.skus, 'SKU', 'SKUs'), vazio: cards.vai_faltar.skus === 0,
       apoio: [plural(cards.vai_faltar.produtos, 'produto', 'produtos'), 'zera antes de um pedido feito hoje chegar'],
       borda: 'border-l-danger/60', icone: AlertTriangle, cor: 'text-danger/60',
     },
     {
-      filtro: 'pedir_agora', titulo: 'Pedir agora', numero: plural(cards.pedir_agora.skus, 'SKU', 'SKUs'),
+      filtro: 'pedir_agora', titulo: 'Pedir agora', numero: plural(cards.pedir_agora.skus, 'SKU', 'SKUs'), vazio: cards.pedir_agora.skus === 0,
       apoio: [plural(cards.pedir_agora.produtos, 'produto', 'produtos')],
       borda: 'border-l-warning', icone: Clock, cor: 'text-warning',
     },
     {
       filtro: 'comprar', titulo: 'Sugerido para comprar', numero: `${fmtBRL(cards.sugerido.valor)} · ${fmtInt(cards.sugerido.unidades)} un.`,
+      vazio: cards.sugerido.unidades === 0,
       apoio: [plural(cards.sugerido.fornecedores, 'fornecedor', 'fornecedores')],
       borda: 'border-l-primary', icone: ShoppingCart, cor: 'text-primary',
     },
@@ -52,7 +53,8 @@ export function CardsUrgencia({ cards, ativo, onFiltro, ocultarVendaPerdida }: {
             <span className="flex items-center gap-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
               <c.icone aria-hidden className={cn('h-4 w-4', c.cor)} />{c.titulo}
             </span>
-            <span className="text-h2 tabular-nums text-foreground">{c.numero}</span>
+            {/* Card zerado perde peso: o olho vai para onde há o que pedir. */}
+            <span className={cn('text-h2 tabular-nums', c.vazio ? 'text-muted-foreground' : 'text-foreground')}>{c.numero}</span>
             {c.apoio.map((a) => <span key={a} className="text-caption tabular-nums">{a}</span>)}
           </button>
         );
