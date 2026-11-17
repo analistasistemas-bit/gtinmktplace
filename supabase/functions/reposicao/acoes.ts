@@ -68,6 +68,57 @@ export async function processarAcao(deps: DepsAcao, ctx: CtxAcao, corpo: unknown
     return (data ?? []) as Item[];
   };
 
+  /** Insere a marca de não repor; já marcada (23505) devolve o id existente (idempotente). */
+  const marcarNaoRepor = async (linha: { org_id: string; escopo: string; codigo_pai: string; codigo: string | null; cor: string | null }) => {
+    const { data, error } = await db.from('reposicao_nao_repor').insert({ ...linha, criado_por: ctx.userId }).select('id').single();
+    if (!error) return (data as { id: string }).id;
+    if (error.code !== '23505') falhou('não repor', error);
+    let q = db.from('reposicao_nao_repor').select('id').eq('org_id', o).eq('escopo', linha.escopo).eq('codigo_pai', linha.codigo_pai);
+    q = linha.codigo === null ? q.is('codigo', null) : q.eq('codigo', linha.codigo);
+    q = linha.cor === null ? q.is('cor', null) : q.eq('cor', linha.cor);
+    const { data: ex, error: eErr } = await q.maybeSingle();
+    falhou('ler não repor', eErr);
+    return (ex as { id: string } | null)?.id ?? null;
+  };
+
+  /** Zera, nos rascunhos da org, os itens do produto (ou só da cor, pelo texto exato da variação da família mais
+   * recente, como no cálculo). Atômico por rascunho (RPC, sob lock); entre rascunhos, não. */
+  const tirarDosRascunhos = async (id: string | null, codigoPai: string, cor: string | null): Promise<RespostaAcao> => {
+    const removidos = { rascunhos: 0, unidades: 0 };
+    const { data: ps, error: pErr } = await db.from('pedidos_compra').select('id, fornecedor_id').eq('org_id', o).eq('status', 'rascunho');
+    falhou('ler rascunhos', pErr);
+    const pedidos = (ps ?? []) as { id: string; fornecedor_id: string }[];
+    if (!pedidos.length) return ok({ id, removidos });
+    const { data: is, error: iErr } = await db.from('pedidos_compra_itens').select('pedido_id, codigo, quantidade')
+      .eq('org_id', o).eq('codigo_pai', codigoPai).in('pedido_id', pedidos.map((p) => p.id));
+    falhou('ler itens dos rascunhos', iErr);
+    let itens = (is ?? []) as { pedido_id: string; codigo: string; quantidade: number }[];
+    if (cor !== null && itens.length) {
+      const { data: vs, error: vErr } = await db.from('variacoes').select('codigo, cor, familias!inner(id, criado_em)')
+        .eq('org_id', o).in('codigo', [...new Set(itens.map((i) => i.codigo))]);
+      falhou('ler variações', vErr);
+      const porCodigo = new Map<string, { cor: string | null; familias: { id: string; criado_em: string } }>();
+      for (const v of (vs ?? []) as unknown as { codigo: string; cor: string | null; familias: { id: string; criado_em: string } }[]) {
+        const atual = porCodigo.get(v.codigo);
+        if (!atual || familiaMaisRecente(v.familias, atual.familias)) porCodigo.set(v.codigo, v);
+      }
+      itens = itens.filter((i) => porCodigo.get(i.codigo)?.cor === cor);
+    }
+    for (const p of pedidos) {
+      const doPedido = itens.filter((i) => i.pedido_id === p.id);
+      if (!doPedido.length) continue;
+      const { error } = await db.rpc('reposicao_salvar_rascunho', {
+        p_org: o, p_pedido: p.id, p_fornecedor: p.fornecedor_id, p_usuario: ctx.userId, p_previsto: null, p_mudar_previsto: false,
+        p_itens: doPedido.map((i) => ({ codigo: i.codigo, codigo_pai: codigoPai, quantidade: 0, sugerida: null })),
+      });
+      if (error?.code === '23514') continue; // aprovado no meio: pedido aprovado nunca muda (§24)
+      if (error) return erroRpc(error) ?? falhar('fora de linha', error);
+      removidos.rascunhos++;
+      removidos.unidades += doPedido.reduce((s, i) => s + i.quantidade, 0);
+    }
+    return ok({ id, removidos });
+  };
+
   switch (c.action) {
     case 'salvar_config': {
       if (!admin) return erro(403, 'Só administrador altera o prazo e a cobertura da reposição.');
@@ -198,25 +249,22 @@ export async function processarAcao(deps: DepsAcao, ctx: CtxAcao, corpo: unknown
       return ok(data as { status: string; codigos: string[] });
     }
 
-    case 'nao_repor': {
+    case 'nao_repor':
+    case 'fora_de_linha': {
       const escopo = c.escopo;
-      if (escopo !== 'sku' && escopo !== 'cor' && escopo !== 'familia') return erro(400, 'Escopo inválido.');
+      const fora = c.action === 'fora_de_linha';
+      // Fora de linha (ADR-0207 §23) é só produto ou cor; SKU continua no "Não repor este tamanho".
+      if ((escopo !== 'sku' || fora) && escopo !== 'cor' && escopo !== 'familia') return erro(400, 'Escopo inválido.');
       if (!texto(c.codigoPai) || (escopo === 'sku' && !texto(c.codigo)) || (escopo === 'cor' && !texto(c.cor))) {
         return erro(400, 'Informe o produto e, conforme o escopo, o SKU ou a cor.');
       }
       const linha = {
-        org_id: o, escopo, codigo_pai: c.codigoPai, codigo: escopo === 'sku' ? c.codigo : null, cor: escopo === 'cor' ? c.cor : null,
+        org_id: o, escopo, codigo_pai: c.codigoPai, codigo: escopo === 'sku' ? c.codigo as string : null, cor: escopo === 'cor' ? c.cor as string : null,
       };
-      const { data, error } = await db.from('reposicao_nao_repor').insert({ ...linha, criado_por: ctx.userId }).select('id').single();
-      if (!error) return ok({ id: (data as { id: string }).id });
-      if (error.code !== '23505') falhou('não repor', error);
-      // Já marcado: devolve o id existente (idempotente).
-      let q = db.from('reposicao_nao_repor').select('id').eq('org_id', o).eq('escopo', escopo).eq('codigo_pai', linha.codigo_pai);
-      q = linha.codigo === null ? q.is('codigo', null) : q.eq('codigo', linha.codigo);
-      q = linha.cor === null ? q.is('cor', null) : q.eq('cor', linha.cor);
-      const { data: ex, error: eErr } = await q.maybeSingle();
-      falhou('ler não repor', eErr);
-      return ok({ id: (ex as { id: string } | null)?.id ?? null });
+      const id = await marcarNaoRepor(linha);
+      if (!fora) return ok({ id });
+      // §24: a marca vem antes; falha daqui em diante deixa a marca gravada e o retry refaz só a limpeza.
+      return tirarDosRascunhos(id, linha.codigo_pai, linha.cor);
     }
 
     case 'remover_nao_repor': {
