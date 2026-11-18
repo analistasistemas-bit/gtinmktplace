@@ -1524,6 +1524,10 @@ um smoke test contra Postgres real antes do primeiro deploy.
   + verificação). Medição 08/11 (Nano Banana 2.1, 12 kits): 7/12 aprovados de primeira; conferência humana das 12
   aprovadas: 3 fiéis, 7 em dúvida, 2 não fiéis. `gpt-5.4-image-2` não gerou imagem pela OpenRouter; `gemini-3-pro-image`
   descartado por custo (~3x).
+  **Emenda 18/11 (ADR-0200):** base de moda adulta (`ehModa` no `path_from_root` da categoria, lido no GET público do ML,
+  + `familias.genero` adulto) gera N modelos vestindo as peças, 4:5 em 2K; o modo fica em `ficha.vestida` (jsonb) e vale
+  para as 3 tentativas; a resposta traz `vestida: true` e a tela recorta para 1200×1540 (`montarArquivoFinal`) ao usar.
+  O inspetor julga a peça no corpo e não confere proporção. Infantil, não-moda ou categoria ilegível: fluxo antigo (1:1).
 - **kit-transferencia** (`verify_jwt=false`, assinatura QStash) — worker da saga de transferência (`montar|desmontar|repor|
   cancelamento|sair_sobra|entrada|encerrar`). Um passo por invocação, com claim `kit_reivindicar_execucao`; pausa, reduz, aumenta e
   confirma os alvos no ML, cria os itens do kit, registra o ledger e finaliza (`kit_saga_finalizar`). Ao fim, enfileira

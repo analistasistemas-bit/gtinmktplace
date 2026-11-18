@@ -1,5 +1,14 @@
 # PubliAI — Tasks
 
+## Capa do kit com variação: modelos vestindo as peças (emenda 18/11 ao ADR-0200) — 2026-11-18
+
+- [x] Prompt com N modelos lado a lado, bloco técnico literal, 4:5 em 2K; só moda adulta (`capaVestida`); infantil e não-moda no fluxo antigo (`69dfdddb`).
+- [x] Recorte 1200×1540 na tela ao usar (marca `vestida` da edge); inspetor vestido sem proporção; revisão Grok (3 achados corrigidos).
+- [x] Teste real: Choker Zaven Azul Marinho + Rosa Bebê, aprovada na 1ª, US$ 0,079; OK do Diego.
+- [x] Merge `983f9ab5`; deploy `gerar-foto-kit` v19, `gerar-capa-kit-unidades` v10, `gerar-capa-kit-virtual` v5 (fonte implantado conferido).
+- [ ] 1ª capa gerada pela tela com a edge implantada.
+- [ ] (Não pedido) regerar capa de combinação já publicada ("Gerar nova capa" no Gerenciar kit; crítica, escreve no ML).
+
 ## Alíquota com vigência (ADR-0208) — 2026-11-17
 
 Branch `worktree-imposto-vigencia`. Spec `docs/decisions/0208-aliquota-com-vigencia.md`. Migration `20261117141732_aliquotas_vigencia.sql` já aplicada. O imposto da venda usa a alíquota vigente na data; publicar, calculadora, kits e promoções continuam na alíquota atual.
