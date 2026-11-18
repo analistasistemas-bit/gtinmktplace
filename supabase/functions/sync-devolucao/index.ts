@@ -80,16 +80,17 @@ Deno.serve(async (req) => {
   const { nova, row, ignorado } = await upsertDevolucao(admin, job.user_id, orgId, claim, ret, conexao.contaExternaId, extras, lidoEm);
 
   if (nova && orgId && avisaNovaDevolucao(row.type) && await reservarNotificacao(admin, orgId, job.user_id, 'devolucao_nova', String(row.claim_id))) {
-    // O claim só traz o order_id; o número que o ML exibe é o pack (quando há), lido da venda.
-    // Venda ausente/erro: cai no order_id (a venda sincroniza antes da devolução, então é raro).
+    // O claim só traz o order_id; o número que o ML exibe é o pack (quando há), lido da venda,
+    // junto com os itens do pedido (produto devolvido). Venda ausente/erro: cai no order_id e sai
+    // sem produtos (a venda sincroniza antes da devolução, então é raro).
     const { data: venda, error: erroVenda } = row.order_id != null
-      ? await admin.from('ml_vendas').select('pack_id')
+      ? await admin.from('ml_vendas').select('pack_id, itens:ml_vendas_itens(titulo, cor, codigo, quantity)')
         .eq('org_id', orgId).eq('order_id', row.order_id).limit(1).maybeSingle()
       : { data: null, error: null };
     if (erroVenda) console.error('sync-devolucao: pack_id da venda indisponível', erroVenda.message);
     await notificarCategoria(admin, orgId, 'pos_venda', montarMensagemNovaDevolucao({
       claim_id: row.claim_id, order_id: row.order_id, pack_id: venda?.pack_id ?? null, tipo: row.type ?? 'claim', reason_id: row.reason_id,
-      motivo: row.reason_texto, valor: row.valor_em_jogo, moeda: 'BRL',
+      motivo: row.reason_texto, valor: row.valor_em_jogo, moeda: 'BRL', itens: venda?.itens ?? [],
     }));
   }
 

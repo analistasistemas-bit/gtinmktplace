@@ -216,6 +216,8 @@ export interface NovaDevolucaoAlerta {
   motivo: string | null;
   valor: number | null;
   moeda: string;
+  /** Itens do pedido do claim (ml_vendas_itens). Vazio/ausente = venda ainda não sincronizada. */
+  itens?: Array<{ titulo: string | null; cor: string | null; codigo: string | null; quantity: number }>;
 }
 
 export function montarMensagemLiberacao(total: number, n: number, moeda: string): string {
@@ -246,6 +248,10 @@ export function montarMensagemNovaDevolucao(d: NovaDevolucaoAlerta): string {
       d.valor != null && `Valor: ${fmtBRL(d.valor, d.moeda)}`,
       d.motivo && `Motivo: ${d.motivo}`,
     ],
+    (d.itens ?? []).flatMap((i) => {
+      const detalhe = [i.cor && `Cor: ${i.cor}`, i.codigo && `SKU ${i.codigo}`].filter(Boolean).join(' · ');
+      return [`• ${i.quantity}× ${i.titulo ?? 'item'}`, detalhe && `  ${detalhe}`];
+    }),
     [`Acompanhe em Faturamento › Devoluções e aja dentro do prazo do ML.`, urlDevolucaoML(d.tipo, d.claim_id)],
   );
 }

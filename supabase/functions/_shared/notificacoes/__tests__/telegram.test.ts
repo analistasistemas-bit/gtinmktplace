@@ -89,6 +89,14 @@ describe('montarMensagemNovaDevolucao (link ML)', () => {
     expect(msg).toContain('Nova devolução (arrependimento)');
     expect(msg).not.toContain('Nova reclamação');
   });
+  it('lista os produtos devolvidos com cor e SKU', () => {
+    const msg = montarMensagemNovaDevolucao({
+      claim_id: 789, order_id: 1, tipo: 'mediations', motivo: null, valor: null, moeda: 'BRL',
+      itens: [{ titulo: 'Regata Feminina Poliamida', cor: 'Marrom', codigo: '00123', quantity: 1 }],
+    });
+    expect(msg).toContain('• 1× Regata Feminina Poliamida');
+    expect(msg).toContain('Cor: Marrom · SKU 00123');
+  });
   it('linka a lista filtrada quando tipo é returns', () => {
     const msg = montarMensagemNovaDevolucao({ claim_id: 789, order_id: 1, tipo: 'returns', motivo: null, valor: null, moeda: 'BRL' });
     expect(msg).toContain('post-purchase/post-sales?main.filter=returns');
