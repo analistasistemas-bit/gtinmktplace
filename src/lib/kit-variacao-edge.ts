@@ -291,6 +291,8 @@ export interface RespostaFotoKit {
   motivos?: string[];
   previa_url?: string | null;
   originais?: Array<{ cor: string; urls: string[] }>;
+  /** Emenda 18/11: capa com modelos (4:5); a tela recorta para 1200×1540 ao usar. */
+  vestida?: boolean;
   /** ADR-0205 (`gerar-capa-kit-unidades`): reprovada por falha técnica (provedor, timeout), não pela conferência. */
   falha_tecnica?: boolean;
 }

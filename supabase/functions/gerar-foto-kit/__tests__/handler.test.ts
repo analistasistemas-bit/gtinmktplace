@@ -322,7 +322,8 @@ describe('gerar-foto-kit', () => {
       const inspetor = (f.pedidosVerificacao[0].messages as Array<{ content: string }>)[0].content;
       expect(inspetor).toMatch(/WORN by models/);
       const chamadasFetch = espiao!.mock.calls.length;
-      expect((await post(ok)).status).toBe(200);
+      const r2 = await (await post(ok)).json();
+      expect(r2).toMatchObject({ aprovado: true, vestida: true });
       expect(f.chamadasImagem[1].image_config).toEqual({ aspect_ratio: '4:5', image_size: '2K' });
       expect(textoDo(1)).toMatch(/exactly 2 models/);
       expect(espiao!.mock.calls.length).toBe(chamadasFetch);

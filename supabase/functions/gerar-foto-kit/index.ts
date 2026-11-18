@@ -198,6 +198,8 @@ async function atender(req: Request, inicio: number): Promise<Response> {
     return json({
       request_id: requestId, tentativa: Number(l.tentativa), aprovado: true, proxima: false, path, url,
       custo_centavos: centavos(custoUsd), verificacao: l.verificacao ?? null, originais: await originais(l.ficha),
+      // Emenda 18/11: capa vestida (4:5) → a tela recorta para 1200×1540 ao usar.
+      ...(l.ficha?.vestida ? { vestida: true } : {}),
       ...(existente ? { existente: true } : {}),
     });
   };

@@ -100,15 +100,12 @@ describe('FotoCombinacao: verificação e prévia ampliada', () => {
   });
 
   // Emenda 18/11: capa vestida vem 4:5 (vertical) e vira o arquivo final 1200×1540 (ADR-0203) ao usar.
-  it('foto vertical: "Usar esta foto" entrega o arquivo recortado; quadrada segue pelo caminho', async () => {
-    vi.mocked(gerarFotoKitEdge).mockImplementationOnce(async (p) => aprovada(p.requestId));
+  it('capa vestida (marcada pela edge): "Usar esta foto" entrega o arquivo recortado; sem a marca segue pelo caminho', async () => {
+    vi.mocked(gerarFotoKitEdge).mockImplementationOnce(async (p) => ({ ...aprovada(p.requestId), vestida: true }));
     const user = userEvent.setup();
     const onChange = abrir();
     await user.click(screen.getByRole('button', { name: 'Gerar foto Bege Cru e Cinza Escuro' }));
-    const img = await screen.findByAltText('Foto gerada Bege Cru e Cinza Escuro');
-    Object.defineProperty(img, 'naturalWidth', { value: 1856 });
-    Object.defineProperty(img, 'naturalHeight', { value: 2304 });
-    fireEvent.load(img);
+    fireEvent.load(await screen.findByAltText('Foto gerada Bege Cru e Cinza Escuro'));
     await user.click(screen.getByRole('button', { name: 'Usar foto gerada Bege Cru e Cinza Escuro' }));
     expect(montarArquivoFinal).toHaveBeenCalledWith(`https://x/${ids()[0]}.png`, true);
     const arq = onChange.mock.calls[0][0] as File;

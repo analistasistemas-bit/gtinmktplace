@@ -52,15 +52,13 @@ export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, 
   /** Lote em curso: os botões de geração deste card ficam travados (uma geração por combinação, a do lote). */
   travado?: boolean;
 }) {
-  const [candidata, setCandidata] = useState<(FotoGerada & { requestId: string; conferencia: ConferenciaFoto }) | null>(null);
+  const [candidata, setCandidata] = useState<(FotoGerada & { requestId: string; conferencia: ConferenciaFoto; vestida?: boolean }) | null>(null);
   /** 3 reprovações: a IA não conseguiu uma foto fiel (só a prévia da última, sem "Usar"). */
   const [naoFiel, setNaoFiel] = useState<(ConferenciaFoto & { previaUrl: string | null }) | null>(null);
   const [tentativa, setTentativa] = useState(1);
   const [ampliar, setAmpliar] = useState(false);
   const [carregada, setCarregada] = useState(false);
   const [erroPrevia, setErroPrevia] = useState(false);
-  /** Emenda 18/11: capa vestida vem 4:5 (vertical) e vira 1200×1540 ao usar (ADR-0203). Quadrada segue como veio. */
-  const [vertical, setVertical] = useState(false);
   const requestId = useRef('');
   const gerar = useMutation({
     // `recarregar`: o mesmo pedido da candidata, só para obter a URL de novo (a edge devolve a geração existente).
@@ -97,13 +95,14 @@ export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, 
       }
       if (id === requestId.current) requestId.current = '';
       setCarregada(false); setErroPrevia(false); setNaoFiel(null);
-      setCandidata({ path: r.path, url: r.url ?? null, requestId: id, conferencia: conferenciaDe(r) });
+      setCandidata({ path: r.path, url: r.url ?? null, requestId: id, conferencia: conferenciaDe(r), vestida: r.vestida === true });
     },
     onError: (e, p) => { if (!p?.silencioso) toast.error('Não foi possível gerar a foto', { description: (e as Error).message }); },
   });
 
-  const usar = async (c: FotoGerada) => {
-    if (vertical && c.url) {
+  /** Emenda 18/11: a capa vestida (4:5, marcada pela edge) vira 1200×1540 ao usar (ADR-0203); a quadrada segue como veio. */
+  const usar = async (c: FotoGerada & { vestida?: boolean }) => {
+    if (c.vestida && c.url) {
       try {
         const b = await montarArquivoFinal(c.url, true);
         onChange(new File([b], 'foto-ia-1200x1540.jpg', { type: 'image/jpeg' }));
@@ -158,7 +157,7 @@ export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, 
               ? <img
                   key={candidata.url} src={candidata.url} alt={`Foto gerada ${rotulo}`}
                   className="h-24 w-18 shrink-0 rounded bg-background object-contain"
-                  onLoad={(e) => { setVertical(e.currentTarget.naturalHeight > e.currentTarget.naturalWidth); setCarregada(true); }} onError={() => { setCarregada(false); setErroPrevia(true); }}
+                  onLoad={() => setCarregada(true)} onError={() => { setCarregada(false); setErroPrevia(true); }}
                 />
               : <span aria-hidden className="h-24 w-18 shrink-0 rounded bg-muted" />}
             <div className="grid min-w-0 gap-1.5">

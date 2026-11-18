@@ -152,11 +152,14 @@ describe('capa com modelos vestindo (moda adulta)', () => {
     expect(s).toMatch(/WORN by models/);
     expect(s).toMatch(/ignore the models/);
     expect(s).not.toMatch(/laid flat/);
+    expect(s).toMatch(/if there are two rows, top row first/);   // pedido permite duas fileiras com 4+
+    expect(s).not.toMatch(/side by side, left to right/);
   });
 
   it('veredito vestido ignora a proporção (depende da pose); comprimento e cor continuam', () => {
     const v = avaliar(vestida, resposta([peca(1, { proporcao_original: 0.8, proporcao_gerada: 1.4 }), peca(2)]));
     expect(v.aprovado).toBe(true);
+    expect(v.itens.some((i) => i.campo === 'proporcao')).toBe(false);   // não conferida → fora da grade
     const c = avaliar(vestida, resposta([peca(1, { comprimento_vs_original: 'mais_longo' }), peca(2, { cor: { ok: false, nota: 'mais claro' } })]));
     expect(c.aprovado).toBe(false);
     expect(c.itens.find((i) => i.campo === 'comprimento')!.ok).toBe(false);

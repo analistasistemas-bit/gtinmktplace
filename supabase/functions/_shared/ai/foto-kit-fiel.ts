@@ -140,6 +140,9 @@ export const SISTEMA_VERIFICACAO = 'You are a strict quality inspector for e-com
 
 // Modo vestido: a gerada mostra as peças no corpo. Troca só a frase da vista estendida; o resto do inspetor vale igual.
 const SISTEMA_VERIFICACAO_VESTIDA = SISTEMA_VERIFICACAO.replace(
+  'side by side, left to right in the order of DATA.cores.',
+  'worn by models in the order of DATA.cores, read left to right and, if there are two rows, top row first.',
+).replace(
   'The generated image is a FRONT view of the pieces laid flat, so judge only what is drawn on that front view.',
   'The generated image shows the pieces WORN by models, front view: judge each garment as worn on the body and '
     + 'ignore the models themselves (face, hair, skin, body, pose) and plain neutral complementary pieces (e.g. '
@@ -308,7 +311,8 @@ export function avaliar(ficha: Ficha, resposta: any): Verificacao {
     }
   });
 
-  const itens = ITENS.map(([campo, rotulo]) => {
+  // Vestida: proporção não é conferida, então nem aparece na grade como conferida.
+  const itens = ITENS.filter(([campo]) => !(ficha.vestida && campo === 'proporcao')).map(([campo, rotulo]) => {
     const f = falhas.get(campo);
     return { campo, rotulo, ok: !f, nota: f ? f.join('; ').slice(0, 300) : 'igual à original' };
   });
