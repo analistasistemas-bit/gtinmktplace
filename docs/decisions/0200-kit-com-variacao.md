@@ -468,3 +468,30 @@ A edge `preco-avulso-kit` (só leitura, escopada por `org_id`) passa a aceitar o
 ## Adendo 2026-11-12 — Fotos 2 a 7 da base no kit vinculado
 
 O kit vinculado passa a levar as fotos 2 a 7 do anúncio publicado da base, conforme o ADR-0204 (reuso de `picture_id`, lidos por edge de leitura e gravados em `galeria_ml_fotos`; só `publish-familia-ml` as lê, só para kit vinculado). A decisão 6 do adendo de 12/11 do ADR-0200 ("a publicação comum não leva galeria") **continua valendo para o kit com variação**; o kit vinculado é a exceção, restrita a `publish-familia-ml`. `montar-canonico` e o worker `kit-transferencia` não mudam (ADR-0204, decisão 3).
+
+## Emenda 2026-11-18 ao Adendo 1 — capa de kit de moda adulta com modelos vestindo as peças
+
+**Por quê.** A capa com as peças estendidas, sem pessoa e quadrada, teve recepção ruim no ML. Em 18/11 três capas
+adultas de 2 peças da Zaven com modelos vestindo as peças saíram fiéis na 1ª tentativa (~US$ 0,085 e ~25 s cada,
+Nano Banana 2.1, 4:5 em 2K). A tentativa anterior (ADR-0209, com fila, cotas, classificação de fotos e "Recriar
+capas") foi encerrada por complexidade; esta emenda fica só na troca do pedido.
+
+**Decisão.**
+1. **Só moda adulta**: `ehModa(path_from_root da categoria da base)` e `familias.genero` em masculino, feminino ou
+   unissex. Leitura da categoria falhou → fluxo antigo (nunca presume moda). Infantil e bebê ficam no fluxo antigo: o
+   modelo padrão recusa criança (`PROHIBITED_CONTENT`). Demais categorias: nada muda.
+2. A decisão é tomada na 1ª tentativa e guardada na ficha (`ficha.vestida`, no jsonb já existente): as tentativas 2 e
+   3 do mesmo pedido seguem o mesmo modo. Sem migration.
+3. **Pedido**: N modelos lado a lado (uma por cor, na ordem de DATA.cores), cada uma vestindo a peça da sua cor; com
+   4+ peças, duas fileiras se couber. Fundo branco puro, foto de moda de estúdio, fidelidade total à peça (modelagem,
+   gola, manga, comprimento, textura, barra, cor), complemento neutro sem destaque, sem texto/preço/selo/logo, peça
+   nunca escondida por braço ou cabelo, mais o bloco técnico de `galeria/regras.ts` (`BLOCO_TECNICO`). Referências:
+   as mesmas fotos de origem por cor de hoje (sem classificar fotos).
+4. **Formato**: 4:5 em 2K (`image_config` via `extra` de `gerarImagem`) e recorte para 1200×1540 na tela ao usar a
+   foto, com `montarArquivoFinal` do ADR-0203.
+5. **Conferência**: o inspetor julga a peça no corpo e ignora modelo, pose e complemento neutro; a proporção
+   altura/largura (dependente da pose) sai do veredito no modo vestido. Comprimento, cor e detalhes seguem. A
+   aprovação humana continua obrigatória.
+
+**Fora do escopo**: kits já publicados (nenhuma escrita no ML), migration, fila, cotas, cobrança (segue igual) e
+classificação de fotos.

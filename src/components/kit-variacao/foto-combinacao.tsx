@@ -13,6 +13,7 @@ import { Loader2, Maximize2, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { StatusPill } from '@/components/ui/status-pill';
 import { gerarFotoKitEdge, type RespostaFotoKit } from '@/lib/kit-variacao-edge';
+import { montarArquivoFinal } from '@/lib/galeria/final';
 import { type ConferenciaFoto, PreviaAmpliada } from './previa-ampliada';
 import { cn } from '@/lib/utils';
 
@@ -58,6 +59,8 @@ export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, 
   const [ampliar, setAmpliar] = useState(false);
   const [carregada, setCarregada] = useState(false);
   const [erroPrevia, setErroPrevia] = useState(false);
+  /** Emenda 18/11: capa vestida vem 4:5 (vertical) e vira 1200×1540 ao usar (ADR-0203). Quadrada segue como veio. */
+  const [vertical, setVertical] = useState(false);
   const requestId = useRef('');
   const gerar = useMutation({
     // `recarregar`: o mesmo pedido da candidata, só para obter a URL de novo (a edge devolve a geração existente).
@@ -99,6 +102,19 @@ export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, 
     onError: (e, p) => { if (!p?.silencioso) toast.error('Não foi possível gerar a foto', { description: (e as Error).message }); },
   });
 
+  const usar = async (c: FotoGerada) => {
+    if (vertical && c.url) {
+      try {
+        const b = await montarArquivoFinal(c.url, true);
+        onChange(new File([b], 'foto-ia-1200x1540.jpg', { type: 'image/jpeg' }));
+      } catch {
+        toast.error('Não foi possível preparar a foto', { description: 'Recarregue a prévia e tente de novo.' });
+        return;
+      }
+    } else onChange({ path: c.path, url: c.url });
+    setCandidata(null);
+  };
+
   useImperativeHandle(controle, () => ({
     async gerar() {
       if (gerar.isPending) return 'falhou' as const;
@@ -110,11 +126,9 @@ export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, 
     },
     candidata: () => (candidata ? { path: candidata.path, url: candidata.url, conferencia: candidata.conferencia } : null),
     aprovar() {
-      if (!candidata) return;
-      onChange({ path: candidata.path, url: candidata.url });
-      setCandidata(null);
+      if (candidata) void usar(candidata);
     },
-  }), [gerar, candidata, onChange]);
+  }), [gerar, candidata, usar]);
   useEffect(() => {
     onEstado?.({ gerando: gerar.isPending, temCandidata: !!candidata, pronta: !!candidata && carregada, naoFiel: !!naoFiel });
   }, [onEstado, gerar.isPending, candidata, carregada, naoFiel]);
@@ -144,7 +158,7 @@ export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, 
               ? <img
                   key={candidata.url} src={candidata.url} alt={`Foto gerada ${rotulo}`}
                   className="h-24 w-18 shrink-0 rounded bg-background object-contain"
-                  onLoad={() => setCarregada(true)} onError={() => { setCarregada(false); setErroPrevia(true); }}
+                  onLoad={(e) => { setVertical(e.currentTarget.naturalHeight > e.currentTarget.naturalWidth); setCarregada(true); }} onError={() => { setCarregada(false); setErroPrevia(true); }}
                 />
               : <span aria-hidden className="h-24 w-18 shrink-0 rounded bg-muted" />}
             <div className="grid min-w-0 gap-1.5">
@@ -157,7 +171,7 @@ export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, 
               <div className="flex flex-wrap gap-1.5">
                 <Button
                   size="sm" aria-label={`Usar foto gerada ${rotulo}`} disabled={!carregada}
-                  onClick={() => { onChange({ path: candidata.path, url: candidata.url }); setCandidata(null); }}
+                  onClick={() => void usar(candidata)}
                 >
                   Usar esta foto
                 </Button>
@@ -182,7 +196,7 @@ export function FotoCombinacao({ rotulo, titulo = rotulo, cores, familiaBaseId, 
             <PreviaAmpliada
               open={ampliar} onOpenChange={setAmpliar} rotulo={rotulo} url={candidata.url} aprovada
               conferencia={candidata.conferencia} gerando={gerar.isPending || travado} onGerarDeNovo={() => gerar.mutate(undefined)}
-              onUsar={() => { onChange({ path: candidata.path, url: candidata.url }); setCandidata(null); }}
+              onUsar={() => void usar(candidata)}
             />
           </div>
         ) : naoFiel && !gerar.isPending ? (

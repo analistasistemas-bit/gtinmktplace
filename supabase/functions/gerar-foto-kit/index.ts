@@ -16,7 +16,7 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { rotuloCombinacao } from '../_shared/kit-variacao/combinacoes.ts';
 import { adequadaAoML, dimensoesImagem, gerarImagem, resolverModeloImagem } from '../_shared/ai/imagem.ts';
 import {
-  avaliar, extrairFicha, type Ficha, type FotosDaCor, lerVerificacao, MAX_TENTATIVAS, montarPedidoFiel, reprovacao,
+  avaliar, capaVestida, extrairFicha, type Ficha, type FotosDaCor, lerVerificacao, MAX_TENTATIVAS, montarPedidoFiel, reprovacao,
   type Verificacao,
 } from '../_shared/ai/foto-kit-fiel.ts';
 import { fotoDaOrg } from '../criar-kit-variacao/processar.ts';
@@ -79,6 +79,19 @@ async function paraDataUrl(blob: Blob): Promise<string> {
   let bin = '';
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return `data:${blob.type || 'image/jpeg'};base64,${btoa(bin)}`;
+}
+
+/** `path_from_root` da categoria (GET público, como o galeria-gerar). Falha → null: nunca presume moda. */
+async function lerCategoria(id: string): Promise<Array<{ id: string }> | null> {
+  try {
+    const r = await fetch(`https://api.mercadolibre.com/categories/${encodeURIComponent(id)}`, { signal: AbortSignal.timeout(8_000) });
+    if (!r.ok) return null;
+    const cat = await r.json() as { path_from_root?: unknown };
+    return Array.isArray(cat.path_from_root) ? cat.path_from_root as Array<{ id: string }> : null;
+  } catch (e) {
+    logErro('categoria', e);
+    return null;
+  }
 }
 
 Deno.serve(async (req) => {
@@ -269,17 +282,21 @@ async function atender(req: Request, inicio: number): Promise<Response> {
 
   // Fotos de origem por cor: as da ficha guardada ou, na 1ª tentativa, as variações da cor (todas, até o teto).
   let origem: string[][];
+  // Emenda 18/11: modo vestido decidido na 1ª tentativa e guardado na ficha (as seguintes repetem o mesmo modo).
+  let vestida = false;
   if (fichaSalva) {
     origem = fichaSalva.cores.map((c) => c.fotos);
   } else {
     // Base da própria org; cores só dela (nunca texto livre do cliente no pedido à IA).
-    const { data: base, error } = await admin.from('familias').select('variacoes(cor, imagem_path, excluida_da_publicacao)')
+    const { data: base, error } = await admin.from('familias').select('categoria_ml_id, genero, variacoes(cor, imagem_path, excluida_da_publicacao)')
       .eq('id', familiaBaseId).eq('org_id', orgId).maybeSingle();
     if (error) return json({ error: 'Falha ao carregar a família base. Tente novamente.' }, 500);
     if (!base) return json({ error: 'Família base não encontrada.' }, 404);
     const variacoes = ((base.variacoes ?? []) as Array<{ cor: string | null; imagem_path: string | null; excluida_da_publicacao?: boolean }>)
       .filter((v) => !v.excluida_da_publicacao);
     if (cores.some((c) => !variacoes.some((v) => String(v.cor ?? '').trim() === c))) return json({ error: 'Cor fora da base.' }, 400);
+    const categoria = base.categoria_ml_id as string | null;
+    vestida = !!categoria && capaVestida(await lerCategoria(categoria), base.genero as string | null);
 
     // Fotos de origem: da própria org (mesma regra da criação, Task 10) e fora de item moderado no ML.
     const { data: perfis, error: errPerfis } = await admin.from('profiles').select('id').eq('org_id', orgId);
@@ -357,11 +374,12 @@ async function atender(req: Request, inicio: number): Promise<Response> {
       ficha = fichaSalva;
     } else {
       const lida = await extrairFicha(grupos, origem, fatia(FICHA_MS, 60_000));
-      ficha = lida.ficha;
+      ficha = vestida ? { ...lida.ficha, vestida: true } : lida.ficha;
       custoUsd += lida.custoUsd;
     }
+    // Vestida: 4:5 em 2K (ADR-0203); a tela recorta para 1200×1540 ao usar.
     gerada = await gerarImagem(modelo, montarPedidoFiel({ ficha, grupos, motivos }), grupos.flatMap((g) => g.urls),
-      fatia(90_000, VERIFICACAO_MS + RESERVA_FINAL_MS));
+      fatia(90_000, VERIFICACAO_MS + RESERVA_FINAL_MS), ficha.vestida ? { aspect_ratio: '4:5', image_size: '2K' } : {});
     custoUsd += gerada.custoUsd;
   } catch (e) {
     // Falha de geração não cobra: some a reserva e o mesmo request_id pode tentar de novo.

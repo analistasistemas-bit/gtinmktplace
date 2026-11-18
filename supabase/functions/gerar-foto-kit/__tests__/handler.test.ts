@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const PNG_VERTICAL = (() => {
   const be = (n: number) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
@@ -292,6 +292,61 @@ describe('gerar-foto-kit', () => {
       rotulo: 'Preto e Branco', storage_path: `org-1/kit-variacao-ia/${REQ}.png`,
     });
     expect(Number(f.linhas[0].custo_usd)).toBeGreaterThan(0);
+  });
+
+  // Emenda 18/11 ao Adendo 1: moda adulta → modelos vestindo, 4:5 em 2K; modo guardado na ficha para as tentativas seguintes.
+  describe('capa com modelos vestindo', () => {
+    const MODA = [{ id: 'MLB1430' }, { id: 'MLB31447' }];
+    // Só o fetch: `unstubAllGlobals` levaria junto o `Deno` do beforeAll.
+    let espiao: ReturnType<typeof vi.spyOn> | null = null;
+    const categoria = (path: unknown, ok = true) => {
+      espiao?.mockRestore();
+      espiao = vi.spyOn(globalThis, 'fetch').mockImplementation(async (u) => {
+        expect(String(u)).toBe('https://api.mercadolibre.com/categories/MLB-CAT');
+        return new Response(JSON.stringify({ path_from_root: path }), { status: ok ? 200 : 500 });
+      });
+    };
+    const textoDo = (i: number) => ((f.chamadasImagem[i].messages as Array<{ content: Array<{ type: string; text?: string }> }>)[0].content[0].text ?? '');
+    afterEach(() => { espiao?.mockRestore(); espiao = null; });
+
+    it('moda adulta: pedido com modelos, 4:5 2K, ficha.vestida gravada; a 2ª tentativa segue vestida sem reler a categoria', async () => {
+      f.base = { ...(f.base as object), categoria_ml_id: 'MLB-CAT', genero: 'feminino' };
+      categoria(MODA);
+      f.verificacoes = [LONGA];
+      const r1 = await (await post(ok)).json();
+      expect(r1).toMatchObject({ aprovado: false, proxima: true });
+      expect(f.chamadasImagem[0].image_config).toEqual({ aspect_ratio: '4:5', image_size: '2K' });
+      expect(textoDo(0)).toMatch(/exactly 2 models/);
+      expect(textoDo(0)).not.toMatch(/No person/);
+      expect((f.linhas[0].ficha as { vestida?: boolean }).vestida).toBe(true);
+      const inspetor = (f.pedidosVerificacao[0].messages as Array<{ content: string }>)[0].content;
+      expect(inspetor).toMatch(/WORN by models/);
+      const chamadasFetch = espiao!.mock.calls.length;
+      expect((await post(ok)).status).toBe(200);
+      expect(f.chamadasImagem[1].image_config).toEqual({ aspect_ratio: '4:5', image_size: '2K' });
+      expect(textoDo(1)).toMatch(/exactly 2 models/);
+      expect(espiao!.mock.calls.length).toBe(chamadasFetch);
+    });
+
+    it('infantil (meninas) em moda: fluxo antigo (1:1, peças estendidas)', async () => {
+      f.base = { ...(f.base as object), categoria_ml_id: 'MLB-CAT', genero: 'meninas' };
+      categoria(MODA);
+      expect((await post(ok)).status).toBe(200);
+      expect(f.chamadasImagem[0].image_config).toEqual({ aspect_ratio: '1:1' });
+      expect(textoDo(0)).toMatch(/No person, no mannequin/);
+      expect((f.linhas[0].ficha as { vestida?: boolean }).vestida).toBeUndefined();
+    });
+
+    it('não-moda ou categoria ilegível: fluxo antigo', async () => {
+      f.base = { ...(f.base as object), categoria_ml_id: 'MLB-CAT', genero: 'feminino' };
+      categoria([{ id: 'MLB5726' }]);
+      expect((await post(ok)).status).toBe(200);
+      expect(f.chamadasImagem[0].image_config).toEqual({ aspect_ratio: '1:1' });
+      f.linhas = []; f.chamadasImagem = [];
+      categoria(null, false);
+      expect((await post(ok)).status).toBe(200);
+      expect(f.chamadasImagem[0].image_config).toEqual({ aspect_ratio: '1:1' });
+    });
   });
 
   it('originais repetidas (mesmo arquivo em outro caminho) vão uma vez só', async () => {

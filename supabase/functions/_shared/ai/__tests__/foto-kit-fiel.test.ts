@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../client.ts', () => ({ openrouterClient: () => { throw new Error('IA real proibida em teste'); } }));
-import { avaliar, montarPedidoFiel, SISTEMA_VERIFICACAO, type Ficha } from '../foto-kit-fiel.ts';
+import { avaliar, capaVestida, montarPedidoFiel, sistemaVerificacao, SISTEMA_VERIFICACAO, type Ficha } from '../foto-kit-fiel.ts';
+import { BLOCO_TECNICO } from '../../galeria/regras.ts';
 
 const ficha: Ficha = {
   tipo_peca: 'short', comprimento: 'meio_da_coxa', comprimento_descricao: 'short curto, termina no meio da coxa',
@@ -101,5 +102,66 @@ describe('foto de frente: detalhe das costas ou de dentro da peça', () => {
   it('gerador: não mostra na frente o que só existe nas costas ou por dentro', () => {
     const [instr] = montarPedidoFiel({ ficha, grupos: [{ cor: 'Bege Cru', urls: ['data:a'] }, { cor: 'Cinza Escuro', urls: ['data:b'] }] });
     expect(instr).toMatch(/only on the back or inside[^.]*must NOT appear in the image/);
+  });
+});
+
+// Emenda 18/11 ao Adendo 1: kit de moda adulta → modelos vestindo as peças, 4:5.
+describe('capa com modelos vestindo (moda adulta)', () => {
+  const grupos = [{ cor: 'Off White', urls: ['data:a'] }, { cor: 'Preto', urls: ['data:b'] }];
+  const vestida: Ficha = { ...ficha, vestida: true };
+  const VESTIDO = [{ id: 'MLB1430' }, { id: 'MLB31447' }];   // Calçados, Roupas e Bolsas › Camisetas e Regatas
+
+  it('capaVestida: só moda com gênero adulto; infantil, sem gênero e não-moda ficam no fluxo antigo', () => {
+    expect(capaVestida(VESTIDO, 'feminino')).toBe(true);
+    expect(capaVestida(VESTIDO, 'masculino')).toBe(true);
+    expect(capaVestida(VESTIDO, 'unissex')).toBe(true);
+    expect(capaVestida(VESTIDO, 'meninas')).toBe(false);
+    expect(capaVestida(VESTIDO, 'sem_genero_infantil')).toBe(false);
+    expect(capaVestida(VESTIDO, null)).toBe(false);
+    expect(capaVestida([{ id: 'MLB5726' }], 'feminino')).toBe(false);   // Eletrodomésticos
+    expect(capaVestida(null, 'feminino')).toBe(false);                 // categoria não lida → nunca presume moda
+  });
+
+  it('pedido vestido: modelos lado a lado, bloco técnico literal, sem "No person"', () => {
+    const [instr, dados] = montarPedidoFiel({ ficha: vestida, grupos });
+    expect(instr).toContain(BLOCO_TECNICO);
+    expect(instr).toContain('photorealistic, ultra detailed, commercial product photography, studio lighting, realistic shadows, sharp focus, clean composition, high resolution, professional catalog, no distortion, no blur, no watermark, premium marketplace standard');
+    expect(instr).not.toMatch(/No person|no mannequin|laid flat/i);
+    expect(instr).toMatch(/exactly 2 models/);
+    expect(instr).toMatch(/pure white/i);
+    expect(instr).toMatch(/never hidden by arms or hair/);
+    expect(instr).toMatch(/No text, price, badge, seal or logo/);
+    expect(instr).not.toContain('Off White');   // cor só nos dados
+    expect(dados).toContain('"cor":"Off White"');
+  });
+
+  it('pedido vestido com motivos usa DATA.corrigir', () => {
+    const [instr] = montarPedidoFiel({ ficha: vestida, grupos, motivos: ['Cor: Preto saiu cinza'] });
+    expect(instr).toMatch(/DATA\.corrigir/);
+  });
+
+  it('regressão: ficha sem vestida mantém o pedido antigo (peças estendidas, sem pessoa)', () => {
+    const [instr] = montarPedidoFiel({ ficha, grupos });
+    expect(instr).toMatch(/No person, no mannequin/);
+    expect(instr).not.toContain(BLOCO_TECNICO);
+  });
+
+  it('inspetor vestido julga a peça no corpo; o antigo continua de peça estendida', () => {
+    expect(sistemaVerificacao(false)).toBe(SISTEMA_VERIFICACAO);
+    const s = sistemaVerificacao(true);
+    expect(s).toMatch(/WORN by models/);
+    expect(s).toMatch(/ignore the models/);
+    expect(s).not.toMatch(/laid flat/);
+  });
+
+  it('veredito vestido ignora a proporção (depende da pose); comprimento e cor continuam', () => {
+    const v = avaliar(vestida, resposta([peca(1, { proporcao_original: 0.8, proporcao_gerada: 1.4 }), peca(2)]));
+    expect(v.aprovado).toBe(true);
+    const c = avaliar(vestida, resposta([peca(1, { comprimento_vs_original: 'mais_longo' }), peca(2, { cor: { ok: false, nota: 'mais claro' } })]));
+    expect(c.aprovado).toBe(false);
+    expect(c.itens.find((i) => i.campo === 'comprimento')!.ok).toBe(false);
+    expect(c.itens.find((i) => i.campo === 'cor')!.ok).toBe(false);
+    // regressão: sem vestida a proporção fora de 15% reprova
+    expect(avaliar(ficha, resposta([peca(1, { proporcao_original: 0.8, proporcao_gerada: 1.4 }), peca(2)])).aprovado).toBe(false);
   });
 });

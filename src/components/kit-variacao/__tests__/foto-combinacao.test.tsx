@@ -6,6 +6,8 @@ import { FotoCombinacao } from '../foto-combinacao';
 
 vi.mock('@/lib/kit-variacao-edge', () => ({ gerarFotoKitEdge: vi.fn() }));
 import { gerarFotoKitEdge } from '@/lib/kit-variacao-edge';
+vi.mock('@/lib/galeria/final', () => ({ montarArquivoFinal: vi.fn(async () => new Blob(['jpg'], { type: 'image/jpeg' })) }));
+import { montarArquivoFinal } from '@/lib/galeria/final';
 
 const itensOk = [
   { campo: 'comprimento', rotulo: 'Comprimento', ok: true, nota: 'igual à original' },
@@ -95,6 +97,23 @@ describe('FotoCombinacao: verificação e prévia ampliada', () => {
     fireEvent.load(within(d).getByAltText('Foto gerada Bege Cru e Cinza Escuro, ampliada'));
     await user.click(within(d).getByRole('button', { name: 'Usar esta foto' }));
     expect(onChange).toHaveBeenCalledWith({ path: `ORG/kit-variacao-ia/${ids()[0]}.png`, url: `https://x/${ids()[0]}.png` });
+  });
+
+  // Emenda 18/11: capa vestida vem 4:5 (vertical) e vira o arquivo final 1200×1540 (ADR-0203) ao usar.
+  it('foto vertical: "Usar esta foto" entrega o arquivo recortado; quadrada segue pelo caminho', async () => {
+    vi.mocked(gerarFotoKitEdge).mockImplementationOnce(async (p) => aprovada(p.requestId));
+    const user = userEvent.setup();
+    const onChange = abrir();
+    await user.click(screen.getByRole('button', { name: 'Gerar foto Bege Cru e Cinza Escuro' }));
+    const img = await screen.findByAltText('Foto gerada Bege Cru e Cinza Escuro');
+    Object.defineProperty(img, 'naturalWidth', { value: 1856 });
+    Object.defineProperty(img, 'naturalHeight', { value: 2304 });
+    fireEvent.load(img);
+    await user.click(screen.getByRole('button', { name: 'Usar foto gerada Bege Cru e Cinza Escuro' }));
+    expect(montarArquivoFinal).toHaveBeenCalledWith(`https://x/${ids()[0]}.png`, true);
+    const arq = onChange.mock.calls[0][0] as File;
+    expect(arq).toBeInstanceOf(File);
+    expect(arq.type).toBe('image/jpeg');
   });
 
   it('"Gerar de novo" na prévia ampliada pede uma geração nova (outro request_id)', async () => {
