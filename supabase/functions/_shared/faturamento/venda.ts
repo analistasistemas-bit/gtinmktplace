@@ -89,9 +89,22 @@ export function ehVendaDaConta(
  *  cotação cancelada, mas o vendedor não paga nada (medido em 2026-11-11, pedido 2000019473934850). */
 export const SUBSTATUS_ENVIO_CARO = 'cost_exceeded';
 
-/** Frete que o vendedor realmente paga: 0 quando a etiqueta foi cancelada por custo excedido. */
-export function freteEfetivo(frete: number | null, substatusEnvio: string | null | undefined): number | null {
-  return substatusEnvio === SUBSTATUS_ENVIO_CARO ? 0 : frete;
+/** Tag do envio ainda sem etiqueta, cujo `/costs` devolve cotação provisória de reserva (medido em
+ *  2026-11-18: pedido 2000019635870412 trazia frete 91,10 contra 46,45 pagos de fato na mesma rota). */
+export const TAG_ENVIO_COTACAO_PROVISORIA = 'fallback_options';
+
+/** Frete que o vendedor realmente paga: 0 quando a etiqueta foi cancelada por custo excedido;
+ *  null (não lido) quando o envio `pending` ainda carrega a cotação provisória — o webhook
+ *  `shipments` reprocessa e grava o valor real depois. */
+export function freteEfetivo(
+  frete: number | null,
+  substatusEnvio: string | null | undefined,
+  tagsEnvio: readonly string[] = [],
+  statusEnvio?: string | null,
+): number | null {
+  if (substatusEnvio === SUBSTATUS_ENVIO_CARO) return 0;
+  if (statusEnvio === 'pending' && tagsEnvio.includes(TAG_ENVIO_COTACAO_PROVISORIA)) return null;
+  return frete;
 }
 
 export function calcularLiquido(total: number, saleFee: number, frete: number | null, cupom: number | null = 0): number {

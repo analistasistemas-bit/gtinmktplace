@@ -281,7 +281,7 @@ export async function buscarFreteVendedor(token: string, shippingId: number | st
 /** Status do envio + geografia (cidade/UF do receiver_address) via /shipments/{id}. null em erro. */
 export async function buscarShipment(token: string, shippingId: number | string | null): Promise<{
   status: string | null; substatus: string | null; tracking: string | null; logistic: string | null;
-  cidade: string | null; uf: string | null; receiverNome: string | null;
+  cidade: string | null; uf: string | null; receiverNome: string | null; tags: string[];
 } | null> {
   if (shippingId == null) return null;
   try {
@@ -299,6 +299,7 @@ export async function buscarShipment(token: string, shippingId: number | string 
       cidade: geo.cidade,
       uf: geo.uf,
       receiverNome: extrairReceiverNome(s),
+      tags: Array.isArray(s?.tags) ? s.tags : [],
     };
   } catch {
     return null;
@@ -435,7 +436,7 @@ export async function upsertVenda(
   opts: { freteVendedor?: number | null;
           idsPubliai: Set<string>; codigoResolver: (i: string | null, v: number | null) => string | null;
           eanResolver?: (i: string | null, v: number | null) => string | null;
-          shipment?: { status: string | null; substatus: string | null; tracking: string | null; logistic: string | null; cidade: string | null; uf: string | null; receiverNome: string | null } | null;
+          shipment?: { status: string | null; substatus: string | null; tracking: string | null; logistic: string | null; cidade: string | null; uf: string | null; receiverNome: string | null; tags?: string[] } | null;
           infoPorGtin?: Map<string, { codigo: string | null; ean: string | null }>;
           gtinPorItem?: Map<string, string>;
           liquidoPorPayment?: Map<string, DadosPagamentoMP>;
@@ -458,7 +459,7 @@ export async function upsertVenda(
   const { venda, itens } = mapearPedidoParaVenda(pedido, {
     idsPubliai: opts.idsPubliai, codigoResolver: opts.codigoResolver, eanResolver: opts.eanResolver,
     infoPorGtin: opts.infoPorGtin, gtinPorItem: opts.gtinPorItem, liquidoPorPayment: opts.liquidoPorPayment,
-    freteVendedor: freteEfetivo(opts.freteVendedor ?? null, opts.shipment?.substatus),
+    freteVendedor: freteEfetivo(opts.freteVendedor ?? null, opts.shipment?.substatus, opts.shipment?.tags, opts.shipment?.status),
   });
   // Estado anterior (para detectar "nova venda paga" e não realertar, não perder um comprador_nome
   // real já capturado — o ML é inconsistente e às vezes some com o buyer — e não apagar

@@ -621,4 +621,14 @@ describe('freteEfetivo', () => {
     expect(freteEfetivo(null, 'shipment_paid')).toBeNull();
     expect(freteEfetivo(null, 'cost_exceeded')).toBe(0);
   });
+  it('envio pending + ready_to_fix + fallback_options: cotação provisória → null (frete não lido)', () => {
+    expect(freteEfetivo(91.1, 'ready_to_fix', ['fallback_options'], 'pending')).toBeNull();
+  });
+  it('fallback_options só vale em envio pending; ready_to_fix sozinho sem a tag mantém o frete', () => {
+    expect(freteEfetivo(91.1, 'ready_to_fix', [], 'pending')).toBe(91.1);
+    expect(freteEfetivo(7.15, 'shipment_paid', ['fallback_options'], 'ready_to_ship')).toBe(7.15);
+  });
+  it('cost_exceeded continua 0 mesmo com a tag fallback_options', () => {
+    expect(freteEfetivo(57, 'cost_exceeded', ['fallback_options'], 'pending')).toBe(0);
+  });
 });
