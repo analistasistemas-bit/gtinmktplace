@@ -15,7 +15,7 @@ import { resolverConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts
 import {
   buscarPedido, buscarFreteVendedor, buscarShipment, carregarCatalogo, upsertVenda, resolverOrgPorUserId,
 } from '../_shared/faturamento/io.ts';
-import { ehVendaDaConta, totalNovaVenda, SUBSTATUS_ENVIO_CARO } from '../_shared/faturamento/venda.ts';
+import { ehVendaDaConta, totalNovaVenda, freteEfetivo, SUBSTATUS_ENVIO_CARO } from '../_shared/faturamento/venda.ts';
 import { reservarNotificacao } from '../_shared/faturamento/notificacoes-dedupe.ts';
 import { verificarAltaFrete } from '../_shared/faturamento/monitor-frete.ts';
 import { depsMonitorFrete } from '../_shared/faturamento/monitor-frete-deps.ts';
@@ -312,7 +312,7 @@ Deno.serve(async (req) => {
         orgId, userId, orderId: Number(pedido.id), limiteMs: Date.now() + 8000,
         packId: pedido.pack_id != null ? Number(pedido.pack_id) : null,
         status: String(pedido.status ?? ''),
-        freteVendedor: frete, dataVenda: pedido.date_closed ?? pedido.date_created ?? null,
+        freteVendedor: freteEfetivo(frete, shipment?.substatus, shipment?.tags, shipment?.status), dataVenda: pedido.date_closed ?? pedido.date_created ?? null,
         itens: itens.map((i) => ({ ml_item_id: i.ml_item_id, variation_id: i.variation_id, quantity: i.quantity, titulo: i.titulo })),
       }, depsMonitorFrete(admin));
     } catch (e) {

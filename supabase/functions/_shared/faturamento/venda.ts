@@ -94,8 +94,9 @@ export const SUBSTATUS_ENVIO_CARO = 'cost_exceeded';
 export const TAG_ENVIO_COTACAO_PROVISORIA = 'fallback_options';
 
 /** Frete que o vendedor realmente paga: 0 quando a etiqueta foi cancelada por custo excedido;
- *  null (não lido) quando o envio `pending` ainda carrega a cotação provisória — o webhook
- *  `shipments` reprocessa e grava o valor real depois. */
+ *  null (não lido) quando o envio `pending` ainda carrega a cotação provisória — o valor real
+ *  entra no `reconciliar-faturamento` (hora em hora, pedidos de até 72h); o webhook `shipments`
+ *  repetido cai no dedup do `ml-webhook` e não reprocessa. */
 export function freteEfetivo(
   frete: number | null,
   substatusEnvio: string | null | undefined,
