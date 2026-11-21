@@ -144,9 +144,10 @@ conhecidos do Mercado Ads.
 
 2. Desempenho e Campanhas compartilham um único seletor de período e comparação.
    Mês atual permanece o padrão. Presets e intervalos personalizados usam dias
-   completos em America/Sao_Paulo, terminando no máximo em ontem. Atraso na coleta
-   não desloca silenciosamente a janela: bloqueia somente os indicadores que
-   dependem da cobertura ausente. A comparação usa uma janela imediatamente
+   completos em America/Sao_Paulo, terminando no máximo em ontem. A coleta lê até
+   D-1 (roda ~11:17 BRT): até ela rodar, presets e Mês atual terminam em anteontem
+   (`fimDiasAds`, 2026-11-21); coleta parada há mais de 1 dia não desloca mais a
+   janela e bloqueia somente os indicadores que dependem da cobertura ausente. A comparação usa uma janela imediatamente
    anterior com a mesma quantidade de dias completos.
 
 3. O topo apresenta Investimento, Vendas por Ads, ROAS, ACOS, TACOS da conta,

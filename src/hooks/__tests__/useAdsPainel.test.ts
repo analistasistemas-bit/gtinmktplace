@@ -241,14 +241,14 @@ describe('useAdsPainel', () => {
     expect(r2.result.current.isError).toBe(false);
   });
 
-  it('(e) período termina ontem BRT, mesmo com a coleta do dia ainda não feita', async () => {
+  it('(e) período termina anteontem enquanto a coleta do dia não rodou (última coleta leu até anteontem)', async () => {
     vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-05T08:00:00-03:00') });
     m.buscarUltimoOkAds.mockResolvedValue('2026-10-04T14:17:00Z');
     const r = render();
+    // O sync não bloqueia: a 1ª janela sai até ontem e é trocada quando o último ok chega.
+    await waitFor(() => expect(r.result.current.janela).toEqual({ desde: '2026-09-04', ate: '2026-10-03' }));
     await waitFor(() => expect(r.result.current.painel).not.toBeNull());
-    expect(r.result.current.janela).toEqual({ desde: '2026-09-05', ate: '2026-10-04' });
-    expect(m.buscarPainelAds).toHaveBeenCalledWith('2026-09-05', '2026-10-04');
-    expect(m.buscarPainelAds).toHaveBeenCalledTimes(1);
+    expect(m.buscarPainelAds).toHaveBeenLastCalledWith('2026-09-04', '2026-10-03');
   });
 
   it('(f) finanças da conta iniciam sem sync pronto; erro no sync fica no bloco do sync', async () => {
@@ -405,9 +405,10 @@ describe('useAdsPainel', () => {
       { wrapper: criarWrapper() },
     );
 
+    const janela = { desde: '2026-10-01', ate: '2026-10-03' };
+    await waitFor(() => expect(result.current.janela).toEqual(janela));
     await waitFor(() => expect(result.current.painel).not.toBeNull());
 
-    const janela = { desde: '2026-10-01', ate: '2026-10-04' };
 
     expect(result.current.janela).toEqual(janela);
     expect(m.buscarPainelAds).toHaveBeenCalledWith(janela.desde, janela.ate);

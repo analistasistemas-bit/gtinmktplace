@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import type { FontePainelAds, LucroFamilia } from '@/lib/ads-painel';
 import type { Janela, Periodo } from '@/lib/metricas';
 import { diaBRT } from '@/lib/calendario-brt';
+import { fimDiasAds } from '@/lib/sku-ads';
 import { agruparPorFamilia, type LinhaSku } from '@/lib/vendas-sku';
 
 export type DiasAds = 7 | 30 | 90;
@@ -50,24 +51,26 @@ export const MOTIVOS_PERIODO_ADS: Record<MotivoPeriodoInvalidoAds, string> = {
 const diaReal = (d: string) =>
   /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`)) && somarDias(d, 0) === d;
 
-/** Dias completos até ONTEM em BRT; a coleta atrasada não desloca a janela (`ultimoOkEm` só mantém a assinatura).
- *  Mês atual aguarda o 1º dia fechado. `range` é validado (datas reais, ordem, ≤ ontem, dentro da retenção)
+/** Dias completos até ONTEM em BRT, ou ANTEONTEM enquanto a coleta do dia não rodou (`fimDiasAds`: a coleta lê até
+ *  D-1, então ontem só entra depois da rodada das ~11:17 BRT). Coleta parada há mais de 1 dia não desloca mais: o
+ *  aviso de cobertura aparece. Mês atual aguarda o 1º dia fechado. `range` é validado (datas reais, ordem, ≤ ontem, dentro da retenção)
  *  e nunca vira outra janela. */
 export function resolverPeriodoAds(
   periodo: PeriodoAds,
   agora: Date,
-  _ultimoOkEm: string | null,
+  ultimoOkEm: string | null,
 ): ResolucaoPeriodoAds {
   const hoje = diaBRT(agora.getTime());
   const ontem = somarDias(hoje, -1);
+  const fim = fimDiasAds(agora, ultimoOkEm);
 
   if (periodo.tipo === 'preset') {
-    return { tipo: 'pronto', janela: { desde: somarDias(ontem, -(periodo.dias - 1)), ate: ontem } };
+    return { tipo: 'pronto', janela: { desde: somarDias(fim, -(periodo.dias - 1)), ate: fim } };
   }
   if (periodo.tipo === 'mes_atual') {
     const inicioMes = `${hoje.slice(0, 7)}-01`;
-    if (ontem < inicioMes) return { tipo: 'aguardando_mes', janela: null, inicioMes, fimDisponivel: ontem };
-    return { tipo: 'pronto', janela: { desde: inicioMes, ate: ontem } };
+    if (fim < inicioMes) return { tipo: 'aguardando_mes', janela: null, inicioMes, fimDisponivel: fim };
+    return { tipo: 'pronto', janela: { desde: inicioMes, ate: fim } };
   }
 
   const { desde, ate } = periodo;

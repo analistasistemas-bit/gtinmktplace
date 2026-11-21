@@ -62,7 +62,7 @@ const SEM_LEITURA: ContaAoVivo = { serie: [], completo: false, lidoEm: '' };
 const SEM_GRUPOS: FontePainelAds = { sync: null, conta: [], grupos: [] };
 
 /** Painel de Ads (ADR-0179, plano §5.6): gasto do Ads × lucro das vendas no MESMO recorte de dias BRT.
- *  A janela é resolvida uma vez (resolverPeriodoAds, até ontem BRT, sem depender da coleta) e compartilhada por
+ *  A janela é resolvida uma vez (resolverPeriodoAds, até ontem BRT, ou anteontem até a coleta do dia rodar) e compartilhada por
  *  RPC, vendas, leitura ao vivo e montagem. A conta usa só a série ao vivo; grupos/famílias seguem pela coleta.
  *  Toda chave leva a org e não há placeholderData: resposta tardia de outra org/janela nunca monta esta tela. */
 export function useAdsPainel(periodo: PeriodoAds, comparar: 'anterior' | 'nenhum' = 'anterior'): RetornoAdsPainel {
@@ -84,7 +84,7 @@ export function useAdsPainel(periodo: PeriodoAds, comparar: 'anterior' | 'nenhum
   );
   const ultimoOkEm = syncQ.data ?? null;
 
-  const resolucao = useMemo(() => resolverPeriodoAds(selecionado, meioDiaBRT(hoje), null), [selecionado, hoje]);
+  const resolucao = useMemo(() => resolverPeriodoAds(selecionado, meioDiaBRT(hoje), ultimoOkEm), [selecionado, hoje, ultimoOkEm]);
   const habilitado = orgId != null && resolucao.tipo === 'pronto';
   const desde = resolucao.tipo === 'pronto' ? resolucao.janela.desde : null;
   const ate = resolucao.tipo === 'pronto' ? resolucao.janela.ate : null;
