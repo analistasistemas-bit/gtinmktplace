@@ -175,13 +175,21 @@ describe('margemDoAlvo', () => {
 
 describe('simularMargem', () => {
   it('Review Focus 5: preço inválido → preco_invalido sem chamar nenhuma dep', async () => {
-    for (const p of [0, -1, 'abc', '50', 1000001, NaN, Infinity, null, undefined]) {
+    for (const p of [0, -1, 'abc', '50', 1000001, NaN, Infinity, null, undefined, 0.004]) {
       const d = deps([{ mlb: 'MLB1', custo: 14, preco: 50 }]);
       expect(await simularMargem('MLB1', p, d), String(p)).toEqual({ estado: 'preco_invalido' });
       expect(d.tarifaEm).not.toHaveBeenCalled();
       expect(d.reservarTarifas).not.toHaveBeenCalled();
       expect(d.resolver.vinculos).not.toHaveBeenCalled();
     }
+  });
+
+  it('preço com 3 casas é arredondado a 2 antes de calcular (49,999 → 50)', async () => {
+    const d = deps([{ mlb: 'MLB1', custo: 14, preco: 80 }]);
+    const r = await simularMargem('MLB1', 49.999, d);
+    if (r.estado !== 'ok') throw new Error(r.estado);
+    expect(r.anuncios[0]).toMatchObject({ preco_brl: 50, margem_pct: 40 });
+    expect(d.tarifaEm.mock.calls.every(([q]) => (q as { preco: number }).preco === 50)).toBe(true);
   });
 
   it('preço informado vale para todos os anúncios do alvo; preço atual vem junto', async () => {

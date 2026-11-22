@@ -36,7 +36,9 @@ export async function resolverAlvo(identificador: string, d: DepsAlvo): Promise<
   if (tipo === 'mlbu') return anuncios(await d.vinculos({ mlbu: s }), null);
   if (tipo === 'familia_ml') {
     const familia = s.replace(/^#/, '');
-    return anuncios(await d.vinculos({ familia_ml: familia }), familia);
+    const vs = await d.vinculos({ familia_ml: familia });
+    // EAN usado como SKU também tem 12+ dígitos: sem família, tenta o SKU exato (nunca título).
+    return vs.length ? anuncios(vs, familia) : anuncios(await d.vinculos({ sku: familia }), null);
   }
   const porSku = await d.vinculos({ sku: s });
   if (porSku.length) return anuncios(porSku, null);

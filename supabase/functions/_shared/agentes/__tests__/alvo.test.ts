@@ -49,6 +49,26 @@ describe('resolverAlvo', () => {
     expect(d.vinculos).toHaveBeenCalledWith({ familia_ml: '8632963637759506' });
   });
 
+  it('família existente não consulta SKU', async () => {
+    const d = deps([vin('MLB1', { familia_ml: '8632963637759506', sku: '8632963637759506' })]);
+    expect(await resolverAlvo('8632963637759506', d))
+      .toEqual({ tipo: 'anuncios', mlbs: ['MLB1'], familia_ml: '8632963637759506' });
+    expect(d.vinculos).toHaveBeenCalledTimes(1);
+  });
+
+  it('EAN de 13 dígitos cadastrado como SKU → resolve pelo SKU, sem título', async () => {
+    const d = deps([vin('MLB1', { sku: '7891234567895' })], [{ codigo_pai: 'P', titulo: 't', mlbs: ['MLB9'] }]);
+    expect(await resolverAlvo('#7891234567895', d)).toEqual({ tipo: 'anuncios', mlbs: ['MLB1'], familia_ml: null });
+    expect(d.vinculos).toHaveBeenLastCalledWith({ sku: '7891234567895' });
+    expect(d.buscarPorTitulo).not.toHaveBeenCalled();
+  });
+
+  it('16 dígitos sem família e sem SKU → nao_encontrado, sem título', async () => {
+    const d = deps([], [{ codigo_pai: 'P', titulo: 't', mlbs: ['MLB9'] }]);
+    expect(await resolverAlvo('8632963637759506', d)).toEqual({ tipo: 'nao_encontrado' });
+    expect(d.buscarPorTitulo).not.toHaveBeenCalled();
+  });
+
   it('SKU que casa 2 vínculos → os 2 MLBs (sem repetir)', async () => {
     const d = deps([vin('MLB1', { sku: 'S1' }), vin('MLB2', { sku: 'S1' }), vin('MLB2', { sku: 'S1' }), vin('MLB3', { sku: 'S2' })]);
     expect(await resolverAlvo('S1', d)).toEqual({ tipo: 'anuncios', mlbs: ['MLB1', 'MLB2'], familia_ml: null });

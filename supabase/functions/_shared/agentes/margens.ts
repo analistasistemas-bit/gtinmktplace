@@ -83,6 +83,7 @@ async function calcular(mlbs: string[], d: DepsMargens, precoSimulado: number | 
       const det = await detalheEquilibrioDoMlb(ml, preco, cad, aliq, d.tarifaEm);
       const p = det.pior;
       if (det.motivo || !p || det.acosPct == null) return { ...base, motivo: det.motivo ?? 'sem_preco' };
+      // Cada componente `_brl` é arredondado à parte (soma pode diferir 1–2 centavos); `margem_pct` vem do cálculo cru.
       return {
         ...base, sku: p.sku, custo_brl: r2(p.custo), comissao_brl: r2(p.comissao), frete_brl: r2(p.frete),
         imposto_brl: r2(p.imposto), liquido_brl: r2(p.liquido),
@@ -129,10 +130,10 @@ export function margemDoAlvo(identificador: string, d: DepsMargens): Promise<Res
 export function simularMargem(
   identificador: string, precoBrl: unknown, d: DepsMargens,
 ): Promise<RespostaAlvo<MargemSimulada> | { estado: 'preco_invalido' }> {
-  if (typeof precoBrl !== 'number' || !Number.isFinite(precoBrl) || precoBrl <= 0 || precoBrl > PRECO_MAX) {
-    return Promise.resolve({ estado: 'preco_invalido' });
-  }
-  return doAlvo(identificador, d, precoBrl, (a) => a);
+  // O ML só aceita 2 casas: arredonda antes de validar, e `preco_brl` é exatamente o preço da conta.
+  const preco = typeof precoBrl === 'number' && Number.isFinite(precoBrl) ? r2(precoBrl) : NaN;
+  if (!(preco > 0 && preco <= PRECO_MAX)) return Promise.resolve({ estado: 'preco_invalido' });
+  return doAlvo(identificador, d, preco, (a) => a);
 }
 
 // Cursor opaco, não secreto: o campo `o` amarra a página à organização da conexão.
