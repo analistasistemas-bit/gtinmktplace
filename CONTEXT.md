@@ -315,3 +315,17 @@ _Evitar_: pedido mínimo (valor ou quantidade mínima do pedido inteiro, que nã
 
 **Módulo Reposição**:
 Recurso ligado por organização na Central de controle, pensado para quem não tem ERP. Todo membro vê a reposição e monta rascunhos; só administrador da organização aprova o pedido de compra.
+
+## Acesso de agentes
+
+**Agente**:
+Programa autônomo (Claude, Cursor, automação) que opera o PubliAI em nome de uma organização, sem usuário humano na frente. Tem identidade própria, distinta de qualquer usuário.
+_Evitar_: usuário, integração.
+
+**Chave de agente**:
+Credencial que pertence a uma única organização, gerada e revogada por administrador dela, com escopo de leitura ou de escrita. Toda ação do agente é registrada com o nome da chave.
+_Evitar_: token (já designa o acesso ao Mercado Livre), chave de API.
+
+**Pedido de publicação**:
+Solicitação feita por um agente para publicar ou atualizar um anúncio no marketplace. Nunca chega ao canal sozinho: espera aprovação de um humano na fila de revisão do app.
+_Evitar_: publicação (que só existe após a aprovação).
