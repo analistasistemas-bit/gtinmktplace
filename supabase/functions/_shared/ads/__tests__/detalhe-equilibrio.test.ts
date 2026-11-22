@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detalheEquilibrioDoMlb, equilibrioDoMlb, parseItensBulk } from '../campanhas.ts';
+import { detalheEquilibrioDoMlb, equilibrioDoMlb, LimiteTarifa, parseItensBulk } from '../campanhas.ts';
 import { montarCadastro, type LinhaVariacao } from '../../promocoes/cadastro.ts';
 import type { ItemML, Tarifa } from '../../promocoes/tipos.ts';
 
@@ -39,6 +39,21 @@ describe('detalheEquilibrioDoMlb', () => {
   it('empate de margem → primeira cor', async () => {
     const igual = montarCadastro([v({ id: 'a', ml_variation_id: '1' }), v({ id: 'b', ml_variation_id: '2' })], []);
     expect((await detalheEquilibrioDoMlb(duas, 50, igual, ALIQ, async () => TARIFA)).pior?.variacao_id).toBe('a');
+  });
+
+  it('comissão nula tolerada como em liquidoClassico', async () => {
+    const semComissao = { comissao: null, frete: 0 } as unknown as Tarifa;
+    const d = await detalheEquilibrioDoMlb(duas, 50, cad, ALIQ, async () => semComissao);
+    expect(d.acosPct).toBe((await equilibrioDoMlb(duas, 50, cad, ALIQ, async () => semComissao)).acosPct);
+    expect(d.acosPct).toBe(64);
+    expect(d.pior?.comissao).toBe(0);
+  });
+
+  it('LimiteTarifa propaga; outro erro de tarifa → erro_tarifa', async () => {
+    await expect(detalheEquilibrioDoMlb(duas, 50, cad, ALIQ, async () => { throw new LimiteTarifa(); }))
+      .rejects.toBeInstanceOf(LimiteTarifa);
+    expect(await detalheEquilibrioDoMlb(duas, 50, cad, ALIQ, async () => { throw new Error('estimada'); }))
+      .toEqual({ acosPct: null, motivo: 'erro_tarifa', pior: null });
   });
 
   it('com motivo, pior é null', async () => {

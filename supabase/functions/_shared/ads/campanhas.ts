@@ -193,7 +193,8 @@ export async function detalheEquilibrioDoMlb(
     if (!pior || margemPct < pior.margemPct) {
       pior = {
         variacao_id: r.variacao_id, sku: r.sku, custo: r.custo,
-        comissao: (preco * t.comissao.percentual) / 100 + t.comissao.fixa, frete: t.frete,
+        // Comissão nula tolerada como em `liquidoClassico` (?? 0): o detalhe nunca derruba o número.
+        comissao: (preco * (t.comissao?.percentual ?? 0)) / 100 + (t.comissao?.fixa ?? 0), frete: t.frete,
         imposto: (preco * aliquota) / 100, liquido, margemPct,
       };
     }
