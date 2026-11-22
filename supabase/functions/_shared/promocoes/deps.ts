@@ -7,10 +7,14 @@ import { redisGet, redisSet } from '../redis/client.ts';
 import { paginarTudo } from '../pagina.ts';
 import { qstashClient } from '../queue.ts';
 import { montarCadastro, type Cadastro, type LinhaItemUp, type LinhaVariacao } from './cadastro.ts';
-import { buscarItensML, criarGetJson, lerOfertaRelampago, listarItensPromocao, listarPromocoes } from './ml.ts';
+import {
+  buscarItensML, criarGetJson, lerOfertaRelampago, lerPromocao, listarAtivosPagina, listarItensPromocao, listarPromocoes, promocoesDoAnuncio,
+} from './ml.ts';
 import { contar } from './projecao.ts';
 import { avisarPromocoes, depsAlertas } from './alertas.ts';
-import { mesmaRodada, type DepsLeitura, type DepsLista, type MsgLeitura, type QueryTarifa } from './sincronizar.ts';
+import {
+  mesmaRodada, type DepsDescoberta, type DepsLeitura, type DepsLista, type MsgDescoberta, type MsgLeitura, type QueryTarifa,
+} from './sincronizar.ts';
 import type { Comissao } from '../preco/sugerir.ts';
 import type { Aliquotas, LinhaItem, Tarifa } from './tipos.ts';
 
@@ -27,6 +31,12 @@ const urlWorker = () => `${Deno.env.get('SUPABASE_URL')}/functions/v1/sincroniza
 /** Entrega duplicada do QStash não bifurca a cadeia: mesma mensagem → mesmo id (QStash aceita e descarta). */
 const dedupId = (m: MsgLeitura) =>
   `${m.org_id}:${m.promocao_id}:${m.rodada}:${m.cursor ?? ''}`.replace(/[^A-Za-z0-9_-]/g, '_');
+
+const dedupIdDescoberta = (m: MsgDescoberta) =>
+  `${m.org_id}:descoberta:${m.rodada}:${m.scroll_id ?? ''}`.replace(/[^A-Za-z0-9_-]/g, '_');
+const publicar = (body: MsgLeitura | MsgDescoberta, deduplicationId: string) =>
+  qstashClient().publishJSON({ url: urlWorker(), body, retries: 1, deduplicationId });
+const listaIds = (ids: string[]) => `(${ids.map((v) => `"${v.replaceAll('"', '')}"`).join(',')})`;
 
 export async function lerAliquotas(admin: SupabaseClient, orgId: string): Promise<Aliquotas | null> {
   const { data, error } = await admin.from('configuracoes')
@@ -92,6 +102,20 @@ export function criarTarifaEm(cx: Cx, opts?: { fresco?: boolean }): (q: QueryTar
   };
 }
 
+async function reservarLeitura(admin: SupabaseClient, orgId: string, promocaoId: string, rodada: string): Promise<boolean> {
+  const limite = new Date(Date.now() - RESERVA_MIN * 60_000).toISOString();
+  // Reserva vencida = cadeia anterior morreu sem concluir nem falhar: registra antes de reservar de novo.
+  const vencida = await admin.from('ml_promocoes').update({ erro: MSG_INTERROMPIDA })
+    .eq('org_id', orgId).eq('promocao_id', promocaoId).lt('rodada_em_curso', limite);
+  falhou('reservarLeitura.vencida', vencida.error);
+  const { data, error } = await admin.from('ml_promocoes').update({ rodada_em_curso: rodada })
+    .eq('org_id', orgId).eq('promocao_id', promocaoId)
+    .or(`rodada_em_curso.is.null,rodada_em_curso.lt.${limite}`)
+    .select('promocao_id');
+  falhou('reservarLeitura', error);
+  return (data ?? []).length === 1;
+}
+
 export function depsLista(admin: SupabaseClient, cx: Cx): DepsLista {
   const get = criarGetJson(cx.token);
   const { orgId } = cx;
@@ -112,28 +136,21 @@ export function depsLista(admin: SupabaseClient, cx: Cx): DepsLista {
     async encerrarAusentes(vistos) {
       let q = admin.from('ml_promocoes').update({ status: 'finished', rodada_em_curso: null })
         .eq('org_id', orgId).in('status', ['pending', 'started']);
-      if (vistos.length) q = q.not('promocao_id', 'in', `(${vistos.map((v) => `"${v.replaceAll('"', '')}"`).join(',')})`);
+      // Poupa as descobertas pela visão por anúncio (bruto.descoberta): quem as gere é a etapa de descoberta.
+      // `not eq` puro descartaria bruto sem a chave (NULL); por isso o `or` com is.null.
+      q = q.or('bruto->>descoberta.is.null,bruto->>descoberta.neq.item');
+      if (vistos.length) q = q.not('promocao_id', 'in', listaIds(vistos));
       const { error } = await q;
       falhou('encerrarAusentes', error);
     },
 
-    async reservarLeitura(promocaoId, rodada) {
-      const limite = new Date(Date.now() - RESERVA_MIN * 60_000).toISOString();
-      // Reserva vencida = cadeia anterior morreu sem concluir nem falhar: registra antes de reservar de novo.
-      const vencida = await admin.from('ml_promocoes').update({ erro: MSG_INTERROMPIDA })
-        .eq('org_id', orgId).eq('promocao_id', promocaoId).lt('rodada_em_curso', limite);
-      falhou('reservarLeitura.vencida', vencida.error);
-      const { data, error } = await admin.from('ml_promocoes').update({ rodada_em_curso: rodada })
-        .eq('org_id', orgId).eq('promocao_id', promocaoId)
-        .or(`rodada_em_curso.is.null,rodada_em_curso.lt.${limite}`)
-        .select('promocao_id');
-      falhou('reservarLeitura', error);
-      return (data ?? []).length === 1;
-    },
+    reservarLeitura: (promocaoId, rodada) => reservarLeitura(admin, orgId, promocaoId, rodada),
 
     async enfileirar(m) {
-      await qstashClient().publishJSON({ url: urlWorker(), body: m, retries: 1, deduplicationId: dedupId(m) });
+      await publicar(m, dedupId(m));
     },
+
+    enfileirarDescoberta: (m) => publicar(m, dedupIdDescoberta(m)),
 
     avisar: () => avisarPromocoes(Date.now(), depsAlertas(admin, orgId)),
 
@@ -145,6 +162,42 @@ export function depsLista(admin: SupabaseClient, cx: Cx): DepsLista {
         ...(ok ? { ultimo_ok_em: agora } : { ultimo_erro_em: agora }),
       }, { onConflict: 'org_id' });
       falhou('gravarEstado', error);
+    },
+  };
+}
+
+export function depsDescoberta(admin: SupabaseClient, cx: Cx): DepsDescoberta {
+  const get = criarGetJson(cx.token);
+  const { orgId } = cx;
+  return {
+    async rodadaDaLista() {
+      const { data, error } = await admin.from('ml_promocoes_sync').select('iniciado_em').eq('org_id', orgId).maybeSingle();
+      falhou('rodadaDaLista', error);
+      return (data?.iniciado_em as string | null) ?? null;
+    },
+    listarAtivos: (scrollId) => listarAtivosPagina(get, cx.mlUserId, scrollId),
+    promocoesDoAnuncio: (itemId) => promocoesDoAnuncio(get, itemId),
+    lerPromocao: (id, tipo) => lerPromocao(get, id, tipo),
+
+    async gravarDescoberta(p) {
+      const { error } = await admin.from('ml_promocoes').upsert({
+        org_id: orgId, promocao_id: p.id, tipo: p.tipo, nome: p.nome, status: p.status,
+        inicio: p.inicio, fim: p.fim, prazo_adesao: p.prazo_adesao, beneficios: p.beneficios,
+        bruto: { ...p.bruto, descoberta: 'item' }, sincronizado_em: new Date().toISOString(),
+      }, { onConflict: 'org_id,promocao_id' });
+      falhou('gravarDescoberta', error);
+    },
+
+    reservarLeitura: (promocaoId, rodada) => reservarLeitura(admin, orgId, promocaoId, rodada),
+    enfileirarLeitura: async (m) => { await publicar(m, dedupId(m)); },
+    continuar: async (m) => { await publicar(m, dedupIdDescoberta(m)); },
+
+    async encerrarDescobertasAusentes(vistos) {
+      let q = admin.from('ml_promocoes').update({ status: 'finished', rodada_em_curso: null })
+        .eq('org_id', orgId).in('status', ['pending', 'started']).eq('bruto->>descoberta', 'item');
+      if (vistos.length) q = q.not('promocao_id', 'in', listaIds(vistos));
+      const { error } = await q;
+      falhou('encerrarDescobertasAusentes', error);
     },
   };
 }
@@ -191,7 +244,7 @@ export function depsLeitura(admin: SupabaseClient, cx: Cx, msg: MsgLeitura): Dep
 
     async continuar(cursor) {
       const m = { ...msg, cursor };
-      await qstashClient().publishJSON({ url: urlWorker(), body: m, retries: 1, deduplicationId: dedupId(m) });
+      await publicar(m, dedupId(m));
     },
 
     async concluir() {

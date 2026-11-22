@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  comConviteRelampago, comOfertaRelampago, MSG_ALIQUOTA, umaOfertaPorAnuncio, mesmaRodada, projetarItem, sincronizarLista, sincronizarPromocao,
-  type DepsLeitura, type DepsLista, type MsgLeitura,
+  comConviteRelampago, comOfertaRelampago, descobrirPromocoes, MSG_ALIQUOTA, umaOfertaPorAnuncio, mesmaRodada, projetarItem, sincronizarLista, sincronizarPromocao,
+  type DepsDescoberta, type DepsLeitura, type DepsLista, type MsgDescoberta, type MsgLeitura,
 } from '../sincronizar.ts';
 import { montarCadastro, type LinhaVariacao } from '../cadastro.ts';
 import { SemAcessoPromocoes } from '../ml.ts';
@@ -157,6 +157,7 @@ const depsLista = (o: Partial<DepsLista> = {}): FakeLista => ({
   encerrarAusentes: vi.fn(async () => {}),
   reservarLeitura: vi.fn(async () => true),
   enfileirar: vi.fn(async () => {}),
+  enfileirarDescoberta: vi.fn(async () => {}),
   avisar: vi.fn(async () => 0),
   gravarEstado: vi.fn(async () => {}),
   ...o,
@@ -199,6 +200,23 @@ describe('sincronizarLista', () => {
     const d = depsLista({ listarPromocoes: vi.fn(async () => [promo('P')]), gravarPromocoes: vi.fn(async () => { throw new Error('db fora'); }) });
     await expect(sincronizarLista(d, ctx)).rejects.toThrow('db fora');
     expect(d.gravarEstado).toHaveBeenCalledWith({ estado: 'erro', erro: 'db fora' });
+  });
+
+  it('enfileira a descoberta com as ids listadas, inclusive com lista vazia (continua sem_promocoes)', async () => {
+    const d = depsLista({ listarPromocoes: vi.fn(async () => [promo('P'), promo('F', 'DEAL', 'finished')]) });
+    await sincronizarLista(d, ctx);
+    expect(d.enfileirarDescoberta).toHaveBeenCalledWith({
+      etapa: 'descoberta', org_id: 'org', rodada: ctx.rodada, scroll_id: null, listadas: ['P', 'F'], achadas: [], falhas: 0,
+    });
+    const v = depsLista();
+    expect((await sincronizarLista(v, ctx)).estado).toBe('sem_promocoes');
+    expect(v.enfileirarDescoberta).toHaveBeenCalledWith(expect.objectContaining({ listadas: [] }));
+  });
+
+  it('falha ao enfileirar a descoberta não derruba a lista', async () => {
+    const d = depsLista({ listarPromocoes: vi.fn(async () => [promo('P')]), enfileirarDescoberta: vi.fn(async () => { throw new Error('qstash'); }) });
+    expect((await sincronizarLista(d, ctx)).estado).toBe('ok');
+    expect(d.enfileirar).toHaveBeenCalledTimes(1);
   });
 
   it('falha nos alertas não derruba o sync', async () => {
@@ -534,5 +552,97 @@ describe('umaOfertaPorAnuncio + comConviteRelampago', () => {
     expect(l).toMatchObject({ status: 'pending', preco_promo: 24.45, convite_aberto: true, preco_min: 8.55, preco_max: 25.65, preco_sugerido: 24.23, estoque_min: 5 });
     expect(l).not.toHaveProperty('convite');
     expect(comConviteRelampago(pend, o)).toBe(pend);
+  });
+});
+
+const msgD = (o: Partial<MsgDescoberta> = {}): MsgDescoberta => ({
+  etapa: 'descoberta', org_id: 'org', rodada: ctx.rodada, scroll_id: null, listadas: ['P-LISTADA'], achadas: [], falhas: 0, ...o,
+});
+type FakeDescoberta = DepsDescoberta & Record<keyof DepsDescoberta, ReturnType<typeof vi.fn>>;
+function depsDescoberta(o: { paginas?: { ids: string[]; scrollId: string | null }[]; porAnuncio?: Record<string, unknown> } & Partial<DepsDescoberta> = {}): FakeDescoberta {
+  const paginas = [...(o.paginas ?? [{ ids: [], scrollId: null }])];
+  const { paginas: _p, porAnuncio, ...resto } = o;
+  return {
+    rodadaDaLista: vi.fn(async () => ctx.rodada.replace('Z', '+00:00')),
+    listarAtivos: vi.fn(async () => paginas.shift() ?? { ids: [], scrollId: null }),
+    promocoesDoAnuncio: vi.fn(async (id: string) => {
+      const r = porAnuncio?.[id];
+      if (r instanceof Error) throw r;
+      return (r ?? []) as { id: string; tipo: string }[];
+    }),
+    lerPromocao: vi.fn(async (id: string, tipo: string) => ({ ...promo(id, tipo, 'started'), bruto: { id } })),
+    gravarDescoberta: vi.fn(async () => {}),
+    reservarLeitura: vi.fn(async () => true),
+    enfileirarLeitura: vi.fn(async () => {}),
+    continuar: vi.fn(async () => {}),
+    encerrarDescobertasAusentes: vi.fn(async () => {}),
+    ...resto,
+  } as unknown as FakeDescoberta;
+}
+
+describe('descobrirPromocoes', () => {
+  it('rodada diferente da lista → obsoleta, sem ler nem escrever', async () => {
+    const d = depsDescoberta({ rodadaDaLista: vi.fn(async () => '2026-10-06T13:00:00.000Z') });
+    expect(await descobrirPromocoes(d, msgD(), { concorrencia: 2 })).toEqual({ resultado: 'obsoleta' });
+    expect(d.listarAtivos).not.toHaveBeenCalled();
+    expect(d.gravarDescoberta).not.toHaveBeenCalled();
+    expect(d.encerrarDescobertasAusentes).not.toHaveBeenCalled();
+  });
+
+  it('página com ids e scroll → continua carregando scroll_id, achadas (sem duplicar, sem as listadas) e falhas', async () => {
+    const d = depsDescoberta({
+      paginas: [{ ids: ['A', 'B', 'C'], scrollId: 's1' }],
+      porAnuncio: {
+        A: [{ id: 'P-LISTADA', tipo: 'SMART' }, { id: 'P-NOVA', tipo: 'SMART' }],
+        B: [{ id: 'P-NOVA', tipo: 'SMART' }], C: new Error('ML 500'),
+      },
+    });
+    expect(await descobrirPromocoes(d, msgD({ falhas: 1 }), { concorrencia: 2 })).toEqual({ resultado: 'continua' });
+    expect(d.continuar).toHaveBeenCalledWith(msgD({ scroll_id: 's1', achadas: [{ id: 'P-NOVA', tipo: 'SMART' }], falhas: 2 }));
+    expect(d.gravarDescoberta).not.toHaveBeenCalled();
+  });
+
+  it('SemAcessoPromocoes propaga', async () => {
+    const d = depsDescoberta({ paginas: [{ ids: ['A'], scrollId: 's' }], porAnuncio: { A: new SemAcessoPromocoes('ML 403') } });
+    await expect(descobrirPromocoes(d, msgD(), { concorrencia: 2 })).rejects.toBeInstanceOf(SemAcessoPromocoes);
+  });
+
+  it('fim: grava achada com marcador, reserva e enfileira a leitura; cupom/PRICE_DISCOUNT já saem em ml.ts', async () => {
+    const d = depsDescoberta({ lerPromocao: vi.fn(async (id: string) => ({ ...promo(id, 'SMART', id === 'P-FIM' ? 'finished' : 'started') })) });
+    const r = await descobrirPromocoes(d, msgD({ achadas: [{ id: 'P-NOVA', tipo: 'SMART' }, { id: 'P-FIM', tipo: 'SMART' }] }), { concorrencia: 2 });
+    expect(r).toEqual({ resultado: 'concluida', achadas: 2, falhas: 0 });
+    expect(d.gravarDescoberta).toHaveBeenCalledTimes(1);
+    expect(d.gravarDescoberta).toHaveBeenCalledWith(expect.objectContaining({ id: 'P-NOVA' }));
+    expect(d.reservarLeitura).toHaveBeenCalledWith('P-NOVA', ctx.rodada);
+    expect(d.enfileirarLeitura).toHaveBeenCalledWith({ etapa: 'promocao', org_id: 'org', promocao_id: 'P-NOVA', tipo: 'SMART', rodada: ctx.rodada, cursor: null });
+    expect(d.encerrarDescobertasAusentes).toHaveBeenCalledWith(['P-NOVA']);
+  });
+
+  it('não enfileira leitura quando a reserva falha, mas mantém a promoção como vista', async () => {
+    const d = depsDescoberta({ reservarLeitura: vi.fn(async () => false) });
+    await descobrirPromocoes(d, msgD({ achadas: [{ id: 'P-NOVA', tipo: 'SMART' }] }), { concorrencia: 2 });
+    expect(d.enfileirarLeitura).not.toHaveBeenCalled();
+    expect(d.encerrarDescobertasAusentes).toHaveBeenCalledWith(['P-NOVA']);
+  });
+
+  it('falha por anúncio na cadeia (falhas > 0) não encerra nada', async () => {
+    const d = depsDescoberta({ paginas: [{ ids: ['A'], scrollId: null }], porAnuncio: { A: new Error('ML 500') } });
+    const r = await descobrirPromocoes(d, msgD(), { concorrencia: 2 });
+    expect(r).toEqual({ resultado: 'concluida', achadas: 0, falhas: 1 });
+    expect(d.encerrarDescobertasAusentes).not.toHaveBeenCalled();
+  });
+
+  it('falha ao ler uma promoção conta como falha, não derruba as outras e impede o encerramento', async () => {
+    const d = depsDescoberta({ lerPromocao: vi.fn(async (id: string) => { if (id === 'P-RUIM') throw new Error('ML 500'); return promo(id, 'SMART', 'started'); }) });
+    const r = await descobrirPromocoes(d, msgD({ achadas: [{ id: 'P-RUIM', tipo: 'SMART' }, { id: 'P-BOA', tipo: 'SMART' }] }), { concorrencia: 2 });
+    expect(r).toEqual({ resultado: 'concluida', achadas: 2, falhas: 1 });
+    expect(d.gravarDescoberta).toHaveBeenCalledWith(expect.objectContaining({ id: 'P-BOA' }));
+    expect(d.encerrarDescobertasAusentes).not.toHaveBeenCalled();
+  });
+
+  it('sem falhas e sem achadas: encerra todas as descobertas antigas (vistos vazio)', async () => {
+    const d = depsDescoberta();
+    await descobrirPromocoes(d, msgD(), { concorrencia: 2 });
+    expect(d.encerrarDescobertasAusentes).toHaveBeenCalledWith([]);
   });
 });

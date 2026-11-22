@@ -175,3 +175,26 @@ O card da Black Friday mostrava "123 vale a pena" (convidados + participando som
 Convidados). `contar` passa a gravar `convidados_semaforo` (semáforo só dos convidados); o card desenha a barra com
 esse recorte e uma linha "Participando: N vale a pena · …" calculada por diferença (total − convidados). Contagem
 gravada antes da emenda não tem o campo e mantém o visual antigo até o próximo sync.
+
+## Emenda 2026-11-22 — descoberta pela visão por anúncio
+
+**Motivo.** A lista da conta (`GET /seller-promotions/users/{id}`) omite campanhas SMART com convite aberto; elas
+só aparecem na visão por anúncio (`GET /seller-promotions/items/{itemId}`). Medido em 22/11: `P-MLB18211016`
+("Novembro Feminino") e `P-MLB18209030`, 15 convites em 175 anúncios, todos fora da Central. Convite com aporte do
+ML ficava invisível.
+
+**Desenho.** Nova etapa `descoberta`, encadeada pelo QStash depois da `lista` (enfileirada mesmo com a lista
+vazia). Faz o scan dos anúncios ativos (`/users/{id}/items/search?search_type=scan`), uma página de 100 por
+mensagem, lê a visão por anúncio (6 em paralelo) e junta as promoções com `id` que não são cupom, em
+`candidate`/`pending`/`started` e ausentes da lista. No fim lê os metadados
+(`/seller-promotions/promotions/{id}`), grava em `ml_promocoes` com o marcador `bruto.descoberta = 'item'` (sem
+migration) e entrega à leitura de itens existente, sem mudança. Posse: a mensagem carrega a rodada da lista; rodada
+diferente de `ml_promocoes_sync.iniciado_em` → obsoleta, sem escrita. O `encerrarAusentes` da lista poupa as
+marcadas; se a promoção voltar à lista, o upsert da lista tira o marcador e ela volta a ser gerida por ela. A
+descoberta só encerra (`finished`) as marcadas que sumiram quando a cadeia inteira rodou sem nenhuma falha: com
+falha, dado velho é melhor que esconder convite válido.
+
+**Custo.** 1 `GET` por anúncio ativo por dia (schedule diário), sem Redis; ~1 mensagem QStash por 100 anúncios.
+
+**Descartado — varrer só os anúncios já em promoção.** Perderia convites de quem está fora de todas as campanhas,
+justamente o caso a descobrir.

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  buscarItensML, criarGetJson, lerOfertaRelampago, listarItensPromocao, listarPromocoes, normalizarItemML,
-  normalizarItemPromocao, normalizarPromocao, SemAcessoPromocoes,
+  buscarItensML, criarGetJson, lerOfertaRelampago, lerPromocao, listarAtivosPagina, listarItensPromocao, listarPromocoes, normalizarItemML,
+  normalizarItemPromocao, normalizarPromocao, promocoesDoAnuncio, SemAcessoPromocoes,
 } from '../ml.ts';
 import type { PromocaoML } from '../tipos.ts';
 import promocoesUsuario from './fixtures/promocoes-usuario.json';
@@ -182,5 +182,40 @@ describe('lerOfertaRelampago', () => {
       { id: 'LGH-MLB1000', type: 'LIGHTNING', status: 'candidate', min_discounted_price: 5.7, max_discounted_price: 25.65, suggested_discounted_price: 24.23 },
     ]);
     expect(await lerOfertaRelampago(get, 'LGH-MLB1000', 'MLB5322348511')).toEqual({ preco_min: 5.7, preco_max: 25.65, preco_sugerido: 24.23 });
+  });
+});
+
+describe('descoberta pela visão por anúncio (emenda 2026-11-22)', () => {
+  it('listarAtivosPagina: 1ª página sem scroll_id; seguinte com scroll_id codificado; vazia encerra', async () => {
+    const get = vi.fn(async () => ({ scroll_id: 'a+b/c=', results: ['MLB1', 'MLB2'], paging: { limit: 100, total: 2 } }));
+    expect(await listarAtivosPagina(get, '77', null)).toEqual({ ids: ['MLB1', 'MLB2'], scrollId: 'a+b/c=' });
+    expect(get).toHaveBeenCalledWith('/users/77/items/search?status=active&search_type=scan&limit=100');
+    await listarAtivosPagina(get, '77', 'a+b/c=');
+    expect(get).toHaveBeenLastCalledWith('/users/77/items/search?status=active&search_type=scan&limit=100&scroll_id=a%2Bb%2Fc%3D');
+    expect(await listarAtivosPagina(vi.fn(async () => ({ scroll_id: 'x', results: [] })), '77', 'x')).toEqual({ ids: [], scrollId: null });
+  });
+
+  it('promocoesDoAnuncio: só com id+type, sem cupom, só candidate/pending/started', async () => {
+    const get = vi.fn(async () => [
+      { id: 'P-MLB18211016', type: 'SMART', status: 'candidate', name: 'Novembro Feminino' },
+      { type: 'PRICE_DISCOUNT', status: 'candidate' },
+      { id: 'C-MLB6616773', type: 'SELLER_COUPON_CAMPAIGN', status: 'candidate' },
+      { id: 'P-FIM', type: 'DEAL', status: 'finished' },
+      { id: 'P-PEND', type: 'DEAL', status: 'pending' },
+      { id: 'P-ON', type: 'DEAL', status: 'started' },
+    ]);
+    expect(await promocoesDoAnuncio(get, 'MLB5419367521')).toEqual([
+      { id: 'P-MLB18211016', tipo: 'SMART' }, { id: 'P-PEND', tipo: 'DEAL' }, { id: 'P-ON', tipo: 'DEAL' },
+    ]);
+    expect(get).toHaveBeenCalledWith('/seller-promotions/items/MLB5419367521?app_version=v2');
+    expect(await promocoesDoAnuncio(vi.fn(async () => ({ erro: 1 })), 'MLB1')).toEqual([]);
+  });
+
+  it('lerPromocao: metadados normalizados; resposta sem id → null', async () => {
+    const get = vi.fn(async () => ({ id: 'P-MLB18211016', type: 'SMART', status: 'started', name: 'Novembro Feminino',
+      start_date: '2026-11-01T03:00:00Z', finish_date: '2026-12-01T02:00:00Z', deadline_date: '2026-12-01T02:00:00Z' }));
+    expect(await lerPromocao(get, 'P-MLB18211016', 'SMART')).toMatchObject({ id: 'P-MLB18211016', tipo: 'SMART', status: 'started', fim: '2026-12-01T02:00:00Z' });
+    expect(get).toHaveBeenCalledWith('/seller-promotions/promotions/P-MLB18211016?promotion_type=SMART&app_version=v2');
+    expect(await lerPromocao(vi.fn(async () => ({})), 'P-X', 'SMART')).toBeNull();
   });
 });

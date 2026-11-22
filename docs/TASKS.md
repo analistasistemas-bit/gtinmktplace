@@ -1,5 +1,10 @@
 # PubliAI — Tasks
 
+## Central de Promoções: descoberta pela visão por anúncio (emenda 22/11 ao ADR-0170) — 2026-11-22
+
+- [x] Etapa `descoberta` no `sincronizar-promocoes`: acha campanhas com convite que a lista da conta omite (marcador `bruto.descoberta='item'`, sem migration).
+- [ ] Merge na `main` e deploy de `sincronizar-promocoes` (mudança em `_shared/promocoes/`; conferir versão pós-deploy); validar na Avil que `P-MLB18211016` aparece.
+
 ## Capa do kit com variação: modelos vestindo as peças (emenda 18/11 ao ADR-0200) — 2026-11-18
 
 - [x] Prompt com N modelos lado a lado, bloco técnico literal, 4:5 em 2K; só moda adulta (`capaVestida`); infantil e não-moda no fluxo antigo (`69dfdddb`).
