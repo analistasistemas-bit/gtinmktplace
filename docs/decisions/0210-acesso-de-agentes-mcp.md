@@ -100,3 +100,21 @@ Até lá, o Diego usa uma conexão por loja.
 
 - Cupom do vendedor não entra na margem.
 - Não verificado: se a alíquota interna (`interna_pct`, ADR-0112) deveria entrar neste cálculo; hoje não entra, nem na aba Campanhas.
+
+## Implementação da fatia 1 (2026-11-22)
+
+Código pronto e revisado na branch `worktree-api-agentes`; aguarda aplicação da migration, merge e deploy. Guia de uso: `docs/reference/acesso-de-agentes.md`. O que mudou em relação ao texto aprovado:
+
+- Ferramentas com prefixo: `publiai_loja`, `publiai_margem_anuncio`, `publiai_margens_catalogo`, `publiai_simular_margem`.
+- Segundo teto diário por organização, além do de tarifas: **leituras** de item e preço no ML (3.000 por dia; 2 por bloco de 20 anúncios). Estado `limite_leituras`.
+- A busca por SKU cobre os dois modelos de anúncio (legado e user products).
+- A auditoria grava só identificador canônico (MLB, MLBU, família ou SKU resolvido); o resto vira `texto_livre`.
+- `agente_conexoes.criada_por` pode ficar nulo se o usuário for excluído (a conexão é da organização).
+
+### Pendências aceitas para o piloto
+
+- Conferir no aceite se `/items/bulk` devolve item de outro vendedor. Se devolver, validar o vendedor antes de liberar outras lojas.
+- O cache de comissão `promo:lp:v1` é compartilhado entre organizações. É anterior a este trabalho; pendência separada.
+- Não há bloqueio por IP antes da consulta da chave. Sugestão registrada: assinatura embutida na chave antes de abrir a mais lojas.
+- Sem revalidação da conexão depois da leitura do corpo (janela de até 10 s).
+- O limite de 10 conexões ativas não é atômico (contar e inserir são passos separados).

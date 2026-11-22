@@ -4,6 +4,10 @@
 
 **Ultima atualizacao:** 2026-11-17
 
+## Acesso de agentes (ADR-0210, fatia 1): código pronto, não está no ar
+
+Código pronto e revisado na branch `worktree-api-agentes`; aguarda aplicação da migration, merge e deploy. Servidor MCP somente leitura (`agentes`) e tela de conexões; guia em `docs/reference/acesso-de-agentes.md`. Pendências aceitas para o piloto na seção final da ADR-0210. Módulo `agentes` desligado por padrão.
+
 ## Alíquota com vigência (ADR-0208): schema no ar, código na branch
 
 Migration `20261117141732_aliquotas_vigencia.sql` aplicada. A venda passa a usar a alíquota vigente na data; uma mudança em Configurações não reescreve vendas anteriores. Precificação (publicar, calculadora, kits, promoções) continua na alíquota atual. Implementado na branch `worktree-imposto-vigencia` (`8f94d0c0`, `bd98e952`, `02e219c2`, `c07c5650`). Ainda não está na `main` e as edges não foram redeployadas: até o deploy, Central, relatório mensal e Telegram seguem no código anterior.

@@ -2056,3 +2056,27 @@ Todas as tabelas novas têm RLS: `select` só da própria org (`org_id = current
 **RPCs novas** (definer, só `service_role`; travam o pedido primeiro, depois fornecedor, depois variações): `reposicao_recalcular_status`, `reposicao_receber` (baixa no pedido), `reposicao_desfazer_recebimentos`, `reposicao_validar_pedido`, `reposicao_salvar_rascunho`, `reposicao_editar_pedido`, `reposicao_encerrar_saldo`, `reposicao_reabrir_saldo` e `registrar_entrada_lote` (várias cores numa transação, com pedido).
 
 **Assinaturas alteradas:** `registrar_entrada(..., p_pedido_compra uuid default null)`; `importar_nota_compra(p_org, p_user, p_nota, p_itens, p_pedido_compra uuid default null, p_vincular_cnpj boolean default false)`; `desfazer_nota_compra` agora desfaz também a baixa no pedido. Sem os parâmetros novos o comportamento é o anterior.
+
+## Acesso de agentes (ADR-0210)
+
+> Migration `20261122203018_agente_conexoes.sql`. Código pronto, **deploy pendente**. Guia: [acesso-de-agentes.md](acesso-de-agentes.md).
+
+### `agente_conexoes`
+
+Uma linha por chave de agente. A chave nunca é guardada: só o hash.
+
+- `id` uuid PK; `org_id` uuid, FK `organizations(id)` **on delete cascade**; `nome` (1–60 caracteres); `prefixo` (8 hex, identifica a chave na tela); `hash` **unique** (SHA-256 da chave); `criada_por` uuid, FK `auth.users(id)` **on delete set null** (a conexão é da organização: apagar quem criou não é bloqueado, e a coluna fica nula); `criada_em`; `expira_em`; `revogada_em`; `ultimo_uso_em`.
+- `check (expira_em > criada_em and expira_em <= criada_em + interval '366 days')`.
+- `unique (org_id, id)`: alvo da FK composta da auditoria. Índice `(org_id, criada_em desc)`.
+
+### `agente_chamadas`
+
+Auditoria: uma linha por chamada de ferramenta.
+
+- `id` bigint identity PK; `org_id`; `conexao_id`; `ferramenta`; `alvo` (nulo ou identificador canônico; nunca texto livre); `resultado`; `criado_em`.
+- **FK composta** `(org_id, conexao_id)` → `agente_conexoes (org_id, id)` **on delete cascade**: a chamada nunca aponta conexão de outra organização.
+- Índices `(org_id, criado_em desc)` e `(conexao_id, criado_em desc)` (cascade e últimas chamadas).
+
+### RLS sem policy (de propósito)
+
+Ambas têm RLS ligada, **nenhuma policy**, e `revoke all` de `anon` e `authenticated` (o default do Supabase concede ALL, inclusive `TRUNCATE`, que a RLS não cobre). Resultado: nenhum acesso pelo PostgREST com JWT de usuário. Só as edges `agentes` e `agente-conexoes` (service role) leem e gravam, e toda consulta delas leva o `org_id`. A tela do administrador lê pela edge, não pelo cliente Supabase.

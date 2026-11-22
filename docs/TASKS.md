@@ -1,5 +1,11 @@
 # PubliAI — Tasks
 
+## Acesso de agentes — fatia 1 (ADR-0210) — 2026-11-22
+
+- [x] Código pronto e revisado na branch `worktree-api-agentes`: servidor MCP `agentes`, edge `agente-conexoes`, tela em Configurações, migration `20261122203018_agente_conexoes.sql`, docs (`docs/reference/acesso-de-agentes.md`).
+- [ ] Aplicar a migration, fazer o merge e o deploy das edges `agentes` e `agente-conexoes`.
+- [ ] Aceite: mesmo número da aba Campanhas, consulta pela família, teste real em cada cliente (tabela do guia) e as pendências da ADR.
+
 ## Capa do kit com variação: modelos vestindo as peças (emenda 18/11 ao ADR-0200) — 2026-11-18
 
 - [x] Prompt com N modelos lado a lado, bloco técnico literal, 4:5 em 2K; só moda adulta (`capaVestida`); infantil e não-moda no fluxo antigo (`69dfdddb`).
