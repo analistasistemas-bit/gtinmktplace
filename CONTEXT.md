@@ -323,23 +323,15 @@ Programa autônomo (Claude, ChatGPT, Grok, Hermes e afins) que opera o PubliAI e
 _Evitar_: usuário, integração.
 
 **Conexão de agente**:
-Vínculo entre um agente e uma organização, criado e revogado por administrador dela, com validade. Nasce de duas formas, com o mesmo comportamento: por chave de agente ou por autorização (o administrador aprova o agente numa tela do app). Toda ação é registrada no nome da conexão, não da pessoa que a criou.
+Vínculo entre um agente e uma única organização, criado e revogado por administrador dela, com validade. Nasce de duas formas, com o mesmo comportamento: por chave de agente ou por autorização (o administrador aprova o agente numa tela do app). Toda ação é registrada no nome da conexão, não da pessoa que a criou.
 _Evitar_: sessão, login do agente.
 
 **Chave de agente**:
 Segredo que o administrador gera no app e cola no agente para criar uma conexão de agente. É exibida uma única vez.
 _Evitar_: token (já designa o acesso ao Mercado Livre), chave de API.
 
-**Chave de plataforma**:
-Conexão de agente da administração da plataforma, somente leitura e com validade, que enxerga apenas as lojas geridas; cada consulta informa a organização e fica registrada na auditoria, visível ao administrador da loja. Nunca é entregue a cliente.
-_Evitar_: chave mestra.
-
-**Loja gerida**:
-Organização com modalidade comercial vigente, cuja operação é feita pela Daludi. O contrato de gestão é a autorização para a administração da plataforma ler seus dados por chave de plataforma; encerrada a vigência, a loja sai do alcance.
-_Evitar_: marcação manual de loja gerida.
-
 **Módulo Acesso de agentes**:
-Recurso ligado por organização na Central de controle, desligado por padrão, que permite ao administrador da loja criar conexões de agente. Não condiciona a chave de plataforma.
+Recurso ligado por organização na Central de controle, desligado por padrão, que permite ao administrador da loja criar conexões de agente.
 _Evitar_: módulo Ads como pré-requisito.
 
 **Pedido de publicação**:
