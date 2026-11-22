@@ -12,13 +12,15 @@ create table if not exists public.agente_conexoes (
   prefixo        text not null,
   hash           text not null unique,
   -- A conexão é da org, não da pessoa: apagar quem criou não é bloqueado pela FK.
+  -- A edge de emissão sempre preenche; só fica nulo quando o usuário é excluído.
   criada_por     uuid references auth.users(id) on delete set null,
   criada_em      timestamptz not null default now(),
   expira_em      timestamptz not null,
   revogada_em    timestamptz,
   ultimo_uso_em  timestamptz,
   constraint agente_conexoes_expira_check
-    check (expira_em > criada_em and expira_em <= criada_em + interval '366 days')
+    check (expira_em > criada_em and expira_em <= criada_em + interval '366 days'),
+  constraint agente_conexoes_org_id_id_key unique (org_id, id)   -- alvo da FK composta da auditoria
 );
 create index if not exists agente_conexoes_org_criada on public.agente_conexoes (org_id, criada_em desc);
 
@@ -26,11 +28,13 @@ create index if not exists agente_conexoes_org_criada on public.agente_conexoes 
 create table if not exists public.agente_chamadas (
   id          bigint generated always as identity primary key,
   org_id      uuid not null,
-  conexao_id  uuid not null references public.agente_conexoes(id) on delete cascade,
+  conexao_id  uuid not null,
   ferramenta  text not null,
   alvo        text,
   resultado   text not null,
-  criado_em   timestamptz not null default now()
+  criado_em   timestamptz not null default now(),
+  -- FK composta: a chamada nunca aponta conexão de outra org.
+  foreign key (org_id, conexao_id) references public.agente_conexoes (org_id, id) on delete cascade
 );
 create index if not exists agente_chamadas_org_criado on public.agente_chamadas (org_id, criado_em desc);
 -- Serve ao on delete cascade e às últimas chamadas de uma conexão.
