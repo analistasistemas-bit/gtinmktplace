@@ -13,7 +13,7 @@ vi.mock('@/hooks/useAdsMetricas', () => ({ useAdsMetricas: vi.fn() }));
 const anuncio = (over: Partial<AnuncioPatrocinado> = {}): AnuncioPatrocinado => ({
   mlb: 'MLB1', campanhaId: 1, grupoId: null, statusAds: 'active', catalogo: false, titulo: 'Camiseta Azul',
   thumbnail: 'https://img/1.jpg', permalink: 'https://produto.mercadolivre.com.br/MLB1',
-  item: { status: 'active', subStatus: [], estoque: 7, preco: 59.9 }, equilibrio: { acosPct: 32, motivo: null }, ...over,
+  item: { status: 'active', subStatus: [], estoque: 7, preco: 59.9, precoTabela: null }, equilibrio: { acosPct: 32, motivo: null }, ...over,
 });
 const familia = (over: Partial<FamiliaCampanha> = {}): FamiliaCampanha => ({
   codigoPai: 'P1', nome: 'Camiseta', anuncios: [anuncio()], equilibrioPct: 32, motivoEquilibrio: null,
@@ -77,7 +77,7 @@ describe('LinhaMlb', () => {
     expect(screen.getByText('Em espera')).toHaveAttribute('data-tone', 'neutral');
   });
   it('item pausado sem estoque: Pausado · sem estoque, em aviso', () => {
-    linha(anuncio({ item: { status: 'paused', subStatus: ['out_of_stock'], estoque: 0, preco: 10 } }));
+    linha(anuncio({ item: { status: 'paused', subStatus: ['out_of_stock'], estoque: 0, preco: 10, precoTabela: null } }));
     expect(screen.getByText('Pausado · sem estoque')).toHaveAttribute('data-tone', 'warning');
   });
   it('item null: Status indisponível, sem estoque nem preço', () => {

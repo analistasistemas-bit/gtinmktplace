@@ -69,7 +69,7 @@ describe('parseItensBulk', () => {
       { status_code: 500 },
       { status_code: 200, body: { id: 'MLB4' } },
     ], ['MLB1', 'MLB2', 'MLB3', 'MLB4']);
-    expect([...m.entries()]).toEqual([['MLB1', { status: 'paused', subStatus: ['out_of_stock'], estoque: 0, preco: 30 }]]);
+    expect([...m.entries()]).toEqual([['MLB1', { status: 'paused', subStatus: ['out_of_stock'], estoque: 0, preco: 30, precoTabela: null }]]);
     expect(parseItensBulk({ erro: 1 }, ['MLB1']).size).toBe(0);
     expect(parseItensBulk([{ status_code: 200, body: { id: 'MLB1', status: '' } }], ['MLB1']).size).toBe(0);
   });

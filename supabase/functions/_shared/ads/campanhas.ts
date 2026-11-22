@@ -13,7 +13,7 @@ export interface CampanhaAds {
   id: number; nome: string; status: 'active' | 'paused'; estrategia: string | null;
   roasObjetivo: number | null; acosObjetivo: number | null; orcamentoDiario: number | null;
 }
-export interface ItemAgora { status: string; subStatus: string[]; estoque: number | null; preco: number | null }
+export interface ItemAgora { status: string; subStatus: string[]; estoque: number | null; preco: number | null; precoTabela: number | null }
 export interface Equilibrio { acosPct: number | null; motivo: string | null }
 export interface AnuncioPatrocinado {
   mlb: string; campanhaId: number; grupoId: number | null; statusAds: string; catalogo: boolean;
@@ -103,7 +103,7 @@ export function parseAnunciosPatrocinados(corpo: unknown): { total: number; anun
   return { total, anuncios };
 }
 
-export const CAMPOS_ITEM_AGORA = 'id,status,sub_status,available_quantity,price';
+export const CAMPOS_ITEM_AGORA = 'id,status,sub_status,available_quantity,price,original_price';
 
 /** `/items/bulk` com CAMPOS_ITEM_AGORA → status por MLB. Só entra o 200 com `status`; o resto fica desconhecido. */
 export function parseItensBulk(json: unknown, ids: readonly string[]): Map<string, ItemAgora> {
@@ -118,7 +118,7 @@ export function parseItensBulk(json: unknown, ids: readonly string[]): Map<strin
     m.set(b.id, {
       status: b.status,
       subStatus: Array.isArray(b.sub_status) ? b.sub_status.filter((s): s is string => typeof s === 'string') : [],
-      estoque, preco: numOuNull(b.price),
+      estoque, preco: numOuNull(b.price), precoTabela: numOuNull(b.original_price),
     });
   }
   return m;
@@ -131,16 +131,32 @@ function coresDe(ml: ItemML) {
     : [{ variation_id: null, sku: ml.sku, gtin: ml.gtin, unidades: ml.unidades }];
 }
 
+/** ACOS de equilíbrio do MLB (aba Campanhas): `detalheEquilibrioDoMlb` sem a pior cor. */
+export async function equilibrioDoMlb(
+  ml: ItemML, preco: number | null, cad: Cadastro, aliq: Aliquotas, tarifaEm: (q: QueryTarifa) => Promise<Tarifa>,
+): Promise<Equilibrio> {
+  const { acosPct, motivo } = await detalheEquilibrioDoMlb(ml, preco, cad, aliq, tarifaEm);
+  return { acosPct, motivo };
+}
+
+/** Componentes da pior cor, em reais, sem arredondar: comissao + frete + imposto + liquido = preço. */
+export interface DetalheCor {
+  variacao_id: string; sku: string | null; custo: number; comissao: number; frete: number; imposto: number;
+  liquido: number; margemPct: number;
+}
+export type DetalheEquilibrio = Equilibrio & { pior: DetalheCor | null };
+
 /**
  * ACOS de equilíbrio pelo preço (glossário): (líquido − custo) ÷ preço, pior cor. Qualquer cor sem referência deixa
  * o MLB sem referência — nunca mínimo parcial. Não usa `projetarCor` porque ele exige piso, que não entra aqui.
  * Comissão/frete estimados chegam como exceção da tarifa (TarifaEstimada) → `erro_tarifa`; sem dimensão o frete
  * sairia do pacote padrão (ml/frete.ts) → `sem_dimensao`. `LimiteTarifa` sobe para o orquestrador.
+ * Expõe a pior cor (`pior`); com `motivo`, `pior` é null.
  */
-export async function equilibrioDoMlb(
+export async function detalheEquilibrioDoMlb(
   ml: ItemML, preco: number | null, cad: Cadastro, aliq: Aliquotas, tarifaEm: (q: QueryTarifa) => Promise<Tarifa>,
-): Promise<Equilibrio> {
-  const sem = (motivo: string): Equilibrio => ({ acosPct: null, motivo });
+): Promise<DetalheEquilibrio> {
+  const sem = (motivo: string): DetalheEquilibrio => ({ acosPct: null, motivo, pior: null });
   const resolvidas = [];
   for (const c of coresDe(ml)) {
     const r = resolverPack(cad, { item_id: ml.id, variation_id: c.variation_id, sku: c.sku, gtin: c.gtin }, c.unidades, ml.formato_kit, [...ml.relacionados, ...(ml.relacoesVariacao ?? [])]);
@@ -155,11 +171,12 @@ export async function equilibrioDoMlb(
     if (r.custo == null || r.custo <= 0) return sem('sem_custo');
     if (r.origem == null) return sem('sem_origem');
     if (r.dim == null) return sem('sem_dimensao');
-    resolvidas.push({ custo: r.custo, origem: r.origem, dim: r.dim });
+    resolvidas.push({ variacao_id: r.variacao_id, sku: c.sku, custo: r.custo, origem: r.origem, dim: r.dim });
   }
   if (preco == null || preco <= 0) return sem('sem_preco');
   if (!ml.categoria || !ml.listing_type_id) return sem('sem_categoria');
   let menor = Infinity;
+  let pior: DetalheCor | null = null;
   for (const r of resolvidas) {
     let t: Tarifa;
     try {
@@ -169,10 +186,20 @@ export async function equilibrioDoMlb(
       return sem('erro_tarifa');
     }
     const aliquota = r.origem === 'importado' ? aliq.importado : aliq.nacional;
-    menor = Math.min(menor, ((liquidoNoPreco(preco, t, aliquota) - r.custo) * 100) / preco);
+    const liquido = liquidoNoPreco(preco, t, aliquota);
+    const margemPct = ((liquido - r.custo) * 100) / preco;
+    menor = Math.min(menor, margemPct);
+    // Empate: fica a primeira cor encontrada.
+    if (!pior || margemPct < pior.margemPct) {
+      pior = {
+        variacao_id: r.variacao_id, sku: r.sku, custo: r.custo,
+        comissao: (preco * t.comissao.percentual) / 100 + t.comissao.fixa, frete: t.frete,
+        imposto: (preco * aliquota) / 100, liquido, margemPct,
+      };
+    }
   }
   // Sem arredondar: 19,996 % virando 20 % esconderia o alerta contra um ACOS-alvo de 20 % (arredonda a tela).
-  return { acosPct: menor, motivo: null };
+  return { acosPct: menor, motivo: null, pior };
 }
 
 /** Pai (`anuncios_externos`) + filhos UP (`anuncios_externos_itens`) → MLBs publicados por código pai, sem repetir. */
