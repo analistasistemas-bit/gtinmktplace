@@ -270,6 +270,17 @@
 | **Quanto vende · Observado** | Bloco do painel só com dado observado: faixa pública do anúncio, "criado há" (semáforo pela idade) e mínimo por mês e por dia (piso da faixa ÷ idade). A estimativa de vendas foi reprovada na validação (mediana 90,9% > 30%) e está desligada. |
 | **Ritmo do catálogo** | Em página de catálogo (`/p/`): faixa de todos os vendedores ÷ idade do produto de catálogo (`date_created` de `/products/{id}`, `catalogoCriadoEm`). Ex.: "+1.000 desde 07/2020 → ≥ 13/mês, ≥ 0,4/dia". Rotulado como piso, nunca como venda do anúncio. |
 
+## Acesso de agentes (ADR-0210)
+
+| Termo | Definição |
+|---|---|
+| **Agente** | Programa autônomo (Claude, ChatGPT, Grok, Hermes e afins) que opera o PubliAI em nome de uma organização, sem usuário humano na frente. Tem identidade própria, distinta de qualquer usuário. |
+| **Conexão de agente** | Vínculo entre um agente e uma única organização (`agente_conexoes`), criado e revogado por administrador dela, com validade. Toda chamada é registrada no nome da conexão (`agente_chamadas`), não da pessoa que a criou. |
+| **Chave de agente** | Segredo `pai_…` que o administrador gera em Configurações › Conexões de agentes e cola no agente. Exibida uma única vez; o banco guarda só o hash. Não confundir com o token do Mercado Livre. |
+| **Módulo Acesso de agentes** | Módulo `agentes` em `organizations.modulos_habilitados`, desligado por padrão, que permite ao administrador criar conexões de agente. |
+| **ROAS mínimo** | 100 ÷ margem s/ venda (em pontos percentuais): o ROAS abaixo do qual o gasto com Ads consome todo o lucro do anúncio no preço atual. Vazio quando a margem é zero ou negativa ("sem espaço para Ads"). É o inverso do **ACOS de equilíbrio pelo preço**. |
+| **Pedido de publicação** | Solicitação de um agente para publicar ou alterar um anúncio no marketplace (inclusive preço, pausa e promoção); espera aprovação humana na fila do app. Previsto para a escrita, ainda não implementado. |
+
 ## Pulse (inteligência de mercado)
 
 | Termo | Definição |

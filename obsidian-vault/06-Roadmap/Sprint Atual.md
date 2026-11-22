@@ -1,6 +1,6 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-11-17
+atualizado: 2026-11-22
 ---
 
 # Sprint Atual
@@ -25,6 +25,8 @@ setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > **Kit vinculado (ADR-0151), evolução Fatia 2, galeria da base (ADR-0204, proposto) — em branch, 12/11:** o kit leva as fotos 2–7 do anúncio da base (edge `fotos-base-kit`, `criar-kit-vinculado` grava `galeria_ml_fotos`, `publish-familia-ml` publica a galeria e rebaixa para só a capa se o ML recusar foto; prévia no Criar kit). Não mergeada nem deployada; deploy após o merge: `fotos-base-kit`, `criar-kit-vinculado`, `publish-familia-ml` e importadores de `_shared/`. 1º CREATE real com galeria a validar pelo Diego.
 >
 > **Reposição e pedido de compra ([[Índice de ADRs|ADR-0207]], aceito) — no ar desde 17/11 (main 5e17568a):** módulo `reposicao` para loja sem ERP (sugestão por SKU, pedido de compra, recebimento vinculado à entrada/nota, "Completar grade" e confirmação do 1º pedido). Ligado na Zaven (prazo 15, cobertura 30); números conferidos contra o ledger (247/247) e pedido simulado em produção. Pendentes: 1º pedido real (Diego) e fase 2 (DSA/Daludi Shop: validade/lote e sazonalidade). Ajustes pós-teste (17/11): "i" da faixa, foto da cor/estampa na grade e autocura da foto (main 7a090d22); **Fora de linha** marcado no Estoque (produto ou cor, emenda 23–24 do ADR), a Reposição só obedece e o menu "Não repor ▾" saiu (**no ar** em 17/11: main 5379a634, edge `reposicao` v3; falta conferir o celular e dados reais na Zaven).
+>
+> **🟢 Acesso de agentes ([[Índice de ADRs|ADR-0210]], aceito) — fatia 1 no ar desde 22/11 (main `12d00860`), piloto na Zaven.** Servidor MCP somente leitura (edge pública `agentes`): margem, ROAS mínimo e simulação de preço por MLB, MLBU, família do ML, SKU ou título; chave por organização gerada em Configurações › Conexões de agentes (edge `agente-conexoes`), guardada só como hash, com auditoria por chamada. Módulo `agentes` ligado só na Zaven. Aceite por chamadas reais feito em 22/11. Pendentes: 1ª chave pela tela e teste em cada cliente (Diego); antes de abrir a outras lojas, as pendências do fim da ADR; fatia 2 (OAuth) e fatia 3 (chave de plataforma). Guia: `docs/reference/acesso-de-agentes.md`.
 >
 > **Alíquota com vigência ([[Índice de ADRs|ADR-0208]], aceito) — branch `worktree-imposto-vigencia`, 17/11.** A mudança de alíquota vale para vendas a partir do save. Schema `aliquotas_vigencia` aplicado. Front e edges ainda sem merge e sem deploy.
 >
