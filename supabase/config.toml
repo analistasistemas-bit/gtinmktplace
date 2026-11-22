@@ -161,6 +161,9 @@ verify_jwt = false
 verify_jwt = false
 
 # --- verify_jwt = true (chamadas com JWT: frontend ou QStash autenticado) ---
+# ADR-0210: o admin cria/lista/revoga conexões de agente pela tela de Configurações.
+[functions.agente-conexoes]
+verify_jwt = true
 # Emenda ADR-0179 (2026-10-20): aba Campanhas do /ads. Chamada pelo APP com o JWT do usuário; só GET no ML.
 [functions.ads-campanhas]
 verify_jwt = true

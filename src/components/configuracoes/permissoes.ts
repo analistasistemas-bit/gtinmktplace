@@ -44,6 +44,8 @@ export function usePermissoesConfig() {
     podeVerMembros: menus.includes('usuarios'),
     podeVerCanais: menus.includes('canais'),
     podeVerConfig: menus.includes('configuracoes'),
+    // Conexões de agentes: só o admin da própria org; a edge recusa sessão de suporte (ADR-0210).
+    podeGerirAgentes: isAdmin && !context,
     profileLoading,
   };
 }

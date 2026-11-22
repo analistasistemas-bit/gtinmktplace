@@ -4,7 +4,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { cn } from '@/lib/utils';
-import { SECOES, type Secao } from '@/components/configuracoes/secoes';
+import { SECOES, secoesVisiveis, type Secao } from '@/components/configuracoes/secoes';
 import { usePermissoesConfig } from '@/components/configuracoes/permissoes';
 import { CarregandoMarca } from '@/components/ui/carregando-marca';
 
@@ -30,7 +30,8 @@ export default function Configuracoes() {
 
 function ConfiguracoesLayout() {
   const { pathname } = useLocation();
-  const { podeVerMembros, podeVerCanais, podeVerConfig, profileLoading } = usePermissoesConfig();
+  const permissoes = usePermissoesConfig();
+  const { profileLoading } = permissoes;
   const { data: aliquotas } = useAliquotas();
   // Só lê o cache que o MenuGuard já carregou (ver useModulosHabilitados).
   const { data: modulos } = useModulosHabilitados({ retryOnMount: false });
@@ -40,8 +41,7 @@ function ConfiguracoesLayout() {
   // queryKey da seção, então o react-query dedupe — uma requisição só.
   const fiscalPendente = aliquotas != null && !aliquotas.confirmada;
 
-  const visiveis = SECOES.filter((s) => (s.somenteMembros ? podeVerMembros : s.somenteCanais ? podeVerCanais : podeVerConfig)
-    && (!s.modulo || !!modulos?.includes(s.modulo)));
+  const visiveis = secoesVisiveis(SECOES, permissoes, modulos);
   const slug = pathname.replace(/^\/configuracoes\/?/, '').split('/')[0];
   const secao = visiveis.find((s) => s.slug === slug);
 

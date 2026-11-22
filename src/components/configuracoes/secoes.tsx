@@ -1,5 +1,5 @@
 import { lazy, type ComponentType } from 'react';
-import { Boxes, Bell, Building2, Cpu, Plug, Puzzle, Settings2, Users } from 'lucide-react';
+import { Bot, Boxes, Bell, Building2, Cpu, Plug, Puzzle, Settings2, Users } from 'lucide-react';
 import type { ModuloId } from '@/lib/modulos';
 import { ExtensaoNavegador } from './extensao-navegador';
 import { SecaoGeral } from './secao-geral';
@@ -7,6 +7,7 @@ import { SecaoPrecos } from './secao-precos';
 import { SecaoFiscal } from './secao-fiscal';
 import { SecaoIA } from './secao-ia';
 import { SecaoNotificacoes } from './secao-notificacoes';
+import { SecaoAgentes } from './secao-agentes';
 
 // A página de Usuários vira uma seção. O lazy vive aqui, não em App.tsx, senão sobra uma
 // declaração não usada lá e o ESLint reprova.
@@ -27,6 +28,8 @@ export interface Secao {
    *  do antigo menu Canais); as demais exigem 'configuracoes' — leitura liberada na org. */
   somenteMembros?: true;
   somenteCanais?: true;
+  /** Só admin da org, fora de sessão de suporte (`podeGerirAgentes`). */
+  somenteAdmin?: true;
   /** Só aparece com este módulo habilitado na org. */
   modulo?: ModuloId;
   /** Tabela (não formulário): usa a largura cheia do painel. */
@@ -88,6 +91,15 @@ export const SECOES: Secao[] = [
     Componente: ExtensaoNavegador,
   },
   {
+    slug: 'agentes',
+    titulo: 'Agentes',
+    descricao: 'Chaves para agentes de IA consultarem as margens da loja.',
+    icone: Bot,
+    somenteAdmin: true,
+    modulo: 'agentes',
+    Componente: SecaoAgentes,
+  },
+  {
     slug: 'membros',
     titulo: 'Membros e acessos',
     descricao: 'Convites, permissões de menu e notificações por pessoa.',
@@ -97,3 +109,14 @@ export const SECOES: Secao[] = [
     Componente: SecaoMembros,
   },
 ];
+
+/** Seções que o perfil enxerga. Navegação, não segurança: a edge/RLS de cada seção barra de novo. */
+export function secoesVisiveis(
+  secoes: Secao[],
+  p: { podeVerMembros: boolean; podeVerCanais: boolean; podeVerConfig: boolean; podeGerirAgentes: boolean },
+  modulos: readonly string[] | null | undefined,
+): Secao[] {
+  return secoes.filter((s) => (s.somenteMembros ? p.podeVerMembros : s.somenteCanais ? p.podeVerCanais : p.podeVerConfig)
+    && (!s.somenteAdmin || p.podeGerirAgentes)
+    && (!s.modulo || !!modulos?.includes(s.modulo)));
+}
