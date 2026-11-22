@@ -82,6 +82,13 @@ export async function redisExpire(chave: string, ttlSegundos: number, sinal?: Ab
   return r === 1;
 }
 
+/** Script Lua atômico com resposta inteira obrigatória (limites de agentes, ADR-0210). */
+export function redisEvalInteiro(
+  script: string, chaves: string[], args: (string | number)[], sinal?: AbortSignal,
+): Promise<number> {
+  return inteiro(['EVAL', script, chaves.length, ...chaves, ...args], sinal);
+}
+
 /** Um único MGET (1 comando no Upstash; pipeline de GET contaria N). Ordem preservada, miss = null. */
 export async function redisMget(chaves: string[], sinal?: AbortSignal): Promise<(string | null)[]> {
   if (chaves.length === 0) return [];
