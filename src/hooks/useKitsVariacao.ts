@@ -1,4 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { QK } from '@/lib/queries';
 import { fetchDetalheKitVariacao, fetchGaleriasPecasKit, fetchKitsVariacao, fetchPrecoAvulsoKit } from '@/lib/kit-variacao-edge';
 
 export const QK_KITS_VARIACAO = ['kits-variacao'] as const;
@@ -7,7 +9,8 @@ export const QK_KITS_VARIACAO = ['kits-variacao'] as const;
  *  leitura enquanto algum kit está sendo montado ou encerrado, para a linha mudar de estado sozinha, e enquanto há
  *  transferência ativa. */
 export function useKitsVariacao(enabled: boolean) {
-  return useQuery({
+  const qc = useQueryClient();
+  const q = useQuery({
     queryKey: QK_KITS_VARIACAO,
     queryFn: fetchKitsVariacao,
     enabled,
@@ -16,6 +19,20 @@ export function useKitsVariacao(enabled: boolean) {
     refetchInterval: (q) => ((q.state.data ?? []).some((k) => k.transferencia?.estado === 'ativa') ? 5_000
       : (q.state.data ?? []).some((k) => k.status === 'publicando' || k.status === 'encerrando') ? 10_000 : false),
   });
+  // Etapa andou, transferência terminou ou o kit mudou de estado: o estoque das telas mudou junto. Recarrega Publicados
+  // e os saldos sem o operador atualizar a página. A primeira leitura só registra o ponto de partida.
+  const assinatura = q.data?.map((k) => [k.id, k.status, k.transferencia?.id, k.transferencia?.passo, k.transferencia?.estado].join(':')).join('|');
+  const anterior = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (assinatura === undefined) return;
+    if (anterior.current !== undefined && anterior.current !== assinatura) {
+      qc.invalidateQueries({ queryKey: QK.publicados });
+      qc.invalidateQueries({ queryKey: QK.produtosEstoqueResumo });
+      qc.invalidateQueries({ queryKey: ['variacoes-estoque'] });
+    }
+    anterior.current = assinatura;
+  }, [assinatura, qc]);
+  return q;
 }
 
 /** Preço avulso das peças da base (ADR-0200, adendo 08/11). Uma leitura nova por abertura do diálogo (`abertura`
