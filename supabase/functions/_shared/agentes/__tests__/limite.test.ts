@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const db = new Map<string, number>();
 const ttl = new Map<string, number>();
 let falhar = false;
+let falharExpire = false;
+let falharDecr = false;
 
 vi.mock('../../redis/client.ts', () => ({
   redisIncrBy: vi.fn(async (k: string, n: number) => {
@@ -10,17 +12,29 @@ vi.mock('../../redis/client.ts', () => ({
     db.set(k, (db.get(k) ?? 0) + n);
     return db.get(k)!;
   }),
-  redisExpire: vi.fn(async (k: string, s: number) => { ttl.set(k, s); return true; }),
+  redisDecrBy: vi.fn(async (k: string, n: number) => {
+    if (falharDecr) throw new Error('redis fora');
+    db.set(k, (db.get(k) ?? 0) - n);
+    return db.get(k)!;
+  }),
+  redisExpire: vi.fn(async (k: string, s: number) => {
+    if (falharExpire) throw new Error('redis fora');
+    ttl.set(k, s);
+    return true;
+  }),
 }));
 
 const { LIMITES, reservarChamada, reservarFalhaIp, reservarTarifas } = await import('../limite.ts');
-const { redisIncrBy } = await import('../../redis/client.ts');
+const { redisDecrBy, redisExpire, redisIncrBy } = await import('../../redis/client.ts');
 
 const agora = new Date('2026-11-22T14:05:30.000Z');
+const invalida = new Date('lixo');
 
 beforeEach(() => {
-  db.clear(); ttl.clear(); falhar = false;
+  db.clear(); ttl.clear(); falhar = false; falharExpire = false; falharDecr = false;
   vi.mocked(redisIncrBy).mockClear();
+  vi.mocked(redisDecrBy).mockClear();
+  vi.mocked(redisExpire).mockClear();
 });
 
 describe('LIMITES', () => {
@@ -35,7 +49,15 @@ describe('reservarChamada', () => {
     for (let i = 0; i < 61; i++) r.push(await reservarChamada('c1', agora));
     expect(r).toEqual([...Array(60).fill('ok'), 'limite']);
     expect(ttl.get('agt:ch:v1:c1:202611221405')).toBe(120);
-    expect(ttl.size).toBe(1);
+    expect(vi.mocked(redisExpire)).toHaveBeenCalledTimes(1); // só quando a chave nasce
+    expect(vi.mocked(redisDecrBy)).not.toHaveBeenCalled(); // janela por minuto não devolve
+  });
+
+  it('EXPIRE lançando → falha; Date inválido → falha', async () => {
+    falharExpire = true;
+    expect(await reservarChamada('c1', agora)).toBe('falha');
+    expect(await reservarChamada('c1', invalida)).toBe('falha');
+    expect(await reservarFalhaIp('1.2.3.4', invalida)).toBe('falha');
   });
 
   it('conexões independentes; minuto seguinte reabre', async () => {
@@ -77,13 +99,34 @@ describe('reservarTarifas', () => {
     expect(db.get('agt:tar:v1:o1:20261122')).toBe(1);
   });
 
-  it('teto 5000: exato ok, acima limite sem devolver', async () => {
-    expect(await reservarTarifas('o1', 5000, agora)).toBe('ok');
-    expect(await reservarTarifas('o1', 1, agora)).toBe('limite');
-    expect(db.get('agt:tar:v1:o1:20261122')).toBe(5001);
+  it('acima do teto devolve o n: 4990 + 50 → limite e volta a 4990; depois 10 → ok (5000)', async () => {
+    expect(await reservarTarifas('o1', 4990, agora)).toBe('ok');
+    expect(await reservarTarifas('o1', 50, agora)).toBe('limite');
+    expect(vi.mocked(redisDecrBy)).toHaveBeenCalledWith('agt:tar:v1:o1:20261122', 50);
+    expect(db.get('agt:tar:v1:o1:20261122')).toBe(4990);
+    expect(await reservarTarifas('o1', 10, agora)).toBe('ok');
+    expect(db.get('agt:tar:v1:o1:20261122')).toBe(5000);
+    expect(vi.mocked(redisExpire)).toHaveBeenCalledTimes(1);
   });
 
-  it.each([0, -1, 1.5, NaN])('n inválido (%s) → falha sem tocar no Redis', async (n) => {
+  it('n acima do teto (6000) → limite sem chamar o Redis', async () => {
+    expect(await reservarTarifas('o1', 6000, agora)).toBe('limite');
+    expect(vi.mocked(redisIncrBy)).not.toHaveBeenCalled();
+  });
+
+  it('DECRBY lançando → falha', async () => {
+    await reservarTarifas('o1', 4990, agora);
+    falharDecr = true;
+    expect(await reservarTarifas('o1', 50, agora)).toBe('falha');
+  });
+
+  it('EXPIRE lançando ou Date inválido → falha', async () => {
+    expect(await reservarTarifas('o1', 5, invalida)).toBe('falha');
+    falharExpire = true;
+    expect(await reservarTarifas('o1', 5, agora)).toBe('falha');
+  });
+
+  it.each([0, -1, 1.5, NaN, 2 ** 53])('n inválido (%s) → falha sem tocar no Redis', async (n) => {
     expect(await reservarTarifas('o1', n, agora)).toBe('falha');
     expect(vi.mocked(redisIncrBy)).not.toHaveBeenCalled();
   });

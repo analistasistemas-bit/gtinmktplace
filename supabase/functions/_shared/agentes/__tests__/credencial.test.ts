@@ -48,4 +48,11 @@ describe('situacaoDaConexao', () => {
     expect(situacaoDaConexao({ ...base, expira_em: agora.toISOString() }, agora)).toBe('expirada');
     expect(situacaoDaConexao({ ...base, expira_em: '2026-11-22T11:59:59.999Z' }, agora)).toBe('expirada');
   });
+
+  it('fecha em dado inválido', () => {
+    expect(situacaoDaConexao({ ...base, expira_em: 'lixo' }, agora)).toBe('expirada');
+    expect(situacaoDaConexao(base, new Date('lixo'))).toBe('expirada');
+    expect(situacaoDaConexao({ ...base, revogada_em: 'lixo' }, agora)).toBe('revogada');
+    expect(situacaoDaConexao({ ...base, revogada_em: '' }, agora)).toBe('revogada');
+  });
 });

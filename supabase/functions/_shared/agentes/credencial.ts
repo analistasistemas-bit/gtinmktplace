@@ -24,8 +24,9 @@ export function extrairChave(req: Request): string | null {
 
 export type LinhaConexao = { id: string; org_id: string; expira_em: string; revogada_em: string | null };
 
-/** Revogada vence expirada; expira exatamente em `agora` já é expirada. */
+/** Revogada vence expirada; expira exatamente em `agora` já é expirada. Fecha em dado ruim: `revogada_em` não nulo
+ *  (mesmo não parseável) = revogada; `expira_em` ou `agora` inválidos = expirada. */
 export function situacaoDaConexao(l: LinhaConexao, agora: Date): 'ok' | 'revogada' | 'expirada' {
-  if (l.revogada_em) return 'revogada';
-  return new Date(l.expira_em).getTime() <= agora.getTime() ? 'expirada' : 'ok';
+  if (l.revogada_em !== null) return 'revogada';
+  return new Date(l.expira_em).getTime() > agora.getTime() ? 'ok' : 'expirada'; // NaN > x é falso
 }
