@@ -1,5 +1,6 @@
 // Portão da chamada de agente (ADR-0210, fatia 1). Lógica pura, padrão de `_shared/auth-org.ts`: todo IO chega
 // por `DepsAuthAgente` (a fiação com o banco é da edge). A org vem só da linha da conexão.
+// Logs só com códigos fixos: nada de chave, hash, motivo do 401 ou mensagem de erro de dependência.
 import { extrairChave, hashChave, type LinhaConexao, situacaoDaConexao } from './credencial.ts';
 import { reservarChamada, reservarFalhaIp } from './limite.ts';
 
@@ -21,36 +22,41 @@ export type ResultadoAuthAgente = { ok: true; conexaoId: string; orgId: string }
 const INDISPONIVEL: Recusa = { ok: false, status: 503, codigo: 'indisponivel' };
 const LIMITE: Recusa = { ok: false, status: 429, codigo: 'limite' };
 
-/** Toda falha de credencial responde igual (401) e debita o IP; o motivo só vai ao log, nunca a chave/hash. */
-async function recusarCredencial(d: DepsAuthAgente, motivo: string, conexaoId?: string): Promise<Recusa> {
-  console.warn('[agentes/auth] credencial recusada', motivo, conexaoId ?? '');
+const indisponivel = (codigo: string): Recusa => {
+  console.warn(`[agentes] auth: ${codigo}`);
+  return INDISPONIVEL;
+};
+
+const textoNaoVazio = (v: unknown) => typeof v === 'string' && v.length > 0;
+
+/** Toda falha de credencial responde igual (401) e debita o IP. Loga um evento genérico só enquanto o IP está
+ *  abaixo do teto (atacante não controla volume de log). */
+async function recusarCredencial(d: DepsAuthAgente): Promise<Recusa> {
   const r = await reservarFalhaIp(d.ip, d.agora);
   if (r === 'limite') return LIMITE;
   if (r === 'falha') return INDISPONIVEL;
+  console.warn('[agentes] credencial recusada');
   return { ok: false, status: 401, codigo: 'nao_autorizado' };
 }
 
 export async function autenticarAgente(req: Request, d: DepsAuthAgente): Promise<ResultadoAuthAgente> {
   const chave = extrairChave(req);
-  if (!chave) return recusarCredencial(d, 'ausente_ou_malformada');
+  if (!chave) return recusarCredencial(d);
 
   let linha: LinhaConexao | null;
   try {
     linha = await d.buscarConexaoPorHash(await hashChave(chave));
-  } catch (e) {
-    // ponytail: só o nome do erro; a mensagem do banco poderia ecoar o hash do filtro.
-    console.warn('[agentes/auth] busca da conexão falhou', e instanceof Error ? e.name : typeof e);
-    return INDISPONIVEL;
+  } catch {
+    return indisponivel('banco_indisponivel');
   }
-  if (!linha) return recusarCredencial(d, 'nao_encontrada');
-  const situacao = situacaoDaConexao(linha, d.agora);
-  if (situacao !== 'ok') return recusarCredencial(d, situacao, linha.id);
+  if (!linha) return recusarCredencial(d);
+  if (!textoNaoVazio(linha.id) || !textoNaoVazio(linha.org_id)) return indisponivel('linha_invalida');
+  if (situacaoDaConexao(linha, d.agora) !== 'ok') return recusarCredencial(d);
 
   try {
-    if (!(await d.orgAtivaComModulo(linha.org_id))) return { ok: false, status: 403, codigo: 'acesso_desligado' };
-  } catch (e) {
-    console.warn('[agentes/auth] checagem da org falhou', linha.id, String(e));
-    return INDISPONIVEL;
+    if ((await d.orgAtivaComModulo(linha.org_id)) !== true) return { ok: false, status: 403, codigo: 'acesso_desligado' };
+  } catch {
+    return indisponivel('modulo_indisponivel');
   }
 
   const r = await reservarChamada(linha.id, d.agora);
@@ -59,8 +65,8 @@ export async function autenticarAgente(req: Request, d: DepsAuthAgente): Promise
 
   try {
     await d.marcarUso(linha.id);
-  } catch (e) {
-    console.warn('[agentes/auth] marcarUso falhou (segue)', linha.id, String(e));
+  } catch {
+    console.warn('[agentes] auth: marcar_uso_falhou');
   }
   return { ok: true, conexaoId: linha.id, orgId: linha.org_id };
 }

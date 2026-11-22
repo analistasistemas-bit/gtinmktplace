@@ -15,6 +15,7 @@ vi.mock('../limite.ts', () => ({
 }));
 
 const { autenticarAgente } = await import('../auth-agente.ts');
+type DepsAuthAgente = import('../auth-agente.ts').DepsAuthAgente;
 const { gerarChave } = await import('../credencial.ts');
 const { reservarChamada, reservarFalhaIp } = await import('../limite.ts');
 
@@ -28,7 +29,7 @@ let chave: string;
 let hash: string;
 let linha: { id: string; org_id: string; expira_em: string; revogada_em: string | null } | null;
 
-function deps(over: Record<string, unknown> = {}) {
+function deps(over: Partial<DepsAuthAgente> = {}) {
   return {
     buscarConexaoPorHash: vi.fn(async (h: string) => (h === hash ? linha : null)),
     orgAtivaComModulo: vi.fn(async () => true),
@@ -36,7 +37,7 @@ function deps(over: Record<string, unknown> = {}) {
     agora,
     ip: '1.2.3.4',
     ...over,
-  };
+  } as DepsAuthAgente & Record<'buscarConexaoPorHash' | 'orgAtivaComModulo' | 'marcarUso', ReturnType<typeof vi.fn>>;
 }
 
 beforeEach(async () => {
@@ -92,11 +93,21 @@ describe('autenticarAgente', () => {
     expect(d.marcarUso).not.toHaveBeenCalled();
   });
 
-  it('IP com 21 falhas no minuto recebe 429 antes de consultar o banco', async () => {
+  it('chave ausente: 21ª falha no minuto → 429 e o banco nunca é consultado', async () => {
     const d = deps();
     for (let i = 0; i < 20; i++) expect(await autenticarAgente(req(), d)).toEqual(NAO_AUT);
     expect(await autenticarAgente(req(), d)).toEqual({ ok: false, status: 429, codigo: 'limite' });
     expect(d.buscarConexaoPorHash).not.toHaveBeenCalled();
+  });
+
+  it('chave bem formada e inexistente com IP saturado: consulta o banco 1 vez e responde 429', async () => {
+    // Intencional: sem bloqueio por IP antes do lookup — clientes de chat compartilham IP de saída e uma chave
+    // válida não pode ser barrada por falhas de terceiros.
+    const { chave: outra } = await gerarChave();
+    const d = deps();
+    for (let i = 0; i < 20; i++) await autenticarAgente(req(), d);
+    expect(await autenticarAgente(req(`Bearer ${outra}`), d)).toEqual({ ok: false, status: 429, codigo: 'limite' });
+    expect(d.buscarConexaoPorHash).toHaveBeenCalledTimes(1);
   });
 
   it('credencial válida não sofre pré-checagem de IP', async () => {
@@ -133,25 +144,67 @@ describe('autenticarAgente', () => {
     expect(await autenticarAgente(req(`Bearer ${chave}`), d)).toMatchObject({ ok: true });
   });
 
-  it('exceção no banco → 503 sem vazar mensagem (busca e org)', async () => {
-    const segredo = 'detalhe interno';
-    const d1 = deps({ buscarConexaoPorHash: vi.fn(async () => { throw new Error(segredo); }) });
-    const r1 = await autenticarAgente(req(`Bearer ${chave}`), d1);
-    expect(r1).toEqual({ ok: false, status: 503, codigo: 'indisponivel' });
-    const d2 = deps({ orgAtivaComModulo: vi.fn(async () => { throw new Error(segredo); }) });
-    const r2 = await autenticarAgente(req(`Bearer ${chave}`), d2);
-    expect(r2).toEqual({ ok: false, status: 503, codigo: 'indisponivel' });
-    expect(reservarFalhaIp).not.toHaveBeenCalled();
+  it('orgAtivaComModulo só libera com true estrito', async () => {
+    for (const v of [{}, 'false', 1, 'true']) {
+      const d = deps({ orgAtivaComModulo: vi.fn(async () => v as unknown as boolean) });
+      expect(await autenticarAgente(req(`Bearer ${chave}`), d)).toEqual({ ok: false, status: 403, codigo: 'acesso_desligado' });
+    }
   });
 
-  it('nunca loga a chave nem o hash', async () => {
+  it('linha sem id/org_id string não vazia → 503 linha_invalida', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    linha = { ...linha!, revogada_em: '2026-11-01T00:00:00Z' };
-    await autenticarAgente(req(`Bearer ${chave}`), deps());
-    await autenticarAgente(req('Bearer lixo'), deps());
-    const logado = JSON.stringify(warn.mock.calls);
-    expect(logado).not.toContain(chave);
-    expect(logado).not.toContain(hash);
+    const invalidas = [{ id: '' }, { org_id: '' }, { id: 7 }, { org_id: null }];
+    for (const x of invalidas) {
+      linha = { ...linha!, ...x } as typeof linha;
+      expect(await autenticarAgente(req(`Bearer ${chave}`), deps())).toEqual({ ok: false, status: 503, codigo: 'indisponivel' });
+    }
+    expect(warn.mock.calls).toEqual(invalidas.map(() => ['[agentes] auth: linha_invalida']));
+    expect(reservarFalhaIp).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('exceções de dependência: só código fixo no log; sentinela, chave e hash nunca aparecem', async () => {
+    const SENTINELA = 'SENTINELA-9f3c';
+    const espioes = (['warn', 'error', 'log'] as const).map((m) => vi.spyOn(console, m).mockImplementation(() => {}));
+    const boom = vi.fn(async () => { throw new Error(`${SENTINELA} ${hash}`); });
+    const r1 = await autenticarAgente(req(`Bearer ${chave}`), deps({ buscarConexaoPorHash: boom }));
+    const r2 = await autenticarAgente(req(`Bearer ${chave}`), deps({ orgAtivaComModulo: boom }));
+    const r3 = await autenticarAgente(req(`Bearer ${chave}`), deps({ marcarUso: boom }));
+    expect(r1).toEqual({ ok: false, status: 503, codigo: 'indisponivel' });
+    expect(r2).toEqual({ ok: false, status: 503, codigo: 'indisponivel' });
+    expect(r3).toEqual({ ok: true, conexaoId: 'con-1', orgId: 'org-1' });
+    expect(espioes[0].mock.calls).toEqual([
+      ['[agentes] auth: banco_indisponivel'],
+      ['[agentes] auth: modulo_indisponivel'],
+      ['[agentes] auth: marcar_uso_falhou'],
+    ]);
+    const tudo = JSON.stringify([espioes.map((e) => e.mock.calls), r1, r2, r3]);
+    for (const proibido of [SENTINELA, chave, hash]) expect(tudo).not.toContain(proibido);
+    expect(reservarFalhaIp).not.toHaveBeenCalled();
+    espioes.forEach((e) => e.mockRestore());
+  });
+
+  it('os 5 casos de 401 produzem a mesma chamada de log; IP saturado não loga', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { chave: outra } = await gerarChave();
+    const casos: Array<[string | undefined, typeof linha]> = [
+      [undefined, linha],
+      ['Bearer lixo', linha],
+      [`Bearer ${outra}`, linha],
+      [`Bearer ${chave}`, { ...linha!, revogada_em: '2026-11-01T00:00:00Z' }],
+      [`Bearer ${chave}`, { ...linha!, expira_em: agora.toISOString() }],
+    ];
+    for (const [auth, l] of casos) {
+      linha = l;
+      await autenticarAgente(req(auth), deps());
+    }
+    expect(warn.mock.calls).toEqual(casos.map(() => ['[agentes] credencial recusada']));
+    warn.mockClear();
+    resIp = 'limite';
+    await autenticarAgente(req(), deps());
+    expect(warn).not.toHaveBeenCalled();
+    const tudo = JSON.stringify(warn.mock.calls);
+    expect(tudo).not.toContain(chave);
     warn.mockRestore();
   });
 });
