@@ -1,0 +1,37 @@
+// Limites do acesso de agentes (ADR-0210, fatia 1). Mesmo desenho de `_shared/extensao/cotas-busca.ts`: 1 INCRBY
+// (+ EXPIRE quando a chave nasce), sem DECRBY acima do teto (a janela fica fechada até virar). Fail-closed:
+// exceção do Redis = 'falha' (o chamador recusa com 503).
+import { redisExpire, redisIncrBy } from '../redis/client.ts';
+
+export const LIMITES = { chamadasMin: 60, falhasIpMin: 20, tarifasDia: 5000 } as const;
+const TTL_MIN_S = 120;
+const TTL_DIA_S = 2 * 86_400;
+
+const minutoUtc = (d: Date) => d.toISOString().slice(0, 16).replace(/\D/g, ''); // yyyymmddhhmm
+const diaBrt = (d: Date) =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(d).replace(/\D/g, ''); // yyyymmdd
+
+type Resultado = 'ok' | 'limite' | 'falha';
+
+async function reservar(chave: string, n: number, teto: number, ttl: number, rotulo: string): Promise<Resultado> {
+  try {
+    const total = await redisIncrBy(chave, n);
+    if (total === n) await redisExpire(chave, ttl); // chave nova
+    return total <= teto ? 'ok' : 'limite';
+  } catch (e) {
+    console.warn('[agentes/limite] Redis falhou, fail-closed', rotulo, String(e));
+    return 'falha';
+  }
+}
+
+export const reservarChamada = (conexaoId: string, agora: Date) =>
+  reservar(`agt:ch:v1:${conexaoId}:${minutoUtc(agora)}`, 1, LIMITES.chamadasMin, TTL_MIN_S, 'agt:ch');
+
+export const reservarFalhaIp = (ip: string, agora: Date) =>
+  reservar(`agt:ip:v1:${ip}:${minutoUtc(agora)}`, 1, LIMITES.falhasIpMin, TTL_MIN_S, 'agt:ip');
+
+/** Debita `n` tarifas de uma vez no dia (fuso de São Paulo) da org. */
+export function reservarTarifas(orgId: string, n: number, agora: Date): Promise<Resultado> {
+  if (!Number.isInteger(n) || n <= 0) return Promise.resolve('falha');
+  return reservar(`agt:tar:v1:${orgId}:${diaBrt(agora)}`, n, LIMITES.tarifasDia, TTL_DIA_S, 'agt:tar');
+}
