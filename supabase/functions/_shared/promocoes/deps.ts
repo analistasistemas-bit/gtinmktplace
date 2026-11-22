@@ -183,7 +183,7 @@ export function depsDescoberta(admin: SupabaseClient, cx: Cx): DepsDescoberta {
       const { error } = await admin.from('ml_promocoes').upsert({
         org_id: orgId, promocao_id: p.id, tipo: p.tipo, nome: p.nome, status: p.status,
         inicio: p.inicio, fim: p.fim, prazo_adesao: p.prazo_adesao, beneficios: p.beneficios,
-        bruto: { ...p.bruto, descoberta: 'item' }, sincronizado_em: new Date().toISOString(),
+        bruto: { ...(p.bruto as Record<string, unknown>), descoberta: 'item' }, sincronizado_em: new Date().toISOString(),
       }, { onConflict: 'org_id,promocao_id' });
       falhou('gravarDescoberta', error);
     },
