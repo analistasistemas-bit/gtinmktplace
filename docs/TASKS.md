@@ -3,7 +3,8 @@
 ## Central de Promoções: descoberta pela visão por anúncio (emenda 22/11 ao ADR-0170) — 2026-11-22
 
 - [x] Etapa `descoberta` no `sincronizar-promocoes`: acha campanhas com convite que a lista da conta omite (marcador `bruto.descoberta='item'`, sem migration).
-- [ ] Merge na `main` e deploy de `sincronizar-promocoes` (mudança em `_shared/promocoes/`; conferir versão pós-deploy); validar na Avil que `P-MLB18211016` aparece.
+- [x] Merge na `main` (`d8904de2`) e deploy de `sincronizar-promocoes` (v51). Validado em produção em 22/11: `P-MLB18211016` e `P-MLB18209030` entraram na Central com 4 e 11 convites.
+- [ ] 1ª adesão real pelo app a uma campanha descoberta pela visão por anúncio.
 
 ## Capa do kit com variação: modelos vestindo as peças (emenda 18/11 ao ADR-0200) — 2026-11-18
 
