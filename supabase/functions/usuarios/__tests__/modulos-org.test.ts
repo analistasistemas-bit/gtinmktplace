@@ -15,10 +15,6 @@ describe('MODULOS_VALIDOS', () => {
 });
 
 describe('gravarModulosOrg (ADR-0200)', () => {
-  it('aceita ["agentes"]: 200 (ADR-0210)', async () => {
-    const chamar = vi.fn().mockResolvedValue({ data: { ok: true }, error: null });
-    expect(await gravarModulosOrg(chamar)).toEqual({ status: 200, body: { ok: true } });
-  });
   it('gravou: 200', async () => {
     const chamar = vi.fn().mockResolvedValue({ data: { ok: true }, error: null });
     expect(await gravarModulosOrg(chamar)).toEqual({ status: 200, body: { ok: true } });
