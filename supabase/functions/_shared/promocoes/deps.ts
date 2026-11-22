@@ -150,7 +150,7 @@ export function depsLista(admin: SupabaseClient, cx: Cx): DepsLista {
       await publicar(m, dedupId(m));
     },
 
-    enfileirarDescoberta: (m) => publicar(m, dedupIdDescoberta(m)),
+    enfileirarDescoberta: async (m) => { await publicar(m, dedupIdDescoberta(m)); },
 
     avisar: () => avisarPromocoes(Date.now(), depsAlertas(admin, orgId)),
 

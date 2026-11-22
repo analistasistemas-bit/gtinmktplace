@@ -93,7 +93,7 @@ Deno.serve(async (req) => {
       if (payload.etapa === 'descoberta') {
         const cx = await conexaoDaOrg(admin, payload.org_id);
         if (!cx) return json({ ok: false, erro: 'sem conexão' });
-        const r = await descobrirPromocoes(depsDescoberta(admin, cx), payload as MsgDescoberta,
+        const r = await descobrirPromocoes(depsDescoberta(admin, cx), payload as unknown as MsgDescoberta,
           { concorrencia: CONCORRENCIA_DESCOBERTA });
         return json({ ok: true, ...r });
       }
