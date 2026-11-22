@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  LIMITE_CONEXOES_ATIVAS, contarAtivas, expiraEm, inserirConexao, listarChamadas, listarConexoes, revogarConexao,
+  LIMITE_CONEXOES_ATIVAS, contarAtivas, expiraEm, idValido, inserirConexao, listarChamadas, listarConexoes, revogarConexao,
   validarNova,
 } from '../conexoes.ts';
 
@@ -54,6 +54,16 @@ describe('validarNova', () => {
   it('corpo que não é objeto → nome_invalido', () => {
     expect(validarNova(null)).toEqual({ erro: 'nome_invalido' });
     expect(validarNova('x')).toEqual({ erro: 'nome_invalido' });
+  });
+});
+
+describe('idValido', () => {
+  it('só uuid passa; o resto vira 404 sem tocar o banco', () => {
+    expect(idValido('0b9d5a3e-1c2f-4a6b-9e8d-7f6a5b4c3d2e')).toBe(true);
+    expect(idValido('0B9D5A3E-1C2F-4A6B-9E8D-7F6A5B4C3D2E')).toBe(true);
+    for (const id of ['abc', '', 42, null, undefined, '0b9d5a3e-1c2f-4a6b-9e8d-7f6a5b4c3d2e; drop']) {
+      expect(idValido(id)).toBe(false);
+    }
   });
 });
 

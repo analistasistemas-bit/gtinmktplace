@@ -62,6 +62,14 @@ describe('usePermissoesConfig', () => {
     expect(comoUsuario(SUPER, { orgId: 'org-9', scope: 'read' }).podeVerMembros).toBe(false);
   });
 
+  // Conexões de agentes (ADR-0210): só o admin da própria org; a edge recusa qualquer sessão de suporte.
+  it('podeGerirAgentes: admin sim; membro e sessão de suporte (read ou full) não', () => {
+    expect(comoUsuario(MEMBRO).podeGerirAgentes).toBe(false);
+    expect(comoUsuario(ADMIN).podeGerirAgentes).toBe(true);
+    expect(comoUsuario(SUPER, { orgId: 'org-9', scope: 'full' }).podeGerirAgentes).toBe(false);
+    expect(comoUsuario(SUPER, { orgId: 'org-9', scope: 'read' }).podeGerirAgentes).toBe(false);
+  });
+
   it('sem perfil carregado, não edita nem vê nada', () => {
     const p = comoUsuario(null);
     expect(p.podeEditarConfig).toBe(false);

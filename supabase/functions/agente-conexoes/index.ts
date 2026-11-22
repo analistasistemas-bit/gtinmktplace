@@ -7,14 +7,13 @@ import { requireUserOrg } from '../_shared/auth.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { gerarChave } from '../_shared/agentes/credencial.ts';
 import {
-  LIMITE_CONEXOES_ATIVAS, contarAtivas, expiraEm, inserirConexao, listarChamadas, listarConexoes, revogarConexao,
+  LIMITE_CONEXOES_ATIVAS, contarAtivas, expiraEm, idValido, inserirConexao, listarChamadas, listarConexoes, revogarConexao,
   validarNova,
 } from '../_shared/agentes/conexoes.ts';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 const NAO_ENCONTRADA = { erro: 'Conexão não encontrada.' };
-const idValido = (id: unknown): id is string => typeof id === 'string' && id.length > 0 && id.length <= 64;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();

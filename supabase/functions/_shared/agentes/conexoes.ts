@@ -15,7 +15,11 @@ export function validarNova(e: unknown): { nome: string; dias: Validade } | { er
   return { nome, dias: c.dias as Validade };
 }
 
-export const expiraEm = (agora: Date, dias: number) => new Date(agora.getTime() + dias * 86_400_000).toISOString();
+/** id não-uuid é "não encontrada" (404), nunca 500 por 22P02 do Postgres. */
+export const idValido = (id: unknown): id is string =>
+  typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+export const expiraEm =(agora: Date, dias: number) => new Date(agora.getTime() + dias * 86_400_000).toISOString();
 
 const COLUNAS = 'id, nome, prefixo, criada_em, expira_em, revogada_em, ultimo_uso_em';
 export type ConexaoLista = {
