@@ -41,6 +41,8 @@ describe('tratarMcp — protocolo', () => {
   it('notificação (sem id) → 202 sem corpo', async () => {
     const r = await tratarMcp({ jsonrpc: '2.0', method: 'notifications/initialized' }, fs(), vi.fn());
     expect(r).toEqual({ status: 202, corpo: null });
+    expect(await tratarMcp({ jsonrpc: '2.0', method: 'notifications/x', params: [] }, fs(), vi.fn()))
+      .toEqual({ status: 202, corpo: null });
   });
 
   it('resposta do cliente (id + result ou error) → 202 sem corpo', async () => {
@@ -53,6 +55,10 @@ describe('tratarMcp — protocolo', () => {
     ['id sem result/error/method', { jsonrpc: '2.0', id: 1 }],
     ['notificação com method não string', { jsonrpc: '2.0', method: 5 }],
     ['result sem id', { jsonrpc: '2.0', result: {} }],
+    ['resposta com result e error juntos', { jsonrpc: '2.0', id: 7, result: {}, error: { code: 1 } }],
+    ['resposta com id objeto', { jsonrpc: '2.0', id: {}, result: {} }],
+    ['notificação com params número', { jsonrpc: '2.0', method: 'notifications/x', params: 5 }],
+    ['notificação com method vazio', { jsonrpc: '2.0', method: '' }],
   ])('JSON-RPC malformado (%s) → -32600, nunca 202', async (_, corpo) => {
     const r = await tratarMcp(corpo, fs(), vi.fn());
     expect(r.status).toBe(400);
@@ -117,7 +123,8 @@ describe('tratarMcp — tools/call', () => {
     const r = await tratarMcp(chamar('publiai_simular_margem', { identificador: 'SKU-1', preco_brl: 99.9 }), f, auditar);
     expect(texto(r)).toEqual({ isError: false, json: { estado: 'nao_encontrado' } });
     expect(f.simular).toHaveBeenCalledWith('SKU-1', 99.9);
-    expect(auditar).toHaveBeenCalledWith('publiai_simular_margem', 'SKU-1', 'nao_encontrado');
+    // SKU não resolvido pelo serviço não vai para a auditoria
+    expect(auditar).toHaveBeenCalledWith('publiai_simular_margem', 'texto_livre', 'nao_encontrado');
   });
 
   it('auditoria nunca grava texto livre: chave de agente e título viram texto_livre, MLB sai canônico', async () => {
@@ -130,6 +137,28 @@ describe('tratarMcp — tools/call', () => {
     await tratarMcp(chamar('publiai_simular_margem', { identificador: chave, preco_brl: 'x' }), fs(), auditar);
     expect(auditar.mock.calls.map((c) => c[1])).toEqual(['texto_livre', 'texto_livre', 'MLB123', 'texto_livre']);
     expect(JSON.stringify(auditar.mock.calls)).not.toContain('kkkk');
+  });
+
+  it('auditoria grava SKU só quando o serviço o resolveu (estado ok)', async () => {
+    const auditar = vi.fn(async () => {});
+    const com = (estado: string) => fs({ margem: vi.fn(async () => ({ estado })) });
+    const token = 'APP_USR-1234567890-abcdef';
+    await tratarMcp(chamar('publiai_margem_anuncio', { identificador: token }), com('nao_encontrado'), auditar);
+    await tratarMcp(chamar('publiai_margem_anuncio', { identificador: token }), com('ok'), auditar);
+    await tratarMcp(chamar('publiai_margem_anuncio', { identificador: 'ABC-123' }), com('ok'), auditar);
+    await tratarMcp(chamar('publiai_margem_anuncio', { identificador: 'ABC-123' }), com('candidatos'), auditar);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await tratarMcp(chamar('publiai_margem_anuncio', { identificador: 'ABC-123' }),
+      fs({ margem: vi.fn(async () => { throw new Error('x'); }) }), auditar);
+    expect(auditar.mock.calls.map((c) => c[1])).toEqual(['texto_livre', token, 'ABC-123', 'texto_livre', 'texto_livre']);
+  });
+
+  it('loja e catálogo ignoram identificador e cursor extras: alvo sempre null', async () => {
+    const auditar = vi.fn(async () => {});
+    await tratarMcp(chamar('publiai_loja', { identificador: 'segredo' }), fs(), auditar);
+    await tratarMcp(chamar('publiai_margens_catalogo', { cursor: 'c1', identificador: 'segredo' }), fs(), auditar);
+    await tratarMcp(chamar('publiai_margens_catalogo', { cursor: 7, identificador: 'segredo' }), fs(), auditar);
+    expect(auditar.mock.calls.map((c) => c[1])).toEqual([null, null, null]);
   });
 
   it("estado 'indisponivel' do serviço → isError true; limites seguem isError false", async () => {
@@ -212,23 +241,29 @@ describe('ipDoCliente', () => {
 describe('alvoParaAuditoria', () => {
   const chave = `pai_0123abcd_${'A'.repeat(20)}-_${'b'.repeat(21)}`;
   it.each([
-    ['mlb123', 'MLB123'],
-    ['mlbu55', 'MLBU55'],
-    ['#8632963637759506', '8632963637759506'],
-    ['863296363775', '863296363775'],
-    ['SKU-1', 'SKU-1'],
-    ['00123/A_b.c', '00123/A_b.c'],
-    [chave, 'texto_livre'],
-    ['pai_abc', 'texto_livre'],
-    ['Vestido longo azul', 'texto_livre'],
-    ['x'.repeat(41), 'texto_livre'],
-    ['', 'texto_livre'],
-    [5, 'texto_livre'],
-    [{ a: 1 }, 'texto_livre'],
-    [undefined, null],
-    [null, null],
-  ])('%j → %j', (entrada, esperado) => {
+    // [entrada, resolvido, esperado]
+    ['mlb123', false, 'MLB123'],
+    ['mlbu55', true, 'MLBU55'],
+    ['#8632963637759506', false, '8632963637759506'],
+    ['863296363775', false, '863296363775'],
+    ['1'.repeat(25), false, 'texto_livre'],
+    ['SKU-1', true, 'SKU-1'],
+    ['SKU-1', false, 'texto_livre'],
+    ['00123/A_b.c', true, '00123/A_b.c'],
+    ['APP_USR-1234567890-abcdef', false, 'texto_livre'],
+    ['APP_USR-1234567890-abcdef', true, 'APP_USR-1234567890-abcdef'],
+    [chave, true, 'texto_livre'],
+    [chave, false, 'texto_livre'],
+    ['pai_abc', true, 'texto_livre'],
+    ['Vestido longo azul', true, 'texto_livre'],
+    ['x'.repeat(41), true, 'texto_livre'],
+    ['', true, 'texto_livre'],
+    [5, true, 'texto_livre'],
+    [{ a: 1 }, true, 'texto_livre'],
+    [undefined, true, null],
+    [null, false, null],
+  ])('%j (resolvido %j) → %j', (entrada, resolvido, esperado) => {
     expect(chave).toMatch(/^pai_[0-9a-f]{8}_[A-Za-z0-9_-]{43}$/);
-    expect(alvoParaAuditoria(entrada)).toBe(esperado);
+    expect(alvoParaAuditoria(entrada, resolvido)).toBe(esperado);
   });
 });

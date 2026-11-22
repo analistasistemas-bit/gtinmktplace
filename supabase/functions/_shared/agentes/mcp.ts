@@ -22,28 +22,30 @@ const str = { type: 'string' } as const;
 type Ferramenta = {
   descricao: string;
   schema: Record<string, unknown>;
-  /** Argumentos válidos → [alvo auditado, execução]; inválidos → null. */
-  preparar(a: Args, f: Ferramentas): [string | null, () => Promise<unknown>] | null;
+  /** Só ferramentas que declaram `identificador` o levam para a auditoria; as demais auditam alvo null. */
+  comIdentificador?: true;
+  /** Argumentos válidos → execução; inválidos → null. Só lê os argumentos declarados no esquema. */
+  preparar(a: Args, f: Ferramentas): (() => Promise<unknown>) | null;
 };
 
 const FERRAMENTAS: Record<string, Ferramenta> = {
   publiai_loja: {
     descricao: 'Nome da organização e apelido da conta do Mercado Livre conectada.',
     schema: { type: 'object', properties: {} },
-    preparar: (_a, f) => [null, () => f.loja()],
+    preparar: (_a, f) => () => f.loja(),
   },
   publiai_margem_anuncio: {
     descricao: 'Margem de contribuição (%) e ROAS mínimo de um anúncio. Aceita MLB, MLBU, família do ML, SKU ou ' +
       'trecho do título (título devolve candidatos para escolher).',
     schema: { type: 'object', properties: { identificador: str }, required: ['identificador'] },
-    preparar: (a, f) => (typeof a.identificador === 'string'
-      ? [a.identificador, () => f.margem(a.identificador as string)] : null),
+    comIdentificador: true,
+    preparar: (a, f) => (typeof a.identificador === 'string' ? () => f.margem(a.identificador as string) : null),
   },
   publiai_margens_catalogo: {
     descricao: 'Margens de todos os anúncios publicados, 50 por página. Passe `proximo_cursor` para a página seguinte.',
     schema: { type: 'object', properties: { cursor: str } },
     preparar: (a, f) => (a.cursor == null || typeof a.cursor === 'string'
-      ? [null, () => f.catalogo((a.cursor as string | undefined) ?? null)] : null),
+      ? () => f.catalogo((a.cursor as string | undefined) ?? null) : null),
   },
   publiai_simular_margem: {
     descricao: 'Margem e ROAS mínimo de um anúncio se o preço fosse `preco_brl` (em reais). Não altera nada no ' +
@@ -52,8 +54,9 @@ const FERRAMENTAS: Record<string, Ferramenta> = {
       type: 'object', properties: { identificador: str, preco_brl: { type: 'number' } },
       required: ['identificador', 'preco_brl'],
     },
+    comIdentificador: true,
     preparar: (a, f) => (typeof a.identificador === 'string' && typeof a.preco_brl === 'number'
-      ? [a.identificador, () => f.simular(a.identificador as string, a.preco_brl)] : null),
+      ? () => f.simular(a.identificador as string, a.preco_brl) : null),
   },
 };
 
@@ -78,17 +81,16 @@ async function chamarFerramenta(id: unknown, params: unknown, f: Ferramentas, au
     return erro(id, -32602, 'Unknown tool');
   }
   const args = obj(params) ? (params.arguments ?? {}) : {};
-  const preparado = obj(args) ? def.preparar(args, f) : null;
-  const alvo = obj(args) ? alvoParaAuditoria(args.identificador) : null;
+  const executar = obj(args) ? def.preparar(args, f) : null;
 
   let resultado: unknown;
   let estado: string;
-  if (!preparado) {
+  if (!executar) {
     resultado = { erro: 'argumento_invalido' };
     estado = 'erro';
   } else {
     try {
-      resultado = await preparado[1]();
+      resultado = await executar();
       estado = obj(resultado) && typeof resultado.estado === 'string' ? resultado.estado : 'ok';
     } catch {
       // Sem a mensagem: ela pode carregar dado de outra camada.
@@ -97,6 +99,9 @@ async function chamarFerramenta(id: unknown, params: unknown, f: Ferramentas, au
       estado = 'erro';
     }
   }
+  // Calculado depois da execução: SKU só é gravado se o serviço o resolveu (estado 'ok' explícito).
+  const resolvido = obj(resultado) && resultado.estado === 'ok';
+  const alvo = def.comIdentificador && obj(args) ? alvoParaAuditoria(args.identificador, resolvido) : null;
   try {
     await auditar(nome, alvo, estado);
   } catch {
@@ -110,13 +115,15 @@ async function chamarFerramenta(id: unknown, params: unknown, f: Ferramentas, au
 export async function tratarMcp(corpo: unknown, f: Ferramentas, auditar: Auditar): Promise<Resposta> {
   const invalido = () => erro(null, -32600, 'Invalid Request', 400);
   if (!obj(corpo) || corpo.jsonrpc !== '2.0') return invalido();
-  // O Streamable HTTP pede 202 sem corpo para notificação (method, sem id) e resposta do cliente (id + result/error).
-  const temId = 'id' in corpo;
-  if (!('method' in corpo)) return temId && ('result' in corpo || 'error' in corpo) ? { status: 202, corpo: null } : invalido();
-  if (typeof corpo.method !== 'string') return invalido();
-  if (!temId) return { status: 202, corpo: null };
+  // O Streamable HTTP pede 202 sem corpo para notificação (method, sem id, params objeto/array ou ausente) e
+  // resposta do cliente (id string/número + exatamente um entre result e error). O resto malformado → -32600.
   const { id, method, params } = corpo;
-  if (typeof id !== 'string' && typeof id !== 'number') return invalido();
+  const idOk = typeof id === 'string' || typeof id === 'number';
+  const aceito = { status: 202, corpo: null };
+  if (!('method' in corpo)) return idOk && ('result' in corpo) !== ('error' in corpo) ? aceito : invalido();
+  if (typeof method !== 'string' || !method) return invalido();
+  if (!('id' in corpo)) return params === undefined || typeof params === 'object' && params !== null ? aceito : invalido();
+  if (!idOk) return invalido();
 
   switch (method) {
     case 'initialize': {
@@ -152,14 +159,14 @@ export function ipDoCliente(req: Request): string {
 
 const SKU = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,39}$/;
 /** Forma canônica do identificador para a auditoria: nunca grava texto livre (o agente pode colar uma chave ou um
- *  segredo). MLB/MLBU em maiúsculas, família do ML (12+ dígitos, sem `#`) ou SKU curto; o resto é `texto_livre`. */
-export function alvoParaAuditoria(identificador: unknown): string | null {
+ *  segredo). MLB/MLBU em maiúsculas e família do ML (12–20 dígitos, sem `#`) sempre; SKU curto só quando o serviço o
+ *  resolveu (`resolvido`: casou com um anúncio da organização). O resto é `texto_livre`. */
+export function alvoParaAuditoria(identificador: unknown, resolvido: boolean): string | null {
   if (identificador == null) return null;
   if (typeof identificador !== 'string') return 'texto_livre';
   const s = identificador.trim();
-  if (s.length > 40) return 'texto_livre';
   if (/^MLBU?\d+$/i.test(s)) return s.toUpperCase();
-  if (/^#?\d{12,}$/.test(s)) return s.replace(/^#/, '');
-  if (SKU.test(s) && !/^pai_/i.test(s)) return s;
+  if (/^#?\d{12,20}$/.test(s)) return s.replace(/^#/, '');
+  if (resolvido && SKU.test(s) && !/^pai_/i.test(s)) return s;
   return 'texto_livre';
 }
