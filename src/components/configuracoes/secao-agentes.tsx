@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -105,7 +105,7 @@ export function SecaoAgentes() {
   );
 }
 
-function DialogNovaConexao({ aberto, onFechar }: { aberto: boolean; onFechar: () => void }) {
+export function DialogNovaConexao({ aberto, onFechar }: { aberto: boolean; onFechar: () => void }) {
   const invalidar = useInvalidarConexoes();
   const [nome, setNome] = useState('');
   const [dias, setDias] = useState<Validade>(90);
@@ -114,36 +114,49 @@ function DialogNovaConexao({ aberto, onFechar }: { aberto: boolean; onFechar: ()
   // A chave vive só aqui, em estado local: sai da memória do React ao fechar (nem React Query, nem localStorage).
   const [criada, setCriada] = useState<ConexaoCriada | null>(null);
   const [copiado, setCopiado] = useState(false);
+  // Cada fechamento abre uma "sessão" nova: resposta que chega depois de fechar não grava a chave.
+  const sessao = useRef(0);
+  useEffect(() => { if (!aberto) sessao.current += 1; }, [aberto]);
 
   function fechar() {
-    setNome(''); setDias(90); setErro(null); setCriada(null); setCopiado(false);
+    sessao.current += 1;
+    setNome(''); setDias(90); setErro(null); setCriada(null); setCopiado(false); setEnviando(false);
     onFechar();
   }
 
   async function enviar(e: FormEvent) {
     e.preventDefault();
+    const minha = sessao.current;
     setEnviando(true); setErro(null);
     try {
-      setCriada(await criarConexaoAgente(nome.trim(), dias));
+      const r = await criarConexaoAgente(nome.trim(), dias);
       void invalidar();
+      if (minha === sessao.current) setCriada(r);
     } catch (err) {
-      setErro(err instanceof Error ? err.message : 'Não foi possível criar a conexão.');
+      if (minha === sessao.current) setErro(err instanceof Error ? err.message : 'Não foi possível criar a conexão.');
     } finally {
-      setEnviando(false);
+      if (minha === sessao.current) setEnviando(false);
     }
   }
 
-  async function copiar() {
-    if (!criada) return;
-    try { await navigator.clipboard.writeText(criada.chave); setCopiado(true); } catch { /* sem permissão: não finge */ }
+  async function copiar(texto: string) {
+    try {
+      await navigator.clipboard.writeText(texto);
+      setCopiado(true);
+    } catch {
+      toast.error('Não foi possível copiar. Selecione o texto e copie manualmente.');
+    }
   }
 
+  // Enviando: nada fecha (a chave ficaria órfã). Com a chave na tela: só "Concluir" fecha.
+  const travado = enviando || !!criada;
   return (
-    <Dialog open={aberto} onOpenChange={(v) => { if (!v) fechar(); }}>
+    <Dialog open={aberto} onOpenChange={(v) => { if (!v && !travado) fechar(); }}>
       <DialogContent
         processando={enviando}
-        // Com a chave na tela, clique fora não fecha: só "Concluir" (a chave não volta).
-        onInteractOutside={(e) => { if (criada) e.preventDefault(); }}
+        showCloseButton={!travado}
+        onInteractOutside={(e) => { if (travado) e.preventDefault(); }}
+        onEscapeKeyDown={(e) => { if (travado) e.preventDefault(); }}
       >
         {criada ? (
           <>
@@ -156,7 +169,7 @@ function DialogNovaConexao({ aberto, onFechar }: { aberto: boolean; onFechar: ()
                 <label htmlFor="agente-chave" className="mb-1 block text-xs font-medium text-muted-foreground">Chave</label>
                 <div className="flex gap-2">
                   <Input id="agente-chave" readOnly value={criada.chave} className="font-mono text-xs" onFocus={(e) => e.target.select()} />
-                  <Button type="button" variant="outline" size="sm" onClick={() => void copiar()}>
+                  <Button type="button" variant="outline" size="sm" onClick={() => void copiar(criada.chave)}>
                     {copiado ? 'Copiado' : 'Copiar'}
                   </Button>
                 </div>
@@ -197,7 +210,7 @@ function DialogNovaConexao({ aberto, onFechar }: { aberto: boolean; onFechar: ()
             </div>
             {erro && <p className="text-sm text-destructive">{erro}</p>}
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={fechar}>Cancelar</Button>
+              <Button type="button" variant="outline" disabled={enviando} onClick={fechar}>Cancelar</Button>
               <Button type="submit" disabled={enviando || !nome.trim()}>Criar</Button>
             </DialogFooter>
           </form>
@@ -206,6 +219,23 @@ function DialogNovaConexao({ aberto, onFechar }: { aberto: boolean; onFechar: ()
     </Dialog>
   );
 }
+
+// Nomes gravados pela edge `agentes` (`_shared/agentes/mcp.ts`); fora do mapa aparece como veio.
+const FERRAMENTAS: Record<string, string> = {
+  publiai_loja: 'Loja',
+  publiai_margem_anuncio: 'Margem do anúncio',
+  publiai_margens_catalogo: 'Margens do catálogo',
+  publiai_simular_margem: 'Simulação de preço',
+  desconhecida: 'Ferramenta desconhecida',
+};
+const RESULTADOS: Record<string, string> = {
+  ok: 'Concluída',
+  nao_encontrado: 'Não encontrado',
+  candidatos: 'Vários resultados',
+  erro: 'Erro',
+  limite_tarifas: 'Limite diário atingido',
+  indisponivel: 'Indisponível',
+};
 
 function DialogChamadas({ conexao, onFechar }: { conexao: ConexaoAgente | null; onFechar: () => void }) {
   const { data, isLoading, isError } = useChamadasConexao(conexao?.id ?? null);
@@ -229,9 +259,9 @@ function DialogChamadas({ conexao, onFechar }: { conexao: ConexaoAgente | null; 
                 {data.map((c, i) => (
                   <TableRow key={i}>
                     <TableCell className="whitespace-nowrap">{fmtData(c.criado_em)}</TableCell>
-                    <TableCell>{c.ferramenta}</TableCell>
+                    <TableCell>{FERRAMENTAS[c.ferramenta] ?? c.ferramenta}</TableCell>
                     <TableCell>{c.alvo ?? '—'}</TableCell>
-                    <TableCell>{c.resultado}</TableCell>
+                    <TableCell>{RESULTADOS[c.resultado] ?? c.resultado}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

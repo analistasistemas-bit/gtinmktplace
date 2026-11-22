@@ -19,7 +19,7 @@ export function validarNova(e: unknown): { nome: string; dias: Validade } | { er
 export const idValido = (id: unknown): id is string =>
   typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
-export const expiraEm =(agora: Date, dias: number) => new Date(agora.getTime() + dias * 86_400_000).toISOString();
+export const expiraEm = (agora: Date, dias: number) => new Date(agora.getTime() + dias * 86_400_000).toISOString();
 
 const COLUNAS = 'id, nome, prefixo, criada_em, expira_em, revogada_em, ultimo_uso_em';
 export type ConexaoLista = {

@@ -15,8 +15,10 @@ vi.mock('@/hooks/useAgenteConexoes', () => ({
   useRevogarConexao: () => ({ mutate: revogar, isPending: false }),
   useChamadasConexao: (id: string | null) => (id ? chamadas : { data: undefined }),
 }));
+const toastErro = vi.fn();
+vi.mock('sonner', () => ({ toast: { error: (...a: unknown[]) => toastErro(...a), success: vi.fn() } }));
 
-import { SecaoAgentes } from '../secao-agentes';
+import { DialogNovaConexao, SecaoAgentes } from '../secao-agentes';
 import { SECOES, secoesVisiveis } from '../secoes';
 
 const CONEXAO = {
@@ -112,10 +114,19 @@ describe('SecaoAgentes', () => {
   });
 
   it('Ver chamadas lista a auditoria; vazio e erro tratados', async () => {
-    chamadas = { data: [{ criado_em: '2026-11-22T10:00:00Z', ferramenta: 'margem_do_anuncio', alvo: 'MLB123', resultado: 'ok' }] };
+    chamadas = { data: [
+      { criado_em: '2026-11-22T10:00:00Z', ferramenta: 'publiai_margem_anuncio', alvo: 'MLB123', resultado: 'ok' },
+      { criado_em: '2026-11-22T09:00:00Z', ferramenta: 'publiai_simular_margem', alvo: null, resultado: 'limite_tarifas' },
+      { criado_em: '2026-11-22T08:00:00Z', ferramenta: 'ferramenta_nova', alvo: null, resultado: 'estado_novo' },
+    ] };
     const { unmount } = render(<SecaoAgentes />);
     fireEvent.click(screen.getByRole('button', { name: 'Ver chamadas' }));
-    expect(await screen.findByText('margem_do_anuncio')).toBeInTheDocument();
+    expect(await screen.findByText('Margem do anúncio')).toBeInTheDocument();
+    expect(screen.getByText('Concluída')).toBeInTheDocument();
+    expect(screen.getByText('Simulação de preço')).toBeInTheDocument();
+    expect(screen.getByText('Limite diário atingido')).toBeInTheDocument();
+    expect(screen.getByText('ferramenta_nova')).toBeInTheDocument();
+    expect(screen.getByText('estado_novo')).toBeInTheDocument();
     expect(screen.getByText('MLB123')).toBeInTheDocument();
     unmount();
 
@@ -129,5 +140,65 @@ describe('SecaoAgentes', () => {
     render(<SecaoAgentes />);
     fireEvent.click(screen.getByRole('button', { name: 'Ver chamadas' }));
     expect(await screen.findByText(/Não foi possível carregar as chamadas/)).toBeInTheDocument();
+  });
+});
+
+describe('DialogNovaConexao: a chave nunca fica presa', () => {
+  const RESPOSTA = { id: 'c2', chave: CHAVE, prefixo: 'ab12cd34', expira_em: '2027-02-20T12:00:00Z' };
+  let resolver: (v: unknown) => void;
+  beforeEach(() => {
+    criar.mockReset(); invalidar.mockReset(); toastErro.mockReset();
+    criar.mockImplementation(() => new Promise((r) => { resolver = r; }));
+  });
+  const enviar = () => {
+    fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Meu agente' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Criar' }));
+  };
+
+  it('durante o envio, Esc não fecha e Cancelar fica desabilitado', async () => {
+    const onFechar = vi.fn();
+    render(<DialogNovaConexao aberto onFechar={onFechar} />);
+    enviar();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancelar' })).toBeDisabled());
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onFechar).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('resposta que chega com o diálogo já fechado não grava a chave', async () => {
+    const { rerender } = render(<DialogNovaConexao aberto onFechar={vi.fn()} />);
+    enviar();
+    rerender(<DialogNovaConexao aberto={false} onFechar={vi.fn()} />);
+    resolver(RESPOSTA);
+    await waitFor(() => expect(invalidar).toHaveBeenCalled());
+    rerender(<DialogNovaConexao aberto onFechar={vi.fn()} />);
+    expect(screen.queryByDisplayValue(CHAVE)).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Nome')).toBeInTheDocument();
+  });
+
+  it('com a chave na tela, Esc não fecha; só Concluir', async () => {
+    const onFechar = vi.fn();
+    render(<DialogNovaConexao aberto onFechar={onFechar} />);
+    enviar();
+    resolver(RESPOSTA);
+    await waitFor(() => expect(screen.getByDisplayValue(CHAVE)).toBeInTheDocument());
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onFechar).not.toHaveBeenCalled();
+    expect(screen.getByDisplayValue(CHAVE)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Concluir' }));
+    expect(onFechar).toHaveBeenCalledTimes(1);
+  });
+
+  it('falha ao copiar avisa por toast', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: vi.fn().mockRejectedValue(new Error('negado')) }, configurable: true,
+    });
+    render(<DialogNovaConexao aberto onFechar={vi.fn()} />);
+    enviar();
+    resolver(RESPOSTA);
+    await waitFor(() => expect(screen.getByDisplayValue(CHAVE)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Copiar' }));
+    await waitFor(() => expect(toastErro).toHaveBeenCalledWith('Não foi possível copiar. Selecione o texto e copie manualmente.'));
+    expect(screen.queryByRole('button', { name: 'Copiado' })).not.toBeInTheDocument();
   });
 });
