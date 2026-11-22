@@ -118,7 +118,7 @@
 | pulse-sonar-visitas | true | HTTP (frontend) | sim (leitura; cache Redis 24h por item) |
 | pulse-analise-secoes237 | true | HTTP (frontend) | sim (leitura; demanda do nicho por vendedor, ponte pelo catálogo) |
 | **Promoções (ADR-0170)** ||||
-| sincronizar-promocoes | false | QStash (fan-out por org) **ou** HTTP (JWT do usuário) | sim (reserva de rodada + `deduplicationId`) |
+| sincronizar-promocoes | false | QStash (fan-out por org) **ou** HTTP (JWT do usuário) | sim (reserva de rodada + `deduplicationId`; etapa `descoberta` com posse pela rodada da lista) |
 | **Ads (ADR-0179, emenda 2026-10-20)** ||||
 | ads-campanhas | true | HTTP (frontend, JWT do usuário) | sim (só leitura; cache Redis 10 min por org) |
 | ads-metricas | true | HTTP (frontend, JWT do usuário) | sim (só leitura; cache Redis 300 s por chave de leitura) |
@@ -2159,7 +2159,10 @@ Lógica em `supabase/functions/_shared/galeria/`. Nenhuma edge desta família es
   - **QStash `{}`** → fan-out por org com o módulo `promocoes` ativo, disparando `{etapa:'lista',
     org_id}` por org. Etapa **`lista`**: trava de 5 min, lista as promoções da conta, encerra as
     que sumiram, roda os alertas lendo o banco, e reserva + enfileira 1 leitura por promoção
-    `pending`/`started` não-cupom. Etapa **`promocao`**: uma oferta por anúncio (a Relâmpago lista o
+    `pending`/`started` não-cupom, e enfileira a etapa **`descoberta`** (emenda 2026-11-22 do ADR-0170): scan dos
+    anúncios ativos (100 por mensagem, 6 em paralelo), visão por anúncio (`/seller-promotions/items/{id}`) para achar
+    campanhas com convite que a lista da conta omite; grava com `bruto.descoberta='item'`, enfileira a leitura e só
+    encerra as descobertas ausentes se a cadeia rodou sem falha. Etapa **`promocao`**: uma oferta por anúncio (a Relâmpago lista o
     mesmo item 2×; fica a que participa, senão a de menor preço), lotes de 20 itens, **teto de 100
     itens por mensagem** (ADR-0173 §4; 90 s de relógio só de reserva), continuação pelo último `ml_item_id`, posse da rodada (`rodada_em_curso`) conferida antes de
     cada lote e na conclusão, `deduplicationId` no enfileiramento QStash.

@@ -15,6 +15,12 @@ export const MSG_ALIQUOTA = 'Confirme as alíquotas de imposto em Configuraçõe
 export interface QueryTarifa { preco: number; categoria: string; listingType: string; dim: DimensoesPacote | null }
 export interface MsgLeitura { etapa: 'promocao'; org_id: string; promocao_id: string; tipo: string; rodada: string; cursor: string | null }
 
+/** Descoberta pela visão por anúncio (emenda 2026-11-22 do ADR-0170): a lista da conta omite campanhas com convite. */
+export interface MsgDescoberta {
+  etapa: 'descoberta'; org_id: string; rodada: string; scroll_id: string | null;
+  listadas: string[]; achadas: { id: string; tipo: string }[]; falhas: number;
+}
+
 export interface DepsLista {
   lerAliquotas(): Promise<Aliquotas | null>;
   listarPromocoes(): Promise<PromocaoML[]>;
@@ -25,6 +31,7 @@ export interface DepsLista {
   /** Reserva atômica: grava rodada_em_curso se estiver nula ou com mais de 30 min. true = reservou. */
   reservarLeitura(promocaoId: string, rodada: string): Promise<boolean>;
   enfileirar(m: MsgLeitura): Promise<void>;
+  enfileirarDescoberta(m: MsgDescoberta): Promise<void>;
   /** Alertas lendo o banco (dados da rodada anterior). Devolve nº de envios. */
   avisar(): Promise<number>;
   gravarEstado(e: { estado: EstadoSync; erro?: string }): Promise<void>;
@@ -51,6 +58,21 @@ export interface DepsLeitura {
   concluir(): Promise<boolean>;
   /** Só com a posse da rodada: erro = msg, rodada_em_curso = null. */
   falhar(erro: string): Promise<void>;
+}
+
+export interface DepsDescoberta {
+  /** ml_promocoes_sync.iniciado_em da org (a rodada da lista). */
+  rodadaDaLista(): Promise<string | null>;
+  listarAtivos(scrollId: string | null): Promise<{ ids: string[]; scrollId: string | null }>;
+  promocoesDoAnuncio(itemId: string): Promise<{ id: string; tipo: string }[]>;
+  lerPromocao(id: string, tipo: string): Promise<PromocaoML | null>;
+  /** Upsert com o marcador bruto.descoberta = 'item'. */
+  gravarDescoberta(p: PromocaoML): Promise<void>;
+  reservarLeitura(promocaoId: string, rodada: string): Promise<boolean>;
+  enfileirarLeitura(m: MsgLeitura): Promise<void>;
+  continuar(m: MsgDescoberta): Promise<void>;
+  /** status='finished' nas descobertas (marcador) pending/started da org que não estão em `vistos`. */
+  encerrarDescobertasAusentes(vistos: string[]): Promise<void>;
 }
 
 const mensagem = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -161,6 +183,14 @@ export async function sincronizarLista(
       await deps.avisar();
     } catch (e) {
       console.error('[promocoes] alertas falharam (sync mantido):', e);
+    }
+    try {
+      await deps.enfileirarDescoberta({
+        etapa: 'descoberta', org_id: ctx.orgId, rodada: ctx.rodada, scroll_id: null,
+        listadas: promos.map((p) => p.id), achadas: [], falhas: 0,
+      });
+    } catch (e) {
+      console.error('[promocoes] descoberta não enfileirada (sync mantido):', e);
     }
     if (!promos.length) {
       await deps.gravarEstado({ estado: 'sem_promocoes' });
@@ -309,4 +339,50 @@ export async function sincronizarPromocao(
     await deps.falhar(mensagem(e));
     return { resultado: 'erro', processados: feitos };
   }
+}
+
+/**
+ * Descoberta de campanhas que a lista da conta omite (convite aberto): varre os anúncios ativos, lê a visão por
+ * anúncio e leva à leitura normal as promoções ausentes de `msg.listadas`. Uma página por mensagem (continuação).
+ */
+export async function descobrirPromocoes(
+  deps: DepsDescoberta, msg: MsgDescoberta, opts: { concorrencia: number },
+): Promise<{ resultado: 'obsoleta' | 'continua' | 'concluida'; achadas?: number; falhas?: number }> {
+  if (!mesmaRodada(await deps.rodadaDaLista(), msg.rodada)) return { resultado: 'obsoleta' };
+  const { ids, scrollId } = await deps.listarAtivos(msg.scroll_id);
+  const listadas = new Set(msg.listadas);
+  const achadas = new Map(msg.achadas.map((a) => [a.id, a]));
+  let falhas = msg.falhas;
+  await emParalelo(ids, opts.concorrencia, async (itemId) => {
+    try {
+      for (const p of await deps.promocoesDoAnuncio(itemId)) if (!listadas.has(p.id)) achadas.set(p.id, p);
+    } catch (e) {
+      if (e instanceof SemAcessoPromocoes) throw e;
+      falhas++;
+      console.warn('[promocoes] visão por anúncio indisponível', { ml_item_id: itemId, erro: mensagem(e) });
+    }
+  });
+  if (ids.length && scrollId) {
+    await deps.continuar({ ...msg, scroll_id: scrollId, achadas: [...achadas.values()], falhas });
+    return { resultado: 'continua' };
+  }
+  const gravadas: string[] = [];
+  for (const { id, tipo } of achadas.values()) {
+    try {
+      const p = await deps.lerPromocao(id, tipo);
+      if (!p || (p.status !== 'pending' && p.status !== 'started')) continue;
+      await deps.gravarDescoberta(p);
+      gravadas.push(id);
+      if (await deps.reservarLeitura(id, msg.rodada)) {
+        await deps.enfileirarLeitura({ etapa: 'promocao', org_id: msg.org_id, promocao_id: id, tipo, rodada: msg.rodada, cursor: null });
+      }
+    } catch (e) {
+      if (e instanceof SemAcessoPromocoes) throw e;
+      falhas++;
+      console.warn('[promocoes] promoção descoberta não lida', { promocao_id: id, erro: mensagem(e) });
+    }
+  }
+  // Com falha, dado velho é melhor que esconder convite válido: nada é encerrado.
+  if (falhas === 0) await deps.encerrarDescobertasAusentes(gravadas);
+  return { resultado: 'concluida', achadas: achadas.size, falhas };
 }

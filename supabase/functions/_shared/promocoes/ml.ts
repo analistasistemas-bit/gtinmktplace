@@ -139,6 +139,32 @@ export async function lerOfertaRelampago(get: GetJson, promocaoId: string, itemI
   return { preco_min: num(x.min_discounted_price), preco_max: num(x.max_discounted_price), preco_sugerido: num(x.suggested_discounted_price) };
 }
 
+const STATUS_DESCOBERTA = new Set(['candidate', 'pending', 'started']);
+
+/** Uma página do scan dos anúncios ativos da conta. Página vazia = fim (scrollId null). */
+export async function listarAtivosPagina(get: GetJson, mlUserId: string, scrollId: string | null): Promise<{ ids: string[]; scrollId: string | null }> {
+  const base = `/users/${mlUserId}/items/search?status=active&search_type=scan&limit=100`;
+  const r = (await get(scrollId ? `${base}&scroll_id=${encodeURIComponent(scrollId)}` : base)) as Obj;
+  const ids = Array.isArray(r.results) ? r.results.filter((x): x is string => typeof x === 'string') : [];
+  return { ids, scrollId: ids.length ? str(r.scroll_id) : null };
+}
+
+/** Visão por anúncio: promoções com id (PRICE_DISCOUNT não tem) que não são cupom e estão abertas ou ativas. */
+export async function promocoesDoAnuncio(get: GetJson, itemId: string): Promise<{ id: string; tipo: string }[]> {
+  const out: { id: string; tipo: string }[] = [];
+  for (const p of lista(await get(`/seller-promotions/items/${encodeURIComponent(itemId)}?app_version=v2`))) {
+    const id = str(p.id), tipo = str(p.type);
+    if (id && tipo && !TIPOS_CUPOM.has(tipo) && STATUS_DESCOBERTA.has(String(p.status))) out.push({ id, tipo });
+  }
+  return out;
+}
+
+/** Metadados de uma promoção fora da lista da conta. */
+export async function lerPromocao(get: GetJson, id: string, tipo: string): Promise<PromocaoML | null> {
+  const r = await get(`/seller-promotions/promotions/${encodeURIComponent(id)}?promotion_type=${encodeURIComponent(tipo)}&app_version=v2`);
+  return r && typeof r === 'object' ? normalizarPromocao(r as Obj) : null;
+}
+
 export async function buscarItensML(get: GetJson, ids: string[]): Promise<Map<string, ItemML>> {
   const m = new Map<string, ItemML>();
   for (let i = 0; i < ids.length; i += 20) {
