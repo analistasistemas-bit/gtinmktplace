@@ -327,8 +327,12 @@ Credencial que pertence a uma única organização, gerada e revogada por admini
 _Evitar_: token (já designa o acesso ao Mercado Livre), chave de API.
 
 **Chave de plataforma**:
-Chave de agente da administração da plataforma, somente leitura, que enxerga todas as organizações; cada consulta informa a organização e é registrada na auditoria. Nunca é entregue a cliente.
+Chave de agente da administração da plataforma, somente leitura e com validade, que enxerga apenas as lojas geridas; cada consulta informa a organização e fica registrada na auditoria, visível ao administrador da loja. Nunca é entregue a cliente.
 _Evitar_: chave mestra.
+
+**Loja gerida**:
+Organização com modalidade comercial vigente, cuja operação é feita pela Daludi. O contrato de gestão é a autorização para a administração da plataforma ler seus dados por chave de plataforma; encerrada a vigência, a loja sai do alcance.
+_Evitar_: marcação manual de loja gerida.
 
 **Pedido de publicação**:
 Solicitação feita por um agente para publicar ou atualizar um anúncio no marketplace. Nunca chega ao canal sozinho: espera aprovação de um humano na fila de revisão do app.
