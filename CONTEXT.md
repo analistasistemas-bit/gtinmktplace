@@ -319,21 +319,29 @@ Recurso ligado por organização na Central de controle, pensado para quem não 
 ## Acesso de agentes
 
 **Agente**:
-Programa autônomo (Claude, Cursor, automação) que opera o PubliAI em nome de uma organização, sem usuário humano na frente. Tem identidade própria, distinta de qualquer usuário.
+Programa autônomo (Claude, ChatGPT, Grok, Hermes e afins) que opera o PubliAI em nome de uma organização, sem usuário humano na frente. Tem identidade própria, distinta de qualquer usuário.
 _Evitar_: usuário, integração.
 
+**Conexão de agente**:
+Vínculo entre um agente e uma organização, criado e revogado por administrador dela, com validade. Nasce de duas formas, com o mesmo comportamento: por chave de agente ou por autorização (o administrador aprova o agente numa tela do app). Toda ação é registrada no nome da conexão, não da pessoa que a criou.
+_Evitar_: sessão, login do agente.
+
 **Chave de agente**:
-Credencial que pertence a uma única organização, gerada e revogada por administrador dela, com escopo de leitura ou de escrita. Toda ação do agente é registrada com o nome da chave. Existe em dois tipos: a **chave da organização** (enxerga só aquela organização) e a **chave de plataforma**.
+Segredo que o administrador gera no app e cola no agente para criar uma conexão de agente. É exibida uma única vez.
 _Evitar_: token (já designa o acesso ao Mercado Livre), chave de API.
 
 **Chave de plataforma**:
-Chave de agente da administração da plataforma, somente leitura e com validade, que enxerga apenas as lojas geridas; cada consulta informa a organização e fica registrada na auditoria, visível ao administrador da loja. Nunca é entregue a cliente.
+Conexão de agente da administração da plataforma, somente leitura e com validade, que enxerga apenas as lojas geridas; cada consulta informa a organização e fica registrada na auditoria, visível ao administrador da loja. Nunca é entregue a cliente.
 _Evitar_: chave mestra.
 
 **Loja gerida**:
 Organização com modalidade comercial vigente, cuja operação é feita pela Daludi. O contrato de gestão é a autorização para a administração da plataforma ler seus dados por chave de plataforma; encerrada a vigência, a loja sai do alcance.
 _Evitar_: marcação manual de loja gerida.
 
+**Módulo Acesso de agentes**:
+Recurso ligado por organização na Central de controle, desligado por padrão, que permite ao administrador da loja criar conexões de agente. Não condiciona a chave de plataforma.
+_Evitar_: módulo Ads como pré-requisito.
+
 **Pedido de publicação**:
-Solicitação feita por um agente para publicar ou atualizar um anúncio no marketplace. Nunca chega ao canal sozinho: espera aprovação de um humano na fila de revisão do app.
+Solicitação feita por um agente para publicar ou alterar um anúncio no marketplace (inclusive preço, pausa e promoção). Nunca chega ao canal sozinho: espera aprovação de um humano na fila de revisão do app.
 _Evitar_: publicação (que só existe após a aprovação).
