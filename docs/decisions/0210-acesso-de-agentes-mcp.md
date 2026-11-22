@@ -1,6 +1,6 @@
 # ADR-0210 — Acesso de agentes: servidor MCP, conexão por organização, leitura de margens, em três fatias
 
-**Status:** Proposta (entrevista grill-with-docs de 2026-11-22, revisada no mesmo dia por Codex gpt-6.2-sol high e Grok 4.7 xhigh; aguarda aprovação do Diego)
+**Status:** Aceito, a implementar (aprovado pelo Diego em 2026-11-22, após entrevista grill-with-docs e revisão de Codex gpt-6.2-sol high e Grok 4.7 xhigh). Plano da fatia 1: `docs/superpowers/plans/2026-11-22-acesso-de-agentes-fatia-1.md`
 **Data:** 2026-11-22
 **Decisores:** Diego
 **Relaciona:** [0027](0027-multi-tenancy-organizations.md) (organização), [0092](0092-identidade-da-plataforma-e-acesso-super-admin.md) (acesso da plataforma a dados de cliente), [0179](0179-painel-de-ads.md) (ACOS de equilíbrio pelo preço, emenda de 2026-10-20), [0170](0170-central-de-promocoes-ml.md) (projeção do líquido), [0055](0055-imposto-por-origem-nacional-importado.md) e [0208](0208-aliquota-com-vigencia.md) (imposto), [0189](0189-extensao-publiai-navegador.md) (precedente de cliente fora do app).
