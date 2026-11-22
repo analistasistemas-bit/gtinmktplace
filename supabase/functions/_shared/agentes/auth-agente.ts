@@ -7,7 +7,7 @@ import { reservarChamada, reservarFalhaIp } from './limite.ts';
 export interface DepsAuthAgente {
   buscarConexaoPorHash(hash: string): Promise<LinhaConexao | null>;
   orgAtivaComModulo(orgId: string): Promise<boolean>;
-  marcarUso(conexaoId: string): Promise<void>;
+  marcarUso(conexaoId: string, orgId: string): Promise<void>;
   agora: Date;
   ip: string;
 }
@@ -64,7 +64,7 @@ export async function autenticarAgente(req: Request, d: DepsAuthAgente): Promise
   if (r === 'falha') return INDISPONIVEL;
 
   try {
-    await d.marcarUso(linha.id);
+    await d.marcarUso(linha.id, linha.org_id);
   } catch {
     console.warn('[agentes] auth: marcar_uso_falhou');
   }

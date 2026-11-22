@@ -66,7 +66,8 @@ export async function carregarCadastro(admin: SupabaseClient, orgId: string): Pr
 export function criarTarifaEm(cx: Cx, opts?: { fresco?: boolean; semRetentativa?: boolean }): (q: QueryTarifa) => Promise<Tarifa> {
   // Disjuntor: 429/5xx que resistiu às retentativas → o resto desta execução não espera de novo
   // (cores são sequenciais; esperar 4 s em cada estouraria o tempo da edge).
-  // `semRetentativa` já nasce desligado: cada cor faz no máximo 2 consultas (edge `agentes`, teto de tarifas).
+  // `semRetentativa: true` desliga as retentativas de comissão desde a primeira chamada: cada cor faz no máximo
+  // 2 consultas ao ML (comissão + frete), o que torna real o teto de tarifas da edge `agentes`.
   let semRetentativa = opts?.semRetentativa ?? false;
   return async ({ preco, categoria, listingType, dim }) => {
     const p = preco.toFixed(2);

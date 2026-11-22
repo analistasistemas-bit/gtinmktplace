@@ -43,20 +43,17 @@ Deno.serve(async (req) => {
   try {
     const admin = adminClient();
     const agoraAuth = new Date();
-    let orgDaLinha = '';
     const auth = await autenticarAgente(req, {
-      async buscarConexaoPorHash(hash) {
-        const l = await buscarConexaoPorHash(admin, hash);
-        orgDaLinha = l?.org_id ?? '';
-        return l;
-      },
+      buscarConexaoPorHash: (hash) => buscarConexaoPorHash(admin, hash),
       orgAtivaComModulo: (orgId) => orgAtivaComModulo(admin, orgId),
-      marcarUso: (conexaoId) => marcarUso(admin, orgDaLinha, conexaoId, agoraAuth),
+      marcarUso: (conexaoId, orgId) => marcarUso(admin, orgId, conexaoId, agoraAuth),
       agora: agoraAuth,
       ip: ipDoCliente(req),
     });
     if (!auth.ok) {
-      return json({ erro: auth.codigo }, auth.status, auth.status === 401 ? { 'WWW-Authenticate': 'Bearer' } : {});
+      const extra: Record<string, string> = auth.status === 401 ? { 'WWW-Authenticate': 'Bearer' }
+        : auth.status === 429 ? { 'Retry-After': '60' } : {};
+      return json({ erro: auth.codigo }, auth.status, extra);
     }
     const { orgId, conexaoId } = auth;
 

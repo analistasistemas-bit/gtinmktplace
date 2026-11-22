@@ -6,7 +6,7 @@ const NOMES = ['publiai_loja', 'publiai_margem_anuncio', 'publiai_margens_catalo
 
 function fs(o: Partial<Ferramentas> = {}): Ferramentas {
   return {
-    loja: vi.fn(async () => ({ organizacao: 'Loja A', conta_ml: 'LOJA_A' })),
+    loja: vi.fn(async () => ({ organizacao: 'Loja A', conta_ml: 'LOJA_A', conta_ml_id: '123' })),
     margem: vi.fn(async () => ({ estado: 'ok', anuncios: [] })),
     catalogo: vi.fn(async () => ({ estado: 'ok', anuncios: [], proximo_cursor: null })),
     simular: vi.fn(async () => ({ estado: 'nao_encontrado' })),
@@ -41,6 +41,10 @@ describe('tratarMcp — protocolo', () => {
   it('notificação (sem id) → 202 sem corpo', async () => {
     const r = await tratarMcp({ jsonrpc: '2.0', method: 'notifications/initialized' }, fs(), vi.fn());
     expect(r).toEqual({ status: 202, corpo: null });
+  });
+
+  it('mensagem sem method (resposta do cliente) → 202 sem corpo', async () => {
+    expect(await tratarMcp({ jsonrpc: '2.0', id: 7, result: {} }, fs(), vi.fn())).toEqual({ status: 202, corpo: null });
   });
 
   it('ping → resultado vazio', async () => {
@@ -85,7 +89,7 @@ describe('tratarMcp — tools/call', () => {
   it('loja e catálogo: alvo nulo; catálogo repassa o cursor', async () => {
     const f = fs();
     const auditar = vi.fn(async () => {});
-    expect(texto(await tratarMcp(chamar('publiai_loja'), f, auditar)).json).toEqual({ organizacao: 'Loja A', conta_ml: 'LOJA_A' });
+    expect(texto(await tratarMcp(chamar('publiai_loja'), f, auditar)).json).toEqual({ organizacao: 'Loja A', conta_ml: 'LOJA_A', conta_ml_id: '123' });
     await tratarMcp(chamar('publiai_margens_catalogo', { cursor: 'abc' }), f, auditar);
     await tratarMcp(chamar('publiai_margens_catalogo', {}), f, auditar);
     expect(f.catalogo).toHaveBeenNthCalledWith(1, 'abc');
@@ -110,10 +114,16 @@ describe('tratarMcp — tools/call', () => {
     expect(auditar.mock.calls[0][1]).toBe('x'.repeat(200));
   });
 
-  it('ferramenta inexistente → -32602, sem auditoria', async () => {
+  it('ferramenta inexistente → -32602, auditada como desconhecida (nunca o nome cru)', async () => {
     const auditar = vi.fn(async () => {});
-    expect(erroRpc(await tratarMcp(chamar('publiai_apagar_tudo', {}), fs(), auditar))).toBe(-32602);
-    expect(auditar).not.toHaveBeenCalled();
+    expect(erroRpc(await tratarMcp(chamar('publiai_apagar_tudo', { identificador: 'MLB1' }), fs(), auditar))).toBe(-32602);
+    expect(auditar.mock.calls).toEqual([['desconhecida', null, 'erro']]);
+  });
+
+  it('ferramenta inexistente com auditoria falhando → indisponivel', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const r = await tratarMcp(chamar('xyz'), fs(), vi.fn(async () => { throw new Error('db'); }));
+    expect(texto(r)).toEqual({ isError: true, json: { erro: 'indisponivel' } });
   });
 
   it.each([

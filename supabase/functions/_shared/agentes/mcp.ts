@@ -68,7 +68,16 @@ const conteudo = (id: unknown, v: unknown, isError: boolean) =>
 async function chamarFerramenta(id: unknown, params: unknown, f: Ferramentas, auditar: Auditar): Promise<Resposta> {
   const nome = obj(params) && typeof params.name === 'string' ? params.name : null;
   const def = nome != null && Object.hasOwn(FERRAMENTAS, nome) ? FERRAMENTAS[nome] : null;
-  if (!nome || !def) return erro(id, -32602, 'Unknown tool');
+  if (!nome || !def) {
+    // Auditada sem o nome cru (texto livre do cliente).
+    try {
+      await auditar('desconhecida', null, 'erro');
+    } catch {
+      console.error('[agentes] auditoria falhou', 'desconhecida');
+      return conteudo(id, { erro: 'indisponivel' }, true);
+    }
+    return erro(id, -32602, 'Unknown tool');
+  }
   const args = obj(params) ? (params.arguments ?? {}) : {};
   const preparado = obj(args) ? def.preparar(args, f) : null;
   const alvoBruto = obj(args) && typeof args.identificador === 'string' ? args.identificador : null;
@@ -100,11 +109,10 @@ async function chamarFerramenta(id: unknown, params: unknown, f: Ferramentas, au
 }
 
 export async function tratarMcp(corpo: unknown, f: Ferramentas, auditar: Auditar): Promise<Resposta> {
-  if (!obj(corpo) || corpo.jsonrpc !== '2.0' || typeof corpo.method !== 'string') {
-    return erro(null, -32600, 'Invalid Request', 400);
-  }
-  // Notificação (sem id): o Streamable HTTP pede 202 sem corpo.
-  if (!('id' in corpo)) return { status: 202, corpo: null };
+  if (!obj(corpo) || corpo.jsonrpc !== '2.0') return erro(null, -32600, 'Invalid Request', 400);
+  // Notificação (sem id) ou resposta do cliente (sem method): o Streamable HTTP pede 202 sem corpo.
+  if (!('method' in corpo) || !('id' in corpo)) return { status: 202, corpo: null };
+  if (typeof corpo.method !== 'string') return erro(null, -32600, 'Invalid Request', 400);
   const { id, method, params } = corpo;
   if (typeof id !== 'string' && typeof id !== 'number') return erro(null, -32600, 'Invalid Request', 400);
 

@@ -56,7 +56,7 @@ describe('autenticarAgente', () => {
     expect(d.buscarConexaoPorHash).toHaveBeenCalledWith(hash);
     expect(d.orgAtivaComModulo).toHaveBeenCalledWith('org-1');
     expect(reservarChamada).toHaveBeenCalledWith('con-1', agora);
-    expect(d.marcarUso).toHaveBeenCalledWith('con-1');
+    expect(d.marcarUso).toHaveBeenCalledWith('con-1', 'org-1');
     expect(reservarFalhaIp).not.toHaveBeenCalled();
   });
 
