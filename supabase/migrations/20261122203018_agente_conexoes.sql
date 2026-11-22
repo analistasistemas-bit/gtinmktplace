@@ -32,6 +32,8 @@ create table if not exists public.agente_chamadas (
   criado_em   timestamptz not null default now()
 );
 create index if not exists agente_chamadas_org_criado on public.agente_chamadas (org_id, criado_em desc);
+-- Serve ao on delete cascade e às últimas chamadas de uma conexão.
+create index if not exists agente_chamadas_conexao on public.agente_chamadas (conexao_id, criado_em desc);
 
 -- 3. RLS sem policy; default privileges do Supabase dão ALL (inclui TRUNCATE, que RLS não cobre) -------------------
 alter table public.agente_conexoes enable row level security;
