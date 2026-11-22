@@ -11,7 +11,8 @@ create table if not exists public.agente_conexoes (
   nome           text not null check (char_length(nome) between 1 and 60),
   prefixo        text not null,
   hash           text not null unique,
-  criada_por     uuid not null references auth.users(id),
+  -- A conexão é da org, não da pessoa: apagar quem criou não é bloqueado pela FK.
+  criada_por     uuid references auth.users(id) on delete set null,
   criada_em      timestamptz not null default now(),
   expira_em      timestamptz not null,
   revogada_em    timestamptz,
