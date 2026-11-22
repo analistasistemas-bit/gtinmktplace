@@ -159,13 +159,15 @@ export function ipDoCliente(req: Request): string {
 
 const SKU = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,39}$/;
 /** Forma canônica do identificador para a auditoria: nunca grava texto livre (o agente pode colar uma chave ou um
- *  segredo). MLB/MLBU em maiúsculas e família do ML (12–20 dígitos, sem `#`) sempre; SKU curto só quando o serviço o
+ *  segredo). Mais de 40 caracteres é sempre `texto_livre`. MLB/MLBU (até 20 dígitos) em maiúsculas e família do ML (12–20 dígitos, sem `#`) sempre; SKU curto só quando o serviço o
  *  resolveu (`resolvido`: casou com um anúncio da organização). O resto é `texto_livre`. */
 export function alvoParaAuditoria(identificador: unknown, resolvido: boolean): string | null {
   if (identificador == null) return null;
   if (typeof identificador !== 'string') return 'texto_livre';
   const s = identificador.trim();
-  if (/^MLBU?\d+$/i.test(s)) return s.toUpperCase();
+  // Teto antes de qualquer canonicalização: nada longo vai para a auditoria.
+  if (s.length > 40) return 'texto_livre';
+  if (/^MLBU?\d{1,20}$/i.test(s)) return s.toUpperCase();
   if (/^#?\d{12,20}$/.test(s)) return s.replace(/^#/, '');
   if (resolvido && SKU.test(s) && !/^pai_/i.test(s)) return s;
   return 'texto_livre';

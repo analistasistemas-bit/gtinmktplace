@@ -153,6 +153,17 @@ describe('tratarMcp — tools/call', () => {
     expect(auditar.mock.calls.map((c) => c[1])).toEqual(['texto_livre', token, 'ABC-123', 'texto_livre', 'texto_livre']);
   });
 
+  it('MLB longo nunca vai inteiro para a auditoria (ok, nao_encontrado ou exceção)', async () => {
+    const auditar = vi.fn(async () => {});
+    const longo = 'MLB' + '1'.repeat(200);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    for (const margem of [async () => ({ estado: 'ok' }), async () => ({ estado: 'nao_encontrado' }),
+      async () => { throw new Error('x'); }]) {
+      await tratarMcp(chamar('publiai_margem_anuncio', { identificador: longo }), fs({ margem: vi.fn(margem) }), auditar);
+    }
+    expect(auditar.mock.calls.map((c) => c[1])).toEqual(['texto_livre', 'texto_livre', 'texto_livre']);
+  });
+
   it('loja e catálogo ignoram identificador e cursor extras: alvo sempre null', async () => {
     const auditar = vi.fn(async () => {});
     await tratarMcp(chamar('publiai_loja', { identificador: 'segredo' }), fs(), auditar);
@@ -243,6 +254,12 @@ describe('alvoParaAuditoria', () => {
   it.each([
     // [entrada, resolvido, esperado]
     ['mlb123', false, 'MLB123'],
+    ['MLB123', true, 'MLB123'],
+    ['MLB' + '1'.repeat(200), true, 'texto_livre'],
+    ['MLB' + '1'.repeat(200), false, 'texto_livre'],
+    ['MLB' + '1'.repeat(21), false, 'texto_livre'],
+    ['MLBU' + '1'.repeat(21), false, 'texto_livre'],
+    ['A' + 'b'.repeat(40), true, 'texto_livre'],
     ['mlbu55', true, 'MLBU55'],
     ['#8632963637759506', false, '8632963637759506'],
     ['863296363775', false, '863296363775'],
