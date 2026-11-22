@@ -51,6 +51,7 @@ const roas = (m: number | null) => (m != null && m > 0 ? 100 / m : null);
 const espaco = (m: number | null) => (m != null && m <= 0 ? 'sem_espaco_para_ads' : null);
 // Insumo ausente nunca vira zero: o cálculo compartilhado trata comissão nula como 0 e inflaria a margem.
 const naoNeg = (x: unknown) => typeof x === 'number' && Number.isFinite(x) && x >= 0;
+const utilizavel = (p: unknown): p is number => typeof p === 'number' && Number.isFinite(p) && p > 0;
 const obj = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null;
 const aliquotasValidas = (a: unknown): a is Aliquotas => obj(a) && naoNeg(a.nacional) && naoNeg(a.importado);
 const tarifaValida = (t: unknown): t is Tarifa =>
@@ -66,10 +67,12 @@ async function calcular(mlbs: string[], d: DepsMargens, precoSimulado: number | 
   if (!aliquotasValidas(aliq)) return { estado: 'sem_aliquota' };
   const [itens, precos] = await Promise.all([d.buscarItensML(mlbs), d.lerPrecos(mlbs)]);
   // 2 consultas por cor é teto real porque a edge desliga as retentativas de comissão (Tarefa 6).
+  // Um só predicado decide reserva e cálculo: anúncio sem preço utilizável nunca consulta tarifa.
+  const atualDe = (m: string) => { const p = precos.get(m)?.preco; return utilizavel(p) ? p : null; };
+  const precoDe = (m: string) => precoSimulado ?? atualDe(m);
   const n = mlbs.reduce((s, m) => {
     const it = itens.get(m);
-    const usaTarifa = it && (precoSimulado != null || (precos.get(m)?.preco ?? 0) > 0);
-    return usaTarifa ? s + 2 * Math.max(1, it.variacoes.length) : s;
+    return it && precoDe(m) != null ? s + 2 * Math.max(1, it.variacoes.length) : s;
   }, 0);
   if (n > 0) {
     const res = await d.reservarTarifas(n);
@@ -96,9 +99,9 @@ async function calcular(mlbs: string[], d: DepsMargens, precoSimulado: number | 
       if (parou) throw new LimiteTarifa();
       const ml = itens.get(mlb) ?? null;
       const agora = precos.get(mlb) ?? null;
-      const atual = agora?.preco ?? null;
-      const tabela = agora?.precoTabela ?? null;
-      const preco = precoSimulado ?? atual;
+      const atual = atualDe(mlb);
+      const tabela = utilizavel(agora?.precoTabela) ? agora!.precoTabela : null;
+      const preco = precoDe(mlb);
       const base: MargemSimulada = {
         mlb, titulo: ml?.titulo ?? null, sku: null, preco_brl: preco == null ? null : r2(preco),
         preco_tabela_brl: tabela == null ? null : r2(tabela),
@@ -107,6 +110,7 @@ async function calcular(mlbs: string[], d: DepsMargens, precoSimulado: number | 
         margem_pct: null, roas_minimo: null, motivo: null, preco_atual_brl: atual == null ? null : r2(atual),
       };
       if (!ml || (precoSimulado == null && !agora)) return { ...base, motivo: 'anuncio_indisponivel' };
+      if (preco == null) return { ...base, motivo: 'sem_preco' };
       const det = await detalheEquilibrioDoMlb(ml, preco, cad, aliq, tarifa);
       const p = det.pior;
       if (det.motivo || !p || det.acosPct == null) return { ...base, motivo: det.motivo ?? 'sem_preco' };

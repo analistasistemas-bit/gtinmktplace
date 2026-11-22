@@ -112,7 +112,7 @@ describe('resolverAlvo', () => {
 
   it('vazio, só espaços, > 200 caracteres, bruto > 400, caractere de controle ou não-string → nao_encontrado sem deps', async () => {
     const d = deps([vin('MLB1')]);
-    for (const s of ['', '   ', 'a'.repeat(201), ' '.repeat(400) + 'MLB1', 'MLB1\n', 'MLB\u00001', 'MLB1\u007f',
+    for (const s of ['', '   ', 'a'.repeat(201), ' '.repeat(400) + 'MLB1', 'MLB1\n', 'MLB\u00001', 'MLB1\u007f', 'MLB1\u0085', 'MLB1\u2028', 'MLB1\u2029',
       123 as unknown as string]) {
       expect(await resolverAlvo(s, d)).toEqual({ tipo: 'nao_encontrado' });
     }

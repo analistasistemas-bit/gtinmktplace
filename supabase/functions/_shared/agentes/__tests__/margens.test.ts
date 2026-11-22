@@ -400,6 +400,26 @@ describe('reserva de tarifas', () => {
   });
 });
 
+describe('preço lido não utilizável', () => {
+  it.each([NaN, Infinity, 0, -5])('preço %s → sem_preco, sem reservar nem consultar tarifa', async (p) => {
+    const d = deps([{ mlb: 'MLB1', custo: 14, preco: p }]);
+    const r = await margemDoAlvo('MLB1', d);
+    if (r.estado !== 'ok') throw new Error(r.estado);
+    expect(r.anuncios[0]).toMatchObject({ preco_brl: null, em_promocao: null, margem_pct: null, motivo: 'sem_preco' });
+    expect(d.tarifaEm).not.toHaveBeenCalled();
+    expect(d.reservarTarifas).not.toHaveBeenCalled();
+  });
+
+  it('misto (bom + NaN) → reserva 2 e só as tarifas do bom', async () => {
+    const d = deps([{ mlb: 'MLB1', custo: 14, preco: 50, sku: 'S' }, { mlb: 'MLB2', custo: 14, preco: NaN, sku: 'S' }]);
+    const r = await margemDoAlvo('S', d);
+    if (r.estado !== 'ok') throw new Error(r.estado);
+    expect(d.reservarTarifas).toHaveBeenCalledWith(2);
+    expect(d.tarifaEm).toHaveBeenCalledTimes(1);
+    expect(r.anuncios.map((a) => a.motivo)).toEqual([null, 'sem_preco']);
+  });
+});
+
 describe('cursor ausente', () => {
   it('undefined = primeira página; string vazia continua inválida', async () => {
     const d = deps([{ mlb: 'MLB1', custo: 14, preco: 50 }]);

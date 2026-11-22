@@ -28,7 +28,7 @@ export async function resolverAlvo(identificador: string, d: DepsAlvo): Promise<
   const NADA: Alvo = { tipo: 'nao_encontrado' };
   if (typeof identificador !== 'string' || identificador.length > 2 * MAX_IDENTIFICADOR) return NADA;
   // deno-lint-ignore no-control-regex
-  if (/[\u0000-\u001f\u007f]/.test(identificador)) return NADA;
+  if (/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(identificador)) return NADA;
   const s = identificador.trim();
   if (s.length < 1 || s.length > MAX_IDENTIFICADOR) return NADA;
   const anuncios = (vs: Vinculo[], familia_ml: string | null): Alvo =>
