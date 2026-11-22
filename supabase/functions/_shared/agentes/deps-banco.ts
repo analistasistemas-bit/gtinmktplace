@@ -20,7 +20,7 @@ const um = <T>(x: T | T[] | null | undefined): T | null => (Array.isArray(x) ? x
 
 /** Filhos ativos (cor não retirada) de anúncio ML publicado da org. */
 const filhosPublicados = (admin: SupabaseClient, orgId: string, colunas: string) =>
-  admin.from('anuncios_externos_itens').select(`${colunas}, anuncios_externos!inner(codigo_pai)`)
+  admin.from('anuncios_externos_itens').select(`${colunas}, anuncios_externos!inner(codigo_pai, canal, status)`)
     .eq('org_id', orgId).eq('retirado', false).not('item_externo_id', 'is', null)
     .eq('anuncios_externos.canal', 'mercado_livre').eq('anuncios_externos.status', 'publicado');
 const paisPublicados = (admin: SupabaseClient, orgId: string, colunas: string) =>
