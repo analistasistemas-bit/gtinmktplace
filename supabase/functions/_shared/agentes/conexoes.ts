@@ -36,12 +36,14 @@ export async function listarConexoes(admin: SupabaseClient, orgId: string): Prom
   const { data, error } = await admin.from('agente_conexoes').select(COLUNAS)
     .eq('org_id', orgId).order('criada_em', { ascending: false });
   falhou('listarConexoes', error);
-  // Projeção explícita: mesmo que o select mude, nada além destas chaves sai da edge.
-  return ((data ?? []) as ConexaoLista[]).map((l) => ({
-    id: l.id, nome: l.nome, prefixo: l.prefixo, criada_em: l.criada_em, expira_em: l.expira_em,
-    revogada_em: l.revogada_em, ultimo_uso_em: l.ultimo_uso_em,
-  }));
+  return ((data ?? []) as ConexaoLista[]).map(projetarConexao);
 }
+
+/** Projeção explícita: mesmo que o select mude, nada além destas chaves sai da edge (nunca `hash`). */
+export const projetarConexao = (l: ConexaoLista): ConexaoLista => ({
+  id: l.id, nome: l.nome, prefixo: l.prefixo, criada_em: l.criada_em, expira_em: l.expira_em,
+  revogada_em: l.revogada_em, ultimo_uso_em: l.ultimo_uso_em,
+});
 
 /** Ativa = não revogada e não expirada. ponytail: contar e inserir não são atômicos; duas criações simultâneas
  *  podem passar de 10 por uma. Trigger/constraint se o limite virar cobrança. */
