@@ -41,7 +41,12 @@ Edge nova, `verify_jwt=false` (valida assinatura QStash **ou** JWT do usuário).
   sumiram, roda os alertas lendo o banco, reserva + enfileira 1 leitura por promoção
   `pending`/`started` não-cupom. Etapa **`promocao`**: uma oferta por anúncio, lotes de 20 itens,
   **teto de 100 itens por mensagem** (90 s de relógio só de reserva), continuação pelo último `ml_item_id`, posse da rodada conferida antes de cada lote e na
-  conclusão, `deduplicationId`.
+  conclusão, `deduplicationId`. Etapa **`descoberta`** (emenda 2026-11-22, `main` `d8904de2`): a lista
+  da conta omite campanhas com convite aberto, então depois da lista o worker varre todos os anúncios
+  ativos (scan do ML, 100 por mensagem), lê a visão por anúncio e manda para a leitura normal as
+  promoções fora da lista, gravadas com `bruto.descoberta = 'item'`. A lista não encerra as marcadas; a
+  descoberta encerra as que sumiram, só quando a varredura termina sem falhas. Custo: 1 `GET` por
+  anúncio ativo por rodada, sem Redis.
 - **Usuário logado** → dispara a etapa de lista só da própria org, throttle de 2 min, `403` sem o
   módulo.
 

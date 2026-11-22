@@ -10,6 +10,11 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **Convite de campanha aparecia no ML e não na Central de Promoções (2026-11-22)** — proposta "Black Friday com aporte
+  do Mercado Livre" visível no Seller Center e ausente no app. **Raiz:** `/seller-promotions/users/{id}` não devolve
+  toda campanha com convite; ela só aparece em `/seller-promotions/items/{id}`. **Correção:** etapa `descoberta` no
+  `sincronizar-promocoes` (`main` `d8904de2`, emenda ao ADR-0170). Ver [[Promoções]].
+
 - **Nota fiscal com a cor de outra variação (2026-11-05)** — Zaven: pedido Azul Claro saiu no DANFE como Preto, com o
   SKU certo. **Raiz:** `fiscal_information.title` é o xProd da nota e vinha da família (`descricao_fiscal || nome_pai`);
   a família tinha "Preto" no nome e ganhou outras cores por UPDATE. **Fix:** cor do produto citada no texto vira a do SKU,

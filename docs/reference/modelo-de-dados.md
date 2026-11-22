@@ -1004,7 +1004,9 @@ Uma linha por promoção da conta ML. `org_id` + `promocao_id` (PK composta), `t
 `status`, `inicio`, `fim`, `prazo_adesao`, `beneficios jsonb`, `bruto jsonb` (payload cru do ML,
 default `{}`), `contagem jsonb`, `erro`, `sincronizado_em`, `itens_sincronizados_em`,
 `rodada_em_curso` — reserva da leitura em curso (janela de 30 min; `null` = nenhuma leitura em
-andamento), conferida pelo worker antes de cada lote e na conclusão.
+andamento), conferida pelo worker antes de cada lote e na conclusão. Promoção que a lista da conta
+omite e foi achada pela visão por anúncio leva `bruto.descoberta = 'item'` (emenda 2026-11-22 do
+ADR-0170, sem migration): a etapa de lista não a encerra; quem encerra é a etapa de descoberta.
 
 ### `promocao_sugestoes_dispensadas`
 

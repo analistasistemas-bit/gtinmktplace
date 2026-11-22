@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-11-16
+atualizado: 2026-11-22
 ---
 
 # Changelog
@@ -8,6 +8,12 @@ atualizado: 2026-11-16
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-11-22
+
+- **Central de Promoções descobre campanhas pela visão por anúncio** (`main` `d8904de2`, `sincronizar-promocoes` v51).
+  A lista de promoções da conta no ML omite campanhas com convite aberto; o sync agora varre os anúncios ativos e acha as
+  que faltam. Validado em produção: duas campanhas com aporte do ML entraram com 4 e 11 convites. Emenda ao ADR-0170.
 
 ## 2026-11-16
 
