@@ -63,10 +63,11 @@ export async function carregarCadastro(admin: SupabaseClient, orgId: string): Pr
 
 /** Comissão + frete exatos num preço (cache `promo:` no Redis); estimado lança TarifaEstimada.
  * `fresco` (reajuste, C1): não lê o cache — mudança de tarifa do ML não passa despercebida; ainda grava. */
-export function criarTarifaEm(cx: Cx, opts?: { fresco?: boolean }): (q: QueryTarifa) => Promise<Tarifa> {
+export function criarTarifaEm(cx: Cx, opts?: { fresco?: boolean; semRetentativa?: boolean }): (q: QueryTarifa) => Promise<Tarifa> {
   // Disjuntor: 429/5xx que resistiu às retentativas → o resto desta execução não espera de novo
   // (cores são sequenciais; esperar 4 s em cada estouraria o tempo da edge).
-  let semRetentativa = false;
+  // `semRetentativa` já nasce desligado: cada cor faz no máximo 2 consultas (edge `agentes`, teto de tarifas).
+  let semRetentativa = opts?.semRetentativa ?? false;
   return async ({ preco, categoria, listingType, dim }) => {
     const p = preco.toFixed(2);
     const dimKey = dim ? `${dim.altura_cm}x${dim.largura_cm}x${dim.comprimento_cm}x${dim.peso_gramas}` : 'padrao';

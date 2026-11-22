@@ -46,4 +46,10 @@ describe('criarTarifaEm', () => {
     await expect(tarifaEm(q)).rejects.toThrow(/429/);
     expect(m.lp.mock.calls).toEqual([[undefined], [[]]]);
   });
+
+  it('semRetentativa: já a primeira consulta de comissão sai sem esperas', async () => {
+    m.get.mockResolvedValue(null);
+    await criarTarifaEm(cx, { semRetentativa: true })(q);
+    expect(m.lp.mock.calls).toEqual([[[]]]);
+  });
 });

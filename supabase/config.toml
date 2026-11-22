@@ -46,6 +46,9 @@ verify_jwt = false
 verify_jwt = false
 [functions.reconciliar-estoque]
 verify_jwt = false
+# ADR-0210: servidor MCP de agentes; autentica pela chave de agente (pai_…), não por JWT.
+[functions.agentes]
+verify_jwt = false
 # E6b: chamadas pelo APP com o JWT do usuário (não pelo QStash) — verify_jwt fica ligado.
 # Explícito de propósito, para a intenção ficar registrada ao lado dos workers.
 [functions.cadastrar-produto]
