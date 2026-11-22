@@ -16,6 +16,8 @@ export interface DepsMargens {
   lerPrecos(ids: string[]): Promise<Map<string, ItemAgora>>;
   tarifaEm(q: QueryTarifa): Promise<Tarifa>;
   reservarTarifas(n: number): Promise<'ok' | 'limite' | 'falha'>;
+  /** Leituras de item e preço no ML (multigets de 20). */
+  reservarLeituras(n: number): Promise<'ok' | 'limite' | 'falha'>;
   listarMlbs(depois: string | null, limite: number): Promise<string[]>;
   agora: Date;
 }
@@ -28,7 +30,7 @@ export type MargemAnuncio = {
 };
 export type MargemSimulada = MargemAnuncio & { preco_atual_brl: number | null };
 export type Referencia = { margem_pct: number | null; roas_minimo: number | null; mlb: string | null; motivo: string | null };
-type Falha = { estado: 'sem_aliquota' | 'limite_tarifas' | 'indisponivel' };
+type Falha = { estado: 'sem_aliquota' | 'limite_tarifas' | 'limite_leituras' | 'indisponivel' };
 type Lido = { lido_em: string; tarifa_idade_max_horas: number };
 export type RespostaAlvo<A = MargemAnuncio> =
   | ({ estado: 'ok'; anuncios: A[]; referencia: Referencia } & Lido)
@@ -44,6 +46,7 @@ export type RespostaCatalogo =
 const TARIFA_IDADE_MAX_HORAS = 8;
 const MAX_MLBS_ALVO = 60;
 const POR_PAGINA = 50;
+const MULTIGET = 20;
 const PRECO_MAX = 1_000_000;
 const MLB_RE = /^MLB\d+$/;
 const r2 = (x: number) => Math.round(x * 100) / 100;
@@ -65,6 +68,10 @@ const tarifaValida = (t: unknown): t is Tarifa =>
 async function calcular(mlbs: string[], d: DepsMargens, precoSimulado: number | null): Promise<MargemSimulada[] | Falha> {
   const aliq = await d.lerAliquotas();
   if (!aliquotasValidas(aliq)) return { estado: 'sem_aliquota' };
+  // Orçamento de leituras antes de tocar o ML: itens + preços, um multiget de 20 MLBs cada.
+  const leituras = await d.reservarLeituras(2 * Math.ceil(mlbs.length / MULTIGET));
+  if (leituras === 'limite') return { estado: 'limite_leituras' };
+  if (leituras !== 'ok') return { estado: 'indisponivel' };
   const [itens, precos] = await Promise.all([d.buscarItensML(mlbs), d.lerPrecos(mlbs)]);
   // 2 consultas por cor é teto real porque a edge desliga as retentativas de comissão (Tarefa 6).
   // Um só predicado decide reserva e cálculo: anúncio sem preço utilizável nunca consulta tarifa.

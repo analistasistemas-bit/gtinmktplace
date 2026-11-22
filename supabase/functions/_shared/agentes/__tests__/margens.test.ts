@@ -49,6 +49,7 @@ function deps(anuncios: Anuncio[], o: Partial<DepsMargens> & { semItem?: string[
         { status: 'active', subStatus: [], estoque: 1, preco: a.preco, precoTabela: a.precoTabela ?? null }]))),
     tarifaEm: vi.fn(async () => TARIFA),
     reservarTarifas: vi.fn(async () => 'ok' as const),
+    reservarLeituras: vi.fn(async () => 'ok' as const),
     listarMlbs: vi.fn(async (depois: string | null, limite: number) =>
       todos.filter((m) => depois == null || m > depois).slice(0, limite)),
     ...o,
@@ -138,6 +139,32 @@ describe('margemDoAlvo', () => {
       expect(d.tarifaEm).not.toHaveBeenCalled();
       expect(d.carregarCadastro).not.toHaveBeenCalled();
     }
+  });
+
+  it("reservarLeituras 'limite' → limite_leituras; 'falha' → indisponivel; ML nunca lido", async () => {
+    for (const [res, estado] of [['limite', 'limite_leituras'], ['falha', 'indisponivel']] as const) {
+      const d = deps([{ mlb: 'MLB1', custo: 14, preco: 50 }], { reservarLeituras: vi.fn(async () => res) });
+      expect(await margemDoAlvo('MLB1', d)).toEqual({ estado });
+      expect(d.reservarLeituras).toHaveBeenCalledWith(2);
+      expect(d.buscarItensML).not.toHaveBeenCalled();
+      expect(d.lerPrecos).not.toHaveBeenCalled();
+      expect(d.reservarTarifas).not.toHaveBeenCalled();
+    }
+  });
+
+  it('reserva 2 leituras por bloco de 20 MLBs, uma vez por chamada', async () => {
+    const anuncios = Array.from({ length: 41 }, (_, i) => ({ mlb: `MLB${100 + i}`, custo: 14, preco: 50 }));
+    const d = deps(anuncios);
+    await margensDoCatalogo(null, d);
+    expect(d.reservarLeituras).toHaveBeenCalledTimes(1);
+    expect(d.reservarLeituras).toHaveBeenCalledWith(2 * 3);
+  });
+
+  it('sem alíquota não reserva nem lê o ML', async () => {
+    const d = deps([{ mlb: 'MLB1', custo: 14, preco: 50 }], { lerAliquotas: vi.fn(async () => null) });
+    expect(await margemDoAlvo('MLB1', d)).toEqual({ estado: 'sem_aliquota' });
+    expect(d.reservarLeituras).not.toHaveBeenCalled();
+    expect(d.buscarItensML).not.toHaveBeenCalled();
   });
 
   it('tarifaEm lança LimiteTarifa → limite_tarifas', async () => {

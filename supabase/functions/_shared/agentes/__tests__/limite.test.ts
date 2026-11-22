@@ -21,7 +21,7 @@ vi.mock('../../redis/client.ts', () => ({
   }),
 }));
 
-const { LIMITES, reservarChamada, reservarFalhaIp, reservarTarifas } = await import('../limite.ts');
+const { LIMITES, reservarChamada, reservarFalhaIp, reservarLeituras, reservarTarifas } = await import('../limite.ts');
 const { redisEvalInteiro } = await import('../../redis/client.ts');
 const evalMock = vi.mocked(redisEvalInteiro);
 
@@ -35,7 +35,7 @@ beforeEach(() => {
 
 describe('LIMITES', () => {
   it('valores da fatia 1', () => {
-    expect(LIMITES).toEqual({ chamadasMin: 60, falhasIpMin: 20, tarifasDia: 5000 });
+    expect(LIMITES).toEqual({ chamadasMin: 60, falhasIpMin: 20, tarifasDia: 5000, leiturasDia: 3000 });
   });
 });
 
@@ -131,5 +131,32 @@ describe('reservarTarifas', () => {
   it.each([0, -1, 1.5, NaN, 2 ** 53])('n inválido (%s) → falha sem tocar no Redis', async (n) => {
     expect(await reservarTarifas('o1', n, agora)).toBe('falha');
     expect(evalMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('reservarLeituras', () => {
+  it('soma n na chave do dia em BRT da org, TTL 2 dias, teto 3000', async () => {
+    expect(LIMITES.leiturasDia).toBe(3000);
+    expect(await reservarLeituras('o1', 6, agora)).toBe('ok');
+    expect(db.get('agt:lei:v1:o1:20261122')).toBe(6);
+    expect(ttl.get('agt:lei:v1:o1:20261122')).toBe(172800);
+  });
+
+  it('2990 + 20 → limite com contador intacto', async () => {
+    expect(await reservarLeituras('o1', 2990, agora)).toBe('ok');
+    expect(await reservarLeituras('o1', 20, agora)).toBe('limite');
+    expect(db.get('agt:lei:v1:o1:20261122')).toBe(2990);
+  });
+
+  it('n acima do teto → limite; n inválido → falha; sem tocar no Redis', async () => {
+    expect(await reservarLeituras('o1', 3001, agora)).toBe('limite');
+    expect(await reservarLeituras('o1', 0, agora)).toBe('falha');
+    expect(await reservarLeituras('o1', 1.5, agora)).toBe('falha');
+    expect(evalMock).not.toHaveBeenCalled();
+  });
+
+  it('Redis falhando → falha', async () => {
+    falhar = true;
+    expect(await reservarLeituras('o1', 2, agora)).toBe('falha');
   });
 });

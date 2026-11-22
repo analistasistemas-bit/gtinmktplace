@@ -3,7 +3,7 @@
 // Redis, resposta inesperada ou data inválida = 'falha' (o chamador recusa com 503).
 import { redisEvalInteiro } from '../redis/client.ts';
 
-export const LIMITES = { chamadasMin: 60, falhasIpMin: 20, tarifasDia: 5000 } as const;
+export const LIMITES = { chamadasMin: 60, falhasIpMin: 20, tarifasDia: 5000, leiturasDia: 3000 } as const;
 const TTL_MIN_S = 120;
 const TTL_DIA_S = 2 * 86_400;
 
@@ -42,9 +42,17 @@ export const reservarChamada = (conexaoId: string, agora: Date) =>
 export const reservarFalhaIp = (ip: string, agora: Date) =>
   reservar(() => `agt:ip:v1:${ip}:${minutoUtc(agora)}`, 1, LIMITES.falhasIpMin, TTL_MIN_S);
 
-/** Debita `n` tarifas de uma vez no dia (fuso de São Paulo) da org. */
-export async function reservarTarifas(orgId: string, n: number, agora: Date): Promise<Resultado> {
+/** Debita `n` de uma cota diária (fuso de São Paulo) da org. */
+async function reservarDia(prefixo: string, teto: number, orgId: string, n: number, agora: Date): Promise<Resultado> {
   if (!Number.isSafeInteger(n) || n <= 0) return 'falha';
-  if (n > LIMITES.tarifasDia) return 'limite';
-  return await reservar(() => `agt:tar:v1:${orgId}:${diaBrt(agora)}`, n, LIMITES.tarifasDia, TTL_DIA_S);
+  if (n > teto) return 'limite';
+  return await reservar(() => `agt:${prefixo}:v1:${orgId}:${diaBrt(agora)}`, n, teto, TTL_DIA_S);
 }
+
+/** Consultas de tarifa (comissão + frete) ao ML. */
+export const reservarTarifas = (orgId: string, n: number, agora: Date) =>
+  reservarDia('tar', LIMITES.tarifasDia, orgId, n, agora);
+
+/** Leituras de item/preço no ML (multiget de até 20 MLBs cada). */
+export const reservarLeituras = (orgId: string, n: number, agora: Date) =>
+  reservarDia('lei', LIMITES.leiturasDia, orgId, n, agora);
