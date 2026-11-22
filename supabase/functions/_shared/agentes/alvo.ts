@@ -17,8 +17,8 @@ const MIN_TITULO = 3;
 const MAX_CANDIDATOS = 10;
 
 export function classificarIdentificador(s: string): 'mlb' | 'mlbu' | 'familia_ml' | 'sku_ou_titulo' {
-  if (/^MLB\d+$/.test(s)) return 'mlb';
-  if (/^MLBU\d+$/.test(s)) return 'mlbu';
+  if (/^MLB\d+$/i.test(s)) return 'mlb';
+  if (/^MLBU\d+$/i.test(s)) return 'mlbu';
   if (/^#?\d{12,}$/.test(s)) return 'familia_ml';
   return 'sku_ou_titulo';
 }
@@ -26,14 +26,16 @@ export function classificarIdentificador(s: string): 'mlb' | 'mlbu' | 'familia_m
 /** Título nunca resolve sozinho: devolve candidatos (no máximo 10) para o agente escolher. */
 export async function resolverAlvo(identificador: string, d: DepsAlvo): Promise<Alvo> {
   const NADA: Alvo = { tipo: 'nao_encontrado' };
-  if (typeof identificador !== 'string') return NADA;
+  if (typeof identificador !== 'string' || identificador.length > 2 * MAX_IDENTIFICADOR) return NADA;
+  // deno-lint-ignore no-control-regex
+  if (/[\u0000-\u001f\u007f]/.test(identificador)) return NADA;
   const s = identificador.trim();
   if (s.length < 1 || s.length > MAX_IDENTIFICADOR) return NADA;
   const anuncios = (vs: Vinculo[], familia_ml: string | null): Alvo =>
     vs.length ? { tipo: 'anuncios', mlbs: [...new Set(vs.map((v) => v.mlb))], familia_ml } : NADA;
   const tipo = classificarIdentificador(s);
-  if (tipo === 'mlb') return anuncios(await d.vinculos({ mlb: s }), null);
-  if (tipo === 'mlbu') return anuncios(await d.vinculos({ mlbu: s }), null);
+  if (tipo === 'mlb') return anuncios(await d.vinculos({ mlb: s.toUpperCase() }), null);
+  if (tipo === 'mlbu') return anuncios(await d.vinculos({ mlbu: s.toUpperCase() }), null);
   if (tipo === 'familia_ml') {
     const familia = s.replace(/^#/, '');
     const vs = await d.vinculos({ familia_ml: familia });
@@ -43,6 +45,8 @@ export async function resolverAlvo(identificador: string, d: DepsAlvo): Promise<
   const porSku = await d.vinculos({ sku: s });
   if (porSku.length) return anuncios(porSku, null);
   if (s.length < MIN_TITULO) return NADA;
-  const candidatos = (await d.buscarPorTitulo(s)).slice(0, MAX_CANDIDATOS);
+  // Projeção explícita: campo extra da dep nunca chega ao agente.
+  const candidatos = (await d.buscarPorTitulo(s)).slice(0, MAX_CANDIDATOS)
+    .map(({ codigo_pai, titulo, mlbs }) => ({ codigo_pai, titulo, mlbs }));
   return candidatos.length ? { tipo: 'candidatos', candidatos } : NADA;
 }

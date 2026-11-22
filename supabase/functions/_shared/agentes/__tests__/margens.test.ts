@@ -9,7 +9,7 @@ const ORG = 'org-A';
 const AGORA = new Date('2026-11-22T12:00:00Z');
 const TARIFA: Tarifa = { comissao: { percentual: 12, fixa: 6 }, frete: 0 };
 
-type Anuncio = { mlb: string; custo: number | null; preco: number | null; precoTabela?: number | null; familia?: string; sku?: string };
+type Anuncio = { mlb: string; custo: number | null; preco: number | null; precoTabela?: number | null; familia?: string; sku?: string; cores?: number };
 
 const linha = (a: Anuncio, n: number): LinhaVariacao => ({
   id: `v-${a.mlb}`, custo: a.custo, preco: 18, cor: 'Azul', codigo: null, gtin: null, ml_variation_id: String(n),
@@ -19,7 +19,9 @@ const linha = (a: Anuncio, n: number): LinhaVariacao => ({
 const itemML = (a: Anuncio, n: number): ItemML => ({
   id: a.mlb, titulo: `Produto ${a.mlb}`, thumbnail: null, permalink: null, criado_em: null, listing_type_id: 'gold_special',
   categoria: 'MLB1234', sku: null, gtin: null, unidades: null, formato_kit: false, catalogo: false, relacionados: [],
-  variacoes: [{ variation_id: n, cor: 'A', sku: a.sku ?? `SKU-${a.mlb}`, gtin: null }],
+  variacoes: a.cores == null
+    ? [{ variation_id: n, cor: 'A', sku: a.sku ?? `SKU-${a.mlb}`, gtin: null }]
+    : Array.from({ length: a.cores }, (_, j) => ({ variation_id: n * 100 + j, cor: `C${j}`, sku: null, gtin: null })),
 });
 
 /** Deps falsas já "fechadas" na organização ORG. `semItem`/`semPreco` simulam MLB que o ML não devolveu. */
@@ -119,10 +121,11 @@ describe('margemDoAlvo', () => {
     expect(r.referencia).toEqual({ margem_pct: null, roas_minimo: null, mlb: null, motivo: 'anuncio_sem_numero' });
   });
 
-  it('referência = menor margem quando todos têm número', async () => {
+  it('referência = menor margem quando todos têm número (pior no meio)', async () => {
     const r = await margemDoAlvo('SKU-X', deps([
       { mlb: 'MLB1', custo: 14, preco: 50, sku: 'SKU-X' },
       { mlb: 'MLB2', custo: 79, preco: 100, sku: 'SKU-X' },
+      { mlb: 'MLB3', custo: 10, preco: 50, sku: 'SKU-X' },
     ]));
     if (r.estado !== 'ok') throw new Error(r.estado);
     expect(r.referencia).toEqual({ margem_pct: -5, roas_minimo: null, mlb: 'MLB2', motivo: 'sem_espaco_para_ads' });
@@ -189,7 +192,7 @@ describe('simularMargem', () => {
     const r = await simularMargem('MLB1', 49.999, d);
     if (r.estado !== 'ok') throw new Error(r.estado);
     expect(r.anuncios[0]).toMatchObject({ preco_brl: 50, margem_pct: 40 });
-    expect(d.tarifaEm.mock.calls.every(([q]) => (q as { preco: number }).preco === 50)).toBe(true);
+    expect(vi.mocked(d.tarifaEm).mock.calls.every(([q]) => (q as { preco: number }).preco === 50)).toBe(true);
   });
 
   it('preço informado vale para todos os anúncios do alvo; preço atual vem junto', async () => {
@@ -200,7 +203,7 @@ describe('simularMargem', () => {
     const r = await simularMargem('SKU-X', 1000000, d);
     if (r.estado !== 'ok') throw new Error(r.estado);
     expect(r.anuncios.map((a) => [a.preco_brl, a.preco_atual_brl])).toEqual([[1000000, 50], [1000000, 45]]);
-    expect(d.tarifaEm.mock.calls.every(([q]) => (q as { preco: number }).preco === 1000000)).toBe(true);
+    expect(vi.mocked(d.tarifaEm).mock.calls.every(([q]) => (q as { preco: number }).preco === 1000000)).toBe(true);
     const r2 = await simularMargem('MLB1', 50, deps([{ mlb: 'MLB1', custo: 14, preco: 80 }]));
     if (r2.estado !== 'ok') throw new Error(r2.estado);
     expect(r2.anuncios[0]).toMatchObject({ preco_brl: 50, preco_atual_brl: 80, margem_pct: 40, roas_minimo: 2.5 });
@@ -285,5 +288,123 @@ describe('saída sem dado sensível', () => {
       expect(s.estado).toBe('ok');
       for (const k of chaves(s)) expect(proibidas.some((p) => k.toLowerCase().includes(p)), k).toBe(false);
     }
+  });
+});
+
+describe('insumo ausente nunca vira margem', () => {
+  const um = [{ mlb: 'MLB1', custo: 14, preco: 50 }];
+  it.each([
+    ['comissão null', { comissao: null, frete: 0 }],
+    ['comissão sem percentual', { comissao: { fixa: 6 }, frete: 0 }],
+    ['frete NaN', { comissao: { percentual: 12, fixa: 6 }, frete: NaN }],
+    ['frete ausente', { comissao: { percentual: 12, fixa: 6 } }],
+    ['percentual negativo', { comissao: { percentual: -1, fixa: 6 }, frete: 0 }],
+  ])('tarifa com %s → erro_tarifa, sem margem', async (_, t) => {
+    const r = await margemDoAlvo('MLB1', deps(um, { tarifaEm: vi.fn(async () => t as unknown as Tarifa) }));
+    if (r.estado !== 'ok') throw new Error(r.estado);
+    expect(r.anuncios[0]).toMatchObject({ margem_pct: null, comissao_brl: null, motivo: 'erro_tarifa' });
+    expect(r.referencia.margem_pct).toBeNull();
+  });
+
+  it.each([
+    ['sem importado', { nacional: 8 }],
+    ['com NaN', { nacional: NaN, importado: 16 }],
+    ['negativa', { nacional: -8, importado: 16 }],
+    ['não-objeto', 8],
+  ])('alíquota %s → sem_aliquota', async (_, a) => {
+    const d = deps(um, { lerAliquotas: vi.fn(async () => a as unknown as { nacional: number; importado: number }) });
+    expect(await margemDoAlvo('MLB1', d)).toEqual({ estado: 'sem_aliquota' });
+    expect(d.tarifaEm).not.toHaveBeenCalled();
+  });
+
+  it('zeros explícitos calculam normalmente', async () => {
+    const r = await margemDoAlvo('MLB1', deps(um, {
+      tarifaEm: vi.fn(async () => ({ comissao: { percentual: 0, fixa: 0 }, frete: 0 })),
+      lerAliquotas: vi.fn(async () => ({ nacional: 0, importado: 0 })),
+    }));
+    if (r.estado !== 'ok') throw new Error(r.estado);
+    expect(r.anuncios[0]).toMatchObject({ margem_pct: 72, comissao_brl: 0, frete_brl: 0, imposto_brl: 0, motivo: null });
+  });
+
+  it('resultado não finito → erro_calculo, sem número e sem referência', async () => {
+    const r = await margemDoAlvo('MLB1', deps(um, {
+      tarifaEm: vi.fn(async () => ({ comissao: { percentual: 1e308, fixa: 0 }, frete: 0 })),
+    }));
+    if (r.estado !== 'ok') throw new Error(r.estado);
+    expect(r.anuncios[0]).toMatchObject({
+      margem_pct: null, roas_minimo: null, custo_brl: null, comissao_brl: null, liquido_brl: null, motivo: 'erro_calculo',
+    });
+    expect(r.referencia).toEqual({ margem_pct: null, roas_minimo: null, mlb: null, motivo: 'anuncio_sem_numero' });
+  });
+});
+
+describe('LimiteTarifa interrompe a fila', () => {
+  it('6 anúncios, 2ª tarifa lança: nenhuma consulta nova depois da falha', async () => {
+    const seis = Array.from({ length: 6 }, (_, i) => ({ mlb: `MLB${i + 1}`, custo: 14, preco: 50, sku: 'SKU-X' }));
+    let chamadas = 0;
+    let noMomento = -1;
+    const tarifaEm = vi.fn(async () => {
+      const n = ++chamadas;
+      await new Promise((r) => setTimeout(r, 5));
+      if (n === 2) { noMomento = chamadas; throw new LimiteTarifa(); }
+      return TARIFA;
+    });
+    expect(await margemDoAlvo('SKU-X', deps(seis, { tarifaEm }))).toEqual({ estado: 'limite_tarifas' });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(noMomento).toBeGreaterThan(0);
+    expect(tarifaEm).toHaveBeenCalledTimes(noMomento);
+    expect(noMomento).toBeLessThan(6);
+  });
+});
+
+describe('simulação sem leitura de preço atual', () => {
+  it('linha de preço ausente → calcula com o simulado; atual/tabela/promoção null', async () => {
+    const r = await simularMargem('MLB1', 50, deps([{ mlb: 'MLB1', custo: 14, preco: 80 }], { semPreco: ['MLB1'] }));
+    if (r.estado !== 'ok') throw new Error(r.estado);
+    expect(r.anuncios[0]).toMatchObject({
+      preco_brl: 50, preco_atual_brl: null, preco_tabela_brl: null, em_promocao: null, margem_pct: 40, motivo: null,
+    });
+  });
+
+  it('linha com preço null → calcula com o simulado; atual e promoção null', async () => {
+    const r = await simularMargem('MLB1', 50, deps([{ mlb: 'MLB1', custo: 14, preco: null, precoTabela: 70 }]));
+    if (r.estado !== 'ok') throw new Error(r.estado);
+    expect(r.anuncios[0]).toMatchObject({ preco_brl: 50, preco_atual_brl: null, em_promocao: null, margem_pct: 40 });
+  });
+
+  it('item ausente → anuncio_indisponivel mesmo na simulação', async () => {
+    const r = await simularMargem('MLB1', 50, deps([{ mlb: 'MLB1', custo: 14, preco: 80 }], { semItem: ['MLB1'] }));
+    if (r.estado !== 'ok') throw new Error(r.estado);
+    expect(r.anuncios[0]).toMatchObject({ margem_pct: null, motivo: 'anuncio_indisponivel' });
+  });
+});
+
+describe('reserva de tarifas', () => {
+  it('2 × cores (mín. 1) só dos anúncios que consultam tarifa', async () => {
+    const d = deps([
+      { mlb: 'MLB1', custo: 14, preco: 50, sku: 'SKU-X', cores: 3 },
+      { mlb: 'MLB2', custo: 14, preco: 50, sku: 'SKU-X', cores: 0 },
+      { mlb: 'MLB3', custo: 14, preco: null, sku: 'SKU-X' },
+      { mlb: 'MLB4', custo: 14, preco: 0, sku: 'SKU-X' },
+      { mlb: 'MLB5', custo: 14, preco: 50, sku: 'SKU-X' },
+    ], { semItem: ['MLB5'] });
+    await margemDoAlvo('SKU-X', d);
+    expect(d.reservarTarifas).toHaveBeenCalledWith(8);
+  });
+
+  it('nada a consultar → reservarTarifas não é chamado', async () => {
+    const d = deps([{ mlb: 'MLB1', custo: 14, preco: null }]);
+    const r = await margemDoAlvo('MLB1', d);
+    expect(r.estado).toBe('ok');
+    expect(d.reservarTarifas).not.toHaveBeenCalled();
+  });
+});
+
+describe('cursor ausente', () => {
+  it('undefined = primeira página; string vazia continua inválida', async () => {
+    const d = deps([{ mlb: 'MLB1', custo: 14, preco: 50 }]);
+    expect(await margensDoCatalogo(undefined, d)).toMatchObject({ estado: 'ok', anuncios: [{ mlb: 'MLB1' }] });
+    expect(d.listarMlbs).toHaveBeenCalledWith(null, 51);
+    expect(await margensDoCatalogo('', d)).toEqual({ estado: 'cursor_invalido' });
   });
 });

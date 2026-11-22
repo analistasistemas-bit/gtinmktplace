@@ -9,7 +9,7 @@ const v = (o: Partial<LinhaVariacao> & { id: string }): LinhaVariacao => ({
   familias: { ml_item_id: 'MLB1', origem: 'nacional' }, ...o,
 });
 const duas: ItemML = {
-  id: 'MLB1', titulo: null, thumbnail: null, permalink: null, listing_type_id: 'gold_special', categoria: 'MLB1234',
+  id: 'MLB1', titulo: null, thumbnail: null, permalink: null, criado_em: null, listing_type_id: 'gold_special', categoria: 'MLB1234',
   sku: null, gtin: null, unidades: null, formato_kit: false, catalogo: false, relacionados: [],
   variacoes: [{ variation_id: 1, cor: 'A', sku: 'SKU-A', gtin: null }, { variation_id: 2, cor: 'B', sku: 'SKU-B', gtin: null }],
 };

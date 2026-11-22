@@ -94,9 +94,26 @@ describe('resolverAlvo', () => {
     expect(await resolverAlvo('camiseta', deps())).toEqual({ tipo: 'nao_encontrado' });
   });
 
-  it('vazio, só espaços, > 200 caracteres ou não-string → nao_encontrado sem deps', async () => {
+  it('MLB/MLBU sem diferenciar maiúsculas; deps recebem maiúsculas', async () => {
+    expect(classificarIdentificador('mlb123')).toBe('mlb');
+    expect(classificarIdentificador('Mlbu9')).toBe('mlbu');
+    const d = deps([vin('MLB123', { mlbu: 'MLBU9' })]);
+    expect(await resolverAlvo('mlb123', d)).toEqual({ tipo: 'anuncios', mlbs: ['MLB123'], familia_ml: null });
+    expect(d.vinculos).toHaveBeenLastCalledWith({ mlb: 'MLB123' });
+    expect(await resolverAlvo('mlbu9', d)).toEqual({ tipo: 'anuncios', mlbs: ['MLB123'], familia_ml: null });
+    expect(d.vinculos).toHaveBeenLastCalledWith({ mlbu: 'MLBU9' });
+  });
+
+  it('candidatos projetados: campo extra da dep não sai', async () => {
+    const extra = [{ codigo_pai: 'P', titulo: 'Camiseta', mlbs: ['MLB1'], custo_centavos: 1 }];
+    const r = await resolverAlvo('camiseta', deps([], extra));
+    expect(r).toEqual({ tipo: 'candidatos', candidatos: [{ codigo_pai: 'P', titulo: 'Camiseta', mlbs: ['MLB1'] }] });
+  });
+
+  it('vazio, só espaços, > 200 caracteres, bruto > 400, caractere de controle ou não-string → nao_encontrado sem deps', async () => {
     const d = deps([vin('MLB1')]);
-    for (const s of ['', '   ', 'a'.repeat(201), 123 as unknown as string]) {
+    for (const s of ['', '   ', 'a'.repeat(201), ' '.repeat(400) + 'MLB1', 'MLB1\n', 'MLB\u00001', 'MLB1\u007f',
+      123 as unknown as string]) {
       expect(await resolverAlvo(s, d)).toEqual({ tipo: 'nao_encontrado' });
     }
     expect(d.vinculos).not.toHaveBeenCalled();

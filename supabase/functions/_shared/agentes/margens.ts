@@ -49,24 +49,51 @@ const MLB_RE = /^MLB\d+$/;
 const r2 = (x: number) => Math.round(x * 100) / 100;
 const roas = (m: number | null) => (m != null && m > 0 ? 100 / m : null);
 const espaco = (m: number | null) => (m != null && m <= 0 ? 'sem_espaco_para_ads' : null);
+// Insumo ausente nunca vira zero: o cálculo compartilhado trata comissão nula como 0 e inflaria a margem.
+const naoNeg = (x: unknown) => typeof x === 'number' && Number.isFinite(x) && x >= 0;
+const obj = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null;
+const aliquotasValidas = (a: unknown): a is Aliquotas => obj(a) && naoNeg(a.nacional) && naoNeg(a.importado);
+const tarifaValida = (t: unknown): t is Tarifa =>
+  obj(t) && obj(t.comissao) && naoNeg(t.comissao.percentual) && naoNeg(t.comissao.fixa) && naoNeg(t.frete);
 
 /**
  * Margem de cada MLB, na ordem pedida. `precoSimulado` substitui o preço lido em todos. Reserva o orçamento de
- * tarifas uma vez, antes de calcular (2 consultas por cor). MLB sem item ou sem preço lido → `anuncio_indisponivel`.
+ * tarifas uma vez, antes de calcular (2 consultas por cor). Sem item → `anuncio_indisponivel`; fora da simulação,
+ * também sem a leitura de preço. A primeira `LimiteTarifa` para a fila: nada novo consulta tarifa depois dela.
  */
 async function calcular(mlbs: string[], d: DepsMargens, precoSimulado: number | null): Promise<MargemSimulada[] | Falha> {
   const aliq = await d.lerAliquotas();
-  if (!aliq) return { estado: 'sem_aliquota' };
+  if (!aliquotasValidas(aliq)) return { estado: 'sem_aliquota' };
   const [itens, precos] = await Promise.all([d.buscarItensML(mlbs), d.lerPrecos(mlbs)]);
-  const n = mlbs.reduce((s, m) => { const it = itens.get(m); return it ? s + 2 * Math.max(1, it.variacoes.length) : s; }, 0);
+  // 2 consultas por cor é teto real porque a edge desliga as retentativas de comissão (Tarefa 6).
+  const n = mlbs.reduce((s, m) => {
+    const it = itens.get(m);
+    const usaTarifa = it && (precoSimulado != null || (precos.get(m)?.preco ?? 0) > 0);
+    return usaTarifa ? s + 2 * Math.max(1, it.variacoes.length) : s;
+  }, 0);
   if (n > 0) {
     const res = await d.reservarTarifas(n);
     if (res === 'limite') return { estado: 'limite_tarifas' };
     if (res !== 'ok') return { estado: 'indisponivel' };
   }
   const cad = await d.carregarCadastro();
+  let parou = false;
+  const tarifa = async (q: QueryTarifa): Promise<Tarifa> => {
+    if (parou) throw new LimiteTarifa();
+    let t: unknown;
+    try {
+      t = await d.tarifaEm(q);
+    } catch (e) {
+      if (e instanceof LimiteTarifa) parou = true;
+      throw e;
+    }
+    // Erro comum: `detalheEquilibrioDoMlb` o converte em `erro_tarifa`.
+    if (!tarifaValida(t)) throw new Error('tarifa_invalida');
+    return t;
+  };
   try {
     return await emParalelo(mlbs, 4, async (mlb): Promise<MargemSimulada> => {
+      if (parou) throw new LimiteTarifa();
       const ml = itens.get(mlb) ?? null;
       const agora = precos.get(mlb) ?? null;
       const atual = agora?.preco ?? null;
@@ -79,10 +106,12 @@ async function calcular(mlbs: string[], d: DepsMargens, precoSimulado: number | 
         custo_brl: null, comissao_brl: null, frete_brl: null, imposto_brl: null, liquido_brl: null,
         margem_pct: null, roas_minimo: null, motivo: null, preco_atual_brl: atual == null ? null : r2(atual),
       };
-      if (!ml || !agora) return { ...base, motivo: 'anuncio_indisponivel' };
-      const det = await detalheEquilibrioDoMlb(ml, preco, cad, aliq, d.tarifaEm);
+      if (!ml || (precoSimulado == null && !agora)) return { ...base, motivo: 'anuncio_indisponivel' };
+      const det = await detalheEquilibrioDoMlb(ml, preco, cad, aliq, tarifa);
       const p = det.pior;
       if (det.motivo || !p || det.acosPct == null) return { ...base, motivo: det.motivo ?? 'sem_preco' };
+      const finitos = [det.acosPct, p.custo, p.comissao, p.frete, p.imposto, p.liquido].every(Number.isFinite);
+      if (!finitos) return { ...base, motivo: 'erro_calculo' };
       // Cada componente `_brl` é arredondado à parte (soma pode diferir 1–2 centavos); `margem_pct` vem do cálculo cru.
       return {
         ...base, sku: p.sku, custo_brl: r2(p.custo), comissao_brl: r2(p.comissao), frete_brl: r2(p.frete),
@@ -152,9 +181,9 @@ function lerCursor(c: string, orgId: string): string | null {
 }
 
 /** 50 MLBs por página, em ordem crescente de MLB. `parcial`: algum anúncio sem número por falha de leitura. */
-export async function margensDoCatalogo(cursor: string | null, d: DepsMargens): Promise<RespostaCatalogo> {
+export async function margensDoCatalogo(cursor: string | null | undefined, d: DepsMargens): Promise<RespostaCatalogo> {
   let depois: string | null = null;
-  if (cursor !== null) {
+  if (cursor != null) {
     depois = typeof cursor === 'string' ? lerCursor(cursor, d.orgId) : null;
     if (depois == null) return { estado: 'cursor_invalido' };
   }
