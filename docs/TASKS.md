@@ -3,8 +3,10 @@
 ## Acesso de agentes — fatia 1 (ADR-0210) — 2026-11-22
 
 - [x] Código pronto e revisado na branch `worktree-api-agentes`: servidor MCP `agentes`, edge `agente-conexoes`, tela em Configurações, migration `20261122203018_agente_conexoes.sql`, docs (`docs/reference/acesso-de-agentes.md`).
-- [ ] Aplicar a migration, fazer o merge e o deploy das edges `agentes` e `agente-conexoes`.
-- [ ] Aceite: mesmo número da aba Campanhas, consulta pela família, teste real em cada cliente (tabela do guia) e as pendências da ADR.
+- [x] Migration aplicada, merge na `main` (`12d00860`) e deploy em 22/11: `agentes` v1 (pública), `agente-conexoes` v1, `usuarios` v63, `ads-campanhas` v33, `process-familia` v239, `sincronizar-promocoes` v52.
+- [x] Aceite por chamadas reais na Zaven (22/11, chave temporária já revogada): família do ML com 16 anúncios, MLB, MLBU, SKU, título (candidatos), catálogo paginado, simulação, anúncio de outra organização → não encontrado, revogação → 401, auditoria completa. Números conferidos contra custo e alíquota do cadastro.
+- [ ] Diego: gerar a primeira chave pela tela (Configurações › Conexões de agentes) e testar em cada cliente (tabela do guia).
+- [ ] Antes de abrir a outras lojas: pendências da ADR-0210 (vendedor do anúncio, cabeçalho de IP, assinatura na chave).
 
 ## Central de Promoções: descoberta pela visão por anúncio (emenda 22/11 ao ADR-0170) — 2026-11-22
 

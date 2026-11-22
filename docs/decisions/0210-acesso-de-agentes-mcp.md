@@ -1,6 +1,6 @@
 # ADR-0210 — Acesso de agentes: servidor MCP, conexão por organização, leitura de margens, em três fatias
 
-**Status:** Aceito, a implementar (aprovado pelo Diego em 2026-11-22, após entrevista grill-with-docs e revisão de Codex gpt-6.2-sol high e Grok 4.7 xhigh). Plano da fatia 1: `docs/superpowers/plans/2026-11-22-acesso-de-agentes-fatia-1.md`
+**Status:** Aceito — fatia 1 em produção, em piloto na Zaven (main `12d00860`, deploy e aceite em 2026-11-22); fatias 2 e 3 a implementar (aprovado pelo Diego em 2026-11-22, após entrevista grill-with-docs e revisão de Codex gpt-6.2-sol high e Grok 4.7 xhigh). Plano da fatia 1: `docs/superpowers/plans/2026-11-22-acesso-de-agentes-fatia-1.md`
 **Data:** 2026-11-22
 **Decisores:** Diego
 **Relaciona:** [0027](0027-multi-tenancy-organizations.md) (organização), [0092](0092-identidade-da-plataforma-e-acesso-super-admin.md) (acesso da plataforma a dados de cliente), [0179](0179-painel-de-ads.md) (ACOS de equilíbrio pelo preço, emenda de 2026-10-20), [0170](0170-central-de-promocoes-ml.md) (projeção do líquido), [0055](0055-imposto-por-origem-nacional-importado.md) e [0208](0208-aliquota-com-vigencia.md) (imposto), [0189](0189-extensao-publiai-navegador.md) (precedente de cliente fora do app).
@@ -118,3 +118,17 @@ Código pronto e revisado na branch `worktree-api-agentes`; aguarda aplicação 
 - Não há bloqueio por IP antes da consulta da chave. Sugestão registrada: assinatura embutida na chave antes de abrir a mais lojas.
 - Sem revalidação da conexão depois da leitura do corpo (janela de até 10 s).
 - O limite de 10 conexões ativas não é atômico (contar e inserir são passos separados).
+
+## Aceite da fatia 1 (2026-11-22)
+
+Chamadas reais ao servidor em produção, com uma conexão temporária da Zaven (revogada ao fim):
+
+- Família do ML `8632963637759506`: 16 anúncios, todos com número; referência pela pior margem.
+- O mesmo anúncio encontrado por MLB (inclusive em minúsculas), por MLBU e por SKU; trecho de título devolve candidatos.
+- Margem conferida contra o cadastro: custo da variação, alíquota confirmada da organização, comissão e frete lidos do Mercado Livre; a soma dos componentes fecha no preço.
+- Catálogo em páginas de 50 com cursor; cursor inválido recusado; simulação com outro preço; preço inválido recusado sem consulta.
+- Anúncio publicado de outra organização: "não encontrado", igual a um anúncio inexistente.
+- Conexão revogada: 401 na chamada seguinte. Sem chave: 401. GET: 405.
+- Auditoria: uma linha por chamada de ferramenta, com alvo canônico (`texto_livre` para a busca por título).
+
+Não coberto neste aceite: comparação lado a lado com a aba Campanhas na tela (a conta é a mesma função, coberta por teste de paridade); leitura de anúncio de outro vendedor por `/items/bulk`; qual cabeçalho de IP chega à edge; criação de chave pela tela; conexão em cada cliente.
