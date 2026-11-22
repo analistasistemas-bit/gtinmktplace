@@ -323,8 +323,12 @@ Programa autônomo (Claude, Cursor, automação) que opera o PubliAI em nome de 
 _Evitar_: usuário, integração.
 
 **Chave de agente**:
-Credencial que pertence a uma única organização, gerada e revogada por administrador dela, com escopo de leitura ou de escrita. Toda ação do agente é registrada com o nome da chave.
+Credencial que pertence a uma única organização, gerada e revogada por administrador dela, com escopo de leitura ou de escrita. Toda ação do agente é registrada com o nome da chave. Existe em dois tipos: a **chave da organização** (enxerga só aquela organização) e a **chave de plataforma**.
 _Evitar_: token (já designa o acesso ao Mercado Livre), chave de API.
+
+**Chave de plataforma**:
+Chave de agente da administração da plataforma, somente leitura, que enxerga todas as organizações; cada consulta informa a organização e é registrada na auditoria. Nunca é entregue a cliente.
+_Evitar_: chave mestra.
 
 **Pedido de publicação**:
 Solicitação feita por um agente para publicar ou atualizar um anúncio no marketplace. Nunca chega ao canal sozinho: espera aprovação de um humano na fila de revisão do app.
