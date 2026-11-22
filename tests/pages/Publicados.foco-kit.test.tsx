@@ -1,7 +1,7 @@
 // ADR-0200 (adendo 08/11): depois de criar/montar/desmontar, Publicados leva à linha da base, expande e destaca o
 // bloco "Kits com variação", que mostra o andamento da transferência.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, act, waitFor } from '@testing-library/react';
+import { render, screen, act, waitFor, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useFocoKitStore } from '@/stores/foco-kit-store';
@@ -431,5 +431,19 @@ describe('Publicados — foco e andamento do kit com variação', () => {
     lista(true);
     renderPagina('/publicados?kit=K1');
     await waitFor(() => expect(screen.getByTestId('gerenciar-kit')).toHaveTextContent('K1'));
+  });
+
+  it('kit encerrado fica escondido atrás de "Ver encerrados"', async () => {
+    lista(true);
+    useKitsVariacaoMock.mockReturnValue({ data: [kit({ id: 'K0', codigoPaiKit: '00000308', status: 'encerrado' }), kit()] });
+    renderPagina();
+    act(() => useFocoKitStore.getState().focar(BASE, 'K1'));
+    const b = await bloco();
+    expect(b).toHaveTextContent('00000223');
+    expect(b).not.toHaveTextContent('00000308');
+    fireEvent.click(screen.getByRole('button', { name: 'Ver encerrados (1)' }));
+    expect(b).toHaveTextContent('00000308 · Encerrado');
+    fireEvent.click(screen.getByRole('button', { name: 'Ocultar encerrados' }));
+    expect(b).not.toHaveTextContent('00000308');
   });
 });

@@ -312,7 +312,11 @@ function KitsComVariacao({ kits, onGerenciar, foco }: {
     const id = setTimeout(() => setDestaque(false), 2500);
     return () => clearTimeout(id);
   }, [destaque]);
+  // Kit encerrado é só histórico: fica recolhido até o operador pedir.
+  const [verEncerrados, setVerEncerrados] = useState(false);
   if (!temKits) return null;
+  const encerrados = kits.filter((k) => k.status === 'encerrado').length;
+  const visiveis = verEncerrados ? kits : kits.filter((k) => k.status !== 'encerrado');
   return (
     <div
       ref={ref}
@@ -325,7 +329,7 @@ function KitsComVariacao({ kits, onGerenciar, foco }: {
     >
       <span className="font-medium">Kits com variação:</span>
       <ul className="grid gap-2">
-        {kits.map((k) => {
+        {visiveis.map((k) => {
           const t = k.transferencia ?? null;
           return (
             <li key={k.id}>
@@ -358,6 +362,16 @@ function KitsComVariacao({ kits, onGerenciar, foco }: {
           );
         })}
       </ul>
+      {encerrados > 0 && (
+        <button
+          type="button"
+          onClick={() => setVerEncerrados((v) => !v)}
+          aria-expanded={verEncerrados}
+          className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+        >
+          {verEncerrados ? 'Ocultar encerrados' : `Ver encerrados (${encerrados})`}
+        </button>
+      )}
     </div>
   );
 }
