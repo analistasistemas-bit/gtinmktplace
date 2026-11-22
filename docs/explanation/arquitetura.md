@@ -336,6 +336,20 @@ erros de leitura; RLS por org) e API do ML. O token ML da org fica só no servid
 a leitura da página do anúncio (um GET de HTML) é feita no navegador pelo service worker e nada
 dela é gravado. Módulo ligado só na org DSA.
 
+### Acesso de agentes por MCP (ADR-0210)
+
+Primeira superfície do PubliAI para um cliente que não é o app nem a extensão: agentes de IA
+(Claude, ChatGPT, Grok e afins) leem margens de uma organização. Fluxo: agente → edge pública
+`agentes` (`verify_jwt=false`, servidor MCP sem estado sobre JSON-RPC) → autenticação pela chave
+de agente (hash SHA-256 em `agente_conexoes`; a organização vem só dessa linha) → serviço de
+margens em `_shared/agentes/`, que reusa `detalheEquilibrioDoMlb` (o mesmo cálculo da aba
+Campanhas) → banco e API do Mercado Livre, só leitura. A edge roda com service role, então a RLS
+não protege este caminho: todo filtro de organização fica em `_shared/agentes/deps-banco.ts`.
+Limites atômicos no Redis (chamadas por conexão, falhas por IP, tarifas e leituras por dia) fecham
+o acesso quando o Redis falha, e cada chamada de ferramenta grava uma linha em `agente_chamadas`.
+As conexões são criadas e revogadas pela edge `agente-conexoes` (`verify_jwt`, admin da
+organização, módulo `agentes`). Guia em [reference/acesso-de-agentes.md](../reference/acesso-de-agentes.md).
+
 ### Calculadora Mercado Livre (ADR-0126)
 
 A segunda modalidade de `/viabilidade` simula Clássico e Premium sem persistir dados nem alterar
