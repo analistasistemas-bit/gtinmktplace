@@ -20,6 +20,9 @@ Ver [[Financeiro]], [[Estoque]], [[Notificações]], [[Índice de ADRs]].
   com um anexo opcional (JPG/PNG/PDF até 5 MB) e liberação manual quando o estado é incerto; anexos
   recebidos e enviados aparecem no balão (emenda 07/11 aos ADR-0067 e ADR-0192). Abrir a conversa
   marca a leitura também no ML.
+  Pedido cancelado não encerra a conversa por si: quem encerra é o ML (`conversation_status`, gravado
+  em `ml_mensagens.conversa_status`). Cancelado com conversa `active` conta, aparece em Aguardando e
+  aceita resposta; `blocked` ou ainda não relida fica fora (emenda 23/11 ao ADR-0067).
   O webhook antigo de `messages`/`claims` nunca entregou nada — corrigido na emenda de 28/10 ao
   ADR-0067 (`messages` chega com id da mensagem; reclamação chega como `post_purchase`).
   Ver `docs/decisions/0192-posvenda-ml-acoes.md`.

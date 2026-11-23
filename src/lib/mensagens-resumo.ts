@@ -1,7 +1,7 @@
 // Cards de resumo da aba Mensagens (pós-venda ML). Funções puras. Os números exibidos vêm da RPC
 // `resumo_mensagens_posvenda` (todas as mensagens); `resumirConversas`/`baldeDaConversa` espelham a
-// mesma regra sobre o array limitado, para o filtro local e os testes. Cancelados ficam fora.
-import type { Conversa } from './mensagens';
+// mesma regra sobre o array limitado, para o filtro local e os testes. Conversas encerradas ficam fora.
+import { conversaEncerrada, type Conversa } from './mensagens';
 
 export type Balde = 'aPreparar' | 'aCaminho' | 'entregues' | 'semResponder' | 'respondidas';
 
@@ -12,9 +12,9 @@ export interface ResumoMensagens {
 
 const A_PREPARAR = ['pending', 'handling', 'ready_to_ship'];
 
-/** Em qual card a conversa cai (ou null: cancelada, ou lida/dispensada sem estar em nenhum). */
+/** Em qual card a conversa cai (ou null: encerrada, ou lida/dispensada sem estar em nenhum). */
 export function baldeDaConversa(c: Conversa): Balde | null {
-  if (c.order_status === 'cancelled') return null;
+  if (conversaEncerrada(c)) return null;
   if (c.idsNaoLidosML.length > 0) {
     if (c.shipping_status && A_PREPARAR.includes(c.shipping_status)) return 'aPreparar';
     if (c.shipping_status === 'shipped') return 'aCaminho';
@@ -33,7 +33,7 @@ export function resumirConversas(conversas: Conversa[]): ResumoMensagens {
     lidas: { semResponder: 0, respondidas: 0 },
   };
   for (const c of conversas) {
-    if (c.order_status === 'cancelled') continue;
+    if (conversaEncerrada(c)) continue;
     if (c.idsNaoLidosML.length > 0) r.naoLidas.total++;
     const b = baldeDaConversa(c);
     if (b === 'aPreparar' || b === 'aCaminho' || b === 'entregues') r.naoLidas[b]++;

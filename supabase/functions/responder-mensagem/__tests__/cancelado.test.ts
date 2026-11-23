@@ -13,6 +13,7 @@ const fronteiras = vi.hoisted(() => ({
   upsert: vi.fn(),
   auditar: vi.fn().mockResolvedValue(undefined),
   marcarCancelada: vi.fn().mockResolvedValue(undefined),
+  statusLocal: vi.fn(),
 }));
 
 vi.mock('../../_shared/cors.ts', () => ({ corsHeaders: {}, handleOptions: () => new Response() }));
@@ -50,6 +51,7 @@ vi.mock('../../_shared/faturamento/mensagens-io.ts', () => ({
   resolverCompradorId: fronteiras.comprador,
   upsertMensagens: fronteiras.upsert,
   marcarConversaCancelada: (...args: unknown[]) => fronteiras.marcarCancelada(...args),
+  statusConversaLocal: (...args: unknown[]) => fronteiras.statusLocal(...args),
   ERRO_PEDIDO_CANCELADO: 'Não é possível responder porque o pedido foi cancelado.',
   CODIGO_PEDIDO_CANCELADO: 'pedido_cancelado',
   ERRO_EM_MEDIACAO: 'Reclamação em mediação.',
@@ -80,6 +82,8 @@ beforeEach(() => {
   fronteiras.token.mockResolvedValue('token-ml');
   fronteiras.comprador.mockResolvedValue('buyer-1');
   fronteiras.buscarPack.mockResolvedValue([]);
+  fronteiras.statusLocal.mockReset();
+  fronteiras.statusLocal.mockResolvedValue(null);
 });
 
 describe('responder-mensagem — pedido cancelado', () => {
@@ -98,6 +102,38 @@ describe('responder-mensagem — pedido cancelado', () => {
     expect(fronteiras.token).not.toHaveBeenCalled();
     expect(fronteiras.comprador).not.toHaveBeenCalled();
     expect(fronteiras.enviar).not.toHaveBeenCalled();
+  });
+
+  // Emenda ADR-0067 (23/11): quem encerra a conversa é o ML (conversation_status), não o pedido.
+  it('cancelado + conversa blocked no banco → 409 antes do fluxo', async () => {
+    fronteiras.meta.mockResolvedValue({ orderStatus: 'cancelled' });
+    fronteiras.statusLocal.mockResolvedValue('blocked');
+
+    const response = await chamar({ pack_id: '123', text: 'Olá' });
+
+    expect(response.status).toBe(409);
+    expect(fronteiras.statusLocal).toHaveBeenCalledWith(expect.anything(), 'org-1', '123');
+    expect(fronteiras.marcarCancelada).toHaveBeenCalled();
+    expect(fronteiras.enviar).not.toHaveBeenCalled();
+  });
+
+  it('cancelado + conversa active no banco → segue para o envio normal, sem marcar cancelada', async () => {
+    fronteiras.meta.mockResolvedValue({ orderStatus: 'cancelled' });
+    fronteiras.statusLocal.mockResolvedValue('active');
+    fronteiras.enviar.mockResolvedValue(sucesso('confirmada'));
+
+    const response = await chamar({ pack_id: '123', text: 'Olá', operacao_id: OP });
+
+    expect(response.status).toBe(200);
+    expect(fronteiras.enviar).toHaveBeenCalled();
+    expect(fronteiras.marcarCancelada).not.toHaveBeenCalled();
+  });
+
+  it('não cancelado não consulta o estado da conversa', async () => {
+    fronteiras.enviar.mockResolvedValue(sucesso('confirmada'));
+    await chamar({ pack_id: '123', text: 'Olá', operacao_id: OP });
+    expect(fronteiras.statusLocal).not.toHaveBeenCalled();
+    expect(fronteiras.enviar).toHaveBeenCalled();
   });
 
   it('quando envio falha com ERRO_PEDIDO_CANCELADO (403 ML), persiste cancelamento e responde 409 estruturado', async () => {

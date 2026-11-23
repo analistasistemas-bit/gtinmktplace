@@ -1818,9 +1818,11 @@ Lógica em `supabase/functions/_shared/galeria/`. Nenhuma edge desta família es
   Anúncio pausado/finalizado: o ML recusa com 400 `not_active_item` → 409 `codigo: 'anuncio_inativo'`
   com a orientação de reativar; a aba Perguntas já avisa pelo `ml_trafego_item.status` (02/11/2026).
 - **responder-mensagem** — envia mensagem pós-venda ao comprador (≤350 chars, limite do ML),
-  re-busca o pack e marca as recebidas como lidas. Se o pedido for cancelado (detectado localmente ou
-  rejeitado pelo ML com 403 `blocked_by_cancelled_order`), persiste `order_status = 'cancelled'` em
-  `ml_mensagens` (e `ml_vendas`) e responde HTTP 409 estruturado (`codigo: 'pedido_cancelado'`). Reusa
+  re-busca o pack e marca as recebidas como lidas. Se o pedido for cancelado e a conversa não estiver
+  `active` no banco (`conversa_status` da mensagem mais recente do pack; emenda ADR-0067 de 23/11), ou se
+  o ML rejeitar com 403 `blocked_by_cancelled_order`, persiste `order_status = 'cancelled'` e
+  `conversa_status = 'blocked'` em `ml_mensagens` (e `ml_vendas`) e responde HTTP 409 estruturado
+  (`codigo: 'pedido_cancelado'`). Pedido cancelado com conversa `active` segue o envio normal. Reusa
   `sugerir-resposta-pergunta` para a sugestão de IA (ADR-0067). `pack_id` validado (`/^\d+$/`) antes de
   entrar na query `.or()` de `resolverMetaPack` (plan 037). Se o ML rejeitar com 403
   `blocked_by_claim` ou `blocked_by_mediation` (reclamação aberta bloqueia o chat pós-venda), devolve

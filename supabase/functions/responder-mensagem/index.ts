@@ -14,6 +14,7 @@ import {
   resolverMetaPack,
   resolverCompradorId,
   marcarConversaCancelada,
+  statusConversaLocal,
   ERRO_PEDIDO_CANCELADO,
   CODIGO_PEDIDO_CANCELADO,
   ERRO_EM_MEDIACAO,
@@ -68,7 +69,8 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
   const dono = (cxRow?.criado_por as string | null) ?? null; // mesma chave user_id do sync/backfill.
 
   const meta = await resolverMetaPack(admin, dono ?? context.userId, packId);
-  if (pedidoCancelado(meta.orderStatus)) {
+  // Pedido cancelado só barra se o ML não informou a conversa como ativa (emenda ADR-0067, 23/11).
+  if (pedidoCancelado(meta.orderStatus) && await statusConversaLocal(admin, orgId, packId) !== 'active') {
     await marcarConversaCancelada(admin, orgId, packId, dono).catch((e) =>
       console.error('[responder-mensagem] falha ao marcar conversa cancelada:', e)
     );

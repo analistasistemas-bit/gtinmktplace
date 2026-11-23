@@ -2388,6 +2388,7 @@ export type Database = {
           atualizado_em: string
           comprador_nick: string | null
           comprador_nome: string | null
+          conversa_status: string | null
           data_ml: string | null
           direcao: string
           id: string
@@ -2408,6 +2409,7 @@ export type Database = {
           atualizado_em?: string
           comprador_nick?: string | null
           comprador_nome?: string | null
+          conversa_status?: string | null
           data_ml?: string | null
           direcao: string
           id?: string
@@ -2428,6 +2430,7 @@ export type Database = {
           atualizado_em?: string
           comprador_nick?: string | null
           comprador_nome?: string | null
+          conversa_status?: string | null
           data_ml?: string | null
           direcao?: string
           id?: string

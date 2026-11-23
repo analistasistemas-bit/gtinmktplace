@@ -54,6 +54,7 @@ const msg = (over: Partial<Mensagem>): Mensagem => ({
   comprador_nome: over.comprador_nome ?? null,
   comprador_nick: over.comprador_nick ?? null,
   order_status: over.order_status ?? null,
+  conversa_status: over.conversa_status ?? null,
   // `??` trataria um `null` explícito como "não informado" e cairia no default — usa 'in' para
   // permitir que o teste do caso `data_ml: null` passe null de propósito.
   data_ml: 'data_ml' in over ? (over.data_ml as string | null) : '2026-07-10T10:00:00Z',
@@ -137,6 +138,31 @@ describe('buscarConversas', () => {
     });
     const [conversa] = await buscarConversas();
     expect(conversa).toMatchObject({ order_status: 'cancelled', aguardando: false });
+  });
+
+  // Emenda ADR-0067 (23/11): quem encerra a conversa é o ML (conversation_status), não o pedido.
+  it.each([
+    ['cancelado + active aguarda', 'cancelled', 'active', true],
+    ['cancelado + blocked não aguarda', 'cancelled', 'blocked', false],
+    ['cancelado + null (não relida) não aguarda', 'cancelled', null, false],
+    ['não cancelado ignora o estado da conversa', 'paid', 'blocked', true],
+  ])('%s', async (_nome, order_status, conversa_status, aguardando) => {
+    mockLimit.mockResolvedValueOnce({ data: [msg({ order_status, conversa_status })], error: null });
+    const [conversa] = await buscarConversas();
+    expect(conversa).toMatchObject({ order_status, conversa_status, aguardando });
+  });
+
+  it('conversa_status vem da mensagem mais recente e entra no select', async () => {
+    mockLimit.mockResolvedValueOnce({
+      data: [
+        msg({ id: '2', message_id: 'm2', order_status: 'cancelled', conversa_status: 'active', data_ml: '2026-07-10T11:00:00Z' }),
+        msg({ id: '1', message_id: 'm1', order_status: 'cancelled', conversa_status: 'blocked', data_ml: '2026-07-10T10:00:00Z' }),
+      ],
+      error: null,
+    });
+    const [conversa] = await buscarConversas();
+    expect(mockSelectMsg).toHaveBeenLastCalledWith(expect.stringContaining('conversa_status'));
+    expect(conversa).toMatchObject({ conversa_status: 'active', aguardando: true });
   });
 
   it('multi-pack: aguardando vem antes; entre não-aguardando, mais recente primeiro', async () => {

@@ -204,3 +204,30 @@ Mensagem pós-venda aceita um arquivo (JPG, PNG ou PDF, até 5 MB), com texto ob
   Os bytes não são guardados. Upload por pack usa o destino `mensagem_pack`.
 - **Exibição:** a lista traz `anexos`; o balão mostra miniatura ou cartão de PDF nos dois lados, e a
   mensagem só com anexo deixa de aparecer vazia.
+
+## Emenda 2026-11-23 — pedido cancelado não encerra a conversa; quem encerra é o ML
+
+Desde 08/09/2026 o app tratava toda conversa de pedido `cancelled` como "mensagens desativadas": ela saía
+do filtro Aguardando, dos cards, dos contadores e do badge, e `responder-mensagem` recusava com 409
+`pedido_cancelado` antes de tentar. A regra supunha que o ML bloqueia toda conversa de pedido cancelado.
+
+Medição em 23/11 (`GET /messages/packs/{pack}/sellers/{seller}?tag=post_sale&mark_as_read=false`, campo
+`conversation_status`): de 24 conversas de pedidos cancelados (4 organizações), 19 vieram
+`{status: "blocked", substatus: "blocked_by_cancelled_order"}` e 5 vieram `{status: "active", substatus: null}`
+— o comprador escreve, o ML conta como não lida e o vendedor pode responder. Três dessas cinco tinham
+mensagem do comprador sem resposta e estavam invisíveis no app. O tipo de devolução/cancelamento não separa
+os casos; só `conversation_status.status` separa. As conversas de pedidos não cancelados medidas vieram
+todas `active`.
+
+Decisão:
+- Coluna `ml_mensagens.conversa_status` (migration `20261123225446_mensagens_conversa_status.sql`): o
+  `conversation_status.status` da última leitura do pack, gravado em todas as linhas do pack por toda
+  sincronização (webhook, reconciliação, backfill, marcar como lida, re-busca pós-envio). Leitura sem o
+  campo não sobrescreve o valor anterior.
+- Regra única: conversa **encerrada** ⇔ `order_status = 'cancelled'` **e** `conversa_status` distinto de
+  `'active'`. Os dois valores vêm da mensagem mais recente do pack. Pedido não cancelado: nada muda.
+- Aplicada em `contar_conversas_aguardando`, `resumo_mensagens_posvenda`, no front (`conversaEncerrada` em
+  `src/lib/mensagens.ts`: Aguardando, cards e caixa de resposta) e no pré-bloqueio do `responder-mensagem`.
+  Cancelado com conversa `active` segue o envio normal; se o ML recusar com `blocked_by_cancelled_order`, a
+  edge grava `conversa_status = 'blocked'` junto com `order_status = 'cancelled'`.
+- Linhas antigas (`conversa_status` nulo) mantêm o comportamento anterior até a próxima sincronização do pack.

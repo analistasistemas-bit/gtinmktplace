@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { useListaMensagens, useResumoMensagens } from '@/hooks/useMensagens';
 import {
   responderMensagem, sugerirRespostaMensagem, dispensarConversa, ehPedidoCancelado, ehReclamacaoAberta, marcarMensagensLidasML,
-  verificarEnvio, liberarEnvio, enviarAnexoMensagem, buscarEnvioPendente, type Conversa, type EnvioPendente, type RespostaEnvio,
+  verificarEnvio, liberarEnvio, enviarAnexoMensagem, buscarEnvioPendente, conversaEncerrada, type Conversa, type EnvioPendente, type RespostaEnvio,
 } from '@/lib/mensagens';
 import type { ErroEdge } from '@/lib/edge';
 import { baldeDaConversa, rotuloVenda, type Balde, type ResumoMensagens } from '@/lib/mensagens-resumo';
@@ -61,7 +61,7 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
 
   const ultimaMsg = c.mensagens[c.mensagens.length - 1];
   const ultimaRecebida = [...c.mensagens].reverse().find((m) => m.direcao === 'recebida');
-  const cancelada = c.order_status === 'cancelled' || canceladaLocal;
+  const cancelada = conversaEncerrada(c) || canceladaLocal;
   // Reclamação aberta: o ML só aceita a conversa pela reclamação (emenda ADR-0067, 01/11).
   const emReclamacao = !cancelada && (c.reclamacaoAberta || reclamacaoLocal);
   // Pedido cancelado tem precedência: não há o que conferir.

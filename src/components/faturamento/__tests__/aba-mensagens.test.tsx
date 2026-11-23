@@ -36,7 +36,7 @@ function conversaBase(id: number, aguardando: boolean) {
   const packId = `pack-${id}`;
   return {
     pack_id: packId, order_id: `order-${id}`, item_titulo: `Produto ${id}`, item_id: `MLB${id}`,
-    comprador_nome: null, comprador_nick: `NICK_${id}`, order_status: 'paid', aguardando,
+    comprador_nome: null, comprador_nick: `NICK_${id}`, order_status: 'paid', conversa_status: null as string | null, aguardando,
     ultima: '2026-07-10T10:00:00Z', shipping_status: 'handling', idsNaoLidosML: [] as string[], reclamacaoAberta: false, envioPendente: null,
     mensagens: [{
       id: `message-${id}`, pack_id: packId, order_id: `order-${id}`, message_id: `m${id}`, direcao: 'recebida', texto: 'Olá',
@@ -48,7 +48,7 @@ function conversaBase(id: number, aguardando: boolean) {
 
 const PACK_1_CANCELADA = {
   pack_id: 'pack-1', order_id: 'order-1', item_titulo: 'Produto X', item_id: 'MLB123', comprador_nome: null,
-  comprador_nick: 'MARIA_01', order_status: 'cancelled', aguardando: false, ultima: '2026-07-10T10:00:00Z', shipping_status: 'handling', idsNaoLidosML: [] as string[], reclamacaoAberta: false, envioPendente: null,
+  comprador_nick: 'MARIA_01', order_status: 'cancelled', conversa_status: null as string | null, aguardando: false, ultima: '2026-07-10T10:00:00Z', shipping_status: 'handling', idsNaoLidosML: [] as string[], reclamacaoAberta: false, envioPendente: null,
   mensagens: [{
     id: 'message-1', pack_id: 'pack-1', order_id: 'order-1', message_id: 'm1', direcao: 'recebida', texto: 'Olá',
     item_titulo: 'Produto X', item_id: 'MLB123', comprador_nome: null, comprador_nick: 'MARIA_01',
@@ -172,6 +172,41 @@ describe('AbaMensagens', () => {
     expect(responderBtn).toBeDisabled();
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['mensagens'] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['mensagensAguardando'] });
+  });
+
+  // Emenda ADR-0067 (23/11): quem encerra a conversa é o ML (conversation_status), não o pedido.
+  it.each([
+    ['active', false],
+    ['blocked', true],
+    [null, true],
+  ])('pedido cancelado com conversa %s: encerrada = %s', async (conversa_status, encerrada) => {
+    const ORIGINAL = CONVERSAS;
+    CONVERSAS = [{ ...conversaBase(2, false), order_status: 'cancelled', conversa_status }];
+    try {
+      renderAba();
+      await userEvent.click(screen.getByRole('tab', { name: 'Todas' }));
+      const card = screen.getByText('Produto 2').closest('div.rounded-lg') as HTMLElement;
+      await abrir(card);
+      if (encerrada) {
+        expect(within(card).getByText('Pedido cancelado')).toBeInTheDocument();
+        expect(within(card).getByRole('textbox')).toBeDisabled();
+      } else {
+        expect(within(card).queryByText('Pedido cancelado')).not.toBeInTheDocument();
+        expect(within(card).getByRole('textbox')).not.toBeDisabled();
+      }
+    } finally { CONVERSAS = ORIGINAL; }
+  });
+
+  it('pedido cancelado com conversa active e reclamação aberta: vale o aviso da reclamação', async () => {
+    const ORIGINAL = CONVERSAS;
+    CONVERSAS = [{ ...conversaBase(2, false), order_status: 'cancelled', conversa_status: 'active', reclamacaoAberta: true }];
+    try {
+      renderAba();
+      await userEvent.click(screen.getByRole('tab', { name: 'Todas' }));
+      const card = screen.getByText('Produto 2').closest('div.rounded-lg') as HTMLElement;
+      expect(within(card).getByText('Em reclamação')).toBeInTheDocument();
+      expect(within(card).queryByText('Pedido cancelado')).not.toBeInTheDocument();
+    } finally { CONVERSAS = ORIGINAL; }
   });
 
   it('conversa em reclamação aberta: aviso com link para Reclamações no lugar da caixa de resposta', async () => {

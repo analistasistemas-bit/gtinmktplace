@@ -92,6 +92,14 @@ describe('buscarMensagensPackEstrito: paginação', () => {
     expect(await buscarMensagensPackEstrito('t', 1, 2, f)).toHaveLength(25);
     expect((f as unknown as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(3);
   });
+  it('carrega conversation_status.status do ML em conversaStatus; ausente fica sem a propriedade', async () => {
+    const com = await buscarMensagensPackEstrito('t', 1, 2, resp(200, {
+      conversation_status: { status: 'active', substatus: null }, messages: [{ id: 'a' }],
+    }));
+    expect(com.conversaStatus).toBe('active');
+    const sem = await buscarMensagensPackEstrito('t', 1, 2, resp(200, { messages: [{ id: 'a' }] }));
+    expect(sem).not.toHaveProperty('conversaStatus');
+  });
   it('404 na 1ª página → []', async () => {
     expect(await buscarMensagensPackEstrito('t', 1, 2, resp(404))).toEqual([]);
   });

@@ -5,7 +5,7 @@ import { baldeDaConversa, mensagensPendentes, resumirConversas, rotuloVenda } fr
 function msg(direcao: 'recebida' | 'enviada', extra: Partial<Mensagem> = {}): Mensagem {
   return {
     id: Math.random().toString(), pack_id: 'p', order_id: 'o', message_id: Math.random().toString(), direcao, texto: 'x',
-    item_titulo: null, item_id: null, comprador_nome: null, comprador_nick: null, order_status: 'paid',
+    item_titulo: null, item_id: null, comprador_nome: null, comprador_nick: null, order_status: 'paid', conversa_status: null,
     data_ml: '2026-10-28T10:00:00Z', lida: false, lida_ml_em: null, anexos: [], ...extra,
   };
 }
@@ -14,7 +14,7 @@ function conversa(over: Partial<Conversa> & { ultimaMsg?: Mensagem; naoLidaML?: 
   const m = over.ultimaMsg ?? msg('recebida');
   return {
     pack_id: 'p', order_id: 'o', item_titulo: null, item_id: null, comprador_nome: null, comprador_nick: null,
-    order_status: 'paid', mensagens: [m], aguardando: false, ultima: m.data_ml,
+    order_status: 'paid', conversa_status: null, mensagens: [m], aguardando: false, ultima: m.data_ml,
     shipping_status: 'handling', envioPendente: null,
     idsNaoLidosML: over.naoLidaML === false ? [] : [m.message_id],
     ...over,
@@ -55,6 +55,23 @@ describe('resumirConversas', () => {
     const c = conversa({ order_status: 'cancelled' });
     expect(baldeDaConversa(c)).toBeNull();
     expect(resumirConversas([c]).naoLidas.total).toBe(0);
+  });
+
+  // Emenda ADR-0067 (23/11): quem encerra a conversa é o ML (conversation_status), não o pedido.
+  it.each([
+    ['cancelado + active conta como conversa normal', 'cancelled', 'active', 'aPreparar', 1],
+    ['cancelado + blocked fica fora', 'cancelled', 'blocked', null, 0],
+    ['cancelado + null (não relida) fica fora', 'cancelled', null, null, 0],
+    ['não cancelado ignora o estado da conversa', 'paid', 'blocked', 'aPreparar', 1],
+  ])('%s', (_nome, order_status, conversa_status, balde, total) => {
+    const c = conversa({ order_status, conversa_status });
+    expect(baldeDaConversa(c)).toBe(balde);
+    expect(resumirConversas([c]).naoLidas.total).toBe(total);
+  });
+
+  it('cancelado + active lido no ML e sem resposta = sem responder', () => {
+    const r = resumirConversas([conversa({ order_status: 'cancelled', conversa_status: 'active', naoLidaML: false })]);
+    expect(r.lidas).toEqual({ semResponder: 1, respondidas: 0 });
   });
 });
 
