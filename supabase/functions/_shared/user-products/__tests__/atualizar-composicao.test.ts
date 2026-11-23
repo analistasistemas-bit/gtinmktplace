@@ -380,6 +380,21 @@ describe('atualizarComposicao — somenteEstoque nunca muda composição (ADR-01
     expect(w.chamadas.repor).toEqual([]);
   });
 
+  // Incidente 02749572 (Avil, 12/11): Adicionar variação parou entre ativar e marcarAtivo; o reenvio
+  // "somente estoque" com a cor desmarcada terminou `publicado` e o filho ficou 'criado' para sempre,
+  // fora do push de estoque, com o item vendendo no ML.
+  it('cor fora do conjunto presa em criado com item → erro, zero PUT', async () => {
+    const w = fakeMundo({ seed: [
+      filho('A', 'MLB1'),
+      filho('B', 'MLB2', { status: 'criado' }),
+    ] });
+    const r = await atualizarComposicao(w.portas, entrada({
+      skusDesejados: ['A'], estoquePorSku: { A: 5 }, somenteEstoque: true,
+    }));
+    expect(r).toEqual({ tipo: 'erro', codigo: 'reposicao_sem_item', skus: ['B'] });
+    expect(w.chamadas.repor).toEqual([]);
+  });
+
   it('nenhuma linha filha para os SKUs desejados → erro, não sem_mudanca', async () => {
     const w = fakeMundo({ seed: [] });
     const r = await atualizarComposicao(w.portas, entrada({

@@ -257,6 +257,11 @@ export async function atualizarComposicao(
       const f = filhoPorSku.get(sku);
       return !!f && !f.retirado && !ativo(sku);
     });
+    // Cor fora do conjunto com item já no ML e criação não fechada ('criado'): fechar a família como
+    // `publicado` a deixaria fora do push de estoque para sempre (incidente 02749572, 12/11/2026).
+    for (const f of naoRetirados) {
+      if (!desejadosSet.has(f.sku) && f.status === 'criado' && f.itemExternoId) naoProntos.push(f.sku);
+    }
     if (naoProntos.length > 0) return { tipo: 'erro', codigo: 'reposicao_sem_item', skus: naoProntos };
     if (desejados.length > 0 && !desejados.some(ativo)) {
       return { tipo: 'erro', codigo: 'reposicao_sem_item', skus: desejados };

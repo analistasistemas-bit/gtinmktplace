@@ -1,5 +1,12 @@
 # PubliAI — Tasks
 
+## Estoque fora do push: filho UP preso em `criado` (adendo 23/11 ao ADR-0195) — 2026-11-23
+
+- [x] Causa: Adicionar variação de 12/11 parou entre ativar e `marcarAtivo` no SKU `02749572` (Avil); o reenvio "somente estoque" com a cor desmarcada fechou a família `publicado` e o filho ficou `criado`, fora do push (`alvos.ts`). Ajuste para 0 de 18/11 nunca chegou ao ML; 4 pedidos pagos depois dele.
+- [x] Fix: somente estoque recusa (`reposicao_sem_item`) com cor fora do conjunto em `criado` com item (`atualizar-composicao.ts`).
+- [ ] Diego: deploy `update-familia-ml` + `reconciliar-convergencia-up` (importam a saga).
+- [ ] Diego: decidir o saldo físico de `02749572` e só então reparar a linha (`criado` → `ativo`) e enfileirar o push.
+
 ## Acesso de agentes — fatia 1 (ADR-0210) — 2026-11-22
 
 - [x] Código pronto e revisado na branch `worktree-api-agentes`: servidor MCP `agentes`, edge `agente-conexoes`, tela em Configurações, migration `20261122203018_agente_conexoes.sql`, docs (`docs/reference/acesso-de-agentes.md`).
