@@ -174,7 +174,7 @@ describe('AbaMensagens', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['mensagensAguardando'] });
   });
 
-  // Emenda ADR-0067 (23/11): quem encerra a conversa é o ML (conversation_status), não o pedido.
+  // Emenda ADR-0067 (23/11): quem encerra a conversa é o ML (ml_conversas), não o pedido.
   it.each([
     ['active', false],
     ['blocked', true],
@@ -237,6 +237,29 @@ describe('AbaMensagens', () => {
     expect(within(card).queryByRole('textbox')).not.toBeInTheDocument();
     expect(within(card).getByRole('link', { name: /ver reclamação/i })).toBeInTheDocument();
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['mensagensAguardando'] });
+  });
+
+  it('melhoria 7: 409 pedido_cancelado trava localmente e solta quando o banco mostra a conversa reaberta', async () => {
+    const ORIGINAL = CONVERSAS;
+    try {
+      responderMensagemMock.mockRejectedValueOnce(Object.assign(new Error('x'), { codigo: 'pedido_cancelado' }));
+      const { rerender, queryClient } = renderAba();
+      const tela = () => <QueryClientProvider client={queryClient}><AbaMensagens /></QueryClientProvider>;
+      await userEvent.click(screen.getByRole('tab', { name: 'Todas' }));
+      const card = () => screen.getByText('Produto 2').closest('div.rounded-lg') as HTMLElement;
+      await abrir(card());
+      await userEvent.type(within(card()).getByPlaceholderText(/escreva ao comprador/i), 'Oi');
+      await userEvent.click(within(card()).getByRole('button', { name: /responder/i }));
+      expect(within(card()).getByRole('textbox')).toBeDisabled();
+      // sync traz a conversa bloqueada; depois o ML a reabre (active)
+      CONVERSAS = ORIGINAL.map((c) => c.pack_id === 'pack-2' ? { ...c, order_status: 'cancelled', conversa_status: 'blocked' } : c);
+      rerender(tela());
+      expect(within(card()).getByRole('textbox')).toBeDisabled();
+      CONVERSAS = ORIGINAL.map((c) => c.pack_id === 'pack-2' ? { ...c, order_status: 'cancelled', conversa_status: 'active' } : c);
+      rerender(tela());
+      expect(within(card()).getByRole('textbox')).not.toBeDisabled();
+      expect(within(card()).queryByText('Pedido cancelado')).not.toBeInTheDocument();
+    } finally { CONVERSAS = ORIGINAL; }
   });
 
   it('reclamação fecha com o card aberto: o aviso some e a caixa de resposta volta (achado Codex)', async () => {

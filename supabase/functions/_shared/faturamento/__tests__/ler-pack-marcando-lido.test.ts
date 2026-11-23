@@ -92,13 +92,23 @@ describe('buscarMensagensPackEstrito: paginação', () => {
     expect(await buscarMensagensPackEstrito('t', 1, 2, f)).toHaveLength(25);
     expect((f as unknown as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(3);
   });
-  it('carrega conversation_status.status do ML em conversaStatus; ausente fica sem a propriedade', async () => {
-    const com = await buscarMensagensPackEstrito('t', 1, 2, resp(200, {
-      conversation_status: { status: 'active', substatus: null }, messages: [{ id: 'a' }],
-    }));
-    expect(com.conversaStatus).toBe('active');
+  it('carrega o estado da conversa com o instante de antes do 1º fetch; ausente fica sem a propriedade', async () => {
+    const inicio = new Date('2026-11-23T10:00:00.000Z');
+    vi.useFakeTimers({ now: inicio, toFake: ['Date'] });
+    const f = vi.fn(async () => {
+      vi.setSystemTime(new Date('2026-11-23T10:00:05.000Z')); // resposta chega depois
+      return new Response(JSON.stringify({ conversation_status: { status: 'active', substatus: null }, messages: [{ id: 'a' }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const com = await buscarMensagensPackEstrito('t', 1, 2, f);
+    vi.useRealTimers();
+    expect(com.conversa).toEqual({ status: 'active', observadoEm: inicio.toISOString() });
     const sem = await buscarMensagensPackEstrito('t', 1, 2, resp(200, { messages: [{ id: 'a' }] }));
-    expect(sem).not.toHaveProperty('conversaStatus');
+    expect(sem).not.toHaveProperty('conversa');
+  });
+  it('200 sem mensagens com estado: [] carregando o estado (achado 2)', async () => {
+    const msgs = await buscarMensagensPackEstrito('t', 1, 2, resp(200, { conversation_status: { status: 'blocked' }, messages: [] }));
+    expect(msgs).toHaveLength(0);
+    expect(msgs.conversa?.status).toBe('blocked');
   });
   it('404 na 1ª página → []', async () => {
     expect(await buscarMensagensPackEstrito('t', 1, 2, resp(404))).toEqual([]);

@@ -61,11 +61,18 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
 
   const ultimaMsg = c.mensagens[c.mensagens.length - 1];
   const ultimaRecebida = [...c.mensagens].reverse().find((m) => m.direcao === 'recebida');
-  const cancelada = conversaEncerrada(c) || canceladaLocal;
+  const encerrada = conversaEncerrada(c);
+  const cancelada = encerrada || canceladaLocal;
   // Reclamação aberta: o ML só aceita a conversa pela reclamação (emenda ADR-0067, 01/11).
   const emReclamacao = !cancelada && (c.reclamacaoAberta || reclamacaoLocal);
-  // Pedido cancelado tem precedência: não há o que conferir.
-  const pendente = cancelada ? null : pendenteLocal !== undefined ? pendenteLocal : c.envioPendente;
+  // Envio pendente segue conferível/liberável mesmo com a conversa encerrada: só o envio novo trava.
+  const pendente = pendenteLocal !== undefined ? pendenteLocal : c.envioPendente;
+  // A trava local (409) cai quando o banco mostra a conversa reaberta (encerrada → não encerrada).
+  const encerradaAntes = useRef(encerrada);
+  useEffect(() => {
+    if (encerradaAntes.current && !encerrada) setCanceladaLocal(false);
+    encerradaAntes.current = encerrada;
+  }, [encerrada]);
   // A trava local (409) cai quando o banco confirma o fechamento (aberta → fechada); antes disso o
   // dado pode só não ter sincronizado, então "false" sozinho não a solta.
   const reclamacaoAntes = useRef(c.reclamacaoAberta);

@@ -5,7 +5,7 @@ import { baldeDaConversa, mensagensPendentes, resumirConversas, rotuloVenda } fr
 function msg(direcao: 'recebida' | 'enviada', extra: Partial<Mensagem> = {}): Mensagem {
   return {
     id: Math.random().toString(), pack_id: 'p', order_id: 'o', message_id: Math.random().toString(), direcao, texto: 'x',
-    item_titulo: null, item_id: null, comprador_nome: null, comprador_nick: null, order_status: 'paid', conversa_status: null,
+    item_titulo: null, item_id: null, comprador_nome: null, comprador_nick: null, order_status: 'paid',
     data_ml: '2026-10-28T10:00:00Z', lida: false, lida_ml_em: null, anexos: [], ...extra,
   };
 }
@@ -57,7 +57,7 @@ describe('resumirConversas', () => {
     expect(resumirConversas([c]).naoLidas.total).toBe(0);
   });
 
-  // Emenda ADR-0067 (23/11): quem encerra a conversa é o ML (conversation_status), não o pedido.
+  // Emenda ADR-0067 (23/11): quem encerra a conversa é o ML (ml_conversas), não o pedido.
   it.each([
     ['cancelado + active conta como conversa normal', 'cancelled', 'active', 'aPreparar', 1],
     ['cancelado + blocked fica fora', 'cancelled', 'blocked', null, 0],

@@ -1818,11 +1818,13 @@ Lógica em `supabase/functions/_shared/galeria/`. Nenhuma edge desta família es
   Anúncio pausado/finalizado: o ML recusa com 400 `not_active_item` → 409 `codigo: 'anuncio_inativo'`
   com a orientação de reativar; a aba Perguntas já avisa pelo `ml_trafego_item.status` (02/11/2026).
 - **responder-mensagem** — envia mensagem pós-venda ao comprador (≤350 chars, limite do ML),
-  re-busca o pack e marca as recebidas como lidas. Se o pedido for cancelado e a conversa não estiver
-  `active` no banco (`conversa_status` da mensagem mais recente do pack; emenda ADR-0067 de 23/11), ou se
-  o ML rejeitar com 403 `blocked_by_cancelled_order`, persiste `order_status = 'cancelled'` e
-  `conversa_status = 'blocked'` em `ml_mensagens` (e `ml_vendas`) e responde HTTP 409 estruturado
-  (`codigo: 'pedido_cancelado'`). Pedido cancelado com conversa `active` segue o envio normal. Reusa
+  re-busca o pack e marca as recebidas como lidas. Emenda ADR-0067 de 23/11: envio **novo** é barrado
+  com HTTP 409 (`codigo: 'pedido_cancelado'`) quando o pedido está cancelado (`order_status` da mensagem
+  mais recente do pack, como a tela; `ml_vendas.status` reforça) e `ml_conversas.status` do pack não é
+  `active`; estado desconhecido ou falha de leitura também barra, sem gravar estado. Cancelado com conversa
+  `active` segue o envio normal. `verificar`/`liberar` nunca são barrados por isso. Se o ML recusar com 403
+  `blocked_by_cancelled_order`, audita a falha, persiste `order_status = 'cancelled'` em `ml_mensagens`
+  (e `ml_vendas`), registra `blocked` em `ml_conversas` com o instante de início do envio e responde 409. Reusa
   `sugerir-resposta-pergunta` para a sugestão de IA (ADR-0067). `pack_id` validado (`/^\d+$/`) antes de
   entrar na query `.or()` de `resolverMetaPack` (plan 037). Se o ML rejeitar com 403
   `blocked_by_claim` ou `blocked_by_mediation` (reclamação aberta bloqueia o chat pós-venda), devolve

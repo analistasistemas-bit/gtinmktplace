@@ -459,10 +459,9 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
         await Promise.all(lote.map(async (packId) => {
           try {
             const msgs = await buscarMensagensPackEstrito(token, packId, cx.contaExternaId!);
-            if (msgs.length) {
-              const meta = await resolverMetaPack(admin, userId, packId);
-              await upsertMensagensEstrito(admin, userId, org, packId, meta, cx.contaExternaId!, msgs);
-            }
+            // Sem guarda de vazio: o upsert registra o estado da conversa mesmo sem mensagens.
+            const meta = await resolverMetaPack(admin, userId, packId);
+            await upsertMensagensEstrito(admin, userId, org, packId, meta, cx.contaExternaId!, msgs);
             n++;
           } catch (e) {
             console.warn(`reconciliar: mensagens do pack ${packId} da org ${org} falharam: ${(e as Error).message}`);

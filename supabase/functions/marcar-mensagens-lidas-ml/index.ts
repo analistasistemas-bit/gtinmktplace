@@ -50,10 +50,9 @@ Deno.serve(async (req) => {
 
   try {
     const msgs = await lerPackMarcandoLido(token, packId, sellerId);
-    if (msgs.length) {
-      const meta = await resolverMetaPack(admin, dono, packId);
-      await upsertMensagensEstrito(admin, dono, orgId, packId, meta, sellerId, msgs);
-    }
+    // Sem guarda de vazio: o upsert registra o estado da conversa mesmo sem mensagens.
+    const meta = await resolverMetaPack(admin, dono, packId);
+    await upsertMensagensEstrito(admin, dono, orgId, packId, meta, sellerId, msgs);
   } catch (e) {
     const msg = (e as Error).message;
     return erro(msg, msg === ERRO_RECONECTAR_ML ? 403 : 502);

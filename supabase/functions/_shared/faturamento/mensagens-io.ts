@@ -51,29 +51,34 @@ export async function buscarPacksNaoLidos(token: string): Promise<string[]> {
   return packsNaoLidos(await resp.json());
 }
 
-/** Mensagens lidas do pack + `conversation_status.status` do ML (`active`/`blocked`), quando veio.
- *  O upsert grava em `conversa_status` (emenda ADR-0067, 23/11): pedido cancelado só encerra a
- *  conversa quando o ML a bloqueia. Carregado no próprio array para todo chamador gravar sem mudança. */
-export type MensagensPack = MensagemML[] & { conversaStatus?: string };
+/** Estado da conversa observado numa leitura do pack: `conversation_status.status` do ML
+ *  (`active`/`blocked`) e o instante em que a leitura COMEÇOU (guarda temporal do registro). */
+export interface EstadoConversa { status: string; observadoEm: string }
+
+/** Mensagens lidas do pack + o estado da conversa, quando o ML o informou. O upsert registra em
+ *  `ml_conversas` (emenda ADR-0067, 23/11): pedido cancelado só encerra a conversa quando o ML a
+ *  bloqueia. Carregado no próprio array para todo chamador registrar sem mudança. */
+export type MensagensPack = MensagemML[] & { conversa?: EstadoConversa };
 
 const statusDaConversa = (json: unknown): string | undefined => {
   const s = (json as { conversation_status?: { status?: unknown } } | null)?.conversation_status?.status;
   return typeof s === 'string' ? s : undefined;
 };
 
-const comStatus = (msgs: MensagemML[], status: string | undefined): MensagensPack =>
-  status ? Object.assign(msgs, { conversaStatus: status }) : msgs;
+const comStatus = (msgs: MensagemML[], status: string | undefined, observadoEm: string): MensagensPack =>
+  status ? Object.assign(msgs, { conversa: { status, observadoEm } }) : msgs;
 
 /** GET /messages/packs/{pack}/sellers/{seller}?tag=post_sale. [] em erro (não trava o worker). */
 export async function buscarMensagensPack(
   token: string, packId: string | number, sellerId: string | number, marcarLida = false,
 ): Promise<MensagensPack> {
   const url = `${API}/messages/packs/${packId}/sellers/${sellerId}?tag=post_sale&mark_as_read=${marcarLida}`;
+  const observadoEm = new Date().toISOString();
   try {
     const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) });
     if (!resp.ok) return [];
     const json = await resp.json();
-    return comStatus(extrairMensagens(json), statusDaConversa(json));
+    return comStatus(extrairMensagens(json), statusDaConversa(json), observadoEm);
   } catch { return []; }
 }
 
@@ -92,6 +97,7 @@ async function paginarPack(
   const LIMITE = 10; // ponytail: página padrão do ML; o offset avança pelo que a página trouxe.
   const vistas = new Map<string, MensagemML>(); // dedupe por id: página repetida não conta como cobertura
   let status: string | undefined;
+  const observadoEm = new Date().toISOString(); // antes do 1º fetch: guarda temporal do registro
   for (let pag = 0; pag < 100; pag++) {
     const url = `${API}/messages/packs/${packId}/sellers/${sellerId}?tag=post_sale&mark_as_read=${marcarLido}&limit=${LIMITE}&offset=${vistas.size}`;
     const resp = await f(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) });
@@ -108,10 +114,10 @@ async function paginarPack(
     const bruto = (json as { paging?: { total?: unknown } })?.paging?.total;
     const total = typeof bruto === 'number' ? bruto : NaN;
     const totalValido = Number.isFinite(total) && total >= 0;
-    if (totalValido && vistas.size >= total) return comStatus([...vistas.values()], status);
+    if (totalValido && vistas.size >= total) return comStatus([...vistas.values()], status, observadoEm);
     if (msgs.length < LIMITE) {
       // Página curta/vazia só é o fim quando não há total para contradizê-la.
-      if (!totalValido) return comStatus([...vistas.values()], status);
+      if (!totalValido) return comStatus([...vistas.values()], status, observadoEm);
       throw new Error(`ML /messages/packs: paginação incompleta: ${vistas.size} de ${total}`);
     }
     if (vistas.size === antes) throw new Error('ML /messages/packs: paginação sem avanço');
@@ -142,7 +148,6 @@ function montarLinhasMensagens(
 ) {
   // null significa que a fonte atual não sabe o valor; omitir a coluna no upsert preserva o
   // snapshot já completo de uma sincronização anterior (novas linhas continuam com null no DB).
-  const conversaStatus = (msgs as MensagensPack).conversaStatus;
   const metadata = {
     ...(meta.orderId != null ? { order_id: meta.orderId } : {}),
     ...(meta.itemId != null ? { item_id: meta.itemId } : {}),
@@ -150,7 +155,6 @@ function montarLinhasMensagens(
     ...(meta.compradorNome != null ? { comprador_nome: meta.compradorNome } : {}),
     ...(meta.compradorNick != null ? { comprador_nick: meta.compradorNick } : {}),
     ...(meta.orderStatus != null ? { order_status: meta.orderStatus } : {}),
-    ...(conversaStatus != null ? { conversa_status: conversaStatus } : {}),
   };
   return msgs.map((m) => {
     const r = mapearMensagem(m, sellerId);
@@ -180,6 +184,26 @@ async function aplicarLidaMlEm(
   return null;
 }
 
+/** Registra o estado da conversa em `ml_conversas` pela RPC com guarda temporal: observação mais
+ *  antiga que a gravada não sobrescreve (sync atrasado não desfaz bloqueio confirmado). Devolve a
+ *  mensagem do erro, se houver. */
+export async function registrarEstadoConversa(
+  admin: SupabaseClient, orgId: string, packId: string | number, estado: EstadoConversa,
+): Promise<string | null> {
+  const { error } = await admin.rpc('registrar_estado_conversa', {
+    p_org_id: orgId, p_pack_id: String(packId), p_status: estado.status, p_observado_em: estado.observadoEm,
+  });
+  return error ? error.message : null;
+}
+
+/** Estado lido junto do pack, se o ML o informou e há org. Sem estado não registra nada. */
+const registrarEstadoDoPack = (
+  admin: SupabaseClient, orgId: string | null, packId: string | number, msgs: MensagemML[],
+): Promise<string | null> => {
+  const estado = (msgs as MensagensPack).conversa;
+  return orgId && estado ? registrarEstadoConversa(admin, orgId, packId, estado) : Promise.resolve(null);
+};
+
 /** Upsert idempotente das mensagens de um pack. Retorna nº de novas RECEBIDAS (para alerta). */
 export async function upsertMensagens(
   admin: SupabaseClient,
@@ -190,6 +214,9 @@ export async function upsertMensagens(
   sellerId: string | number,
   msgs: MensagemML[],
 ): Promise<{ novasRecebidas: number }> {
+  // Antes do retorno antecipado: leitura 200 sem mensagens também informa o estado da conversa.
+  const erroEstado = await registrarEstadoDoPack(admin, orgId, packId, msgs);
+  if (erroEstado) console.error(`[mensagens-io] estado da conversa não registrado (org ${orgId}, pack ${packId}): ${erroEstado}`);
   const rows = montarLinhasMensagens(userId, orgId, packId, meta, sellerId, msgs);
   if (rows.length === 0) return { novasRecebidas: 0 };
 
@@ -220,6 +247,8 @@ export async function upsertMensagensEstrito(
   sellerId: string | number,
   msgs: MensagemML[],
 ): Promise<{ novasRecebidas: number }> {
+  const erroEstado = await registrarEstadoDoPack(admin, orgId, packId, msgs);
+  if (erroEstado) throw new Error(`registrar estado da conversa: ${erroEstado}`);
   const rows = montarLinhasMensagens(userId, orgId, packId, meta, sellerId, msgs);
   if (rows.length === 0) return { novasRecebidas: 0 };
 
@@ -327,26 +356,33 @@ export async function listarPacksDeVendasEstrito(admin: SupabaseClient, userId: 
   return mapearPacksDeVendas(data);
 }
 
-/** `conversa_status` da mensagem mais recente do pack na org (mesma ordenação das RPCs). Sem linha,
- *  sem valor ou erro → null, que conta como conversa encerrada (emenda ADR-0067, 23/11). */
-export async function statusConversaLocal(
+/** Mesma fonte da tela e das RPCs: `order_status` da mensagem mais recente do pack na org
+ *  (`data_ml desc nulls last, message_id desc`) e o estado do pack em `ml_conversas`. Erro em
+ *  qualquer leitura → null (estado desconhecido). Emenda ADR-0067 (23/11). */
+export async function estadoConversaLocal(
   admin: SupabaseClient, orgId: string, packId: string | number,
-): Promise<string | null> {
-  const { data, error } = await admin.from('ml_mensagens')
-    .select('conversa_status')
-    .eq('org_id', orgId).eq('pack_id', String(packId))
-    .order('data_ml', { ascending: false, nullsFirst: false })
-    .order('message_id', { ascending: false })
-    .limit(1).maybeSingle();
-  if (error) return null;
-  return (data as { conversa_status?: string | null } | null)?.conversa_status ?? null;
+): Promise<{ orderStatus: string | null; conversaStatus: string | null } | null> {
+  const [msg, conv] = await Promise.all([
+    admin.from('ml_mensagens').select('order_status')
+      .eq('org_id', orgId).eq('pack_id', String(packId))
+      .order('data_ml', { ascending: false, nullsFirst: false })
+      .order('message_id', { ascending: false })
+      .limit(1).maybeSingle(),
+    admin.from('ml_conversas').select('status')
+      .eq('org_id', orgId).eq('pack_id', String(packId)).maybeSingle(),
+  ]);
+  if (msg.error || conv.error) return null;
+  return {
+    orderStatus: (msg.data as { order_status?: string | null } | null)?.order_status ?? null,
+    conversaStatus: (conv.data as { status?: string | null } | null)?.status ?? null,
+  };
 }
 
 export async function marcarConversaCancelada(
   admin: SupabaseClient, orgId: string, packId: string | number, userId?: string | null,
 ): Promise<void> {
   const { error } = await admin.from('ml_mensagens')
-    .update({ order_status: 'cancelled', conversa_status: 'blocked' })
+    .update({ order_status: 'cancelled' })
     .eq('org_id', orgId).eq('pack_id', String(packId));
   if (error) throw new Error(`marcar conversa cancelada: ${error.message}`);
 

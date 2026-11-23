@@ -2165,6 +2165,35 @@ export type Database = {
           },
         ]
       }
+      ml_conversas: {
+        Row: {
+          observado_em: string
+          org_id: string
+          pack_id: string
+          status: string
+        }
+        Insert: {
+          observado_em: string
+          org_id: string
+          pack_id: string
+          status: string
+        }
+        Update: {
+          observado_em?: string
+          org_id?: string
+          pack_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_conversas_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ml_devolucoes: {
         Row: {
           aberto_em: string | null
@@ -2388,7 +2417,6 @@ export type Database = {
           atualizado_em: string
           comprador_nick: string | null
           comprador_nome: string | null
-          conversa_status: string | null
           data_ml: string | null
           direcao: string
           id: string
@@ -2409,7 +2437,6 @@ export type Database = {
           atualizado_em?: string
           comprador_nick?: string | null
           comprador_nome?: string | null
-          conversa_status?: string | null
           data_ml?: string | null
           direcao: string
           id?: string
@@ -2430,7 +2457,6 @@ export type Database = {
           atualizado_em?: string
           comprador_nick?: string | null
           comprador_nome?: string | null
-          conversa_status?: string | null
           data_ml?: string | null
           direcao?: string
           id?: string
@@ -6681,6 +6707,15 @@ export type Database = {
           p_user: string
         }
         Returns: number
+      }
+      registrar_estado_conversa: {
+        Args: {
+          p_observado_em: string
+          p_org_id: string
+          p_pack_id: string
+          p_status: string
+        }
+        Returns: undefined
       }
       registrar_falha_coleta_pulse: {
         Args: { p_org: string; p_produto: string }

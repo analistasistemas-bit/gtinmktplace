@@ -14,7 +14,8 @@ import {
   resolverMetaPack,
   resolverCompradorId,
   marcarConversaCancelada,
-  statusConversaLocal,
+  estadoConversaLocal,
+  registrarEstadoConversa,
   ERRO_PEDIDO_CANCELADO,
   CODIGO_PEDIDO_CANCELADO,
   ERRO_EM_MEDIACAO,
@@ -69,12 +70,19 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
   const dono = (cxRow?.criado_por as string | null) ?? null; // mesma chave user_id do sync/backfill.
 
   const meta = await resolverMetaPack(admin, dono ?? context.userId, packId);
-  // Pedido cancelado só barra se o ML não informou a conversa como ativa (emenda ADR-0067, 23/11).
-  if (pedidoCancelado(meta.orderStatus) && await statusConversaLocal(admin, orgId, packId) !== 'active') {
-    await marcarConversaCancelada(admin, orgId, packId, dono).catch((e) =>
-      console.error('[responder-mensagem] falha ao marcar conversa cancelada:', e)
-    );
-    return erro(ERRO_PEDIDO_CANCELADO, 409, CODIGO_PEDIDO_CANCELADO);
+  // Pré-bloqueio só de envio NOVO: verificar/liberar resolvem tentativa existente pela máquina de
+  // estados. Encerrada ⇔ cancelado (mensagem mais recente, como a tela; ml_vendas reforça) e conversa
+  // não 'active' no ML; estado desconhecido barra sem gravar estado (emenda ADR-0067, 23/11).
+  if (!verificar && !liberar) {
+    const local = await estadoConversaLocal(admin, orgId, packId);
+    if ((pedidoCancelado(local?.orderStatus) || pedidoCancelado(meta.orderStatus)) && local?.conversaStatus !== 'active') {
+      if (pedidoCancelado(meta.orderStatus)) {
+        await marcarConversaCancelada(admin, orgId, packId, dono).catch((e) =>
+          console.error('[responder-mensagem] falha ao marcar conversa cancelada:', e)
+        );
+      }
+      return erro(ERRO_PEDIDO_CANCELADO, 409, CODIGO_PEDIDO_CANCELADO);
+    }
   }
 
   let token: string;
@@ -88,6 +96,7 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
   const operacaoId = (operacaoInformada as string | null | undefined) ?? crypto.randomUUID();
   const legado = operacaoInformada == null; // bundle antigo do PWA: sem Conferir nem Liberar.
   let r: ResultadoEnvio;
+  const inicioEnvio = new Date().toISOString(); // antes do POST: guarda temporal do estado da conversa
   try {
     r = verificar ? await verificarEnvio(deps, packId, operacaoId)
       : liberar ? await liberarEnvio(deps, packId, operacaoId)
@@ -112,9 +121,16 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
 
   if (!r.ok) {
     if (r.erro === ERRO_PEDIDO_CANCELADO) {
+      await auditar('failed');
       await marcarConversaCancelada(admin, orgId, packId, dono).catch((e) =>
         console.error('[responder-mensagem] falha ao marcar conversa cancelada:', e)
       );
+      // Recusa `blocked_by_cancelled_order` deste POST é a evidência do ML de conversa bloqueada.
+      if (!verificar && !liberar) {
+        const falhou = await registrarEstadoConversa(admin, orgId, packId, { status: 'blocked', observadoEm: inicioEnvio })
+          .catch((e) => (e as Error).message);
+        if (falhou) console.error('[responder-mensagem] falha ao registrar conversa bloqueada:', falhou);
+      }
       return erro(ERRO_PEDIDO_CANCELADO, 409, CODIGO_PEDIDO_CANCELADO);
     }
     await auditar('failed');
@@ -128,10 +144,9 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
   if ((r.estado === 'confirmada' || (legado && r.estado === 'inconclusiva')) && dono) {
     try {
       const msgs = await buscarMensagensPack(token, packId, sellerId);
-      if (msgs.length) {
-        const meta = await resolverMetaPack(admin, dono, packId);
-        await upsertMensagens(admin, dono, orgId, packId, meta, sellerId, msgs);
-      }
+      // Sem guarda de vazio: o upsert registra o estado da conversa mesmo sem mensagens.
+      const meta = await resolverMetaPack(admin, dono, packId);
+      await upsertMensagens(admin, dono, orgId, packId, meta, sellerId, msgs);
       await admin.from('ml_mensagens').update({ lida: true, atualizado_em: new Date().toISOString() })
         .eq('user_id', dono).eq('pack_id', packId).eq('direcao', 'recebida').eq('lida', false);
     } catch (e) {

@@ -25,8 +25,6 @@ export interface Mensagem {
   comprador_nome: string | null;
   comprador_nick: string | null;
   order_status: string | null;
-  /** `conversation_status.status` do ML na última leitura do pack (`active`/`blocked`); null = não lido. */
-  conversa_status: string | null;
   data_ml: string | null;
   /** Dispensada/tratada localmente (não é a leitura no ML). */
   lida: boolean;
@@ -44,6 +42,7 @@ export interface Conversa {
   comprador_nome: string | null;
   comprador_nick: string | null;
   order_status: string | null;
+  /** Estado do pack em `ml_conversas` (`conversation_status.status` do ML); null = ainda não observado. */
   conversa_status: string | null;
   mensagens: Mensagem[];
   /** Aguardando resposta = última mensagem do comprador, não lida, em conversa não encerrada. ADR-0067. */
@@ -61,7 +60,7 @@ export interface Conversa {
 }
 
 /** Conversa encerrada pelo ML: pedido cancelado e o ML não a informou como ativa (`conversa_status`
- *  null = ainda não relida conta como encerrada). Emenda ADR-0067 (23/11): parte das conversas de
+ *  null = ainda não observada conta como encerrada). Emenda ADR-0067 (23/11): parte das conversas de
  *  pedido cancelado segue ativa. Mesma regra das RPCs `contar_conversas_aguardando`/`resumo_mensagens_posvenda`. */
 export function conversaEncerrada(c: Pick<Conversa, 'order_status' | 'conversa_status'>): boolean {
   return c.order_status === 'cancelled' && c.conversa_status !== 'active';
@@ -79,6 +78,18 @@ async function preencherEnvio(conversas: Conversa[]): Promise<void> {
     }
   }
   for (const c of conversas) c.shipping_status = (c.order_id && porOrder.get(c.order_id)) || null;
+}
+
+/** Estado de cada conversa em `ml_conversas` (RLS por org), pelos packs carregados em lotes de 100.
+ *  Falha na leitura deixa null — conversa de pedido cancelado segue encerrada (lado seguro). */
+async function preencherEstadoConversa(conversas: Conversa[]): Promise<void> {
+  const packs = conversas.map((c) => c.pack_id);
+  const porPack = new Map<string, string>();
+  for (let i = 0; i < packs.length; i += 100) {
+    const { data } = await supabase.from('ml_conversas').select('pack_id, status').in('pack_id', packs.slice(i, i + 100));
+    for (const r of (data ?? []) as Array<{ pack_id: string; status: string }>) porPack.set(r.pack_id, r.status);
+  }
+  for (const c of conversas) c.conversa_status = porPack.get(c.pack_id) ?? null;
 }
 
 /** Marca as conversas cujo pedido (`order_id` de alguma mensagem, ou o `pack_id` em pedido solo)
@@ -128,7 +139,7 @@ export async function buscarEnvioPendente(pack_id: string): Promise<EnvioPendent
 export async function buscarConversas(): Promise<Conversa[]> {
   const { data, error } = await supabase
     .from('ml_mensagens')
-    .select('id, pack_id, order_id, message_id, direcao, texto, item_titulo, item_id, comprador_nome, comprador_nick, order_status, conversa_status, data_ml, lida, lida_ml_em, anexos:raw->message_attachments')
+    .select('id, pack_id, order_id, message_id, direcao, texto, item_titulo, item_id, comprador_nome, comprador_nick, order_status, data_ml, lida, lida_ml_em, anexos:raw->message_attachments')
     // 1000 últimas mensagens; paginação real se a aba crescer. Ordena desc (mais recentes
     // primeiro) para o .limit() pegar as certas, depois reverte para a ordem cronológica
     // ascendente que o resto da função espera. nullsFirst: false → nulls ficam no FIM do desc,
@@ -153,7 +164,7 @@ export async function buscarConversas(): Promise<Conversa[]> {
         comprador_nome: m.comprador_nome,
         comprador_nick: m.comprador_nick,
         order_status: m.order_status,
-        conversa_status: m.conversa_status,
+        conversa_status: null,
         mensagens: [],
         aguardando: false,
         ultima: null,
@@ -170,10 +181,10 @@ export async function buscarConversas(): Promise<Conversa[]> {
     if (m.comprador_nome) c.comprador_nome = m.comprador_nome;
     if (m.comprador_nick) c.comprador_nick = m.comprador_nick;
     c.order_status = m.order_status;
-    c.conversa_status = m.conversa_status;
     c.ultima = m.data_ml;
   }
   const conversas = [...porPack.values()];
+  await preencherEstadoConversa(conversas);
   for (const c of conversas) {
     const ultima = c.mensagens[c.mensagens.length - 1];
     c.aguardando = !conversaEncerrada(c) && ultima?.direcao === 'recebida' && ultima?.lida === false;

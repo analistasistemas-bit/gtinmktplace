@@ -118,12 +118,17 @@ describe('envio de resposta', () => {
     expect(within(card()).getByRole('button', { name: 'Já conferi, liberar envio' })).toBeInTheDocument();
   });
 
-  it('pedido_cancelado_tem_precedencia_sobre_a_pendencia', async () => {
-    CONVERSAS = [conversa({ envioPendente: PENDENTE, order_status: 'cancelled' })];
+  // Achado 4 (emenda ADR-0067, 23/11): a tentativa já existente segue conferível e liberável mesmo
+  // com a conversa encerrada; só o envio novo fica travado.
+  it('conversa_encerrada_mantem_conferir_e_liberar_da_pendencia', async () => {
+    CONVERSAS = [conversa({ envioPendente: PENDENTE, order_status: 'cancelled', conversa_status: 'blocked' })];
+    verificarMock.mockResolvedValueOnce(resp('enviada', true));
     renderAba(); await abrir();
     expect(within(card()).getByText('Pedido cancelado')).toBeInTheDocument();
-    expect(within(card()).queryByRole('button', { name: 'Conferir no Mercado Livre' })).not.toBeInTheDocument();
-    expect(within(card()).getByRole('textbox')).toBeDisabled();
+    expect(within(card()).getByRole('button', { name: 'Já conferi, liberar envio' })).toBeEnabled();
+    expect(within(card()).queryByRole('textbox')).not.toBeInTheDocument();
+    await userEvent.click(within(card()).getByRole('button', { name: 'Conferir no Mercado Livre' }));
+    expect(verificarMock).toHaveBeenCalledWith('pack-2', OP);
   });
 
   it('conferir_confirmada_mostra_sucesso_e_libera_o_campo', async () => {

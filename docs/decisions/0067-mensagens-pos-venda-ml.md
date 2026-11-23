@@ -220,14 +220,23 @@ os casos; só `conversation_status.status` separa. As conversas de pedidos não 
 todas `active`.
 
 Decisão:
-- Coluna `ml_mensagens.conversa_status` (migration `20261123225446_mensagens_conversa_status.sql`): o
-  `conversation_status.status` da última leitura do pack, gravado em todas as linhas do pack por toda
-  sincronização (webhook, reconciliação, backfill, marcar como lida, re-busca pós-envio). Leitura sem o
-  campo não sobrescreve o valor anterior.
-- Regra única: conversa **encerrada** ⇔ `order_status = 'cancelled'` **e** `conversa_status` distinto de
-  `'active'`. Os dois valores vêm da mensagem mais recente do pack. Pedido não cancelado: nada muda.
-- Aplicada em `contar_conversas_aguardando`, `resumo_mensagens_posvenda`, no front (`conversaEncerrada` em
-  `src/lib/mensagens.ts`: Aguardando, cards e caixa de resposta) e no pré-bloqueio do `responder-mensagem`.
-  Cancelado com conversa `active` segue o envio normal; se o ML recusar com `blocked_by_cancelled_order`, a
-  edge grava `conversa_status = 'blocked'` junto com `order_status = 'cancelled'`.
-- Linhas antigas (`conversa_status` nulo) mantêm o comportamento anterior até a próxima sincronização do pack.
+- O estado é do **pack**, não da mensagem: tabela `ml_conversas` (`org_id`, `pack_id`, `status`,
+  `observado_em`; chave `(org_id, pack_id)`), migration `20261123231030_mensagens_conversas.sql`. Leitura
+  pela org (RLS `current_org_id()`); escrita só pelo service role, pela função
+  `registrar_estado_conversa(org, pack, status, observado_em)`.
+- **Guarda temporal:** `observado_em` é o instante em que **começou** a requisição ao ML que viu o estado;
+  a função só sobrescreve quando a observação nova é mais recente. Um sync atrasado que leu `active` antes
+  de uma recusa `blocked_by_cancelled_order` não desfaz o bloqueio.
+- Toda sincronização de pack (webhook, reconciliação, backfill, marcar como lida, re-busca pós-envio)
+  registra o estado quando o ML o informa, inclusive em leitura sem mensagens. Leitura sem o campo não
+  registra nada. A recusa `blocked_by_cancelled_order` de um envio registra `blocked` com o instante de
+  início desse envio; nenhum outro caminho grava `blocked`.
+- Regra única: conversa **encerrada** ⇔ `order_status = 'cancelled'` (mensagem mais recente do pack) **e**
+  `ml_conversas.status` distinto de `'active'` (sem linha = ainda não observado). Pedido não cancelado:
+  nada muda. Aplicada em `contar_conversas_aguardando`, `resumo_mensagens_posvenda`, no front
+  (`conversaEncerrada` em `src/lib/mensagens.ts`) e no pré-bloqueio do `responder-mensagem`.
+- O pré-bloqueio vale só para **envio novo**, decidido pela mesma fonte da tela (`ml_vendas.status`
+  cancelado reforça). Estado desconhecido ou falha de leitura barra sem gravar estado. `verificar` e
+  `liberar` de tentativa existente nunca são barrados, e o card mantém "Conferir" e "Já conferi, liberar
+  envio" com a conversa encerrada; só o envio novo fica desabilitado.
+- Packs ainda sem linha em `ml_conversas` mantêm o comportamento anterior até a próxima sincronização.

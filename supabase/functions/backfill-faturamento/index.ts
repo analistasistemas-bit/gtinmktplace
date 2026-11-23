@@ -223,7 +223,7 @@ export async function processarConexao(admin: ReturnType<typeof adminClient>, cx
         await Promise.all(lote.map(async (p) => {
           try {
             const msgs = await io.buscarMensagensPack(token, p.packId, contaExternaId);
-            if (msgs.length) await io.upsertMensagens(admin, userId, orgId, p.packId, p, contaExternaId, msgs);
+            await io.upsertMensagens(admin, userId, orgId, p.packId, p, contaExternaId, msgs); // vazio registra o estado da conversa
           } catch (e) {
             console.warn(`backfill: mensagens do pack ${p?.packId} de ${userId} falharam: ${(e as Error).message}`);
           }
@@ -317,7 +317,7 @@ function depsBackfillReal(admin: ReturnType<typeof adminClient>, orgId: string):
         // allSettled: nada fica em voo quando o lote lança.
         const rs = await Promise.allSettled(lote.map(async (p) => {
           const msgs = await buscarMensagensPackEstrito(token, p.packId, contaExternaId);
-          if (msgs.length) await upsertMensagensEstrito(admin, userId, org, p.packId, p, contaExternaId, msgs);
+          await upsertMensagensEstrito(admin, userId, org, p.packId, p, contaExternaId, msgs); // vazio registra o estado da conversa
         }));
         const falha = rs.find((r): r is PromiseRejectedResult => r.status === 'rejected');
         if (falha) throw falha.reason;

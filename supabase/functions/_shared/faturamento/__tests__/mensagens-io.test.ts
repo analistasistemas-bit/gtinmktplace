@@ -3,7 +3,8 @@ import {
   CODIGO_PEDIDO_CANCELADO,
   ERRO_PEDIDO_CANCELADO,
   buscarMensagensPack,
-  statusConversaLocal,
+  estadoConversaLocal,
+  upsertMensagensEstrito,
   marcarConversaCancelada,
   mensagemErroEnvioML,
   ERRO_EM_MEDIACAO,
@@ -191,59 +192,113 @@ describe('upsertMensagens', () => {
     expect(row).not.toHaveProperty('comprador_nome');
     expect(row).not.toHaveProperty('comprador_nick');
     expect(row).not.toHaveProperty('order_status');
-    expect(row).not.toHaveProperty('conversa_status');
   });
 
-  it('estado da conversa lido do ML (conversaStatus do pack) vai em conversa_status de todas as linhas', async () => {
-    const { admin, upsert } = criarAdminMock(['m1', 'm2']);
-    const msgs = Object.assign(
-      [msgDoComprador('m1', '2026-07-10T10:00:00Z'), msgDoVendedor('m2', '2026-07-10T10:01:00Z')],
-      { conversaStatus: 'active' },
-    );
-    await upsertMensagens(admin, 'user-1', 'org-1', 'pack-1', META, SELLER_ID, msgs);
+});
+
+// Emenda ADR-0067 (23/11): o estado é do PACK, em ml_conversas, pela RPC com guarda temporal.
+describe('upsertMensagens: estado da conversa', () => {
+  const ESTADO = { status: 'blocked', observadoEm: '2026-11-23T10:00:00.000Z' };
+  const comRpc = (erro: { message: string } | null = null) => {
+    const m = criarAdminMock(null);
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: erro });
+    return { ...m, rpc, admin: Object.assign(m.admin, { rpc }) };
+  };
+
+  it('achado 2: 200 sem mensagens com estado registra o estado e não faz upsert', async () => {
+    const { admin, rpc, upsert } = comRpc();
+    await upsertMensagens(admin, 'user-1', 'org-1', 'pack-1', META, SELLER_ID, Object.assign([], { conversa: ESTADO }));
+    expect(rpc).toHaveBeenCalledWith('registrar_estado_conversa', {
+      p_org_id: 'org-1', p_pack_id: 'pack-1', p_status: 'blocked', p_observado_em: ESTADO.observadoEm,
+    });
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it('achado 2: leitura sem conversation_status (mensagem nova) não registra nada', async () => {
+    const { admin, rpc } = comRpc();
+    await upsertMensagens(admin, 'user-1', 'org-1', 'pack-1', META, SELLER_ID, [msgDoComprador('m1', '2026-07-10T10:00:00Z')]);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('linhas de ml_mensagens não carregam estado de conversa', async () => {
+    const { admin, upsert } = comRpc();
+    await upsertMensagens(admin, 'user-1', 'org-1', 'pack-1', META, SELLER_ID,
+      Object.assign([msgDoComprador('m1', '2026-07-10T10:00:00Z')], { conversa: ESTADO }));
     for (const chamada of upsert.mock.calls) {
-      for (const row of chamada[0] as Array<Record<string, unknown>>) expect(row.conversa_status).toBe('active');
+      for (const row of chamada[0] as Array<Record<string, unknown>>) expect(Object.keys(row).some((k) => k.includes('conversa'))).toBe(false);
     }
+  });
+
+  it('sem org não registra', async () => {
+    const { admin, rpc } = comRpc();
+    await upsertMensagens(admin, 'user-1', null, 'pack-1', META, SELLER_ID, Object.assign([], { conversa: ESTADO }));
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('falha ao registrar: tolerante loga e segue; estrita lança', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const t = comRpc({ message: 'rpc fora' });
+    await expect(upsertMensagens(t.admin, 'user-1', 'org-1', 'pack-1', META, SELLER_ID,
+      Object.assign([msgDoComprador('m1', '2026-07-10T10:00:00Z')], { conversa: ESTADO }))).resolves.toEqual({ novasRecebidas: 1 });
+    expect(log).toHaveBeenCalled();
+    log.mockRestore();
+    const e = comRpc({ message: 'rpc fora' });
+    await expect(upsertMensagensEstrito(e.admin, 'user-1', 'org-1', 'pack-1', META, SELLER_ID, Object.assign([], { conversa: ESTADO })))
+      .rejects.toThrow('registrar estado da conversa: rpc fora');
   });
 });
 
-describe('statusConversaLocal', () => {
-  function criarAdminStatus(data: unknown, error: { message: string } | null = null) {
-    const maybeSingle = vi.fn().mockResolvedValue({ data, error });
-    const q: Record<string, ReturnType<typeof vi.fn>> = {};
-    for (const k of ['select', 'eq', 'order', 'limit']) q[k] = vi.fn(() => ({ ...q, maybeSingle }));
-    const from = vi.fn(() => q);
-    return { admin: { from } as unknown as Parameters<typeof statusConversaLocal>[0], q, from };
+describe('estadoConversaLocal', () => {
+  function criarAdminEstado(msg: { data: unknown; error?: { message: string } | null }, conv: { data: unknown; error?: { message: string } | null }) {
+    const consultas: Record<string, Record<string, ReturnType<typeof vi.fn>>> = {};
+    const from = vi.fn((tabela: string) => {
+      const r = tabela === 'ml_mensagens' ? msg : conv;
+      const maybeSingle = vi.fn().mockResolvedValue({ data: r.data, error: r.error ?? null });
+      const q: Record<string, ReturnType<typeof vi.fn>> = { maybeSingle };
+      for (const k of ['select', 'eq', 'order', 'limit']) q[k] = vi.fn(() => q);
+      consultas[tabela] = q;
+      return q;
+    });
+    return { admin: { from } as unknown as Parameters<typeof estadoConversaLocal>[0], consultas };
   }
 
-  it('lê conversa_status da mensagem mais recente do pack na org', async () => {
-    const { admin, q, from } = criarAdminStatus({ conversa_status: 'active' });
-    await expect(statusConversaLocal(admin, 'org-1', 123)).resolves.toBe('active');
-    expect(from).toHaveBeenCalledWith('ml_mensagens');
-    expect(q.select).toHaveBeenCalledWith('conversa_status');
-    expect(q.eq).toHaveBeenCalledWith('org_id', 'org-1');
-    expect(q.eq).toHaveBeenCalledWith('pack_id', '123');
-    expect(q.order).toHaveBeenNthCalledWith(1, 'data_ml', { ascending: false, nullsFirst: false });
-    expect(q.order).toHaveBeenNthCalledWith(2, 'message_id', { ascending: false });
-    expect(q.limit).toHaveBeenCalledWith(1);
+  it('order_status da mensagem mais recente do pack na org + status de ml_conversas', async () => {
+    const { admin, consultas } = criarAdminEstado({ data: { order_status: 'cancelled' } }, { data: { status: 'active' } });
+    await expect(estadoConversaLocal(admin, 'org-1', 123)).resolves.toEqual({ orderStatus: 'cancelled', conversaStatus: 'active' });
+    const m = consultas.ml_mensagens;
+    expect(m.select).toHaveBeenCalledWith('order_status');
+    expect(m.eq).toHaveBeenCalledWith('org_id', 'org-1');
+    expect(m.eq).toHaveBeenCalledWith('pack_id', '123');
+    expect(m.order).toHaveBeenNthCalledWith(1, 'data_ml', { ascending: false, nullsFirst: false });
+    expect(m.order).toHaveBeenNthCalledWith(2, 'message_id', { ascending: false });
+    expect(m.limit).toHaveBeenCalledWith(1);
+    expect(consultas.ml_conversas.eq).toHaveBeenCalledWith('org_id', 'org-1');
+    expect(consultas.ml_conversas.eq).toHaveBeenCalledWith('pack_id', '123');
   });
 
-  it('sem linha, sem valor ou erro → null (conta como encerrada)', async () => {
-    await expect(statusConversaLocal(criarAdminStatus(null).admin, 'o', 'p')).resolves.toBeNull();
-    await expect(statusConversaLocal(criarAdminStatus({ conversa_status: null }).admin, 'o', 'p')).resolves.toBeNull();
-    await expect(statusConversaLocal(criarAdminStatus(null, { message: 'x' }).admin, 'o', 'p')).resolves.toBeNull();
+  it('sem linhas → nulos; erro em qualquer leitura → null (desconhecido)', async () => {
+    await expect(estadoConversaLocal(criarAdminEstado({ data: null }, { data: null }).admin, 'o', 'p'))
+      .resolves.toEqual({ orderStatus: null, conversaStatus: null });
+    await expect(estadoConversaLocal(criarAdminEstado({ data: null, error: { message: 'x' } }, { data: null }).admin, 'o', 'p')).resolves.toBeNull();
+    await expect(estadoConversaLocal(criarAdminEstado({ data: null }, { data: null, error: { message: 'x' } }).admin, 'o', 'p')).resolves.toBeNull();
   });
 });
 
 describe('buscarMensagensPack (não paginada)', () => {
-  it('carrega conversation_status.status do ML em conversaStatus', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
-      conversation_status: { status: 'blocked', substatus: 'blocked_by_cancelled_order' }, messages: [{ id: 'a' }],
-    }), { status: 200 })));
+  it('carrega conversation_status.status com o instante de ANTES do fetch (achado 3)', async () => {
+    const inicio = new Date('2026-11-23T10:00:00.000Z');
+    vi.useFakeTimers({ now: inicio, toFake: ['Date'] });
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      vi.setSystemTime(new Date('2026-11-23T10:00:05.000Z')); // resposta chega depois
+      return new Response(JSON.stringify({
+        conversation_status: { status: 'blocked', substatus: 'blocked_by_cancelled_order' }, messages: [{ id: 'a' }],
+      }), { status: 200 });
+    }));
     const msgs = await buscarMensagensPack('t', 1, 2);
     vi.unstubAllGlobals();
+    vi.useRealTimers();
     expect([...msgs]).toEqual([{ id: 'a' }]);
-    expect(msgs.conversaStatus).toBe('blocked');
+    expect(msgs.conversa).toEqual({ status: 'blocked', observadoEm: inicio.toISOString() });
   });
 });
 
@@ -301,12 +356,6 @@ describe('constantes de pedido cancelado', () => {
 });
 
 describe('marcarConversaCancelada', () => {
-  it('grava conversa_status blocked junto (só roda com a conversa encerrada pelo ML)', async () => {
-    const { admin, mensagensUpdate } = criarAdminMarcarCancelada({ venda: null });
-    await marcarConversaCancelada(admin, 'org-1', 'pack-1');
-    expect(mensagensUpdate).toHaveBeenCalledWith({ order_status: 'cancelled', conversa_status: 'blocked' });
-  });
-
   it('atualiza ml_mensagens com order_status: cancelled filtrando por org_id e pack_id', async () => {
     const {
       admin,
@@ -327,7 +376,7 @@ describe('marcarConversaCancelada', () => {
     await marcarConversaCancelada(admin, 'org-42', 98765);
 
     expect(from).toHaveBeenCalledWith('ml_mensagens');
-    expect(mensagensUpdate).toHaveBeenCalledWith({ order_status: 'cancelled', conversa_status: 'blocked' });
+    expect(mensagensUpdate).toHaveBeenCalledWith({ order_status: 'cancelled' });
     expect(mensagensBuilder.eq).toHaveBeenNthCalledWith(1, 'org_id', 'org-42');
     expect(mensagensBuilder.eq).toHaveBeenNthCalledWith(2, 'pack_id', '98765');
 
