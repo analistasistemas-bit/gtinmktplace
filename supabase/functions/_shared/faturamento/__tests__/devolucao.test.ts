@@ -161,6 +161,16 @@ describe('revisaoPendente', () => {
     expect(revisaoPendente([], ok('sem_review' as const))).toBe(false);
   });
   it('leitura falha → decide pelas ações', () => expect(revisaoPendente(RESIDUAL, FALHA)).toBe(true));
+  // Real 23/11/2026 (returns 176066718 e 181846403): devolução entregue aguardando "Já revisei"
+  // responde `{ reviews: [] }` com return_review_ok obrigatório e prazo.
+  it('lista vazia com return_review obrigatório → true', () => {
+    const OBRIGATORIA = [{ action: 'return_review_ok', due_date: '2026-11-26T22:31:00.000-04:00', mandatory: true }];
+    expect(revisaoPendente(OBRIGATORIA, ok([]))).toBe(true);
+  });
+  it('lista vazia com return_review residual (não obrigatório) ou sem ações → false', () => {
+    expect(revisaoPendente(RESIDUAL, ok([]))).toBe(false);
+    expect(revisaoPendente([], ok([]))).toBe(false);
+  });
 });
 
 describe('linhaParaUpsert (objeto final)', () => {

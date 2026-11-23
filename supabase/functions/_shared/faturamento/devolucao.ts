@@ -196,10 +196,16 @@ export function normalizarRevisoes(resp: unknown): RevisaoML[] {
 }
 
 /** Revisões lidas com sucesso têm precedência sobre as ações (o ML mantém `return_review_*` em
- *  claims fechados). Sem leitura útil (`'sem_review'` ou falha), decide pelas ações. */
+ *  claims fechados). Sem leitura útil (`'sem_review'` ou falha), decide pelas ações.
+ *  Lista VAZIA não é "revisado": devolução entregue aguardando o vendedor responde `{ reviews: [] }`
+ *  com `return_review_*` obrigatório (medido 23/11/2026); o resíduo pós-revisão vem `mandatory: false`. */
 export function revisaoPendente(acoes: AcaoPendente[], revisoes: Leitura<RevisaoML[] | 'sem_review'>): boolean {
-  if (revisoes.ok && revisoes.valor !== 'sem_review') return revisoes.valor.some((r) => r.seller_status === 'pending');
-  return acoes.some((a) => a.action.startsWith('return_review'));
+  const deRevisao = acoes.filter((a) => a.action.startsWith('return_review'));
+  if (revisoes.ok && revisoes.valor !== 'sem_review') {
+    if (revisoes.valor.length === 0) return deRevisao.some((a) => a.mandatory);
+    return revisoes.valor.some((r) => r.seller_status === 'pending');
+  }
+  return deRevisao.length > 0;
 }
 
 export function mapearDevolucao(claim: ClaimML, ret?: ReturnML | null, contaExternaId?: string | null): DevolucaoRow {
