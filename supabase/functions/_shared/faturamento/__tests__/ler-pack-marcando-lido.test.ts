@@ -105,6 +105,22 @@ describe('buscarMensagensPackEstrito: paginação', () => {
     const sem = await buscarMensagensPackEstrito('t', 1, 2, resp(200, { messages: [{ id: 'a' }] }));
     expect(sem).not.toHaveProperty('conversa');
   });
+  it('C: status só na 2ª página → o par usa o instante de antes da 2ª página', async () => {
+    vi.useFakeTimers({ now: new Date('2026-11-23T10:00:00.000Z'), toFake: ['Date'] });
+    let n = 0;
+    const f = vi.fn(async () => {
+      n++;
+      vi.setSystemTime(new Date(`2026-11-23T10:00:0${n * 2}.000Z`)); // cada resposta chega depois
+      const messages = Array.from({ length: n === 1 ? 10 : 2 }, (_, i) => ({ id: `p${n}-${i}` }));
+      return new Response(JSON.stringify({
+        paging: { total: 12 }, messages, ...(n === 2 ? { conversation_status: { status: 'blocked' } } : {}),
+      }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const msgs = await buscarMensagensPackEstrito('t', 1, 2, f);
+    vi.useRealTimers();
+    expect(msgs).toHaveLength(12);
+    expect(msgs.conversa).toEqual({ status: 'blocked', observadoEm: '2026-11-23T10:00:02.000Z' });
+  });
   it('200 sem mensagens com estado: [] carregando o estado (achado 2)', async () => {
     const msgs = await buscarMensagensPackEstrito('t', 1, 2, resp(200, { conversation_status: { status: 'blocked' }, messages: [] }));
     expect(msgs).toHaveLength(0);

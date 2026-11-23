@@ -85,6 +85,54 @@ describe('depsMensagemReal.postML', () => {
   });
 });
 
+// Emenda ADR-0067 (23/11, v3): só o POST real recusado com blocked_by_cancelled_order carimba `blocked`
+// em ml_conversas, com o instante de imediatamente antes do fetch (guarda temporal da RPC).
+describe('depsMensagemReal.postML: carimbo da conversa bloqueada', () => {
+  const comRpc = (rpc = vi.fn().mockResolvedValue({ data: null, error: null })) =>
+    ({ admin: { from: semBanco.from, rpc } as unknown as Parameters<typeof depsMensagemReal>[0], rpc });
+  const BLOQUEIO = { code: 'forbidden', message: 'blocked_by_cancelled_order' };
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('403 blocked_by_cancelled_order registra blocked com o instante de antes do fetch', async () => {
+    const inicio = new Date('2026-11-23T10:00:00.000Z');
+    vi.useFakeTimers({ now: inicio, toFake: ['Date'] });
+    const { admin, rpc } = comRpc();
+    const antesDoPedido = new Date().toISOString();
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      vi.setSystemTime(new Date('2026-11-23T10:00:03.000Z')); // resposta chega depois
+      return resposta(403, BLOQUEIO);
+    }));
+
+    await expect(depsMensagemReal(admin, CTX).postML({ texto: 'Olá', anexo: null })).resolves.toEqual({ status: 403, body: BLOQUEIO });
+    expect(rpc).toHaveBeenCalledWith('registrar_estado_conversa', {
+      p_org_id: 'org-1', p_pack_id: '123', p_status: 'blocked', p_observado_em: inicio.toISOString(),
+    });
+    expect(rpc.mock.calls[0][1].p_observado_em >= antesDoPedido).toBe(true);
+  });
+
+  it.each([
+    ['201', resposta(201, { id: 'm1' })],
+    ['403 blocked_by_claim', resposta(403, { message: 'blocked_by_claim' })],
+    ['500', resposta(500, { message: 'blocked_by_cancelled_order' })],
+  ])('%s não registra', async (_n, r) => {
+    const { admin, rpc } = comRpc();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(r));
+    await depsMensagemReal(admin, CTX).postML({ texto: 'Olá', anexo: null });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('falha no registro (erro ou exceção) não altera o resultado do envio', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    for (const rpc of [vi.fn().mockResolvedValue({ data: null, error: { message: 'x' } }), vi.fn().mockRejectedValue(new Error('rede'))]) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(resposta(403, BLOQUEIO)));
+      await expect(depsMensagemReal(comRpc(rpc).admin, CTX).postML({ texto: 'Olá', anexo: null }))
+        .resolves.toEqual({ status: 403, body: BLOQUEIO });
+    }
+    expect(log).toHaveBeenCalled();
+    log.mockRestore();
+  });
+});
+
 describe('depsMensagemReal.erroRecusa', () => {
   const erroRecusa = depsMensagemReal(semBanco, CTX).erroRecusa;
 

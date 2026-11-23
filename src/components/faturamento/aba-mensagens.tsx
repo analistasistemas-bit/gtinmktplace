@@ -44,7 +44,8 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
   const [texto, setTexto] = useState('');
   const [sugerindo, setSugerindo] = useState(false);
   const [enviando, setEnviando] = useState(false);
-  const [canceladaLocal, setCanceladaLocal] = useState(false);
+  // Instante da recusa local (409 pedido_cancelado); null = sem recusa nesta sessão do card.
+  const [recusaEm, setRecusaEm] = useState<number | null>(null);
   const [reclamacaoLocal, setReclamacaoLocal] = useState(false);
   const [dispensando, setDispensando] = useState(false);
   const marcandoRef = useRef(false);
@@ -61,18 +62,14 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
 
   const ultimaMsg = c.mensagens[c.mensagens.length - 1];
   const ultimaRecebida = [...c.mensagens].reverse().find((m) => m.direcao === 'recebida');
-  const encerrada = conversaEncerrada(c);
-  const cancelada = encerrada || canceladaLocal;
+  // A trava local vale até o ML observar a conversa ativa DEPOIS da recusa (emenda ADR-0067, 23/11).
+  const travaLocal = recusaEm != null
+    && !(c.conversa_status === 'active' && Date.parse(c.conversa_observado_em ?? '') > recusaEm);
+  const cancelada = conversaEncerrada(c) || travaLocal;
   // Reclamação aberta: o ML só aceita a conversa pela reclamação (emenda ADR-0067, 01/11).
   const emReclamacao = !cancelada && (c.reclamacaoAberta || reclamacaoLocal);
   // Envio pendente segue conferível/liberável mesmo com a conversa encerrada: só o envio novo trava.
   const pendente = pendenteLocal !== undefined ? pendenteLocal : c.envioPendente;
-  // A trava local (409) cai quando o banco mostra a conversa reaberta (encerrada → não encerrada).
-  const encerradaAntes = useRef(encerrada);
-  useEffect(() => {
-    if (encerradaAntes.current && !encerrada) setCanceladaLocal(false);
-    encerradaAntes.current = encerrada;
-  }, [encerrada]);
   // A trava local (409) cai quando o banco confirma o fechamento (aberta → fechada); antes disso o
   // dado pode só não ter sincronizado, então "false" sozinho não a solta.
   const reclamacaoAntes = useRef(c.reclamacaoAberta);
@@ -180,7 +177,8 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
         await qc.invalidateQueries({ queryKey: ['mensagens'] });
         await qc.invalidateQueries({ queryKey: ['mensagensAguardando'] });
       } else if (ehPedidoCancelado(e)) {
-        setCanceladaLocal(true);
+        tentativaRef.current = null; // recusa terminal: o próximo envio usa operacao_id novo
+        setRecusaEm(Date.now());
         toast.info('Este pedido foi cancelado no Mercado Livre. Mensagens desativadas.');
         await qc.invalidateQueries({ queryKey: ['mensagens'] });
         await qc.invalidateQueries({ queryKey: ['mensagensAguardando'] });

@@ -228,15 +228,34 @@ Decisão:
   a função só sobrescreve quando a observação nova é mais recente. Um sync atrasado que leu `active` antes
   de uma recusa `blocked_by_cancelled_order` não desfaz o bloqueio.
 - Toda sincronização de pack (webhook, reconciliação, backfill, marcar como lida, re-busca pós-envio)
-  registra o estado quando o ML o informa, inclusive em leitura sem mensagens. Leitura sem o campo não
-  registra nada. A recusa `blocked_by_cancelled_order` de um envio registra `blocked` com o instante de
-  início desse envio; nenhum outro caminho grava `blocked`.
+  registra o estado quando o ML o informa, inclusive em leitura sem mensagens (sem consultar metadados
+  do pedido). Leitura sem o campo não registra nada. Na paginação vale o par (estado, instante antes do
+  fetch) da última página que informou o estado. Falha no registro loga e não falha o sync (o estado é só
+  para exibição).
+- **Carimbo do bloqueio no POST real:** quando o próprio POST do envio (`postML`) volta 403
+  `blocked_by_cancelled_order`, registra `blocked` com o instante de imediatamente antes desse `fetch`.
+  Recusa armazenada devolvida em repetição do mesmo `operacao_id`, `verificar` e `liberar` não registram
+  nada; nenhum outro caminho grava `blocked`. A leitura de conferência do envio não registra estado.
 - Regra única: conversa **encerrada** ⇔ `order_status = 'cancelled'` (mensagem mais recente do pack) **e**
   `ml_conversas.status` distinto de `'active'` (sem linha = ainda não observado). Pedido não cancelado:
-  nada muda. Aplicada em `contar_conversas_aguardando`, `resumo_mensagens_posvenda`, no front
-  (`conversaEncerrada` em `src/lib/mensagens.ts`) e no pré-bloqueio do `responder-mensagem`.
-- O pré-bloqueio vale só para **envio novo**, decidido pela mesma fonte da tela (`ml_vendas.status`
-  cancelado reforça). Estado desconhecido ou falha de leitura barra sem gravar estado. `verificar` e
-  `liberar` de tentativa existente nunca são barrados, e o card mantém "Conferir" e "Já conferi, liberar
-  envio" com a conversa encerrada; só o envio novo fica desabilitado.
+  nada muda. Aplicada em `contar_conversas_aguardando`, `resumo_mensagens_posvenda` e no front
+  (`conversaEncerrada` em `src/lib/mensagens.ts`: contadores, filtro Aguardando, formulário).
+- **O ML é a única autoridade sobre o envio.** `ml_conversas` serve só para exibição: o
+  `responder-mensagem` não pré-decide mais (saiu também o bloqueio antigo por `ml_vendas.status`). Todo
+  pedido (envio novo, `verificar`, `liberar`) vai à máquina de estados; conversa bloqueada o ML recusa
+  com 403 e nada sai. A recusa `blocked_by_cancelled_order` audita a falha, marca o pedido cancelado e
+  responde 409 `pedido_cancelado`, como antes.
+- Na tela, o card mantém "Conferir" e "Já conferi, liberar envio" com a conversa encerrada; só o envio
+  novo fica desabilitado. O 409 `pedido_cancelado` encerra a tentativa (o próximo envio usa
+  `operacao_id` novo) e trava o card localmente até o ML observar a conversa `active` depois da recusa.
 - Packs ainda sem linha em `ml_conversas` mantêm o comportamento anterior até a próxima sincronização.
+
+### Limitações conhecidas (aceitas)
+
+1. Sync atrasado pode regravar o `order_status` da mensagem com um snapshot antigo da venda (ex.: `paid`
+   depois de uma recusa ter marcado `cancelled`), e a conversa reaparece como respondível até o próximo
+   sync. O ML continua recusando o envio. A corrida já existia antes desta mudança.
+2. Janela de deploy: PWA com bundle antigo pode mostrar contador (RPC) incluindo conversa que a tela
+   antiga ainda esconde, até recarregar.
+3. Tentar enviar em conversa bloqueada custa um POST recusado pelo ML (sem pré-bloqueio na edge, por
+   decisão).

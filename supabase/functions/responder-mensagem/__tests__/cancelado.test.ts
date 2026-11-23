@@ -13,8 +13,8 @@ const fronteiras = vi.hoisted(() => ({
   upsert: vi.fn(),
   auditar: vi.fn().mockResolvedValue(undefined),
   marcarCancelada: vi.fn().mockResolvedValue(undefined),
-  estadoLocal: vi.fn(),
   registrar: vi.fn(),
+  registrarPack: vi.fn(),
 }));
 
 vi.mock('../../_shared/cors.ts', () => ({ corsHeaders: {}, handleOptions: () => new Response() }));
@@ -47,13 +47,12 @@ vi.mock('../../_shared/faturamento/mensagem-fluxo.ts', () => ({
 vi.mock('../../_shared/faturamento/mensagem-fluxo-io.ts', () => ({ depsMensagemReal: fronteiras.deps }));
 vi.mock('../../_shared/faturamento/mensagens-io.ts', () => ({
   buscarMensagensPack: fronteiras.buscarPack,
-  pedidoCancelado: (status: string | null | undefined) => status === 'cancelled',
   resolverMetaPack: fronteiras.meta,
   resolverCompradorId: fronteiras.comprador,
   upsertMensagens: fronteiras.upsert,
   marcarConversaCancelada: (...args: unknown[]) => fronteiras.marcarCancelada(...args),
-  estadoConversaLocal: (...args: unknown[]) => fronteiras.estadoLocal(...args),
   registrarEstadoConversa: (...args: unknown[]) => fronteiras.registrar(...args),
+  registrarEstadoDoPack: (...args: unknown[]) => fronteiras.registrarPack(...args),
   ERRO_PEDIDO_CANCELADO: 'Não é possível responder porque o pedido foi cancelado.',
   CODIGO_PEDIDO_CANCELADO: 'pedido_cancelado',
   ERRO_EM_MEDIACAO: 'Reclamação em mediação.',
@@ -84,46 +83,16 @@ beforeEach(() => {
   fronteiras.token.mockResolvedValue('token-ml');
   fronteiras.comprador.mockResolvedValue('buyer-1');
   fronteiras.buscarPack.mockResolvedValue([]);
-  fronteiras.estadoLocal.mockReset();
-  fronteiras.estadoLocal.mockResolvedValue({ orderStatus: 'paid', conversaStatus: null });
   fronteiras.registrar.mockReset();
   fronteiras.registrar.mockResolvedValue(null);
+  fronteiras.registrarPack.mockReset();
+  fronteiras.registrarPack.mockResolvedValue(undefined);
 });
 
 describe('responder-mensagem — pedido cancelado', () => {
-  it('retorna 409 estruturado e persiste cancelamento sem renovar token, resolver comprador ou enviar', async () => {
+  // Emenda ADR-0067 (23/11, v3): o ML é a única autoridade sobre o envio; a edge não pré-decide.
+  it('A: pedido cancelado em envio novo chega à máquina de estados, sem 409 antecipado', async () => {
     fronteiras.meta.mockResolvedValue({ orderStatus: 'cancelled' });
-
-    const response = await chamar({ pack_id: '123', text: 'Olá' });
-
-    expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({
-      ok: false,
-      erro: 'Não é possível responder porque o pedido foi cancelado.',
-      codigo: 'pedido_cancelado',
-    });
-    expect(fronteiras.marcarCancelada).toHaveBeenCalledWith(expect.anything(), 'org-1', '123', 'owner-1');
-    expect(fronteiras.token).not.toHaveBeenCalled();
-    expect(fronteiras.comprador).not.toHaveBeenCalled();
-    expect(fronteiras.enviar).not.toHaveBeenCalled();
-  });
-
-  // Emenda ADR-0067 (23/11): quem encerra a conversa é o ML (ml_conversas), não o pedido.
-  it('cancelado + conversa blocked → 409 antes do fluxo, sem registrar estado', async () => {
-    fronteiras.meta.mockResolvedValue({ orderStatus: 'cancelled' });
-    fronteiras.estadoLocal.mockResolvedValue({ orderStatus: 'cancelled', conversaStatus: 'blocked' });
-
-    const response = await chamar({ pack_id: '123', text: 'Olá' });
-
-    expect(response.status).toBe(409);
-    expect(fronteiras.estadoLocal).toHaveBeenCalledWith(expect.anything(), 'org-1', '123');
-    expect(fronteiras.enviar).not.toHaveBeenCalled();
-    expect(fronteiras.registrar).not.toHaveBeenCalled();
-  });
-
-  it('cancelado + conversa active → segue para o envio normal, sem marcar cancelada', async () => {
-    fronteiras.meta.mockResolvedValue({ orderStatus: 'cancelled' });
-    fronteiras.estadoLocal.mockResolvedValue({ orderStatus: 'cancelled', conversaStatus: 'active' });
     fronteiras.enviar.mockResolvedValue(sucesso('confirmada'));
 
     const response = await chamar({ pack_id: '123', text: 'Olá', operacao_id: OP });
@@ -133,48 +102,27 @@ describe('responder-mensagem — pedido cancelado', () => {
     expect(fronteiras.marcarCancelada).not.toHaveBeenCalled();
   });
 
-  it('achado 1: cancelado com estado desconhecido ou erro de leitura → 409 e nenhuma gravação de estado', async () => {
-    fronteiras.meta.mockResolvedValue({ orderStatus: 'cancelled' });
-    for (const local of [{ orderStatus: 'cancelled', conversaStatus: null }, null]) {
-      fronteiras.estadoLocal.mockResolvedValueOnce(local);
-      const response = await chamar({ pack_id: '123', text: 'Olá' });
-      expect(response.status).toBe(409);
-    }
-    expect(fronteiras.registrar).not.toHaveBeenCalled();
-    expect(fronteiras.enviar).not.toHaveBeenCalled();
-  });
-
-  it('achado 5: mensagem mais recente cancelled + conversa não ativa barra mesmo com venda paid', async () => {
-    fronteiras.estadoLocal.mockResolvedValue({ orderStatus: 'cancelled', conversaStatus: 'blocked' });
-
-    const response = await chamar({ pack_id: '123', text: 'Olá' });
-
-    expect(response.status).toBe(409);
-    expect((await response.json()).codigo).toBe('pedido_cancelado');
-    expect(fronteiras.enviar).not.toHaveBeenCalled();
-    // Cancelado só pela mensagem: não reescreve a venda.
-    expect(fronteiras.marcarCancelada).not.toHaveBeenCalled();
-  });
-
-  it('não cancelado em nenhuma fonte segue para o envio', async () => {
-    fronteiras.enviar.mockResolvedValue(sucesso('confirmada'));
-    await chamar({ pack_id: '123', text: 'Olá', operacao_id: OP });
-    expect(fronteiras.enviar).toHaveBeenCalled();
-  });
-
-  it('recusa blocked_by_cancelled_order registra blocked com o instante de antes do POST e audita falha', async () => {
-    let postEm = '';
-    fronteiras.enviar.mockImplementationOnce(async () => {
-      postEm = new Date().toISOString();
-      return recusa('Não é possível responder porque o pedido foi cancelado.');
-    });
+  it('A: recusa do ML por pedido cancelado → 409 pedido_cancelado com auditoria failed', async () => {
+    fronteiras.enviar.mockResolvedValue(recusa('Não é possível responder porque o pedido foi cancelado.'));
 
     const response = await chamar({ pack_id: '456', text: 'Olá', operacao_id: OP });
 
     expect(response.status).toBe(409);
-    expect(fronteiras.registrar).toHaveBeenCalledWith(expect.anything(), 'org-1', '456', { status: 'blocked', observadoEm: expect.any(String) });
-    expect(fronteiras.registrar.mock.calls[0][3].observadoEm <= postEm).toBe(true);
+    expect((await response.json()).codigo).toBe('pedido_cancelado');
     expect(fronteiras.auditar).toHaveBeenCalledWith(expect.anything(), expect.anything(), { type: 'pack', id: '456' }, 'failed');
+  });
+
+  it('B: a edge não registra estado (recusa armazenada, verificar e liberar) — só o POST real carimba', async () => {
+    fronteiras.enviar.mockResolvedValue(recusa('Não é possível responder porque o pedido foi cancelado.'));
+    fronteiras.verificar.mockResolvedValue(recusa('Não é possível responder porque o pedido foi cancelado.'));
+    fronteiras.liberar.mockResolvedValue(sucesso('inconclusiva'));
+
+    await chamar({ pack_id: '456', text: 'Olá', operacao_id: OP });
+    await chamar({ pack_id: '456', operacao_id: OP, verificar: true });
+    await chamar({ pack_id: '456', operacao_id: OP, liberar: true });
+
+    expect(fronteiras.registrar).not.toHaveBeenCalled();
+    expect(fronteiras.registrarPack).not.toHaveBeenCalled();
   });
 
   it('quando envio falha com ERRO_PEDIDO_CANCELADO (403 ML), persiste cancelamento e responde 409 estruturado', async () => {
@@ -401,9 +349,8 @@ describe('responder-mensagem — verificar e liberar', () => {
     expect(fronteiras.buscarPack).not.toHaveBeenCalled();
   });
 
-  it('achado 4: verificar e liberar em pack cancelado e encerrado chegam à máquina de estados', async () => {
+  it('verificar e liberar em pedido cancelado chegam à máquina de estados', async () => {
     fronteiras.meta.mockResolvedValue({ orderStatus: 'cancelled' });
-    fronteiras.estadoLocal.mockResolvedValue({ orderStatus: 'cancelled', conversaStatus: 'blocked' });
     fronteiras.verificar.mockResolvedValue(sucesso('enviada', { pendenteConfirmacao: true }));
     fronteiras.liberar.mockResolvedValue(sucesso('inconclusiva'));
 
@@ -411,6 +358,18 @@ describe('responder-mensagem — verificar e liberar', () => {
     expect((await chamar({ pack_id: '10', operacao_id: OP, liberar: true })).status).toBe(200);
     expect(fronteiras.verificar).toHaveBeenCalledWith(expect.anything(), '10', OP);
     expect(fronteiras.liberar).toHaveBeenCalledWith(expect.anything(), '10', OP);
-    expect(fronteiras.estadoLocal).not.toHaveBeenCalled();
+  });
+
+  it('D: re-sync com leitura vazia não consulta metadados nem faz upsert; só repassa ao registro do estado', async () => {
+    fronteiras.enviar.mockResolvedValue(sucesso('confirmada'));
+    const vazia = Object.assign([], { conversa: { status: 'blocked', observadoEm: '2026-11-23T10:00:00.000Z' } });
+    fronteiras.buscarPack.mockResolvedValueOnce(vazia);
+
+    const response = await chamar({ pack_id: '10', text: 'Olá', operacao_id: OP });
+
+    expect(response.status).toBe(200);
+    expect(fronteiras.meta).not.toHaveBeenCalled();
+    expect(fronteiras.upsert).not.toHaveBeenCalled();
+    expect(fronteiras.registrarPack).toHaveBeenCalledWith(expect.anything(), 'org-1', '10', vazia);
   });
 });

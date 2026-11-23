@@ -3,12 +3,11 @@ import {
   CODIGO_PEDIDO_CANCELADO,
   ERRO_PEDIDO_CANCELADO,
   buscarMensagensPack,
-  estadoConversaLocal,
+  registrarEstadoDoPack,
   upsertMensagensEstrito,
   marcarConversaCancelada,
   mensagemErroEnvioML,
   ERRO_EM_MEDIACAO,
-  pedidoCancelado,
   resolverMetaPack,
   upsertMensagens,
 } from '../mensagens-io';
@@ -235,52 +234,47 @@ describe('upsertMensagens: estado da conversa', () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 
-  it('falha ao registrar: tolerante loga e segue; estrita lança', async () => {
+  it('falha ao registrar (só exibição): as duas variantes logam e seguem com o upsert', async () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const msgs = () => Object.assign([msgDoComprador('m1', '2026-07-10T10:00:00Z')], { conversa: ESTADO });
     const t = comRpc({ message: 'rpc fora' });
-    await expect(upsertMensagens(t.admin, 'user-1', 'org-1', 'pack-1', META, SELLER_ID,
-      Object.assign([msgDoComprador('m1', '2026-07-10T10:00:00Z')], { conversa: ESTADO }))).resolves.toEqual({ novasRecebidas: 1 });
-    expect(log).toHaveBeenCalled();
-    log.mockRestore();
+    await expect(upsertMensagens(t.admin, 'user-1', 'org-1', 'pack-1', META, SELLER_ID, msgs())).resolves.toEqual({ novasRecebidas: 1 });
     const e = comRpc({ message: 'rpc fora' });
-    await expect(upsertMensagensEstrito(e.admin, 'user-1', 'org-1', 'pack-1', META, SELLER_ID, Object.assign([], { conversa: ESTADO })))
-      .rejects.toThrow('registrar estado da conversa: rpc fora');
+    await expect(upsertMensagensEstrito(e.admin, 'user-1', 'org-1', 'pack-1', META, SELLER_ID, msgs())).resolves.toEqual({ novasRecebidas: 1 });
+    expect(log).toHaveBeenCalledTimes(2);
+    log.mockRestore();
   });
 });
 
-describe('estadoConversaLocal', () => {
-  function criarAdminEstado(msg: { data: unknown; error?: { message: string } | null }, conv: { data: unknown; error?: { message: string } | null }) {
-    const consultas: Record<string, Record<string, ReturnType<typeof vi.fn>>> = {};
-    const from = vi.fn((tabela: string) => {
-      const r = tabela === 'ml_mensagens' ? msg : conv;
-      const maybeSingle = vi.fn().mockResolvedValue({ data: r.data, error: r.error ?? null });
-      const q: Record<string, ReturnType<typeof vi.fn>> = { maybeSingle };
-      for (const k of ['select', 'eq', 'order', 'limit']) q[k] = vi.fn(() => q);
-      consultas[tabela] = q;
-      return q;
-    });
-    return { admin: { from } as unknown as Parameters<typeof estadoConversaLocal>[0], consultas };
-  }
+// D (v3): leitura vazia nos chamadores registra só o estado, independente dos metadados.
+describe('registrarEstadoDoPack', () => {
+  const ESTADO = { status: 'blocked', observadoEm: '2026-11-23T10:00:00.000Z' };
 
-  it('order_status da mensagem mais recente do pack na org + status de ml_conversas', async () => {
-    const { admin, consultas } = criarAdminEstado({ data: { order_status: 'cancelled' } }, { data: { status: 'active' } });
-    await expect(estadoConversaLocal(admin, 'org-1', 123)).resolves.toEqual({ orderStatus: 'cancelled', conversaStatus: 'active' });
-    const m = consultas.ml_mensagens;
-    expect(m.select).toHaveBeenCalledWith('order_status');
-    expect(m.eq).toHaveBeenCalledWith('org_id', 'org-1');
-    expect(m.eq).toHaveBeenCalledWith('pack_id', '123');
-    expect(m.order).toHaveBeenNthCalledWith(1, 'data_ml', { ascending: false, nullsFirst: false });
-    expect(m.order).toHaveBeenNthCalledWith(2, 'message_id', { ascending: false });
-    expect(m.limit).toHaveBeenCalledWith(1);
-    expect(consultas.ml_conversas.eq).toHaveBeenCalledWith('org_id', 'org-1');
-    expect(consultas.ml_conversas.eq).toHaveBeenCalledWith('pack_id', '123');
+  it('leitura vazia sem estado: nenhum registro', async () => {
+    const rpc = vi.fn();
+    await registrarEstadoDoPack({ rpc } as unknown as Parameters<typeof registrarEstadoDoPack>[0], 'org-1', 'p1', []);
+    expect(rpc).not.toHaveBeenCalled();
   });
 
-  it('sem linhas → nulos; erro em qualquer leitura → null (desconhecido)', async () => {
-    await expect(estadoConversaLocal(criarAdminEstado({ data: null }, { data: null }).admin, 'o', 'p'))
-      .resolves.toEqual({ orderStatus: null, conversaStatus: null });
-    await expect(estadoConversaLocal(criarAdminEstado({ data: null, error: { message: 'x' } }, { data: null }).admin, 'o', 'p')).resolves.toBeNull();
-    await expect(estadoConversaLocal(criarAdminEstado({ data: null }, { data: null, error: { message: 'x' } }).admin, 'o', 'p')).resolves.toBeNull();
+  it('leitura vazia com blocked registra blocked', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: null });
+    await registrarEstadoDoPack({ rpc } as unknown as Parameters<typeof registrarEstadoDoPack>[0], 'org-1', 'p1', Object.assign([], { conversa: ESTADO }));
+    expect(rpc).toHaveBeenCalledWith('registrar_estado_conversa', {
+      p_org_id: 'org-1', p_pack_id: 'p1', p_status: 'blocked', p_observado_em: ESTADO.observadoEm,
+    });
+  });
+
+  it('sem org não registra; erro ou exceção da RPC loga e não lança', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const rpc = vi.fn();
+    await registrarEstadoDoPack({ rpc } as unknown as Parameters<typeof registrarEstadoDoPack>[0], null, 'p1', Object.assign([], { conversa: ESTADO }));
+    expect(rpc).not.toHaveBeenCalled();
+    for (const r of [vi.fn().mockResolvedValue({ error: { message: 'x' } }), vi.fn().mockRejectedValue(new Error('rede'))]) {
+      await expect(registrarEstadoDoPack({ rpc: r } as unknown as Parameters<typeof registrarEstadoDoPack>[0], 'org-1', 'p1',
+        Object.assign([], { conversa: ESTADO }))).resolves.toBeUndefined();
+    }
+    expect(log).toHaveBeenCalledTimes(2);
+    log.mockRestore();
   });
 });
 
@@ -324,12 +318,6 @@ describe('resolverMetaPack', () => {
 });
 
 describe('regras de envio pós-venda', () => {
-  it('reconhece somente pedido cancelado', () => {
-    expect(pedidoCancelado('cancelled')).toBe(true);
-    expect(pedidoCancelado('paid')).toBe(false);
-    expect(pedidoCancelado(null)).toBe(false);
-  });
-
   it('traduz bloqueio por cancelamento e preserva erros genéricos do ML', () => {
     expect(mensagemErroEnvioML(
       403,

@@ -20,8 +20,6 @@ export const CODIGO_PEDIDO_CANCELADO = 'pedido_cancelado';
 export const ERRO_EM_MEDIACAO =
   'o pedido está em mediação no Mercado Livre. Responda dentro da reclamação, no próprio ML.';
 
-export const pedidoCancelado = (status: string | null | undefined): boolean => status === 'cancelled';
-
 export function mensagemErroEnvioML(status: number, corpo: string): string {
   if (status === 403 && corpo.includes('blocked_by_cancelled_order')) {
     return ERRO_PEDIDO_CANCELADO;
@@ -65,8 +63,8 @@ const statusDaConversa = (json: unknown): string | undefined => {
   return typeof s === 'string' ? s : undefined;
 };
 
-const comStatus = (msgs: MensagemML[], status: string | undefined, observadoEm: string): MensagensPack =>
-  status ? Object.assign(msgs, { conversa: { status, observadoEm } }) : msgs;
+const comEstado = (msgs: MensagemML[], conversa: EstadoConversa | undefined): MensagensPack =>
+  conversa ? Object.assign(msgs, { conversa }) : msgs;
 
 /** GET /messages/packs/{pack}/sellers/{seller}?tag=post_sale. [] em erro (não trava o worker). */
 export async function buscarMensagensPack(
@@ -78,7 +76,8 @@ export async function buscarMensagensPack(
     const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) });
     if (!resp.ok) return [];
     const json = await resp.json();
-    return comStatus(extrairMensagens(json), statusDaConversa(json), observadoEm);
+    const status = statusDaConversa(json);
+    return comEstado(extrairMensagens(json), status ? { status, observadoEm } : undefined);
   } catch { return []; }
 }
 
@@ -96,9 +95,9 @@ async function paginarPack(
 ): Promise<MensagensPack> {
   const LIMITE = 10; // ponytail: página padrão do ML; o offset avança pelo que a página trouxe.
   const vistas = new Map<string, MensagemML>(); // dedupe por id: página repetida não conta como cobertura
-  let status: string | undefined;
-  const observadoEm = new Date().toISOString(); // antes do 1º fetch: guarda temporal do registro
+  let conversa: EstadoConversa | undefined; // par da última página que informou o estado
   for (let pag = 0; pag < 100; pag++) {
+    const observadoEm = new Date().toISOString(); // antes do fetch desta página: guarda temporal do registro
     const url = `${API}/messages/packs/${packId}/sellers/${sellerId}?tag=post_sale&mark_as_read=${marcarLido}&limit=${LIMITE}&offset=${vistas.size}`;
     const resp = await f(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) });
     if (vazioSeSemAcesso && !vistas.size && (resp.status === 403 || resp.status === 404)) return [];
@@ -106,7 +105,8 @@ async function paginarPack(
     if (resp.status === 403) throw new Error(ERRO_RECONECTAR_ML);
     if (!resp.ok) throw new Error(`ML /messages/packs ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
     const json = await resp.json();
-    status = statusDaConversa(json) ?? status;
+    const status = statusDaConversa(json);
+    if (status) conversa = { status, observadoEm };
     const msgs = extrairMensagens(json);
     const antes = vistas.size;
     for (const m of msgs) { const k = m.id != null ? String(m.id) : JSON.stringify(m); if (!vistas.has(k)) vistas.set(k, m); }
@@ -114,10 +114,10 @@ async function paginarPack(
     const bruto = (json as { paging?: { total?: unknown } })?.paging?.total;
     const total = typeof bruto === 'number' ? bruto : NaN;
     const totalValido = Number.isFinite(total) && total >= 0;
-    if (totalValido && vistas.size >= total) return comStatus([...vistas.values()], status, observadoEm);
+    if (totalValido && vistas.size >= total) return comEstado([...vistas.values()], conversa);
     if (msgs.length < LIMITE) {
       // Página curta/vazia só é o fim quando não há total para contradizê-la.
-      if (!totalValido) return comStatus([...vistas.values()], status, observadoEm);
+      if (!totalValido) return comEstado([...vistas.values()], conversa);
       throw new Error(`ML /messages/packs: paginação incompleta: ${vistas.size} de ${total}`);
     }
     if (vistas.size === antes) throw new Error('ML /messages/packs: paginação sem avanço');
@@ -196,13 +196,16 @@ export async function registrarEstadoConversa(
   return error ? error.message : null;
 }
 
-/** Estado lido junto do pack, se o ML o informou e há org. Sem estado não registra nada. */
-const registrarEstadoDoPack = (
+/** Registra o estado lido junto do pack, se o ML o informou e há org; sem estado não faz nada.
+ *  Independe dos metadados (leitura vazia também). Estado é só para exibição: falha loga e segue. */
+export async function registrarEstadoDoPack(
   admin: SupabaseClient, orgId: string | null, packId: string | number, msgs: MensagemML[],
-): Promise<string | null> => {
+): Promise<void> {
   const estado = (msgs as MensagensPack).conversa;
-  return orgId && estado ? registrarEstadoConversa(admin, orgId, packId, estado) : Promise.resolve(null);
-};
+  if (!orgId || !estado) return;
+  const erro = await registrarEstadoConversa(admin, orgId, packId, estado).catch((e) => (e as Error).message);
+  if (erro) console.error(`[mensagens-io] estado da conversa não registrado (org ${orgId}, pack ${packId}): ${erro}`);
+}
 
 /** Upsert idempotente das mensagens de um pack. Retorna nº de novas RECEBIDAS (para alerta). */
 export async function upsertMensagens(
@@ -215,8 +218,7 @@ export async function upsertMensagens(
   msgs: MensagemML[],
 ): Promise<{ novasRecebidas: number }> {
   // Antes do retorno antecipado: leitura 200 sem mensagens também informa o estado da conversa.
-  const erroEstado = await registrarEstadoDoPack(admin, orgId, packId, msgs);
-  if (erroEstado) console.error(`[mensagens-io] estado da conversa não registrado (org ${orgId}, pack ${packId}): ${erroEstado}`);
+  await registrarEstadoDoPack(admin, orgId, packId, msgs);
   const rows = montarLinhasMensagens(userId, orgId, packId, meta, sellerId, msgs);
   if (rows.length === 0) return { novasRecebidas: 0 };
 
@@ -247,8 +249,7 @@ export async function upsertMensagensEstrito(
   sellerId: string | number,
   msgs: MensagemML[],
 ): Promise<{ novasRecebidas: number }> {
-  const erroEstado = await registrarEstadoDoPack(admin, orgId, packId, msgs);
-  if (erroEstado) throw new Error(`registrar estado da conversa: ${erroEstado}`);
+  await registrarEstadoDoPack(admin, orgId, packId, msgs); // só exibição: não falha o worker
   const rows = montarLinhasMensagens(userId, orgId, packId, meta, sellerId, msgs);
   if (rows.length === 0) return { novasRecebidas: 0 };
 
@@ -354,28 +355,6 @@ export async function listarPacksDeVendasEstrito(admin: SupabaseClient, userId: 
     .limit(limite);
   if (error) throw new Error(`listar packs de vendas: ${error.message}`);
   return mapearPacksDeVendas(data);
-}
-
-/** Mesma fonte da tela e das RPCs: `order_status` da mensagem mais recente do pack na org
- *  (`data_ml desc nulls last, message_id desc`) e o estado do pack em `ml_conversas`. Erro em
- *  qualquer leitura → null (estado desconhecido). Emenda ADR-0067 (23/11). */
-export async function estadoConversaLocal(
-  admin: SupabaseClient, orgId: string, packId: string | number,
-): Promise<{ orderStatus: string | null; conversaStatus: string | null } | null> {
-  const [msg, conv] = await Promise.all([
-    admin.from('ml_mensagens').select('order_status')
-      .eq('org_id', orgId).eq('pack_id', String(packId))
-      .order('data_ml', { ascending: false, nullsFirst: false })
-      .order('message_id', { ascending: false })
-      .limit(1).maybeSingle(),
-    admin.from('ml_conversas').select('status')
-      .eq('org_id', orgId).eq('pack_id', String(packId)).maybeSingle(),
-  ]);
-  if (msg.error || conv.error) return null;
-  return {
-    orderStatus: (msg.data as { order_status?: string | null } | null)?.order_status ?? null,
-    conversaStatus: (conv.data as { status?: string | null } | null)?.status ?? null,
-  };
 }
 
 export async function marcarConversaCancelada(

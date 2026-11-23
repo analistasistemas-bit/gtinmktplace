@@ -3,7 +3,7 @@
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { enviarMsgML } from '../ml/mensagem.ts';
 import { mapearMensagem, type MensagemML } from './mensagem-mapper.ts';
-import { lerPackSemMarcarLido, mensagemErroEnvioML } from './mensagens-io.ts';
+import { lerPackSemMarcarLido, mensagemErroEnvioML, registrarEstadoConversa } from './mensagens-io.ts';
 import type { DepsMensagem, MsgConversa, TentativaMensagem } from './mensagem-fluxo.ts';
 
 const T = 'ml_posvenda_acoes';
@@ -72,8 +72,16 @@ export function depsMensagemReal(admin: SupabaseClient, ctx: CtxMensagem): DepsM
 
     async postML(p) {
       try {
+        const antes = new Date().toISOString(); // guarda temporal do carimbo de bloqueio
         const resp = await enviarMsgML(ctx.token, ctx.packId, ctx.sellerId, ctx.buyerId, p.texto, p.anexo);
         const texto = await resp.text().catch(() => '');
+        // Recusa deste POST por pedido cancelado = evidência do ML de conversa bloqueada (emenda
+        // ADR-0067, 23/11). Só exibição: falha no registro loga e nunca muda o resultado do envio.
+        if (resp.status === 403 && texto.includes('blocked_by_cancelled_order')) {
+          const falhou = await registrarEstadoConversa(admin, ctx.orgId, ctx.packId, { status: 'blocked', observadoEm: antes })
+            .catch((e) => (e as Error).message);
+          if (falhou) console.error(`[mensagem-fluxo-io] conversa bloqueada não registrada (pack ${ctx.packId}): ${falhou}`);
+        }
         let body: unknown = null;
         try { body = texto ? JSON.parse(texto) : null; } catch { body = { texto: texto.slice(0, 2000) }; }
         return { status: resp.status, body };

@@ -980,7 +980,9 @@ requisição ao ML que observou o estado). PK `(org_id, pack_id)`. RLS: `select`
 `org_id = current_org_id()`; `revoke all` de `anon, authenticated` + `grant select` a `authenticated`; sem
 policy de escrita. Escrita só por `registrar_estado_conversa(p_org_id, p_pack_id, p_status, p_observado_em)`
 (`security definer`, execute só para `service_role`): upsert que só sobrescreve quando `observado_em` é
-mais recente que o gravado (sync atrasado não desfaz bloqueio confirmado). Conversa **encerrada** ⇔
+mais recente que o gravado (sync atrasado não desfaz bloqueio confirmado). Gravada pelos syncs de pack
+quando o ML informa o estado e pelo POST real do envio recusado com `blocked_by_cancelled_order`. Só
+exibição: o envio não consulta a tabela. Conversa **encerrada** ⇔
 `order_status = 'cancelled'` na mensagem mais recente do pack e `status` distinto de `'active'` (sem
 linha = não observado, conta como encerrada); pedido não cancelado ignora a tabela.
 

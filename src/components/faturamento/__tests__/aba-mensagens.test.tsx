@@ -36,7 +36,7 @@ function conversaBase(id: number, aguardando: boolean) {
   const packId = `pack-${id}`;
   return {
     pack_id: packId, order_id: `order-${id}`, item_titulo: `Produto ${id}`, item_id: `MLB${id}`,
-    comprador_nome: null, comprador_nick: `NICK_${id}`, order_status: 'paid', conversa_status: null as string | null, aguardando,
+    comprador_nome: null, comprador_nick: `NICK_${id}`, order_status: 'paid', conversa_status: null as string | null, conversa_observado_em: null as string | null, aguardando,
     ultima: '2026-07-10T10:00:00Z', shipping_status: 'handling', idsNaoLidosML: [] as string[], reclamacaoAberta: false, envioPendente: null,
     mensagens: [{
       id: `message-${id}`, pack_id: packId, order_id: `order-${id}`, message_id: `m${id}`, direcao: 'recebida', texto: 'Olá',
@@ -48,7 +48,7 @@ function conversaBase(id: number, aguardando: boolean) {
 
 const PACK_1_CANCELADA = {
   pack_id: 'pack-1', order_id: 'order-1', item_titulo: 'Produto X', item_id: 'MLB123', comprador_nome: null,
-  comprador_nick: 'MARIA_01', order_status: 'cancelled', conversa_status: null as string | null, aguardando: false, ultima: '2026-07-10T10:00:00Z', shipping_status: 'handling', idsNaoLidosML: [] as string[], reclamacaoAberta: false, envioPendente: null,
+  comprador_nick: 'MARIA_01', order_status: 'cancelled', conversa_status: null as string | null, conversa_observado_em: null as string | null, aguardando: false, ultima: '2026-07-10T10:00:00Z', shipping_status: 'handling', idsNaoLidosML: [] as string[], reclamacaoAberta: false, envioPendente: null,
   mensagens: [{
     id: 'message-1', pack_id: 'pack-1', order_id: 'order-1', message_id: 'm1', direcao: 'recebida', texto: 'Olá',
     item_titulo: 'Produto X', item_id: 'MLB123', comprador_nome: null, comprador_nick: 'MARIA_01',
@@ -239,10 +239,11 @@ describe('AbaMensagens', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['mensagensAguardando'] });
   });
 
-  it('melhoria 7: 409 pedido_cancelado trava localmente e solta quando o banco mostra a conversa reaberta', async () => {
+  it('E: 409 pedido_cancelado é terminal e trava localmente até o ML observar a conversa ativa DEPOIS da recusa', async () => {
     const ORIGINAL = CONVERSAS;
     try {
       responderMensagemMock.mockRejectedValueOnce(Object.assign(new Error('x'), { codigo: 'pedido_cancelado' }));
+      responderMensagemMock.mockResolvedValueOnce({ ok: true, estado: 'confirmada', operacao_id: 'op-2', pendenteConfirmacao: false });
       const { rerender, queryClient } = renderAba();
       const tela = () => <QueryClientProvider client={queryClient}><AbaMensagens /></QueryClientProvider>;
       await userEvent.click(screen.getByRole('tab', { name: 'Todas' }));
@@ -251,14 +252,22 @@ describe('AbaMensagens', () => {
       await userEvent.type(within(card()).getByPlaceholderText(/escreva ao comprador/i), 'Oi');
       await userEvent.click(within(card()).getByRole('button', { name: /responder/i }));
       expect(within(card()).getByRole('textbox')).toBeDisabled();
-      // sync traz a conversa bloqueada; depois o ML a reabre (active)
-      CONVERSAS = ORIGINAL.map((c) => c.pack_id === 'pack-2' ? { ...c, order_status: 'cancelled', conversa_status: 'blocked' } : c);
+      const comEstado = (observado: string) => ORIGINAL.map((c) => c.pack_id === 'pack-2'
+        ? { ...c, order_status: 'cancelled', conversa_status: 'active', conversa_observado_em: observado } : c);
+      // active observado ANTES da recusa não solta a trava
+      CONVERSAS = comEstado('2000-01-01T00:00:00Z');
       rerender(tela());
       expect(within(card()).getByRole('textbox')).toBeDisabled();
-      CONVERSAS = ORIGINAL.map((c) => c.pack_id === 'pack-2' ? { ...c, order_status: 'cancelled', conversa_status: 'active' } : c);
+      // active observado DEPOIS da recusa solta
+      CONVERSAS = comEstado('2099-01-01T00:00:00Z');
       rerender(tela());
       expect(within(card()).getByRole('textbox')).not.toBeDisabled();
       expect(within(card()).queryByText('Pedido cancelado')).not.toBeInTheDocument();
+      // a tentativa recusada era terminal: o novo envio usa operacao_id novo
+      await userEvent.click(within(card()).getByRole('button', { name: /responder/i }));
+      const [primeira, segunda] = responderMensagemMock.mock.calls.map((c) => (c[2] as { operacao_id: string }).operacao_id);
+      expect(segunda).toBeDefined();
+      expect(segunda).not.toBe(primeira);
     } finally { CONVERSAS = ORIGINAL; }
   });
 

@@ -12,6 +12,7 @@ import {
   ERRO_RECONECTAR_ML,
   resolverMetaPack,
   upsertMensagensEstrito,
+  registrarEstadoDoPack,
 } from '../_shared/faturamento/mensagens-io.ts';
 
 interface Body { pack_id?: string }
@@ -50,9 +51,10 @@ Deno.serve(async (req) => {
 
   try {
     const msgs = await lerPackMarcandoLido(token, packId, sellerId);
-    // Sem guarda de vazio: o upsert registra o estado da conversa mesmo sem mensagens.
-    const meta = await resolverMetaPack(admin, dono, packId);
-    await upsertMensagensEstrito(admin, dono, orgId, packId, meta, sellerId, msgs);
+    if (msgs.length) {
+      const meta = await resolverMetaPack(admin, dono, packId);
+      await upsertMensagensEstrito(admin, dono, orgId, packId, meta, sellerId, msgs);
+    } else await registrarEstadoDoPack(admin, orgId, packId, msgs); // vazia: só o estado, se o ML o informou
   } catch (e) {
     const msg = (e as Error).message;
     return erro(msg, msg === ERRO_RECONECTAR_ML ? 403 : 502);

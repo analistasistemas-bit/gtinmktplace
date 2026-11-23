@@ -22,8 +22,9 @@ Ver [[Financeiro]], [[Estoque]], [[Notificações]], [[Índice de ADRs]].
   marca a leitura também no ML.
   Pedido cancelado não encerra a conversa por si: quem encerra é o ML (`conversation_status`, guardado
   por pack em `ml_conversas`, com guarda temporal na gravação). Cancelado com conversa `active` conta,
-  aparece em Aguardando e aceita resposta; `blocked` ou ainda não observada fica fora. Envio pendente
-  segue conferível e liberável mesmo com a conversa encerrada (emenda 23/11 ao ADR-0067).
+  aparece em Aguardando e aceita resposta; `blocked` ou ainda não observada fica fora. O estado é só
+  exibição: o envio não é pré-bloqueado, quem recusa é o ML (403), e esse POST recusado carimba `blocked`.
+  Envio pendente segue conferível e liberável mesmo com a conversa encerrada (emenda 23/11 ao ADR-0067).
   O webhook antigo de `messages`/`claims` nunca entregou nada — corrigido na emenda de 28/10 ao
   ADR-0067 (`messages` chega com id da mensagem; reclamação chega como `post_purchase`).
   Ver `docs/decisions/0192-posvenda-ml-acoes.md`.

@@ -2,7 +2,7 @@
 
 ## Mensagens: pedido cancelado com conversa ativa (emenda 23/11 ao ADR-0067) — 2026-11-23
 
-- [x] Tabela `ml_conversas` (estado do pack, `conversation_status.status` do ML) registrada por `registrar_estado_conversa` com guarda temporal em toda sincronização; RPCs, front e `responder-mensagem` passam a encerrar a conversa só com pedido cancelado e conversa não `active`; pré-bloqueio só em envio novo.
+- [x] Tabela `ml_conversas` (estado do pack, `conversation_status.status` do ML) registrada por `registrar_estado_conversa` com guarda temporal em toda sincronização; RPCs e front passam a encerrar a conversa só com pedido cancelado e conversa não `active`; `responder-mensagem` sem pré-bloqueio (o ML decide); POST recusado com `blocked_by_cancelled_order` carimba `blocked`.
 - [ ] Aplicar a migration `20261123231030_mensagens_conversas.sql`, merge e deploy das edges afetadas.
 - [ ] Conferir em produção as conversas de pedido cancelado com conversa ativa voltando a Aguardando após a próxima sincronização dos packs.
 

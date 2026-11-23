@@ -5,7 +5,7 @@ import type { Mensagem } from '../mensagens';
 // representa o retorno bruto do Postgrest (desc + limit); mockOrder segue sendo o ponto de
 // controle dos fixtures, só que agora por trás de um `.limit()` na cadeia.
 const { mockLimit, mockDataOrder, mockMessageIdOrder, mockReclamacoes, mockSelectMsg, mockEnvio, mockEnvioUm, mockConversas } = vi.hoisted(() => ({
-  mockConversas: vi.fn(async (_col: string, _packs: string[]) => ({ data: [] as Array<{ pack_id: string; status: string }>, error: null as null | { message: string } })),
+  mockConversas: vi.fn(async (_col: string, _packs: string[]) => ({ data: [] as Array<{ pack_id: string; status: string; observado_em: string }>, error: null as null | { message: string } })),
   mockSelectMsg: vi.fn(),
   mockEnvioUm: vi.fn(),
   mockEnvio: vi.fn(async () => ({ data: [] as Array<{ pack_id: string; operacao_id: string; estado: string }>, error: null as null | { message: string } })),
@@ -150,27 +150,34 @@ describe('buscarConversas', () => {
     ['não cancelado ignora o estado da conversa', 'paid', 'blocked', true],
   ])('%s', async (_nome, order_status, conversa_status, aguardando) => {
     mockLimit.mockResolvedValueOnce({ data: [msg({ order_status })], error: null });
-    mockConversas.mockResolvedValueOnce({ data: conversa_status ? [{ pack_id: 'pack-1', status: conversa_status }] : [], error: null });
+    mockConversas.mockResolvedValueOnce({ data: conversa_status ? [{ pack_id: 'pack-1', status: conversa_status, observado_em: '2026-11-23T10:00:00Z' }] : [], error: null });
     const [conversa] = await buscarConversas();
     expect(conversa).toMatchObject({ order_status, conversa_status, aguardando });
   });
 
-  it('estado lido de ml_conversas pelos packs carregados, em lotes de 100; erro deixa null', async () => {
+  it('estado e instante lidos de ml_conversas pelos packs carregados, em lotes de 100', async () => {
     mockConversas.mockClear();
     mockLimit.mockResolvedValueOnce({
       data: Array.from({ length: 150 }, (_, i) => msg({ id: `${i}`, message_id: `m${i}`, pack_id: `p${i}`, order_status: 'cancelled' })),
       error: null,
     });
     mockConversas
-      .mockResolvedValueOnce({ data: [{ pack_id: 'p0', status: 'active' }], error: null })
-      .mockResolvedValueOnce({ data: null as never, error: { message: 'fora' } });
+      .mockResolvedValueOnce({ data: [{ pack_id: 'p0', status: 'active', observado_em: '2026-11-23T10:00:00Z' }], error: null })
+      .mockResolvedValueOnce({ data: [], error: null });
     const conversas = await buscarConversas();
     expect(mockConversas).toHaveBeenCalledTimes(2);
     expect(mockConversas.mock.calls[0][0]).toBe('pack_id');
     expect(mockConversas.mock.calls[0][1]).toHaveLength(100);
     expect(mockConversas.mock.calls[1][1]).toHaveLength(50);
-    expect(conversas.find((c) => c.pack_id === 'p0')).toMatchObject({ conversa_status: 'active', aguardando: true });
-    expect(conversas.find((c) => c.pack_id === 'p149')).toMatchObject({ conversa_status: null, aguardando: false });
+    expect(conversas.find((c) => c.pack_id === 'p0'))
+      .toMatchObject({ conversa_status: 'active', conversa_observado_em: '2026-11-23T10:00:00Z', aguardando: true });
+    expect(conversas.find((c) => c.pack_id === 'p149')).toMatchObject({ conversa_status: null, conversa_observado_em: null, aguardando: false });
+  });
+
+  it('E: erro num lote de ml_conversas lança (o react-query mantém o último dado válido)', async () => {
+    mockLimit.mockResolvedValueOnce({ data: [msg({ order_status: 'cancelled' })], error: null });
+    mockConversas.mockResolvedValueOnce({ data: null as never, error: { message: 'fora' } });
+    await expect(buscarConversas()).rejects.toThrow('fora');
   });
 
   it('multi-pack: aguardando vem antes; entre não-aguardando, mais recente primeiro', async () => {

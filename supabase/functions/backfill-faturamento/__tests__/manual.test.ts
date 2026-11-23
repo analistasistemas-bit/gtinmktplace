@@ -49,6 +49,7 @@ function criarIo() {
     listarPacksDeVendas: vi.fn(async () => [{ packId: 'p1' }]),
     buscarMensagensPack: vi.fn(async () => [{ id: 'm1' }]),
     upsertMensagens: vi.fn(async () => ({ novasRecebidas: 0 })),
+    registrarEstadoDoPack: vi.fn(async () => undefined),
   };
 }
 
@@ -80,6 +81,17 @@ describe('processarConexao (caminho manual/legado) — caracterização', () => 
     expect(io.listarPacksDeVendas).toHaveBeenCalledWith(admin, 'user-1');
     expect(io.buscarMensagensPack).toHaveBeenCalledWith('tok', 'p1', '999');
     expect(io.upsertMensagens).toHaveBeenCalledWith(admin, 'user-1', 'org-1', 'p1', { packId: 'p1' }, '999', [{ id: 'm1' }]);
+  });
+
+  it('D: pack com leitura vazia não faz upsert; só repassa ao registro do estado', async () => {
+    const io = criarIo();
+    const vazia = Object.assign([], { conversa: { status: 'blocked', observadoEm: 'T' } });
+    io.buscarMensagensPack.mockResolvedValueOnce(vazia as never);
+    const admin = { tag: 'admin' };
+    // deno-lint-ignore no-explicit-any
+    await processarConexao(admin as any, CX, INTERVALO, false, io as any);
+    expect(io.upsertMensagens).not.toHaveBeenCalled();
+    expect(io.registrarEstadoDoPack).toHaveBeenCalledWith(admin, 'org-1', 'p1', vazia);
   });
 
   it('soVendas:true → pula perguntas, claims e mensagens', async () => {

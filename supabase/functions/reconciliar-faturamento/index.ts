@@ -11,7 +11,7 @@ import { carregarLiquidoMP, carregarLiquidoMPDoPedido, carregarGtinsDaVenda, map
 import { buscarPerguntasSeller, buscarTituloItem, upsertPergunta, carregarPerguntasLocais } from '../_shared/faturamento/perguntas-io.ts';
 import { buscarClaimsSeller, lerClaimCompleto, upsertDevolucao, carregarDevolucoesLocais, enriquecerPendentes, resolverPedidoDoClaim } from '../_shared/faturamento/devolucoes-io.ts';
 import { mapearPergunta } from '../_shared/faturamento/pergunta.ts';
-import { buscarPacksNaoLidos, buscarMensagensPackEstrito, upsertMensagensEstrito, resolverMetaPack } from '../_shared/faturamento/mensagens-io.ts';
+import { buscarPacksNaoLidos, buscarMensagensPackEstrito, upsertMensagensEstrito, resolverMetaPack, registrarEstadoDoPack } from '../_shared/faturamento/mensagens-io.ts';
 import { recuperarComOrcamento, recuperarPendentes } from '../_shared/faturamento/posvenda-fluxo.ts';
 import { depsAcaoReal } from '../_shared/faturamento/posvenda-acao-io.ts';
 import { tratarPedidoCancelado } from '../_shared/estoque/cancelamento.ts';
@@ -459,9 +459,10 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
         await Promise.all(lote.map(async (packId) => {
           try {
             const msgs = await buscarMensagensPackEstrito(token, packId, cx.contaExternaId!);
-            // Sem guarda de vazio: o upsert registra o estado da conversa mesmo sem mensagens.
-            const meta = await resolverMetaPack(admin, userId, packId);
-            await upsertMensagensEstrito(admin, userId, org, packId, meta, cx.contaExternaId!, msgs);
+            if (msgs.length) {
+              const meta = await resolverMetaPack(admin, userId, packId);
+              await upsertMensagensEstrito(admin, userId, org, packId, meta, cx.contaExternaId!, msgs);
+            } else await registrarEstadoDoPack(admin, org, packId, msgs); // vazia: só o estado, se o ML o informou
             n++;
           } catch (e) {
             console.warn(`reconciliar: mensagens do pack ${packId} da org ${org} falharam: ${(e as Error).message}`);

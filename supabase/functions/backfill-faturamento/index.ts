@@ -22,7 +22,7 @@ import { carregarLiquidoMP, carregarLiquidoMPDoPedido, carregarGtinsFallback } f
 import { buscarPerguntasSeller, buscarTituloItem, upsertPergunta } from '../_shared/faturamento/perguntas-io.ts';
 import {
   buscarMensagensPack, upsertMensagens, listarPacksDeVendas,
-  buscarMensagensPackEstrito, upsertMensagensEstrito, listarPacksDeVendasEstrito,
+  buscarMensagensPackEstrito, upsertMensagensEstrito, listarPacksDeVendasEstrito, registrarEstadoDoPack,
 } from '../_shared/faturamento/mensagens-io.ts';
 import { buscarClaimsSeller, lerClaimCompleto, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
 import { claimsDeVenda } from '../_shared/faturamento/reconciliar-filtros.ts';
@@ -95,6 +95,7 @@ const IO_PADRAO = {
   getValidAccessTokenConexao, buscarPerguntasSeller, buscarTituloItem, upsertPergunta, buscarClaimsSeller,
   lerClaimCompleto, upsertDevolucao, buscarPedidosPeriodo, carregarCatalogo, carregarLiquidoMP, carregarGtinsFallback,
   buscarFreteVendedor, buscarShipment, upsertVenda, listarPacksDeVendas, buscarMensagensPack, upsertMensagens,
+  registrarEstadoDoPack,
 };
 type IoConexao = typeof IO_PADRAO;
 
@@ -223,7 +224,8 @@ export async function processarConexao(admin: ReturnType<typeof adminClient>, cx
         await Promise.all(lote.map(async (p) => {
           try {
             const msgs = await io.buscarMensagensPack(token, p.packId, contaExternaId);
-            await io.upsertMensagens(admin, userId, orgId, p.packId, p, contaExternaId, msgs); // vazio registra o estado da conversa
+            if (msgs.length) await io.upsertMensagens(admin, userId, orgId, p.packId, p, contaExternaId, msgs);
+            else await io.registrarEstadoDoPack(admin, orgId, p.packId, msgs); // vazia: só o estado, se o ML o informou
           } catch (e) {
             console.warn(`backfill: mensagens do pack ${p?.packId} de ${userId} falharam: ${(e as Error).message}`);
           }
@@ -317,7 +319,8 @@ function depsBackfillReal(admin: ReturnType<typeof adminClient>, orgId: string):
         // allSettled: nada fica em voo quando o lote lança.
         const rs = await Promise.allSettled(lote.map(async (p) => {
           const msgs = await buscarMensagensPackEstrito(token, p.packId, contaExternaId);
-          await upsertMensagensEstrito(admin, userId, org, p.packId, p, contaExternaId, msgs); // vazio registra o estado da conversa
+          if (msgs.length) await upsertMensagensEstrito(admin, userId, org, p.packId, p, contaExternaId, msgs);
+          else await registrarEstadoDoPack(admin, org, p.packId, msgs); // vazia: só o estado, se o ML o informou
         }));
         const falha = rs.find((r): r is PromiseRejectedResult => r.status === 'rejected');
         if (falha) throw falha.reason;
