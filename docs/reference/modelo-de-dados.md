@@ -2041,7 +2041,7 @@ responde apenas sobre `seller_id` que o chamador já descobriu pela ponte do cat
 
 ## Reposição e pedido de compra (ADR-0207)
 
-> Migrations `20261116231928_reposicao.sql`, `20261117004919_reposicao_acoes.sql`, `20261117020908_reposicao_entrada_lote.sql`. Código pronto, **deploy pendente**.
+> Migrations `20261116231928_reposicao.sql`, `20261117004919_reposicao_acoes.sql`, `20261117020908_reposicao_entrada_lote.sql`. Aplicada em 2026-11-22.
 
 Todas as tabelas novas têm RLS: `select` só da própria org (`org_id = current_org_id()`); `anon` e `authenticated` sem escrita (revoke all + grant select). Escrita só por `service_role` (edge `reposicao`) e pelas RPCs abaixo.
 
@@ -2061,7 +2061,7 @@ Todas as tabelas novas têm RLS: `select` só da própria org (`org_id = current
 
 ## Acesso de agentes (ADR-0210)
 
-> Migration `20261122203018_agente_conexoes.sql`. Código pronto, **deploy pendente**. Guia: [acesso-de-agentes.md](acesso-de-agentes.md).
+> Migration `20261122203018_agente_conexoes.sql`. Aplicada em 2026-11-22. Guia: [acesso-de-agentes.md](acesso-de-agentes.md).
 
 ### `agente_conexoes`
 

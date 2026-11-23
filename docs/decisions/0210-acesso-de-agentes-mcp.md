@@ -103,7 +103,7 @@ Até lá, o Diego usa uma conexão por loja.
 
 ## Implementação da fatia 1 (2026-11-22)
 
-Código pronto e revisado na branch `worktree-api-agentes`; aguarda aplicação da migration, merge e deploy. Guia de uso: `docs/reference/acesso-de-agentes.md`. O que mudou em relação ao texto aprovado:
+Migration aplicada, merge na `main` e deploy feitos em 2026-11-22 (ver "Aceite da fatia 1"). Guia de uso: `docs/reference/acesso-de-agentes.md`; contrato técnico: `docs/reference/api-agentes.md`. O que mudou em relação ao texto aprovado:
 
 - Ferramentas com prefixo: `publiai_loja`, `publiai_margem_anuncio`, `publiai_margens_catalogo`, `publiai_simular_margem`.
 - Segundo teto diário por organização, além do de tarifas: **leituras** de item e preço no ML (3.000 por dia; 2 por bloco de 20 anúncios). Estado `limite_leituras`.
