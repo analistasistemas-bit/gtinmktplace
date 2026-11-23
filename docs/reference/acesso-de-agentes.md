@@ -1,6 +1,6 @@
 # Referência — Acesso de agentes (ADR-0210, fatia 1)
 
-> Estado: código pronto e revisado na branch `worktree-api-agentes`; aguarda aplicação da migration, merge e deploy. Decisão: [ADR-0210](../decisions/0210-acesso-de-agentes-mcp.md). Tabelas: [modelo-de-dados.md](modelo-de-dados.md). Edges: [edge-functions.md](edge-functions.md).
+> Estado: código pronto e revisado na branch `worktree-api-agentes`; aguarda aplicação da migration, merge e deploy. Decisão: [ADR-0210](../decisions/0210-acesso-de-agentes-mcp.md). Tabelas: [modelo-de-dados.md](modelo-de-dados.md). Edges: [edge-functions.md](edge-functions.md). Contrato técnico (protocolo, esquemas, campos, erros, limites): [api-agentes.md](api-agentes.md).
 
 ## O que é
 
