@@ -36,7 +36,7 @@ function conversaBase(id: number, aguardando: boolean) {
   const packId = `pack-${id}`;
   return {
     pack_id: packId, order_id: `order-${id}`, item_titulo: `Produto ${id}`, item_id: `MLB${id}`,
-    comprador_nome: null, comprador_nick: `NICK_${id}`, order_status: 'paid', conversa_status: null as string | null, conversa_observado_em: null as string | null, aguardando,
+    comprador_nome: null, comprador_nick: `NICK_${id}`, order_status: 'paid', conversa_status: null as string | null, aguardando,
     ultima: '2026-07-10T10:00:00Z', shipping_status: 'handling', idsNaoLidosML: [] as string[], reclamacaoAberta: false, envioPendente: null,
     mensagens: [{
       id: `message-${id}`, pack_id: packId, order_id: `order-${id}`, message_id: `m${id}`, direcao: 'recebida', texto: 'Olá',
@@ -48,7 +48,7 @@ function conversaBase(id: number, aguardando: boolean) {
 
 const PACK_1_CANCELADA = {
   pack_id: 'pack-1', order_id: 'order-1', item_titulo: 'Produto X', item_id: 'MLB123', comprador_nome: null,
-  comprador_nick: 'MARIA_01', order_status: 'cancelled', conversa_status: null as string | null, conversa_observado_em: null as string | null, aguardando: false, ultima: '2026-07-10T10:00:00Z', shipping_status: 'handling', idsNaoLidosML: [] as string[], reclamacaoAberta: false, envioPendente: null,
+  comprador_nick: 'MARIA_01', order_status: 'cancelled', conversa_status: null as string | null, aguardando: false, ultima: '2026-07-10T10:00:00Z', shipping_status: 'handling', idsNaoLidosML: [] as string[], reclamacaoAberta: false, envioPendente: null,
   mensagens: [{
     id: 'message-1', pack_id: 'pack-1', order_id: 'order-1', message_id: 'm1', direcao: 'recebida', texto: 'Olá',
     item_titulo: 'Produto X', item_id: 'MLB123', comprador_nome: null, comprador_nick: 'MARIA_01',
@@ -62,8 +62,10 @@ let CONVERSAS = [
   ...Array.from({ length: 12 }, (_, i) => conversaBase(i + 14, false)),
 ];
 
+// Sobrescreve o retorno do hook da lista (ex.: erro sem cache); null = lista CONVERSAS normal.
+let LISTA: Record<string, unknown> | null = null;
 vi.mock('@/hooks/useMensagens', () => ({
-  useListaMensagens: () => ({ data: CONVERSAS, isFetching: false }),
+  useListaMensagens: () => LISTA ?? { data: CONVERSAS, isFetching: false },
   useResumoMensagens: () => ({ data: RESUMO_ATUAL, isError: RESUMO_ERRO }),
 }));
 
@@ -95,6 +97,7 @@ describe('AbaMensagens', () => {
     vi.clearAllMocks();
     RESUMO_ATUAL = RESUMO;
     RESUMO_ERRO = false;
+    LISTA = null;
   });
   it('abre na aba Aguardando; a conversa cancelada (não aguardando) fica fora até trocar para Todas', async () => {
     renderAba();
@@ -150,28 +153,69 @@ describe('AbaMensagens', () => {
     expect(screen.getByText('Produto 2')).toBeInTheDocument();
   });
 
-  it('quando responderMensagem falha com erro de pedido cancelado: exibe toast.info, marca cancelada localmente e invalida queries', async () => {
-    const erro = Object.assign(new Error('Pedido cancelado no Mercado Livre'), { codigo: 'pedido_cancelado' });
-    responderMensagemMock.mockRejectedValueOnce(erro);
+  // Emenda ADR-0067 (23/11): sem trava local por recusa — a tela reflete o banco, que a edge acabou de gravar.
+  it('409 pedido_cancelado: toast, tentativa encerrada e refetch da lista e do resumo, sem travar localmente', async () => {
+    responderMensagemMock.mockRejectedValueOnce(Object.assign(new Error('Pedido cancelado no Mercado Livre'), { codigo: 'pedido_cancelado' }));
+    responderMensagemMock.mockResolvedValueOnce({ ok: true, estado: 'confirmada', operacao_id: 'op-2', pendenteConfirmacao: false });
 
     const { invalidateSpy } = renderAba();
     const card = screen.getByText('Produto 2').closest('div.rounded-lg') as HTMLElement;
     await abrir(card);
     const textarea = within(card).getByPlaceholderText(/escreva ao comprador/i);
-
     await userEvent.type(textarea, 'Mensagem de teste');
-    const responderBtn = within(card).getByRole('button', { name: /responder/i });
-    expect(responderBtn).not.toBeDisabled();
+    await userEvent.click(within(card).getByRole('button', { name: /responder/i }));
 
-    await userEvent.click(responderBtn);
-
-    expect(responderMensagemMock).toHaveBeenCalledWith('pack-2', 'Mensagem de teste', { operacao_id: expect.any(String), anexo: null });
     expect(toast.info).toHaveBeenCalledWith('Este pedido foi cancelado no Mercado Livre. Mensagens desativadas.');
-    expect(within(card).getByText('Pedido cancelado')).toBeInTheDocument();
-    expect(textarea).toBeDisabled();
-    expect(responderBtn).toBeDisabled();
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['mensagens'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['mensagens'] }); // prefixo: lista e resumo
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['mensagensAguardando'] });
+    // Dados do banco ainda não encerrados: nada travado por estado local.
+    expect(within(card).queryByText('Pedido cancelado')).not.toBeInTheDocument();
+    expect(textarea).not.toBeDisabled();
+    // A tentativa recusada era terminal: o novo envio usa operacao_id novo.
+    await userEvent.click(within(card).getByRole('button', { name: /responder/i }));
+    const [primeira, segunda] = responderMensagemMock.mock.calls.map((c) => (c[2] as { operacao_id: string }).operacao_id);
+    expect(segunda).toBeDefined();
+    expect(segunda).not.toBe(primeira);
+  });
+
+  it('depois do 409 + refetch: cancelled e conversa não ativa mostra "Pedido cancelado"; active segue respondível', async () => {
+    const ORIGINAL = CONVERSAS;
+    try {
+      responderMensagemMock.mockRejectedValueOnce(Object.assign(new Error('x'), { codigo: 'pedido_cancelado' }));
+      const { rerender, queryClient } = renderAba();
+      const tela = () => <QueryClientProvider client={queryClient}><AbaMensagens /></QueryClientProvider>;
+      await userEvent.click(screen.getByRole('tab', { name: 'Todas' }));
+      const card = () => screen.getByText('Produto 2').closest('div.rounded-lg') as HTMLElement;
+      await abrir(card());
+      await userEvent.type(within(card()).getByPlaceholderText(/escreva ao comprador/i), 'Oi');
+      await userEvent.click(within(card()).getByRole('button', { name: /responder/i }));
+      const comEstado = (conversa_status: string) => ORIGINAL.map((c) => c.pack_id === 'pack-2'
+        ? { ...c, order_status: 'cancelled', conversa_status } : c);
+      CONVERSAS = comEstado('blocked');
+      rerender(tela());
+      expect(within(card()).getByText('Pedido cancelado')).toBeInTheDocument();
+      expect(within(card()).getByRole('textbox')).toBeDisabled();
+      CONVERSAS = comEstado('active');
+      rerender(tela());
+      expect(within(card()).queryByText('Pedido cancelado')).not.toBeInTheDocument();
+      expect(within(card()).getByRole('textbox')).not.toBeDisabled();
+    } finally { CONVERSAS = ORIGINAL; }
+  });
+
+  it('melhoria 3: falha ao carregar sem cache mostra erro com "Tentar de novo", não caixa vazia', async () => {
+    const refetch = vi.fn();
+    LISTA = { data: undefined, isFetching: false, isError: true, refetch };
+    renderAba();
+    expect(screen.queryByText(/Nenhuma mensagem pós-venda/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Não foi possível carregar as mensagens/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+    expect(refetch).toHaveBeenCalled();
+  });
+
+  it('melhoria 3: falha ao recarregar com cache mantém a lista', () => {
+    LISTA = { data: CONVERSAS, isFetching: false, isError: true, refetch: vi.fn() };
+    renderAba();
+    expect(screen.getByText('Produto 2')).toBeInTheDocument();
   });
 
   // Emenda ADR-0067 (23/11): quem encerra a conversa é o ML (ml_conversas), não o pedido.
@@ -237,38 +281,6 @@ describe('AbaMensagens', () => {
     expect(within(card).queryByRole('textbox')).not.toBeInTheDocument();
     expect(within(card).getByRole('link', { name: /ver reclamação/i })).toBeInTheDocument();
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['mensagensAguardando'] });
-  });
-
-  it('E: 409 pedido_cancelado é terminal e trava localmente até o ML observar a conversa ativa DEPOIS da recusa', async () => {
-    const ORIGINAL = CONVERSAS;
-    try {
-      responderMensagemMock.mockRejectedValueOnce(Object.assign(new Error('x'), { codigo: 'pedido_cancelado' }));
-      responderMensagemMock.mockResolvedValueOnce({ ok: true, estado: 'confirmada', operacao_id: 'op-2', pendenteConfirmacao: false });
-      const { rerender, queryClient } = renderAba();
-      const tela = () => <QueryClientProvider client={queryClient}><AbaMensagens /></QueryClientProvider>;
-      await userEvent.click(screen.getByRole('tab', { name: 'Todas' }));
-      const card = () => screen.getByText('Produto 2').closest('div.rounded-lg') as HTMLElement;
-      await abrir(card());
-      await userEvent.type(within(card()).getByPlaceholderText(/escreva ao comprador/i), 'Oi');
-      await userEvent.click(within(card()).getByRole('button', { name: /responder/i }));
-      expect(within(card()).getByRole('textbox')).toBeDisabled();
-      const comEstado = (observado: string) => ORIGINAL.map((c) => c.pack_id === 'pack-2'
-        ? { ...c, order_status: 'cancelled', conversa_status: 'active', conversa_observado_em: observado } : c);
-      // active observado ANTES da recusa não solta a trava
-      CONVERSAS = comEstado('2000-01-01T00:00:00Z');
-      rerender(tela());
-      expect(within(card()).getByRole('textbox')).toBeDisabled();
-      // active observado DEPOIS da recusa solta
-      CONVERSAS = comEstado('2099-01-01T00:00:00Z');
-      rerender(tela());
-      expect(within(card()).getByRole('textbox')).not.toBeDisabled();
-      expect(within(card()).queryByText('Pedido cancelado')).not.toBeInTheDocument();
-      // a tentativa recusada era terminal: o novo envio usa operacao_id novo
-      await userEvent.click(within(card()).getByRole('button', { name: /responder/i }));
-      const [primeira, segunda] = responderMensagemMock.mock.calls.map((c) => (c[2] as { operacao_id: string }).operacao_id);
-      expect(segunda).toBeDefined();
-      expect(segunda).not.toBe(primeira);
-    } finally { CONVERSAS = ORIGINAL; }
   });
 
   it('reclamação fecha com o card aberto: o aviso some e a caixa de resposta volta (achado Codex)', async () => {

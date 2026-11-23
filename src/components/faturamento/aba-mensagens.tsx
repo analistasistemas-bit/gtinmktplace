@@ -44,8 +44,6 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
   const [texto, setTexto] = useState('');
   const [sugerindo, setSugerindo] = useState(false);
   const [enviando, setEnviando] = useState(false);
-  // Instante da recusa local (409 pedido_cancelado); null = sem recusa nesta sessão do card.
-  const [recusaEm, setRecusaEm] = useState<number | null>(null);
   const [reclamacaoLocal, setReclamacaoLocal] = useState(false);
   const [dispensando, setDispensando] = useState(false);
   const marcandoRef = useRef(false);
@@ -62,10 +60,8 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
 
   const ultimaMsg = c.mensagens[c.mensagens.length - 1];
   const ultimaRecebida = [...c.mensagens].reverse().find((m) => m.direcao === 'recebida');
-  // A trava local vale até o ML observar a conversa ativa DEPOIS da recusa (emenda ADR-0067, 23/11).
-  const travaLocal = recusaEm != null
-    && !(c.conversa_status === 'active' && Date.parse(c.conversa_observado_em ?? '') > recusaEm);
-  const cancelada = conversaEncerrada(c) || travaLocal;
+  // Só os dados do banco: depois do 409 o refetch traz o que a edge gravou (emenda ADR-0067, 23/11).
+  const cancelada = conversaEncerrada(c);
   // Reclamação aberta: o ML só aceita a conversa pela reclamação (emenda ADR-0067, 01/11).
   const emReclamacao = !cancelada && (c.reclamacaoAberta || reclamacaoLocal);
   // Envio pendente segue conferível/liberável mesmo com a conversa encerrada: só o envio novo trava.
@@ -178,7 +174,6 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
         await qc.invalidateQueries({ queryKey: ['mensagensAguardando'] });
       } else if (ehPedidoCancelado(e)) {
         tentativaRef.current = null; // recusa terminal: o próximo envio usa operacao_id novo
-        setRecusaEm(Date.now());
         toast.info('Este pedido foi cancelado no Mercado Livre. Mensagens desativadas.');
         await qc.invalidateQueries({ queryKey: ['mensagens'] });
         await qc.invalidateQueries({ queryKey: ['mensagensAguardando'] });
@@ -228,6 +223,11 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
       toast.info('Envio liberado. Seu texto foi mantido.');
       await qc.invalidateQueries({ queryKey: ['mensagens'] });
     } catch (e) {
+      // Tentativa já terminal (ex.: 409 pedido_cancelado com estado): a pendência dela acabou.
+      if ((e as ErroEdge).estado === 'recusada' || (e as ErroEdge).estado === 'cancelada') {
+        tentativaRef.current = null; setPendenteLocal(null);
+        await qc.invalidateQueries({ queryKey: ['mensagens'] });
+      }
       toast.error(`Falha ao liberar: ${(e as Error).message}`);
     } finally { setResolvendo(false); }
   }
@@ -502,7 +502,7 @@ function CardsResumo({ resumo, erro, ativo, onEscolher }: {
 }
 
 export function AbaMensagens() {
-  const { data: conversas, isFetching } = useListaMensagens();
+  const { data: conversas, isFetching, isError, refetch } = useListaMensagens();
   // Contadores só do banco (todas as mensagens): nunca a contagem do array limitado.
   const { data: resumo, isError: resumoErro } = useResumoMensagens();
   const lista = conversas ?? [];
@@ -520,6 +520,17 @@ export function AbaMensagens() {
   const [pagina, setPagina] = useState(1);
   const [tamanho, setTamanho] = useState(20);
   const [statusFiltro, setStatusFiltro] = useState<FiltroStatusMensagem>('aguardando');
+
+  // Falha sem dado anterior não pode parecer caixa vazia; com cache, a lista anterior continua.
+  if (isError && !conversas) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 rounded-lg border bg-card px-4 py-16 text-center text-sm text-muted-foreground">
+        <MessagesSquare className="h-6 w-6" />
+        Não foi possível carregar as mensagens.
+        <Button variant="outline" size="sm" onClick={() => { void refetch(); }}>Tentar de novo</Button>
+      </div>
+    );
+  }
 
   if (!isFetching && lista.length === 0) {
     return (

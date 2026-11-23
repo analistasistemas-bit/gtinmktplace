@@ -1822,7 +1822,7 @@ Lógica em `supabase/functions/_shared/galeria/`. Nenhuma edge desta família es
   cancelado — o ML é a única autoridade sobre o envio, e todo pedido (envio novo, `verificar`, `liberar`)
   vai à máquina de estados. Se o ML recusar com 403 `blocked_by_cancelled_order`, audita a falha, persiste
   `order_status = 'cancelled'` em `ml_mensagens` (e `ml_vendas`) e responde HTTP 409 estruturado
-  (`codigo: 'pedido_cancelado'`). O carimbo `blocked` em `ml_conversas` é feito pelo adaptador do POST
+  (`codigo: 'pedido_cancelado'`, com `estado`, `operacao_id` e `pendenteConfirmacao` da tentativa). O carimbo `blocked` em `ml_conversas` é feito pelo adaptador do POST
   real (`postML` em `_shared/faturamento/mensagem-fluxo-io.ts`), com o instante de antes do `fetch`. Reusa
   `sugerir-resposta-pergunta` para a sugestão de IA (ADR-0067). `pack_id` validado (`/^\d+$/`) antes de
   entrar na query `.or()` de `resolverMetaPack` (plan 037). Se o ML rejeitar com 403

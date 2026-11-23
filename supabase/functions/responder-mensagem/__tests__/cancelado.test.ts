@@ -131,12 +131,26 @@ describe('responder-mensagem — pedido cancelado', () => {
     const response = await chamar({ pack_id: '456', text: 'Olá' });
 
     expect(response.status).toBe(409);
+    // Corpo com o estado da tentativa (o card limpa a pendência dessa operação); mesmo formato que
+    // src/components/faturamento/__tests__/aba-mensagens-anexo.test.tsx usa como resposta real.
     expect(await response.json()).toEqual({
       ok: false,
       erro: 'Não é possível responder porque o pedido foi cancelado.',
       codigo: 'pedido_cancelado',
+      estado: 'recusada',
+      operacao_id: OP,
+      pendenteConfirmacao: false,
     });
     expect(fronteiras.marcarCancelada).toHaveBeenCalledWith(expect.anything(), 'org-1', '456', 'owner-1');
+  });
+
+  it('Conferir que chega à recusa por pedido cancelado devolve o mesmo 409 com o estado', async () => {
+    fronteiras.verificar.mockResolvedValue(recusa('Não é possível responder porque o pedido foi cancelado.'));
+
+    const response = await chamar({ pack_id: '456', operacao_id: OP, verificar: true });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ codigo: 'pedido_cancelado', estado: 'recusada', operacao_id: OP, pendenteConfirmacao: false });
   });
 
   it('403 blocked_by_claim do ML → 409 reclamacao_aberta, sem marcar cancelada', async () => {

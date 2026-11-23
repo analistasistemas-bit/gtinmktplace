@@ -244,10 +244,12 @@ Decisão:
   `responder-mensagem` não pré-decide mais (saiu também o bloqueio antigo por `ml_vendas.status`). Todo
   pedido (envio novo, `verificar`, `liberar`) vai à máquina de estados; conversa bloqueada o ML recusa
   com 403 e nada sai. A recusa `blocked_by_cancelled_order` audita a falha, marca o pedido cancelado e
-  responde 409 `pedido_cancelado`, como antes.
+  responde 409 `pedido_cancelado`, agora com `estado`, `operacao_id` e `pendenteConfirmacao` da tentativa.
 - Na tela, o card mantém "Conferir" e "Já conferi, liberar envio" com a conversa encerrada; só o envio
   novo fica desabilitado. O 409 `pedido_cancelado` encerra a tentativa (o próximo envio usa
-  `operacao_id` novo) e trava o card localmente até o ML observar a conversa `active` depois da recusa.
+  `operacao_id` novo; em Conferir/Liberar, a pendência dessa operação some) e refaz a lista e o resumo.
+  Não há trava local: a tela reflete o que a edge acabou de gravar. Falha ao carregar sem dado anterior
+  mostra erro com "Tentar de novo", não a caixa vazia.
 - Packs ainda sem linha em `ml_conversas` mantêm o comportamento anterior até a próxima sincronização.
 
 ### Limitações conhecidas (aceitas)
@@ -258,4 +260,7 @@ Decisão:
 2. Janela de deploy: PWA com bundle antigo pode mostrar contador (RPC) incluindo conversa que a tela
    antiga ainda esconde, até recarregar.
 3. Tentar enviar em conversa bloqueada custa um POST recusado pelo ML (sem pré-bloqueio na edge, por
-   decisão).
+   decisão). Se o registro tolerante do `blocked` falhar, a conversa segue respondível na tela e a próxima
+   tentativa também é recusada pelo ML.
+4. `sync-mensagem` consulta a venda antes de ler o pack (ordem herdada); se essa consulta falhar, o
+   worker retenta sem registrar o estado da conversa.

@@ -155,7 +155,7 @@ describe('buscarConversas', () => {
     expect(conversa).toMatchObject({ order_status, conversa_status, aguardando });
   });
 
-  it('estado e instante lidos de ml_conversas pelos packs carregados, em lotes de 100', async () => {
+  it('estado lido de ml_conversas pelos packs carregados, em lotes de 100', async () => {
     mockConversas.mockClear();
     mockLimit.mockResolvedValueOnce({
       data: Array.from({ length: 150 }, (_, i) => msg({ id: `${i}`, message_id: `m${i}`, pack_id: `p${i}`, order_status: 'cancelled' })),
@@ -170,8 +170,8 @@ describe('buscarConversas', () => {
     expect(mockConversas.mock.calls[0][1]).toHaveLength(100);
     expect(mockConversas.mock.calls[1][1]).toHaveLength(50);
     expect(conversas.find((c) => c.pack_id === 'p0'))
-      .toMatchObject({ conversa_status: 'active', conversa_observado_em: '2026-11-23T10:00:00Z', aguardando: true });
-    expect(conversas.find((c) => c.pack_id === 'p149')).toMatchObject({ conversa_status: null, conversa_observado_em: null, aguardando: false });
+      .toMatchObject({ conversa_status: 'active', aguardando: true });
+    expect(conversas.find((c) => c.pack_id === 'p149')).toMatchObject({ conversa_status: null, aguardando: false });
   });
 
   it('E: erro num lote de ml_conversas lança (o react-query mantém o último dado válido)', async () => {

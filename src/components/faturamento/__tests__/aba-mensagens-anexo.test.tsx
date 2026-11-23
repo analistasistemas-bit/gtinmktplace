@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { toast } from 'sonner';
 import { AbaMensagens } from '../aba-mensagens';
+import { supabase } from '@/lib/supabase';
 
 const responderMock = vi.fn();
 const verificarMock = vi.fn();
@@ -129,6 +130,40 @@ describe('envio de resposta', () => {
     expect(within(card()).queryByRole('textbox')).not.toBeInTheDocument();
     await userEvent.click(within(card()).getByRole('button', { name: 'Conferir no Mercado Livre' }));
     expect(verificarMock).toHaveBeenCalledWith('pack-2', OP);
+  });
+
+  // Bloqueio 2 (emenda ADR-0067, 23/11): o 409 da recusa por pedido cancelado traz o estado da
+  // tentativa. Corpo idêntico ao que a edge monta (supabase/functions/responder-mensagem/__tests__/
+  // cancelado.test.ts), passado pelo postEdge real.
+  describe('409 pedido_cancelado com estado da tentativa (corpo real da edge)', () => {
+    const CORPO_409 = {
+      ok: false, erro: 'Não é possível responder porque o pedido foi cancelado.', codigo: 'pedido_cancelado',
+      estado: 'recusada', operacao_id: OP, pendenteConfirmacao: false,
+    };
+    let reais: typeof import('@/lib/mensagens');
+    beforeAll(async () => { reais = await vi.importActual<typeof import('@/lib/mensagens')>('@/lib/mensagens'); });
+    beforeEach(() => {
+      vi.spyOn(supabase.auth, 'getSession').mockResolvedValue({ data: { session: { access_token: 't' } }, error: null } as never);
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(CORPO_409), { status: 409 })));
+    });
+    afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+    it.each([
+      ['Conferir no Mercado Livre', () => verificarMock.mockImplementationOnce((...a: unknown[]) => reais.verificarEnvio(...(a as [string, string])))],
+      ['Liberar envio', () => liberarMock.mockImplementationOnce((...a: unknown[]) => reais.liberarEnvio(...(a as [string, string])))],
+    ])('%s: a pendência daquela operação some e a caixa volta (conversa não encerrada)', async (acao, preparar) => {
+      CONVERSAS = [conversa({ envioPendente: PENDENTE })];
+      preparar();
+      renderAba(); await abrir();
+      if (acao === 'Liberar envio') {
+        await userEvent.click(within(card()).getByRole('button', { name: 'Já conferi, liberar envio' }));
+        await userEvent.click(screen.getByRole('button', { name: 'Liberar envio' }));
+      } else {
+        await userEvent.click(within(card()).getByRole('button', { name: acao }));
+      }
+      await waitFor(() => expect(within(card()).queryByRole('button', { name: 'Conferir no Mercado Livre' })).not.toBeInTheDocument());
+      expect(caixa()).not.toBeDisabled();
+    });
   });
 
   it('conferir_confirmada_mostra_sucesso_e_libera_o_campo', async () => {

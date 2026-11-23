@@ -44,8 +44,6 @@ export interface Conversa {
   order_status: string | null;
   /** Estado do pack em `ml_conversas` (`conversation_status.status` do ML); null = ainda não observado. */
   conversa_status: string | null;
-  /** Quando o ML informou `conversa_status` (`ml_conversas.observado_em`); null = não observado. */
-  conversa_observado_em: string | null;
   mensagens: Mensagem[];
   /** Aguardando resposta = última mensagem do comprador, não lida, em conversa não encerrada. ADR-0067. */
   aguardando: boolean;
@@ -86,17 +84,13 @@ async function preencherEnvio(conversas: Conversa[]): Promise<void> {
  *  Falha num lote lança: o react-query mantém o último dado válido e retenta (nada de estado vazio). */
 async function preencherEstadoConversa(conversas: Conversa[]): Promise<void> {
   const packs = conversas.map((c) => c.pack_id);
-  const porPack = new Map<string, { status: string; observado_em: string }>();
+  const porPack = new Map<string, string>();
   for (let i = 0; i < packs.length; i += 100) {
-    const { data, error } = await supabase.from('ml_conversas').select('pack_id, status, observado_em').in('pack_id', packs.slice(i, i + 100));
+    const { data, error } = await supabase.from('ml_conversas').select('pack_id, status').in('pack_id', packs.slice(i, i + 100));
     if (error) throw new Error(error.message);
-    for (const r of (data ?? []) as Array<{ pack_id: string; status: string; observado_em: string }>) porPack.set(r.pack_id, r);
+    for (const r of (data ?? []) as Array<{ pack_id: string; status: string }>) porPack.set(r.pack_id, r.status);
   }
-  for (const c of conversas) {
-    const e = porPack.get(c.pack_id);
-    c.conversa_status = e?.status ?? null;
-    c.conversa_observado_em = e?.observado_em ?? null;
-  }
+  for (const c of conversas) c.conversa_status = porPack.get(c.pack_id) ?? null;
 }
 
 /** Marca as conversas cujo pedido (`order_id` de alguma mensagem, ou o `pack_id` em pedido solo)
@@ -172,7 +166,6 @@ export async function buscarConversas(): Promise<Conversa[]> {
         comprador_nick: m.comprador_nick,
         order_status: m.order_status,
         conversa_status: null,
-        conversa_observado_em: null,
         mensagens: [],
         aguardando: false,
         ultima: null,

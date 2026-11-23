@@ -109,7 +109,11 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
       await marcarConversaCancelada(admin, orgId, packId, dono).catch((e) =>
         console.error('[responder-mensagem] falha ao marcar conversa cancelada:', e)
       );
-      return erro(ERRO_PEDIDO_CANCELADO, 409, CODIGO_PEDIDO_CANCELADO);
+      // Com o estado da tentativa: o card limpa a pendência dessa operação (409 mantido p/ PWA antiga).
+      return json({
+        ok: false, erro: ERRO_PEDIDO_CANCELADO, codigo: CODIGO_PEDIDO_CANCELADO,
+        estado: r.estado, operacao_id: r.operacao_id, pendenteConfirmacao: r.pendenteConfirmacao,
+      }, 409);
     }
     await auditar('failed');
     if (r.erro === ERRO_EM_MEDIACAO || r.erro?.includes('blocked_by_claim')) return erro(ERRO_RECLAMACAO_ABERTA, 409, 'reclamacao_aberta');
