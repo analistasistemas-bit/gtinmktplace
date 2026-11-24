@@ -102,6 +102,32 @@ fantasma, venda sem produto). Decisão do Diego: corrigir a regra em **todos** o
   não regredir o caso comum. `pending` e `handling` não mudam.
 - O crédito de kit (`entraNoCreditoKit`, ADR-0200) segue o mesmo predicado. O texto do aviso não muda.
 
+**8. Emenda 24/11/2026 (decisão 3): envio `cancelled` repõe quando o histórico prova que a etiqueta nunca foi
+impressa.** Decisão do Diego. Dos 9 cancelamentos que a fila do ADR-0211 concluiu em 24/11, 7 tinham envio
+`cancelled` que nunca saiu e só avisaram: na prática a reposição automática quase não acontecia.
+
+- **Prova** (`GET /shipments/{id}/history`, lida só para envio `cancelled` sem substatus): `id` e `status=cancelled`
+  conferem, `mode=me2`, `date_first_printed` presente e nula, e `date_shipped`, `date_delivered`,
+  `date_not_delivered` e `date_returned` nulas. Qualquer outra forma não prova.
+- **Por que não `date_shipped`:** está vazia também em envio `picked_up`/`dropped_off` (34 de 34 em 24/11).
+- **Medido em 24/11:** 775 envios que saíram (coletados, despachados, entregues, devolvidos), em 5 orgs, 90 dias:
+  **nenhum** sem data de impressão. Dos 212 `cancelled`, 208 nunca impressos; os 4 impressos mantiveram a data,
+  ou seja, o ML não a apagou neles. Os dois pedidos que originaram a decisão 3 também nunca foram impressos.
+- **`pack_splitted` e qualquer substatus ficam de fora:** a peça pode ter ido em outro envio.
+- **Travas, só avisa:** (a) `entrada` ou `ajuste` do SKU depois da baixa; (b) linha de `variacoes` do SKU criada
+  depois da baixa, porque a planilha grava saldo absoluto numa linha nova **sem** movimento no ledger; (c) pedido já
+  avisado (`estoque_cancelado_despachado`): o operador já foi instruído, o app não age por cima. (c) também impede
+  reposição retroativa no deploy.
+- **Fonte das baixas:** o ledger (baixas ainda abertas), não o catálogo atual.
+- **Leitura falhou** (rede, 401/403, 429, 5xx, prazo) ou trava não lida: não repõe. Webhook e reconciliação deixam para a
+  fila do ADR-0211 (`adiado`) se a obrigação está armada e a drenagem ligada; senão avisam na hora. A fila tenta de novo
+  e avisa da 3ª tentativa em diante. 4xx definitivo conta como "não prova" e avisa.
+- **Estado misto na fila** (parte já estornada): com prova repõe o que está aberto; sem prova, avisa da 3ª tentativa em
+  diante (antes ficava pendente para sempre, sem aviso).
+- Vale para webhook, reconciliação e fila, e para o crédito de kit (mesmo predicado).
+- **Risco aceito:** um ajuste feito fora do app (balcão) não deixa rastro; e as travas são lidas antes do estorno, não
+  na mesma transação.
+
 ## Consequências
 
 **Aceitas.** A reconciliação revisita o mesmo pedido cancelado de hora em hora enquanto ele estiver
