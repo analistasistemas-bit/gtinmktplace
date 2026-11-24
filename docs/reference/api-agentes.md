@@ -592,7 +592,7 @@ Todos os contadores ficam no Redis, com incremento e conferência de teto numa �
 Detalhes:
 
 - **Chamadas.** Cada `POST` autenticado, aceito pelo portão (conexão válida, organização ativa com o módulo), conta 1, ainda que o corpo depois seja inválido. Recusas `401` e `403` não consomem o limite da conexão.
-- **IP.** Só conta pedidos com credencial recusada; um pedido com chave válida não é checado contra esse limite. O IP vem de `cf-connecting-ip`; senão, do **último** item de `x-forwarded-for`; senão, a string `desconhecido` (todos sem IP identificável dividem um único contador). Quais cabeçalhos de fato chegam à edge não foi verificado (ADR-0210, "Não coberto").
+- **IP.** Só conta pedidos com credencial recusada; um pedido com chave válida não é checado contra esse limite. O IP vem de `cf-connecting-ip`; senão, do **último** item de `x-forwarded-for`; senão, a string `desconhecido` (todos sem IP identificável dividem um único contador). Medido em 2026-11-23 nos logs da edge: `cf-connecting-ip` chega em todas as requisições (igual ao `x-real-ip` do gateway) e `x-forwarded-for` não chega (ADR-0210, "Aceite em uso real").
 - **Tarifas.** A reserva é feita antes das consultas: 2 por cor (mínimo 1 cor) de cada anúncio que tem item lido e preço utilizável. É um teto de reserva, e não a contagem de chamadas reais ao Mercado Livre (a tarifa pode vir do cache). Reserva maior que 5.000 numa só chamada → `limite_tarifas`. Se uma consulta de tarifa individual sinaliza limite, nenhuma nova consulta é feita naquela chamada e a ferramenta responde `limite_tarifas`.
 - **Leituras.** A reserva é `2 × ceil(anúncios ÷ 20)` (um multiget de item e outro de preço por bloco de 20), feita antes de tocar o Mercado Livre. Uma página de catálogo de 50 anúncios custa 6.
 - **Ordem de consumo dentro de uma chamada de margem:** alíquota (sem alíquota → `sem_aliquota`, nenhuma cota usada) → reserva de leituras → leitura de item e preço → reserva de tarifas → cálculo. Alvo inexistente, cursor inválido e preço inválido terminam antes de qualquer reserva.
@@ -639,8 +639,8 @@ Da ADR-0210 e do código:
 - Alíquota interna (`interna_pct`, ADR-0112) não entra no cálculo, como na aba Campanhas (não verificado se deveria).
 - Comissão e frete vêm de um cache de até 8 horas (`tarifa_idade_max_horas`); o preço é lido na hora.
 - A leitura pode renovar e regravar a credencial do Mercado Livre da organização.
-- Pendências aceitas para o piloto: `/items/bulk` pode devolver item de outro vendedor (a conferir antes de abrir a outras lojas); o cache de comissão `promo:lp:v1` é compartilhado entre organizações; não há bloqueio por IP antes da consulta da chave; não há revalidação da conexão depois da leitura do corpo; o limite de 10 conexões ativas não é atômico.
-- O teste real em cada cliente MCP ainda não foi feito (a tabela de clientes do guia está "a testar").
+- Pendências aceitas para o piloto: o cache de comissão `promo:lp:v1` é compartilhado entre organizações; não há bloqueio por IP antes da consulta da chave; não há revalidação da conexão depois da leitura do corpo; o limite de 10 conexões ativas não é atômico.
+- Teste real em cada cliente: feito em 2026-11-23; resultado na tabela de clientes do guia ([acesso-de-agentes.md](acesso-de-agentes.md)). `/items/bulk` de outro vendedor responde 403 sem corpo e o anúncio vira `anuncio_indisponivel` (ADR-0210).
 
 O que **não existe**:
 

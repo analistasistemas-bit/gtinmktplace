@@ -190,20 +190,27 @@ A igualdade com a aba Campanhas vale **por anúncio**. O agregado da família n�
 
 ## Como conectar em cada cliente
 
-O teste real em cada cliente é posterior à entrega; o resultado fica registrado aqui. Claude.ai e ChatGPT dizem se a fatia 2 (OAuth) é necessária para eles.
+Testado em produção em 2026-11-23, na Zaven, com uma chave criada pela tela e revogada ao fim. "Funciona" = `publiai_loja` e `publiai_margem_anuncio` responderam `ok` e a chamada apareceu na auditoria.
 
 | Cliente | Como configurar | Resultado do teste |
 |---|---|---|
-| Claude Code | `claude mcp add --transport http publiai https://<projeto>.supabase.co/functions/v1/agentes --header "Authorization: Bearer <chave>"` | a testar |
-| claude.ai | Conector personalizado com a URL do servidor; a chave vai em cabeçalho `Authorization`, se o cliente aceitar | a testar |
-| ChatGPT | Conector MCP com a URL do servidor e cabeçalho `Authorization: Bearer <chave>`, se o cliente aceitar | a testar |
-| Hermes | Servidor MCP HTTP com a URL e o cabeçalho `Authorization: Bearer <chave>` na configuração de servidores | a testar |
-| OpenClaw | Servidor MCP HTTP com a URL e o cabeçalho `Authorization: Bearer <chave>` | a testar |
-| Grok (CLI) | Servidor MCP HTTP com a URL e o cabeçalho `Authorization: Bearer <chave>` | a testar |
-| Muse Code | Servidor MCP HTTP com a URL e o cabeçalho `Authorization: Bearer <chave>` | a testar |
-| OpenBot | Servidor MCP HTTP com a URL e o cabeçalho `Authorization: Bearer <chave>` | a testar |
+| Claude Code (CLI e aba Code do Claude Desktop) | `claude mcp add --transport http -s local publiai https://<projeto>.supabase.co/functions/v1/agentes --header "Authorization: Bearer <chave>"`. Use `-s local` ou `-s user`, nunca `-s project` (gravaria a chave em `.mcp.json`). A sessão precisa ser nova para enxergar o servidor; o `/mcp` do Desktop não lista servidores da CLI | funciona |
+| claude.ai (e o chat do Claude Desktop, que usa os conectores da conta) | Configurações › Conectores › Adicionar conector personalizado › URL › Autenticação **Sem login** › Cabeçalhos de requisição: `authorization` = `Bearer <chave>` (o aviso "exigiu login" vem do 401 da primeira sondagem e pode ser ignorado) | funciona |
+| ChatGPT | Plugins › Adicionar › Adicionar servidor MCP personalizado: Autenticação só oferece OAuth, Sem autenticação ou "OAuth ou sem autenticação"; não há campo de chave nem de cabeçalho | não conecta com chave: depende da fatia 2 (OAuth) |
+| Grok Bot (app) | Adicionar um conector personalizado › Tipo HTTPS remoto › Cabeçalhos HTTP: `Authorization` = `Bearer <chave>`; ID do cliente vazio | funciona |
+| OpenBot (app) | Conectar a um MCP personalizado › **Streamable HTTP** (o padrão é STDIO) › Cabeçalhos: `Authorization` = `Bearer <chave>`; App de login vazio; "Testar conexão" lista as 4 ferramentas | funciona |
+| Muse (app) | Sem tela de MCP: pedir no chat para criar o conector (URL, streamable HTTP, chave no cabeçalho `Authorization`). A credencial é digitada numa página segura do Muse, nunca no chat. Guardar o valor completo `Bearer <chave>` e pedir que ele seja enviado sem acrescentar outro `Bearer` (o primeiro envio saiu `Bearer Bearer …` e levou 401) | funciona |
+| OpenClaw | `openclaw mcp add publiai --url <url> --transport streamable-http --header "Authorization=Bearer <chave>"` (a CLI 2026.9.4 aceita `--header`) | não testado (adiado) |
+| Hermes | Roda em servidor remoto; `config.yaml` › `mcp_servers` com `url` e `headers` | não testado (adiado: exigiria levar a chave ao servidor remoto) |
+| Muse Code (CLI) | `~/.config/muse/settings.json` › `mcp_servers`, transporte `streamable_http` com `headers` | não testado (não instalado) |
 
-Em todos: o transporte é HTTP (Streamable HTTP), sem OAuth; a chave nunca vai na URL. Os comandos e telas exatos de cada cliente mudam: confirme na documentação dele no teste e corrija esta tabela.
+Em todos: transporte HTTP (Streamable HTTP), sem OAuth; a chave nunca vai na URL nem no chat. Clientes que fazem `GET` para abrir fluxo SSE recebem 405 e seguem só com `POST` (visto nos logs de Claude Code, Cursor e node).
+
+Observações do teste:
+
+- O agente pode resumir errado: num teste, o modelo disse 17 anúncios onde a ferramenta devolveu 16. Número que vai para decisão se confere no JSON da ferramenta.
+- O agente pode chamar ferramentas que não foram pedidas (o Muse chamou `publiai_margens_catalogo` por conta própria). É só leitura, mas consome cota; vale ligar a aprovação por ferramenta no cliente.
+- O ícone do conector no claude.ai vem do domínio da URL (aparece o do Supabase). O ChatGPT aceita um PNG próprio.
 
 ## Segurança
 

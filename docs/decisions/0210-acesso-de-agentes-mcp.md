@@ -113,7 +113,7 @@ Migration aplicada, merge na `main` e deploy feitos em 2026-11-22 (ver "Aceite d
 
 ### Pendências aceitas para o piloto
 
-- Conferir no aceite se `/items/bulk` devolve item de outro vendedor. Se devolver, validar o vendedor antes de liberar outras lojas.
+- ~~Conferir no aceite se `/items/bulk` devolve item de outro vendedor.~~ Fechada em 2026-11-23: não devolve (ver "Aceite em uso real").
 - O cache de comissão `promo:lp:v1` é compartilhado entre organizações. É anterior a este trabalho; pendência separada.
 - Não há bloqueio por IP antes da consulta da chave. Sugestão registrada: assinatura embutida na chave antes de abrir a mais lojas.
 - Sem revalidação da conexão depois da leitura do corpo (janela de até 10 s).
@@ -131,4 +131,23 @@ Chamadas reais ao servidor em produção, com uma conexão temporária da Zaven 
 - Conexão revogada: 401 na chamada seguinte. Sem chave: 401. GET: 405.
 - Auditoria: uma linha por chamada de ferramenta, com alvo canônico (`texto_livre` para a busca por título).
 
-Não coberto neste aceite: comparação lado a lado com a aba Campanhas na tela (a conta é a mesma função, coberta por teste de paridade); leitura de anúncio de outro vendedor por `/items/bulk`; qual cabeçalho de IP chega à edge; criação de chave pela tela; conexão em cada cliente.
+Não coberto neste aceite: comparação lado a lado com a aba Campanhas na tela (a conta é a mesma função, coberta por teste de paridade); leitura de anúncio de outro vendedor por `/items/bulk`; qual cabeçalho de IP chega à edge; criação de chave pela tela; conexão em cada cliente. Todos cobertos em 2026-11-23 (seção seguinte), exceto os clientes marcados como não testados.
+
+## Aceite em uso real (2026-11-23)
+
+Conduzido pelo Diego na Zaven, com uma chave criada pela tela (prefixo `ad62ca5f`, 30 dias) e revogada ao fim. Somente leitura; nada escrito no Mercado Livre nem em dado de cliente.
+
+**Confirmado:**
+
+- **Tela de conexões:** a chave aparece uma única vez (com o endereço do servidor e o aviso), a lista mostra prefixo, validade e último uso, "Ver chamadas" mostra a auditoria traduzida, com alvo canônico ou "—". A seção só aparece para administrador da própria loja: em sessão de suporte ela some, como decidido.
+- **Paridade com a aba Campanhas, por anúncio:** `MLB5563623367` (Campanha ZAven, ativa) e os outros 8 anúncios da mesma família: tela "até 42,5%", API `42,5848…` (a tela trunca em uma casa). Família `8632963637759506`: tela "até 44,5%", API `44,5332…`. Componentes da API fecham no preço (R$ 42,75 = comissão 5,99 + frete 6,85 + imposto 1,71 + líquido 28,21; custo 10,00).
+- **Clientes:** funcionam Claude Code, claude.ai, Grok Bot, OpenBot e Muse; o ChatGPT não oferece chave nem cabeçalho (só OAuth). Tabela e passo a passo em `docs/reference/acesso-de-agentes.md`.
+- **Revogação pela tela:** chamada seguinte com a mesma chave → `401 {"erro":"nao_autorizado"}`; nenhuma chamada auditada depois de `revogada_em`.
+- **`/items/bulk` de outro vendedor:** com o token da Zaven, um anúncio próprio voltou `200` com o vendedor da Zaven e um anúncio da Avil voltou `403` sem corpo. O código descarta envelope que não é `200` com corpo, então um MLB alheio viraria `anuncio_indisponivel`, nunca um número. Não é preciso validar `seller_id`.
+- **Cabeçalho de IP:** nos logs da edge (77 requisições de 9 clientes diferentes), `cf-connecting-ip` chegou em todas, sempre igual ao `x-real-ip` do gateway; `x-forwarded-for` não chegou em nenhuma. O `ipDoCliente` já prefere `cf-connecting-ip`; o limite de falhas por IP funciona como desenhado.
+
+**Continua pendente:**
+
+- Clientes não testados: OpenClaw (a CLI aceita `--header`), Hermes (servidor remoto) e Muse Code (não instalado).
+- ChatGPT só conecta com a fatia 2.
+- As pendências aceitas para o piloto listadas acima, exceto a do `/items/bulk`.
