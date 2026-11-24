@@ -1,5 +1,14 @@
 # PubliAI — Tasks
 
+## Fila própria de cancelamento (ADR-0211) — 2026-11-24
+
+- [x] Código na branch `feat/adr-0211-fila-cancelamento`: migration `20261124091308_ml_vendas_cancelamento_fila.sql` (colunas, trigger que só arma, 3 RPCs), drenagem `reconciliar-faturamento/cancelamentos.ts`, chamada no fim da etapa `pendencias`, testes F1–F32, P1–P9, B1–B3, I1, teste SQL S1–S19 e script de ensaio.
+- [ ] Orquestrador: rodar o teste SQL (vermelho só com o prelúdio, verde com a migration; comando no topo de `supabase/tests/ml_vendas_cancelamento_fila.sql`).
+- [ ] Revisão independente (crítica) antes do merge.
+- [ ] Deploy: V0, `supabase db push` fora de :00/:40/06:30 UTC, V1/V2, `supabase functions deploy reconciliar-faturamento` (sem `DRENAR_CANCELAMENTOS`).
+- [ ] Ensaio 6.2 (três orgs `ENSAIO ADR-0211 A/B/C`, prévia + `--executar`), canário 6.3 em duas orgs, e só então `DRENAR_CANCELAMENTOS=1`. Registrar a medição no ADR-0211.
+- [ ] Reparo do acervo (388 pedidos, planilha por org, sem estorno por script).
+
 ## Mensagens: pedido cancelado com conversa ativa (emenda 23/11 ao ADR-0067) — 2026-11-23
 
 - [x] Tabela `ml_conversas` (estado do pack, `conversation_status.status` do ML) registrada por `registrar_estado_conversa` com guarda temporal em toda sincronização; RPCs e front passam a encerrar a conversa só com pedido cancelado e conversa não `active`; `responder-mensagem` sem pré-bloqueio (o ML decide); POST recusado com `blocked_by_cancelled_order` carimba `blocked`.

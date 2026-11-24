@@ -1896,6 +1896,16 @@ Lógica em `supabase/functions/_shared/galeria/`. Nenhuma edge desta família es
   fan-out por org atrás de `FANOUT_RECONCILIAR` (ligada em produção) — ver
   [runbook de ativação/rollback](#fan-out-por-org-adr-0173-protocolo-ativação-e-rollback). O
   caminho legado abaixo só volta se a flag for desligada (rollback).
+  **Fila própria de cancelamento (ADR-0211, 24/11/2026 — código na branch, deploy pendente):** a etapa
+  `pendencias` agora sempre volta a `pendencias|<último>`; a execução que acha a fila comum vazia drena
+  um lote da obrigação de cancelamento (`cancelamentos.ts`) e segue para `perguntas`. Lote de 20 por org
+  por ciclo (RPC `reivindicar_cancelamentos`, chave `params.ate`), carência de 5 min, conclusão só com o
+  ledger (`cancelamento_baixas`) e o ML ao vivo, confirmação por geração (`registrar_cancelamentos_tratados`).
+  Prazos contados do início da execução: começa obrigação nova até 60 s (`DRENAR_CANCELAMENTOS_PRAZO_MS`),
+  para de esperar aos 100 s. Liga por `DRENAR_CANCELAMENTOS` (`1` = todas; lista de ids = só essas;
+  ausente = desligada). Não roda no caminho legado nem sem `conta_externa_id`. Obrigação não concluída ou
+  drenagem com erro deixa a rodada `parcial` (`cancelamentosPendentes`/`cancelamentosErro` no acumulado).
+  Reversão: remover a variável (o trigger continua armando).
   **Data de liberação do MP (ADR-0123, 18/08/2026):** o
   Passo 2 realinha `ml_vendas.money_release_date` de TODAS as vendas da org (não só as 72h) com o
   mapa de pagamentos que `carregarLiquidoMP` já carregou — `mapaLiberacaoPorOrder` (puro, indexa

@@ -841,6 +841,17 @@ também bumpam `atualizado_em`, contrato exigido pelo poll incremental de `useVe
 que altera coluna exibida na UI de vendas precisa bumpar `atualizado_em`, senão a mudança fica
 cega ao delta até o próximo fetch completo.
 Classificação: `is_publiai` (match GTIN/família — ADR-0045), `tem_devolucao`. `raw jsonb`.
+**Obrigação de cancelamento (ADR-0211, *migration `20261124091308_ml_vendas_cancelamento_fila.sql`*, ainda não
+aplicada em 24/11):** oito colunas `cancelamento_*` — `geracao` uuid, `versao` (o `raw.last_updated` que armou),
+`armado_em`, `lote` (chave do ciclo do reconciliar), `tentativas`, `tentado_em`, `desfecho`, `concluido_em`.
+Pendente = `geracao` preenchida e `concluido_em` nulo. Trigger `ml_vendas_cancelamento_fila` (`before update of
+raw`, só atribui em `NEW`): arma na transição para `cancelled` em `raw` e renova a geração a cada `cancelled` com
+versão maior; nunca desarma; venda inédita ou acervo já cancelado não arma. Índice parcial `(org_id,
+cancelamento_lote) where cancelamento_geracao is not null`. RPCs `security definer`, só `service_role`:
+`reivindicar_cancelamentos(org, lote, limite, carencia)` (reabre concluída com baixa posterior e fixa o lote, teto
+exato por org e ciclo, só com a rodada `reconciliar` `rodando` no mesmo `params.ate`), `cancelamento_baixas(org,
+orders[])` (baixas do ledger com estorno efetivo e instante da leitura) e `registrar_cancelamentos_tratados(org,
+itens)` (desfecho por geração). Nenhum outro código lê ou grava essas colunas.
 Único `(user_id, order_id)`; índice `(user_id, date_closed DESC)` (lookups pontuais de workers,
 service_role, sem RLS); índice `(org_id)` (*migration `20260705165131_e7_org_id_dominio.sql`*,
 mesma fase E7, cobre a RLS `org_id = current_org_id()`); índice `(org_id, date_closed DESC)`
