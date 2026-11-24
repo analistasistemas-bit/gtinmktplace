@@ -224,7 +224,7 @@ function InstrucoesClientes({ chave }: { chave: string }) {
   const clientes = instrucoesPorCliente(chave, MCP_URL);
   return (
     <Tabs defaultValue={clientes[0].id}>
-      <TabsList className="flex-wrap">
+      <TabsList>
         {clientes.map((c) => <TabsTrigger key={c.id} value={c.id}>{c.nome}</TabsTrigger>)}
       </TabsList>
       {clientes.map((c) => (

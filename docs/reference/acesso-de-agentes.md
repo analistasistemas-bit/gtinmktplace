@@ -198,7 +198,7 @@ A igualdade com a aba Campanhas vale **por anúncio**. O agregado da família n�
 
 | Cliente | Como configurar | Resultado do teste |
 |---|---|---|
-| Claude Code (CLI e aba Code do Claude Desktop) | `claude mcp add --transport http -s local publiai https://<projeto>.supabase.co/functions/v1/agentes --header "Authorization: Bearer <chave>"`. Use `-s local` ou `-s user`, nunca `-s project` (gravaria a chave em `.mcp.json`). A sessão precisa ser nova para enxergar o servidor; o `/mcp` do Desktop não lista servidores da CLI | funciona |
+| Claude Code (CLI e aba Code do Claude Desktop) | `read -rs PUBLIAI_CHAVE` (cole a chave, não aparece), depois `claude mcp add --transport http -s user publiai https://mcp.publiai.daludi.com.br --header "Authorization: Bearer $PUBLIAI_CHAVE"`: a chave não fica no histórico do terminal. Use `-s local` ou `-s user`, nunca `-s project` (gravaria a chave em `.mcp.json`). A sessão precisa ser nova para enxergar o servidor; o `/mcp` do Desktop não lista servidores da CLI | funciona |
 | claude.ai (e o chat do Claude Desktop, que usa os conectores da conta) | Configurações › Conectores › Adicionar conector personalizado › URL › Autenticação **Sem login** › Cabeçalhos de requisição: `authorization` = `Bearer <chave>` (o aviso "exigiu login" vem do 401 da primeira sondagem e pode ser ignorado) | funciona |
 | ChatGPT | Plugins › Adicionar › Adicionar servidor MCP personalizado: Autenticação só oferece OAuth, Sem autenticação ou "OAuth ou sem autenticação"; não há campo de chave nem de cabeçalho | não conecta com chave: depende da fatia 2 (OAuth) |
 | Grok Bot (app) | Adicionar um conector personalizado › Tipo HTTPS remoto › Cabeçalhos HTTP: `Authorization` = `Bearer <chave>`; ID do cliente vazio | funciona |

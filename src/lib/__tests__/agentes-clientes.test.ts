@@ -18,10 +18,12 @@ describe('instrucoesPorCliente', () => {
     }
   });
 
-  it('Claude Code: um comando só, escopo de usuário, com a chave no cabeçalho', () => {
-    expect(valores('claude-code')).toEqual([
-      `claude mcp add --transport http -s user publiai ${URL} --header "Authorization: Bearer ${CHAVE}"`,
-    ]);
+  it('Claude Code: a chave entra por leitura oculta, nunca no comando (não vai para o histórico do terminal)', () => {
+    const [ler, comando, chave] = valores('claude-code');
+    expect(ler).toBe('read -rs PUBLIAI_CHAVE');
+    expect(comando).toBe(`claude mcp add --transport http -s user publiai ${URL} --header "Authorization: Bearer $PUBLIAI_CHAVE" && unset PUBLIAI_CHAVE`);
+    expect(comando).not.toContain(CHAVE);
+    expect(chave).toBe(CHAVE);
   });
 
   it('Muse: a mensagem do chat nunca leva a chave; o valor vai só para a página segura', () => {

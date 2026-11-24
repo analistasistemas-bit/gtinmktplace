@@ -21,10 +21,13 @@ export function instrucoesPorCliente(chave: string, url: string): ClienteAgente[
     {
       id: 'claude-code', nome: 'Claude Code',
       passos: [
+        // A chave não vai no comando: ficaria no histórico do terminal (revisão Codex, Emenda 1).
+        { texto: '1. No terminal, rode e cole a chave quando ele esperar (ela não aparece na tela):', valor: 'read -rs PUBLIAI_CHAVE' },
         {
-          texto: 'Rode no terminal e abra uma sessão nova:',
-          valor: `claude mcp add --transport http -s user publiai ${url} --header "Authorization: ${bearer}"`,
+          texto: '2. Depois rode este comando e abra uma sessão nova do Claude Code:',
+          valor: `claude mcp add --transport http -s user publiai ${url} --header "Authorization: Bearer $PUBLIAI_CHAVE" && unset PUBLIAI_CHAVE`,
         },
+        { texto: 'Chave para colar no passo 1:', valor: chave },
       ],
     },
     {
