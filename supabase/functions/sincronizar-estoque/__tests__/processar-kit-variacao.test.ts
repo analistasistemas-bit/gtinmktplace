@@ -74,8 +74,8 @@ function fakeAdmin(b: Banco) {
           return { data: [{ codigo: 'P1', estoque: b.saldos?.P1 ?? 4 }, { codigo: 'P2', estoque: b.saldos?.P2 ?? 6 }], error: null };
         case 'anuncios_externos':
           return { data: [b.mesmoItem
-            ? { id: 'A', canal: 'fake', item_externo_id: 'MLB-X', variacoes_externas: { P1: 1, P2: 2 } }
-            : { id: 'A', canal: 'fake', item_externo_id: null, variacoes_externas: null }], error: null };
+            ? { id: 'A', canal: 'fake', item_externo_id: 'MLB-X', variacoes_externas: { P1: 1, P2: 2 }, status: 'publicado' }
+            : { id: 'A', canal: 'fake', item_externo_id: null, variacoes_externas: null, status: 'publicado' }], error: null };
         case 'anuncios_externos_itens':
           if (b.mesmoItem) return { data: [], error: null };
           return { data: ITENS.map((r) => (b.semUp ? { ...r, user_product_id: null } : r))
@@ -169,6 +169,8 @@ describe('sincronizar-estoque × kit com variação', () => {
     expect(pushes()).toEqual(['MLB-P2']);
     expect(m.rpcs.find((x) => x.nome === 'kit_criar_transferencia')?.args.p_alvos)
       .toEqual([{ codigo: 'P1', up_id: 'UP-P1', item_ids: ['MLB-P1', 'MLB-P1C'] }]);
+    // Tem saída própria (saga): não é o aviso de "vínculo não ativo".
+    expect(m.notificar.mock.calls.filter((c) => (c as unknown[])[4])).toEqual([]);
   });
 
   it('SKU comum com item fora de ativo segue fora do push, como hoje', async () => {
@@ -176,6 +178,9 @@ describe('sincronizar-estoque × kit com variação', () => {
     await processarSincronizacao(m.deps, JOB);
     expect(pushes()).toEqual(['MLB-P2']);
     expect(m.rpcs).toEqual([]);
+    expect(m.notificar).toHaveBeenCalledWith(
+      expect.anything(), 'O', 'estoque', expect.stringContaining('SKU P1'), { chave: 'up-descartado:MLB-P1' },
+    );
   });
 
   it('participante não é reativado pelo push (só os alvos empurrados)', async () => {
