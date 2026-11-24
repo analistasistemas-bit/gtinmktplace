@@ -1,6 +1,6 @@
 # ADR-0211 — Obrigação de cancelamento com fila própria, armada pelo banco
 
-**Status:** Proposto (2026-11-24, revisão 3). Só desenho: nenhum código, migration ou deploy feito.
+**Status:** Proposto (2026-11-24, revisão 4). Só desenho: nenhum código, migration ou deploy feito.
 **Decisores:** Diego
 **Refina:** [ADR-0121](0121-cancelamento-tratado-tambem-pela-reconciliacao.md) (quem chama o tratamento de cancelamento). As decisões 2 e 3 (quando repor) **não mudam**.
 **Relaciona:** [ADR-0173](0173-fanout-por-org-workers-agendados-cpu.md) (fan-out, `worker_pendencias`), [ADR-0200](0200-kit-com-variacao.md) (pendência `obrigatoria`, baixa adiada), ADR-0094 D-7/D-19 (allowlist de pré-despacho, tombstone `cancelamento_sem_baixa`), ADR-0043 (migrations por canal único).
@@ -13,7 +13,8 @@
 |---|---|---|
 | 1 (`771ce88d`) | — | Tabela dedicada + trigger + etapa nova de cursor |
 | 2 (`84afe109`) | REVISE, 5 pontos | Fila em colunas de `ml_vendas`; a drenagem não regrava a venda e decide pelo ledger; confirmação por geração; sem cursor novo |
-| 3 | REVISE, 5 pontos | O trigger só arma, nunca desarma; só a drenagem conclui, com leitura do ML ao vivo; baixa posterior reabre a obrigação; SKU com `:` corrigido; teto de 20 exato; ensaio SQL fora das tabelas reais |
+| 3 (`d4041a3d`) | REVISE, 5 pontos | O trigger só arma, nunca desarma; só a drenagem conclui, com leitura do ML ao vivo; baixa posterior reabre a obrigação; SKU com `:` corrigido; teto de 20 exato; ensaio SQL fora das tabelas reais |
+| 4 | REVISE, 5 pontos | `cancelled` mais novo renova a geração; só o ciclo corrente reivindica; prazos na drenagem; ensaio sem dado de cliente e sem exclusão no ledger; grupo A do reparo só com contagem confirmada |
 
 ## Contexto
 
@@ -48,7 +49,7 @@ Fatos conferidos em 24/11/2026:
 
 Três regras, cada uma eliminando uma classe de problema:
 
-1. **O banco só arma.** O trigger nunca conclui nem desarma. O que estiver gravado em `raw` depois de armado não importa.
+1. **O banco só arma.** O trigger nunca conclui nem desarma. Cada `cancelled` mais novo que ele vê troca a geração, e conclusão feita com geração antiga não vale.
 2. **Só a drenagem conclui, e só com duas evidências lidas na hora:** o ledger de estoque e a resposta do ML ao vivo.
 3. **Concluir não é definitivo.** Baixa que apareça depois da conclusão reabre a obrigação.
 
@@ -56,16 +57,22 @@ Três regras, cada uma eliminando uma classe de problema:
 
 **1. A obrigação mora em colunas próprias de `ml_vendas`.** Oito colunas `cancelamento_*`: `geracao` (uuid), `versao` (o `last_updated` do registro que armou), `armado_em`, `lote`, `tentativas`, `tentado_em`, `desfecho`, `concluido_em`. Pendente = `geracao` preenchida e `concluido_em` nulo. Nenhum código de kit, de baixa adiada ou da fila comum lê essas colunas. O código novo não lê nem escreve `worker_pendencias`.
 
-**2. O trigger só arma, por atribuição.** `before update of raw` em `ml_vendas`, quando `raw->>'status'` passa de outro valor para `cancelled`:
+**2. O trigger só arma ou renova a geração, por atribuição.** `before update of raw` em `ml_vendas`, em toda gravação com `raw->>'status'` = `cancelled` (inclusive `cancelled → cancelled`):
 
-- Se já há obrigação pendente, não faz nada.
-- Senão, gera `geracao` nova, grava `versao` e `armado_em`, zera tentativas e desfecho. Não mexe em `lote`.
+| Estado da linha | Gravação | Efeito |
+|---|---|---|
+| Nunca armada | passou de outro status para `cancelled` | arma: geração, `versao`, `armado_em` |
+| Nunca armada | já era `cancelled` (acervo) | nada |
+| Armada (pendente ou concluída) | `cancelled` com versão **maior** que a guardada | geração e `versao` novas. Se estava concluída, volta a pendente; se estava pendente, mantém tentativas e `armado_em` |
+| Armada | `cancelled` com versão igual ou menor | nada |
 
-O trigger só altera a linha que está sendo gravada, sem conversão de tipo e sem escrever em outra tabela. Não cria modo de falha novo no `upsert` de ninguém, inclusive o do botão Sincronizar. Só `update`: venda inédita já cancelada não arma. Olha `raw`, não a coluna `status`.
+A versão é o `last_updated` do `raw`, comparado como texto. Em produção o formato é único nas 10.543 linhas (29 caracteres, `.000-04:00`), então a ordem do texto é a ordem do tempo. Se um dia o formato variar, o pior efeito é não reconhecer um `cancelled` mais novo; a drenagem continua exigindo a resposta ao vivo.
 
-**3. A drenagem roda no `reconciliar-faturamento`, sem etapa nova de cursor.** Roda na execução em que a etapa `pendencias` encontra a fila comum vazia, antes de `perguntas`. Liga por `DRENAR_CANCELAMENTOS` (`1` = todas as orgs; lista de ids = só essas). Nunca lança: erro vira log e `parcial`. Não roda em conexão sem `contaExternaId` (sem ela não dá para conferir o vendedor).
+O trigger só altera a linha que está sendo gravada, sem conversão de tipo e sem escrever em outra tabela. Não cria modo de falha novo no `upsert` de ninguém. Só `update`: venda inédita já cancelada não arma. Olha `raw`, não a coluna `status`. Não mexe em `lote`.
 
-**4. O lote é fixado por ciclo e o teto é exato.** A RPC `reivindicar_cancelamentos`, sob trava por org, marca `lote` = chave do ciclo (`params.ate`) em até `20 − (linhas da org já marcadas com essa chave)` obrigações. Nada apaga `lote` durante o ciclo: nem concluir, nem rearmar, nem reabrir. Logo, no máximo 20 vendas distintas por org por ciclo, quantas vezes a execução se repetir. Entra quem tem `armado_em` há mais de 5 minutos, do menos recentemente tentado para o mais recente.
+**3. A drenagem roda no `reconciliar-faturamento`, sem etapa nova de cursor.** Roda na execução em que a etapa `pendencias` encontra a fila comum vazia, antes de `perguntas`. Liga por `DRENAR_CANCELAMENTOS` (`1` = todas as orgs; lista de ids = só essas). Nunca lança: erro vira log e `parcial`. Não roda em conexão sem `contaExternaId` (sem ela não dá para conferir o vendedor). Tem prazo: 10 s por leitura do ML e 60 s de orçamento total (ajustável por `DRENAR_CANCELAMENTOS_PRAZO_MS`), contra 150 s de posse da rodada. O que não começou dentro do orçamento fica pendente para o ciclo seguinte.
+
+**4. O lote é fixado por ciclo e o teto é exato.** A RPC `reivindicar_cancelamentos`, sob trava por org, marca `lote` = chave do ciclo (`params.ate`) em até `20 − (linhas da org já marcadas com essa chave)` obrigações. Nada apaga `lote` durante o ciclo: nem concluir, nem rearmar, nem reabrir. Logo, no máximo 20 vendas distintas por org por ciclo, quantas vezes a execução se repetir. A RPC só reivindica se a rodada `reconciliar` da org está `rodando` com esse mesmo `params.ate`: execução atrasada de um ciclo anterior sai sem marcar nada. Entra quem tem `armado_em` há mais de 5 minutos, do menos recentemente tentado para o mais recente.
 
 **5. A drenagem decide pelo ledger e pelo ML ao vivo. Não regrava a venda.** Para cada obrigação:
 
@@ -121,6 +128,7 @@ O trigger só altera a linha que está sendo gravada, sem conversão de tipo e s
 | `cancelled@30 → paid@10 → paid@40` | Armou em @30. Nada desarma. A drenagem lê o ML ao vivo: `paid@40` > 30 → conclui `nao-cancelado` |
 | Fila lê `paid` velho do ML enquanto o webhook confirma `cancelled` | A fila não grava venda. `paid` com data ≤ `versao` → fica pendente e tenta no ciclo seguinte |
 | `sync-venda` com leitura velha `paid` baixa estoque depois de a fila concluir | A reivindicação seguinte vê baixa aberta posterior à conclusão e reabre |
+| Fila lê `paid@40` para obrigação armada em @30; antes de concluir, o backfill grava `cancelled@50` | O trigger troca a geração. O registro `nao-cancelado` com a geração antiga não altera nada. No ciclo seguinte a `versao` é @50 |
 
 ## Por que colunas em `ml_vendas`
 
@@ -154,6 +162,8 @@ O trigger só altera a linha que está sendo gravada, sem conversão de tipo e s
 - **A fila confia na resposta ao vivo do ML.** Se a própria API devolver um pedido defasado com data igual ou posterior à armada, a fila age sobre ele. Não há fonte melhor; a reabertura por baixa posterior cobre o efeito no estoque de um `paid` que chegue depois.
 - **A baixa obsoleta não é impedida, é reparada.** A leitura velha do `sync-venda` ainda baixa; a fila reabre e trata em até uma hora. Impedir na origem exige mudar a RPC de baixa ou o `sync-venda`, fora deste ADR.
 - Margem de 5 minutos na reabertura: uma baixa criada nos 5 minutos antes da conclusão de um pedido `avisado` reabre uma vez; o tratamento devolve `silenciado` e conclui de novo. Custo: uma passada a mais.
+- A chamada ao ML que estoura o prazo é abandonada, não cancelada (as funções de leitura não aceitam sinal e `io.ts` não muda). Ela termina sozinha, sem efeito.
+- Duas execuções do **mesmo** ciclo (posse vencida e retomada) recebem o mesmo lote e podem tratar o mesmo pedido duas vezes. É idempotente e a confirmação é por geração.
 - Obrigação que o ML nunca confirma fica pendente até investigação (consulta V5 do plano). Não há alerta automático.
 - Com a variável desligada ou no caminho legado, as obrigações se acumulam sem perda.
 - A reabertura varre os movimentos de venda da org a cada ciclo. Hoje são poucos milhares por org; o custo entra na medição do plano.

@@ -5,20 +5,20 @@
 **Goal:** Todo pedido que o ML passa a dizer `cancelled` e tem baixa de estoque aberta é levado a `tratarPedidoCancelado`, não importa quem gravou a venda nem quando.
 
 **Architecture:**
-- Oito colunas `cancelamento_*` em `ml_vendas`. Trigger `before update of raw` que **só arma**, por atribuição.
+- Oito colunas `cancelamento_*` em `ml_vendas`. Trigger `before update of raw` que **só arma ou renova a geração**, por atribuição.
 - Três RPCs: `reivindicar_cancelamentos` (reabre por baixa posterior e fixa o lote do ciclo), `cancelamento_baixas` (o que o ledger diz), `registrar_cancelamentos_tratados` (desfecho por geração).
 - Drenagem dentro do `reconciliar-faturamento`, na execução em que a etapa `pendencias` acha a fila comum vazia. Sem valor novo de cursor. Liga por `DRENAR_CANCELAMENTOS`.
 - A drenagem não regrava a venda. Conclui só com o ledger e a resposta do ML ao vivo.
 
 **Tech Stack:** Postgres/Supabase (migration, trigger, RPC), Deno edge function, vitest.
 
-**Spec:** `docs/decisions/0211-obrigacao-de-cancelamento-com-fila-propria.md` revisão 3 (ler inteiro antes de começar; ler também ADR-0121).
+**Spec:** `docs/decisions/0211-obrigacao-de-cancelamento-com-fila-propria.md` revisão 4 (ler inteiro antes de começar; ler também ADR-0121).
 
 **Classificação:** CRÍTICA (migration + caminho de estoque).
 - Revisão independente obrigatória antes do merge: Codex Sol na versão mais recente (`codex debug models`), `model_reasoning_effort=high`, `-s read-only`, `< /dev/null`, contexto limpo, recebendo só o diff, os arquivos tocados e o ADR-0211. Ou subagente Opus high, se o autor for Codex.
 - Implementador: Sonnet ou superior. Nunca rebaixar.
 
-**Histórico de revisão:** revisão 1 (`771ce88d`) e revisão 2 (`84afe109`) receberam REVISE do Codex gpt-6.2-sol (high). As tabelas "Pontos da rodada 1" e "Pontos da rodada 2" dizem onde cada ponto é resolvido e testado.
+**Histórico de revisão:** as revisões 1 (`771ce88d`), 2 (`84afe109`) e 3 (`d4041a3d`) receberam REVISE do Codex gpt-6.2-sol (high). As tabelas "Pontos da rodada 3", "2" e "1" dizem onde cada ponto é resolvido e testado.
 
 ## Global Constraints
 
@@ -53,6 +53,16 @@
 | `supabase/functions/backfill-faturamento/__tests__/passo.test.ts` e `manual.test.ts` | alterar | só testes de caracterização |
 | `supabase/functions/_shared/faturamento/__tests__/io.test.ts` | alterar | só teste: `upsertVenda` não envia colunas `cancelamento_*` |
 | docs (`0211`, `0121`, `README.md`, `TASKS.md`, `project-status.md`) | alterar | status, ponteiro, índice, pendências |
+
+## Pontos da rodada 3 (REVISE sobre `d4041a3d`)
+
+| # | Ponto | Regra que resolve | Testes |
+|---|---|---|---|
+| 1 | Conclusão apaga cancelamento mais novo | Todo `cancelled` com versão maior que a guardada gera geração nova, inclusive `cancelled → cancelled`. A conclusão só vale para a geração lida | S17, S18, S19, F25 |
+| 2 | Execução atrasada fura o teto | A RPC só reivindica se a rodada `reconciliar` da org está `rodando` com o mesmo `params.ate` | S7g, S7h |
+| 3 | Lote cheio trava a reconciliação | Prazo por chamada ao ML (10 s) e orçamento total da drenagem (60 s, ajustável); o que não começou fica pendente | F23, F24, P7, Task 6.2 e 6.3 |
+| 4 | Ensaio aceita org errada e a limpeza apaga baixas | Ensaio em branch de banco se houver; senão, org e SKUs criados só para o ensaio, prévia das linhas, sem nenhuma exclusão no ledger | Task 6.2 |
+| 5 | Reparo: entrada posterior não absorve a baixa | Grupo A só com contagem física confirmada pelo operador; o resto vai para conferência | Reparo R2 |
 
 ## Pontos da rodada 2 (REVISE sobre `84afe109`)
 
@@ -95,10 +105,10 @@
 
 **Como o teste roda sem travar a produção.** Não há Postgres local confiável e o banco local não reproduz a cadeia de migrations (ver `scripts/teste-sql-desfeito.py`). O teste roda no mesmo banco, numa transação sempre desfeita, mas **só toca um esquema de ensaio**:
 
-- O prelúdio cria `ensaio_adr0211` com `ml_vendas` e `estoque_movimentos` vazias, por `create table … (like public.… including defaults)`. `like` pega só `ACCESS SHARE` nas tabelas reais, que não bloqueia leitura nem escrita. Não copia FKs, políticas nem triggers.
+- O prelúdio cria `ensaio_adr0211` com `ml_vendas`, `estoque_movimentos` e `worker_rodadas` vazias, por `create table … (like public.… including defaults)`. `like` pega só `ACCESS SHARE` nas tabelas reais, que não bloqueia leitura nem escrita. Não copia FKs, políticas nem triggers.
 - A migration entra com `public.` trocado por `ensaio_adr0211.` (`sed`), então colunas, índice, trigger e RPCs nascem no esquema de ensaio.
 - As fixtures são linhas inventadas nas tabelas de ensaio. Nenhuma linha real é lida ou escrita, e nenhuma tabela real recebe `ALTER`.
-- Se o projeto tiver branch de banco do Supabase disponível (`supabase branches list`), rodar lá é melhor e dispensa o esquema de ensaio. Conferir antes; não contratar nada para isso.
+- Branch de banco do Supabase: a consulta de 24/11 à lista de branches do projeto respondeu vazia (nenhum branch existe). Isso não prova que o plano permite criar um. Se o Diego confirmar que permite, rodar o teste no branch é melhor e dispensa o esquema de ensaio.
 
 Comando:
 
@@ -116,6 +126,7 @@ O que o esquema de ensaio **não** prova: a RLS herdada de `ml_vendas` (não há
 create schema ensaio_adr0211;
 create table ensaio_adr0211.ml_vendas (like public.ml_vendas including defaults);
 create table ensaio_adr0211.estoque_movimentos (like public.estoque_movimentos including defaults);
+create table ensaio_adr0211.worker_rodadas (like public.worker_rodadas including defaults);
 grant usage on schema ensaio_adr0211 to service_role;
 grant all on all tables in schema ensaio_adr0211 to service_role;
 ```
@@ -130,22 +141,28 @@ grant all on all tables in schema ensaio_adr0211 to service_role;
 | S3 | venda `paid`; `update` só da coluna `status` para `cancelled` | não arma. Depois `raw` para `cancelled` → arma |
 | S4 | sequência `cancelled@30 → cancelled@10 → paid@20` | geração e `versao` iguais às do @30; pendente |
 | S5 | sequência `cancelled@30 → paid@10 → paid@40` | geração e `versao` iguais às do @30; pendente (o trigger nunca desarma) |
-| S6 | obrigação pendente; `raw` volta a `paid` e depois a `cancelled@50` | geração, `versao`, `tentativas` e `lote` **não** mudam |
-| S6b | obrigação concluída com `lote='L1'`; `raw` → `paid` → `cancelled@50` | geração nova, `versao='…50'`, `concluido_em` nulo, `lote` continua `'L1'` |
+| S6 | obrigação pendente armada em @30; `raw` volta a `paid` e depois a `cancelled@30` (mesma versão) | geração, `versao`, `tentativas` e `lote` **não** mudam |
+| S6b | obrigação concluída (armada em @30) com `lote='L1'`; `raw` → `paid` → `cancelled@50` | geração nova, `versao='…50'`, `concluido_em` nulo, `tentativas=0`, `lote` continua `'L1'` |
+| S6d | obrigação concluída (armada em @30); `raw` → `paid@10` → `cancelled@30` (mesma versão) | continua concluída, mesma geração |
 | S6c | `raw` sem `last_updated`, ou com valor ilegível, virando `cancelled` | arma com `versao` nula ou o texto como veio; o `update` não falha |
+| S17 | corrida da rodada 3: obrigação pendente G1 armada em @30; `update` de `raw` `cancelled → cancelled@50` | geração ≠ G1, `versao='…50'`; `armado_em`, `tentativas` e `lote` preservados. `registrar` com G1 e `concluir=true` devolve 0 e a linha segue pendente |
+| S18 | obrigação pendente armada em @30; `update` para `cancelled@10` | nada muda |
+| S19 | obrigação concluída `nao-cancelado` (armada em @30); `update` `cancelled → cancelled@50` sem passar por `paid` | rearma: geração nova, `concluido_em` nulo |
 | S7 | 25 vendas armadas há mais de 5 min; `reivindicar_cancelamentos(org, 'L1', 20, '5 minutes')` duas vezes | as duas chamadas devolvem os **mesmos** 20; 5 ficam sem lote |
 | S7b | concluir 3 das 20 e chamar de novo com `'L1'` | devolve as 17 restantes; nenhuma nova entra |
 | S7c | chamar com `'L2'` | devolve 20: as 5 nunca tentadas primeiro |
 | S7d | venda armada há 1 minuto | não é reivindicada |
 | S7e | no lote `'L1'` cheio: uma concluída é rearmada (S6b) e outra é reaberta por baixa posterior; chamar de novo com `'L1'` | `count(*) where cancelamento_lote='L1'` continua 20; nenhuma 21ª venda entra |
 | S7f | lote `'L1'` com 12; mais 15 passam da carência; chamar de novo com `'L1'` | entram 8; total com `'L1'` = 20 |
+| S7g | execução atrasada: rodada com `params.ate='L1'` reivindica 20; a rodada passa a `params.ate='L2'` e reivindica 20 (remarca parte); chamar de novo com `'L1'` | devolve 0 linhas e não marca nenhuma |
+| S7h | rodada da org com `estado` diferente de `rodando`, ou sem linha em `worker_rodadas` | devolve 0 linhas e não marca nenhuma |
 | S8 | obrigação com `cancelamento_tentativas=30` | reivindicável |
 | S9 | `registrar_cancelamentos_tratados` com a geração lida, `concluir=true`, `lido_em=T` | `concluido_em=T`, desfecho gravado, `tentativas=1`; devolve 1 |
 | S10 | geração lida G1; a linha é concluída e rearmada (G2); registrar com G1, `concluir=true` e depois `false` | devolve 0 nas duas; G2 segue pendente com `tentativas=0` |
 | S11 | `cancelamento_baixas` para pedidos com: (a) baixa sem estorno; (b) baixa com `estorno_venda` quantidade > 0; (c) baixa com `estorno_sku_nao_encontrado` quantidade 0; (d) só `cancelamento_sem_baixa`; (e) baixa de kit com coluna `codigo` diferente do código da referência; (f) referência `mercado_livre:<pedido>:ABC:01`; (g) pedido `12` e pedido `123` na mesma org | (a) aberta; (b) `estornada=true`; (c) aberta; (d) uma linha com `codigo_ref` nulo; (e) `codigo_ref` = código da referência; (f) `codigo_ref='ABC:01'`; (g) as baixas do `123` não aparecem no `12`. Toda linha traz `lido_em` |
-| S12 | catálogo: corpo da função do trigger | não contém `insert`, `update `, `delete`, `perform` nem `::` (sem conversão de tipo); `prosecdef=false` |
+| S12 | catálogo: corpo da função do trigger | não contém `insert`, `update `, `delete`, `perform`, `::` nem `cast` (sem conversão de tipo); `prosecdef=false` |
 | S13 | catálogo e permissões | sem coluna de descarte; as 3 RPCs com `prosecdef=true`, `search_path=""`, dono `postgres`; `has_function_privilege`: `service_role` sim, `anon` e `authenticated` não |
-| S14 | tabela de ensaio com vendas `cancelled` inseridas **antes** da migration (ordem: prelúdio, fixtures do acervo no fim do prelúdio, migration) | nenhuma com geração preenchida |
+| S14 | tabela de ensaio com vendas `cancelled` inseridas **antes** da migration (ordem: prelúdio, fixtures do acervo no fim do prelúdio, migration) | nenhuma com geração preenchida. Regravar uma delas com `cancelled` de versão mais nova continua sem armar |
 | S15 | obrigação concluída `sem-baixa-aberta` em T; baixa aberta criada em T + 1 min; `reivindicar` | reaberta: geração nova, `concluido_em` nulo, desfecho `reaberto: baixa depois da conclusão`, `armado_em` renovado |
 | S16 | obrigação concluída `avisado` em T com baixa aberta de T − 2 dias; `reivindicar` | **não** reabre. Com baixa estornada posterior a T: não reabre |
 
@@ -169,21 +186,34 @@ alter table public.ml_vendas
 create index ml_vendas_cancelamento_fila_idx on public.ml_vendas (org_id, cancelamento_lote)
   where cancelamento_geracao is not null;
 
--- Só arma. Só atribui em NEW, sem conversão de tipo: não cria falha nova no upsert de ninguém.
+-- Só arma ou renova a geração. Só atribui em NEW, sem conversão de tipo: não cria falha nova no upsert.
+-- Versão = raw.last_updated como texto. Em produção o formato é único (29 caracteres, `.000-04:00`,
+-- 10.543 linhas em 24/11), então a ordem do texto é a ordem do tempo.
 create function public.ml_vendas_cancelamento_fila()
 returns trigger language plpgsql set search_path = '' as $$
+declare
+  v_nova     text    := new.raw->>'last_updated';
+  v_pendente boolean := new.cancelamento_geracao is not null and new.cancelamento_concluido_em is null;
 begin
-  -- Obrigação pendente continua a mesma: quem conclui é a drenagem, nunca uma gravação de raw.
-  if new.cancelamento_geracao is not null and new.cancelamento_concluido_em is null then
+  if new.cancelamento_geracao is null then
+    -- Nunca armada: só arma na transição. Venda do acervo, já cancelada, não arma.
+    if coalesce(old.raw->>'status', old.status, '') = 'cancelled' then
+      return new;
+    end if;
+  elsif ((v_nova collate "C") > (new.cancelamento_versao collate "C")) is not true then
+    -- Já armada, e este cancelled não é mais novo que o já visto: nada muda.
     return new;
   end if;
-  new.cancelamento_geracao      := pg_catalog.gen_random_uuid();
-  new.cancelamento_versao       := new.raw->>'last_updated';
-  new.cancelamento_armado_em    := clock_timestamp();
-  new.cancelamento_tentativas   := 0;
-  new.cancelamento_tentado_em   := null;
-  new.cancelamento_desfecho     := null;
-  new.cancelamento_concluido_em := null;
+  -- Geração nova: qualquer conclusão em andamento com a geração antiga deixa de valer.
+  new.cancelamento_geracao := pg_catalog.gen_random_uuid();
+  new.cancelamento_versao  := v_nova;
+  if not v_pendente then
+    new.cancelamento_armado_em    := clock_timestamp();
+    new.cancelamento_tentativas   := 0;
+    new.cancelamento_tentado_em   := null;
+    new.cancelamento_desfecho     := null;
+    new.cancelamento_concluido_em := null;
+  end if;
   -- cancelamento_lote fica como está: o teto do ciclo conta por ele.
   return new;
 end;
@@ -191,21 +221,27 @@ $$;
 revoke all on function public.ml_vendas_cancelamento_fila() from public, anon, authenticated;
 
 -- `of raw`: marcarConversaCancelada grava só a coluna status. Só update: venda inédita não arma.
+-- Dispara em todo cancelled gravado (inclusive cancelled → cancelled); a função decide.
 create trigger ml_vendas_cancelamento_fila
   before update of raw on public.ml_vendas
   for each row
-  when (coalesce(new.raw->>'status', '') = 'cancelled'
-        and coalesce(old.raw->>'status', old.status, '') <> 'cancelled')
+  when (coalesce(new.raw->>'status', '') = 'cancelled')
   execute function public.ml_vendas_cancelamento_fila();
 
 -- Reabre o que ganhou baixa depois de concluído e fixa o lote do ciclo.
 -- Teto exato: sob a trava, marca no máximo p_limite − (linhas da org já com este lote); nada apaga o lote.
+-- Só o ciclo corrente reivindica: execução atrasada de um ciclo anterior sai sem marcar nada.
 create function public.reivindicar_cancelamentos(p_org uuid, p_lote text, p_limite integer, p_carencia interval)
 returns table (id uuid, order_id bigint, geracao uuid, versao text)
 language plpgsql security definer set search_path = '' as $$
 declare v_ja integer;
 begin
   perform pg_advisory_xact_lock(hashtextextended('cancelamentos|' || p_org::text, 0));
+  if not exists (select 1 from public.worker_rodadas w
+                  where w.job = 'reconciliar' and w.org_id = p_org and w.estado = 'rodando'
+                    and w.params->>'ate' = p_lote) then
+    return;
+  end if;
 
   update public.ml_vendas v
      set cancelamento_geracao      = pg_catalog.gen_random_uuid(),
@@ -306,6 +342,8 @@ Contrato (o corpo é do implementador; os testes fixam o comportamento):
 // ADR-0211: drenagem da obrigação de cancelamento. Não regrava a venda, não toca a fila comum nem a de kit.
 export const LOTE_CANCELAMENTOS = 20;
 export const CARENCIA = '5 minutes';
+export const PRAZO_CHAMADA_MS = 10_000;   // cada leitura do ML
+export const PRAZO_TOTAL_MS = 60_000;     // orçamento da drenagem; a posse da rodada é de 150 s
 
 /** `1` = todas as orgs; lista de ids separada por vírgula = só essas; ausente = desligada. */
 export function drenagemLigada(valor: string | undefined, orgId: string): boolean;
@@ -325,13 +363,14 @@ export interface IoFila {
   kitLigado(): Promise<boolean>;
   tratar(p: PedidoCancelado): Promise<ResultadoCancelamento>;
   registrar(itens: Registro[]): Promise<void>;
+  agora(): number;
 }
 
 /** `registrarPendenciaKit` vira função vazia: a retentativa do crédito de kit fica na fila própria. */
 export function depsDaFila(base: DepsCancelamento): DepsCancelamento;
 
 /** Um lote. Só lança se `reivindicar`, `ledger` ou `registrar` lançarem; quem chama captura. */
-export async function drenarCancelamentos(io: IoFila, lote: string): Promise<{ concluidos: number; pendentes: number }>;
+export async function drenarCancelamentos(io: IoFila, lote: string, prazoTotalMs?: number): Promise<{ concluidos: number; pendentes: number }>;
 ```
 
 Regra de `drenarCancelamentos`, por obrigação:
@@ -350,6 +389,13 @@ Regra de `drenarCancelamentos`, por obrigação:
 7. Desfecho: `reposto` → reler `ledger`; nenhuma aberta conclui com o `lido_em` **da releitura**, senão `reposicao-incompleta`. `avisado` e `silenciado` concluem com o `lido_em` da primeira leitura. Todo o resto, inclusive exceção, não conclui.
 
 Paralelismo: 5 por vez. `kitLigado` é lido no máximo uma vez por lote.
+
+Prazos (a drenagem roda antes de `perguntas` e não pode segurar a rodada):
+
+- `pedido` e `envio` correm contra um temporizador de `PRAZO_CHAMADA_MS`. Estourou → `ml: tempo esgotado`, não conclui. `buscarPedido` e `buscarShipment` não aceitam sinal de cancelamento e `io.ts` não muda: a chamada abandonada segue até o ML responder ou a execução terminar, sem efeito.
+- Antes de **começar** cada obrigação, confere `io.agora()` contra o início + `prazoTotalMs`. Estourou → as que não começaram ficam sem registro (seguem pendentes, com `tentado_em` como estava, e voltam primeiro no ciclo seguinte). Contam em `pendentes`.
+- Tratamento já iniciado não é interrompido (é operação de estoque). `registrar` roda sempre no fim, com o que foi feito.
+- Pior caso: 60 s de orçamento + 20 s das duas leituras de quem começou por último + o tratamento desse item, contra 150 s de posse.
 
 - [ ] **2.1 RED: testes** (IO falso em memória; F12–F14 e F18 usam funções **reais** de `_shared/` com dependências falsas).
 
@@ -380,6 +426,9 @@ Paralelismo: 5 por vez. `kitLigado` é lido no máximo uma vez por lote.
 | F20 | Sequência `cancelled@30 → paid@10 → paid@40`; ML ao vivo `paid@40` | conclui `nao-cancelado` |
 | F21 | Baixa depois da confirmação: ciclo 1 conclui `sem-baixa-aberta`; entra baixa aberta; ciclo 2 (obrigação reaberta pela RPC, simulada no IO) com ML `cancelled` e envio `shipped` | `tratar` chamado com a baixa nova; conclui `avisado` |
 | F22 | Conclusão sem `lidoEm` | a drenagem registra `concluir=false` (`sem instante do ledger`) em vez de concluir |
+| F23 | Relógio falso: `pedido` de uma obrigação nunca responde | depois de 10 s vira `ml: tempo esgotado`, não conclui; as outras 19 seguem |
+| F24 | Relógio falso: lote de 20 com respostas de 9 s cada; orçamento de 20 s | as que começaram terminam e são registradas; as que não começaram não têm registro e contam em `pendentes`; `registrar` chamado 1 vez; a função retorna |
+| F25 | Corrida da rodada 3: obrigação G1 (`versao` @30); ML ao vivo `paid@40`; antes do `registrar`, a geração da linha muda (IO falso que só aceita a geração corrente) | o registro `nao-cancelado` com G1 não conclui nada; no ciclo seguinte, com `versao` @50 e ML `cancelled@50`, trata |
 
 - [ ] **2.2 Rodar e ver falhar:** `pnpm vitest run supabase/functions/reconciliar-faturamento/__tests__/cancelamentos.test.ts`.
 - [ ] **2.3 GREEN: implementar** conforme o contrato e a regra.
@@ -399,6 +448,7 @@ Paralelismo: 5 por vez. `kitLigado` é lido no máximo uma vez por lote.
 | P4 | Repetição da mesma execução: a drenagem é chamada de novo com o **mesmo** `params.ate` |
 | P5 | Fim da rodada: `cancelamentosPendentes > 0` ou `cancelamentosErro > 0` → `parcial` com o texto novo; os dois zerados → `parcial` igual ao de hoje |
 | P6 | Na execução da drenagem, `processarPedidos` e `registrarPendencias` não são chamados |
+| P7 | A drenagem devolve com parte do lote pendente por prazo | o passo devolve `perguntas|` (o cursor avança) e a rodada termina `parcial` |
 
 - [ ] **3.2 Rodar e ver falhar.**
 - [ ] **3.3 GREEN.** Em `DepsReconciliar`:
@@ -466,7 +516,8 @@ Em `fim`:
         kitLigado: async () => (await catalogoDe(userId, orgId)).kitLigado,
         tratar: (p) => tratarPedidoCancelado(admin, deps, { ...p, orgId, userId, canal: 'mercado_livre' }),
         registrar: (itens) => /* rpc registrar_cancelamentos_tratados(orgId, itens); erro lança */,
-      }, lote);
+        agora: () => Date.now(),
+      }, lote, Number(Deno.env.get('DRENAR_CANCELAMENTOS_PRAZO_MS')) || PRAZO_TOTAL_MS);
     },
 ```
 
@@ -489,32 +540,46 @@ Três medições, nesta ordem. `DRENAR_CANCELAMENTOS=1` só depois das três.
 
 - [ ] **6.1 Contagem determinística (antes do deploy):** F15, com lote cheio de 20 baixas abertas incluindo kit. Fixa o teto de chamadas por lote.
 
-- [ ] **6.2 Ensaio medido em org de ensaio (depois da migration, antes de ligar).** Exige OK do Diego: escreve no banco de produção, mas **só em uma org criada para o ensaio**, sem conexão com o ML e sem cliente.
+- [ ] **6.2 Ensaio medido, sem dado de cliente (depois da migration, antes de ligar).** O script `scripts/ensaio-drenagem-cancelamentos.ts` (Deno, local) roda `drenarCancelamentos` **real**, com as três RPCs reais, `tratarPedidoCancelado` real e `depsDaFila(depsCancelamento)` real. Só `pedido` e `envio` são fixos.
 
-  Preparação:
-  - Criar a org de ensaio pela tela. Ligar o módulo `kit_variacao` nela. Não conectar ML.
-  - Cadastrar 20 SKUs com saldo. Marcar 5 como participantes de kit com variação por linhas de fixture em `kits_variacao` e `kit_variacao_skus` (sem anúncio: a saga não tem alvo e não escreve no ML).
+  **Onde roda.** Duas opções, nesta ordem de preferência:
 
-  O script `scripts/ensaio-drenagem-cancelamentos.ts` (Deno, rodado localmente com a chave de serviço):
-  - Recusa rodar se o id da org não for o de ensaio (variável `ENSAIO_ORG_ID`) ou se a org tiver linha em `marketplace_connections`.
-  - Insere 20 linhas em `ml_vendas` com `order_id` numa faixa inventada (`9000000000000001` em diante), `raw.status='paid'`.
-  - Faz a baixa de cada uma pela função real (`registrarBaixaVenda`).
-  - Grava `raw.status='cancelled'` em cada uma (o trigger real arma).
-  - Chama `drenarCancelamentos` **real**, com as RPCs reais, `tratarPedidoCancelado` real e `depsDaFila(depsCancelamento)` real. Só `pedido` e `envio` são fixos: 10 pedidos com envio `ready_to_ship`, 10 com `shipped`. Carência `'0 seconds'` na reivindicação.
-  - Mede: tempo total, tempo de cada RPC, número de idas ao banco, CPU do processo (`process.cpuUsage()`).
-  - Confere: 10 `reposto` com saldo de volta e ledger limpo, 10 `avisado`, 20 linhas com o lote, nenhuma linha em `worker_pendencias`.
-  - Reabertura: faz nova baixa em um pedido concluído e reivindica de novo → a obrigação reabre.
-  - Limpa as linhas criadas (`ml_vendas`, `estoque_movimentos`, identidades de kit, notificações) da org de ensaio.
+  - **A. Branch de banco do Supabase.** Descartável; nada toca a produção. Em 24/11 a lista de branches do projeto está vazia; não foi verificado se o plano permite criar. Só usar se o Diego confirmar.
+  - **B. Produção, em org criada só para o ensaio.** Exige OK explícito do Diego sobre a prévia abaixo.
 
-  Aceite: CPU do processo abaixo de 500 ms no lote; tempo total abaixo de 30 s; `reivindicar_cancelamentos` abaixo de 200 ms. Rodar também `explain analyze` da parte de reabertura da RPC para a maior org (somente leitura: copiar o `select` interno) e registrar o tempo.
+  **Regras da opção B:**
 
-  O que este ensaio **não** mede: as duas leituras do ML por pedido (são espera de rede, não CPU) e a posse/cursor da função deployada. Isso é o 6.3.
+  - A org é criada pela tela para este ensaio, com nome exato `ENSAIO ADR-0211`. Módulo `kit_variacao` ligado. Sem conexão ML.
+  - Os 20 SKUs são criados só para o ensaio, com saldo próprio de 10 unidades cada. 5 são marcados participantes de kit com variação por linhas de fixture (sem anúncio: a saga não tem alvo e não escreve no ML). Nenhum SKU de cliente participa.
+  - **Prévia antes de qualquer escrita.** O script imprime: nome e id da org; contagem de linhas da org em `ml_vendas`, `estoque_movimentos`, `variacoes`, `marketplace_connections`, `anuncios_externos`; a lista exata do que vai inserir. Recusa continuar se: o id não for o de `ENSAIO_ORG_ID`; o nome não for o exato; a org tiver conexão, anúncio ou venda; ou a org tiver SKU que não seja do ensaio. O Diego confere a prévia e só então o script roda com `--executar`.
+  - Toda mutação do script leva `org_id = ENSAIO_ORG_ID` no filtro ou no valor. No fim, o script confere que nenhuma linha de outra org mudou: contagem e maior `criado_em`/`atualizado_em` de `ml_vendas` e `estoque_movimentos` das outras orgs, antes e depois, só podem diferir por atividade normal (o script lista as diferenças para conferência).
+  - **Nada é apagado do ledger.** Os SKUs, as vendas sintéticas e os movimentos do ensaio ficam na org de ensaio, que não tem cliente. Não há limpeza que possa deixar saldo sem lastro.
+
+  **Passos do script (iguais nas duas opções):**
+
+  1. Linha em `worker_rodadas` para a org de ensaio (`job='reconciliar'`, `estado='rodando'`, `params.ate` = lote do ensaio), exigida pela RPC.
+  2. 20 linhas em `ml_vendas` com `order_id` de faixa inventada (`9000000000000001` em diante) e `raw.status='paid'`.
+  3. Baixa de cada uma pela função real (`registrarBaixaVenda`).
+  4. `raw.status='cancelled'` em cada uma (o trigger real arma).
+  5. Drenagem com carência `'0 seconds'`: 10 pedidos com envio `ready_to_ship`, 10 com `shipped`.
+  6. Segunda rodada **lenta**: mais 20 vendas sintéticas, `pedido` fixo com atraso de 15 s. Confere que a drenagem retorna em menos de 60 s com as 20 pendentes por `ml: tempo esgotado`.
+  7. Reabertura: nova baixa em um pedido concluído; reivindicar de novo → a obrigação reabre.
+
+  **Mede:** tempo total, tempo de cada RPC, idas ao banco, CPU do processo (`process.cpuUsage()`).
+
+  **Confere:** 10 `reposto` com saldo de volta a 10 e ledger limpo; 10 `avisado` com saldo em 9; 20 linhas com o lote; nenhuma linha da org em `worker_pendencias`.
+
+  **Aceite:** CPU do processo abaixo de 500 ms no lote; tempo total da rodada normal abaixo de 30 s; `reivindicar_cancelamentos` abaixo de 200 ms. Rodar também `explain analyze` do `select` interno da reabertura para a maior org (somente leitura) e registrar o tempo.
+
+  **O que este ensaio não mede:** as duas leituras reais do ML por pedido e a posse/cursor da função deployada. Isso é o 6.3.
 
 - [ ] **6.3 Canário em produção:** ligar `DRENAR_CANCELAMENTOS` só para duas orgs, uma delas com `kit_variacao`. Observar 24 ciclos: campo `ms` do log `[rodada] lote` da execução que segue para `perguntas|`; métricas `CPUTime`, `WORKER_RESOURCE_LIMIT`, `IDLE_TIMEOUT`. Aceite: zero erro de limite; `ms` abaixo de 60.000; CPU no patamar do ADR-0173 (mediana ~200 ms, máximo < 500 ms).
 
+  **Prazo na Edge:** em um dos ciclos do canário, com obrigação pendente na org, definir `DRENAR_CANCELAMENTOS_PRAZO_MS=1`. Esperado na função deployada: a drenagem não começa nenhum item, `cancelamentosPendentes` igual ao tamanho do lote, cursor em `perguntas|` e rodada concluída `parcial`. Remover a variável em seguida; o ciclo seguinte trata o lote.
+
 - [ ] **6.4** Fora do aceite em qualquer das três: não ligar, voltar ao desenho. Dentro: `DRENAR_CANCELAMENTOS=1` e registrar os números no ADR-0211.
 
-Limite conhecido: o acervo não arma, então o canário verá lotes pequenos. O lote cheio é coberto pelo 6.1 (contagem) e pelo 6.2 (execução real sem ML).
+Limite conhecido: o acervo não arma, então o canário verá lotes pequenos. O lote cheio é coberto pelo 6.1 (contagem) e pelo 6.2 (execução real sem ML). Lote cheio com ML lento **na Edge** não é reproduzido: o 6.2 cobre o código (fora da Edge) e o 6.3 cobre o caminho de prazo na Edge com o lote que houver.
 
 ## Task 7 — Portão, revisão e documentação
 
@@ -522,7 +587,7 @@ Limite conhecido: o acervo não arma, então o canário verá lotes pequenos. O 
 - [ ] **7.2** Estes comandos saem vazios:
   - `git diff origin/main --stat -- supabase/functions/backfill-faturamento/index.ts supabase/functions/backfill-faturamento/passo.ts`
   - `git diff origin/main --stat -- supabase/functions/_shared/estoque/ supabase/functions/_shared/rodada/ supabase/functions/_shared/faturamento/pendencias.ts supabase/functions/_shared/faturamento/io.ts supabase/functions/reconciliar-faturamento/kit.ts`
-- [ ] **7.3** Revisão independente (ver Classificação). Entregar ao revisor as tabelas "Pontos da rodada 2", "Pontos da rodada 1" e "Teste por risco" e pedir veredito por linha.
+- [ ] **7.3** Revisão independente (ver Classificação). Entregar ao revisor as tabelas "Pontos da rodada 3", "2", "1" e "Teste por risco" e pedir veredito por linha.
 - [ ] **7.4** Docs: ADR-0211 → `Aceito` com os SHAs e a medição; emenda de uma linha no ADR-0121 apontando para o 0211; linha no `docs/decisions/README.md`; `docs/TASKS.md`; `docs/project-status.md`. Seguir a skill `docs-update-checklist`. O repositório é público: nenhum id de org, nome de comprador ou lista de pedidos nos docs.
 - [ ] **7.5** Atualizar o Graphify (skill `graphify-update-maintenance`).
 
@@ -643,14 +708,16 @@ Regras:
 
 Passos:
 
-- [ ] **R1** Rodar V0 e enriquecer cada linha (uma consulta por org) com: SKU e quantidade da baixa (`estoque_movimentos.codigo`, `quantidade`), `ml_vendas.shipping_status`, data da venda, claim mais recente (`ml_devolucoes`), e o primeiro movimento manual do SKU **depois** da baixa (entrada, ajuste ou inventário, com `criado_em`).
-- [ ] **R2** Classificar cada linha:
+- [ ] **R1** Rodar V0 e enriquecer cada linha (uma consulta por org) com: SKU e quantidade da baixa, `ml_vendas.shipping_status`, data da venda, claim mais recente (`ml_devolucoes`), e os movimentos manuais do SKU **depois** da baixa, com motivo, quantidade, `estoque_anterior`, `estoque_resultante`, observação e data. No ledger de hoje os motivos manuais são `entrada` (soma) e `ajuste`.
+- [ ] **R2** Classificar cada linha. Uma `entrada` posterior **não** absorve a baixa: ela soma ao saldo e a diferença continua. Um `ajuste` também pode preservá-la (ajuste por perda, por exemplo). O ledger não distingue contagem física de outro ajuste, então o grupo A depende de confirmação do operador.
 
 | Grupo | Critério | Ação sugerida ao operador |
 |---|---|---|
-| A | Houve entrada, ajuste ou inventário do SKU depois da baixa | Nada. A contagem posterior já absorveu a unidade |
-| B | Sem movimento manual posterior e envio `delivered`, `shipped` ou `not_delivered` | Dar entrada manual só quando o produto voltar |
-| C | Sem movimento manual posterior e envio `cancelled`, `pending`, `handling`, `ready_to_ship` ou nulo | Conferir a prateleira. Se a unidade está lá, entrada manual |
+| A | Houve `ajuste` do SKU depois da baixa **e** o operador confirma que foi contagem física do saldo inteiro (ou correção explícita desta baixa) | Nada. A contagem já absorveu a unidade |
+| B | Não é A, e o envio está `delivered`, `shipped` ou `not_delivered` | Dar entrada manual só quando o produto voltar |
+| C | Não é A, e o envio está `cancelled`, `pending`, `handling`, `ready_to_ship` ou nulo | Conferência física do SKU. Se a unidade está lá, entrada manual |
+
+  Na planilha, ajuste posterior sem confirmação aparece como "candidato a A: confirmar se foi contagem". Sem confirmação, o SKU vai para B ou C. Entrada posterior aparece só como informação.
 
 - [ ] **R3** Entregar ao Diego uma planilha por org, ordenada por SKU, com o grupo e a ação. Os 77 sem aviso vêm destacados.
 - [ ] **R4** O Diego decide como cada org recebe a lista. O sistema não dispara aviso em massa.
