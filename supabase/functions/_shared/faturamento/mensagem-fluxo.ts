@@ -173,5 +173,9 @@ export async function liberarEnvio(deps: DepsMensagem, packId: string, operacaoI
   const c = t.estado === 'enviada' || t.estado === 'desconhecido'
     ? await deps.atualizar(t.id, { estado: t.estado }, { estado: 'inconclusiva', erro: MSG_LIBERADO })
     : null;
-  return c ? resultado(c) : falha(409, 'Só um envio aguardando confirmação pode ser liberado.');
+  if (c) return resultado(c);
+  // Já terminal (ex.: recusada por outro processamento): devolve estado e operação para o card soltar a
+  // pendência. Sem transição nem mudança na trava.
+  const terminal = ESTADOS_ATIVOS.includes(t.estado) ? {} : { estado: t.estado, operacao_id: t.operacao_id };
+  return { ...falha(409, 'Só um envio aguardando confirmação pode ser liberado.'), ...terminal };
 }

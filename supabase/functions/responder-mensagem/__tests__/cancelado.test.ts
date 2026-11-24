@@ -112,6 +112,53 @@ describe('responder-mensagem — pedido cancelado', () => {
     expect(fronteiras.auditar).toHaveBeenCalledWith(expect.anything(), expect.anything(), { type: 'pack', id: '456' }, 'failed');
   });
 
+  it('bloqueio 1: com a observação do POST real nas deps, a edge registra blocked DEPOIS que a máquina retornou', async () => {
+    const OBS = '2026-11-23T10:00:00.000Z';
+    fronteiras.deps.mockReturnValueOnce({ fake: true, bloqueioObservadoEm: OBS } as never);
+    fronteiras.enviar.mockImplementationOnce(async () => {
+      expect(fronteiras.registrar).not.toHaveBeenCalled(); // nada antes de a máquina devolver a recusa
+      return recusa('Não é possível responder porque o pedido foi cancelado.');
+    });
+
+    const response = await chamar({ pack_id: '456', text: 'Olá', operacao_id: OP });
+
+    expect(response.status).toBe(409);
+    expect(fronteiras.registrar).toHaveBeenCalledWith(expect.anything(), 'org-1', '456', { status: 'blocked', observadoEm: OBS });
+  });
+
+  it('bloqueio 1: falha no registro do blocked não muda o 409', async () => {
+    fronteiras.deps.mockReturnValueOnce({ fake: true, bloqueioObservadoEm: '2026-11-23T10:00:00.000Z' } as never);
+    fronteiras.enviar.mockResolvedValueOnce(recusa('Não é possível responder porque o pedido foi cancelado.'));
+    fronteiras.registrar.mockRejectedValueOnce(new Error('rpc fora'));
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await chamar({ pack_id: '456', text: 'Olá', operacao_id: OP });
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).codigo).toBe('pedido_cancelado');
+    log.mockRestore();
+  });
+
+  it('melhoria 3: Liberar em operação já recusada (máquina REAL) → 409 com estado e operacao_id', async () => {
+    const real = await vi.importActual<typeof import('../../_shared/faturamento/mensagem-fluxo.ts')>('../../_shared/faturamento/mensagem-fluxo.ts');
+    const recusada = {
+      id: 't1', org_id: 'org-1', user_id: 'u', operacao_id: OP, pack_id: '456', recurso: 'mensagem:456', acao: 'responder_mensagem',
+      payload: { texto: 'Olá', anexo: null }, payload_hash: 'h', antes: { ids: [] }, estado: 'recusada', post_em: 'x',
+      http_status: 403, resposta_ml: null, erro: 'Não é possível responder porque o pedido foi cancelado.', criado_em: 'x',
+    };
+    const depsMaquina = { porOperacao: async () => recusada, atualizar: async () => null } as unknown as Parameters<typeof real.liberarEnvio>[0];
+    fronteiras.liberar.mockImplementationOnce((_d: unknown, pack: string, op: string) => real.liberarEnvio(depsMaquina, pack, op));
+
+    const response = await chamar({ pack_id: '456', operacao_id: OP, liberar: true });
+
+    expect(response.status).toBe(409);
+    // Mesmo corpo que src/components/faturamento/__tests__/aba-mensagens-anexo.test.tsx injeta em "Liberar".
+    expect(await response.json()).toEqual({
+      ok: false, erro: 'Só um envio aguardando confirmação pode ser liberado.',
+      estado: 'recusada', operacao_id: OP, pendenteConfirmacao: false,
+    });
+  });
+
   it('B: a edge não registra estado (recusa armazenada, verificar e liberar) — só o POST real carimba', async () => {
     fronteiras.enviar.mockResolvedValue(recusa('Não é possível responder porque o pedido foi cancelado.'));
     fronteiras.verificar.mockResolvedValue(recusa('Não é possível responder porque o pedido foi cancelado.'));

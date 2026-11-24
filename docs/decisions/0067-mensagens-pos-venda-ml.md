@@ -233,9 +233,12 @@ Decisão:
   fetch) da última página que informou o estado. Falha no registro loga e não falha o sync (o estado é só
   para exibição).
 - **Carimbo do bloqueio no POST real:** quando o próprio POST do envio (`postML`) volta 403
-  `blocked_by_cancelled_order`, registra `blocked` com o instante de imediatamente antes desse `fetch`.
-  Recusa armazenada devolvida em repetição do mesmo `operacao_id`, `verificar` e `liberar` não registram
-  nada; nenhum outro caminho grava `blocked`. A leitura de conferência do envio não registra estado.
+  `blocked_by_cancelled_order`, o adaptador só guarda o instante de imediatamente antes desse `fetch` nas
+  deps da requisição e devolve a recusa na hora. A edge registra o `blocked` com esse instante **depois**
+  que a máquina de estados retornou (`recusada` já gravada, trava liberada), de forma tolerante: o
+  registro de exibição nunca fica no caminho da recusa. Recusa armazenada devolvida em repetição do mesmo
+  `operacao_id`, `verificar` e `liberar` não fazem POST e não registram nada; nenhum outro caminho grava
+  `blocked`. A leitura de conferência do envio não registra estado.
 - Regra única: conversa **encerrada** ⇔ `order_status = 'cancelled'` (mensagem mais recente do pack) **e**
   `ml_conversas.status` distinto de `'active'` (sem linha = ainda não observado). Pedido não cancelado:
   nada muda. Aplicada em `contar_conversas_aguardando`, `resumo_mensagens_posvenda` e no front
@@ -251,6 +254,17 @@ Decisão:
   Não há trava local: a tela reflete o que a edge acabou de gravar. Falha ao carregar sem dado anterior
   mostra erro com "Tentar de novo", não a caixa vazia.
 - Packs ainda sem linha em `ml_conversas` mantêm o comportamento anterior até a próxima sincronização.
+- "Liberar" sobre operação já terminal (ex.: recusada por outro processamento) devolve 409 com o
+  `estado` e o `operacao_id` dela, para o card soltar a pendência; não há transição nem mudança na trava.
+
+### Rollout (passo obrigatório pós-deploy)
+
+A tabela nasce vazia, e packs de pedido cancelado já lidos no ML, fora das 200 vendas mais recentes do
+backfill, nunca seriam relidos. Logo depois do deploy, uma varredura **única**: para cada pack com
+`order_status = 'cancelled'` em `ml_mensagens` sem linha em `ml_conversas`, ler `conversation_status` no
+ML (`GET /messages/packs/{pack}/sellers/{seller}?tag=post_sale&mark_as_read=false`, por organização,
+espaçado) e gravar por `registrar_estado_conversa` com o instante de início da leitura. Operação manual
+do orquestrador; não há script no repositório.
 
 ### Limitações conhecidas (aceitas)
 
@@ -264,3 +278,6 @@ Decisão:
    tentativa também é recusada pelo ML.
 4. `sync-mensagem` consulta a venda antes de ler o pack (ordem herdada); se essa consulta falhar, o
    worker retenta sem registrar o estado da conversa.
+5. Pack com duas vendas: o resumo (RPC) usa a venda mais recente do pack, e o filtro local usa a venda do
+   `order_id` da primeira mensagem carregada; os dois podem divergir. A divergência já existia na main para
+   pedidos não cancelados e agora alcança packs cancelados reabertos.

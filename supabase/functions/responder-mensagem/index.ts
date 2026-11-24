@@ -14,6 +14,7 @@ import {
   resolverCompradorId,
   marcarConversaCancelada,
   registrarEstadoDoPack,
+  registrarEstadoConversa,
   ERRO_PEDIDO_CANCELADO,
   CODIGO_PEDIDO_CANCELADO,
   ERRO_EM_MEDIACAO,
@@ -109,6 +110,13 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
       await marcarConversaCancelada(admin, orgId, packId, dono).catch((e) =>
         console.error('[responder-mensagem] falha ao marcar conversa cancelada:', e)
       );
+      // A máquina já gravou `recusada`: só agora registra o `blocked` que ESTE POST observou (exibição,
+      // tolerante). Replay, verificar e liberar não fazem POST e não têm observação.
+      if (deps.bloqueioObservadoEm) {
+        const falhou = await registrarEstadoConversa(admin, orgId, packId, { status: 'blocked', observadoEm: deps.bloqueioObservadoEm })
+          .catch((e) => (e as Error).message);
+        if (falhou) console.error('[responder-mensagem] falha ao registrar conversa bloqueada:', falhou);
+      }
       // Com o estado da tentativa: o card limpa a pendência dessa operação (409 mantido p/ PWA antiga).
       return json({
         ok: false, erro: ERRO_PEDIDO_CANCELADO, codigo: CODIGO_PEDIDO_CANCELADO,

@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   efeitoMensagem, enviarMensagem, liberarEnvio, verificarEnvio,
   type DepsMensagem, type MsgConversa, type PayloadMensagem, type TentativaMensagem,
 } from '../mensagem-fluxo';
 import { ESTADOS_ATIVOS } from '../posvenda-fluxo';
+import { depsMensagemReal } from '../mensagem-fluxo-io';
 
 const ORG = 'org-1';
 const PACK = 'pack-1';
@@ -388,6 +389,40 @@ describe('liberarEnvio', () => {
 
   it('liberar_operacao_desconhecida_404', async () => {
     expect(await liberarEnvio(cenario().deps, PACK, OP1)).toMatchObject({ http: 404, ok: false });
+  });
+
+  it('liberar_operacao_ja_recusada_devolve_estado_e_operacao_sem_transicao', async () => {
+    const c = cenario();
+    c.ctl.resposta = { status: 403, body: { message: 'blocked_by_cancelled_order' } };
+    await enviarMensagem(c.deps, c.entrada(OP1));
+    expect(await liberarEnvio(c.deps, PACK, OP1)).toMatchObject({ http: 409, ok: false, estado: 'recusada', operacao_id: OP1 });
+    expect(c.linha(OP1).estado).toBe('recusada');
+  });
+});
+
+// Bloqueio 1 (emenda ADR-0067, 23/11): o registro de exibição do `blocked` não pode ficar no caminho da
+// recusa. Máquina REAL com o adaptador de POST real (depsMensagemReal.postML) e RPC que nunca responde.
+describe('recusa por pedido cancelado com registro de exibição lento', () => {
+  it('a máquina grava recusada e retorna sem esperar a RPC; Conferir depois de 121 s devolve a recusa', async () => {
+    const c = cenario();
+    const rpc = vi.fn(() => new Promise(() => {}));
+    const real = depsMensagemReal({ rpc } as unknown as Parameters<typeof depsMensagemReal>[0],
+      { orgId: ORG, packId: PACK, sellerId: '999', buyerId: '111', token: 't' });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ message: 'blocked_by_cancelled_order' }), { status: 403 })));
+    const deps: DepsMensagem = { ...c.deps, postML: real.postML, erroRecusa: real.erroRecusa };
+    try {
+      const r = await Promise.race([
+        enviarMensagem(deps, c.entrada(OP1)),
+        new Promise((ok) => setTimeout(() => ok('pendurou'), 200)),
+      ]);
+      expect(r).not.toBe('pendurou');
+      expect(r).toMatchObject({ ok: false, estado: 'recusada' });
+      expect(c.linha(OP1).estado).toBe('recusada');
+      expect(rpc).not.toHaveBeenCalled();
+      expect(real.bloqueioObservadoEm).toEqual(expect.any(String));
+      c.avancar(121_000);
+      expect(await verificarEnvio(deps, PACK, OP1)).toMatchObject({ ok: false, estado: 'recusada', pendenteConfirmacao: false });
+    } finally { vi.unstubAllGlobals(); }
   });
 });
 

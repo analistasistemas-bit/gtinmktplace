@@ -132,19 +132,24 @@ describe('envio de resposta', () => {
     expect(verificarMock).toHaveBeenCalledWith('pack-2', OP);
   });
 
-  // Bloqueio 2 (emenda ADR-0067, 23/11): o 409 da recusa por pedido cancelado traz o estado da
-  // tentativa. Corpo idêntico ao que a edge monta (supabase/functions/responder-mensagem/__tests__/
-  // cancelado.test.ts), passado pelo postEdge real.
-  describe('409 pedido_cancelado com estado da tentativa (corpo real da edge)', () => {
-    const CORPO_409 = {
+  // Emenda ADR-0067 (23/11): o 409 de operação já recusada traz o estado da tentativa. Corpos idênticos
+  // aos que a edge monta em cada caminho (supabase/functions/responder-mensagem/__tests__/cancelado.test.ts),
+  // passados pelo postEdge real.
+  describe('409 com estado da tentativa recusada (corpo real da edge)', () => {
+    // Conferir que chega à recusa por pedido cancelado.
+    const CORPO_CONFERIR = {
       ok: false, erro: 'Não é possível responder porque o pedido foi cancelado.', codigo: 'pedido_cancelado',
+      estado: 'recusada', operacao_id: OP, pendenteConfirmacao: false,
+    };
+    // Liberar sobre operação já recusada (liberarEnvio real).
+    const CORPO_LIBERAR = {
+      ok: false, erro: 'Só um envio aguardando confirmação pode ser liberado.',
       estado: 'recusada', operacao_id: OP, pendenteConfirmacao: false,
     };
     let reais: typeof import('@/lib/mensagens');
     beforeAll(async () => { reais = await vi.importActual<typeof import('@/lib/mensagens')>('@/lib/mensagens'); });
     beforeEach(() => {
       vi.spyOn(supabase.auth, 'getSession').mockResolvedValue({ data: { session: { access_token: 't' } }, error: null } as never);
-      vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(CORPO_409), { status: 409 })));
     });
     afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
@@ -153,6 +158,8 @@ describe('envio de resposta', () => {
       ['Liberar envio', () => liberarMock.mockImplementationOnce((...a: unknown[]) => reais.liberarEnvio(...(a as [string, string])))],
     ])('%s: a pendência daquela operação some e a caixa volta (conversa não encerrada)', async (acao, preparar) => {
       CONVERSAS = [conversa({ envioPendente: PENDENTE })];
+      const corpo = acao === 'Liberar envio' ? CORPO_LIBERAR : CORPO_CONFERIR;
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(corpo), { status: 409 })));
       preparar();
       renderAba(); await abrir();
       if (acao === 'Liberar envio') {

@@ -4,6 +4,7 @@
 
 - [x] Tabela `ml_conversas` (estado do pack, `conversation_status.status` do ML) registrada por `registrar_estado_conversa` com guarda temporal em toda sincronização; RPCs e front passam a encerrar a conversa só com pedido cancelado e conversa não `active`; `responder-mensagem` sem pré-bloqueio (o ML decide); POST recusado com `blocked_by_cancelled_order` carimba `blocked`.
 - [ ] Aplicar a migration `20261123231030_mensagens_conversas.sql`, merge e deploy das edges afetadas.
+- [ ] **Obrigatório logo após o deploy:** varredura única dos packs com `order_status = 'cancelled'` em `ml_mensagens` sem linha em `ml_conversas` — ler `conversation_status` no ML (GET sem marcar como lida, por organização, espaçado) e gravar via `registrar_estado_conversa` com o instante de início da leitura (ADR-0067, emenda 23/11, seção Rollout).
 - [ ] Conferir em produção as conversas de pedido cancelado com conversa ativa voltando a Aguardando após a próxima sincronização dos packs.
 
 ## Acesso de agentes — fatia 1 (ADR-0210) — 2026-11-22
