@@ -113,7 +113,7 @@ Migration aplicada, merge na `main` e deploy feitos em 2026-11-22 (ver "Aceite d
 
 ### Pendências aceitas para o piloto
 
-- Conferir se `/items/bulk` devolve item de outro vendedor. **Aberta:** um único anúncio de terceiro testado em 2026-11-23 voltou 403, o que é indício, não prova (ver "Aceite em uso real"). Antes de outra loja: ampliar a amostra ou validar `seller_id`.
+- Conferir se `/items/bulk` devolve item de outro vendedor. **Medida em 2026-11-24 e fechada com validação de `seller_id` no código** (Emenda 2).
 - Qual cabeçalho de IP chega à edge, e se ele pode ser forjado na URL direta do Supabase. **Aberta** (ver "Aceite em uso real").
 - O cache de comissão `promo:lp:v1` é compartilhado entre organizações. É anterior a este trabalho; pendência separada. Medido em 2026-11-23: a chave é categoria + tipo de anúncio + preço, sem vendedor, e guarda só a comissão (tarifa do ML), nenhum dado da loja. Zaven e Avil receberam do `/sites/MLB/listing_prices` a mesma comissão nos 4 casos testados (categoria MLB430391, clássico e premium, R$ 42,75 a R$ 150). O risco é de exatidão, não de vazamento: só apareceria se um vendedor tivesse tarifa própria (acordo comercial, loja oficial), o que não foi observado. Mantido sem mudança.
 - Não há bloqueio por IP antes da consulta da chave. Sugestão registrada: assinatura embutida na chave antes de abrir a mais lojas.
@@ -144,14 +144,14 @@ Conduzido pelo Diego na Zaven, com uma chave criada pela tela (prefixo `ad62ca5f
 - **Paridade com a aba Campanhas, por anúncio:** na Campanha ZAven (ativa), seis linhas da família de `MLB5563623367` foram vistas na tela com "até 42,5%" (`MLB7999179888`, `MLB7999083724`, `MLB5563669687`, `MLB5563669643`, `MLB5563669625`, `MLB5563623397`) e a API devolve `42,5848…` para cada uma (a tela trunca em uma casa). A linha do próprio `MLB5563623367` não foi vista na tela. Família `8632963637759506`: tela "até 44,5%", API `44,5332…`. Componentes da API fecham no preço (R$ 42,75 = comissão 5,99 + frete 6,85 + imposto 1,71 + líquido 28,21; custo 10,00).
 - **Clientes:** funcionam Claude Code, claude.ai, Grok Bot, OpenBot e Muse; o ChatGPT não oferece chave nem cabeçalho (só OAuth). Tabela e passo a passo em `docs/reference/acesso-de-agentes.md`.
 - **Revogação pela tela:** chamada seguinte com a mesma chave → `401 {"erro":"nao_autorizado"}`; nenhuma chamada auditada depois de `revogada_em`.
-- **`/items/bulk` de outro vendedor:** com o token da Zaven, um anúncio próprio voltou `200` com o vendedor da Zaven e um anúncio da Avil voltou `403` sem corpo. O código descarta envelope que não é `200` com corpo, então esse caso viraria `anuncio_indisponivel`. É um único anúncio de um único vendedor: indício de isolamento, não prova.
+- **`/items/bulk` de outro vendedor:** com o token da Zaven, um anúncio próprio voltou `200` com o vendedor da Zaven e um anúncio da Avil voltou `403` sem corpo. O código descarta envelope que não é `200` com corpo, então esse caso viraria `anuncio_indisponivel`. É um único anúncio de um único vendedor: indício de isolamento, não prova. Amostra ampliada em 2026-11-24 (Emenda 2).
 - **Cabeçalho de IP:** nos logs do gateway (76 requisições, 10 user-agents, parte delas scripts da própria validação), `cf-connecting-ip` aparece em todas, sempre igual ao `x-real-ip`. O log guarda só uma lista fixa de cabeçalhos, então a ausência de `x-forwarded-for` nele não prova nada, e o que a função recebe não foi lido de dentro dela.
 
 **Continua pendente:**
 
 - Clientes não testados: OpenClaw (a CLI aceita `--header`), Hermes (servidor remoto) e Muse Code (não instalado).
 - ChatGPT só conecta com a fatia 2.
-- As pendências aceitas para o piloto listadas acima, inclusive `/items/bulk` e cabeçalho de IP.
+- As pendências aceitas para o piloto listadas acima, inclusive cabeçalho de IP (`/items/bulk` foi tratado na Emenda 2).
 - A busca por título só olha `familias.nome_pai`: termo que só existe no título da variação (medido em 2026-11-24 com "Neon") responde `nao_encontrado`.
 
 ## Emenda 1 — conexão mais fácil sem OAuth (2026-11-23)
@@ -166,3 +166,27 @@ Aprovada pelo Diego em 2026-11-23, depois do aceite em uso real. A fatia 2 (OAut
 Não muda: uma organização por chave, isolamento, limites, auditoria, somente leitura.
 
 Revisão independente (Codex gpt-6.2-sol, high, 2026-11-23): (a) o comando do Claude Code deixava a chave no histórico do terminal: passou a ler a chave com `read -rs` e usar a variável; (b) a migration recriava o check sem necessidade: só o `NOT NULL` sai. (c) Aceito sem mudança: pelo Worker, o `cf-connecting-ip` que chega à edge é o da Cloudflare, então todas as falhas de credencial por esse endereço dividem um contador de IP (medido em 2026-11-24: um único IP, faixa `2a06:98c0:3600::/48`). Chave válida não passa por esse limite (`auth-agente.ts`), então só quem erra a chave enquanto outro também erra pode receber 429 em vez de 401. Encaminhar o IP original assinado pelo Worker fica para se isso aparecer. Segunda revisão independente (Grok 4.7 xhigh, 2026-11-24): sem bloqueadores; o mesmo item do IP, classificado como menor.
+
+## Emenda 2 — o agente só recebe anúncio da conta da conexão (2026-11-24)
+
+Aprovada pelo Diego em 2026-11-24, depois da amostra abaixo.
+
+**Decisão.** Nas leituras do `/items/bulk` feitas pela edge `agentes`, o pedido inclui `seller_id` e todo envelope com corpo cujo vendedor não seja a conta ML da conexão (`marketplace_connections.conta_externa_id`), ou sem vendedor, vira 403 sem corpo, na mesma posição. O resultado continua `anuncio_indisponivel`; a contagem vai ao log, sem identificar o anúncio. Um ponto só cobre item e preço, inclusive na simulação (`_shared/agentes/so-do-vendedor.ts`, aplicado no `get` de `agentes/index.ts`). Os leitores compartilhados (`_shared/promocoes`, `_shared/ads`) não mudam.
+
+**Medido** (2026-11-24, 17:16 de Brasília, só GET, token da Zaven salvo indicação, duas seleções de campos do app com `seller_id`; em blocos de controle de 20 anúncios, a seleção exata do app deu os mesmos códigos):
+
+| Grupo | Amostra | Resultado |
+|---|---|---|
+| Terceiros de três lojas conectadas ao mesmo aplicativo | 120 anúncios (40 por loja) | 120 envelopes 403 sem corpo |
+| Terceiros não conectados | 120 anúncios de 120 vendedores, 20 categorias, 53 produtos de catálogo | 120 envelopes 403 sem corpo |
+| Próprios da Zaven | 247 vigentes + 64 retirados | 311 envelopes 200, vendedor igual à conta |
+| Vínculos publicados de outra loja, com o token dela (28 de 29 anteriores à conexão atual) | 29 anúncios | 29 envelopes 200, vendedor igual à conta |
+| Lotes mistos | 3 de 20 e 1 de 3 anúncios | Lote 200; próprio 200, terceiro 403, inexistente 404, na posição pedida |
+
+Status no ML dos 340 próprios: Zaven 174 ativos, 73 pausados (67 sem estoque, 6 pelo vendedor) e 64 encerrados; outra loja 24 pausados e 5 em revisão. Nenhum MLB está vinculado a mais de uma organização (consulta a todos os vínculos ML).
+
+**Não medido:** anúncio de catálogo próprio (nenhum entre os 340); status dos terceiros (o ML não informa; 30 dos 120 não conectados estavam inativos no registro do Radar); leitura de terceiro com token de outra loja; amostra aleatória do ML (esta não é).
+
+**Inferência:** a recusa do ML é forte indício de isolamento, mas é comportamento sem contrato conhecido e pode mudar; por isso a validação entra mesmo com zero vazamento. O caminho que ela fecha é o vínculo velho de uma conta trocada. Os outros leitores do `/items/bulk` que não conferem o vendedor (promoções, operações em massa, reajuste, Ads) teriam a mesma exposição: pendência separada, fora desta ADR.
+
+**Ao ligar outra loja:** conferir no catálogo do agente que os anúncios próprios, inclusive um de catálogo se houver, não voltam `anuncio_indisponivel`. O filtro falha fechado: `seller_id` ausente esconde o anúncio e, se `conta_externa_id` divergir da conta do token, esconde a loja inteira.

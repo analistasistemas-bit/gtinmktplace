@@ -555,7 +555,7 @@ Todos, exceto `sem_espaco_para_ads`, vêm com `margem_pct: null`.
 
 | Motivo | Significado | O que fazer |
 |---|---|---|
-| `anuncio_indisponivel` | O item (ou, fora da simulação, o preço) não veio do Mercado Livre | Tentar de novo (marca `parcial` no catálogo) |
+| `anuncio_indisponivel` | O item (ou, fora da simulação, o preço) não veio do Mercado Livre, ou o vendedor informado não é a conta da conexão | Tentar de novo (marca `parcial` no catálogo); se persistir, conferir se o anúncio é da conta conectada |
 | `sem_preco` | Sem preço utilizável (zero, ausente ou inválido) | Verificar o anúncio no app |
 | `sem_cadastro` | Anúncio sem vínculo com o cadastro de produtos | Corrigir o vínculo no app |
 | `sem_custo` | Custo do pacote ausente ou menor ou igual a zero | Preencher o custo no cadastro |
@@ -628,6 +628,7 @@ Um identificador de 12 a 20 dígitos é gravado como família ainda que fosse um
 - **Isolamento por organização.** Toda consulta de banco, cache, cursor e cota leva a organização da conexão. Um MLB, MLBU, família, SKU ou título de **outra** organização responde `nao_encontrado`, idêntico a um inexistente; um cursor de outra organização responde `cursor_invalido`. Não há como enumerar outras lojas.
 - **Uma chave por loja.** Para consultar várias lojas, use uma conexão (chave) por loja; não existe chave multi-loja.
 - **Dados que nunca saem:** dados de comprador, credenciais do Mercado Livre, dados de fornecedor e `familias.custo_centavos` (custo de tokens de IA).
+- **Só anúncio da conta.** Item e preço lidos no Mercado Livre são descartados quando o `seller_id` não é o da conta da conexão, ou não vem (ADR-0210, Emenda 2): o anúncio responde `anuncio_indisponivel`, sem título nem preço.
 - **Erros opacos.** Falhas internas devolvem só `indisponivel`; a mensagem original não é exposta nem logada. Falhas de credencial não distinguem chave inexistente, revogada ou expirada.
 - **Guarde a chave como segredo.** Ela é exibida uma vez; no PubliAI fica só o hash. Revogue e crie outra em caso de vazamento.
 
@@ -640,7 +641,7 @@ Da ADR-0210 e do código:
 - Comissão e frete vêm de um cache de até 8 horas (`tarifa_idade_max_horas`); o preço é lido na hora.
 - A leitura pode renovar e regravar a credencial do Mercado Livre da organização.
 - Pendências aceitas para o piloto: o cache de comissão `promo:lp:v1` é compartilhado entre organizações; não há bloqueio por IP antes da consulta da chave; não há revalidação da conexão depois da leitura do corpo; o limite de 10 conexões ativas não é atômico.
-- Teste real em cada cliente: feito em 2026-11-23; resultado na tabela de clientes do guia ([acesso-de-agentes.md](acesso-de-agentes.md)). `/items/bulk` de outro vendedor: um único anúncio testado respondeu 403 sem corpo (vira `anuncio_indisponivel`); pendente ampliar a amostra ou validar o vendedor antes de abrir a outras lojas (ADR-0210).
+- Teste real em cada cliente: feito em 2026-11-23; resultado na tabela de clientes do guia ([acesso-de-agentes.md](acesso-de-agentes.md)). `/items/bulk` de outro vendedor: 240 de 240 anúncios de terceiros responderam 403 sem corpo (amostra de 2026-11-24, não aleatória); além disso o código confere o vendedor (ADR-0210, Emenda 2). Não medido: anúncio de catálogo próprio.
 
 O que **não existe**:
 
