@@ -148,15 +148,19 @@ export async function drenarCancelamentos(
     // 5. A geração lida ainda está pendente? Erro ou prazo: sem registro.
     try {
       if (!await comPrazo(io.aindaPendente(o), ate(PRAZO_CHAMADA_MS), 'aindaPendente')) return null;
-    } catch { return null; }
+    } catch (e) { console.warn(`drenagem de cancelamentos: ${o.orderId} aindaPendente: ${msg(e)}`); return null; }
     let kitOn: boolean;
-    try { kitOn = await kitLigado(); } catch { return null; }
+    try { kitOn = await kitLigado(); } catch (e) {
+      console.warn(`drenagem de cancelamentos: ${o.orderId} kitLigado: ${msg(e)}`);
+      return null;
+    }
 
     // 6. Tratamento com os itens do ledger.
     let res: ResultadoCancelamento;
     try {
       res = await comPrazo(io.tratar({ ...base, kitLigado: kitOn }), ate(PRAZO_TRATAMENTO_MS), 'tratamento');
     } catch (e) {
+      console.warn(`drenagem de cancelamentos: ${o.orderId} tratamento: ${msg(e)}`);
       return fica(e instanceof TempoEsgotado ? 'tratamento: tempo esgotado' : 'erro');
     }
 
@@ -167,7 +171,7 @@ export async function drenarCancelamentos(
     let l2: Ledger | undefined;
     try {
       l2 = (await comPrazo(io.ledger([o.orderId]), ate(PRAZO_CHAMADA_MS), 'ledger')).get(o.orderId);
-    } catch { return null; }
+    } catch (e) { console.warn(`drenagem de cancelamentos: ${o.orderId} releitura do ledger: ${msg(e)}`); return null; }
     if (!l2) return null;
     return abertasDe(l2).length === 0 ? conclui('reposto', l2.lidoEm) : fica('reposicao-incompleta');
   }

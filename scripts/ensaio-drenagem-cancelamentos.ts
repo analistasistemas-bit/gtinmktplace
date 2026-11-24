@@ -104,6 +104,10 @@ async function previa(admin: SupabaseClient, plano: Plano) {
   console.log('  A: kit rascunho `ENS0211-KIT` com os 5 primeiros SKUs como participantes (sem anúncio)');
   console.log(`  worker_rodadas (reconciliar, rodando) por org; ${plano.vendas.length} vendas em ml_vendas, pedidos ${plano.vendas[0].orderId}..${plano.vendas.at(-1)!.orderId}`);
   console.log(`  baixa real de cada venda; raw → cancelled (o trigger arma); reabertura: baixa de ${plano.reabertura.skuNovo} no pedido ${plano.reabertura.orderId}`);
+  console.log('\nEfeitos colaterais (só nas orgs de ensaio):');
+  console.log('  - aviso in-app e linha em ml_notificacoes_enviadas para os 10 pedidos `avisado` da org A;');
+  console.log('  - jobs `sincronizar-estoque` no QStash (outbox das baixas e dos estornos): o worker de produção roda para essas orgs, sem conexão ML;');
+  console.log('  - execução parcial deixa vendas nas orgs e a prévia passa a recusar: repetir exige orgs novas.');
 }
 
 async function retrato(admin: SupabaseClient, orgs: string[]) {

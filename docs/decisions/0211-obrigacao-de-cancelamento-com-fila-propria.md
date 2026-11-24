@@ -1,6 +1,6 @@
 # ADR-0211 — Obrigação de cancelamento com fila própria, armada pelo banco
 
-**Status:** Aceito (2026-11-24). Implementação na branch `feat/adr-0211-fila-cancelamento`; migration aplicada, deploy, ensaio (6.2), canário (6.3) e medição ainda pendentes.
+**Status:** Aceito (2026-11-24). Implementação na branch `feat/adr-0211-fila-cancelamento`; aplicação da migration, deploy, ensaio (6.2), canário (6.3) e medição pendentes.
 **Decisores:** Diego
 **Refina:** [ADR-0121](0121-cancelamento-tratado-tambem-pela-reconciliacao.md) (quem chama o tratamento de cancelamento). As decisões 2 e 3 (quando repor) **não mudam**.
 **Relaciona:** [ADR-0173](0173-fanout-por-org-workers-agendados-cpu.md) (fan-out, `worker_pendencias`), [ADR-0200](0200-kit-com-variacao.md) (pendência `obrigatoria`, baixa adiada), ADR-0094 D-7/D-19 (allowlist de pré-despacho, tombstone `cancelamento_sem_baixa`), ADR-0043 (migrations por canal único).
