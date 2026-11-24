@@ -767,6 +767,14 @@ describe('tratarPedidoCancelado: envio cancelado que nunca saiu', () => {
       expect(await c.rodar()).toBe('avisado');
       expect(n).toBe(2);
     });
+    it('parcial já conhecido por quem chama e releitura falha: texto neutro, nunca "NÃO reposto"', async () => {
+      const c = cenario({ pedido: { shipmentStatus: 'shipped', parcialConhecido: true }, deps: {
+        houveBaixaDeVenda: () => Promise.resolve(true), baixasAbertas: () => Promise.reject(new Error('fora')),
+      } });
+      expect(await c.rodar()).toBe('avisado');
+      expect(c.chamadas.notificacoes[0].texto).toContain('Confira o saldo em Estoque antes de dar entrada');
+      expect(c.chamadas.notificacoes[0].texto).not.toContain('NÃO reposto');
+    });
     it('leitura pendurada: em 3 s segue com o texto padrão', async () => {
       vi.useFakeTimers();
       const c = cenario({ ...DESPACHADO, deps: { houveBaixaDeVenda: () => Promise.resolve(true), baixasAbertas: () => new Promise(() => {}) } });

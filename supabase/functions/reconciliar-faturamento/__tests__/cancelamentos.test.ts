@@ -613,6 +613,15 @@ describe('drenarCancelamentos: envio cancelado que nunca saiu', () => {
     expect(c.textos[0]).not.toContain('• A');
   });
 
+  it('F42b. misto: o tratamento sabe que parte já voltou', async () => {
+    const c = cenario({ ledger: MISTO(), tentativas: 2, prova: 'nao' });
+    await c.rodar();
+    expect(vi.mocked(c.io.tratar).mock.calls[0][0].parcialConhecido).toBe(true);
+    const d = cenario({ ledger: [aberta('A')], tentativas: 2, prova: 'nao' });
+    await d.rodar();
+    expect(vi.mocked(d.io.tratar).mock.calls[0][0].parcialConhecido).toBe(false);
+  });
+
   it('F43. indisponível sem estado misto: erro nas 2 primeiras, avisa na 3ª; nunca adiado', async () => {
     for (const tentativas of [0, 1]) {
       const c = cenario({ ledger: [aberta('A')], prova: 'indisponivel', tentativas });

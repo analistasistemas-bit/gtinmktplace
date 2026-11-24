@@ -195,7 +195,7 @@ export async function drenarCancelamentos(
     // 6. Tratamento com os itens do ledger. Prazo vencido: nem começa.
     let res: ResultadoCancelamento;
     try {
-      res = await comPrazo(() => io.tratar({ ...base, kitLigado: kitOn, aoIndisponivel: () => (insiste ? 'erro' : 'avisar') }), ate(PRAZO_TRATAMENTO_MS), 'tratamento');
+      res = await comPrazo(() => io.tratar({ ...base, kitLigado: kitOn, parcialConhecido: misto, aoIndisponivel: () => (insiste ? 'erro' : 'avisar') }), ate(PRAZO_TRATAMENTO_MS), 'tratamento');
     } catch (e) {
       console.warn(`drenagem de cancelamentos: ${o.orderId} tratamento: ${msg(e)}`);
       return fica(e instanceof TempoEsgotado ? 'tratamento: tempo esgotado' : 'erro');

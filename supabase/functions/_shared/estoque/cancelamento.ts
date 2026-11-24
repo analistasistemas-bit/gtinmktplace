@@ -117,6 +117,8 @@ export interface PedidoCancelado {
   /** Substatus do envio (emenda 24/11 ao ADR-0121). Ausente = comportamento anterior. */
   shipmentSubstatus?: string | null;
   temEnvio: boolean;
+  /** Emenda 8: quem chama já viu no ledger que parte foi estornada; releitura falha usa o texto neutro. */
+  parcialConhecido?: boolean;
   /** ADR-0200: módulo `kit_variacao` (`Catalogo.kitLigado`). Ausente = desligado, comportamento de hoje. */
   kitLigado?: boolean;
   /** ADR-0200: o catálogo que resolveu os códigos veio incompleto (`Catalogo.incompleto`). */
@@ -210,7 +212,7 @@ export async function tratarPedidoCancelado(
     const saiu = st !== null && SAIU.includes(st);
     // Parcial: pede entrada só do que está aberto. Sem certeza do que voltou: texto neutro, nunca "NÃO reposto".
     const abertas = ledger?.haEstornada ? ledger.abertas : [];
-    incerto ||= abertas.some((b) => b.codigo === null);
+    incerto ||= abertas.some((b) => b.codigo === null) || (!!p.parcialConhecido && !ledger);
     const parcial = incerto ? 'O estoque pode ter voltado em parte. Confira o saldo em Estoque antes de dar entrada.'
       : abertas.length > 0
         ? 'Parte do estoque já voltou. Ainda NÃO voltaram:\n'
