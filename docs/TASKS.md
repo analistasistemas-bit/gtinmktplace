@@ -40,7 +40,8 @@
 - [x] Aceite por chamadas reais na Zaven (22/11, chave temporária já revogada): família do ML com 16 anúncios, MLB, MLBU, SKU, título (candidatos), catálogo paginado, simulação, anúncio de outra organização → não encontrado, revogação → 401, auditoria completa. Números conferidos contra custo e alíquota do cadastro.
 - [ ] Diego: gerar a primeira chave pela tela (Configurações › Conexões de agentes) e testar em cada cliente (tabela do guia).
 - [x] Vendedor do anúncio (Emenda 2 da ADR-0210): amostra de 24/11 (240 de terceiros recusados, 340 próprios com dono certo) e filtro por `seller_id` no ar (`ff4e7729`, `agentes` v5).
-- [ ] Antes de abrir a outras lojas: demais pendências da ADR-0210 (cabeçalho de IP, assinatura na chave).
+- [x] Cabeçalho de IP (24/11): na `agentes`, depois do primeiro 429 nenhuma variação de cabeçalho testada voltou a receber 401; sem mudança de código.
+- [ ] Antes de abrir a outras lojas: assinatura na chave (ADR-0210).
 
 ## Central de Promoções: descoberta pela visão por anúncio (emenda 22/11 ao ADR-0170) — 2026-11-22
 

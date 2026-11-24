@@ -114,7 +114,7 @@ Migration aplicada, merge na `main` e deploy feitos em 2026-11-22 (ver "Aceite d
 ### Pendências aceitas para o piloto
 
 - Conferir se `/items/bulk` devolve item de outro vendedor. **Fechada em 2026-11-24:** amostra medida e validação de `seller_id` no ar (Emenda 2).
-- Qual cabeçalho de IP chega à edge, e se ele pode ser forjado na URL direta do Supabase. **Aberta** (ver "Aceite em uso real").
+- Qual cabeçalho de IP chega à edge, e se ele pode ser forjado na URL direta do Supabase. **Verificação do piloto encerrada em 2026-11-24**, sem mudança de código: cabeçalhos lidos dentro de uma função temporária e limite testado na `agentes` (ver "Cabeçalho de IP").
 - O cache de comissão `promo:lp:v1` é compartilhado entre organizações. É anterior a este trabalho; pendência separada. Medido em 2026-11-23: a chave é categoria + tipo de anúncio + preço, sem vendedor, e guarda só a comissão (tarifa do ML), nenhum dado da loja. Zaven e Avil receberam do `/sites/MLB/listing_prices` a mesma comissão nos 4 casos testados (categoria MLB430391, clássico e premium, R$ 42,75 a R$ 150). O risco é de exatidão, não de vazamento: só apareceria se um vendedor tivesse tarifa própria (acordo comercial, loja oficial), o que não foi observado. Mantido sem mudança.
 - Não há bloqueio por IP antes da consulta da chave. Sugestão registrada: assinatura embutida na chave antes de abrir a mais lojas.
 - Sem revalidação da conexão depois da leitura do corpo (janela de até 10 s).
@@ -145,13 +145,13 @@ Conduzido pelo Diego na Zaven, com uma chave criada pela tela (prefixo `ad62ca5f
 - **Clientes:** funcionam Claude Code, claude.ai, Grok Bot, OpenBot e Muse; o ChatGPT não oferece chave nem cabeçalho (só OAuth). Tabela e passo a passo em `docs/reference/acesso-de-agentes.md`.
 - **Revogação pela tela:** chamada seguinte com a mesma chave → `401 {"erro":"nao_autorizado"}`; nenhuma chamada auditada depois de `revogada_em`.
 - **`/items/bulk` de outro vendedor:** com o token da Zaven, um anúncio próprio voltou `200` com o vendedor da Zaven e um anúncio da Avil voltou `403` sem corpo. O código descarta envelope que não é `200` com corpo, então esse caso viraria `anuncio_indisponivel`. É um único anúncio de um único vendedor: indício de isolamento, não prova. Amostra ampliada em 2026-11-24 (Emenda 2).
-- **Cabeçalho de IP:** nos logs do gateway (76 requisições, 10 user-agents, parte delas scripts da própria validação), `cf-connecting-ip` aparece em todas, sempre igual ao `x-real-ip`. O log guarda só uma lista fixa de cabeçalhos, então a ausência de `x-forwarded-for` nele não prova nada, e o que a função recebe não foi lido de dentro dela.
+- **Cabeçalho de IP:** nos logs do gateway (76 requisições, 10 user-agents, parte delas scripts da própria validação), `cf-connecting-ip` aparece em todas, sempre igual ao `x-real-ip`. O log guarda só uma lista fixa de cabeçalhos, então a ausência de `x-forwarded-for` nele não prova nada, e o que a função recebe não foi lido de dentro dela. Lido em 2026-11-24 (ver "Cabeçalho de IP").
 
 **Continua pendente:**
 
 - Clientes não testados: OpenClaw (a CLI aceita `--header`), Hermes (servidor remoto) e Muse Code (não instalado).
 - ChatGPT só conecta com a fatia 2.
-- As pendências aceitas para o piloto listadas acima, inclusive cabeçalho de IP (`/items/bulk` foi tratado na Emenda 2).
+- As pendências aceitas para o piloto listadas acima, menos as duas já fechadas (`/items/bulk`, Emenda 2; cabeçalho de IP, seção própria).
 - A busca por título só olha `familias.nome_pai`: termo que só existe no título da variação (medido em 2026-11-24 com "Neon") responde `nao_encontrado`.
 
 ## Emenda 1 — conexão mais fácil sem OAuth (2026-11-23)
@@ -196,3 +196,26 @@ As linhas acima medem o ML, não o filtro: nenhum caso real devolveu 200 de outr
 Revisão independente (Codex gpt-6.2-sol, high, 2026-11-24): (a) resposta fora do formato de lista passou a virar lista vazia; (b) entrou teste do fluxo completo com vínculo velho; (c) o texto passou a separar o que mede o ML do que só o teste cobre. Segunda rodada: (d) `seller_id` numérico acima do inteiro seguro é recusado; (e) o teste confere a linha recusada inteira. O MLB do vínculo recusado no catálogo e no cursor, objeção da primeira rodada, foi retirado na segunda: é dado do cadastro da própria organização. Sem mudança: `seller_id` ausente continua escondendo o anúncio, e o cache de comissão compartilhado segue nas pendências aceitas.
 
 **Deploy e aceite (2026-11-24):** main `ff4e7729`, `agentes` v5 (45 de 45 arquivos baixados iguais ao commit, `verify_jwt` falso). Pelo endereço público, na Zaven: `publiai_loja`; `publiai_margem_anuncio` de `MLB5563623367` com a mesma margem do aceite de 23/11 (42,5848%); primeira página do catálogo com 50 de 50 anúncios com número e `parcial` falso. O aceite mostra que o filtro não esconde anúncio próprio nessa página (50 anúncios); o descarte de outro vendedor continua coberto só por teste automático.
+
+## Cabeçalho de IP (2026-11-24)
+
+Autorizado pelo Diego. Sem decisão nova e sem mudança de código.
+
+**Medido dentro da função.** Edge temporária `diag-ip`, separada, sem banco nem segredo, publicada e apagada no mesmo teste (a exclusão foi confirmada pela lista de funções e por 404). 18 pedidos de uma única máquina, um IP de origem IPv4, HTTP/2, 9 variações em cada um dos dois endereços diretos (`<ref>.supabase.co/functions/v1/…` e `<ref>.functions.supabase.co/…`), com o mesmo resultado nos dois:
+
+| O cliente enviou | O que aconteceu |
+|---|---|
+| Nada | `cf-connecting-ip` = IP real; `x-forwarded-for` = real, real e um terceiro endereço, que mudou entre os pedidos (9 valores em 12 pedidos); `x-real-ip` não chega |
+| `CF-Connecting-IP` com valor, sozinho, repetido ou com `X-Forwarded-For` (3 variações) | 403 `error code: 1000`, em vez da resposta da função |
+| `CF-Connecting-IP` vazio | Chega o IP real |
+| `X-Forwarded-For`, simples ou repetido | O valor enviado some; o que chega mantém o formato de quando nada é enviado, com o terceiro endereço variando |
+| `X-Real-IP` | Não chega |
+| `True-Client-IP`, `Forwarded`, `X-Client-IP`, `CF-Connecting-IPv6` e `CF-Pseudo-IPv4`, juntos | Os três primeiros **chegam como enviados** (forjáveis; `ipDoCliente` não usa nenhum); os dois `CF-*` não chegam |
+
+**Medido na `agentes`** (status e corpo da resposta; 30 pedidos sem chave, no mesmo minuto, sem usar o Worker): 20 respostas 401, depois nove 429 e um 403. O 21º pedido, sem nada forjado, deu 429. Em seguida, em `<ref>.supabase.co`: `X-Forwarded-For` (uma e duas entradas), `X-Real-IP`, os três forjáveis juntos e `CF-Connecting-IP` vazio; em `<ref>.functions.supabase.co`, só dois pedidos (sem nada e com `X-Forwarded-For`); e um controle final. Todos deram 429; `CF-Connecting-IP` com valor deu 403 `error code: 1000`. Nenhuma variação testada voltou a receber 401. A chave do contador no Redis não foi observada.
+
+**Inferência:** os dois resultados são compatíveis com o limite por IP que o código descreve e com ele não ser contornável pelos cabeçalhos testados. O 403 é compatível com rejeição na borda da Cloudflare, não confirmada diretamente. Nos 12 pedidos que chegaram à `diag-ip`, o último item de `x-forwarded-for` diferiu do IP de origem, então o ramo de reserva de `ipDoCliente` não identificaria o cliente; ele não seria usado, porque `cf-connecting-ip` veio em todos e tem precedência.
+
+**Não medido:** origem IPv6 (em 2026-11-24, `txvncrgkoynoxwopfkbp.supabase.co` e `txvncrgkoynoxwopfkbp.functions.supabase.co` não tinham registro AAAA; `mcp.publiai.daludi.com.br` tinha dois); HTTP/1.1; mais de uma origem; tráfego pelo Worker neste ensaio (a medição anterior, de um único IP, está na Emenda 1); um Worker de terceiro chamando a URL direta. Consequência esperada da chave do contador: quem tem muitos IPs de verdade tem um limite para cada um; a assinatura na chave é a mitigação proposta, ainda pendente.
+
+Revisão independente do texto (Codex gpt-6.2-sol, high, 2026-11-24, três rodadas): considerou defensável manter o código e pediu só ajustes de redação, aplicados; as três rodadas terminaram em "revisar", e os ajustes da última não passaram por nova rodada.
