@@ -15,7 +15,7 @@ import { buscarPacksNaoLidos, buscarMensagensPackEstrito, upsertMensagensEstrito
 import { recuperarComOrcamento, recuperarPendentes } from '../_shared/faturamento/posvenda-fluxo.ts';
 import { depsAcaoReal } from '../_shared/faturamento/posvenda-acao-io.ts';
 import { envioParaTratamento, tratarPedidoCancelado } from '../_shared/estoque/cancelamento.ts';
-import { lerNuncaSaiu } from '../_shared/estoque/nunca-saiu.ts';
+import { conferirTeto, lerNuncaSaiu } from '../_shared/estoque/nunca-saiu.ts';
 import { despacharPushPendente, refazerBaixaAdiada } from '../_shared/estoque/baixa.ts';
 import { desfechoKit, processarClaim } from './kit.ts';
 import { depsCancelamento } from '../_shared/estoque/cancelamento-deps.ts';
@@ -590,6 +590,7 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
         async ledger(ids) {
           const { data, error } = await admin.rpc('cancelamento_baixas', { p_org: orgId, p_orders: ids });
           if (error) throw new Error(`cancelamento_baixas: ${error.message}`);
+          conferirTeto(data ?? [], 'cancelamento_baixas');
           const porPedido = new Map<string, Ledger>();
           for (const r of (data ?? []) as Array<{ order_id: string; lido_em: string; codigo_ref: string | null; quantidade: number | null; estornada: boolean }>) {
             const l = porPedido.get(r.order_id) ?? { lidoEm: r.lido_em, baixas: [] };

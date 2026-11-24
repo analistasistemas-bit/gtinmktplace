@@ -733,6 +733,15 @@ describe('tratarPedidoCancelado: envio cancelado que nunca saiu', () => {
       expect(await c.rodar()).toBe('avisado');
       expect(ordem).toEqual(['ledger', 'reserva']);
     });
+    it('outra execução já estornou tudo: sem-baixa, sem aviso nem reserva', async () => {
+      const c = cenario({ ...DESPACHADO, deps: {
+        houveBaixaDeVenda: () => Promise.resolve(true),
+        baixasAbertas: () => Promise.resolve({ abertas: [], haEstornada: true }),
+      } });
+      expect(await c.rodar()).toBe('sem-baixa');
+      expect(c.chamadas.reservas).toEqual([]);
+      expect(c.chamadas.notificacoes).toEqual([]);
+    });
     it('leitura pendurada: em 3 s segue com o texto padrão', async () => {
       vi.useFakeTimers();
       const c = cenario({ ...DESPACHADO, deps: { houveBaixaDeVenda: () => Promise.resolve(true), baixasAbertas: () => new Promise(() => {}) } });

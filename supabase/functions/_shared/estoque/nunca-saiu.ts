@@ -43,7 +43,7 @@ export interface BaixasAbertas {
 }
 
 /** Teto de linhas do PostgREST: chegar nele pode ser resposta truncada, então conta como leitura falha. */
-function conferirTeto(linhas: unknown[], onde: string) {
+export function conferirTeto(linhas: unknown[], onde: string) {
   if (linhas.length >= 1000) throw new Error(`${onde}: resposta possivelmente truncada`);
 }
 

@@ -27,6 +27,9 @@ describe('fiação do envio que nunca saiu', () => {
     expect(t).toMatch(/select\('cancelamento_tentativas'\)\s*\.eq\('org_id', orgId\)\.eq\('id', o\.id\)\.eq\('cancelamento_geracao', o\.geracao\)/);
     expect(t).toMatch(/tentativas: Number\(data\.cancelamento_tentativas\)/);
   });
+  it('fila: ledger do lote no teto de linhas é leitura falha, não "sem baixa aberta"', () => {
+    expect(ler('reconciliar-faturamento/index.ts')).toMatch(/if \(error\) throw new Error\(`cancelamento_baixas: \$\{error\.message\}`\);\s*conferirTeto\(data \?\? \[\], 'cancelamento_baixas'\);/);
+  });
   it('deps reais: ledger, trava, dedupe e fila ligados, com as duas flags', () => {
     const t = ler('_shared/estoque/cancelamento-deps.ts');
     for (const d of ['baixasAbertas', 'saldoMexidoDepois', 'notificacaoJaEnviada']) expect(t, d).toMatch(new RegExp(`^  ${d},$`, 'm'));
