@@ -11,7 +11,7 @@ const obj = (x: unknown): x is Record<string, unknown> => typeof x === 'object' 
  */
 export function soDoVendedor(get: GetJson, conta: string): GetJson {
   const daConta = (b: unknown) =>
-    obj(b) && (typeof b.seller_id === 'number' || typeof b.seller_id === 'string') && String(b.seller_id) === conta;
+    obj(b) && (Number.isSafeInteger(b.seller_id) || typeof b.seller_id === 'string') && String(b.seller_id) === conta;
   return async (path) => {
     if (!BULK.test(path)) throw new Error('agentes.leitura_sem_vendedor');
     const json = await get(path.replace(BULK, '$1body.seller_id,'));

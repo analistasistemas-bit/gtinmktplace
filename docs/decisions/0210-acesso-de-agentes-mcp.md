@@ -113,7 +113,7 @@ Migration aplicada, merge na `main` e deploy feitos em 2026-11-22 (ver "Aceite d
 
 ### Pendências aceitas para o piloto
 
-- Conferir se `/items/bulk` devolve item de outro vendedor. **Medida em 2026-11-24 e fechada com validação de `seller_id` no código** (Emenda 2).
+- Conferir se `/items/bulk` devolve item de outro vendedor. **Medida em 2026-11-24; validação de `seller_id` no código, a fechar com o deploy e o aceite na edge** (Emenda 2).
 - Qual cabeçalho de IP chega à edge, e se ele pode ser forjado na URL direta do Supabase. **Aberta** (ver "Aceite em uso real").
 - O cache de comissão `promo:lp:v1` é compartilhado entre organizações. É anterior a este trabalho; pendência separada. Medido em 2026-11-23: a chave é categoria + tipo de anúncio + preço, sem vendedor, e guarda só a comissão (tarifa do ML), nenhum dado da loja. Zaven e Avil receberam do `/sites/MLB/listing_prices` a mesma comissão nos 4 casos testados (categoria MLB430391, clássico e premium, R$ 42,75 a R$ 150). O risco é de exatidão, não de vazamento: só apareceria se um vendedor tivesse tarifa própria (acordo comercial, loja oficial), o que não foi observado. Mantido sem mudança.
 - Não há bloqueio por IP antes da consulta da chave. Sugestão registrada: assinatura embutida na chave antes de abrir a mais lojas.
@@ -189,8 +189,8 @@ As linhas acima medem o ML, não o filtro: nenhum caso real devolveu 200 de outr
 
 **Não medido:** anúncio de catálogo próprio (nenhum entre os 340); status dos terceiros (o ML não informa; 30 dos 120 não conectados estavam inativos no registro do Radar); leitura de terceiro com token de outra loja; amostra aleatória do ML (esta não é).
 
-**Inferência:** a recusa do ML é forte indício de isolamento, mas é comportamento sem contrato conhecido e pode mudar; por isso a validação entra mesmo com zero vazamento. O caminho que ela fecha é o vínculo velho de uma conta trocada. Os outros leitores do `/items/bulk` que não conferem o vendedor (promoções, operações em massa, reajuste, Ads) teriam a mesma exposição: pendência separada, fora desta ADR.
+**Inferência:** a recusa do ML é forte indício de isolamento, mas é comportamento sem contrato conhecido e pode mudar; por isso a validação entra mesmo com zero vazamento na amostra. O caminho que ela fecha é o vínculo velho de uma conta trocada. Os outros leitores do `/items/bulk` que não conferem o vendedor (promoções, operações em massa, reajuste, Ads) teriam a mesma exposição: pendência separada, fora desta ADR.
 
 **Ao ligar outra loja:** conferir no catálogo do agente que os anúncios próprios, inclusive um de catálogo se houver, não voltam `anuncio_indisponivel`. O filtro falha fechado: `seller_id` ausente esconde o anúncio e, se `conta_externa_id` divergir da conta do token, esconde a loja inteira.
 
-Revisão independente (Codex gpt-6.2-sol, high, 2026-11-24): (a) resposta fora do formato de lista passou a virar lista vazia; (b) entrou teste do fluxo completo com vínculo velho; (c) o texto passou a separar o que mede o ML do que só o teste cobre. Não aceito como bloqueador: o MLB do vínculo recusado aparecer no catálogo e no cursor, porque é dado do cadastro da própria organização, não do outro vendedor.
+Revisão independente (Codex gpt-6.2-sol, high, 2026-11-24): (a) resposta fora do formato de lista passou a virar lista vazia; (b) entrou teste do fluxo completo com vínculo velho; (c) o texto passou a separar o que mede o ML do que só o teste cobre. Segunda rodada: (d) `seller_id` numérico acima do inteiro seguro é recusado; (e) o teste confere a linha recusada inteira. O MLB do vínculo recusado no catálogo e no cursor, objeção da primeira rodada, foi retirado na segunda: é dado do cadastro da própria organização. Sem mudança: `seller_id` ausente continua escondendo o anúncio, e o cache de comissão compartilhado segue nas pendências aceitas.

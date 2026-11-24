@@ -75,6 +75,12 @@ describe('soDoVendedor', () => {
     expect(await get(caminhoMultiget(['MLB1', 'MLB2'], 'id'))).toEqual([{ status_code: 403 }, { status_code: 403 }]);
   });
 
+  it('número acima do inteiro seguro é descartado: o JSON já pode tê-lo arredondado para a conta', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const resposta = JSON.parse('[{"status_code":200,"body":{"id":"MLB1","seller_id":9007199254740993}}]');
+    expect(await soDoVendedor(fakeML(resposta).get, '9007199254740992')(caminhoMultiget(['MLB1'], 'id'))).toEqual([{ status_code: 403 }]);
+  });
+
   it('não avisa quando nada é descartado', async () => {
     const aviso = vi.spyOn(console, 'warn').mockImplementation(() => {});
     await precos([ok('MLB1', 111222333), { status_code: 403 }], ['MLB1', 'MLB2']);
@@ -132,22 +138,28 @@ describe('vínculo velho de uma conta trocada (o ML devolve 200 de outro vendedo
     };
     return { d, tarifaEm };
   }
-  const VAZIO = { mlb: 'MLB2', titulo: null, sku: null, preco_tabela_brl: null, margem_pct: null, roas_minimo: null, motivo: 'anuncio_indisponivel' };
+  const VAZIO = {
+    mlb: 'MLB2', titulo: null, sku: null, preco_brl: null, preco_tabela_brl: null, em_promocao: null, custo_brl: null, comissao_brl: null,
+    frete_brl: null, imposto_brl: null, liquido_brl: null, margem_pct: null, roas_minimo: null, motivo: 'anuncio_indisponivel',
+  };
 
   it('margem, catálogo e simulação não entregam nada do outro vendedor nem consultam tarifa dele', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
-    for (const chamar of [
-      (d: DepsMargens) => margemDoAlvo('MLB2', d), (d: DepsMargens) => simularMargem('MLB2', 80, d),
-    ]) {
+    const casos: [(d: DepsMargens) => Promise<unknown>, unknown][] = [
+      [(d) => margemDoAlvo('MLB2', d), VAZIO],
+      // Na simulação, `preco_brl` é o preço digitado pelo agente, não dado do ML.
+      [(d) => simularMargem('MLB2', 80, d), { ...VAZIO, preco_brl: 80, preco_atual_brl: null }],
+    ];
+    for (const [chamar, esperado] of casos) {
       const { d, tarifaEm } = deps();
-      const r = await chamar(d);
-      expect(r).toMatchObject({ estado: 'ok', anuncios: [VAZIO], referencia: { margem_pct: null } });
-      expect(JSON.stringify(r)).not.toContain('Titulo MLB2');
+      const r = await chamar(d) as { anuncios: unknown[] };
+      expect(r.anuncios).toEqual([esperado]);
       expect(tarifaEm).not.toHaveBeenCalled();
     }
     const { d } = deps();
     const r = await margensDoCatalogo(null, d);
-    expect(r).toMatchObject({ estado: 'ok', parcial: true, anuncios: [{ mlb: 'MLB1', titulo: 'Titulo MLB1', preco_brl: 50, margem_pct: 40 }, { ...VAZIO, preco_brl: null }] });
+    expect(r).toMatchObject({ estado: 'ok', parcial: true, anuncios: [{ mlb: 'MLB1', titulo: 'Titulo MLB1', preco_brl: 50, margem_pct: 40 }, VAZIO] });
+    expect((r as { anuncios: unknown[] }).anuncios[1]).toEqual(VAZIO);
   });
 
   it('na família, o anúncio alheio zera a referência e o próprio mantém o número', async () => {
