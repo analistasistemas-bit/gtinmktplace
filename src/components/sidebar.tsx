@@ -12,6 +12,8 @@ import { useQuery } from '@tanstack/react-query';
 import { GlowEffect } from '@/components/ui/glow-effect';
 import { contarPulseAlertas } from '@/lib/pulse-contagem';
 import { QK } from '@/lib/queries';
+import { usePosvendaBadge } from '@/hooks/usePosvenda';
+import { usePerguntasNaoRespondidas } from '@/hooks/usePerguntas';
 
 export const NAV_ITEMS: { to: string; label: string; icon: typeof LayoutDashboard; end: boolean; key: MenuKey }[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true, key: 'dashboard' },
@@ -29,6 +31,23 @@ export const NAV_ITEMS: { to: string; label: string; icon: typeof LayoutDashboar
   { to: '/viabilidade', label: 'Viabilidade', icon: Scale, end: false, key: 'viabilidade' },
   { to: '/configuracoes', label: 'Configurações', icon: Settings, end: false, key: 'configuracoes' },
 ];
+
+/** Pendências do Faturamento (mesmas fontes das abas Pós-venda e Perguntas). Componente à parte
+ *  para as queries só rodarem quando o menu Faturamento aparece. */
+export function BadgeFaturamento() {
+  const posvenda = usePosvendaBadge();
+  const { count: perguntas } = usePerguntasNaoRespondidas();
+  const total = posvenda + perguntas;
+  if (total <= 0) return null;
+  return (
+    <span className="relative ml-auto flex" aria-label={`${total} pendências no Faturamento`}>
+      <span aria-hidden className="absolute inset-0 rounded-full bg-destructive opacity-60 motion-safe:animate-ping" />
+      <span className="relative inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-semibold leading-none text-destructive-foreground">
+        {total > 99 ? '99+' : total}
+      </span>
+    </span>
+  );
+}
 
 export function BrandMark() {
   return <Logo />;
@@ -97,6 +116,7 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
                 {alertasPulse > 99 ? '99+' : alertasPulse}
               </span>
             )}
+            {key === 'faturamento' && <BadgeFaturamento />}
           </NavLink>
         </GlowEffect>
       ))}
