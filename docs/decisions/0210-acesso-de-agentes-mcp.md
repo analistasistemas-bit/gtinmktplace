@@ -113,7 +113,7 @@ Migration aplicada, merge na `main` e deploy feitos em 2026-11-22 (ver "Aceite d
 
 ### Pendências aceitas para o piloto
 
-- Conferir se `/items/bulk` devolve item de outro vendedor. **Medida em 2026-11-24; validação de `seller_id` no código, a fechar com o deploy e o aceite na edge** (Emenda 2).
+- Conferir se `/items/bulk` devolve item de outro vendedor. **Fechada em 2026-11-24:** amostra medida e validação de `seller_id` no ar (Emenda 2).
 - Qual cabeçalho de IP chega à edge, e se ele pode ser forjado na URL direta do Supabase. **Aberta** (ver "Aceite em uso real").
 - O cache de comissão `promo:lp:v1` é compartilhado entre organizações. É anterior a este trabalho; pendência separada. Medido em 2026-11-23: a chave é categoria + tipo de anúncio + preço, sem vendedor, e guarda só a comissão (tarifa do ML), nenhum dado da loja. Zaven e Avil receberam do `/sites/MLB/listing_prices` a mesma comissão nos 4 casos testados (categoria MLB430391, clássico e premium, R$ 42,75 a R$ 150). O risco é de exatidão, não de vazamento: só apareceria se um vendedor tivesse tarifa própria (acordo comercial, loja oficial), o que não foi observado. Mantido sem mudança.
 - Não há bloqueio por IP antes da consulta da chave. Sugestão registrada: assinatura embutida na chave antes de abrir a mais lojas.
@@ -194,3 +194,5 @@ As linhas acima medem o ML, não o filtro: nenhum caso real devolveu 200 de outr
 **Ao ligar outra loja:** conferir no catálogo do agente que os anúncios próprios, inclusive um de catálogo se houver, não voltam `anuncio_indisponivel`. O filtro falha fechado: `seller_id` ausente esconde o anúncio e, se `conta_externa_id` divergir da conta do token, esconde a loja inteira.
 
 Revisão independente (Codex gpt-6.2-sol, high, 2026-11-24): (a) resposta fora do formato de lista passou a virar lista vazia; (b) entrou teste do fluxo completo com vínculo velho; (c) o texto passou a separar o que mede o ML do que só o teste cobre. Segunda rodada: (d) `seller_id` numérico acima do inteiro seguro é recusado; (e) o teste confere a linha recusada inteira. O MLB do vínculo recusado no catálogo e no cursor, objeção da primeira rodada, foi retirado na segunda: é dado do cadastro da própria organização. Sem mudança: `seller_id` ausente continua escondendo o anúncio, e o cache de comissão compartilhado segue nas pendências aceitas.
+
+**Deploy e aceite (2026-11-24):** main `ff4e7729`, `agentes` v5 (45 de 45 arquivos baixados iguais ao commit, `verify_jwt` falso). Pelo endereço público, na Zaven: `publiai_loja`; `publiai_margem_anuncio` de `MLB5563623367` com a mesma margem do aceite de 23/11 (42,5848%); primeira página do catálogo com 50 de 50 anúncios com número e `parcial` falso. O aceite mostra que o filtro não esconde anúncio próprio nessa página (50 anúncios); o descarte de outro vendedor continua coberto só por teste automático.

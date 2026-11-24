@@ -39,7 +39,7 @@
 - [x] Migration aplicada, merge na `main` (`12d00860`) e deploy em 22/11: `agentes` v1 (pública), `agente-conexoes` v1, `usuarios` v63, `ads-campanhas` v33, `process-familia` v239, `sincronizar-promocoes` v52.
 - [x] Aceite por chamadas reais na Zaven (22/11, chave temporária já revogada): família do ML com 16 anúncios, MLB, MLBU, SKU, título (candidatos), catálogo paginado, simulação, anúncio de outra organização → não encontrado, revogação → 401, auditoria completa. Números conferidos contra custo e alíquota do cadastro.
 - [ ] Diego: gerar a primeira chave pela tela (Configurações › Conexões de agentes) e testar em cada cliente (tabela do guia).
-- [ ] Vendedor do anúncio (Emenda 2 da ADR-0210): amostra de 24/11 (240 de terceiros recusados, 340 próprios com dono certo) e filtro por `seller_id` no código; falta o deploy de `agentes`.
+- [x] Vendedor do anúncio (Emenda 2 da ADR-0210): amostra de 24/11 (240 de terceiros recusados, 340 próprios com dono certo) e filtro por `seller_id` no ar (`ff4e7729`, `agentes` v5).
 - [ ] Antes de abrir a outras lojas: demais pendências da ADR-0210 (cabeçalho de IP, assinatura na chave).
 
 ## Central de Promoções: descoberta pela visão por anúncio (emenda 22/11 ao ADR-0170) — 2026-11-22
