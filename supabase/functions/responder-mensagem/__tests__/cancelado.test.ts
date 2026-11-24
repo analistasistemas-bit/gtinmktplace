@@ -32,6 +32,7 @@ vi.mock('../../_shared/supabase.ts', () => ({
       };
       return query;
     },
+    rpc: () => new Promise(() => {}), // registrar_estado_conversa que nunca responde
   }),
 }));
 vi.mock('../../_shared/support-audit.ts', () => ({ auditarOperacaoSuporte: fronteiras.auditar }));
@@ -157,6 +158,38 @@ describe('responder-mensagem — pedido cancelado', () => {
       ok: false, erro: 'Só um envio aguardando confirmação pode ser liberado.',
       estado: 'recusada', operacao_id: OP, pendenteConfirmacao: false,
     });
+  });
+
+  // Item 1 (5ª revisão): RPC de registro pendurada não segura a resposta (helper real, prazo de 3 s).
+  it('registro do blocked com RPC pendurada: a edge responde o 409 depois do prazo', async () => {
+    const real = await vi.importActual<typeof import('../../_shared/faturamento/mensagens-io.ts')>('../../_shared/faturamento/mensagens-io.ts');
+    fronteiras.deps.mockReturnValueOnce({ fake: true, bloqueioObservadoEm: '2026-11-23T10:00:00.000Z' } as never);
+    fronteiras.enviar.mockResolvedValueOnce(recusa('Não é possível responder porque o pedido foi cancelado.'));
+    fronteiras.registrar.mockImplementationOnce((...a: unknown[]) => real.registrarEstadoConversa(...(a as Parameters<typeof real.registrarEstadoConversa>)));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const pendente = chamar({ pack_id: '456', text: 'Olá', operacao_id: OP });
+      await vi.advanceTimersByTimeAsync(3_000);
+      const response = await pendente;
+      expect(response.status).toBe(409);
+      expect((await response.json()).codigo).toBe('pedido_cancelado');
+    } finally { vi.useRealTimers(); warn.mockRestore(); }
+  });
+
+  it('re-sync vazio com RPC pendurada: a edge responde 200 depois do prazo', async () => {
+    const real = await vi.importActual<typeof import('../../_shared/faturamento/mensagens-io.ts')>('../../_shared/faturamento/mensagens-io.ts');
+    fronteiras.enviar.mockResolvedValueOnce(sucesso('confirmada'));
+    fronteiras.buscarPack.mockResolvedValueOnce(Object.assign([], { conversa: { status: 'active', observadoEm: '2026-11-23T10:00:00.000Z' } }));
+    fronteiras.registrarPack.mockImplementationOnce((...a: unknown[]) => real.registrarEstadoDoPack(...(a as Parameters<typeof real.registrarEstadoDoPack>)));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const pendente = chamar({ pack_id: '10', text: 'Olá', operacao_id: OP });
+      await vi.advanceTimersByTimeAsync(3_000);
+      const response = await pendente;
+      expect(response.status).toBe(200);
+    } finally { vi.useRealTimers(); warn.mockRestore(); }
   });
 
   it('B: a edge não registra estado (recusa armazenada, verificar e liberar) — só o POST real carimba', async () => {

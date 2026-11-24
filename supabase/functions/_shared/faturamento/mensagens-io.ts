@@ -184,16 +184,31 @@ async function aplicarLidaMlEm(
   return null;
 }
 
+const PRAZO_REGISTRO_ESTADO_MS = 3_000;
+
 /** Registra o estado da conversa em `ml_conversas` pela RPC com guarda temporal: observação mais
  *  antiga que a gravada não sobrescreve (sync atrasado não desfaz bloqueio confirmado). Devolve a
  *  mensagem do erro, se houver. */
 export async function registrarEstadoConversa(
   admin: SupabaseClient, orgId: string, packId: string | number, estado: EstadoConversa,
 ): Promise<string | null> {
-  const { error } = await admin.rpc('registrar_estado_conversa', {
-    p_org_id: orgId, p_pack_id: String(packId), p_status: estado.status, p_observado_em: estado.observadoEm,
-  });
-  return error ? error.message : null;
+  // Prazo próprio: o registro é só exibição e não pode segurar upsert, "marcar como lida" nem a resposta
+  // de um envio. Estourou → avisa e segue, como falha tolerante (nunca lança por isso).
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const prazo = new Promise<'prazo'>((ok) => { timer = setTimeout(() => ok('prazo'), PRAZO_REGISTRO_ESTADO_MS); });
+  try {
+    const r = await Promise.race([
+      admin.rpc('registrar_estado_conversa', {
+        p_org_id: orgId, p_pack_id: String(packId), p_status: estado.status, p_observado_em: estado.observadoEm,
+      }),
+      prazo,
+    ]);
+    if (r === 'prazo') {
+      console.warn(`[mensagens-io] registro do estado da conversa passou de ${PRAZO_REGISTRO_ESTADO_MS} ms (org ${orgId}, pack ${packId}): segue sem ele`);
+      return null;
+    }
+    return r.error ? r.error.message : null;
+  } finally { clearTimeout(timer); }
 }
 
 /** Registra o estado lido junto do pack, se o ML o informou e há org; sem estado não faz nada.

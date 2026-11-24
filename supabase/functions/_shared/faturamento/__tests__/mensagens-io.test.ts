@@ -4,6 +4,7 @@ import {
   ERRO_PEDIDO_CANCELADO,
   buscarMensagensPack,
   registrarEstadoDoPack,
+  registrarEstadoConversa,
   upsertMensagensEstrito,
   marcarConversaCancelada,
   mensagemErroEnvioML,
@@ -247,6 +248,53 @@ describe('upsertMensagens: estado da conversa', () => {
 });
 
 // D (v3): leitura vazia nos chamadores registra só o estado, independente dos metadados.
+// Item 1 (5ª revisão): o registro de exibição tem prazo próprio de 3 s; RPC pendurada não segura o chamador.
+describe('registro do estado com prazo', () => {
+  const ESTADO = { status: 'blocked', observadoEm: '2026-11-23T10:00:00.000Z' };
+  const nunca = () => vi.fn(() => new Promise(() => {}));
+
+  it('RPC que nunca responde: registrarEstadoDoPack resolve em 3 s, avisa e não lança', async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      let pronto = false;
+      const p = registrarEstadoDoPack({ rpc: nunca() } as unknown as Parameters<typeof registrarEstadoDoPack>[0], 'org-1', 'p1',
+        Object.assign([], { conversa: ESTADO })).then(() => { pronto = true; });
+      await vi.advanceTimersByTimeAsync(2_999);
+      expect(pronto).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await p;
+      expect(pronto).toBe(true);
+      expect(warn).toHaveBeenCalled();
+    } finally { warn.mockRestore(); vi.useRealTimers(); }
+  });
+
+  it('RPC que nunca responde: o upsert das mensagens acontece depois do prazo (as duas variantes)', async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (const fn of [upsertMensagens, upsertMensagensEstrito]) {
+        const m = criarAdminMock(null);
+        const admin = Object.assign(m.admin, { rpc: nunca() });
+        const p = fn(admin, 'user-1', 'org-1', 'pack-1', META, SELLER_ID,
+          Object.assign([msgDoComprador('m1', '2026-07-10T10:00:00Z')], { conversa: ESTADO }));
+        await vi.advanceTimersByTimeAsync(3_000);
+        await expect(p).resolves.toEqual({ novasRecebidas: 1 });
+        expect(m.upsert).toHaveBeenCalledTimes(2);
+      }
+    } finally { warn.mockRestore(); vi.useRealTimers(); }
+  });
+
+  it('RPC rápida: devolve o erro dela como antes, sem aviso de prazo', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: { message: 'x' } });
+    await expect(registrarEstadoConversa({ rpc } as unknown as Parameters<typeof registrarEstadoConversa>[0], 'org-1', 'p1', ESTADO))
+      .resolves.toBe('x');
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
+
 describe('registrarEstadoDoPack', () => {
   const ESTADO = { status: 'blocked', observadoEm: '2026-11-23T10:00:00.000Z' };
 

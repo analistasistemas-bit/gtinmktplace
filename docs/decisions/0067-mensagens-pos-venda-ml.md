@@ -281,3 +281,11 @@ do orquestrador; não há script no repositório.
 5. Pack com duas vendas: o resumo (RPC) usa a venda mais recente do pack, e o filtro local usa a venda do
    `order_id` da primeira mensagem carregada; os dois podem divergir. A divergência já existia na main para
    pedidos não cancelados e agora alcança packs cancelados reabertos.
+6. A lista da aba Mensagens carrega as 1.000 mensagens mais recentes da org (limite já existente em
+   `src/lib/mensagens.ts`); conversa cuja última mensagem esteja além disso entra nos contadores (RPC) sem
+   aparecer na lista, cancelada ou não. Medição de 23/11/2026: a maior org tem 454 mensagens e nenhum pack
+   passa da posição 1.000. Revisitar (paginação por pack no servidor) quando alguma org se aproximar do limite.
+7. "Liberar" em corrida com outro operador pode devolver 409 sem estado (a operação ainda ativa naquele
+   instante); "Conferir" recupera o estado real.
+8. O registro de exibição (`registrar_estado_conversa`) tem prazo de 3 s: se a RPC não responder a tempo,
+   o chamador segue sem ele (aviso no log) e o estado fica para a próxima sincronização do pack.
