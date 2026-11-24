@@ -46,3 +46,17 @@ Na mesma leitura, 61 cores da Linha 1500MT (`02835002`) estavam em 1.164 no ML p
 - Publicação nova acima do limite nasce em N anúncios, sem saldo escondido.
 - Anúncio publicado acima do limite segue mostrando menos que o saldo real até a movimentação existir. A Linha 1500MT
   (`02835002`) fica nesse caso.
+
+## Adendo 2026-11-23 — cor fora do conjunto presa em `criado` também barra o somente estoque
+
+**Incidente (Avil, Tecido Oxford Natal `02710170`, SKU `02749572`).** Em 12/11 o Adicionar variação criou o item
+`MLB5550174533`, gravou `family_id` e parou entre a ativação e o `marcarAtivo`: o filho ficou `criado`. O catch do
+worker limpou `mudando_composicao` (o reconciliador de convergência não o vê mais). O reenvio "somente estoque" com a
+cor desmarcada só olhou os SKUs desejados e fechou a família como `publicado`. Desde então o push de estoque
+(`_shared/estoque/alvos.ts`, só filho `ativo`) descartava o SKU em silêncio: o ajuste para 0 de 18/11 nunca chegou ao
+ML e o item seguiu vendendo.
+
+**Decisão.** Em somente estoque, filho não retirado fora do conjunto desejado com status `criado` e item gravado
+entra em `reposicao_sem_item`, como o filho desejado não ativo (item 1). Nada é enviado; a família vai a `erro` e o
+sino avisa. Saída: "Atualizar tudo" com a cor marcada retoma a saga e confirma o item. Cor desmarcada em outro status
+segue ignorada (ADR-0104 §4).

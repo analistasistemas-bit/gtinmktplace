@@ -708,7 +708,8 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   if (resultado.codigo === 'reposicao_sem_item') {
     const { skus } = resultado;
     const mensagem = `UPDATE bloqueado: ${skus.length} cor(es) sem anúncio confirmado no Mercado Livre `
-      + `(${skus.slice(0, 10).join(', ')}${skus.length > 10 ? '…' : ''}). Nada foi enviado.`;
+      + `(${skus.slice(0, 10).join(', ')}${skus.length > 10 ? '…' : ''}). Nada foi enviado. `
+      + 'Para concluir, reenvie em "Atualizar tudo" com essas cores e todas as já publicadas marcadas.';
     const { error: errGravar } = await admin.from('familias')
       .update({ status: 'erro', erro_mensagem: mensagem }).eq('id', familia.id);
     // Sem o erro gravado a família fica `publicando` e prende o lote: o worker retenta.
