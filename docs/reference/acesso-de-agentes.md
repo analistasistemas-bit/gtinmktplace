@@ -214,7 +214,7 @@ Observações do teste:
 
 - O agente pode resumir errado: num teste, o modelo disse 17 anúncios onde a ferramenta devolveu 16. Número que vai para decisão se confere no JSON da ferramenta.
 - O agente pode chamar ferramentas que não foram pedidas (o Muse chamou `publiai_margens_catalogo` por conta própria). É só leitura, mas consome cota; vale ligar a aprovação por ferramenta no cliente.
-- No claude.ai o conector com a URL do Supabase mostrou o ícone do Supabase (provavelmente pelo domínio; com o domínio próprio, não confirmado). O ChatGPT aceita um PNG próprio.
+- No claude.ai o ícone do conector veio do domínio raiz: com a URL do Supabase, o do Supabase; com `mcp.publiai.daludi.com.br`, o de `daludi.com.br` (2026-11-24), que aparece pequeno porque a imagem é 1024×1536 com muita margem. Ícone do PubliAI ali exigiria um domínio raiz próprio. O ChatGPT aceita um PNG próprio.
 
 ## Segurança
 
