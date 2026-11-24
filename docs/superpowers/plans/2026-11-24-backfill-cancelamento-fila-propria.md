@@ -58,7 +58,7 @@
 
 | # | Ponto | Regra que resolve | Testes |
 |---|---|---|---|
-| a | Ensaio: esperar 6 min não muda `m.criado_em > concluido_em - 5 min`; com carência zero os `avisado` reabrem e disputam o 2º lote | Uma org de ensaio por cenário (normal, lento, reabertura), ids distintos exigidos pelo script; a reabertura usa **outra** referência de baixa (outro SKU de ensaio) no mesmo pedido | `__tests__/ensaio-cenarios.test.ts` (função pura `planoEnsaio`) |
+| a | Ensaio: esperar 6 min não muda `m.criado_em > concluido_em - 5 min`; com carência zero os `avisado` reabrem e disputam o 2º lote | Uma org de ensaio por cenário (normal, lento, reabertura), ids distintos exigidos pelo script; a reabertura usa **outra** referência de baixa (outro SKU de ensaio) no mesmo pedido | `scripts/ensaio-drenagem-cancelamentos.test.ts` (função pura `planoEnsaio`, `deno test`) |
 | b | Prazos ignoravam o tempo gasto antes da drenagem; `registrar` estourado tratado como "nada gravado" | Início da execução capturado na entrada do passo, antes de conexão/token/pendências, e passado à drenagem; 60 s e 100 s contam dele; `registrar` sem resposta = incerto, reconferido pelo ledger no ciclo seguinte | P9, F29, F30, F31 |
 | c | `PedidoML.status` é opcional: resposta sem status concluía `nao-cancelado` | `nao-cancelado` só com `status` texto não vazio e ≠ `cancelled`; sem status → `ml: sem status`, pendente | F32 |
 | D1 | Remover o trigger como rollback | Proibido (Diego, 24/11). Reversão = desligar `DRENAR_CANCELAMENTOS`; V7 removida | ADR "Como reverter" |
@@ -593,6 +593,16 @@ Três medições, nesta ordem. `DRENAR_CANCELAMENTOS=1` só depois das três.
   - **Prévia antes de qualquer escrita.** O script imprime, para cada uma das três orgs: nome e id; contagem de linhas da org em `ml_vendas`, `estoque_movimentos`, `variacoes`, `marketplace_connections`, `anuncios_externos`; a lista exata do que vai inserir. Recusa continuar se: os três ids (`ENSAIO_ORG_A`, `ENSAIO_ORG_B`, `ENSAIO_ORG_C`) não forem distintos; algum nome não for o exato do seu cenário; a org tiver conexão, anúncio ou venda; ou a org tiver SKU que não seja do ensaio. O Diego confere a prévia e só então o script roda com `--executar`.
   - Toda mutação do script leva o `org_id` da org de ensaio do cenário no filtro ou no valor. No fim, o script confere que nenhuma linha de outra org mudou: contagem e maior `criado_em`/`atualizado_em` de `ml_vendas` e `estoque_movimentos` das outras orgs, antes e depois, só podem diferir por atividade normal (o script lista as diferenças para conferência).
   - **Nada é apagado do ledger.** Os SKUs, as vendas sintéticas e os movimentos do ensaio ficam na org de ensaio, que não tem cliente. Não há limpeza que possa deixar saldo sem lastro.
+
+  **Como rodar** (prévia primeiro; `--executar` só depois do OK do Diego). A chave de serviço vem do painel; nunca é impressa:
+
+  ```bash
+  SUPABASE_URL=https://<ref>.supabase.co SUPABASE_SERVICE_ROLE_KEY=... \
+  ENSAIO_ORG_A=<uuid> ENSAIO_ORG_B=<uuid> ENSAIO_ORG_C=<uuid> \
+  deno run --node-modules-dir=none -A --env-file=.env.local scripts/ensaio-drenagem-cancelamentos.ts [--executar]
+  ```
+
+  O script cria os SKUs `ENS0211-<org>-NN` (lote, família, variações e entrada de 10 por `registrar_entrada`) e, na org A, um kit rascunho com 5 participantes.
 
   **Passos do script (iguais nas duas opções):**
 
