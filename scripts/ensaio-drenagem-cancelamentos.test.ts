@@ -1,7 +1,7 @@
 // Teste sem rede do plano do ensaio (ADR-0211, ressalva a da rodada 5): um cenário por org, e a reabertura usa
 // outra referência de baixa. Rodar: deno test --node-modules-dir=none -A scripts/ensaio-drenagem-cancelamentos.test.ts
 import { deepStrictEqual as assertEquals, ok as assert, throws as assertThrows } from 'node:assert/strict';
-import { planoEnsaio } from './ensaio-drenagem-cancelamentos.ts';
+import { codigoSaida, planoEnsaio } from './ensaio-drenagem-cancelamentos.ts';
 
 const ORGS = {
   A: '00000000-0000-0000-0000-00000000000a',
@@ -34,4 +34,9 @@ Deno.test('reabertura: mesmo pedido, outra referência de baixa (outro SKU da or
   assert(p.skus.C.includes(p.reabertura.skuNovo));
   assert(!p.vendas.some((v) => v.sku === p.reabertura.skuNovo), 'o SKU novo não tem baixa original');
   assert(p.reabertura.naoReabre !== p.reabertura.orderId);
+});
+
+Deno.test('qualquer critério reprovado sai com código 1', () => {
+  assertEquals(codigoSaida([]), 0);
+  assertEquals(codigoSaida(['aceite: CPU 900 ms < 500']), 1);
 });

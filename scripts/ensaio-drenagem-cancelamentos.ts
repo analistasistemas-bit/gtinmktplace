@@ -59,6 +59,9 @@ export function planoEnsaio(orgs: Record<Letra, string>, carimbo: string): Plano
   return { orgs, skus, vendas, reabertura, lotes };
 }
 
+/** Código de saída do ensaio: qualquer critério reprovado = 1. */
+export function codigoSaida(reprovados: string[]): number { return reprovados.length ? 1 : 0; }
+
 function range(n: number) { return Array.from({ length: n }, (_, i) => i + 1); }
 
 // ─── Execução (só com import.meta.main) ──────────────────────────────────────────────────────────────────────────
@@ -208,7 +211,7 @@ async function executar(admin: SupabaseClient, plano: Plano) {
       kitLigado: () => Promise.resolve(l === 'A'),
       tratar: (p: PedidoDaFila) => tratarPedidoCancelado(admin, deps, { ...p, orgId: org, userId: donos[org], canal: 'mercado_livre' }),
       async registrar(itens) {
-        await ler(medir('registrar', admin.rpc('registrar_cancelamentos_tratados', { p_org: org, p_itens: itens })), 'registrar');
+        return Number(await ler(medir('registrar', admin.rpc('registrar_cancelamentos_tratados', { p_org: org, p_itens: itens })), 'registrar'));
       },
       agora: () => Date.now(),
     };
@@ -253,7 +256,8 @@ async function executar(admin: SupabaseClient, plano: Plano) {
   const saldo = (l: Letra) => ler<Array<{ codigo: string; estoque: number }>>(admin.from('variacoes').select('codigo, estoque').eq('org_id', plano.orgs[l]), `saldo ${l}`);
   const [eA, eB, eC, sA] = [await estado('A'), await estado('B'), await estado('C'), await saldo('A')];
   const pend = await ler<unknown[]>(admin.from('worker_pendencias').select('order_id').in('org_id', Object.values(plano.orgs)), 'worker_pendencias');
-  const ok = (c: boolean, m: string) => console.log(`${c ? 'OK  ' : 'FALHOU'} ${m}`);
+  const reprovados: string[] = [];
+  const ok = (c: boolean, m: string) => { console.log(`${c ? 'OK  ' : 'FALHOU'} ${m}`); if (!c) reprovados.push(m); };
   const desf = (e: typeof eA, d: string) => e.filter((x) => x.cancelamento_desfecho === d && x.cancelamento_concluido_em).length;
   const saldoDe = (codigo: string) => sA.find((s) => s.codigo === codigo)?.estoque;
   const vA = plano.vendas.filter((v) => v.letra === 'A');
@@ -268,9 +272,17 @@ async function executar(admin: SupabaseClient, plano: Plano) {
     && c2?.cancelamento_desfecho === 'reposto' && !!c2.cancelamento_concluido_em, 'C: só o pedido com baixa nova reabriu');
   ok(pend.length === 0, 'nenhuma linha das orgs de ensaio em worker_pendencias');
   const cpuMs = Math.round((cpuA.user + cpuA.system) / 1000);
-  console.log('\nMedição (rodada A):', { resultado: rA, ms: msA, cpuMs, rpcMs: tempos, aceite: { cpu: cpuMs < 500, total: msA < 30_000,
-    reivindicar: Math.max(...(tempos.reivindicar ?? [0])) < 200 } });
+  const maxReivindicar = Math.max(...(tempos.reivindicar ?? [0]));
+  console.log('\nMedição (rodada A):', { resultado: rA, ms: msA, cpuMs, rpcMs: tempos });
+  ok(cpuMs < 500, `aceite: CPU ${cpuMs} ms < 500`);
+  ok(msA < 30_000, `aceite: rodada A ${msA} ms < 30 s`);
+  ok(maxReivindicar < 200, `aceite: reivindicar ${maxReivindicar} ms < 200`);
   console.log('Outras orgs antes/depois (diferença só por atividade normal):', { antes, depois: await retrato(admin, Object.values(plano.orgs)) });
+  if (codigoSaida(reprovados)) {
+    console.error(`\nENSAIO REPROVADO (${reprovados.length}): ${reprovados.join(' | ')}`);
+    Deno.exit(codigoSaida(reprovados));
+  }
+  console.log('\nENSAIO APROVADO');
 }
 
 if (import.meta.main) {

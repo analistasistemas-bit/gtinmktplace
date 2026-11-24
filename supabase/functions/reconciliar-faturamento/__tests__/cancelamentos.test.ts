@@ -41,7 +41,8 @@ function criarIo(obrigacoes: Obrigacao[], over: Partial<IoFila> = {}, baixasInic
     aindaPendente: vi.fn(async (_o: Obrigacao) => true),
     kitLigado: vi.fn(async () => false),
     tratar: vi.fn(async (_p: PedidoDaFila): Promise<ResultadoCancelamento> => 'avisado'),
-    registrar: vi.fn(async (_i: Registro[]) => {}),
+    // Como a RPC: devolve quantas conclusões foram aceitas.
+    registrar: vi.fn(async (i: Registro[]) => i.filter((r) => r.concluir).length),
     agora: () => Date.now(),
     ...over,
   };
@@ -119,8 +120,8 @@ describe('drenarCancelamentos', () => {
       expect(f.reg('o1')?.desfecho).toMatch(/^ml: /);
       expect(f.io.tratar).not.toHaveBeenCalled();
     }
-    // Obrigação sem versão armada também não conclui.
-    const f = criarIo([ob('o1', null)]);
+    // Resposta sem last_updated também não conclui.
+    const f = criarIo([ob('o1')], { pedido: vi.fn(async () => ({ id: 'o1', status: 'paid', seller: { id: 999 } } as PedidoML)) });
     await drenarCancelamentos(f.io, 'L1');
     expect(f.reg('o1')).toMatchObject({ concluir: false, desfecho: 'ml: sem versão' });
   });
@@ -332,6 +333,7 @@ describe('drenarCancelamentos', () => {
       pedido: vi.fn(async () => { corrente.set('v-o1', 'g2'); return { id: 'o1', status: 'paid', last_updated: v(40), seller: { id: 999 } } as PedidoML; }),
       registrar: vi.fn(async (itens: Registro[]) => {
         for (const i of itens) if (i.concluir && corrente.get(i.id) === i.geracao) concluidas.add(i.id);
+        return concluidas.size;
       }),
     });
     await drenarCancelamentos(f.io, 'L1');
@@ -399,8 +401,9 @@ describe('drenarCancelamentos', () => {
     expect(await p).toEqual({ concluidos: 5, pendentes: 15 });
     expect(f.registros()).toHaveLength(5);
 
+    // Prazo vencido na entrada: lança (a rodada sai `parcial`), sem reivindicar.
     const g = criarIo(obs);
-    expect(await drenarCancelamentos(g.io, 'L1', 60_000, Date.now() - 61_000)).toEqual({ concluidos: 0, pendentes: 0 });
+    await expect(drenarCancelamentos(g.io, 'L1', 60_000, Date.now() - 61_000)).rejects.toThrow(/sem tempo/);
     expect(g.io.reivindicar).not.toHaveBeenCalled();
   });
 
@@ -427,5 +430,81 @@ describe('drenarCancelamentos', () => {
       expect(f.reg('o1'), String(status)).toMatchObject({ concluir: false, desfecho: 'ml: sem status' });
       expect(f.io.tratar).not.toHaveBeenCalled();
     }
+  });
+
+  // ── Revisão Codex de f3fb4fe1 (BLOQUEAR) ──────────────────────────────────────────────────────────────
+  it('F33 (r1). geração trocada durante kitLigado → não trata; a contagem usa as conclusões aceitas pela RPC', async () => {
+    let pendente = true;
+    const f = criarIo([ob('o1')], {
+      kitLigado: vi.fn(async () => { pendente = false; return false; }),
+      aindaPendente: vi.fn(async () => pendente),
+    });
+    expect(await drenarCancelamentos(f.io, 'L1')).toEqual({ concluidos: 0, pendentes: 1 });
+    expect(f.io.tratar).not.toHaveBeenCalled();
+    expect(f.io.aindaPendente.mock.invocationCallOrder[0]).toBeGreaterThan(f.io.kitLigado.mock.invocationCallOrder[0]);
+
+    const g = criarIo([ob('o1'), ob('o2')], { registrar: vi.fn(async () => 1) });
+    expect(await drenarCancelamentos(g.io, 'L1')).toEqual({ concluidos: 1, pendentes: 1 });
+  });
+
+  it('F34 (r2). status fora da lista do ML (espaços, arbitrário, número, pending_cancel) fica pendente; envio idem', async () => {
+    for (const status of ['  ', 'xyz', 7, 'pending_cancel']) {
+      const f = criarIo([ob('o1')], { pedido: vi.fn(async () => ({ id: 'o1', status, last_updated: v(40), seller: { id: 999 } } as unknown as PedidoML)) });
+      await drenarCancelamentos(f.io, 'L1');
+      expect(f.reg('o1')?.concluir, String(status)).toBe(false);
+      expect(f.io.tratar).not.toHaveBeenCalled();
+    }
+    for (const status of [7, 'xyz', ' shipped']) {
+      const f = criarIo([ob('o1')], { envio: vi.fn(async () => ({ status } as unknown as { status: string })) });
+      await drenarCancelamentos(f.io, 'L1');
+      expect(f.reg('o1'), String(status)).toMatchObject({ concluir: false, desfecho: 'ml: envio não lido' });
+      expect(f.io.tratar).not.toHaveBeenCalled();
+    }
+  });
+
+  it('F35 (r3). prazo final vencido antes de tratar: o tratamento nem começa', async () => {
+    let relogio = 0;
+    const f = criarIo([ob('o1')], {
+      agora: () => relogio,
+      aindaPendente: vi.fn(async () => { relogio = PRAZO_FINAL_MS + 1; return true; }),
+    });
+    await drenarCancelamentos(f.io, 'L1', 60_000, 0);
+    expect(f.io.tratar).not.toHaveBeenCalled();
+    expect(f.reg('o1')).toMatchObject({ concluir: false, desfecho: 'tratamento: tempo esgotado' });
+  });
+
+  it('F36 (r4). versão armada nula: cancelled ao vivo trata; outro status não conclui', async () => {
+    const f = criarIo([ob('o1', null)]);
+    await drenarCancelamentos(f.io, 'L1');
+    expect(f.io.tratar).toHaveBeenCalledTimes(1);
+    const g = criarIo([ob('o1', null)], { pedido: vi.fn(async () => ({ id: 'o1', status: 'paid', last_updated: v(40), seller: { id: 999 } } as PedidoML)) });
+    await drenarCancelamentos(g.io, 'L1');
+    expect(g.reg('o1')).toMatchObject({ concluir: false, desfecho: 'ml: sem versão' });
+  });
+
+  it('F31b (r8). registrar confirma DEPOIS do prazo: o ciclo seguinte não reivindica o concluído nem repete o estorno', async () => {
+    vi.useFakeTimers({ now: 0 });
+    const concluidas = new Set<string>();
+    const obs = [ob('o1'), ob('o2')];
+    const f = criarIo(obs, {
+      reivindicar: vi.fn(async () => obs.filter((o) => !concluidas.has(o.id))),
+      registrar: vi.fn((itens: Registro[]) => new Promise<number>((ok) => setTimeout(() => {
+        for (const i of itens) if (i.concluir) concluidas.add(i.id);
+        ok(concluidas.size);
+      }, 15_000))),
+    });
+    f.io.tratar.mockImplementation(async (p) => { if (p.orderId === 'o1') { f.estornar('o1'); return 'reposto'; } return 'erro'; });
+    const p = drenarCancelamentos(f.io, 'L1').then(() => 'ok', (e) => e as Error);
+    await vi.advanceTimersByTimeAsync(10_001);
+    expect(await p).toBeInstanceOf(Error);
+    await vi.advanceTimersByTimeAsync(10_000); // a gravação abandonada termina depois
+    expect(concluidas.has('v-o1')).toBe(true);
+    vi.useRealTimers();
+    f.io.registrar.mockImplementation(async (i: Registro[]) => i.filter((r) => r.concluir).length);
+    f.io.tratar.mockImplementation(async () => 'avisado');
+    await drenarCancelamentos(f.io, 'L2');
+    const tratados = f.io.tratar.mock.calls.map((c) => c[0].orderId);
+    expect(tratados.filter((id) => id === 'o1')).toHaveLength(1);
+    expect(f.io.registrar.mock.calls.at(-1)![0].map((r) => r.id)).toEqual(['v-o2']);
   });
 });

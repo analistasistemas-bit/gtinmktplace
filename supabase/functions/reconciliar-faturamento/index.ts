@@ -564,6 +564,7 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
 
     // ADR-0211: fila de cancelamento. Desligada sem DRENAR_CANCELAMENTOS. Toda RPC que falha lança (a drenagem
     // decide o que isso significa); o passo captura e segue para perguntas.
+    drenagemLigada: () => drenagemLigada(Deno.env.get('DRENAR_CANCELAMENTOS'), orgId),
     async drenarCancelamentos(token, cx, userId, lote, inicioMs) {
       if (!drenagemLigada(Deno.env.get('DRENAR_CANCELAMENTOS'), orgId)) return { concluidos: 0, pendentes: 0 };
       if (!cx.contaExternaId) {
@@ -605,8 +606,9 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
         kitLigado: async () => (await catalogoDe(userId, orgId)).kitLigado,
         tratar: (p) => tratarPedidoCancelado(admin, deps, { ...p, orgId, userId, canal: 'mercado_livre' }),
         async registrar(itens) {
-          const { error } = await admin.rpc('registrar_cancelamentos_tratados', { p_org: orgId, p_itens: itens });
+          const { data, error } = await admin.rpc('registrar_cancelamentos_tratados', { p_org: orgId, p_itens: itens });
           if (error) throw new Error(`registrar_cancelamentos_tratados: ${error.message}`);
+          return Number(data ?? 0); // conclusões aceitas (geração corrente)
         },
         agora: () => Date.now(),
       }, lote, Number(Deno.env.get('DRENAR_CANCELAMENTOS_PRAZO_MS')) || PRAZO_TOTAL_MS, inicioMs);

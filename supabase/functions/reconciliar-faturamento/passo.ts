@@ -46,6 +46,8 @@ export interface DepsReconciliar {
   processarPedidos(token: string, cx: ConexaoCanal, userId: string, orgId: string, pedidos: PedidoML[]): Promise<ResultadoPedidos>;
   /** carregarLiquidoMP (120 d) + reconciliarLiberacoes. MP null → loga e devolve 0. */
   liberacoes(token: string, cx: ConexaoCanal, orgId: string, hojeBRT: string): Promise<number>;
+  /** ADR-0211: `DRENAR_CANCELAMENTOS` liga a drenagem nesta org. Desligada, o passo é idêntico ao de antes. */
+  drenagemLigada(): boolean;
   /** ADR-0211: um lote da fila de cancelamento, fixado por `lote` (`params.ate`). `inicioMs` = início desta execução:
    *  os prazos da drenagem contam dele. Devolve zeros quando desligada. */
   drenarCancelamentos(token: string, cx: ConexaoCanal, userId: string, lote: string, inicioMs: number): Promise<{ concluidos: number; pendentes: number }>;
@@ -106,6 +108,8 @@ export function passoReconciliar(deps: DepsReconciliar, orgId: string): Passo<Pa
       const inicio = deps.agora();
       // Ordem de TEXTO de order_id (lerPendencias), então o cursor é o último do array como veio.
       const ids = await deps.pendencias(c.pos, LOTE_PENDENCIAS);
+      const drena = deps.drenagemLigada();
+      if (ids.length === 0 && !drena) return { proximo: ir('perguntas'), acumulado };
       if (ids.length === 0) {
         // ADR-0211: a drenagem roda sozinha nesta execução e nunca segura as etapas seguintes.
         let acc = acumulado;
@@ -129,8 +133,9 @@ export function passoReconciliar(deps: DepsReconciliar, orgId: string): Passo<Pa
       }
       const r = lidos.length ? await deps.processarPedidos(token, cx, userId, orgId, lidos) : resultadoVazio();
       const acc = await registrar(acumulado, { ...r, falhas: [...falhasLeitura, ...r.falhas] }, inicio);
-      // Sempre volta a `pendencias`: a execução com a fila comum vazia é a que drena os cancelamentos.
-      return { proximo: ir('pendencias', ids[ids.length - 1]), acumulado: acc };
+      // Com a drenagem ligada, sempre volta a `pendencias`: a execução com a fila comum vazia é a que drena.
+      const proximo = drena || ids.length === LOTE_PENDENCIAS ? ir('pendencias', ids[ids.length - 1]) : ir('perguntas');
+      return { proximo, acumulado: acc };
     }
 
     if (c.etapa === 'perguntas') {

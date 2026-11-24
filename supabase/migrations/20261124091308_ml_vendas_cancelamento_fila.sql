@@ -29,8 +29,11 @@ begin
     if coalesce(old.raw->>'status', old.status, '') = 'cancelled' then
       return new;
     end if;
-  elsif ((v_nova collate "C") > (new.cancelamento_versao collate "C")) is not true then
-    -- Já armada, e este cancelled não é mais novo que o já visto: nada muda.
+  elsif v_nova is null
+     or (new.cancelamento_versao is not null
+         and ((v_nova collate "C") > (new.cancelamento_versao collate "C")) is not true) then
+    -- Já armada, e este cancelled não é mais novo que o já visto: nada muda. Versão guardada nula
+    -- (armou sem last_updated) é sempre substituída pela primeira versão não nula.
     return new;
   end if;
   -- Geração nova: qualquer conclusão em andamento com a geração antiga deixa de valer.
@@ -67,9 +70,12 @@ language plpgsql security definer set search_path = '' as $$
 declare v_ja integer;
 begin
   perform pg_advisory_xact_lock(hashtextextended('cancelamentos|' || p_org::text, 0));
-  if not exists (select 1 from public.worker_rodadas w
-                  where w.job = 'reconciliar' and w.org_id = p_org and w.estado = 'rodando'
-                    and w.params->>'ate' = p_lote) then
+  -- `for share`: segura a linha da rodada até o fim da transação; a abertura do ciclo seguinte (update
+  -- da mesma linha) espera, então o lote não é marcado por uma execução que acabou de ficar obsoleta.
+  perform 1 from public.worker_rodadas w
+   where w.job = 'reconciliar' and w.org_id = p_org and w.estado = 'rodando' and w.params->>'ate' = p_lote
+     for share;
+  if not found then
     return;
   end if;
 
@@ -133,6 +139,7 @@ language sql security definer set search_path = '' as $$
 $$;
 
 -- Desfecho por geração. concluido_em = instante da leitura do ledger que justificou a conclusão.
+-- Devolve quantas CONCLUSÕES foram aceitas (linha com a geração lida e ainda pendente); a drenagem conta por ele.
 create function public.registrar_cancelamentos_tratados(p_org uuid, p_itens jsonb)
 returns integer language sql security definer set search_path = '' as $$
   with u as (
@@ -145,8 +152,8 @@ returns integer language sql security definer set search_path = '' as $$
            as x(id uuid, geracao uuid, concluir boolean, desfecho text, lido_em timestamptz)
      where v.org_id = p_org and v.id = x.id and v.cancelamento_geracao = x.geracao
        and v.cancelamento_concluido_em is null
-    returning 1)
-  select count(*)::integer from u;
+    returning x.concluir)
+  select (count(*) filter (where concluir))::integer from u;
 $$;
 
 revoke all on function public.reivindicar_cancelamentos(uuid, text, integer, interval) from public, anon, authenticated;

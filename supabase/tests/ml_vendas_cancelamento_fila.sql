@@ -56,6 +56,41 @@ returns void language sql as $$
 create function ensaio_adr0211.linha(vid uuid) returns ensaio_adr0211.ml_vendas language sql as
   $$ select * from ensaio_adr0211.ml_vendas where id = vid $$;
 
+-- S12/S13/S7i ANTES de qualquer grant do teste: as permissões conferidas são só as da migration.
+-- ── Catálogo e permissões ──────────────────────────────────────────────────────────────────
+do $$
+declare corpo text; f record;
+begin
+  -- S12: o trigger só atribui; sem escrita, sem conversão de tipo, security invoker.
+  select lower(p.prosrc) into corpo from pg_proc p
+   where p.pronamespace = 'ensaio_adr0211'::regnamespace and p.proname = 'ml_vendas_cancelamento_fila';
+  perform ensaio_adr0211.ok(corpo is not null and position('insert' in corpo) = 0 and position('update ' in corpo) = 0
+    and position('delete' in corpo) = 0 and position('perform' in corpo) = 0 and position('::' in corpo) = 0
+    and position('cast' in corpo) = 0, 'S12 corpo do trigger');
+  perform ensaio_adr0211.ok((select not prosecdef from pg_proc where pronamespace = 'ensaio_adr0211'::regnamespace
+    and proname = 'ml_vendas_cancelamento_fila'), 'S12 invoker');
+
+  -- S13: sem coluna de descarte; RPCs definer, search_path vazio, dono postgres, execute só service_role.
+  perform ensaio_adr0211.ok(not exists (select 1 from information_schema.columns where table_schema = 'ensaio_adr0211'
+    and table_name = 'ml_vendas' and column_name like 'cancelamento%descart%'), 'S13 sem descarte');
+  perform ensaio_adr0211.ok((select count(*) from information_schema.columns where table_schema = 'ensaio_adr0211'
+    and table_name = 'ml_vendas' and column_name like 'cancelamento\_%') = 8, 'S13 oito colunas');
+  for f in select p.oid, p.proname, p.prosecdef, p.proconfig, pg_get_userbyid(p.proowner) dono from pg_proc p
+            where p.pronamespace = 'ensaio_adr0211'::regnamespace
+              and p.proname in ('reivindicar_cancelamentos', 'cancelamento_baixas', 'registrar_cancelamentos_tratados') loop
+    perform ensaio_adr0211.ok(f.prosecdef and f.proconfig @> array['search_path=""'] and f.dono = 'postgres', 'S13 ' || f.proname);
+    perform ensaio_adr0211.ok(has_function_privilege('service_role', f.oid, 'execute')
+      and not has_function_privilege('anon', f.oid, 'execute')
+      and not has_function_privilege('authenticated', f.oid, 'execute'), 'S13 grants ' || f.proname);
+  end loop;
+  perform ensaio_adr0211.ok((select count(*) from pg_proc where pronamespace = 'ensaio_adr0211'::regnamespace
+    and proname in ('reivindicar_cancelamentos', 'cancelamento_baixas', 'registrar_cancelamentos_tratados')) = 3, 'S13 três RPCs');
+  -- S7i: a RPC segura a linha da rodada (for share) antes de marcar o lote. Concorrência real não cabe numa
+  -- transação única; o catálogo prova que a trava está no corpo.
+  perform ensaio_adr0211.ok((select position('for share' in lower(prosrc)) > 0 from pg_proc
+    where pronamespace = 'ensaio_adr0211'::regnamespace and proname = 'reivindicar_cancelamentos'), 'S7i trava a rodada');
+end $$;
+
 grant execute on all functions in schema ensaio_adr0211 to service_role;
 set local role service_role;
 
@@ -146,6 +181,15 @@ begin
   update ensaio_adr0211.ml_vendas set raw = '{"status":"cancelled"}' where id = vid;
   l := ensaio_adr0211.linha(vid);
   perform ensaio_adr0211.ok(l.cancelamento_geracao is not null and l.cancelamento_versao is null, 'S6c sem versão');
+  -- S6c (recuperação): a primeira versão não nula substitui a nula e renova a geração.
+  g := l.cancelamento_geracao;
+  perform ensaio_adr0211.gravar(vid, 'cancelled', 50);
+  l := ensaio_adr0211.linha(vid);
+  perform ensaio_adr0211.ok(l.cancelamento_geracao <> g and l.cancelamento_versao = ensaio_adr0211.v(50), 'S6c recupera a versão');
+  -- e um cancelled sem data depois disso não mexe.
+  g := l.cancelamento_geracao;
+  update ensaio_adr0211.ml_vendas set raw = '{"status":"cancelled"}' where id = vid;
+  perform ensaio_adr0211.ok((ensaio_adr0211.linha(vid)).cancelamento_geracao = g, 'S6c nula depois não renova');
   vid := ensaio_adr0211.nova(1, 111, 'paid', 1);
   update ensaio_adr0211.ml_vendas set raw = '{"status":"cancelled","last_updated":"ontem"}' where id = vid;
   l := ensaio_adr0211.linha(vid);
@@ -284,6 +328,10 @@ begin
   l := ensaio_adr0211.linha(vid);
   perform ensaio_adr0211.ok(l.cancelamento_concluido_em = t and l.cancelamento_desfecho = 'reposto'
     and l.cancelamento_tentativas = 1, 'S9 concluída');
+  -- S9b: registro sem conclusão é aceito (tentativa conta) mas devolve 0 conclusões.
+  vid := ensaio_adr0211.armada(8, 803);
+  perform ensaio_adr0211.ok(ensaio_adr0211.registrar(8, vid, (ensaio_adr0211.linha(vid)).cancelamento_geracao, false, 'erro', t) = 0, 'S9b devolve 0');
+  perform ensaio_adr0211.ok((ensaio_adr0211.linha(vid)).cancelamento_tentativas = 1, 'S9b tentativa contada');
 
   -- S10: G1 lida; concluída e rearmada (G2); registrar com G1 (true e false) = 0; G2 segue pendente.
   vid := ensaio_adr0211.armada(8, 802);
@@ -358,38 +406,6 @@ begin
     and (ensaio_adr0211.linha(v1)).cancelamento_armado_em > t, 'S15 reabre');
   perform ensaio_adr0211.ok((ensaio_adr0211.linha(v2)).cancelamento_concluido_em = t, 'S16 baixa antiga não reabre');
   perform ensaio_adr0211.ok((ensaio_adr0211.linha(v3)).cancelamento_concluido_em = t, 'S16 baixa estornada não reabre');
-end $$;
-
-reset role;
-
--- ── Catálogo e permissões ──────────────────────────────────────────────────────────────────
-do $$
-declare corpo text; f record;
-begin
-  -- S12: o trigger só atribui; sem escrita, sem conversão de tipo, security invoker.
-  select lower(p.prosrc) into corpo from pg_proc p
-   where p.pronamespace = 'ensaio_adr0211'::regnamespace and p.proname = 'ml_vendas_cancelamento_fila';
-  perform ensaio_adr0211.ok(corpo is not null and position('insert' in corpo) = 0 and position('update ' in corpo) = 0
-    and position('delete' in corpo) = 0 and position('perform' in corpo) = 0 and position('::' in corpo) = 0
-    and position('cast' in corpo) = 0, 'S12 corpo do trigger');
-  perform ensaio_adr0211.ok((select not prosecdef from pg_proc where pronamespace = 'ensaio_adr0211'::regnamespace
-    and proname = 'ml_vendas_cancelamento_fila'), 'S12 invoker');
-
-  -- S13: sem coluna de descarte; RPCs definer, search_path vazio, dono postgres, execute só service_role.
-  perform ensaio_adr0211.ok(not exists (select 1 from information_schema.columns where table_schema = 'ensaio_adr0211'
-    and table_name = 'ml_vendas' and column_name like 'cancelamento%descart%'), 'S13 sem descarte');
-  perform ensaio_adr0211.ok((select count(*) from information_schema.columns where table_schema = 'ensaio_adr0211'
-    and table_name = 'ml_vendas' and column_name like 'cancelamento\_%') = 8, 'S13 oito colunas');
-  for f in select p.oid, p.proname, p.prosecdef, p.proconfig, pg_get_userbyid(p.proowner) dono from pg_proc p
-            where p.pronamespace = 'ensaio_adr0211'::regnamespace
-              and p.proname in ('reivindicar_cancelamentos', 'cancelamento_baixas', 'registrar_cancelamentos_tratados') loop
-    perform ensaio_adr0211.ok(f.prosecdef and f.proconfig @> array['search_path=""'] and f.dono = 'postgres', 'S13 ' || f.proname);
-    perform ensaio_adr0211.ok(has_function_privilege('service_role', f.oid, 'execute')
-      and not has_function_privilege('anon', f.oid, 'execute')
-      and not has_function_privilege('authenticated', f.oid, 'execute'), 'S13 grants ' || f.proname);
-  end loop;
-  perform ensaio_adr0211.ok((select count(*) from pg_proc where pronamespace = 'ensaio_adr0211'::regnamespace
-    and proname in ('reivindicar_cancelamentos', 'cancelamento_baixas', 'registrar_cancelamentos_tratados')) = 3, 'S13 três RPCs');
 end $$;
 
 rollback;

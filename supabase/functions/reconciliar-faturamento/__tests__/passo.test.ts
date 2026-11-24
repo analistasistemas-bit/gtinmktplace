@@ -48,6 +48,8 @@ function criarDeps(over: Partial<DepsReconciliar> = {}, pend: string[] = []) {
       return { n: ids.length, ultimo: ids.length === 50 ? ids[ids.length - 1] : null };
     }),
     liberacoes: vi.fn(async () => 3),
+    // ADR-0211: desligada por padrão (DRENAR_CANCELAMENTOS ausente) — os testes de antes valem como estão na main.
+    drenagemLigada: vi.fn(() => false),
     drenarCancelamentos: vi.fn(async (_t: string, _cx: ConexaoCanal, _u: string, _l: string, _i: number) => ({ concluidos: 0, pendentes: 0 })),
     ...over,
   };
@@ -61,7 +63,7 @@ const lotePedidos = (deps: ReturnType<typeof criarDeps>) =>
   (deps.processarPedidos.mock.calls.at(-1)![4] as PedidoML[]).map((p) => Number(p.id));
 
 describe('passoReconciliar', () => {
-  it('1. cursor null sem pendências → perguntas| sem processar; com 3 → processa e volta a pendencias| (ADR-0211); perguntas → claims|', async () => {
+  it('1. cursor null sem pendências → perguntas| sem processar; com 3 → processa e perguntas|; perguntas → claims|', async () => {
     const vazio = criarDeps();
     const r0 = await rodar(vazio, null);
     expect(r0.proximo).toBe('perguntas|');
@@ -70,7 +72,7 @@ describe('passoReconciliar', () => {
 
     const tres = criarDeps({}, idsPend(3));
     const r1 = await rodar(tres, null);
-    expect(r1.proximo).toBe('pendencias|o03');
+    expect(r1.proximo).toBe('perguntas|');
     expect(tres.pendencias).toHaveBeenCalledWith('', LOTE_PENDENCIAS);
     expect(tres.pedidoPorId.mock.calls.map((c) => c[1])).toEqual(['o01', 'o02', 'o03']);
     expect(lotePedidos(tres).length).toBe(3);
@@ -277,7 +279,7 @@ describe('passoReconciliar', () => {
       expect(r.parcial).toBe('3 pedido(s) descartado(s) após 5 tentativas');
     });
 
-    it('25 pendências → 20 e pendencias|<20º>, depois 5 e pendencias|<25º>, depois drena e perguntas| (ADR-0211)', async () => {
+    it('25 pendências → 20 e pendencias|<20º>, depois 5 e perguntas|', async () => {
       expect(LOTE_PENDENCIAS).toBe(20);
       const pend = idsPend(25);
       const deps = criarDeps({}, pend);
@@ -288,13 +290,8 @@ describe('passoReconciliar', () => {
       const r2 = await rodar(deps, r1.proximo, r1.acumulado);
       expect(deps.pendencias).toHaveBeenLastCalledWith(pend[19], LOTE_PENDENCIAS);
       expect(deps.pedidoPorId).toHaveBeenCalledTimes(25);
-      expect(r2.proximo).toBe(`pendencias|${pend[24]}`);
+      expect(r2.proximo).toBe('perguntas|');
       expect(r2.acumulado.reconciliados).toBe(25);
-      expect(deps.drenarCancelamentos).not.toHaveBeenCalled();
-
-      const r3 = await rodar(deps, r2.proximo, r2.acumulado);
-      expect(r3.proximo).toBe('perguntas|');
-      expect(deps.drenarCancelamentos).toHaveBeenCalledTimes(1);
     });
 
     it('pedidoPorId que lança conta como falha; o resto segue', async () => {
@@ -307,7 +304,7 @@ describe('passoReconciliar', () => {
       const r = await rodar(deps, null);
       expect((deps.processarPedidos.mock.calls[0][4] as PedidoML[]).map((p) => p.id)).toEqual(['o01', 'o03']);
       expect(deps.registrarPendencias).toHaveBeenCalledWith(['o01', 'o03'], INICIO, ['o02'], expect.stringMatching(/^reconciliar: /));
-      expect(r.proximo).toBe('pendencias|o03');
+      expect(r.proximo).toBe('perguntas|');
       expect(r.acumulado.pedidosComFalha).toBe(1);
     });
 
@@ -368,8 +365,27 @@ describe('11. ADR-0211: drenagem de cancelamentos na execução em que a fila co
   const ETAPAS = ['pendencias', 'perguntas', 'claims', 'enriquecer', 'mensagens', 'posvenda', 'vendas', 'liberacoes'];
   const INICIO_MS = Date.parse(INICIO);
 
+  it('P10 (r5). desligada: cursor e acumulado IDÊNTICOS aos de antes do ADR-0211, sem chamar a drenagem', async () => {
+    for (const n of [0, 3, 20, 25]) {
+      const deps = criarDeps({}, idsPend(n));
+      const passos: Array<[string | null, Acumulado]> = [];
+      let r = await rodar(deps, null);
+      for (let i = 0; i < 200 && r.proximo; i++) {
+        passos.push([r.proximo, r.acumulado]);
+        r = await rodar(deps, r.proximo, r.acumulado);
+      }
+      // Antes: lote curto (ou vazio) vai direto a perguntas|; lote cheio volta a pendencias|<último>.
+      const esperado = n === 0 ? ['perguntas|'] : n === 3 ? ['perguntas|'] : n === 20 ? ['pendencias|o20', 'perguntas|']
+        : ['pendencias|o20', 'perguntas|'];
+      expect(passos.map(([c]) => c).slice(0, esperado.length), String(n)).toEqual(esperado);
+      expect(Object.keys(r.acumulado).filter((k) => k.startsWith('cancelamentos')), String(n)).toEqual([]);
+      expect(r.parcial ?? null, String(n)).toBeNull();
+      expect(deps.drenarCancelamentos).not.toHaveBeenCalled();
+    }
+  });
+
   it('P1. nenhum cursor novo: as etapas de `proximo` são as de hoje', async () => {
-    const deps = criarDeps({}, idsPend(3));
+    const deps = criarDeps({ drenagemLigada: vi.fn(() => true) }, idsPend(3));
     const vistas = new Set<string>();
     let r = await rodar(deps, null);
     for (let i = 0; i < 200 && r.proximo; i++) {
@@ -381,7 +397,7 @@ describe('11. ADR-0211: drenagem de cancelamentos na execução em que a fila co
   });
 
   it('P2/P6. fila comum vazia → drena com params.ate e o início da execução, sem processar pedidos; devolve perguntas|', async () => {
-    const deps = criarDeps({}, idsPend(3));
+    const deps = criarDeps({ drenagemLigada: vi.fn(() => true) }, idsPend(3));
     const r = await rodar(deps, 'pendencias|o03');
     expect(r.proximo).toBe('perguntas|');
     expect(deps.drenarCancelamentos).toHaveBeenCalledWith('tok', CX, 'user-1', PARAMS.ate, INICIO_MS);
@@ -391,7 +407,7 @@ describe('11. ADR-0211: drenagem de cancelamentos na execução em que a fila co
 
   it('P3/P8. a drenagem lança (inclusive prazo de registrar/reivindicar) → não lança, perguntas| e cancelamentosErro = 1', async () => {
     for (const erro of ['boom', 'registrar: tempo esgotado', 'reivindicar: tempo esgotado']) {
-      const deps = criarDeps({ drenarCancelamentos: vi.fn(async () => { throw new Error(erro); }) });
+      const deps = criarDeps({ drenagemLigada: vi.fn(() => true), drenarCancelamentos: vi.fn(async () => { throw new Error(erro); }) });
       const r = await rodar(deps, null);
       expect(r.proximo, erro).toBe('perguntas|');
       expect(r.acumulado.cancelamentosErro, erro).toBe(1);
@@ -399,26 +415,26 @@ describe('11. ADR-0211: drenagem de cancelamentos na execução em que a fila co
   });
 
   it('P4. repetição da mesma execução drena de novo com o mesmo params.ate', async () => {
-    const deps = criarDeps();
+    const deps = criarDeps({ drenagemLigada: vi.fn(() => true) });
     await rodar(deps, null);
     await rodar(deps, null);
     expect(deps.drenarCancelamentos.mock.calls.map((c) => c[3])).toEqual([PARAMS.ate, PARAMS.ate]);
   });
 
   it('P5/P7. fim: pendentes ou erro de drenagem → parcial; zerados → igual a hoje', async () => {
-    const deps = criarDeps({ drenarCancelamentos: vi.fn(async () => ({ concluidos: 4, pendentes: 3 })) });
+    const deps = criarDeps({ drenagemLigada: vi.fn(() => true), drenarCancelamentos: vi.fn(async () => ({ concluidos: 4, pendentes: 3 })) });
     const r = await rodar(deps, null);
     expect(r.proximo).toBe('perguntas|');
     expect(r.acumulado).toMatchObject({ cancelamentosTratados: 4, cancelamentosPendentes: 3 });
     expect((await rodar(deps, 'liberacoes|', r.acumulado)).parcial).toBe('3 cancelamento(s) aguardando tratamento');
-    expect((await rodar(criarDeps(), 'liberacoes|', { cancelamentosErro: 1 })).parcial).toBe('drenagem de cancelamentos falhou');
-    expect((await rodar(criarDeps({ pendentesAtivos: vi.fn(async () => 2) }), 'liberacoes|', { cancelamentosPendentes: 1 })).parcial)
+    expect((await rodar(criarDeps({ drenagemLigada: vi.fn(() => true) }), 'liberacoes|', { cancelamentosErro: 1 })).parcial).toBe('drenagem de cancelamentos falhou');
+    expect((await rodar(criarDeps({ drenagemLigada: vi.fn(() => true), pendentesAtivos: vi.fn(async () => 2) }), 'liberacoes|', { cancelamentosPendentes: 1 })).parcial)
       .toBe('2 pedido(s) pendente(s); 1 cancelamento(s) aguardando tratamento');
-    expect((await rodar(criarDeps(), 'liberacoes|', { cancelamentosPendentes: 0, cancelamentosErro: 0 })).parcial).toBeNull();
+    expect((await rodar(criarDeps({ drenagemLigada: vi.fn(() => true) }), 'liberacoes|', { cancelamentosPendentes: 0, cancelamentosErro: 0 })).parcial).toBeNull();
   });
 
   it('P9. o início passado à drenagem é o da entrada do passo, antes de conexão, token e pendências', async () => {
-    const deps = criarDeps();
+    const deps = criarDeps({ drenagemLigada: vi.fn(() => true) });
     deps.agora.mockReturnValueOnce('2026-09-27T11:59:00.000Z');
     await rodar(deps, null);
     expect(deps.drenarCancelamentos.mock.calls[0][4]).toBe(Date.parse('2026-09-27T11:59:00.000Z'));

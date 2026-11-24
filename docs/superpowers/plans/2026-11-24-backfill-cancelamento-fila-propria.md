@@ -61,6 +61,15 @@
 | a | Ensaio: esperar 6 min não muda `m.criado_em > concluido_em - 5 min`; com carência zero os `avisado` reabrem e disputam o 2º lote | Uma org de ensaio por cenário (normal, lento, reabertura), ids distintos exigidos pelo script; a reabertura usa **outra** referência de baixa (outro SKU de ensaio) no mesmo pedido | `scripts/ensaio-drenagem-cancelamentos.test.ts` (função pura `planoEnsaio`, `deno test`) |
 | b | Prazos ignoravam o tempo gasto antes da drenagem; `registrar` estourado tratado como "nada gravado" | Início da execução capturado na entrada do passo, antes de conexão/token/pendências, e passado à drenagem; 60 s e 100 s contam dele; `registrar` sem resposta = incerto, reconferido pelo ledger no ciclo seguinte | P9, F29, F30, F31 |
 | c | `PedidoML.status` é opcional: resposta sem status concluía `nao-cancelado` | `nao-cancelado` só com `status` texto não vazio e ≠ `cancelled`; sem status → `ml: sem status`, pendente | F32 |
+| R6-1 | Geração trocada durante `kitLigado` ainda era tratada; contagem ignorava o retorno da RPC | `aindaPendente` logo antes de `tratar`, depois de toda espera; `registrar_cancelamentos_tratados` devolve as conclusões aceitas e a drenagem conta por ele | F33, S9b |
+| R6-2 | Status arbitrário, só espaços ou numérico concluía/avisava | Allowlist de status do ML (pedido e envio); fora dela fica pendente; `pending_cancel` não conclui | F34 |
+| R6-3 | Prazo conferido depois de a operação começar; prazo vencido na entrada não deixava `parcial` | `comPrazo` recebe a função e só a chama com prazo; sem tempo na entrada a drenagem lança | F35, F30 |
+| R6-4 | Versão nula nunca renovava | Trigger troca versão nula pela primeira não nula; drenagem trata `cancelled` ao vivo com versão nula, outro status fica | S6c, F36 |
+| R6-5 | Flag desligada mudava cursor e acumulado | `drenagemLigada()` no passo; desligada = idêntico à `main` | P10 e os testes 1/8 da `main` sem alteração |
+| R6-6 | Rodada obsoleta checada sem trava | `for share` na linha de `worker_rodadas` | S7i |
+| R6-7 | S13 mascarado pelo grant do teste | Catálogo conferido antes de qualquer grant do teste | S13 |
+| R6-8 | `registrar` que confirma depois do prazo | Ciclo seguinte não reivindica o concluído nem repete o estorno | F31b |
+| R6-9 | Ensaio saía com 0 mesmo reprovando | Qualquer critério falho → `Deno.exit(1)` | script |
 | D1 | Remover o trigger como rollback | Proibido (Diego, 24/11). Reversão = desligar `DRENAR_CANCELAMENTOS`; V7 removida | ADR "Como reverter" |
 
 ## Pontos da rodada 4 (REVISE sobre `abad948e`)
@@ -625,7 +634,7 @@ Três medições, nesta ordem. `DRENAR_CANCELAMENTOS=1` só depois das três.
 
 - [ ] **6.3 Canário em produção:** ligar `DRENAR_CANCELAMENTOS` só para duas orgs, uma delas com `kit_variacao`. Observar 24 ciclos: campo `ms` do log `[rodada] lote` da execução que segue para `perguntas|`; métricas `CPUTime`, `WORKER_RESOURCE_LIMIT`, `IDLE_TIMEOUT`. Aceite: zero erro de limite; `ms` abaixo de 60.000; CPU no patamar do ADR-0173 (mediana ~200 ms, máximo < 500 ms).
 
-  **Prazo na Edge:** em um dos ciclos do canário, com obrigação pendente na org, definir `DRENAR_CANCELAMENTOS_PRAZO_MS=1`. Esperado na função deployada: a drenagem não começa nenhum item, `cancelamentosPendentes` igual ao tamanho do lote, cursor em `perguntas|` e rodada concluída `parcial`. Remover a variável em seguida; o ciclo seguinte trata o lote.
+  **Prazo na Edge:** em um dos ciclos do canário, com obrigação pendente na org, definir `DRENAR_CANCELAMENTOS_PRAZO_MS=1`. Esperado na função deployada: a drenagem não reivindica nada (prazo vencido na entrada lança `sem tempo`), `cancelamentosErro = 1`, cursor em `perguntas|` e rodada concluída `parcial` ("drenagem de cancelamentos falhou"). Remover a variável em seguida; o ciclo seguinte trata o lote.
 
 - [ ] **6.4** Fora do aceite em qualquer das três: não ligar, voltar ao desenho. Dentro: `DRENAR_CANCELAMENTOS=1` e registrar os números no ADR-0211.
 
