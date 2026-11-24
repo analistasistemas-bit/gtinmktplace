@@ -99,7 +99,7 @@ describe('soDoVendedor', () => {
     expect(ml.caminhos).toEqual([]);
   });
 
-  it('a edge só lê o ML pelo filtro', () => {
+  it('a edge embrulha no filtro o único criarGetJson, usado para item e preço', () => {
     const edge = readFileSync('supabase/functions/agentes/index.ts', 'utf8');
     expect(edge.match(/criarGetJson\(/g)).toHaveLength(1);
     expect(edge).toContain('get: soDoVendedor(criarGetJson(token), cx.contaExternaId)');

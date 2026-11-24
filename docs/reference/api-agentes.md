@@ -628,7 +628,7 @@ Um identificador de 12 a 20 dígitos é gravado como família ainda que fosse um
 - **Isolamento por organização.** Toda consulta de banco, cache, cursor e cota leva a organização da conexão. Um MLB, MLBU, família, SKU ou título de **outra** organização responde `nao_encontrado`, idêntico a um inexistente; um cursor de outra organização responde `cursor_invalido`. Não há como enumerar outras lojas.
 - **Uma chave por loja.** Para consultar várias lojas, use uma conexão (chave) por loja; não existe chave multi-loja.
 - **Dados que nunca saem:** dados de comprador, credenciais do Mercado Livre, dados de fornecedor e `familias.custo_centavos` (custo de tokens de IA).
-- **Só anúncio da conta.** Item e preço lidos no Mercado Livre são descartados quando o `seller_id` não é o da conta da conexão, ou não vem (ADR-0210, Emenda 2): o anúncio responde `anuncio_indisponivel`. A conferência é por leitura: se só uma for recusada, o que sai veio da outra, já conferida (na simulação, o item conferido basta para calcular).
+- **Só anúncio da conta.** Item e preço lidos no Mercado Livre são descartados quando o `seller_id` não é o da conta da conexão, ou não vem (ADR-0210, Emenda 2): o anúncio responde `anuncio_indisponivel`. A conferência é por leitura: se só uma for recusada, o que sai veio da outra, já conferida (na simulação, com só o preço recusado, o item conferido basta para calcular, e os campos de preço vindos do ML ficam `null`).
 - **Erros opacos.** Falhas internas devolvem só `indisponivel`; a mensagem original não é exposta nem logada. Falhas de credencial não distinguem chave inexistente, revogada ou expirada.
 - **Guarde a chave como segredo.** Ela é exibida uma vez; no PubliAI fica só o hash. Revogue e crie outra em caso de vazamento.
 
