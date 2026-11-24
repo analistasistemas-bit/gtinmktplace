@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { partesNegrito, rotuloEtapa, rotuloQuer, rotuloReputacao, rotuloStatus, textoHistorico } from '../posvenda-rotulos';
+import { partesNegrito, rotuloEtapa, rotuloQuer, rotuloReputacao, rotuloStatus, textoHistorico, ultimaMensagemParaResponder } from '../posvenda-rotulos';
 
 describe('posvenda-rotulos', () => {
   it('comprador quer', () => {
@@ -40,5 +40,15 @@ describe('posvenda-rotulos', () => {
       { t: 'a ', b: false }, { t: 'b', b: true }, { t: ' c\n', b: false }, { t: 'd', b: true },
     ]);
     expect(partesNegrito('sem')).toEqual([{ t: 'sem', b: false }]);
+  });
+
+  it('última mensagem para responder: ignora status; some se a última é do vendedor', () => {
+    const m = (autor: 'comprador' | 'vendedor' | 'ml', texto: string) => ({ autor, texto });
+    const opcoes = m('ml', 'Escolha 1, 2 ou 3');
+    const pergunta = m('ml', 'Qual percentual?');
+    expect(ultimaMensagemParaResponder([opcoes, m('vendedor', '2.'), pergunta, m('ml', 'Status da reclamação: dispute / opened')])).toBe(pergunta);
+    expect(ultimaMensagemParaResponder([opcoes, m('vendedor', '2.')])).toBeNull();
+    expect(ultimaMensagemParaResponder([m('comprador', 'Oi')])?.texto).toBe('Oi');
+    expect(ultimaMensagemParaResponder([])).toBeNull();
   });
 });

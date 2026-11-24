@@ -14,7 +14,7 @@ import { AnexoMensagem } from '@/components/faturamento/anexo-mensagem';
 import type { Travas } from './lista-reclamacoes';
 import type { Devolucao } from '@/lib/devolucoes';
 import { fmtBRL } from '@/lib/formato';
-import { partesNegrito, rotuloEtapa, rotuloQuer, rotuloReputacao, textoHistorico } from '@/lib/posvenda-rotulos';
+import { partesNegrito, rotuloEtapa, rotuloQuer, rotuloReputacao, textoHistorico, ultimaMensagemParaResponder } from '@/lib/posvenda-rotulos';
 import { urlVendaML } from '@/lib/ml-status';
 import { DialogoConfirmarAcao } from './dialogo-confirmar-acao';
 import { DialogoRevisarDevolucao, Fotos, montarInfoRevisao, type Anexo } from './dialogo-revisar-devolucao';
@@ -26,6 +26,24 @@ export const fmtDataHora = (iso: string | null | undefined) => {
 };
 
 const AUTOR: Record<string, string> = { comprador: 'Comprador', vendedor: 'Você', ml: 'Mercado Livre' };
+
+function CardMensagem({ m, claimId }: { m: DetalheReclamacao['historico'][number]; claimId: string }) {
+  return (
+    <div className="rounded-lg border bg-card p-2.5 text-xs">
+      <div className="mb-0.5 text-muted-foreground">{fmtDataHora(m.data)} · {AUTOR[m.autor] ?? m.autor}</div>
+      <div className="whitespace-pre-wrap">
+        {partesNegrito(textoHistorico(m.texto)).map((p, j) => (p.b ? <strong key={j}>{p.t}</strong> : <span key={j}>{p.t}</span>))}
+      </div>
+      {m.anexos.length > 0 && (
+        <div className="mt-1 flex flex-wrap gap-1">{m.anexos.map((a) => (
+          <AnexoMensagem key={a.id} claimId={claimId}
+            anexo={{ filename: a.id, original_filename: a.nome, type: a.tipo, size: a.tamanho, potential_security_threat: false }} />
+        ))}</div>
+      )}
+      {m.moderacao === 'rejected' && <div className="mt-1 text-destructive">Mensagem rejeitada pela moderação do ML.</div>}
+    </div>
+  );
+}
 export const MSG_TRAVA = 'Ação enviada ao ML · aguardando confirmação';
 const MSG_NAO_LIBERADA = 'Não liberado pelo ML nesta reclamação';
 
@@ -114,6 +132,7 @@ function Conteudo({ d, item, travas, produto, onFechar }: {
     ['Reputação', rotuloReputacao(d.afeta_reputacao)],
     ['Custo da devolução', d.custo_devolucao != null ? `${fmtBRL(d.custo_devolucao)} para você` : '—'],
   ];
+  const ultima = ultimaMensagemParaResponder(d.historico);
 
   return (
     <div className="space-y-4 overflow-y-auto px-4 pb-6">
@@ -147,25 +166,17 @@ function Conteudo({ d, item, travas, produto, onFechar }: {
       <section className="space-y-2">
         <div className="text-sm font-semibold">Histórico</div>
         {d.historico.length === 0 && <p className="text-xs text-muted-foreground">Sem mensagens.</p>}
-        {[...d.historico].reverse().map((m, i) => (
-          <div key={i} className="rounded-lg border bg-card p-2.5 text-xs">
-            <div className="mb-0.5 text-muted-foreground">{fmtDataHora(m.data)} · {AUTOR[m.autor] ?? m.autor}</div>
-            <div className="whitespace-pre-wrap">
-              {partesNegrito(textoHistorico(m.texto)).map((p, j) => (p.b ? <strong key={j}>{p.t}</strong> : <span key={j}>{p.t}</span>))}
-            </div>
-            {m.anexos.length > 0 && (
-              <div className="mt-1 flex flex-wrap gap-1">{m.anexos.map((a) => (
-                <AnexoMensagem key={a.id} claimId={claimId}
-                  anexo={{ filename: a.id, original_filename: a.nome, type: a.tipo, size: a.tamanho, potential_security_threat: false }} />
-              ))}</div>
-            )}
-            {m.moderacao === 'rejected' && <div className="mt-1 text-destructive">Mensagem rejeitada pela moderação do ML.</div>}
-          </div>
-        ))}
+        {[...d.historico].reverse().map((m, i) => <CardMensagem key={i} m={m} claimId={claimId} />)}
       </section>
 
       <section className="space-y-2">
         <label htmlFor="pv-resposta" className="text-sm font-semibold">Responder</label>
+        {ultima && (
+          <div className="space-y-1">
+            <div className="text-xs text-muted-foreground">Respondendo a:</div>
+            <CardMensagem m={ultima} claimId={claimId} />
+          </div>
+        )}
         <Textarea id="pv-resposta" value={texto} onChange={(ev) => setTexto(ev.target.value)} maxLength={2000} disabled={off('responder')}
           placeholder="Escreva dentro da reclamação… (pode anexar foto ou PDF)" className="min-h-20" />
         <Fotos claimId={claimId} idBase="pv-anexo" destino="mensagem" obrigatoria={false} anexos={anexos} onChange={(fn) => setAnexos(fn)} onSubindo={(dl) => setSubindo((n) => n + dl)} />

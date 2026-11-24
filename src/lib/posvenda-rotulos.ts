@@ -22,6 +22,12 @@ export function textoHistorico(texto: string): string {
   return `Status: ${partes.join(' · ')}`;
 }
 
+/** Mensagem a que o vendedor está respondendo: a última que não é linha de status; null se a última é dele. */
+export function ultimaMensagemParaResponder<M extends { autor: string; texto: string }>(historico: M[]): M | null {
+  const ultima = [...historico].reverse().find((m) => !m.texto.startsWith('Status da reclamação:'));
+  return ultima && ultima.autor !== 'vendedor' ? ultima : null;
+}
+
 /** Divide `**negrito**` em partes (sem HTML); quebras de linha ficam no texto. */
 export function partesNegrito(texto: string): Array<{ t: string; b: boolean }> {
   return texto.split(/\*\*(.+?)\*\*/gs).flatMap((t, i) => (t === '' ? [] : [{ t, b: i % 2 === 1 }]));
