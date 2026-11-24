@@ -15,3 +15,21 @@ describe('fiação do substatus do envio', () => {
       expect(t.match(/\.\.\.envioParaTratamento\(shipment\)/g) ?? []).toHaveLength(n);
     });
 });
+
+// Emenda 8: todo pedido montado para o tratamento leva o leitor do histórico; a fila lê tentativas com a geração.
+describe('fiação do envio que nunca saiu', () => {
+  it.each([['sync-venda/index.ts', 1], ['reconciliar-faturamento/index.ts', 4]] as const)('%s: o thunk vai com o envio', (arquivo, n) => {
+    expect(ler(arquivo).match(/\.\.\.envioParaTratamento\(shipment\),\s*lerNuncaSaiu: \(\) => lerNuncaSaiu\(token, shippingId!\),/g) ?? []).toHaveLength(n);
+  });
+  it('fila: leitor do histórico e tentativas lidas junto da geração', () => {
+    const t = ler('reconciliar-faturamento/index.ts');
+    expect(t).toMatch(/lerNuncaSaiu: \(id\) => lerNuncaSaiu\(token, id\),/);
+    expect(t).toMatch(/select\('cancelamento_tentativas'\)\s*\.eq\('org_id', orgId\)\.eq\('id', o\.id\)\.eq\('cancelamento_geracao', o\.geracao\)/);
+    expect(t).toMatch(/tentativas: Number\(data\.cancelamento_tentativas\)/);
+  });
+  it('deps reais: ledger, trava, dedupe e fila ligados, com as duas flags', () => {
+    const t = ler('_shared/estoque/cancelamento-deps.ts');
+    for (const d of ['baixasAbertas', 'saldoMexidoDepois', 'notificacaoJaEnviada']) expect(t, d).toMatch(new RegExp(`^  ${d},$`, 'm'));
+    expect(t).toMatch(/drenar: Deno\.env\.get\('DRENAR_CANCELAMENTOS'\), fanout: fanoutAtivo\('FANOUT_RECONCILIAR'\)/);
+  });
+});

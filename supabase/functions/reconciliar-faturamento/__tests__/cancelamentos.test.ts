@@ -59,7 +59,7 @@ describe('drenarCancelamentos', () => {
   it('F1. cada ResultadoCancelamento: avisado/silenciado concluem; reposto confere o ledger; os demais ficam', async () => {
     const ESPERADO = {
       reposto: 'confere-ledger', avisado: 'conclui', 'sem-baixa': 'fica', silenciado: 'conclui',
-      pendente: 'fica', repetir: 'fica', ignorado: 'fica', erro: 'fica',
+      pendente: 'fica', repetir: 'fica', adiado: 'fica', ignorado: 'fica', erro: 'fica',
     } satisfies Record<ResultadoCancelamento, 'conclui' | 'fica' | 'confere-ledger'>;
     for (const [res, esperado] of Object.entries(ESPERADO) as Array<[ResultadoCancelamento, string]>) {
       const f = criarIo([ob('o1')]);
@@ -536,5 +536,123 @@ describe('drenarCancelamentos', () => {
     const h = criarIo([ob('o1')], { envio: vi.fn(async () => ({ status: 'ready_to_ship', substatus: 'printed' })) }, { o1: [estornada('A'), aberta('B')] });
     await drenarCancelamentos(h.io, 'L1');
     expect(h.io.tratar).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Emenda 8 (24/11) ao ADR-0121: envio `cancelled` que nunca saiu, na fila, com o `tratarPedidoCancelado` real.
+describe('drenarCancelamentos: envio cancelado que nunca saiu', () => {
+  type Envio = { status: string; substatus?: string | null };
+  function cenario(o: { ledger: Baixa[]; prova?: 'sim' | 'nao' | 'indisponivel'; envio?: Envio; tentativas?: number; some?: string[]; avisado?: boolean }) {
+    const textos: string[] = [];
+    const estornos: unknown[][] = [];
+    const lerNuncaSaiu = vi.fn(async (_s: number | string) => o.prova ?? ('sim' as const));
+    const f = criarIo([ob('o1')], {
+      envio: vi.fn(async () => o.envio ?? { status: 'cancelled', substatus: null }),
+      aindaPendente: vi.fn(async () => ({ tentativas: o.tentativas ?? 0 })),
+      lerNuncaSaiu,
+    }, { o1: o.ledger });
+    const deps = depsDaFila({
+      estornarVendaCancelada: async (_a: unknown, p: { itens: Array<{ codigo: string | null }> }) => {
+        estornos.push(p.itens);
+        f.baixas.set('o1', f.baixas.get('o1')!.map((b) => (p.itens.some((i) => i.codigo === b.codigoRef) && !o.some?.includes(b.codigoRef) ? { ...b, estornada: true } : b)));
+        return { pendentesDePush: [], falhas: [], aplicados: [] };
+      },
+      despacharPushPendente: async () => ({ marcados: 0, falhas: 0 }),
+      enfileirarSincronizacaoEstoque: async () => 'x',
+      houveBaixaDeVenda: async () => true,
+      claimDoPedido: async () => null,
+      reservarNotificacao: async () => true,
+      notificarCategoria: async (_a: unknown, _o: string, _c: string, t: string) => { textos.push(t); },
+      baixasAbertas: async () => {
+        const bs = f.baixas.get('o1')!;
+        return { abertas: bs.filter((b) => !b.estornada).map((b) => ({ codigoRef: b.codigoRef, codigo: b.codigoRef, quantidade: b.quantidade })), haEstornada: bs.some((b) => b.estornada) };
+      },
+      saldoMexidoDepois: async () => false,
+      notificacaoJaEnviada: async () => !!o.avisado,
+      filaAssume: async () => true, // a fila nunca consulta: com isto ela emitiria `adiado`
+    } as unknown as DepsCancelamento);
+    f.io.tratar.mockImplementation((p) => tratarPedidoCancelado({} as never, deps, { ...p, orgId: 'org-1', userId: 'u-1', canal: 'mercado_livre' }));
+    return { ...f, textos, estornos, lerNuncaSaiu, rodar: async () => { await drenarCancelamentos(f.io, 'L1'); return f.reg('o1')!; } };
+  }
+  const MISTO = () => [estornada('A'), aberta('B', 2)];
+
+  it('F40. com prova repõe e conclui só depois de reler o ledger', async () => {
+    const c = cenario({ ledger: [aberta('A'), aberta('B', 2)] });
+    expect(await c.rodar()).toMatchObject({ concluir: true, desfecho: 'reposto', lido_em: 'L2' });
+    expect(c.estornos).toEqual([[{ codigo: 'A', quantity: 1 }, { codigo: 'B', quantity: 2 }]]);
+    expect(c.lerNuncaSaiu.mock.calls).toEqual([['So1']]);
+  });
+
+  it('F41. misto com prova: repõe só as abertas, lendo o histórico uma vez e antes de reconferir a geração', async () => {
+    const c = cenario({ ledger: MISTO() });
+    expect(await c.rodar()).toMatchObject({ concluir: true, desfecho: 'reposto' });
+    expect(c.estornos).toEqual([[{ codigo: 'B', quantity: 2 }]]);
+    expect(c.lerNuncaSaiu).toHaveBeenCalledTimes(1);
+    expect(c.io.aindaPendente.mock.invocationCallOrder[0]).toBeGreaterThan(c.lerNuncaSaiu.mock.invocationCallOrder[0]);
+  });
+
+  const SEM_PROVA: Array<[string, { prova?: 'nao' | 'indisponivel'; envio?: Envio }, number]> = [
+    ['impressa', { prova: 'nao' }, 1], ['histórico indisponível', { prova: 'indisponivel' }, 1],
+    ['despachado', { envio: { status: 'shipped' } }, 0], ['pack_splitted', { envio: { status: 'cancelled', substatus: 'pack_splitted' } }, 0],
+  ];
+  it.each(SEM_PROVA)('F42. misto sem prova (%s): pendente nas 2 primeiras, avisa só o aberto na 3ª', async (_n, o, leituras) => {
+    for (const tentativas of [0, 1]) {
+      const c = cenario({ ledger: MISTO(), tentativas, ...o });
+      expect(await c.rodar(), String(tentativas)).toMatchObject({ concluir: false, desfecho: 'parcial-sem-pre-despacho' });
+      expect(c.io.tratar).not.toHaveBeenCalled();
+      expect(c.lerNuncaSaiu).toHaveBeenCalledTimes(leituras);
+    }
+    const c = cenario({ ledger: MISTO(), tentativas: 2, ...o });
+    expect(await c.rodar()).toMatchObject({ concluir: true, desfecho: 'avisado' });
+    expect(c.estornos).toEqual([]);
+    expect(c.textos).toHaveLength(1);
+    expect(c.textos[0]).toContain('• B — 2 un.');
+    expect(c.textos[0]).not.toContain('• A');
+  });
+
+  it('F43. indisponível sem estado misto: erro nas 2 primeiras, avisa na 3ª; nunca adiado', async () => {
+    for (const tentativas of [0, 1]) {
+      const c = cenario({ ledger: [aberta('A')], prova: 'indisponivel', tentativas });
+      expect(await c.rodar()).toMatchObject({ concluir: false, desfecho: 'erro' });
+      expect(c.textos).toEqual([]);
+    }
+    expect(await cenario({ ledger: [aberta('A')], prova: 'indisponivel', tentativas: 2 }).rodar()).toMatchObject({ concluir: true, desfecho: 'avisado' });
+  });
+
+  it('F44. estorno que deixa baixa aberta (variação apagada): pendente nas 2 primeiras, avisa na 3ª', async () => {
+    for (const tentativas of [0, 1, 2]) {
+      const c = cenario({ ledger: [aberta('A'), aberta('APAGADO', 3)], some: ['APAGADO'], tentativas });
+      expect(await c.rodar(), String(tentativas)).toMatchObject(tentativas < 2 ? { concluir: false, desfecho: 'erro' } : { concluir: true, desfecho: 'avisado' });
+      expect(c.textos).toHaveLength(tentativas < 2 ? 0 : 1);
+      if (tentativas === 2) expect(c.textos[0]).toContain('• APAGADO — 3 un.');
+    }
+  });
+
+  it('F45. impressa sem estado misto avisa já na 1ª; já avisado silencia e conclui', async () => {
+    expect(await cenario({ ledger: [aberta('A')], prova: 'nao' }).rodar()).toMatchObject({ concluir: true, desfecho: 'avisado' });
+    const c = cenario({ ledger: [aberta('A')], avisado: true });
+    expect(await c.rodar()).toMatchObject({ concluir: true, desfecho: 'silenciado' });
+    expect(c.lerNuncaSaiu).not.toHaveBeenCalled();
+  });
+
+  it('F46. histórico que não responde no estado misto: solta em 10 s e fica pendente', async () => {
+    vi.useFakeTimers({ now: 0 });
+    const c = cenario({ ledger: MISTO() });
+    c.lerNuncaSaiu.mockImplementation(() => nunca());
+    const p = c.rodar();
+    await vi.advanceTimersByTimeAsync(10_001);
+    expect(await p).toMatchObject({ concluir: false, desfecho: 'parcial-sem-pre-despacho' });
+    expect(c.lerNuncaSaiu).toHaveBeenCalledTimes(1);
+  });
+
+  it('F47. sem o leitor: como antes da emenda (misto fica sempre; envio cancelled avisa, sem thunk no tratamento)', async () => {
+    const c = cenario({ ledger: MISTO(), tentativas: 5 });
+    c.io.lerNuncaSaiu = undefined as never;
+    expect(await c.rodar()).toMatchObject({ concluir: false, desfecho: 'parcial-sem-pre-despacho' });
+    expect(c.io.aindaPendente).not.toHaveBeenCalled();
+    const d = cenario({ ledger: [aberta('A')], tentativas: 5 });
+    d.io.lerNuncaSaiu = undefined as never;
+    expect(await d.rodar()).toMatchObject({ concluir: true, desfecho: 'avisado' });
+    expect(d.estornos).toEqual([]);
   });
 });

@@ -10,6 +10,8 @@ import { classificarItensKit, gravarIdentidades } from '../kit-variacao/venda.ts
 import { notificarCategoria } from '../notificacoes/config.ts';
 import { skusParticipantes } from '../kit-variacao/politica.ts';
 import { avisarKitsEncerrados } from '../kit-variacao/encerrar.ts';
+import { fanoutAtivo } from '../rodada/deps.ts';
+import { baixasAbertas, filaAssume, notificacaoJaEnviada, saldoMexidoDepois } from './nunca-saiu.ts';
 import { agendarCancelamentoKit, type DepsCancelamento } from './cancelamento.ts';
 
 export const depsCancelamento: DepsCancelamento = {
@@ -26,4 +28,9 @@ export const depsCancelamento: DepsCancelamento = {
   classificarItensKit,
   gravarIdentidades,
   registrarPendenciaKit,
+  baixasAbertas,
+  saldoMexidoDepois,
+  notificacaoJaEnviada,
+  filaAssume: (admin, orgId, orderId) => filaAssume(admin, orgId, orderId,
+    { drenar: Deno.env.get('DRENAR_CANCELAMENTOS'), fanout: fanoutAtivo('FANOUT_RECONCILIAR') }),
 };

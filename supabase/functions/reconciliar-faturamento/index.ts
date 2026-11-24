@@ -15,6 +15,7 @@ import { buscarPacksNaoLidos, buscarMensagensPackEstrito, upsertMensagensEstrito
 import { recuperarComOrcamento, recuperarPendentes } from '../_shared/faturamento/posvenda-fluxo.ts';
 import { depsAcaoReal } from '../_shared/faturamento/posvenda-acao-io.ts';
 import { envioParaTratamento, tratarPedidoCancelado } from '../_shared/estoque/cancelamento.ts';
+import { lerNuncaSaiu } from '../_shared/estoque/nunca-saiu.ts';
 import { despacharPushPendente, refazerBaixaAdiada } from '../_shared/estoque/baixa.ts';
 import { desfechoKit, processarClaim } from './kit.ts';
 import { depsCancelamento } from '../_shared/estoque/cancelamento-deps.ts';
@@ -179,6 +180,7 @@ async function legado(admin: ReturnType<typeof adminClient>): Promise<Response> 
                   orgId, userId, canal: 'mercado_livre', orderId: pedido.id, itens,
                   statusPedido: pedido.status ?? null,
                   ...envioParaTratamento(shipment),
+                  lerNuncaSaiu: () => lerNuncaSaiu(token, shippingId!),
                   temEnvio: pedido.shipping?.id != null,
                   kitLigado, catalogoIncompleto: incompleto || gtinIncerto,
                 };
@@ -260,6 +262,7 @@ async function legado(admin: ReturnType<typeof adminClient>): Promise<Response> 
               orgId, userId, canal: 'mercado_livre', orderId: pedido.id, itens,
               statusPedido: pedido.status ?? null,
               ...envioParaTratamento(shipment),
+              lerNuncaSaiu: () => lerNuncaSaiu(token, shippingId!),
               temEnvio: pedido.shipping?.id != null,
               kitLigado, catalogoIncompleto: incompleto || gtinIncerto,
             });
@@ -418,6 +421,7 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
                   orgId: org, userId, canal: 'mercado_livre', orderId: pedido.id, itens,
                   statusPedido: pedido.status ?? null,
                   ...envioParaTratamento(shipment),
+                  lerNuncaSaiu: () => lerNuncaSaiu(token, shippingId!),
                   temEnvio: pedido.shipping?.id != null,
                   kitLigado, catalogoIncompleto: incompleto || gtinIncerto,
                 };
@@ -529,6 +533,7 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
               orgId: org, userId, canal: 'mercado_livre', orderId: pedido.id, itens,
               statusPedido: pedido.status ?? null,
               ...envioParaTratamento(shipment),
+              lerNuncaSaiu: () => lerNuncaSaiu(token, shippingId!),
               temEnvio: pedido.shipping?.id != null,
               kitLigado, catalogoIncompleto: incompleto || gtinIncerto,
             });
@@ -596,12 +601,13 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
         },
         pedido: (id) => buscarPedido(token, id),
         envio: (id) => buscarShipment(token, id),
+        lerNuncaSaiu: (id) => lerNuncaSaiu(token, id),
         async aindaPendente(o) {
-          const { data, error } = await admin.from('ml_vendas').select('id')
+          const { data, error } = await admin.from('ml_vendas').select('cancelamento_tentativas')
             .eq('org_id', orgId).eq('id', o.id).eq('cancelamento_geracao', o.geracao).is('cancelamento_concluido_em', null)
             .maybeSingle();
           if (error) throw new Error(`ml_vendas (geração): ${error.message}`);
-          return !!data;
+          return data ? { tentativas: Number(data.cancelamento_tentativas) } : false;
         },
         kitLigado: async () => (await catalogoDe(userId, orgId)).kitLigado,
         tratar: (p) => tratarPedidoCancelado(admin, deps, { ...p, orgId, userId, canal: 'mercado_livre' }),

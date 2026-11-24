@@ -7,12 +7,13 @@
 // org inteira, contra 888 em `vendas`. O saldo local ficou abaixo do físico, calado.
 //
 // A decisão de repor NÃO mudou (ADR-0094 D-7): só a allowlist de pré-despacho repõe, e todo o
-// resto avisa. O que mudou é quem pode chamar.
+// resto avisa. O que mudou é quem pode chamar. Exceção (emenda 8): envio `cancelled` com prova de que nunca saiu.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { refBaixa, selecionarBaixas, type ItemVendaBaixa, type MovimentoPendente } from './baixa.ts';
 import type { CategoriaNotificacao } from '../notificacoes/categorias.ts';
 import { urlVendaML } from '../notificacoes/telegram.ts';
 import { criarTransferencia } from '../kit-variacao/saga.ts';
+import type { BaixasAbertas, ProvaNuncaSaiu } from './nunca-saiu.ts';
 import type { classificarItensKit, gravarIdentidades } from '../kit-variacao/venda.ts';
 
 /** Estados de envio que provam que a mercadoria NÃO saiu. Allowlist, nunca denylist:
@@ -97,6 +98,11 @@ export interface DepsCancelamento {
   gravarIdentidades: typeof gravarIdentidades;
   /** ADR-0200: RPC `registrar_pendencia_kit` (worker_pendencias obrigatória, sem descarte). Lança em erro. */
   registrarPendenciaKit: (admin: SupabaseClient, orgId: string, orderId: string, erro: string) => Promise<void>;
+  /** Emenda 8 ao ADR-0121 (`nunca-saiu.ts`). Só chamados com `lerNuncaSaiu`. Lançam em erro de leitura. */
+  baixasAbertas: (admin: SupabaseClient, orgId: string, orderId: string | number) => Promise<BaixasAbertas>;
+  saldoMexidoDepois: (admin: SupabaseClient, orgId: string, orderId: string | number) => Promise<boolean>;
+  notificacaoJaEnviada: (admin: SupabaseClient, orgId: string, entidade: string, chave: string) => Promise<boolean>;
+  filaAssume: (admin: SupabaseClient, orgId: string, orderId: string | number) => Promise<boolean>;
 }
 
 export interface PedidoCancelado {
@@ -115,6 +121,12 @@ export interface PedidoCancelado {
   kitLigado?: boolean;
   /** ADR-0200: o catálogo que resolveu os códigos veio incompleto (`Catalogo.incompleto`). */
   catalogoIncompleto?: boolean;
+  /** Emenda 8: lê o histórico do envio. Ausente = comportamento anterior à emenda. */
+  lerNuncaSaiu?: () => Promise<ProvaNuncaSaiu>;
+  /** Emenda 8: política da fila do ADR-0211 quando não dá para decidir agora. Ausente = `filaAssume` ou aviso. */
+  aoIndisponivel?: () => 'erro' | 'avisar';
+  /** Emenda 8: roda antes de reservar o aviso (claims: grava a devolução que o texto do aviso lê). */
+  antesDoAviso?: () => Promise<unknown>;
 }
 
 export type ResultadoCancelamento =
@@ -124,6 +136,7 @@ export type ResultadoCancelamento =
   | 'silenciado' // aviso já dado antes (a reconciliação revisita o pedido de hora em hora)
   | 'pendente' // ADR-0200: crédito de SKU de kit com variação não confirmado; obrigação gravada em worker_pendencias
   | 'repetir' // ADR-0200: obrigação de crédito NÃO gravada; quem chama tem de repetir (502 / falha do pedido)
+  | 'adiado' // emenda 8: não deu para decidir agora; a fila do ADR-0211 decide. Nada reservado
   | 'ignorado'
   | 'erro';
 
@@ -135,6 +148,12 @@ export function entraNoCreditoKit(p: PedidoCancelado): boolean {
   if (p.statusPedido !== 'cancelled' || !p.kitLigado) return false;
   const st = p.shipmentStatus != null ? String(p.shipmentStatus) : null;
   return preDespacho(st, p.shipmentSubstatus) || !p.temEnvio;
+}
+
+/** Emenda 8: envio cancelado, sem substatus, que o histórico pode provar que nunca saiu. */
+export function candidatoNuncaSaiu(p: Omit<PedidoCancelado, 'orgId' | 'userId' | 'canal'>): boolean {
+  return p.statusPedido === 'cancelled' && p.shipmentStatus === 'cancelled' && p.shipmentSubstatus == null
+    && p.temEnvio && !!p.lerNuncaSaiu;
 }
 
 /**
@@ -154,27 +173,22 @@ export async function tratarPedidoCancelado(
   const preDespachoConhecido = preDespacho(st, p.shipmentSubstatus);
 
   try {
-    if (entraNoCreditoKit(p)) return await reporComKit(admin, deps, p);
-    if (preDespachoConhecido || !p.temEnvio) {
-      // A checagem "houve baixa?" vive dentro da RPC, atômica com o estorno — e quando não há
-      // baixa ela grava o tombstone que impede a execução `paid` posterior de baixar um pedido
-      // já cancelado.
-      const { pendentesDePush } = await deps.estornarVendaCancelada(admin, {
-        orgId: p.orgId, canal: p.canal, orderId: p.orderId, itens: p.itens,
-      });
-      // Os movimentos de estorno nascem com push_canal_origem = null, então a reposição alcança
-      // TODOS os canais — inclusive o ML, que não repõe sozinho.
-      await deps.despacharPushPendente(admin, p.orgId, pendentesDePush, deps.enfileirarSincronizacaoEstoque);
-      return 'reposto';
+    if (preDespachoConhecido || !p.temEnvio) return await repor(admin, deps, p);
+    let ledger: BaixasAbertas | null = null;
+    if (candidatoNuncaSaiu(p)) {
+      const r = await tratarNuncaSaiu(admin, deps, p);
+      if (typeof r === 'string') return r;
+      ledger = r.avisar;
     }
     // Sem baixa não há saldo devendo voltar: o aviso não teria o que pedir para conferir.
     // Sem este corte, a primeira varredura alerta todo cancelamento histórico da base de uma
     // vez — 26 pedidos, alguns de 2021, medido em 18/08/2026.
-    if (!await deps.houveBaixaDeVenda(admin, {
+    if (!ledger && !await deps.houveBaixaDeVenda(admin, {
       orgId: p.orgId, canal: p.canal, orderId: p.orderId, itens: p.itens,
     })) {
       return 'sem-baixa';
     }
+    await p.antesDoAviso?.();
     if (!await deps.reservarNotificacao(admin, p.orgId, p.userId, 'estoque_cancelado_despachado', String(p.orderId))) {
       return 'silenciado';
     }
@@ -187,14 +201,25 @@ export async function tratarPedidoCancelado(
         + (claim.desfecho ? `Desfecho: ${claim.desfecho}\n` : '')
       : '';
     const saiu = st !== null && SAIU.includes(st);
+    // Estado parcial: parte já voltou. O texto pede entrada só do que está aberto; leitura falha = texto de sempre.
+    if (!ledger && p.lerNuncaSaiu) ledger = await deps.baixasAbertas(admin, p.orgId, p.orderId).catch(() => null);
+    const aberto = ledger?.haEstornada && ledger.abertas.length > 0
+      ? 'Parte do estoque já voltou. Ainda NÃO voltaram:\n'
+        + selecionarBaixas(ledger.abertas.map((b) => ({ codigo: b.codigo, quantity: b.quantidade })))
+          .map((b) => `• ${b.codigo} — ${b.quantity} un.`).join('\n')
+      : null;
     await deps.notificarCategoria(
       admin, p.orgId, 'pos_venda',
       peloComprador
         ? `🚫 Comprador cancelou o pedido ${p.orderId}\n\n`
           + 'O ML já resolveu: não precisa responder nada.\n\n'
-          + 'O estoque NÃO foi reposto. Se a mercadoria ainda está aí, dê entrada manual em Estoque.'
-        : `📦 Pedido ${p.orderId} cancelado — estoque NÃO reposto\n\n${motivo}${situacaoEnvio}\n`
-          + (saiu
+          + (aberto
+            ? `${aberto}\n\nSe a mercadoria ainda está aí, dê entrada manual em Estoque só desses itens.`
+            : 'O estoque NÃO foi reposto. Se a mercadoria ainda está aí, dê entrada manual em Estoque.')
+        : `📦 Pedido ${p.orderId} cancelado — ${aberto ? 'estoque reposto só em parte' : 'estoque NÃO reposto'}\n\n${motivo}${situacaoEnvio}\n`
+          + (aberto
+            ? `${aberto}\n\n👉 ${saiu ? 'Quando o produto voltar' : 'Se o produto estiver aí'}, dê entrada manual em Estoque só desses itens.`
+            : saiu
             ? 'A mercadoria já saiu, por isso o PubliAI não devolveu ao estoque sozinho.\n\n'
               + '👉 Quando o produto voltar, dê entrada manual em Estoque.'
             : 'Não dá para saber se a mercadoria saiu, por isso o PubliAI não devolveu ao estoque sozinho.\n\n'
@@ -206,6 +231,58 @@ export async function tratarPedidoCancelado(
     console.error('estorno_estoque_falhou', p.orderId, e);
     return 'erro';
   }
+}
+
+/** Credita o que o pedido baixou e despacha o push. Com o módulo de kit, pelo caminho do ADR-0200. */
+async function repor(admin: SupabaseClient, deps: DepsCancelamento, p: PedidoCancelado): Promise<ResultadoCancelamento> {
+  if (p.kitLigado) return await reporComKit(admin, deps, p);
+  // A checagem "houve baixa?" vive dentro da RPC, atômica com o estorno — e quando não há
+  // baixa ela grava o tombstone que impede a execução `paid` posterior de baixar um pedido
+  // já cancelado.
+  const { pendentesDePush } = await deps.estornarVendaCancelada(admin, {
+    orgId: p.orgId, canal: p.canal, orderId: p.orderId, itens: p.itens,
+  });
+  // Os movimentos de estorno nascem com push_canal_origem = null, então a reposição alcança
+  // TODOS os canais — inclusive o ML, que não repõe sozinho.
+  await deps.despacharPushPendente(admin, p.orgId, pendentesDePush, deps.enfileirarSincronizacaoEstoque);
+  return 'reposto';
+}
+
+/**
+ * Emenda 8 ao ADR-0121: repõe as baixas abertas do LEDGER (nunca o catálogo atual) quando o histórico prova que a
+ * etiqueta nunca foi impressa e ninguém mexeu no saldo depois. `avisar` = segue para o aviso, com o ledger lido.
+ */
+async function tratarNuncaSaiu(
+  admin: SupabaseClient, deps: DepsCancelamento, p: PedidoCancelado,
+): Promise<ResultadoCancelamento | { avisar: BaixasAbertas | null }> {
+  let ledger: BaixasAbertas | null = null;
+  const indisponivel = async (motivo: string) => {
+    console.warn('cancelamento_nunca_saiu_indisponivel', p.orderId, motivo);
+    const r = p.aoIndisponivel ? p.aoIndisponivel()
+      : await deps.filaAssume(admin, p.orgId, p.orderId).catch(() => false) ? 'adiado' : 'avisar';
+    return r === 'avisar' ? { avisar: ledger } : r;
+  };
+  try {
+    ledger = await deps.baixasAbertas(admin, p.orgId, p.orderId);
+    if (ledger.abertas.length === 0) return 'sem-baixa';
+    if (await deps.notificacaoJaEnviada(admin, p.orgId, 'estoque_cancelado_despachado', String(p.orderId))) return 'silenciado';
+    const prova = await p.lerNuncaSaiu!();
+    if (prova === 'nao') return { avisar: ledger };
+    if (prova !== 'sim') return await indisponivel('histórico do envio');
+    if (await deps.saldoMexidoDepois(admin, p.orgId, p.orderId)) return { avisar: ledger };
+  } catch (e) {
+    return await indisponivel(String(e));
+  }
+  const r = await repor(admin, deps, {
+    ...p, itens: ledger.abertas.map((b) => ({ codigo: b.codigoRef, quantity: b.quantidade })), catalogoIncompleto: false,
+  }).catch((e) => {
+    console.error('estorno_estoque_falhou', p.orderId, e);
+    return 'reposto' as const; // o ledger relido decide
+  });
+  if (r !== 'reposto') return r;
+  // Lança → `erro`, sem aviso: o estorno pode ter entrado, e mandar dar entrada somaria duas vezes.
+  ledger = await deps.baixasAbertas(admin, p.orgId, p.orderId);
+  return ledger.abertas.length === 0 ? 'reposto' : await indisponivel('baixa aberta depois do estorno');
 }
 
 /**

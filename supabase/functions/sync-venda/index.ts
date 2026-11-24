@@ -9,6 +9,7 @@ import { avisarKitsZerados } from '../_shared/kit-variacao/venda.ts';
 import { dispararReposicao } from '../_shared/kit-variacao/reposicao.ts';
 import { registrarPendenciaKit } from '../_shared/faturamento/pendencias.ts';
 import { envioParaTratamento, tratarPedidoCancelado } from '../_shared/estoque/cancelamento.ts';
+import { lerNuncaSaiu } from '../_shared/estoque/nunca-saiu.ts';
 import { depsCancelamento } from '../_shared/estoque/cancelamento-deps.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
@@ -283,6 +284,7 @@ Deno.serve(async (req) => {
       orgId, userId, canal: 'mercado_livre', orderId: pedido.id, itens,
       statusPedido: pedido.status ?? null,
       ...envioParaTratamento(shipment),
+      lerNuncaSaiu: () => lerNuncaSaiu(token, shippingId!),
       temEnvio: pedido.shipping?.id != null,
       kitLigado, catalogoIncompleto: leituraIncerta,
     });

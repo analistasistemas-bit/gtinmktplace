@@ -1764,7 +1764,14 @@ Lógica em `supabase/functions/_shared/galeria/`. Nenhuma edge desta família es
   **v68**. **Emenda 03/11/2026:** claim `cancel_purchase` não gera "Nova reclamação"
   (`avisaNovaDevolucao`); o aviso de cancelamento ganha texto próprio quando o pedido tem esse claim
   (`cancelamentoPeloComprador`) e a reposição não muda. Redeploy: `sync-devolucao` **v82**,
-  `sync-venda` **v119**, `reconciliar-faturamento` **v108**. **Emenda 13/11/2026:** o aviso genérico traz `Motivo:`/`Desfecho:` do claim mais recente (`claimDoPedido` em `_shared/faturamento/devolucoes-io.ts`, substitui `cancelamentoPeloComprador`) e o link do pedido. Redeploy: `sync-venda` **v134**, `reconciliar-faturamento` **v124**, `backfill-faturamento` **v116**, `sync-devolucao` **v93**, `posvenda-acao` **v19**, `posvenda-detalhe` **v17**. **Devolução (`sync-devolucao`, claims) não é tocada por este épico: nem
+  `sync-venda` **v119**, `reconciliar-faturamento` **v108**. **Emenda 13/11/2026:** o aviso genérico traz `Motivo:`/`Desfecho:` do claim mais recente (`claimDoPedido` em `_shared/faturamento/devolucoes-io.ts`, substitui `cancelamentoPeloComprador`) e o link do pedido. Redeploy: `sync-venda` **v134**, `reconciliar-faturamento` **v124**, `backfill-faturamento` **v116**, `sync-devolucao` **v93**, `posvenda-acao` **v19**, `posvenda-detalhe` **v17**.
+  **Emenda 8 (24/11/2026, deploy pendente):** envio `cancelled` sem substatus repõe quando
+  `GET /shipments/{id}/history` prova que a etiqueta nunca foi impressa (`_shared/estoque/nunca-saiu.ts`, prazo 8 s),
+  com os itens abertos do ledger (`cancelamento_baixas`) e sem `entrada`/`ajuste`/linha nova de `variacoes` depois da
+  baixa; pedido já avisado silencia. Leitura indisponível: webhook e reconciliação devolvem `adiado` se a fila do
+  ADR-0211 vai tratar (obrigação armada, `DRENAR_CANCELAMENTOS=1`, `FANOUT_RECONCILIAR=1`, org ativa, conexão
+  completa), senão avisam na hora; a fila insiste 2 vezes e avisa na 3ª. Aviso em estado parcial lista só o aberto.
+  **Devolução (`sync-devolucao`, claims) não é tocada por este épico: nem
   repõe estoque, nem notifica** — repor exige saber o que voltou e em que estado, decisão do
   operador, fora de escopo (ADR-0094). Toda a lógica de baixa/estorno é envolvida em try/catch — a
   venda é sagrada, nenhuma falha de estoque derruba o `sync-venda`. Redeploy: **v50**.
@@ -1905,6 +1912,8 @@ Lógica em `supabase/functions/_shared/galeria/`. Nenhuma edge desta família es
   para de esperar aos 100 s. Liga por `DRENAR_CANCELAMENTOS` (`1` = todas; lista de ids = só essas;
   ausente = desligada). Não roda no caminho legado nem sem `conta_externa_id`. Obrigação não concluída ou
   drenagem com erro deixa a rodada `parcial` (`cancelamentosPendentes`/`cancelamentosErro` no acumulado).
+  Emenda 8 ao ADR-0121: pedido com parte já estornada repõe só o aberto se o histórico provar que nunca saiu; sem
+  prova fica pendente nas 2 primeiras tentativas e avisa na 3ª (`cancelamento_tentativas`, lido com a geração).
   Reversão: remover a variável (o trigger continua armando).
   **Data de liberação do MP (ADR-0123, 18/08/2026):** o
   Passo 2 realinha `ml_vendas.money_release_date` de TODAS as vendas da org (não só as 72h) com o

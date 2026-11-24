@@ -3,8 +3,9 @@
 // Testável por vitest: não importa io.ts, queue.ts nem cancelamento-deps.ts. Fiação real em index.ts.
 import type { PedidoML } from '../_shared/faturamento/venda.ts';
 import {
-  entraNoCreditoKit, envioParaTratamento, type DepsCancelamento, type PedidoCancelado, type ResultadoCancelamento,
+  candidatoNuncaSaiu, entraNoCreditoKit, envioParaTratamento, type DepsCancelamento, type PedidoCancelado, type ResultadoCancelamento,
 } from '../_shared/estoque/cancelamento.ts';
+import type { ProvaNuncaSaiu } from '../_shared/estoque/nunca-saiu.ts';
 
 export const LOTE_CANCELAMENTOS = 20;
 export const CARENCIA = '5 minutes';
@@ -13,6 +14,8 @@ export const PRAZO_TOTAL_MS = 60_000;      // até aqui (desde o início da exec
 export const PRAZO_TRATAMENTO_MS = 30_000; // espera pelo tratamento de uma obrigação
 export const PRAZO_FINAL_MS = 100_000;     // daqui em diante só grava (até 10 s) e devolve; a posse da rodada é de 150 s
 const PARALELAS = 5;
+/** Emenda 8 ao ADR-0121: sem prova, sem leitura ou com sobra, fica pendente até aqui; depois segue para o aviso. */
+const TENTATIVAS_SEM_AVISO = 2;
 
 /** `1` = todas as orgs; lista de ids separada por vírgula = só essas; ausente = desligada. */
 export function drenagemLigada(valor: string | undefined, orgId: string): boolean {
@@ -35,7 +38,10 @@ export interface IoFila {
   ledger(orderIds: string[]): Promise<Map<string, Ledger>>;
   pedido(orderId: string): Promise<PedidoML>;
   envio(shippingId: number | string): Promise<{ status: string | null; substatus?: string | null } | null>;
-  aindaPendente(o: Obrigacao): Promise<boolean>;
+  /** `false` = geração trocada ou concluída. As tentativas (emenda 8) vêm da mesma linha; `true` = não lidas, conta 0. */
+  aindaPendente(o: Obrigacao): Promise<boolean | { tentativas: number }>;
+  /** Emenda 8 ao ADR-0121: histórico do envio. Ausente = como antes dela. */
+  lerNuncaSaiu?(shippingId: number | string): Promise<ProvaNuncaSaiu>;
   kitLigado(): Promise<boolean>;
   tratar(p: PedidoDaFila): Promise<ResultadoCancelamento>;
   /** Devolve quantas conclusões a RPC aceitou (geração corrente e ainda pendente). */
@@ -46,7 +52,7 @@ export interface IoFila {
 /** Lista fechada (ADR-0211 decisão 6). Membro novo de ResultadoCancelamento quebra a compilação aqui. */
 const DESFECHO_FILA = {
   reposto: 'confere-ledger', avisado: 'conclui', silenciado: 'conclui',
-  'sem-baixa': 'fica', pendente: 'fica', repetir: 'fica', ignorado: 'fica', erro: 'fica',
+  'sem-baixa': 'fica', pendente: 'fica', repetir: 'fica', adiado: 'fica', ignorado: 'fica', erro: 'fica',
 } as const satisfies Record<ResultadoCancelamento, 'conclui' | 'fica' | 'confere-ledger'>;
 
 /** `registrarPendenciaKit` vira função vazia: a retentativa do crédito de kit fica na fila própria. */
@@ -155,10 +161,13 @@ export async function drenarCancelamentos(
       orderId: o.orderId, statusPedido: 'cancelled', shipmentStatus, shipmentSubstatus, temEnvio, catalogoIncompleto: false,
       itens: abertas.map((b) => ({ codigo: b.codigoRef, quantity: b.quantidade })),
     };
+    let prova: Promise<ProvaNuncaSaiu> | undefined; // lida no máximo uma vez
+    if (io.lerNuncaSaiu && temEnvio) base.lerNuncaSaiu = () => (prova ??= io.lerNuncaSaiu!(p.shipping!.id!));
     const misto = abertas.length < l.baixas.filter((b) => b.codigoRef != null).length;
-    if (misto && !entraNoCreditoKit({ ...base, orgId: '', userId: null, canal: '', kitLigado: true })) {
-      return fica('parcial-sem-pre-despacho');
-    }
+    const corte = misto && !entraNoCreditoKit({ ...base, orgId: '', userId: null, canal: '', kitLigado: true });
+    if (corte && !base.lerNuncaSaiu) return fica('parcial-sem-pre-despacho');
+    const provado = corte && candidatoNuncaSaiu(base)
+      && await comPrazo(base.lerNuncaSaiu!, ate(PRAZO_CHAMADA_MS), 'histórico').catch(() => 'indisponivel') === 'sim';
 
     let kitOn: boolean;
     try { kitOn = await kitLigado(); } catch (e) {
@@ -166,14 +175,20 @@ export async function drenarCancelamentos(
       return null;
     }
     // 5. Depois de TODA espera, logo antes de tratar: a geração lida ainda está pendente? Erro ou prazo: sem registro.
+    let tentativas = 0;
     try {
-      if (!await comPrazo(() => io.aindaPendente(o), ate(PRAZO_CHAMADA_MS), 'aindaPendente')) return null;
+      const a = await comPrazo(() => io.aindaPendente(o), ate(PRAZO_CHAMADA_MS), 'aindaPendente');
+      if (!a) return null;
+      if (a !== true) tentativas = a.tentativas;
     } catch (e) { console.warn(`drenagem de cancelamentos: ${o.orderId} aindaPendente: ${msg(e)}`); return null; }
+
+    const insiste = tentativas < TENTATIVAS_SEM_AVISO;
+    if (corte && !provado && insiste) return fica('parcial-sem-pre-despacho');
 
     // 6. Tratamento com os itens do ledger. Prazo vencido: nem começa.
     let res: ResultadoCancelamento;
     try {
-      res = await comPrazo(() => io.tratar({ ...base, kitLigado: kitOn }), ate(PRAZO_TRATAMENTO_MS), 'tratamento');
+      res = await comPrazo(() => io.tratar({ ...base, kitLigado: kitOn, aoIndisponivel: () => (insiste ? 'erro' : 'avisar') }), ate(PRAZO_TRATAMENTO_MS), 'tratamento');
     } catch (e) {
       console.warn(`drenagem de cancelamentos: ${o.orderId} tratamento: ${msg(e)}`);
       return fica(e instanceof TempoEsgotado ? 'tratamento: tempo esgotado' : 'erro');

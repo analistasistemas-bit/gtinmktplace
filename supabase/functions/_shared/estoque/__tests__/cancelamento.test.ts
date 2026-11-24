@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { entraNoCreditoKit, envioParaTratamento, tratarPedidoCancelado, type DepsCancelamento } from '../cancelamento';
+import { entraNoCreditoKit, envioParaTratamento, tratarPedidoCancelado, type DepsCancelamento, type PedidoCancelado } from '../cancelamento';
+import type { ProvaNuncaSaiu } from '../nunca-saiu';
 
 /**
  * ADR-0121 — o tratamento de pedido cancelado passou a ter DOIS gatilhos (webhook e
@@ -49,6 +50,11 @@ function fakeDeps(over: Partial<DepsCancelamento> = {}) {
     classificarItensKit: () => Promise.reject(new Error('identidade inesperada')),
     gravarIdentidades: () => Promise.reject(new Error('identidade inesperada')),
     registrarPendenciaKit: () => Promise.reject(new Error('pendência inesperada')),
+    // Emenda 8: sem o thunk nada disto é lido.
+    baixasAbertas: () => Promise.reject(new Error('ledger inesperado')),
+    saldoMexidoDepois: () => Promise.reject(new Error('trava inesperada')),
+    notificacaoJaEnviada: () => Promise.reject(new Error('dedupe inesperado')),
+    filaAssume: () => Promise.reject(new Error('fila inesperada')),
     ...over,
   };
   return { chamadas, deps };
@@ -447,5 +453,269 @@ describe('tratarPedidoCancelado — ready_to_ship pelo substatus', () => {
     expect(envioParaTratamento({ status: 'ready_to_ship', substatus: 'picked_up' })).toEqual({ shipmentStatus: 'ready_to_ship', shipmentSubstatus: 'picked_up' });
     expect(envioParaTratamento({ status: 'shipped', substatus: null })).toEqual({ shipmentStatus: 'shipped', shipmentSubstatus: null });
     expect(envioParaTratamento(null)).toEqual({ shipmentStatus: null, shipmentSubstatus: null });
+  });
+});
+
+// Emenda 8 (24/11/2026) ao ADR-0121: envio `cancelled` sem substatus e nunca impresso repõe.
+describe('tratarPedidoCancelado: envio cancelado que nunca saiu', () => {
+  interface L { codigoRef: string; codigo: string; quantidade: number; estornada: boolean; some?: boolean }
+  const b = (codigoRef: string, quantidade = 1, codigo = codigoRef): L => ({ codigoRef, codigo, quantidade, estornada: false });
+  const est = (codigoRef: string, quantidade = 1): L => ({ ...b(codigoRef, quantidade), estornada: true });
+
+  /** Ledger vivo: o estorno marca a baixa; `some` = variação apagada (a RPC não credita e a baixa segue aberta). */
+  function cenario(o: {
+    ledger?: L[]; prova?: ProvaNuncaSaiu; mexido?: boolean; avisado?: boolean; assume?: boolean;
+    deps?: Partial<DepsCancelamento>; pedido?: Partial<PedidoCancelado>;
+  } = {}) {
+    const ledger = o.ledger ?? [b('00000029')];
+    const lido = { prova: 0, ledger: 0, saldo: 0, dedupe: 0, fila: 0 };
+    const { chamadas, deps } = fakeDeps({
+      estornarVendaCancelada: (_a, p) => {
+        chamadas.estornos.push({ orderId: p.orderId, itens: p.itens });
+        const aplicados: string[] = [];
+        for (const i of p.itens) {
+          const l = ledger.find((x) => x.codigoRef === i.codigo && !x.estornada && !x.some);
+          if (l) { l.estornada = true; aplicados.push(l.codigoRef); }
+        }
+        return Promise.resolve({ pendentesDePush: [], falhas: [], aplicados });
+      },
+      baixasAbertas: () => {
+        lido.ledger++;
+        return Promise.resolve({
+          abertas: ledger.filter((l) => !l.estornada).map(({ codigoRef, codigo, quantidade }) => ({ codigoRef, codigo, quantidade })),
+          haEstornada: ledger.some((l) => l.estornada),
+        });
+      },
+      saldoMexidoDepois: () => { lido.saldo++; return Promise.resolve(!!o.mexido); },
+      notificacaoJaEnviada: (_a, _o, entidade, chave) => {
+        lido.dedupe++;
+        return Promise.resolve(!!o.avisado && entidade === 'estoque_cancelado_despachado' && chave === String(BASE.orderId));
+      },
+      filaAssume: () => { lido.fila++; return Promise.resolve(!!o.assume); },
+      // Catálogo atual: o SKU resolvido não tem baixa. No ramo novo isto não decide nada.
+      houveBaixaDeVenda: () => Promise.resolve(false),
+      ...o.deps,
+    });
+    const pedido: PedidoCancelado = {
+      ...BASE, itens: [{ codigo: 'SKU-TROCADO', quantity: 9 }], shipmentStatus: 'cancelled', shipmentSubstatus: null,
+      lerNuncaSaiu: () => { lido.prova++; return Promise.resolve(o.prova ?? 'sim'); },
+      ...o.pedido,
+    };
+    return { chamadas, deps, lido, ledger, rodar: () => tratarPedidoCancelado(ADMIN, deps, pedido) };
+  }
+
+  it('com a prova repõe os SKUs abertos do ledger, despacha o push, relê o ledger e não avisa', async () => {
+    const c = cenario({ ledger: [b('00000029', 2), b('ABC:01'), est('OUTRO')] });
+    expect(await c.rodar()).toBe('reposto');
+    expect(c.chamadas.estornos).toEqual([{ orderId: BASE.orderId, itens: [{ codigo: '00000029', quantity: 2 }, { codigo: 'ABC:01', quantity: 1 }] }]);
+    expect(c.chamadas.despachos).toBe(1);
+    expect(c.chamadas.reservas).toEqual([]);
+    expect(c.lido).toMatchObject({ prova: 1, ledger: 2, saldo: 1 });
+  });
+
+  it('impressa (sem prova) avisa o texto de hoje, mesmo com o SKU do catálogo trocado', async () => {
+    const c = cenario({ prova: 'nao' });
+    expect(await c.rodar()).toBe('avisado');
+    expect(c.chamadas.estornos).toEqual([]);
+    expect(c.chamadas.reservas).toEqual([{ entidade: 'estoque_cancelado_despachado', chave: String(BASE.orderId) }]);
+    const hoje = fakeDeps();
+    await tratarPedidoCancelado(ADMIN, hoje.deps, { ...BASE, shipmentStatus: 'cancelled' });
+    expect(c.chamadas.notificacoes).toEqual(hoje.chamadas.notificacoes);
+  });
+
+  it.each([
+    ['substatus', { shipmentSubstatus: 'pack_splitted' }], ['entregue', { shipmentStatus: 'delivered' }],
+    ['envio não lido', { shipmentStatus: null }],
+  ])('%s: não lê o histórico nem repõe, aviso de hoje', async (_n, pedido) => {
+    const c = cenario({ pedido, deps: { houveBaixaDeVenda: () => Promise.resolve(true) } });
+    expect(await c.rodar()).toBe('avisado');
+    expect(c.lido).toMatchObject({ prova: 0, saldo: 0, dedupe: 0, fila: 0 });
+    expect(c.chamadas.estornos).toEqual([]);
+  });
+
+  it('pedido sem envio segue o pré-despacho de hoje, sem ler nada novo', async () => {
+    const c = cenario({ pedido: { temEnvio: false } });
+    expect(await c.rodar()).toBe('reposto');
+    expect(c.lido).toEqual({ prova: 0, ledger: 0, saldo: 0, dedupe: 0, fila: 0 });
+  });
+
+  it('sem o thunk: igual à main (avisa, sem ler nada novo)', async () => {
+    const c = cenario({ pedido: { lerNuncaSaiu: undefined }, deps: { houveBaixaDeVenda: () => Promise.resolve(true) } });
+    expect(await c.rodar()).toBe('avisado');
+    expect(c.lido).toEqual({ prova: 0, ledger: 0, saldo: 0, dedupe: 0, fila: 0 });
+  });
+
+  it('já avisado silencia sem ler o histórico nem reservar', async () => {
+    const c = cenario({ avisado: true });
+    expect(await c.rodar()).toBe('silenciado');
+    expect(c.lido.prova).toBe(0);
+    expect(c.chamadas.estornos).toEqual([]);
+    expect(c.chamadas.reservas).toEqual([]);
+  });
+
+  it.each([['tudo estornado', [est('00000029')]], ['sem baixa', []]])('%s: sem-baixa, sem histórico nem aviso falso', async (_n, ledger) => {
+    const c = cenario({ ledger, deps: { houveBaixaDeVenda: () => Promise.resolve(true) } });
+    expect(await c.rodar()).toBe('sem-baixa');
+    expect(c.lido.prova).toBe(0);
+    expect(c.chamadas.notificacoes).toEqual([]);
+  });
+
+  it('saldo mexido depois da baixa: avisa sem repor', async () => {
+    const c = cenario({ mexido: true });
+    expect(await c.rodar()).toBe('avisado');
+    expect(c.lido.saldo).toBe(1);
+    expect(c.chamadas.estornos).toEqual([]);
+  });
+
+  describe('indisponível', () => {
+    const falha = () => Promise.reject(new Error('fora'));
+    const casos: Array<[string, Parameters<typeof cenario>[0]]> = [
+      ['histórico indisponível', { prova: 'indisponivel' }],
+      ['histórico que lança', { pedido: { lerNuncaSaiu: falha } }],
+      ['ledger não lido', { deps: { baixasAbertas: falha, houveBaixaDeVenda: () => Promise.resolve(true) } }],
+      ['dedupe não lido', { deps: { notificacaoJaEnviada: falha } }],
+      ['trava não lida', { deps: { saldoMexidoDepois: falha } }],
+    ];
+    it.each(casos)('%s e a fila assume: adiado, sem repor nem reservar', async (_n, o) => {
+      const c = cenario({ ...o, assume: true });
+      expect(await c.rodar()).toBe('adiado');
+      expect(c.chamadas.estornos).toEqual([]);
+      expect(c.chamadas.reservas).toEqual([]);
+    });
+    it.each(casos)('%s e a fila não assume: avisa agora, sem repor', async (_n, o) => {
+      const c = cenario(o);
+      expect(await c.rodar()).toBe('avisado');
+      expect(c.lido.fila).toBe(1);
+      expect(c.chamadas.estornos).toEqual([]);
+    });
+    it('não deu para saber se a fila assume: avisa agora', async () => {
+      let consultas = 0;
+      const c = cenario({ prova: 'indisponivel', deps: { filaAssume: () => { consultas++; return falha(); } } });
+      expect(await c.rodar()).toBe('avisado');
+      expect(consultas).toBe(1);
+    });
+    it('a política da fila (p.aoIndisponivel) vale no lugar da consulta', async () => {
+      const c = cenario({ prova: 'indisponivel', assume: true, pedido: { aoIndisponivel: () => 'erro' } });
+      expect(await c.rodar()).toBe('erro');
+      const d = cenario({ prova: 'indisponivel', assume: true, pedido: { aoIndisponivel: () => 'avisar' } });
+      expect(await d.rodar()).toBe('avisado');
+      expect(c.lido.fila + d.lido.fila).toBe(0);
+      expect(c.chamadas.reservas).toEqual([]);
+    });
+  });
+
+  describe('estorno que deixa baixa aberta (variação apagada: a RPC responde duplicata para sempre)', () => {
+    const ledger = () => [b('00000029'), { ...b('APAGADO', 3), some: true }];
+    it('a fila não assume: avisa só o que ficou aberto', async () => {
+      const c = cenario({ ledger: ledger() });
+      expect(await c.rodar()).toBe('avisado');
+      const t = c.chamadas.notificacoes[0].texto;
+      expect(t).toContain('já voltou');
+      expect(t).toContain('APAGADO — 3 un.');
+      expect(t).not.toContain('00000029');
+    });
+    it('a fila assume: adiado; na fila: pendente', async () => {
+      expect(await cenario({ ledger: ledger(), assume: true }).rodar()).toBe('adiado');
+      expect(await cenario({ ledger: ledger(), pedido: { aoIndisponivel: () => 'erro' } }).rodar()).toBe('erro');
+    });
+    it('estorno que lança: o ledger decide (aberta → avisa; creditada → reposto)', async () => {
+      const c = cenario({ deps: { estornarVendaCancelada: () => Promise.reject(new Error('rpc')) } });
+      expect(await c.rodar()).toBe('avisado');
+      const d = cenario({ deps: { despacharPushPendente: () => Promise.reject(new Error('fila de push')) } });
+      expect(await d.rodar()).toBe('reposto');
+      expect(d.chamadas.notificacoes).toEqual([]);
+    });
+    it('releitura do ledger falhou: erro, sem mandar dar entrada no que pode já ter voltado', async () => {
+      let n = 0;
+      const c = cenario({ deps: { baixasAbertas: () => (n++ === 0
+        ? Promise.resolve({ abertas: [b('00000029')], haEstornada: false }) : Promise.reject(new Error('fora'))) } });
+      expect(await c.rodar()).toBe('erro');
+      expect(n).toBe(2);
+      expect(c.chamadas.reservas).toEqual([]);
+    });
+  });
+
+  describe('aviso em estado parcial', () => {
+    it('sem prova: só SKU e quantidade abertos, do movimento (base do kit vinculado), somados por SKU', async () => {
+      const c = cenario({ prova: 'nao', ledger: [est('VOLTOU', 4), b('KIT', 6, 'BASE'), b('BASE', 1), b('A', 2)] });
+      expect(await c.rodar()).toBe('avisado');
+      expect(c.chamadas.reservas).toEqual([{ entidade: 'estoque_cancelado_despachado', chave: String(BASE.orderId) }]);
+      const { categoria, texto } = c.chamadas.notificacoes[0];
+      expect(categoria).toBe('pos_venda');
+      expect(texto).toContain('• BASE — 7 un.\n• A — 2 un.');
+      expect(texto).toContain('já voltou');
+      expect(texto).not.toContain('VOLTOU');
+      expect(texto).not.toContain('KIT');
+      expect(texto).not.toContain('estoque NÃO reposto');
+    });
+    it('cancel_purchase também lista só o aberto', async () => {
+      const c = cenario({ prova: 'nao', ledger: [est('VOLTOU'), b('A', 2)],
+        deps: { claimDoPedido: () => Promise.resolve({ tipo: 'cancel_purchase', motivo: null, desfecho: null }) } });
+      expect(await c.rodar()).toBe('avisado');
+      const t = c.chamadas.notificacoes[0].texto;
+      expect(t).toContain(`Comprador cancelou o pedido ${BASE.orderId}`);
+      expect(t).toContain('• A — 2 un.');
+      expect(t).not.toContain('O estoque NÃO foi reposto');
+    });
+    it('vale fora do ramo novo (envio despachado), e a falha do ledger cai no texto de hoje', async () => {
+      const casa = { pedido: { shipmentStatus: 'shipped' }, ledger: [est('VOLTOU'), b('A', 2)] };
+      const baixa = { houveBaixaDeVenda: () => Promise.resolve(true) };
+      const c = cenario({ ...casa, deps: baixa });
+      expect(await c.rodar()).toBe('avisado');
+      expect(c.chamadas.notificacoes[0].texto).toContain('• A — 2 un.');
+      const d = cenario({ ...casa, deps: { ...baixa, baixasAbertas: () => Promise.reject(new Error('fora')) } });
+      expect(await d.rodar()).toBe('avisado');
+      expect(d.chamadas.notificacoes[0].texto).toContain('estoque NÃO reposto');
+    });
+  });
+
+  it('antesDoAviso roda antes de reservar o aviso; com erro nele, nada é reservado', async () => {
+    const ordem: string[] = [];
+    const c = cenario({ prova: 'nao', pedido: { antesDoAviso: () => { ordem.push('antes'); return Promise.resolve(); } },
+      deps: { reservarNotificacao: () => { ordem.push('reserva'); return Promise.resolve(true); } } });
+    await c.rodar();
+    expect(ordem).toEqual(['antes', 'reserva']);
+    const d = cenario({ prova: 'nao', pedido: { antesDoAviso: () => Promise.reject(new Error('x')) } });
+    expect(await d.rodar()).toBe('erro');
+    expect(d.chamadas.reservas).toEqual([]);
+  });
+
+  describe('kit com variação', () => {
+    const kit = (over: Partial<DepsCancelamento> = {}) => {
+      const agendados: string[][] = [];
+      const incertos: boolean[] = [];
+      const c = cenario({
+        ledger: [b('KIT-PB-M')], pedido: { kitLigado: true, catalogoIncompleto: true },
+        deps: {
+          classificarItensKit: (_a, p) => {
+            incertos.push(p.incerto);
+            return Promise.resolve(p.incerto ? { certos: [], incertos: p.itens, divergentes: [] } : { certos: p.itens, incertos: [], divergentes: [] });
+          },
+          gravarIdentidades: (_a, p) => Promise.resolve(p.itens),
+          skusParticipantes: (_a, _o, skus) => Promise.resolve(new Set(skus)),
+          agendarCancelamentoKit: (_a, p) => { agendados.push(p.codigos); return Promise.resolve([]); },
+          registrarPendenciaKit: () => Promise.resolve(),
+          ...over,
+        },
+      });
+      return { ...c, agendados, incertos };
+    };
+    it('credita e agenda a transferência com o SKU do ledger, mesmo com o catálogo incompleto', async () => {
+      const c = kit();
+      expect(await c.rodar()).toBe('reposto');
+      expect(c.agendados).toEqual([['KIT-PB-M']]);
+      expect(c.incertos).toEqual([false]);
+    });
+    const semCredito = () => Promise.resolve({ pendentesDePush: [], falhas: [{ codigo: 'KIT-PB-M', mensagem: 'x' }], aplicados: [] });
+    it('pendente preserva a retentativa e não manda dar entrada', async () => {
+      const c = kit({ estornarVendaCancelada: semCredito });
+      expect(await c.rodar()).toBe('pendente');
+      expect(c.chamadas.reservas.map((r) => r.entidade)).toEqual(['estoque_cancelado_kit_pendente']);
+    });
+    it('repetir passa direto, sem aviso de entrada', async () => {
+      const c = kit({ estornarVendaCancelada: semCredito, registrarPendenciaKit: () => Promise.reject(new Error('banco')) });
+      expect(await c.rodar()).toBe('repetir');
+      expect(c.chamadas.reservas).toEqual([]);
+    });
   });
 });

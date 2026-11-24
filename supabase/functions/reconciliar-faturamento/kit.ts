@@ -1,6 +1,6 @@
 // ADR-0200 (Task 8): o desfecho do crédito de kit com variação entra no desfecho do claim e do pedido. Sem crédito
 // nem obrigação gravada (`repetir`), nada pode marcar o trabalho como feito.
-import { entraNoCreditoKit, type PedidoCancelado, type ResultadoCancelamento } from '../_shared/estoque/cancelamento.ts';
+import { candidatoNuncaSaiu, entraNoCreditoKit, type PedidoCancelado, type ResultadoCancelamento } from '../_shared/estoque/cancelamento.ts';
 
 export interface IoClaim {
   kitLigado: boolean;
@@ -19,7 +19,8 @@ const NAO_GRAVADA = 'kit_cancelamento: obrigação de crédito não gravada';
  * Um claim. Sem o módulo: a ordem de hoje (devolução, pedido, cancelamento), sem consulta nova. Com o módulo e
  * pedido no crédito de kit: cancelamento ANTES da devolução; `repetir` lança sem gravar a devolução, então o
  * claim continua no filtro e conta como falha. Fora do crédito de kit, a devolução vem antes (o aviso pós-despacho
- * lê o `cancel_purchase` dela).
+ * lê o `cancel_purchase` dela). Envio cancelado que pode nunca ter saído (emenda 8 ao ADR-0121) pode cair em
+ * qualquer dos dois: trata antes, e a devolução é gravada logo antes do aviso, se houver aviso.
  */
 export async function processarClaim(io: IoClaim): Promise<void> {
   if (!io.kitLigado) {
@@ -34,6 +35,13 @@ export async function processarClaim(io: IoClaim): Promise<void> {
     return;
   }
   const p = await io.prepararPedido(r.orderId);
+  if (candidatoNuncaSaiu(p)) {
+    let gravada: Promise<unknown> | undefined;
+    const gravar = () => (gravada ??= io.gravarDevolucao());
+    if (await io.tratar({ ...p, antesDoAviso: gravar }) === 'repetir') throw new Error(NAO_GRAVADA);
+    await gravar();
+    return;
+  }
   if (entraNoCreditoKit(p)) {
     if (await io.tratar(p) === 'repetir') throw new Error(NAO_GRAVADA);
     await io.gravarDevolucao();
