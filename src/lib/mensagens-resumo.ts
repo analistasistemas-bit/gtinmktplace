@@ -12,10 +12,15 @@ export interface ResumoMensagens {
 
 const A_PREPARAR = ['pending', 'handling', 'ready_to_ship'];
 
+/** Não lida no ML e não dispensada aqui: dispensar (`lida`) tira da contagem mesmo sem abrir no ML. */
+export function temNaoLida(c: Pick<Conversa, 'mensagens'>): boolean {
+  return c.mensagens.some((m) => m.direcao === 'recebida' && !m.lida_ml_em && !m.lida);
+}
+
 /** Em qual card a conversa cai (ou null: encerrada, ou lida/dispensada sem estar em nenhum). */
 export function baldeDaConversa(c: Conversa): Balde | null {
   if (conversaEncerrada(c)) return null;
-  if (c.idsNaoLidosML.length > 0) {
+  if (temNaoLida(c)) {
     if (c.shipping_status && A_PREPARAR.includes(c.shipping_status)) return 'aPreparar';
     if (c.shipping_status === 'shipped') return 'aCaminho';
     if (c.shipping_status === 'delivered') return 'entregues';
@@ -34,7 +39,7 @@ export function resumirConversas(conversas: Conversa[]): ResumoMensagens {
   };
   for (const c of conversas) {
     if (conversaEncerrada(c)) continue;
-    if (c.idsNaoLidosML.length > 0) r.naoLidas.total++;
+    if (temNaoLida(c)) r.naoLidas.total++;
     const b = baldeDaConversa(c);
     if (b === 'aPreparar' || b === 'aCaminho' || b === 'entregues') r.naoLidas[b]++;
     else if (b === 'semResponder' || b === 'respondidas') r.lidas[b]++;

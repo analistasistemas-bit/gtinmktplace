@@ -13,6 +13,7 @@ function fakeChain(resultado: unknown) {
   const chain: any = {
     select: () => chain,
     eq: () => chain,
+    is: vi.fn(() => chain),
     then: (resolve: any) => Promise.resolve(resultado).then(resolve),
   };
   return chain;
@@ -20,8 +21,10 @@ function fakeChain(resultado: unknown) {
 
 describe('contarPerguntasNaoRespondidas', () => {
   it('retorna a contagem de não respondidas', async () => {
-    mockFrom.mockReturnValue(fakeChain({ count: 4, error: null }));
+    const chain = fakeChain({ count: 4, error: null });
+    mockFrom.mockReturnValue(chain);
     expect(await contarPerguntasNaoRespondidas()).toBe(4);
+    expect(chain.is).toHaveBeenCalledWith('dispensada_em', null); // dispensada sai do badge
   });
 
   it('count null → 0', async () => {

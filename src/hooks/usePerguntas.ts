@@ -1,12 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 
-/** Conta perguntas não respondidas. Lança em erro (o hook expõe `isError`). */
+/** Conta perguntas não respondidas e não dispensadas. Lança em erro (o hook expõe `isError`). */
 export async function contarPerguntasNaoRespondidas(): Promise<number> {
   const { count, error } = await supabase
     .from('ml_perguntas')
     .select('id', { count: 'exact', head: true })
-    .eq('status', 'UNANSWERED');
+    .eq('status', 'UNANSWERED')
+    .is('dispensada_em', null);
   if (error) throw new Error(error.message);
   return count ?? 0;
 }

@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
-import { Sparkles, Send, MessageCircleQuestion, ExternalLink } from 'lucide-react';
+import { Check, Sparkles, Send, MessageCircleQuestion, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { QK } from '@/lib/queries';
 import {
-  fetchPerguntasPagina, buscarPerguntas, pergCasaStatus, responderPergunta, sugerirResposta,
+  fetchPerguntasPagina, buscarPerguntas, pergCasaStatus, responderPergunta, dispensarPerguntas, sugerirResposta,
   agruparPerguntas, type GrupoPerguntas, type FiltroStatusPergunta,
 } from '@/lib/perguntas';
 import { fmtDataCurta, URL_PERGUNTAS_ML } from '@/lib/ml-status';
@@ -27,14 +27,19 @@ function CardPergunta({ grupo }: { grupo: GrupoPerguntas }) {
   // Perguntas ≠ anúncios: o mesmo comprador chega a perguntar duas vezes no mesmo item.
   const anuncios = [...new Map(grupo.perguntas.map((q) => [q.item_id ?? q.id, q])).values()];
   const respondida = p.status !== 'UNANSWERED';
+  const dispensada = !respondida && !!p.dispensada_em;
   // O ML recusa resposta em anúncio não ativo (400 not_active_item). Só avisa: o status vem do
   // coletor de tráfego e pode estar defasado logo após reativar, então não bloqueia o envio.
-  const inativo = !respondida && grupo.perguntas.some((q) => q.anuncio_status && q.anuncio_status !== 'active');
+  const inativas = respondida ? [] : grupo.perguntas.filter((q) => q.anuncio_status && q.anuncio_status !== 'active');
+  const inativo = inativas.length > 0;
+  // Grupo misto: dispensa só as de anúncio inativo; as outras ainda podem ser respondidas.
+  const aDispensar = inativo ? inativas : grupo.perguntas;
   const rotuloInativo = grupo.perguntas.some((q) => q.anuncio_status === 'paused') ? 'Anúncio pausado'
     : grupo.perguntas.some((q) => q.anuncio_status === 'closed') ? 'Anúncio finalizado' : 'Anúncio inativo';
   const [texto, setTexto] = useState('');
   const [sugerindo, setSugerindo] = useState(false);
   const [enviando, setEnviando] = useState(false);
+  const [dispensando, setDispensando] = useState(false);
 
   async function sugerir() {
     setSugerindo(true);
@@ -69,8 +74,21 @@ function CardPergunta({ grupo }: { grupo: GrupoPerguntas }) {
     } finally { setEnviando(false); }
   }
 
+  async function dispensar() {
+    setDispensando(true);
+    try {
+      const n = await dispensarPerguntas(aDispensar.map((q) => q.question_id));
+      if (n === 0) toast.info('Nenhuma pergunta para dispensar.');
+      else toast.success(n > 1 ? `${n} perguntas dispensadas.` : 'Pergunta dispensada.');
+      await qc.invalidateQueries({ queryKey: ['perguntas'] });
+      await qc.invalidateQueries({ queryKey: ['perguntasNaoRespondidas'] });
+    } catch (e) {
+      toast.error(`Falha ao dispensar: ${(e as Error).message}`);
+    } finally { setDispensando(false); }
+  }
+
   return (
-    <div className={cn('rounded-lg border bg-card p-4', !respondida && 'border-warning/40')}>
+    <div className={cn('rounded-lg border bg-card p-4', !respondida && !dispensada && 'border-warning/40')}>
       <div className="mb-2 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
@@ -96,12 +114,14 @@ function CardPergunta({ grupo }: { grupo: GrupoPerguntas }) {
         </div>
         <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
           {inativo && <StatusPill tone="danger">{rotuloInativo}</StatusPill>}
-          <StatusPill tone={respondida ? 'success' : 'warning'}>{respondida ? 'Respondida' : 'Pendente'}</StatusPill>
+          <StatusPill tone={respondida ? 'success' : dispensada ? 'neutral' : 'warning'}>
+            {respondida ? 'Respondida' : dispensada ? 'Dispensada' : 'Pendente'}
+          </StatusPill>
         </div>
       </div>
       {inativo && (
         <p className="mb-2 text-xs text-muted-foreground">
-          O Mercado Livre só aceita a resposta com o anúncio ativo: reative o anúncio no Mercado Livre para responder.
+          O Mercado Livre só aceita a resposta com o anúncio ativo: reative o anúncio no Mercado Livre para responder{dispensada ? '.' : ' ou dispense a pergunta.'}
         </p>
       )}
 
@@ -118,15 +138,30 @@ function CardPergunta({ grupo }: { grupo: GrupoPerguntas }) {
             rows={3}
             maxLength={2000}
           />
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <Button variant="outline" size="sm" onClick={sugerir} disabled={sugerindo}>
               <Sparkles className={cn('mr-1.5 h-4 w-4', sugerindo && 'animate-pulse')} />
               {sugerindo ? 'Gerando…' : 'Sugerir resposta (IA)'}
             </Button>
-            <Button size="sm" onClick={responder} disabled={enviando || !texto.trim()}>
-              <Send className="mr-1.5 h-4 w-4" />
-              {enviando ? 'Enviando…' : repetidas > 1 ? `Responder as ${repetidas}` : 'Responder'}
-            </Button>
+            <div className="flex items-center gap-2">
+              {!dispensada && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={dispensar}
+                  disabled={dispensando || enviando}
+                  title="Tira a pergunta de Pendentes sem responder; ela continua em Todas."
+                >
+                  <Check className="mr-1.5 h-4 w-4" />
+                  {dispensando ? 'Dispensando…' : aDispensar.length < repetidas ? `Dispensar ${aDispensar.length} de ${repetidas}`
+                    : repetidas > 1 ? `Dispensar as ${repetidas}` : 'Dispensar'}
+                </Button>
+              )}
+              <Button size="sm" onClick={responder} disabled={enviando || dispensando || !texto.trim()}>
+                <Send className="mr-1.5 h-4 w-4" />
+                {enviando ? 'Enviando…' : repetidas > 1 ? `Responder as ${repetidas}` : 'Responder'}
+              </Button>
+            </div>
           </div>
         </div>
       )}
@@ -180,7 +215,7 @@ export function AbaPerguntas() {
   // (a tela mostra 20 por vez, o relatório é "os dados desta aba", não "esta tela").
   async function montarReport() {
     const todas = await buscarPerguntas();
-    return buildPerguntasReport(todas.filter((p) => pergCasaStatus(p.status, statusFiltro)));
+    return buildPerguntasReport(todas.filter((p) => pergCasaStatus(p, statusFiltro)));
   }
 
   return (

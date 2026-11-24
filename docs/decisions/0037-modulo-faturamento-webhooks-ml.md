@@ -70,3 +70,19 @@ O endpoint é público (`verify_jwt=false`), igual aos workers QStash, mas inert
   → marcada PubliAI, com código/EAN resolvidos. Mesma estratégia do financeiro.
 - Atualiza a memória `reference_ml_permissao_pedidos`: `/orders` **funciona**; o que estava
   bloqueado era `/moderations` e `/orders` de *outros* contextos, não a venda do próprio seller.
+
+## Emenda 2026-11-24 — dispensar pergunta
+
+O ML recusa resposta em anúncio pausado ou finalizado (400 `not_active_item`) e a pergunta ficava presa em
+Pendentes e no badge, sem saída na tela.
+
+- `ml_perguntas.dispensada_em` (migration `20261124190139_dispensar_perguntas_e_nao_lidas.sql`): estado **local** da organização. `status` segue espelho
+  do ML e nada é escrito nem apagado no ML. O upsert do worker não envia a coluna, então o sync não desfaz.
+- Escrita só por `dispensar_perguntas(bigint[])` (security definer, `can_write_current_org()`, só a própria
+  org, só `UNANSWERED`).
+- Pendente = `UNANSWERED` sem `dispensada_em` (aba, badges, exportação). A dispensada continua em Todas, com
+  a etiqueta "Dispensada", e ainda pode ser respondida se o anúncio for reativado.
+- O botão vale para qualquer pendente, não só para anúncio pausado: o status do anúncio vem do coletor de
+  tráfego e pode estar defasado ou ausente.
+- Card que agrupa a mesma pergunta em vários anúncios: se parte está inativa, dispensa só essa parte.
+- Sem reabertura automática quando o anúncio é reativado.

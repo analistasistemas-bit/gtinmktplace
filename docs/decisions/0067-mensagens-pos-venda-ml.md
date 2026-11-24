@@ -289,3 +289,14 @@ do orquestrador; não há script no repositório.
    instante); "Conferir" recupera o estado real.
 8. O registro de exibição (`registrar_estado_conversa`) tem prazo de 3 s: se a RPC não responder a tempo,
    o chamador segue sem ele (aviso no log) e o estado fica para a próxima sincronização do pack.
+
+## Emenda 2026-11-24 — conversa dispensada sai das não lidas
+
+"Dispensar" grava só `lida` (local), mas o contador de não lidas olhava só `lida_ml_em` (leitura no ML).
+Conversa dispensada sem ter sido aberta saía de Aguardando e ficava no badge (caso real na Avil).
+
+- Não lida ⇔ recebida com `lida_ml_em` nulo **e** `lida = false`, em `resumo_mensagens_posvenda`
+  (migration `20261124190139_dispensar_perguntas_e_nao_lidas.sql`) e no front (`temNaoLida` em `src/lib/mensagens-resumo.ts`: cards, ponto azul, negrito).
+- Mensagem nova do comprador entra com `lida = false` e volta a contar.
+- Dispensar continua sem escrever no ML: a mensagem segue não lida lá. Abrir a conversa dispensada ainda a
+  marca como lida no ML (`idsNaoLidosML` não mudou).

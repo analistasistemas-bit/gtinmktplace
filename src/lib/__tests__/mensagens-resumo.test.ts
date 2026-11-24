@@ -12,6 +12,7 @@ function msg(direcao: 'recebida' | 'enviada', extra: Partial<Mensagem> = {}): Me
 
 function conversa(over: Partial<Conversa> & { ultimaMsg?: Mensagem; naoLidaML?: boolean }): Conversa {
   const m = over.ultimaMsg ?? msg('recebida');
+  if (over.naoLidaML === false) m.lida_ml_em = '2026-10-28T11:00:00Z';
   return {
     pack_id: 'p', order_id: 'o', item_titulo: null, item_id: null, comprador_nome: null, comprador_nick: null,
     order_status: 'paid', conversa_status: null, mensagens: [m], aguardando: false, ultima: m.data_ml,
@@ -44,6 +45,20 @@ describe('resumirConversas', () => {
   it('dispensar (lida=true) tira de sem responder', () => {
     const r = resumirConversas([conversa({ naoLidaML: false, ultimaMsg: msg('recebida', { lida: true }) })]);
     expect(r.lidas).toEqual({ semResponder: 0, respondidas: 0 });
+  });
+
+  // Caso real (24/11): dispensada sem nunca abrir no ML — sumia da lista e o badge seguia com 1.
+  it('dispensada sem leitura no ML não conta como não lida', () => {
+    const c = conversa({ shipping_status: 'delivered', ultimaMsg: msg('recebida', { lida: true }) });
+    expect(baldeDaConversa(c)).toBeNull();
+    expect(mensagensPendentes(resumirConversas([c]))).toBe(0);
+  });
+
+  it('mensagem nova depois de dispensar volta a contar como não lida', () => {
+    const antiga = msg('recebida', { lida: true });
+    const nova = msg('recebida');
+    const c = conversa({ mensagens: [antiga, nova], idsNaoLidosML: [antiga.message_id, nova.message_id] });
+    expect(baldeDaConversa(c)).toBe('aPreparar');
   });
 
   it('última enviada = respondida', () => {

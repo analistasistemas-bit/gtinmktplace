@@ -9,6 +9,7 @@ const fetchMock = vi.fn();
 const exportarMock = vi.fn();
 const montarReportSpy = vi.fn();
 const responderMock = vi.fn();
+const dispensarMock = vi.fn();
 
 vi.mock('@/lib/perguntas', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/perguntas')>();
@@ -17,6 +18,7 @@ vi.mock('@/lib/perguntas', async (importOriginal) => {
     fetchPerguntasPagina: (...args: Parameters<typeof actual.fetchPerguntasPagina>) => fetchMock(...args),
     buscarPerguntas: () => exportarMock(),
     responderPergunta: (...args: Parameters<typeof actual.responderPergunta>) => responderMock(...args),
+    dispensarPerguntas: (...args: Parameters<typeof actual.dispensarPerguntas>) => dispensarMock(...args),
   };
 });
 
@@ -54,6 +56,8 @@ describe('AbaPerguntas', () => {
     montarReportSpy.mockReset();
     responderMock.mockReset();
     responderMock.mockResolvedValue({ ok: true });
+    dispensarMock.mockReset();
+    dispensarMock.mockResolvedValue(1);
     fetchMock.mockResolvedValue(pagina(PERGUNTAS, 2));
   });
 
@@ -69,6 +73,43 @@ describe('AbaPerguntas', () => {
     renderAba();
     await screen.findByText('Tem estoque?');
     expect(screen.queryByText(/Anúncio (pausado|finalizado|inativo)/)).not.toBeInTheDocument();
+  });
+
+  it('pendente em anúncio pausado: Dispensar tira da fila e refaz lista e badge', async () => {
+    fetchMock.mockResolvedValueOnce(pagina([{ ...PERGUNTAS[0], status: 'UNANSWERED', resposta: null, anuncio_status: 'paused' }], 1));
+    fetchMock.mockResolvedValue(pagina([], 0));
+    const qc = renderAba();
+    const invalidar = vi.spyOn(qc, 'invalidateQueries');
+    await userEvent.click(await screen.findByRole('button', { name: 'Dispensar' }));
+    expect(dispensarMock).toHaveBeenCalledWith([1]);
+    expect(await screen.findByText('Nenhuma pergunta pendente.')).toBeInTheDocument();
+    expect(invalidar).toHaveBeenCalledWith({ queryKey: ['perguntasNaoRespondidas'] });
+    expect(responderMock).not.toHaveBeenCalled();
+  });
+
+  it('grupo misto (um pausado, um ativo): dispensa só a do anúncio pausado', async () => {
+    const r = { ...PERGUNTAS[0], status: 'UNANSWERED', resposta: null };
+    fetchMock.mockResolvedValue(pagina([
+      { ...r, id: 'g-1', question_id: 201, item_id: 'MLB1', anuncio_status: 'paused' },
+      { ...r, id: 'g-2', question_id: 202, item_id: 'MLB2', anuncio_status: 'active' },
+    ], 2));
+    renderAba();
+    await userEvent.click(await screen.findByRole('button', { name: 'Dispensar 1 de 2' }));
+    expect(dispensarMock).toHaveBeenCalledWith([201]);
+  });
+
+  it('dispensada (aba Todas): marca Dispensada, sem botão Dispensar, ainda dá para responder', async () => {
+    fetchMock.mockResolvedValue(pagina([{ ...PERGUNTAS[0], status: 'UNANSWERED', resposta: null, dispensada_em: '2026-11-24T12:00:00Z' }], 1));
+    renderAba();
+    expect(await screen.findByText('Dispensada')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Dispensar' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Responder' })).toBeInTheDocument();
+  });
+
+  it('pergunta respondida não oferece Dispensar', async () => {
+    renderAba();
+    await screen.findByText('· Carla Fabiana');
+    expect(screen.queryByRole('button', { name: /Dispensar/ })).not.toBeInTheDocument();
   });
 
   it('abre na aba Pendentes, página 1', async () => {

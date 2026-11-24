@@ -1,5 +1,11 @@
 # PubliAI — Tasks
 
+## Dispensar: contador de mensagens e perguntas (emendas 24/11 aos ADR-0067 e 0037) — 2026-11-24
+
+- [x] Conversa dispensada sem abrir no ML sai do contador de não lidas (RPC + front).
+- [x] Botão Dispensar em Perguntas (`ml_perguntas.dispensada_em`, RPC `dispensar_perguntas`).
+- [ ] `supabase db push` da `20261124190139_dispensar_perguntas_e_nao_lidas.sql` **antes** do front no ar (a tela lê a coluna nova).
+
 ## Fila própria de cancelamento (ADR-0211) — 2026-11-24
 
 - [x] Código na branch `feat/adr-0211-fila-cancelamento`: migration `20261124091308_ml_vendas_cancelamento_fila.sql` (colunas, trigger que só arma, 3 RPCs), drenagem `reconciliar-faturamento/cancelamentos.ts`, chamada no fim da etapa `pendencias`, testes F1–F32, P1–P9, B1–B3, I1, teste SQL S1–S19 e script de ensaio.

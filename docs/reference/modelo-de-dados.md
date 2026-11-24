@@ -958,6 +958,8 @@ Perguntas de compradores. *Migration `20260622193354_faturamento_perguntas.sql` 
 `question_id` (único com user), `item_id`, `item_titulo`, `texto`, `criada_em`,
 `comprador_id`, `status` (`unanswered`/`answered`/`banned`), `resposta`, `respondida_em`,
 `raw jsonb`.
+**`dispensada_em timestamptz`** (emenda 24/11/2026 ao ADR-0037, migration `20261124190139_dispensar_perguntas_e_nao_lidas.sql`): dispensada pela org;
+sai de Pendentes e do badge. Local, escrita só por `dispensar_perguntas(bigint[])`; o upsert do worker não a envia.
 
 ### `ml_webhook_eventos`
 Dedup de webhooks. *Mesma migration de vendas (ADR-0037).*
@@ -981,7 +983,7 @@ bypassa RLS).
 leitura **no ML**. Monotônico: só sai de `null`, gravado por `coalesce(lida_ml_em, $1)` e nunca pelo
 upsert de `raw`. Backfill inicial de `raw->'message_date'->>'read'`. **Distinto de `lida`**, que
 continua sendo "dispensada/tratada localmente" (badge do menu, Dispensar). O contador "não lidas"
-da aba usa `lida_ml_em`; "sem responder" usa `lida`.
+da aba exige `lida_ml_em` nulo **e** `lida = false` (emenda 24/11/2026 ao ADR-0067); "sem responder" usa `lida`.
 
 ### `ml_conversas`
 Estado da conversa pós-venda **por pack**, como o ML informa em `conversation_status` (emenda 2026-11-23
