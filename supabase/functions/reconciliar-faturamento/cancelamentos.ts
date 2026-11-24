@@ -59,7 +59,8 @@ const STATUS_PEDIDO = new Set(['confirmed', 'payment_required', 'payment_in_proc
   'partially_refunded', 'invalid', 'cancelled']);
 /** Status de envio do ML. Fora desta lista o envio conta como não lido. */
 const STATUS_ENVIO = new Set(['to_be_agreed', 'pending', 'handling', 'ready_to_ship', 'shipped', 'delivered',
-  'not_delivered', 'not_verified', 'cancelled', 'closed', 'error', 'active', 'inactive', 'stale']);
+  'not_delivered', 'not_verified', 'cancelled', 'closed', 'error', 'active', 'inactive', 'stale',
+  'stale_ready_to_ship', 'stale_shipped']);
 
 class TempoEsgotado extends Error {}
 

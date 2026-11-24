@@ -462,6 +462,15 @@ describe('drenarCancelamentos', () => {
     }
   });
 
+  it('F37 (r5). envio stale_ready_to_ship / stale_shipped é status válido do ML: segue para o tratamento', async () => {
+    for (const status of ['stale_ready_to_ship', 'stale_shipped']) {
+      const f = criarIo([ob('o1')], { envio: vi.fn(async () => ({ status })) });
+      await drenarCancelamentos(f.io, 'L1');
+      expect(f.io.tratar, status).toHaveBeenCalledTimes(1);
+      expect(f.io.tratar.mock.calls[0][0].shipmentStatus).toBe(status);
+    }
+  });
+
   it('F35 (r3). prazo final vencido antes de tratar: o tratamento nem começa', async () => {
     let relogio = 0;
     const f = criarIo([ob('o1')], {
