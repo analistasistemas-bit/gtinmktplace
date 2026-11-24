@@ -1,5 +1,5 @@
 // ADR-0173: um lote do reconciliar agendado por org, retomável pelo cursor:
-// pendencias → perguntas → claims → enriquecer (linhas antigas) → mensagens (não lidas) → posvenda (ações pendentes) → vendas (72h) → liberacoes (120 d do MP) → fim.
+// pendencias (e, com a fila comum vazia, a drenagem de cancelamentos do ADR-0211) → perguntas → claims → enriquecer (linhas antigas) → mensagens (não lidas) → posvenda (ações pendentes) → vendas (72h) → liberacoes (120 d do MP) → fim.
 // Puro — só `import type` e módulos puros —, testável por vitest. Fiação real em index.ts.
 import type { ConexaoCanal } from '../_shared/canais/conexao.ts';
 import type { PedidoML } from '../_shared/faturamento/venda.ts';
@@ -46,6 +46,9 @@ export interface DepsReconciliar {
   processarPedidos(token: string, cx: ConexaoCanal, userId: string, orgId: string, pedidos: PedidoML[]): Promise<ResultadoPedidos>;
   /** carregarLiquidoMP (120 d) + reconciliarLiberacoes. MP null → loga e devolve 0. */
   liberacoes(token: string, cx: ConexaoCanal, orgId: string, hojeBRT: string): Promise<number>;
+  /** ADR-0211: um lote da fila de cancelamento, fixado por `lote` (`params.ate`). `inicioMs` = início desta execução:
+   *  os prazos da drenagem contam dele. Devolve zeros quando desligada. */
+  drenarCancelamentos(token: string, cx: ConexaoCanal, userId: string, lote: string, inicioMs: number): Promise<{ concluidos: number; pendentes: number }>;
 }
 
 export interface ResultadoPedidos { ok: string[]; falhas: string[]; mpFalhou: string[] }
@@ -88,6 +91,8 @@ export function passoReconciliar(deps: DepsReconciliar, orgId: string): Passo<Pa
   }
 
   return async ({ cursor, acumulado, params }) => {
+    // ADR-0211: antes de conexão, token e pendências; o orçamento da drenagem conta o que já foi gasto.
+    const inicioMs = Date.parse(deps.agora());
     const conexao = await deps.conexao();
     // Conexão sem dono é estado estrutural (o legado pula), não falha.
     if (!conexao || !conexao.userId) return { proximo: null, acumulado };
@@ -101,7 +106,18 @@ export function passoReconciliar(deps: DepsReconciliar, orgId: string): Passo<Pa
       const inicio = deps.agora();
       // Ordem de TEXTO de order_id (lerPendencias), então o cursor é o último do array como veio.
       const ids = await deps.pendencias(c.pos, LOTE_PENDENCIAS);
-      if (ids.length === 0) return { proximo: ir('perguntas'), acumulado };
+      if (ids.length === 0) {
+        // ADR-0211: a drenagem roda sozinha nesta execução e nunca segura as etapas seguintes.
+        let acc = acumulado;
+        try {
+          const d = await deps.drenarCancelamentos(token, cx, userId, params.ate, inicioMs);
+          acc = somar(somar(acc, 'cancelamentosTratados', d.concluidos), 'cancelamentosPendentes', d.pendentes);
+        } catch (e) {
+          console.error(`reconciliar: drenagem de cancelamentos da org ${orgId} falhou: ${(e as Error)?.message ?? e}`);
+          acc = somar(acc, 'cancelamentosErro', 1);
+        }
+        return { proximo: ir('perguntas'), acumulado: acc };
+      }
       const lidos: PedidoML[] = [];
       const falhasLeitura: string[] = [];
       for (const lote of chunk(ids, PARALELAS)) {
@@ -113,8 +129,8 @@ export function passoReconciliar(deps: DepsReconciliar, orgId: string): Passo<Pa
       }
       const r = lidos.length ? await deps.processarPedidos(token, cx, userId, orgId, lidos) : resultadoVazio();
       const acc = await registrar(acumulado, { ...r, falhas: [...falhasLeitura, ...r.falhas] }, inicio);
-      const proximo = ids.length === LOTE_PENDENCIAS ? ir('pendencias', ids[ids.length - 1]) : ir('perguntas');
-      return { proximo, acumulado: acc };
+      // Sempre volta a `pendencias`: a execução com a fila comum vazia é a que drena os cancelamentos.
+      return { proximo: ir('pendencias', ids[ids.length - 1]), acumulado: acc };
     }
 
     if (c.etapa === 'perguntas') {
@@ -182,8 +198,13 @@ export function passoReconciliar(deps: DepsReconciliar, orgId: string): Passo<Pa
 
 function fim(acumulado: Acumulado, pendentes: number): ResultadoPasso {
   const descartados = acumulado.pedidosDescartados ?? 0;
-  const parcial = pendentes > 0
-    ? `${pendentes} pedido(s) pendente(s)`
-    : descartados > 0 ? `${descartados} pedido(s) descartado(s) após 5 tentativas` : null;
-  return { proximo: null, acumulado, parcial };
+  const canc = acumulado.cancelamentosPendentes ?? 0;
+  const partes = [
+    pendentes > 0 ? `${pendentes} pedido(s) pendente(s)`
+      : descartados > 0 ? `${descartados} pedido(s) descartado(s) após 5 tentativas` : null,
+    // ADR-0211: obrigação não concluída, ou drenagem que falhou, deixa a rodada `parcial`.
+    canc > 0 ? `${canc} cancelamento(s) aguardando tratamento`
+      : (acumulado.cancelamentosErro ?? 0) > 0 ? 'drenagem de cancelamentos falhou' : null,
+  ].filter(Boolean);
+  return { proximo: null, acumulado, parcial: partes.length ? partes.join('; ') : null };
 }
