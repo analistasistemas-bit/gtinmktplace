@@ -1,0 +1,9 @@
+# Deploy: npx wrangler@4 deploy --config infra/mcp-worker/wrangler.toml (ADR-0210, Emenda 1)
+name = "publiai-mcp"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+workers_dev = false
+routes = [{ pattern = "mcp.publiai.daludi.com.br", custom_domain = true }]
+
+[observability]
+enabled = false

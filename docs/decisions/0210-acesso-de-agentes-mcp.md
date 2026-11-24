@@ -151,3 +151,14 @@ Conduzido pelo Diego na Zaven, com uma chave criada pela tela (prefixo `ad62ca5f
 - Clientes não testados: OpenClaw (a CLI aceita `--header`), Hermes (servidor remoto) e Muse Code (não instalado).
 - ChatGPT só conecta com a fatia 2.
 - As pendências aceitas para o piloto listadas acima, exceto a do `/items/bulk`.
+
+## Emenda 1 — conexão mais fácil sem OAuth (2026-11-23)
+
+Aprovada pelo Diego em 2026-11-23, depois do aceite em uso real. A fatia 2 (OAuth) fica adiada; estas mudanças reduzem o trabalho de conectar com a chave da fatia 1.
+
+1. **Validade opcional.** A decisão 1 ("sempre com validade") passa a ser: a conexão tem validade de 30, 90 ou 365 dias **ou vale até ser revogada** (`expira_em` nulo), escolha do administrador na criação; "Até revogar" é o padrão da tela. Motivo: o Diego conecta agentes de uso contínuo e não quer recriar chave; a revogação continua imediata e o "último uso" continua visível. Risco aceito: chave vazada sem data de fim vale até alguém revogar. Data presente continua limitada a 366 dias pelo banco; data inválida continua recusada.
+2. **Credencial tolerante ao formato do cliente.** O cabeçalho `Authorization` aceita `Bearer <chave>`, com `Bearer` em qualquer caixa, ou a chave sozinha. O formato da chave (`pai_<8 hex>_<43>`) continua exigido; JWT e qualquer outro valor continuam recusados com 401. Motivo: no teste, um cliente enviou `Bearer Bearer pai_…` e outro pedia só a chave.
+3. **Endereço com a marca.** `https://mcp.publiai.daludi.com.br` é um Worker da Cloudflare que só repassa o pedido para a edge `agentes` (mesmo método, corpo e cabeçalhos; sem lógica, sem guardar nem registrar cabeçalho). Dá URL curta e o ícone do PubliAI no claude.ai. O endereço do Supabase continua funcionando.
+4. **Instruções prontas por cliente** na tela, depois de criar a chave: cada campo já no formato do cliente, com botão Copiar.
+
+Não muda: uma organização por chave, isolamento, limites, auditoria, somente leitura.

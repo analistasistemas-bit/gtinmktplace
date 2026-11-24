@@ -4,7 +4,8 @@
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 
 export const LIMITE_CONEXOES_ATIVAS = 10;
-const VALIDADES = [30, 90, 365] as const;
+/** `null` = até revogar (Emenda 1); precisa vir explícito, ausente é inválido. */
+const VALIDADES = [30, 90, 365, null] as const;
 type Validade = typeof VALIDADES[number];
 
 export function validarNova(e: unknown): { nome: string; dias: Validade } | { erro: 'nome_invalido' | 'validade_invalida' } {
@@ -19,11 +20,12 @@ export function validarNova(e: unknown): { nome: string; dias: Validade } | { er
 export const idValido = (id: unknown): id is string =>
   typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
-export const expiraEm = (agora: Date, dias: number) => new Date(agora.getTime() + dias * 86_400_000).toISOString();
+export const expiraEm = (agora: Date, dias: number | null): string | null =>
+  dias === null ? null : new Date(agora.getTime() + dias * 86_400_000).toISOString();
 
 const COLUNAS = 'id, nome, prefixo, criada_em, expira_em, revogada_em, ultimo_uso_em';
 export type ConexaoLista = {
-  id: string; nome: string; prefixo: string; criada_em: string; expira_em: string;
+  id: string; nome: string; prefixo: string; criada_em: string; expira_em: string | null;
   revogada_em: string | null; ultimo_uso_em: string | null;
 };
 export type Chamada = { criado_em: string; ferramenta: string; alvo: string | null; resultado: string };
@@ -45,11 +47,12 @@ export const projetarConexao = (l: ConexaoLista): ConexaoLista => ({
   revogada_em: l.revogada_em, ultimo_uso_em: l.ultimo_uso_em,
 });
 
-/** Ativa = não revogada e não expirada. ponytail: contar e inserir não são atômicos; duas criações simultâneas
+/** Ativa = não revogada e não expirada (sem validade conta como ativa). ponytail: contar e inserir não são atômicos; duas criações simultâneas
  *  podem passar de 10 por uma. Trigger/constraint se o limite virar cobrança. */
 export async function contarAtivas(admin: SupabaseClient, orgId: string, agora: Date): Promise<number> {
   const { count, error } = await admin.from('agente_conexoes').select('id', { count: 'exact', head: true })
-    .eq('org_id', orgId).is('revogada_em', null).gt('expira_em', agora.toISOString());
+    .eq('org_id', orgId).is('revogada_em', null)
+    .or(`expira_em.is.null,expira_em.gt.${agora.toISOString()}`);
   falhou('contarAtivas', error);
   if (typeof count !== 'number') throw new Error('agentes.contarAtivas');
   return count;
@@ -57,7 +60,7 @@ export async function contarAtivas(admin: SupabaseClient, orgId: string, agora: 
 
 export async function inserirConexao(
   admin: SupabaseClient, orgId: string,
-  l: { nome: string; prefixo: string; hash: string; criada_por: string; expira_em: string },
+  l: { nome: string; prefixo: string; hash: string; criada_por: string; expira_em: string | null },
 ): Promise<{ id: string }> {
   const { data, error } = await admin.from('agente_conexoes').insert({ org_id: orgId, ...l }).select('id').single();
   falhou('inserirConexao', error);

@@ -2081,8 +2081,8 @@ Todas as tabelas novas têm RLS: `select` só da própria org (`org_id = current
 
 Uma linha por chave de agente. A chave nunca é guardada: só o hash.
 
-- `id` uuid PK; `org_id` uuid, FK `organizations(id)` **on delete cascade**; `nome` (1–60 caracteres); `prefixo` (8 hex, identifica a chave na tela); `hash` **unique** (SHA-256 da chave); `criada_por` uuid, FK `auth.users(id)` **on delete set null** (a conexão é da organização: apagar quem criou não é bloqueado, e a coluna fica nula); `criada_em`; `expira_em`; `revogada_em`; `ultimo_uso_em`.
-- `check (expira_em > criada_em and expira_em <= criada_em + interval '366 days')`.
+- `id` uuid PK; `org_id` uuid, FK `organizations(id)` **on delete cascade**; `nome` (1–60 caracteres); `prefixo` (8 hex, identifica a chave na tela); `hash` **unique** (SHA-256 da chave); `criada_por` uuid, FK `auth.users(id)` **on delete set null** (a conexão é da organização: apagar quem criou não é bloqueado, e a coluna fica nula); `criada_em`; `expira_em` (nulo = vale até revogar, desde `20261124021820_agente_conexoes_sem_validade.sql`, ADR-0210 Emenda 1); `revogada_em`; `ultimo_uso_em`.
+- `check (expira_em is null or (expira_em > criada_em and expira_em <= criada_em + interval '366 days'))`.
 - `unique (org_id, id)`: alvo da FK composta da auditoria. Índice `(org_id, criada_em desc)`.
 
 ### `agente_chamadas`

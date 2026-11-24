@@ -17,7 +17,7 @@ A API de agentes é um servidor **MCP** (Model Context Protocol) remoto, públic
 ## 2. Endpoint e transporte
 
 ```
-POST https://<projeto>.supabase.co/functions/v1/agentes
+POST https://mcp.publiai.daludi.com.br   (ou https://<projeto>.supabase.co/functions/v1/agentes)
 Authorization: Bearer pai_xxxxxxxx_<43 caracteres base64url>
 Content-Type: application/json
 ```
@@ -61,7 +61,7 @@ Total de 56 caracteres: `pai_`, 8 hexadecimais (o prefixo, exibido na tela de co
 
 ### Como enviar
 
-Somente no cabeçalho `Authorization`, com a grafia exata `Bearer <chave>` (um único espaço, `Bearer` com B maiúsculo; a expressão é `^Bearer (\S+)$`). A chave **nunca** vai na URL nem em argumento de ferramenta. Qualquer outro valor, inclusive um JWT do Supabase, equivale a chave ausente.
+Somente no cabeçalho `Authorization`: `Bearer <chave>` (`Bearer` em qualquer caixa, um ou mais espaços) ou a chave sozinha; espaços nas bordas são ignorados. A expressão é `^(?:bearer +)?(\S+)$`, sem diferenciar caixa, e o valor capturado tem de casar o formato acima (ADR-0210, Emenda 1). `Bearer Bearer <chave>` e outros esquemas (`Basic`…) são recusados. A chave **nunca** vai na URL nem em argumento de ferramenta. Qualquer outro valor, inclusive um JWT do Supabase, equivale a chave ausente.
 
 ### Ordem das checagens
 
@@ -69,7 +69,7 @@ Somente no cabeçalho `Authorization`, com a grafia exata `Bearer <chave>` (um �
 2. Extrai a chave do cabeçalho e confere o formato. Falhou → recusa de credencial (não consulta o banco).
 3. Calcula o SHA-256 e busca a conexão pelo hash. Erro de banco → `503`. Sem linha → recusa de credencial.
 4. Linha sem `id` ou `org_id` utilizáveis → `503`.
-5. Situação da conexão: `revogada_em` não nulo → revogada; `expira_em` menor ou igual a "agora" (ou inválido) → expirada. Ambas → recusa de credencial.
+5. Situação da conexão: `revogada_em` não nulo → revogada; `expira_em` nulo → sem validade (vale até revogar); menor ou igual a "agora" (ou inválido) → expirada. Ambas → recusa de credencial.
 6. Organização existe, não está arquivada e tem o módulo `agentes`. Não → `403`. Erro de banco → `503`.
 7. Reserva 1 chamada no limite da conexão (60 por minuto). Acima → `429`; Redis falhou → `503`.
 8. Grava `ultimo_uso_em` na conexão. Se a gravação falhar, a chamada segue.
@@ -90,7 +90,7 @@ O `Retry-After` é sempre `60`, qualquer que seja o tempo restante da janela. `W
 
 ### Validade e revogação
 
-- A conexão tem validade obrigatória, escolhida na criação: 30, 90 ou 365 dias (ver [edge-functions.md](edge-functions.md), `agente-conexoes`). Não há renovação: crie outra chave.
+- A validade é escolhida na criação: até revogar (`dias: null`, padrão da tela) ou 30, 90 ou 365 dias (ver [edge-functions.md](edge-functions.md), `agente-conexoes`). Não há renovação: crie outra chave.
 - A conexão é consultada no banco a cada chamada (sem cache de autenticação). A revogação, a expiração, o arquivamento da organização e o desligamento do módulo valem a partir da chamada seguinte.
 - Não há revalidação depois da leitura do corpo (janela de até 10 s; pendência aceita na ADR).
 - Criar, listar e revogar chaves é feito por administrador na tela do app (edge `agente-conexoes`), não por esta API.
@@ -592,7 +592,7 @@ Todos os contadores ficam no Redis, com incremento e conferência de teto numa �
 Detalhes:
 
 - **Chamadas.** Cada `POST` autenticado, aceito pelo portão (conexão válida, organização ativa com o módulo), conta 1, ainda que o corpo depois seja inválido. Recusas `401` e `403` não consomem o limite da conexão.
-- **IP.** Só conta pedidos com credencial recusada; um pedido com chave válida não é checado contra esse limite. O IP vem de `cf-connecting-ip`; senão, do **último** item de `x-forwarded-for`; senão, a string `desconhecido` (todos sem IP identificável dividem um único contador). Medido em 2026-11-23 nos logs da edge: `cf-connecting-ip` chega em todas as requisições (igual ao `x-real-ip` do gateway) e `x-forwarded-for` não chega (ADR-0210, "Aceite em uso real").
+- **IP.** Só conta pedidos com credencial recusada; um pedido com chave válida não é checado contra esse limite. Pelo endereço `mcp.publiai.daludi.com.br`, o pedido chega à edge vindo do Worker da Cloudflare, então todas as falhas de credencial por esse endereço dividem um único contador de IP (mais restritivo, não mais permissivo: pedido com chave válida não passa por esse limite). O IP vem de `cf-connecting-ip`; senão, do **último** item de `x-forwarded-for`; senão, a string `desconhecido` (todos sem IP identificável dividem um único contador). Medido em 2026-11-23 nos logs da edge: `cf-connecting-ip` chega em todas as requisições (igual ao `x-real-ip` do gateway) e `x-forwarded-for` não chega (ADR-0210, "Aceite em uso real").
 - **Tarifas.** A reserva é feita antes das consultas: 2 por cor (mínimo 1 cor) de cada anúncio que tem item lido e preço utilizável. É um teto de reserva, e não a contagem de chamadas reais ao Mercado Livre (a tarifa pode vir do cache). Reserva maior que 5.000 numa só chamada → `limite_tarifas`. Se uma consulta de tarifa individual sinaliza limite, nenhuma nova consulta é feita naquela chamada e a ferramenta responde `limite_tarifas`.
 - **Leituras.** A reserva é `2 × ceil(anúncios ÷ 20)` (um multiget de item e outro de preço por bloco de 20), feita antes de tocar o Mercado Livre. Uma página de catálogo de 50 anúncios custa 6.
 - **Ordem de consumo dentro de uma chamada de margem:** alíquota (sem alíquota → `sem_aliquota`, nenhuma cota usada) → reserva de leituras → leitura de item e preço → reserva de tarifas → cálculo. Alvo inexistente, cursor inválido e preço inválido terminam antes de qualquer reserva.

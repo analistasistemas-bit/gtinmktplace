@@ -11,7 +11,7 @@ export type DepsConexoes = {
   moduloLigado(orgId: string): Promise<boolean>;
   acoes: {
     contarAtivas(orgId: string): Promise<number>;
-    criar(orgId: string, userId: string, e: { nome: string; dias: number }): Promise<{ id: string; chave: string; prefixo: string; expira_em: string }>;
+    criar(orgId: string, userId: string, e: { nome: string; dias: number | null }): Promise<{ id: string; chave: string; prefixo: string; expira_em: string | null }>;
     listar(orgId: string): Promise<ConexaoLista[]>;
     /** `false` = não existe nesta org. */
     revogar(orgId: string, id: string): Promise<boolean>;

@@ -6,6 +6,8 @@ import { StatusPill } from '@/components/ui/status-pill';
 import { BotaoCopiar } from '@/components/ui/botao-copiar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { instrucoesPorCliente } from '@/lib/agentes-clientes';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -24,6 +26,7 @@ const fmtData = (iso: string) =>
 
 function situacao(c: ConexaoAgente): 'ativa' | 'revogada' | 'expirada' {
   if (c.revogada_em) return 'revogada';
+  if (c.expira_em === null) return 'ativa';
   return new Date(c.expira_em).getTime() > Date.now() ? 'ativa' : 'expirada';
 }
 const PILL = {
@@ -61,7 +64,7 @@ export function SecaoAgentes() {
             <SettingsRow
               key={c.id}
               titulo={c.nome}
-              descricao={`Chave pai_${c.prefixo}_… · Validade até ${fmtData(c.expira_em)} · Último uso: ${c.ultimo_uso_em ? fmtData(c.ultimo_uso_em) : 'nunca'}`}
+              descricao={`Chave pai_${c.prefixo}_… · ${c.expira_em ? `Validade até ${fmtData(c.expira_em)}` : 'Vale até revogar'} · Último uso: ${c.ultimo_uso_em ? fmtData(c.ultimo_uso_em) : 'nunca'}`}
               estado={PILL[s]}
             >
               <Button size="sm" variant="ghost" onClick={() => setVendo(c)}>Ver chamadas</Button>
@@ -108,7 +111,7 @@ export function SecaoAgentes() {
 export function DialogNovaConexao({ aberto, onFechar }: { aberto: boolean; onFechar: () => void }) {
   const invalidar = useInvalidarConexoes();
   const [nome, setNome] = useState('');
-  const [dias, setDias] = useState<Validade>(90);
+  const [dias, setDias] = useState<Validade>(null);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   // A chave vive só aqui, em estado local: sai da memória do React ao fechar (nem React Query, nem localStorage).
@@ -120,7 +123,7 @@ export function DialogNovaConexao({ aberto, onFechar }: { aberto: boolean; onFec
 
   function fechar() {
     sessao.current += 1;
-    setNome(''); setDias(90); setErro(null); setCriada(null); setCopiado(false); setEnviando(false);
+    setNome(''); setDias(null); setErro(null); setCriada(null); setCopiado(false); setEnviando(false);
     onFechar();
   }
 
@@ -153,6 +156,7 @@ export function DialogNovaConexao({ aberto, onFechar }: { aberto: boolean; onFec
   return (
     <Dialog open={aberto} onOpenChange={(v) => { if (!v && !travado) fechar(); }}>
       <DialogContent
+        className={criada ? 'sm:max-w-2xl' : undefined}
         processando={enviando}
         showCloseButton={!travado}
         onInteractOutside={(e) => { if (travado) e.preventDefault(); }}
@@ -162,7 +166,7 @@ export function DialogNovaConexao({ aberto, onFechar }: { aberto: boolean; onFec
           <>
             <DialogHeader>
               <DialogTitle>Conexão criada</DialogTitle>
-              <DialogDescription>Configure o agente com a chave e o endereço abaixo.</DialogDescription>
+              <DialogDescription>Escolha o agente e copie cada campo. A chave não será exibida de novo.</DialogDescription>
             </DialogHeader>
             <div className="flex flex-col gap-3">
               <div>
@@ -175,13 +179,7 @@ export function DialogNovaConexao({ aberto, onFechar }: { aberto: boolean; onFec
                 </div>
                 <p className="mt-1.5 text-xs font-medium text-warning">Esta chave não será exibida de novo.</p>
               </div>
-              <div>
-                <label htmlFor="agente-url" className="mb-1 block text-xs font-medium text-muted-foreground">Endereço do servidor MCP</label>
-                <div className="flex items-center gap-2">
-                  <Input id="agente-url" readOnly value={MCP_URL} className="font-mono text-xs" />
-                  <BotaoCopiar texto={MCP_URL} rotulo="Copiar endereço" />
-                </div>
-              </div>
+              <InstrucoesClientes chave={criada.chave} />
             </div>
             <DialogFooter>
               <Button type="button" onClick={fechar}>Concluir</Button>
@@ -199,9 +197,10 @@ export function DialogNovaConexao({ aberto, onFechar }: { aberto: boolean; onFec
             </div>
             <div>
               <label htmlFor="agente-validade" className="mb-1 block text-sm font-medium">Validade</label>
-              <Select value={String(dias)} onValueChange={(v) => setDias(Number(v) as Validade)}>
+              <Select value={dias === null ? 'revogar' : String(dias)} onValueChange={(v) => setDias(v === 'revogar' ? null : Number(v) as Validade)}>
                 <SelectTrigger id="agente-validade" className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="revogar">Até revogar</SelectItem>
                   <SelectItem value="30">30 dias</SelectItem>
                   <SelectItem value="90">90 dias</SelectItem>
                   <SelectItem value="365">365 dias</SelectItem>
@@ -217,6 +216,34 @@ export function DialogNovaConexao({ aberto, onFechar }: { aberto: boolean; onFec
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Uma aba por cliente validado (Emenda 1): cada campo pronto para colar. ChatGPT fica de fora (só OAuth). */
+function InstrucoesClientes({ chave }: { chave: string }) {
+  const clientes = instrucoesPorCliente(chave, MCP_URL);
+  return (
+    <Tabs defaultValue={clientes[0].id}>
+      <TabsList className="flex-wrap">
+        {clientes.map((c) => <TabsTrigger key={c.id} value={c.id}>{c.nome}</TabsTrigger>)}
+      </TabsList>
+      {clientes.map((c) => (
+        <TabsContent key={c.id} value={c.id} className="flex flex-col gap-2.5 pt-2">
+          {c.passos.map((p, i) => (
+            <div key={i}>
+              <p className="mb-1 text-xs text-muted-foreground">{p.texto}</p>
+              {p.valor && (
+                <div className="flex items-start gap-2">
+                  <code className="min-w-0 flex-1 break-all rounded-md border bg-muted/40 px-2.5 py-1.5 font-mono text-xs">{p.valor}</code>
+                  <BotaoCopiar texto={p.valor} rotulo="Copiar campo" />
+                </div>
+              )}
+            </div>
+          ))}
+        </TabsContent>
+      ))}
+      <p className="pt-1 text-xs text-muted-foreground">ChatGPT ainda não conecta com chave (exige login OAuth).</p>
+    </Tabs>
   );
 }
 

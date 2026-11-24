@@ -17,7 +17,7 @@ function fake(filas: Record<string, Res[]>) {
       const c: Chamada = { tabela, ops: [] };
       chamadas.push(c);
       const b: Record<string, unknown> = {};
-      for (const m of ['select', 'eq', 'is', 'gt', 'order', 'limit', 'maybeSingle', 'single', 'update', 'insert']) {
+      for (const m of ['select', 'eq', 'is', 'gt', 'or', 'order', 'limit', 'maybeSingle', 'single', 'update', 'insert']) {
         b[m] = (...a: unknown[]) => { c.ops.push([m, ...a]); return b; };
       }
       b.then = (ok: (r: Res) => unknown, falha: (e: unknown) => unknown) => {
@@ -41,13 +41,16 @@ describe('validarNova', () => {
     expect(validarNova({ nome: 'x'.repeat(60), dias: 365 })).toEqual({ nome: 'x'.repeat(60), dias: 365 });
     expect(validarNova({ nome: 'a', dias: 30 })).toEqual({ nome: 'a', dias: 30 });
   });
+  it('dias null explícito = até revogar (Emenda 1)', () => {
+    expect(validarNova({ nome: 'a', dias: null })).toEqual({ nome: 'a', dias: null });
+  });
   it('nome vazio, só espaços, 61 caracteres ou não-texto → nome_invalido', () => {
     for (const nome of ['', '   ', 'x'.repeat(61), 42, null, undefined]) {
       expect(validarNova({ nome, dias: 90 })).toEqual({ erro: 'nome_invalido' });
     }
   });
   it('dias fora de 30/90/365 → validade_invalida', () => {
-    for (const dias of [45, 0, '90', null, undefined, 366]) {
+    for (const dias of [45, 0, '90', undefined, 366, 'null', false]) {
       expect(validarNova({ nome: 'ok', dias })).toEqual({ erro: 'validade_invalida' });
     }
   });
@@ -72,6 +75,7 @@ describe('expiraEm', () => {
     expect(expiraEm(AGORA, 30)).toBe('2026-12-22T12:00:00.000Z');
     expect(expiraEm(AGORA, 365)).toBe('2027-11-22T12:00:00.000Z');
   });
+  it('sem validade → null', () => expect(expiraEm(AGORA, null)).toBeNull());
   it('limite de ativas é 10', () => expect(LIMITE_CONEXOES_ATIVAS).toBe(10));
 });
 
@@ -106,7 +110,7 @@ describe('contarAtivas', () => {
     const [c] = chamadas;
     expect(tem(c, 'eq', 'org_id', ORG)).toBe(true);
     expect(tem(c, 'is', 'revogada_em', null)).toBe(true);
-    expect(tem(c, 'gt', 'expira_em', AGORA.toISOString())).toBe(true);
+    expect(tem(c, 'or', `expira_em.is.null,expira_em.gt.${AGORA.toISOString()}`)).toBe(true);
     expect(tem(c, 'select', 'id', { count: 'exact', head: true })).toBe(true);
   });
   it('erro lança (não libera o limite)', async () => {

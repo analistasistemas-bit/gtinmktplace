@@ -28,13 +28,24 @@ describe('extrairChave', () => {
     expect(extrairChave(req(`Bearer ${chave}`))).toBe(chave);
   });
 
-  it('null sem header, com JWT, com 1 caractere a menos ou sem Bearer', async () => {
+  it('aceita o formato de cada cliente: Bearer em qualquer caixa, chave sozinha, espaços nas bordas (Emenda 1)', async () => {
+    const { chave } = await gerarChave();
+    expect(extrairChave(req(chave))).toBe(chave);
+    expect(extrairChave(req(`bearer ${chave}`))).toBe(chave);
+    expect(extrairChave(req(`BEARER  ${chave}`))).toBe(chave);
+    expect(extrairChave(req(`  Bearer ${chave}  `))).toBe(chave);
+  });
+
+  it('null sem header, com JWT, com 1 caractere a menos, Bearer duplicado ou outro esquema', async () => {
     const { chave } = await gerarChave();
     expect(extrairChave(req())).toBeNull();
     expect(extrairChave(req('Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2ln'))).toBeNull();
+    expect(extrairChave(req('eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2ln'))).toBeNull();
     expect(extrairChave(req(`Bearer ${chave.slice(0, -1)}`))).toBeNull();
-    expect(extrairChave(req(chave))).toBeNull();
     expect(extrairChave(req(`Bearer ${chave}x`))).toBeNull();
+    expect(extrairChave(req(`Bearer Bearer ${chave}`))).toBeNull();
+    expect(extrairChave(req(`Basic ${chave}`))).toBeNull();
+    expect(extrairChave(req(`Bearer ${chave} ${chave}`))).toBeNull();
   });
 });
 
@@ -49,8 +60,16 @@ describe('situacaoDaConexao', () => {
     expect(situacaoDaConexao({ ...base, expira_em: '2026-11-22T11:59:59.999Z' }, agora)).toBe('expirada');
   });
 
+  it('sem validade (expira_em nulo) vale até revogar (Emenda 1)', () => {
+    expect(situacaoDaConexao({ ...base, expira_em: null }, agora)).toBe('ok');
+    expect(situacaoDaConexao({ ...base, expira_em: null }, new Date('2099-01-01T00:00:00Z'))).toBe('ok');
+    expect(situacaoDaConexao({ ...base, expira_em: null, revogada_em: '2026-11-21T00:00:00Z' }, agora)).toBe('revogada');
+  });
+
   it('fecha em dado inválido', () => {
     expect(situacaoDaConexao({ ...base, expira_em: 'lixo' }, agora)).toBe('expirada');
+    expect(situacaoDaConexao({ ...base, expira_em: '' }, agora)).toBe('expirada');
+    expect(situacaoDaConexao({ ...base, expira_em: undefined as unknown as null }, agora)).toBe('expirada');
     expect(situacaoDaConexao(base, new Date('lixo'))).toBe('expirada');
     expect(situacaoDaConexao({ ...base, revogada_em: 'lixo' }, agora)).toBe('revogada');
     expect(situacaoDaConexao({ ...base, revogada_em: '' }, agora)).toBe('revogada');

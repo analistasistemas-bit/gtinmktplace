@@ -4,12 +4,13 @@ import { supabase } from '@/lib/supabase';
 import { lerErroEdge } from '@/hooks/useOperacoes';
 
 export interface ConexaoAgente {
-  id: string; nome: string; prefixo: string; criada_em: string; expira_em: string;
+  id: string; nome: string; prefixo: string; criada_em: string; expira_em: string | null;
   revogada_em: string | null; ultimo_uso_em: string | null;
 }
-export interface ConexaoCriada { id: string; chave: string; prefixo: string; expira_em: string }
+export interface ConexaoCriada { id: string; chave: string; prefixo: string; expira_em: string | null }
 export interface ChamadaAgente { criado_em: string; ferramenta: string; alvo: string | null; resultado: string }
-export type Validade = 30 | 90 | 365;
+/** `null` = até revogar (ADR-0210, Emenda 1). */
+export type Validade = 30 | 90 | 365 | null;
 
 const QK = ['agentes', 'conexoes'] as const;
 
@@ -19,7 +20,10 @@ async function chamar<T>(body: Record<string, unknown>, falha: string): Promise<
   return data as T;
 }
 
-export const MCP_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/agentes`;
+const URL_SUPABASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/agentes`;
+// ponytail: o domínio com a marca (Worker da Cloudflare, Emenda 1) só repassa para o projeto de produção; outro
+// projeto (dev local) usa o endereço direto do Supabase.
+export const MCP_URL = URL_SUPABASE.includes('txvncrgkoynoxwopfkbp') ? 'https://mcp.publiai.daludi.com.br' : URL_SUPABASE;
 
 export function useAgenteConexoes() {
   return useQuery({

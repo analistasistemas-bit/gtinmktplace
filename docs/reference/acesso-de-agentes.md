@@ -11,7 +11,7 @@ O agente não altera nada: não publica, não muda preço, não pausa, não mexe
 ## Como ligar
 
 1. Na Central de controle, ligar o módulo **Acesso de agentes** da organização (vem desligado).
-2. Um administrador abre **Configurações → Conexões de agentes → Nova conexão**, dá um nome e escolhe a validade (30, 90 ou 365 dias).
+2. Um administrador abre **Configurações → Conexões de agentes → Nova conexão**, dá um nome e escolhe a validade: **Até revogar** (padrão), 30, 90 ou 365 dias (ADR-0210, Emenda 1).
 3. Copiar a chave. Ela é exibida **uma única vez**; depois só o prefixo (`pai_xxxxxxxx_…`) aparece na lista. Se perder, revogue e crie outra.
 
 A chave tem o formato `pai_<8 hex>_<43 caracteres base64url>` e identifica a conexão e, por ela, a organização. Nenhuma ferramenta recebe organização como argumento.
@@ -19,10 +19,12 @@ A chave tem o formato `pai_<8 hex>_<43 caracteres base64url>` e identifica a con
 ## Endereço do servidor
 
 ```
-POST https://<projeto>.supabase.co/functions/v1/agentes
+POST https://mcp.publiai.daludi.com.br
 Authorization: Bearer pai_xxxxxxxx_<restante-da-chave>
 Content-Type: application/json
 ```
+
+`mcp.publiai.daludi.com.br` é um Worker da Cloudflare que só repassa para a edge (`https://<projeto>.supabase.co/functions/v1/agentes`, que continua funcionando). O cabeçalho aceita `Bearer <chave>`, com `Bearer` em qualquer caixa, ou só a chave (Emenda 1).
 
 - Só `POST` (outro método responde 405). Corpo JSON-RPC 2.0 de até 64 KiB, lido em até 10 s.
 - Sem estado e sem CORS (cliente MCP fala de servidor para servidor).
@@ -167,7 +169,7 @@ Na `referencia`: `anuncio_sem_numero` quando algum anúncio do alvo está sem n�
 | Tarifas | 5.000 por dia (fuso de São Paulo), por organização; 2 consultas por cor de anúncio | `limite_tarifas` |
 | Leituras | 3.000 por dia (fuso de São Paulo), por organização; 2 por bloco de até 20 anúncios (item e preço) | `limite_leituras` |
 | Conexões ativas | 10 por organização | 409 na criação |
-| Validade da chave | 30, 90 ou 365 dias | Expirada = `401` |
+| Validade da chave | Até revogar, 30, 90 ou 365 dias | Expirada ou revogada = `401` |
 | Corpo da requisição | 64 KiB, 10 s de leitura | `413` / `408` |
 | Anúncios por alvo | 60 | `alvo_grande` |
 | Candidatos de título | 10 | — |
@@ -192,7 +194,7 @@ A igualdade com a aba Campanhas vale **por anúncio**. O agregado da família n�
 
 ## Como conectar em cada cliente
 
-Testado em produção em 2026-11-23, na Zaven, com uma chave criada pela tela e revogada ao fim. "Funciona" = `publiai_loja` e `publiai_margem_anuncio` responderam `ok` e a chamada apareceu na auditoria.
+**Ao criar a chave, a tela mostra uma aba por cliente com cada campo pronto e botão Copiar** (Emenda 1); a tabela abaixo é a referência do que cada aba diz. Testado em produção em 2026-11-23, na Zaven, com uma chave criada pela tela e revogada ao fim. "Funciona" = `publiai_loja` e `publiai_margem_anuncio` responderam `ok` e a chamada apareceu na auditoria.
 
 | Cliente | Como configurar | Resultado do teste |
 |---|---|---|

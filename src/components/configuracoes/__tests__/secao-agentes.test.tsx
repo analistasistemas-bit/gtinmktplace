@@ -59,6 +59,14 @@ describe('SecaoAgentes', () => {
     expect(container.textContent).not.toContain('segredo');
   });
 
+  it('conexão sem validade aparece ativa e "Vale até revogar" (Emenda 1)', () => {
+    lista = [{ ...CONEXAO, expira_em: null }];
+    render(<SecaoAgentes />);
+    expect(screen.getByText(/Vale até revogar/)).toBeInTheDocument();
+    expect(screen.getByText('Ativa')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Revogar' })).toBeInTheDocument();
+  });
+
   it('lista vazia mostra estado vazio', () => {
     lista = [];
     render(<SecaoAgentes />);
@@ -73,14 +81,18 @@ describe('SecaoAgentes', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Criar' }));
 
     await waitFor(() => expect(screen.getByDisplayValue(CHAVE)).toBeInTheDocument());
-    expect(criar).toHaveBeenCalledWith('Meu agente', 90);
+    expect(criar).toHaveBeenCalledWith('Meu agente', null); // padrão: até revogar (Emenda 1)
     expect(invalidar).toHaveBeenCalled();
     expect(screen.getByText('Esta chave não será exibida de novo.')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('https://exemplo.supabase.co/functions/v1/agentes')).toBeInTheDocument();
+    // Aba inicial (claude.ai): URL, nome do cabeçalho e valor com Bearer prontos para copiar.
+    expect(screen.getByText('https://exemplo.supabase.co/functions/v1/agentes')).toBeInTheDocument();
+    expect(screen.getByText(`Bearer ${CHAVE}`)).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Claude Code' })).toBeInTheDocument();
     expect(screen.getByDisplayValue(CHAVE)).toHaveAttribute('readonly');
 
     fireEvent.click(screen.getByRole('button', { name: 'Concluir' }));
     await waitFor(() => expect(screen.queryByDisplayValue(CHAVE)).not.toBeInTheDocument());
+    expect(screen.queryByText(`Bearer ${CHAVE}`)).not.toBeInTheDocument();
 
     // Reabrir não traz a chave de volta.
     fireEvent.click(screen.getByRole('button', { name: 'Nova conexão' }));

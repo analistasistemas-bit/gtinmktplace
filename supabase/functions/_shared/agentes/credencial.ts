@@ -16,17 +16,20 @@ export async function gerarChave(): Promise<{ chave: string; prefixo: string; ha
   return { chave, prefixo, hash: await hashChave(chave) };
 }
 
-/** Só `Authorization: Bearer pai_…` no formato exato; qualquer outra coisa (JWT inclusive) = null. */
+/** `Authorization: Bearer pai_…` (Bearer em qualquer caixa) ou a chave sozinha (Emenda 1: cada cliente manda de
+ *  um jeito). A chave tem de casar o formato exato; JWT, `Bearer Bearer …` e outros esquemas = null. */
 export function extrairChave(req: Request): string | null {
-  const m = /^Bearer (\S+)$/.exec(req.headers.get('Authorization') ?? '');
+  const m = /^(?:bearer +)?(\S+)$/i.exec((req.headers.get('Authorization') ?? '').trim());
   return m && FORMATO.test(m[1]) ? m[1] : null;
 }
 
-export type LinhaConexao = { id: string; org_id: string; expira_em: string; revogada_em: string | null };
+/** `expira_em` null = vale até revogar (Emenda 1). */
+export type LinhaConexao = { id: string; org_id: string; expira_em: string | null; revogada_em: string | null };
 
 /** Revogada vence expirada; expira exatamente em `agora` já é expirada. Fecha em dado ruim: `revogada_em` não nulo
- *  (mesmo não parseável) = revogada; `expira_em` ou `agora` inválidos = expirada. */
+ *  (mesmo não parseável) = revogada; `expira_em` ou `agora` inválidos = expirada; só `null` exato é "sem validade". */
 export function situacaoDaConexao(l: LinhaConexao, agora: Date): 'ok' | 'revogada' | 'expirada' {
   if (l.revogada_em !== null) return 'revogada';
+  if (l.expira_em === null) return 'ok';
   return new Date(l.expira_em).getTime() > agora.getTime() ? 'ok' : 'expirada'; // NaN > x é falso
 }
