@@ -264,7 +264,7 @@ async function executar(admin: SupabaseClient, plano: Plano) {
     && c2?.cancelamento_desfecho === 'reposto' && !!c2.cancelamento_concluido_em, 'C: só o pedido com baixa nova reabriu');
   ok(pend.length === 0, 'nenhuma linha das orgs de ensaio em worker_pendencias');
   const cpuMs = Math.round((cpuA.user + cpuA.system) / 1000);
-  console.log('\nMedição (rodada A):', { ms: msA, cpuMs, rpcMs: tempos, aceite: { cpu: cpuMs < 500, total: msA < 30_000,
+  console.log('\nMedição (rodada A):', { resultado: rA, ms: msA, cpuMs, rpcMs: tempos, aceite: { cpu: cpuMs < 500, total: msA < 30_000,
     reivindicar: Math.max(...(tempos.reivindicar ?? [0])) < 200 } });
   console.log('Outras orgs antes/depois (diferença só por atividade normal):', { antes, depois: await retrato(admin, Object.values(plano.orgs)) });
 }
