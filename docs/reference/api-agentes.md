@@ -287,7 +287,7 @@ O texto é validado e classificado nesta ordem. A comparação é sempre de igua
 3. **MLBU** (produto do ML, user product): `^MLBU\d+$`, sem diferenciar maiúsculas. Sem casamento → `nao_encontrado`.
 4. **Família do ML** (o número do painel de Ads): `^#?\d{12,}$` (o `#` é removido). Sem anúncio da família, tenta o **SKU exato** com o mesmo número (um EAN usado como SKU também tem 12 ou mais dígitos); sem casamento → `nao_encontrado`. Nunca cai para título.
 5. **SKU exato** (qualquer outro texto): casa o SKU do filho user products, o código do pai legado (`codigo_pai`, produto único) e o código da variação legada (só pelo MLB da família que esteja publicado na organização). Se casar, resolve.
-6. **Título**: só se o SKU não casou **e** o texto tem 3 ou mais caracteres (menos → `nao_encontrado`). Busca o trecho, sem diferenciar maiúsculas, em `familias.nome_pai` da organização (`*` é removido; `%` e `_` são literais). **Título nunca resolve sozinho:** devolve `estado: "candidatos"`.
+6. **Título**: só se o SKU não casou **e** o texto tem 3 ou mais caracteres (menos → `nao_encontrado`). Busca o trecho, sem diferenciar maiúsculas, em `familias.nome_pai` da organização (`*` é removido; `%` e `_` são literais). O título da variação (cor, estampa, tamanho) não é pesquisado. **Título nunca resolve sozinho:** devolve `estado: "candidatos"`.
 
 #### Regra de candidatos por título
 
@@ -592,7 +592,7 @@ Todos os contadores ficam no Redis, com incremento e conferência de teto numa �
 Detalhes:
 
 - **Chamadas.** Cada `POST` autenticado, aceito pelo portão (conexão válida, organização ativa com o módulo), conta 1, ainda que o corpo depois seja inválido. Recusas `401` e `403` não consomem o limite da conexão.
-- **IP.** Só conta pedidos com credencial recusada; um pedido com chave válida não é checado contra esse limite. Pelo endereço `mcp.publiai.daludi.com.br`, o pedido chega à edge vindo do Worker da Cloudflare, então todas as falhas de credencial por esse endereço dividem um único contador de IP (mais restritivo, não mais permissivo: pedido com chave válida não passa por esse limite). O IP vem de `cf-connecting-ip`; senão, do **último** item de `x-forwarded-for`; senão, a string `desconhecido` (todos sem IP identificável dividem um único contador). Medido em 2026-11-23 nos logs da edge: `cf-connecting-ip` chega em todas as requisições (igual ao `x-real-ip` do gateway) e `x-forwarded-for` não chega (ADR-0210, "Aceite em uso real").
+- **IP.** Só conta pedidos com credencial recusada; um pedido com chave válida não é checado contra esse limite. Pelo endereço `mcp.publiai.daludi.com.br`, o pedido chega à edge vindo do Worker da Cloudflare, então todas as falhas de credencial por esse endereço dividem um único contador de IP (mais restritivo, não mais permissivo: pedido com chave válida não passa por esse limite). O IP vem de `cf-connecting-ip`; senão, do **último** item de `x-forwarded-for`; senão, a string `desconhecido` (todos sem IP identificável dividem um único contador). Nos logs do gateway, `cf-connecting-ip` aparece em todas as requisições medidas; o que a função recebe, e se o cabeçalho pode ser forjado, não foi verificado (ADR-0210, "Aceite em uso real").
 - **Tarifas.** A reserva é feita antes das consultas: 2 por cor (mínimo 1 cor) de cada anúncio que tem item lido e preço utilizável. É um teto de reserva, e não a contagem de chamadas reais ao Mercado Livre (a tarifa pode vir do cache). Reserva maior que 5.000 numa só chamada → `limite_tarifas`. Se uma consulta de tarifa individual sinaliza limite, nenhuma nova consulta é feita naquela chamada e a ferramenta responde `limite_tarifas`.
 - **Leituras.** A reserva é `2 × ceil(anúncios ÷ 20)` (um multiget de item e outro de preço por bloco de 20), feita antes de tocar o Mercado Livre. Uma página de catálogo de 50 anúncios custa 6.
 - **Ordem de consumo dentro de uma chamada de margem:** alíquota (sem alíquota → `sem_aliquota`, nenhuma cota usada) → reserva de leituras → leitura de item e preço → reserva de tarifas → cálculo. Alvo inexistente, cursor inválido e preço inválido terminam antes de qualquer reserva.
@@ -640,7 +640,7 @@ Da ADR-0210 e do código:
 - Comissão e frete vêm de um cache de até 8 horas (`tarifa_idade_max_horas`); o preço é lido na hora.
 - A leitura pode renovar e regravar a credencial do Mercado Livre da organização.
 - Pendências aceitas para o piloto: o cache de comissão `promo:lp:v1` é compartilhado entre organizações; não há bloqueio por IP antes da consulta da chave; não há revalidação da conexão depois da leitura do corpo; o limite de 10 conexões ativas não é atômico.
-- Teste real em cada cliente: feito em 2026-11-23; resultado na tabela de clientes do guia ([acesso-de-agentes.md](acesso-de-agentes.md)). `/items/bulk` de outro vendedor responde 403 sem corpo e o anúncio vira `anuncio_indisponivel` (ADR-0210).
+- Teste real em cada cliente: feito em 2026-11-23; resultado na tabela de clientes do guia ([acesso-de-agentes.md](acesso-de-agentes.md)). `/items/bulk` de outro vendedor: um único anúncio testado respondeu 403 sem corpo (vira `anuncio_indisponivel`); pendente ampliar a amostra ou validar o vendedor antes de abrir a outras lojas (ADR-0210).
 
 O que **não existe**:
 
