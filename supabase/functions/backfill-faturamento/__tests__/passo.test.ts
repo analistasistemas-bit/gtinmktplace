@@ -158,4 +158,27 @@ describe('passoBackfill', () => {
     await expect(rodar(criarDeps(), 'pendencias|3')).rejects.toThrow(/etapa/);
     await expect(rodar(criarDeps(), 'vendas|abc')).rejects.toThrow(/cursor de vendas/);
   });
+
+  // ADR-0211 (caracterização; nada aqui muda com a fila de cancelamento).
+  it('B1. pedido cancelado e paid com falha no mesmo lote: o paid vai para registrarFalhas e o passo não lança', async () => {
+    const deps = criarDeps({
+      pedidosDaJanela: vi.fn(async () => [{ id: 1, status: 'cancelled' }, { id: 2, status: 'paid' }] as PedidoML[]),
+      processarPedidos: vi.fn(async () => ({ ok: ['1'], falhas: ['2'], mpFalhou: false })),
+    });
+    const r = await rodar(deps, null);
+    expect(deps.registrarFalhas.mock.calls[0][0]).toEqual(['2']);
+    expect(r.acumulado).toMatchObject({ sincronizados: 1, pedidosComFalha: 1 });
+    expect(r.proximo).toBe('vendas|2');
+  });
+
+  it('B2. falha que não chegou a registrarFalhas não é contada como registrada: o passo lança', async () => {
+    const deps = criarDeps({
+      pedidosDaJanela: vi.fn(async () => pedidos(2)),
+      processarPedidos: vi.fn(async () => ({ ok: ['1'], falhas: ['2'], mpFalhou: false })),
+      registrarFalhas: vi.fn(async () => { throw new Error('worker_pendencias fora'); }),
+    });
+    await expect(rodar(deps, null)).rejects.toThrow('worker_pendencias fora');
+    expect(Object.keys(deps).sort()).toEqual(
+      ['conexao', 'packs', 'pedidosDaJanela', 'processarPacks', 'processarPedidos', 'registrarFalhas', 'token']);
+  });
 });

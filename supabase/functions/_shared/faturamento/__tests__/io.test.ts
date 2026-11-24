@@ -247,3 +247,11 @@ describe('upsertVenda — itens nunca somem no meio da troca', () => {
     expect(itens.map((i) => i.ml_item_id)).toEqual(['MLB1']);
   });
 });
+
+describe('upsertVenda — ADR-0211', () => {
+  it('I1. a linha gravada em ml_vendas não leva coluna cancelamento_* (o trigger é o único que arma)', async () => {
+    const { admin, upsertVendas } = criarAdminFake();
+    await upsertVenda(admin, 'user-1', 'org-1', { ...pedido, status: 'cancelled' }, opts);
+    expect(Object.keys(upsertVendas.mock.calls[0][0]).filter((k) => k.startsWith('cancelamento_'))).toEqual([]);
+  });
+});

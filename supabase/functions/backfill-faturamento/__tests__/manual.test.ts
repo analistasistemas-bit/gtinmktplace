@@ -132,4 +132,15 @@ describe('processarConexao (caminho manual/legado) — caracterização', () => 
     expect(await processarConexao({} as any, CX, INTERVALO, false, io2 as any))
       .toEqual({ sincronizados: 0, leituraFalhou: true, pedidosComFalha: 0, mpFalhou: false });
   });
+
+  it('B3 (ADR-0211). cancelled grava e paid com upsert que falha: sincronizados=1, pedidosComFalha=1, sem lançar', async () => {
+    const io = criarIo();
+    io.buscarPedidosPeriodo.mockResolvedValue([{ id: 1, status: 'cancelled' }, { id: 2, status: 'paid' }] as never);
+    io.upsertVenda.mockImplementation(async (_a: unknown, _u: unknown, _o: unknown, p: { id: number }) => {
+      if (p.id === 2) throw new Error('upsert falhou');
+    });
+    // deno-lint-ignore no-explicit-any
+    const r = await processarConexao({} as any, CX, INTERVALO, true, io as any);
+    expect(r).toMatchObject({ sincronizados: 1, pedidosComFalha: 1 });
+  });
 });
