@@ -471,6 +471,12 @@ describe('drenarCancelamentos', () => {
     }
   });
 
+  it('F39 (r6). substatus não-texto é normalizado como nos outros chamadores (ready_to_ship + 42 não é pré-despacho)', async () => {
+    const f = criarIo([ob('o1')], { envio: vi.fn(async () => ({ status: 'ready_to_ship', substatus: 42 } as unknown as { status: string })) });
+    await drenarCancelamentos(f.io, 'L1');
+    expect(f.io.tratar.mock.calls[0][0].shipmentSubstatus).toBe('42');
+  });
+
   it('F35 (r3). prazo final vencido antes de tratar: o tratamento nem começa', async () => {
     let relogio = 0;
     const f = criarIo([ob('o1')], {

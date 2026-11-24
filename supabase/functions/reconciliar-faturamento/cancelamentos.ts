@@ -3,7 +3,7 @@
 // Testável por vitest: não importa io.ts, queue.ts nem cancelamento-deps.ts. Fiação real em index.ts.
 import type { PedidoML } from '../_shared/faturamento/venda.ts';
 import {
-  entraNoCreditoKit, type DepsCancelamento, type PedidoCancelado, type ResultadoCancelamento,
+  entraNoCreditoKit, envioParaTratamento, type DepsCancelamento, type PedidoCancelado, type ResultadoCancelamento,
 } from '../_shared/estoque/cancelamento.ts';
 
 export const LOTE_CANCELAMENTOS = 20;
@@ -149,7 +149,7 @@ export async function drenarCancelamentos(
       if (typeof s?.status !== 'string' || !STATUS_ENVIO.has(s.status)) return fica('ml: envio não lido');
       shipmentStatus = s.status;
       // Emenda 24/11 ao ADR-0121: o substatus decide se `ready_to_ship` ainda é pré-despacho.
-      shipmentSubstatus = typeof s.substatus === 'string' ? s.substatus : null;
+      shipmentSubstatus = envioParaTratamento(s).shipmentSubstatus; // mesma normalização dos outros chamadores
     }
     const base: PedidoDaFila = {
       orderId: o.orderId, statusPedido: 'cancelled', shipmentStatus, shipmentSubstatus, temEnvio, catalogoIncompleto: false,

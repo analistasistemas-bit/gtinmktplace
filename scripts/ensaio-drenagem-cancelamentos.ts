@@ -41,7 +41,8 @@ export function planoEnsaio(orgs: Record<Letra, string>, carimbo: string): Plano
   const ids = Object.values(orgs);
   if (ids.some((id) => !/^[0-9a-f-]{36}$/i.test(id))) throw new Error('ENSAIO_ORG_A/B/C: uuid inválido');
   if (new Set(ids).size !== 3) throw new Error('ENSAIO_ORG_A/B/C têm de ser três orgs distintas (um cenário por org)');
-  const sku = (l: Letra, n: number) => `ENS0211-${l}-${String(n).padStart(2, '0')}`;
+  // Códigos de 8 dígitos (trigger de cadastro manual): 9921 + org (1..3) + nº (3 dígitos).
+  const sku = (l: Letra, n: number) => `9921${'ABC'.indexOf(l) + 1}${String(n).padStart(3, '0')}`;
   const skus = { A: range(20).map((i) => sku('A', i)), B: range(20).map((i) => sku('B', i)), C: range(3).map((i) => sku('C', i)) };
   let seq = 0;
   const venda = (letra: Letra, s: string, envio: string, kit = false): Venda =>
@@ -99,12 +100,12 @@ async function previa(admin: SupabaseClient, plano: Plano) {
     if (l === 'A' && !(o!.modulos_habilitados ?? []).includes('kit_variacao')) falhar('org A: ligar o módulo kit_variacao');
     if (n.marketplace_connections || n.anuncios_externos || n.ml_vendas) falhar(`org ${l}: tem conexão, anúncio ou venda`);
     const alheios = await ler<Array<{ codigo: string }>>(
-      admin.from('variacoes').select('codigo').eq('org_id', org).not('codigo', 'like', 'ENS0211-%').limit(1), 'variacoes');
+      admin.from('variacoes').select('codigo').eq('org_id', org).not('codigo', 'like', '9921%').limit(1), 'variacoes');
     if (alheios.length) falhar(`org ${l}: tem SKU que não é do ensaio (${alheios[0].codigo})`);
   }
   console.log('\nVai inserir (só nas três orgs acima):');
   for (const l of ['A', 'B', 'C'] as Letra[]) console.log(`  ${l}: 1 lote, 1 família, SKUs ${plano.skus[l].join(', ')} com entrada de 10 cada`);
-  console.log('  A: kit rascunho `ENS0211-KIT` com os 5 primeiros SKUs como participantes (sem anúncio)');
+  console.log('  A: kit rascunho `99211090` com os 5 primeiros SKUs como participantes (sem anúncio)');
   console.log(`  worker_rodadas (reconciliar, rodando) por org; ${plano.vendas.length} vendas em ml_vendas, pedidos ${plano.vendas[0].orderId}..${plano.vendas.at(-1)!.orderId}`);
   console.log(`  baixa real de cada venda; raw → cancelled (o trigger arma); reabertura: baixa de ${plano.reabertura.skuNovo} no pedido ${plano.reabertura.orderId}`);
   console.log('\nEfeitos colaterais (só nas orgs de ensaio):');
@@ -142,7 +143,7 @@ async function executar(admin: SupabaseClient, plano: Plano) {
     const userId = donos[org] = p!.id;
     const lote = await ler<{ id: string }>(admin.from('lotes').insert({ user_id: userId, org_id: org, status: 'revisao', origem: 'manual' }).select('id').single(), 'lotes');
     const fam = await ler<{ id: string }>(admin.from('familias').insert({
-      lote_id: lote.id, user_id: userId, org_id: org, codigo_pai: `ENS0211-${l}`, nome_pai: `Ensaio ADR-0211 ${l}`,
+      lote_id: lote.id, user_id: userId, org_id: org, codigo_pai: `992110${'ABC'.indexOf(l) + 1}0`, nome_pai: `Ensaio ADR-0211 ${l}`,
       operacao: 'CREATE', origem: 'nacional', chave_cadastro: crypto.randomUUID(),
     }).select('id').single(), 'familias');
     await ler(admin.from('variacoes').insert(plano.skus[l].map((codigo) => ({ familia_id: fam.id, user_id: userId, org_id: org, codigo, preco: 1 }))).select('id'), 'variacoes');
@@ -152,7 +153,7 @@ async function executar(admin: SupabaseClient, plano: Plano) {
     }
   }
   const kit = await ler<{ id: string }>(admin.from('kits_variacao').insert({
-    org_id: plano.orgs.A, codigo_pai_base: 'ENS0211-A', codigo_pai_kit: 'ENS0211-KIT', pecas_por_kit: 2, preco: 1,
+    org_id: plano.orgs.A, codigo_pai_base: '99211010', codigo_pai_kit: '99211090', pecas_por_kit: 2, preco: 1,
   }).select('id').single(), 'kits_variacao');
   await ler(admin.from('kit_variacao_skus').insert(plano.skus.A.slice(0, 5).map((codigo) => ({
     org_id: plano.orgs.A, kit_id: kit.id, codigo, tamanho: 'U', cores: ['Ensaio'], rotulo_cor: 'Ensaio',
