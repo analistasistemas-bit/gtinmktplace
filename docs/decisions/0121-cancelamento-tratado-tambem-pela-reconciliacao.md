@@ -125,6 +125,10 @@ impressa.** Decisão do Diego. Dos 9 cancelamentos que a fila do ADR-0211 conclu
 - **Estado misto na fila** (parte já estornada): com prova repõe o que está aberto; sem prova, avisa da 3ª tentativa em
   diante (antes ficava pendente para sempre, sem aviso).
 - Vale para webhook, reconciliação e fila, e para o crédito de kit (mesmo predicado).
+- **Risco aceito pelo Diego (24/11):** lote da fila com 1.000 linhas de ledger conta como leitura falha e a drenagem da
+  org para naquele ciclo. Medido: no máximo 2 baixas por pedido e 20 linhas nos 20 maiores pedidos de uma org.
+- **Aviso:** o ledger é relido logo antes de reservar; tudo já estornado por outra execução não avisa. Sobra a janela entre
+  essa releitura e o envio.
 - **Risco aceito:** um ajuste feito fora do app (balcão) não deixa rastro; e as travas são lidas antes do estorno, não
   na mesma transação.
 

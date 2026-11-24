@@ -742,6 +742,31 @@ describe('tratarPedidoCancelado: envio cancelado que nunca saiu', () => {
       expect(c.chamadas.reservas).toEqual([]);
       expect(c.chamadas.notificacoes).toEqual([]);
     });
+    it('ramo novo: outra execução estorna tudo enquanto o histórico falha: relê e não avisa', async () => {
+      const c = cenario({ pedido: {
+        aoIndisponivel: () => 'avisar',
+        lerNuncaSaiu: () => { for (const l of c.ledger) l.estornada = true; return Promise.resolve('indisponivel' as const); },
+      } });
+      expect(await c.rodar()).toBe('sem-baixa');
+      expect(c.chamadas.reservas).toEqual([]);
+      expect(c.chamadas.notificacoes).toEqual([]);
+    });
+    it('ramo novo: estornada só uma parte enquanto isso: o aviso lista só o que segue aberto', async () => {
+      const c = cenario({ ledger: [b('00000029'), b('00000030')], pedido: {
+        aoIndisponivel: () => 'avisar',
+        lerNuncaSaiu: () => { c.ledger[0].estornada = true; return Promise.resolve('indisponivel' as const); },
+      } });
+      expect(await c.rodar()).toBe('avisado');
+      expect(c.chamadas.notificacoes[0].texto).toContain('00000030');
+      expect(c.chamadas.notificacoes[0].texto).not.toContain('00000029');
+    });
+    it('ramo novo: releitura falha → avisa com a leitura anterior', async () => {
+      let n = 0;
+      const c = cenario({ prova: 'nao', deps: { baixasAbertas: () => n++ === 0
+        ? Promise.resolve({ abertas: [{ codigoRef: 'A', codigo: 'A', quantidade: 1 }], haEstornada: false }) : Promise.reject(new Error('fora')) } });
+      expect(await c.rodar()).toBe('avisado');
+      expect(n).toBe(2);
+    });
     it('leitura pendurada: em 3 s segue com o texto padrão', async () => {
       vi.useFakeTimers();
       const c = cenario({ ...DESPACHADO, deps: { houveBaixaDeVenda: () => Promise.resolve(true), baixasAbertas: () => new Promise(() => {}) } });

@@ -192,7 +192,8 @@ export async function tratarPedidoCancelado(
     }
     await p.antesDoAviso?.();
     // Estado parcial: parte já voltou. Lido ANTES de reservar e com prazo: nada novo pode consumir o aviso.
-    if (!ledger && p.lerNuncaSaiu) ledger = await semTravar(deps.baixasAbertas(admin, p.orgId, p.orderId));
+    // Relido também no ramo novo: outra execução pode ter estornado durante a espera do histórico.
+    if (p.lerNuncaSaiu) ledger = await semTravar(deps.baixasAbertas(admin, p.orgId, p.orderId)) ?? ledger;
     // Tudo já estornado (outra execução): pedir entrada somaria duas vezes.
     if (ledger?.haEstornada && ledger.abertas.length === 0) return 'sem-baixa';
     if (!await deps.reservarNotificacao(admin, p.orgId, p.userId, 'estoque_cancelado_despachado', String(p.orderId))) {
