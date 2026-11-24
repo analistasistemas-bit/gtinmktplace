@@ -640,7 +640,7 @@ Da ADR-0210 e do código:
 - Alíquota interna (`interna_pct`, ADR-0112) não entra no cálculo, como na aba Campanhas (não verificado se deveria).
 - Comissão e frete vêm de um cache de até 8 horas (`tarifa_idade_max_horas`); o preço é lido na hora.
 - A leitura pode renovar e regravar a credencial do Mercado Livre da organização.
-- Pendências aceitas para o piloto: o cache de comissão `promo:lp:v1` é compartilhado entre organizações; não há bloqueio por IP antes da consulta da chave; não há revalidação da conexão depois da leitura do corpo; o limite de 10 conexões ativas não é atômico.
+- Pendências aceitas para o piloto: o cache de comissão `promo:lp:v1` é compartilhado entre organizações; não há bloqueio por IP antes da consulta da chave (assinatura na chave avaliada e adiada, ADR-0210, Emenda 3); não há revalidação da conexão depois da leitura do corpo; o limite de 10 conexões ativas não é atômico.
 - Teste real por cliente em 2026-11-23: os testados e os pendentes estão na tabela de clientes do guia ([acesso-de-agentes.md](acesso-de-agentes.md)). `/items/bulk` de outro vendedor: 240 de 240 anúncios de terceiros responderam 403 sem corpo (amostra de 2026-11-24, não aleatória); além disso o código confere o vendedor (ADR-0210, Emenda 2). Não medido: anúncio de catálogo próprio.
 
 O que **não existe**:
