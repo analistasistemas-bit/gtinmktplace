@@ -29,6 +29,7 @@ import type { PedidoML } from '../_shared/faturamento/venda.ts';
 import { SemAcessoRodada, cicloHoraUtc, executarMensagem, rotear, statusHttp, type MsgOrg } from '../_shared/rodada/rodada.ts';
 import { depsRodada, fanoutAtivo, publicarDisparo } from '../_shared/rodada/deps.ts';
 import { desfechoPedido, passoReconciliar, resultadoVazio, type DepsReconciliar, type ParamsReconciliar } from './passo.ts';
+import { CARENCIA, LOTE_CANCELAMENTOS, PRAZO_TOTAL_MS, depsDaFila, drenagemLigada, drenarCancelamentos, type Ledger } from './cancelamentos.ts';
 
 const FN = 'reconciliar-faturamento';
 
@@ -559,6 +560,56 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
         console.log(`reconciliar: ${corrigidas} datas de liberação corrigidas (org ${org}), ${marcadas} marcadas como já notificadas`);
       }
       return corrigidas;
+    },
+
+    // ADR-0211: fila de cancelamento. Desligada sem DRENAR_CANCELAMENTOS. Toda RPC que falha lança (a drenagem
+    // decide o que isso significa); o passo captura e segue para perguntas.
+    async drenarCancelamentos(token, cx, userId, lote, inicioMs) {
+      if (!drenagemLigada(Deno.env.get('DRENAR_CANCELAMENTOS'), orgId)) return { concluidos: 0, pendentes: 0 };
+      if (!cx.contaExternaId) {
+        console.warn(`reconciliar: drenagem de cancelamentos pulada na org ${orgId}: conexão sem conta externa`);
+        return { concluidos: 0, pendentes: 0 };
+      }
+      const deps = depsDaFila(depsCancelamento);
+      return await drenarCancelamentos({
+        contaExternaId: String(cx.contaExternaId),
+        async reivindicar(l) {
+          const { data, error } = await admin.rpc('reivindicar_cancelamentos', {
+            p_org: orgId, p_lote: l, p_limite: LOTE_CANCELAMENTOS, p_carencia: CARENCIA,
+          });
+          if (error) throw new Error(`reivindicar_cancelamentos: ${error.message}`);
+          return ((data ?? []) as Array<{ id: string; order_id: number | string; geracao: string; versao: string | null }>)
+            .map((r) => ({ id: r.id, orderId: String(r.order_id), geracao: r.geracao, versao: r.versao }));
+        },
+        async ledger(ids) {
+          const { data, error } = await admin.rpc('cancelamento_baixas', { p_org: orgId, p_orders: ids });
+          if (error) throw new Error(`cancelamento_baixas: ${error.message}`);
+          const porPedido = new Map<string, Ledger>();
+          for (const r of (data ?? []) as Array<{ order_id: string; lido_em: string; codigo_ref: string | null; quantidade: number | null; estornada: boolean }>) {
+            const l = porPedido.get(r.order_id) ?? { lidoEm: r.lido_em, baixas: [] };
+            // codigo_ref nulo = pedido sem baixa (linha única do left join), não baixa com código nulo.
+            if (r.codigo_ref != null) l.baixas.push({ codigoRef: r.codigo_ref, quantidade: Number(r.quantidade), estornada: !!r.estornada });
+            porPedido.set(r.order_id, l);
+          }
+          return porPedido;
+        },
+        pedido: (id) => buscarPedido(token, id),
+        envio: (id) => buscarShipment(token, id),
+        async aindaPendente(o) {
+          const { data, error } = await admin.from('ml_vendas').select('id')
+            .eq('org_id', orgId).eq('id', o.id).eq('cancelamento_geracao', o.geracao).is('cancelamento_concluido_em', null)
+            .maybeSingle();
+          if (error) throw new Error(`ml_vendas (geração): ${error.message}`);
+          return !!data;
+        },
+        kitLigado: async () => (await catalogoDe(userId, orgId)).kitLigado,
+        tratar: (p) => tratarPedidoCancelado(admin, deps, { ...p, orgId, userId, canal: 'mercado_livre' }),
+        async registrar(itens) {
+          const { error } = await admin.rpc('registrar_cancelamentos_tratados', { p_org: orgId, p_itens: itens });
+          if (error) throw new Error(`registrar_cancelamentos_tratados: ${error.message}`);
+        },
+        agora: () => Date.now(),
+      }, lote, Number(Deno.env.get('DRENAR_CANCELAMENTOS_PRAZO_MS')) || PRAZO_TOTAL_MS, inicioMs);
     },
   };
 }
