@@ -99,9 +99,8 @@ async function previa(admin: SupabaseClient, plano: Plano) {
     if (o!.nome !== NOMES[l]) falhar(`org ${l}: nome tem de ser exatamente "${NOMES[l]}"`);
     if (l === 'A' && !(o!.modulos_habilitados ?? []).includes('kit_variacao')) falhar('org A: ligar o módulo kit_variacao');
     if (n.marketplace_connections || n.anuncios_externos || n.ml_vendas) falhar(`org ${l}: tem conexão, anúncio ou venda`);
-    const alheios = await ler<Array<{ codigo: string }>>(
-      admin.from('variacoes').select('codigo').eq('org_id', org).not('codigo', 'like', '9921%').limit(1), 'variacoes');
-    if (alheios.length) falhar(`org ${l}: tem SKU que não é do ensaio (${alheios[0].codigo})`);
+    // A org de ensaio nasce vazia: qualquer SKU ou movimento prévio aborta (nada fora do plano é tocado).
+    if (n.variacoes || n.estoque_movimentos) falhar(`org ${l}: tem SKU ou movimento de estoque; use uma org nova e vazia`);
   }
   console.log('\nVai inserir (só nas três orgs acima):');
   for (const l of ['A', 'B', 'C'] as Letra[]) console.log(`  ${l}: 1 lote, 1 família, SKUs ${plano.skus[l].join(', ')} com entrada de 10 cada`);
