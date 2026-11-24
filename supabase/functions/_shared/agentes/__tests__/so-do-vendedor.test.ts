@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CAMPOS_ITEM_AGORA, parseItensBulk } from '../../ads/campanhas.ts';
 import { caminhoMultiget } from '../../ml/multiget.ts';
+import { montarCadastro } from '../../promocoes/cadastro.ts';
 import { buscarItensML } from '../../promocoes/ml.ts';
+import { type DepsMargens, margemDoAlvo, margensDoCatalogo, simularMargem } from '../margens.ts';
 import { soDoVendedor } from '../so-do-vendedor.ts';
 
 const CONTA = '111222333';
@@ -79,10 +81,10 @@ describe('soDoVendedor', () => {
     expect(aviso).not.toHaveBeenCalled();
   });
 
-  it('erro do ML sobe e resposta que não é lista volta intacta', async () => {
+  it('erro do ML sobe e resposta que não é lista vira lista vazia', async () => {
     const erro = new Error('ML 500 em /items/bulk');
     await expect(soDoVendedor(() => Promise.reject(erro), CONTA)(caminhoMultiget(['MLB1'], 'id'))).rejects.toBe(erro);
-    expect(await soDoVendedor(fakeML({ error: 'x' }).get, CONTA)(caminhoMultiget(['MLB1'], 'id'))).toEqual({ error: 'x' });
+    expect(await soDoVendedor(fakeML({ error: 'x' }).get, CONTA)(caminhoMultiget(['MLB1'], 'id'))).toEqual([]);
   });
 
   it('recusa caminho que não é o bulk, em vez de ler sem conferir o vendedor', async () => {
@@ -95,5 +97,62 @@ describe('soDoVendedor', () => {
     const edge = readFileSync('supabase/functions/agentes/index.ts', 'utf8');
     expect(edge.match(/criarGetJson\(/g)).toHaveLength(1);
     expect(edge).toContain('get: soDoVendedor(criarGetJson(token), cx.contaExternaId)');
+  });
+});
+
+describe('vínculo velho de uma conta trocada (o ML devolve 200 de outro vendedor)', () => {
+  /** MLB1 é da conta; MLB2 está no cadastro da organização, mas o ML diz que é de outro vendedor. */
+  function deps() {
+    const bruto = (id: string, seller_id: number, vid: number) => ({
+      status_code: 200,
+      body: {
+        id, seller_id, title: `Titulo ${id}`, status: 'active', price: 50, original_price: 60, listing_type_id: 'gold_special',
+        category_id: 'MLB1234', attributes: [], item_relations: [],
+        variations: [{ id: vid, seller_custom_field: `SKU-${id}`, attribute_combinations: [{ id: 'COLOR', value_name: 'Azul' }] }],
+      },
+    });
+    const todos: Record<string, unknown> = { MLB1: bruto('MLB1', 111222333, 1), MLB2: bruto('MLB2', 444555666, 2) };
+    const get = soDoVendedor(
+      (p) => Promise.resolve(new URL(`https://x${p}`).searchParams.get('ids')!.split(',').map((id) => todos[id])), CONTA);
+    const vinculo = (mlb: string) => ({ mlb, mlbu: null, familia_ml: '1', sku: `SKU-${mlb}`, codigo_pai: 'P1' });
+    const tarifaEm = vi.fn(async () => ({ comissao: { percentual: 12, fixa: 6 }, frete: 0 }));
+    const d: DepsMargens = {
+      orgId: 'org-A', agora: new Date('2026-11-24T12:00:00Z'),
+      resolver: { vinculos: async (f) => ['MLB1', 'MLB2'].filter((m) => !f.mlb || f.mlb === m).map(vinculo), buscarPorTitulo: async () => [] },
+      carregarCadastro: async () => montarCadastro(['MLB1', 'MLB2'].map((m, i) => ({
+        id: `v-${m}`, custo: 14, preco: 18, cor: 'Azul', codigo: null, gtin: null, ml_variation_id: String(i + 1),
+        peso_gramas: 200, altura_cm: 5, largura_cm: 10, comprimento_cm: 15, atualizado_em: '2026-09-01T00:00:00Z',
+        familias: { ml_item_id: m, origem: 'nacional' },
+      })), []),
+      lerAliquotas: async () => ({ nacional: 8, importado: 16 }),
+      buscarItensML: (ids) => buscarItensML(get, ids),
+      lerPrecos: async (ids) => parseItensBulk(await get(caminhoMultiget(ids, CAMPOS_ITEM_AGORA)), ids),
+      tarifaEm, reservarTarifas: async () => 'ok', reservarLeituras: async () => 'ok',
+      listarMlbs: async () => ['MLB1', 'MLB2'],
+    };
+    return { d, tarifaEm };
+  }
+  const VAZIO = { mlb: 'MLB2', titulo: null, sku: null, preco_tabela_brl: null, margem_pct: null, roas_minimo: null, motivo: 'anuncio_indisponivel' };
+
+  it('margem, catálogo e simulação não entregam nada do outro vendedor nem consultam tarifa dele', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (const chamar of [
+      (d: DepsMargens) => margemDoAlvo('MLB2', d), (d: DepsMargens) => simularMargem('MLB2', 80, d),
+    ]) {
+      const { d, tarifaEm } = deps();
+      const r = await chamar(d);
+      expect(r).toMatchObject({ estado: 'ok', anuncios: [VAZIO], referencia: { margem_pct: null } });
+      expect(JSON.stringify(r)).not.toContain('Titulo MLB2');
+      expect(tarifaEm).not.toHaveBeenCalled();
+    }
+    const { d } = deps();
+    const r = await margensDoCatalogo(null, d);
+    expect(r).toMatchObject({ estado: 'ok', parcial: true, anuncios: [{ mlb: 'MLB1', titulo: 'Titulo MLB1', preco_brl: 50, margem_pct: 40 }, { ...VAZIO, preco_brl: null }] });
+  });
+
+  it('na família, o anúncio alheio zera a referência e o próprio mantém o número', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const r = await margemDoAlvo('123456789012', deps().d);
+    expect(r).toMatchObject({ anuncios: [{ mlb: 'MLB1', margem_pct: 40 }, VAZIO], referencia: { margem_pct: null, motivo: 'anuncio_sem_numero' } });
   });
 });

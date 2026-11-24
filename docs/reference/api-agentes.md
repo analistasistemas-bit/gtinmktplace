@@ -628,7 +628,7 @@ Um identificador de 12 a 20 dígitos é gravado como família ainda que fosse um
 - **Isolamento por organização.** Toda consulta de banco, cache, cursor e cota leva a organização da conexão. Um MLB, MLBU, família, SKU ou título de **outra** organização responde `nao_encontrado`, idêntico a um inexistente; um cursor de outra organização responde `cursor_invalido`. Não há como enumerar outras lojas.
 - **Uma chave por loja.** Para consultar várias lojas, use uma conexão (chave) por loja; não existe chave multi-loja.
 - **Dados que nunca saem:** dados de comprador, credenciais do Mercado Livre, dados de fornecedor e `familias.custo_centavos` (custo de tokens de IA).
-- **Só anúncio da conta.** Item e preço lidos no Mercado Livre são descartados quando o `seller_id` não é o da conta da conexão, ou não vem (ADR-0210, Emenda 2): o anúncio responde `anuncio_indisponivel`, sem título nem preço.
+- **Só anúncio da conta.** Item e preço lidos no Mercado Livre são descartados quando o `seller_id` não é o da conta da conexão, ou não vem (ADR-0210, Emenda 2): o anúncio responde `anuncio_indisponivel`. A conferência é por leitura: se só uma for recusada, o que sai veio da outra, já conferida (na simulação, o item conferido basta para calcular).
 - **Erros opacos.** Falhas internas devolvem só `indisponivel`; a mensagem original não é exposta nem logada. Falhas de credencial não distinguem chave inexistente, revogada ou expirada.
 - **Guarde a chave como segredo.** Ela é exibida uma vez; no PubliAI fica só o hash. Revogue e crie outra em caso de vazamento.
 
@@ -641,7 +641,7 @@ Da ADR-0210 e do código:
 - Comissão e frete vêm de um cache de até 8 horas (`tarifa_idade_max_horas`); o preço é lido na hora.
 - A leitura pode renovar e regravar a credencial do Mercado Livre da organização.
 - Pendências aceitas para o piloto: o cache de comissão `promo:lp:v1` é compartilhado entre organizações; não há bloqueio por IP antes da consulta da chave; não há revalidação da conexão depois da leitura do corpo; o limite de 10 conexões ativas não é atômico.
-- Teste real em cada cliente: feito em 2026-11-23; resultado na tabela de clientes do guia ([acesso-de-agentes.md](acesso-de-agentes.md)). `/items/bulk` de outro vendedor: 240 de 240 anúncios de terceiros responderam 403 sem corpo (amostra de 2026-11-24, não aleatória); além disso o código confere o vendedor (ADR-0210, Emenda 2). Não medido: anúncio de catálogo próprio.
+- Teste real por cliente em 2026-11-23: os testados e os pendentes estão na tabela de clientes do guia ([acesso-de-agentes.md](acesso-de-agentes.md)). `/items/bulk` de outro vendedor: 240 de 240 anúncios de terceiros responderam 403 sem corpo (amostra de 2026-11-24, não aleatória); além disso o código confere o vendedor (ADR-0210, Emenda 2). Não medido: anúncio de catálogo próprio.
 
 O que **não existe**:
 

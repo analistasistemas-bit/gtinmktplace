@@ -15,7 +15,7 @@ export function soDoVendedor(get: GetJson, conta: string): GetJson {
   return async (path) => {
     if (!BULK.test(path)) throw new Error('agentes.leitura_sem_vendedor');
     const json = await get(path.replace(BULK, '$1body.seller_id,'));
-    if (!Array.isArray(json)) return json;
+    if (!Array.isArray(json)) return []; // formato inesperado: nada é entregue sem conferir
     let quantidade = 0;
     const out = json.map((e) => {
       if (!obj(e) || e.body == null || daConta(e.body)) return e;

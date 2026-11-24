@@ -171,7 +171,7 @@ Revisão independente (Codex gpt-6.2-sol, high, 2026-11-23): (a) o comando do Cl
 
 Aprovada pelo Diego em 2026-11-24, depois da amostra abaixo.
 
-**Decisão.** Nas leituras do `/items/bulk` feitas pela edge `agentes`, o pedido inclui `seller_id` e todo envelope com corpo cujo vendedor não seja a conta ML da conexão (`marketplace_connections.conta_externa_id`), ou sem vendedor, vira 403 sem corpo, na mesma posição. O resultado continua `anuncio_indisponivel`; a contagem vai ao log, sem identificar o anúncio. Um ponto só cobre item e preço, inclusive na simulação (`_shared/agentes/so-do-vendedor.ts`, aplicado no `get` de `agentes/index.ts`). Os leitores compartilhados (`_shared/promocoes`, `_shared/ads`) não mudam.
+**Decisão.** Nas leituras do `/items/bulk` feitas pela edge `agentes`, o pedido inclui `seller_id` e todo envelope com corpo cujo vendedor não seja a conta ML da conexão (`marketplace_connections.conta_externa_id`), ou sem vendedor, vira 403 sem corpo, na mesma posição. O resultado continua `anuncio_indisponivel`, sem dado vindo do anúncio recusado; o MLB continua na resposta, porque vem do cadastro da própria organização; a contagem vai ao log, sem identificar o anúncio. Um ponto só cobre item e preço, inclusive na simulação (`_shared/agentes/so-do-vendedor.ts`, aplicado no `get` de `agentes/index.ts`). Os leitores compartilhados (`_shared/promocoes`, `_shared/ads`) não mudam.
 
 **Medido** (2026-11-24, 17:16 de Brasília, só GET, token da Zaven salvo indicação, duas seleções de campos do app com `seller_id`; em blocos de controle de 20 anúncios, a seleção exata do app deu os mesmos códigos):
 
@@ -185,8 +185,12 @@ Aprovada pelo Diego em 2026-11-24, depois da amostra abaixo.
 
 Status no ML dos 340 próprios: Zaven 174 ativos, 73 pausados (67 sem estoque, 6 pelo vendedor) e 64 encerrados; outra loja 24 pausados e 5 em revisão. Nenhum MLB está vinculado a mais de uma organização (consulta a todos os vínculos ML).
 
+As linhas acima medem o ML, não o filtro: nenhum caso real devolveu 200 de outro vendedor, e esse cenário só está coberto por teste automático (margem, simulação, catálogo e família).
+
 **Não medido:** anúncio de catálogo próprio (nenhum entre os 340); status dos terceiros (o ML não informa; 30 dos 120 não conectados estavam inativos no registro do Radar); leitura de terceiro com token de outra loja; amostra aleatória do ML (esta não é).
 
 **Inferência:** a recusa do ML é forte indício de isolamento, mas é comportamento sem contrato conhecido e pode mudar; por isso a validação entra mesmo com zero vazamento. O caminho que ela fecha é o vínculo velho de uma conta trocada. Os outros leitores do `/items/bulk` que não conferem o vendedor (promoções, operações em massa, reajuste, Ads) teriam a mesma exposição: pendência separada, fora desta ADR.
 
 **Ao ligar outra loja:** conferir no catálogo do agente que os anúncios próprios, inclusive um de catálogo se houver, não voltam `anuncio_indisponivel`. O filtro falha fechado: `seller_id` ausente esconde o anúncio e, se `conta_externa_id` divergir da conta do token, esconde a loja inteira.
+
+Revisão independente (Codex gpt-6.2-sol, high, 2026-11-24): (a) resposta fora do formato de lista passou a virar lista vazia; (b) entrou teste do fluxo completo com vínculo velho; (c) o texto passou a separar o que mede o ML do que só o teste cobre. Não aceito como bloqueador: o MLB do vínculo recusado aparecer no catálogo e no cursor, porque é dado do cadastro da própria organização, não do outro vendedor.
