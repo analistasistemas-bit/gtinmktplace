@@ -140,14 +140,19 @@ describe('baixasAbertas', () => {
     expect(await baixasAbertas(banco({ estoque_movimentos: [venda('12:B', 'B'), estorno('12:B')] }).admin, ORG, 12))
       .toEqual({ abertas: [], haEstornada: true });
   });
-  it('lança em erro da RPC ou do ledger, e se a baixa aberta não aparece no ledger', async () => {
-    const t = { estoque_movimentos: [venda('12:B', 'B')] };
-    for (const erro of ['cancelamento_baixas', 'estoque_movimentos']) {
-      await expect(baixasAbertas(banco(t, erro).admin, ORG, 12), erro).rejects.toThrow(/fora/);
-    }
+  it('lança em erro da RPC; erro só na leitura do movimento mantém a baixa confirmada, sem o código', async () => {
+    const t = { estoque_movimentos: [venda('12:B', 'B', -4)] };
+    await expect(baixasAbertas(banco(t, 'cancelamento_baixas').admin, ORG, 12)).rejects.toThrow(/fora/);
+    const semCodigo = { abertas: [{ codigoRef: 'B', codigo: null, quantidade: 4 }], haEstornada: false };
+    expect(await baixasAbertas(banco(t, 'estoque_movimentos').admin, ORG, 12)).toEqual(semCodigo);
+    const { admin } = banco({}); // movimento não achado
+    admin.rpc = () => Promise.resolve({ data: [{ codigo_ref: 'B', quantidade: 4, estornada: false }], error: null });
+    expect(await baixasAbertas(admin, ORG, 12)).toEqual(semCodigo);
+  });
+  it('1000 linhas (teto do PostgREST) pode ser resposta truncada: lança, nunca "sem baixa"', async () => {
     const { admin } = banco({});
-    admin.rpc = () => Promise.resolve({ data: [{ codigo_ref: 'B', quantidade: 1, estornada: false }], error: null });
-    await expect(baixasAbertas(admin, ORG, 12)).rejects.toThrow(/B/);
+    admin.rpc = () => Promise.resolve({ data: Array.from({ length: 1000 }, (_, i) => ({ codigo_ref: `S${i}`, quantidade: 1, estornada: true })), error: null });
+    await expect(baixasAbertas(admin, ORG, 12)).rejects.toThrow(/truncada/);
   });
 });
 
@@ -190,6 +195,10 @@ describe('saldoMexidoDepois', () => {
   it('`_` do prefixo não vale como curinga', async () => {
     const t = { estoque_movimentos: [venda('12:B', 'B'), { ...venda('x', 'C'), referencia_externa: 'mercadoXlivre:12:C' }, mov('entrada', 'C', DEPOIS)] };
     expect(await saldoMexidoDepois(banco(t).admin, ORG, 12)).toBe(false);
+  });
+  it('1000 baixas lidas pode ser resposta truncada: lança', async () => {
+    const t = { estoque_movimentos: Array.from({ length: 1000 }, (_, i) => venda(`12:S${i}`, 'S')) };
+    await expect(saldoMexidoDepois(banco(t).admin, ORG, 12)).rejects.toThrow(/truncada/);
   });
   it('lança em erro de leitura e quando não acha a baixa (nunca "não mexido" por omissão)', async () => {
     const t = { estoque_movimentos: [venda('12:B', 'B')] };

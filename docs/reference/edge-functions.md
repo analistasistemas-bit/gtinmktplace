@@ -1770,7 +1770,8 @@ Lógica em `supabase/functions/_shared/galeria/`. Nenhuma edge desta família es
   com os itens abertos do ledger (`cancelamento_baixas`) e sem `entrada`/`ajuste`/linha nova de `variacoes` depois da
   baixa; pedido já avisado silencia. Leitura indisponível: webhook e reconciliação devolvem `adiado` se a fila do
   ADR-0211 vai tratar (obrigação armada, `DRENAR_CANCELAMENTOS=1`, `FANOUT_RECONCILIAR=1`, org ativa, conexão
-  completa), senão avisam na hora; a fila insiste 2 vezes e avisa na 3ª. Aviso em estado parcial lista só o aberto.
+  completa), senão avisam na hora; a fila insiste 2 vezes e avisa na 3ª (inclusive com o envio ilegível, que nunca repõe). Aviso em estado parcial
+  lista só o aberto; estorno não confirmado pela releitura do ledger avisa com texto neutro ("confira o saldo").
   **Devolução (`sync-devolucao`, claims) não é tocada por este épico: nem
   repõe estoque, nem notifica** — repor exige saber o que voltou e em que estado, decisão do
   operador, fora de escopo (ADR-0094). Toda a lógica de baixa/estorno é envolvida em try/catch — a

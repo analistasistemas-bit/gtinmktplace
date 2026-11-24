@@ -36,9 +36,15 @@ export async function lerNuncaSaiu(token: string, shippingId: number | string): 
 }
 
 export interface BaixasAbertas {
-  /** `codigoRef` só localiza o estorno; `codigo` e `quantidade` são os do movimento (a BASE, no kit vinculado). */
-  abertas: Array<{ codigoRef: string; codigo: string; quantidade: number }>;
+  /** `codigoRef` só localiza o estorno; `codigo` e `quantidade` são os do movimento (a BASE, no kit vinculado).
+   *  `codigo` nulo = a RPC confirmou a baixa, mas o movimento não foi lido. */
+  abertas: Array<{ codigoRef: string; codigo: string | null; quantidade: number }>;
   haEstornada: boolean;
+}
+
+/** Teto de linhas do PostgREST: chegar nele pode ser resposta truncada, então conta como leitura falha. */
+function conferirTeto(linhas: unknown[], onde: string) {
+  if (linhas.length >= 1000) throw new Error(`${onde}: resposta possivelmente truncada`);
 }
 
 /** Baixas do pedido no ledger. O filtro do banco é superconjunto (`_` do LIKE); o prefixo exato é conferido aqui. */
@@ -47,26 +53,30 @@ async function lerBaixas(admin: SupabaseClient, orgId: string, orderId: string |
   const { data, error } = await admin.from('estoque_movimentos').select('codigo, quantidade, criado_em, referencia_externa')
     .eq('org_id', orgId).eq('motivo', 'venda').lt('quantidade', 0).like('referencia_externa', `${prefixo}%`);
   if (error) throw new Error(`estoque_movimentos: ${error.message}`);
+  conferirTeto(data ?? [], 'estoque_movimentos');
   return ((data ?? []) as Array<{ codigo: string; quantidade: number; criado_em: string; referencia_externa: string }>)
     .filter((m) => m.referencia_externa.startsWith(prefixo))
     .map((m) => ({ ...m, codigoRef: m.referencia_externa.slice(prefixo.length) }));
 }
 
-/** Baixas sem estorno efetivo, pela mesma RPC da fila do ADR-0211. Lança em erro. */
+/** Baixas sem estorno efetivo, pela mesma RPC da fila do ADR-0211. Lança se a RPC falhar; a falha só do movimento
+ *  (que dá o código para o texto) não desfaz a baixa que a RPC confirmou. */
 export async function baixasAbertas(admin: SupabaseClient, orgId: string, orderId: string | number): Promise<BaixasAbertas> {
   const { data, error } = await admin.rpc('cancelamento_baixas', { p_org: orgId, p_orders: [String(orderId)] });
   if (error) throw new Error(`cancelamento_baixas: ${error.message}`);
+  conferirTeto(data ?? [], 'cancelamento_baixas');
   // codigo_ref nulo = pedido sem baixa.
-  const linhas = ((data ?? []) as Array<{ codigo_ref: string | null; estornada: boolean }>).filter((l) => l.codigo_ref != null);
-  const refs = linhas.filter((l) => !l.estornada).map((l) => l.codigo_ref!);
-  const movs = refs.length > 0 ? await lerBaixas(admin, orgId, orderId) : [];
+  const linhas = ((data ?? []) as Array<{ codigo_ref: string | null; quantidade: number; estornada: boolean }>).filter((l) => l.codigo_ref != null);
+  const abertas = linhas.filter((l) => !l.estornada);
+  const movs = abertas.length === 0 ? [] : await lerBaixas(admin, orgId, orderId).catch((e) => {
+    console.warn(`nunca-saiu: movimentos do pedido ${orderId} não lidos: ${String(e)}`);
+    return [];
+  });
   return {
     haEstornada: linhas.some((l) => l.estornada),
-    abertas: refs.map((codigoRef) => {
-      const m = movs.find((x) => x.codigoRef === codigoRef);
-      if (!m) throw new Error(`baixa ${codigoRef} do pedido ${orderId} não lida no ledger`);
-      return { codigoRef, codigo: m.codigo, quantidade: -m.quantidade };
-    }),
+    abertas: abertas.map((l) => ({
+      codigoRef: l.codigo_ref!, codigo: movs.find((m) => m.codigoRef === l.codigo_ref)?.codigo ?? null, quantidade: Number(l.quantidade),
+    })),
   };
 }
 

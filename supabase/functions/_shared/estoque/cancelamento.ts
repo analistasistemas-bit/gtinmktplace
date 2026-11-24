@@ -175,10 +175,12 @@ export async function tratarPedidoCancelado(
   try {
     if (preDespachoConhecido || !p.temEnvio) return await repor(admin, deps, p);
     let ledger: BaixasAbertas | null = null;
+    let incerto = false; // estorno pedido e não confirmado
     if (candidatoNuncaSaiu(p)) {
       const r = await tratarNuncaSaiu(admin, deps, p);
       if (typeof r === 'string') return r;
       ledger = r.avisar;
+      incerto = r.incerto;
     }
     // Sem baixa não há saldo devendo voltar: o aviso não teria o que pedir para conferir.
     // Sem este corte, a primeira varredura alerta todo cancelamento histórico da base de uma
@@ -189,6 +191,8 @@ export async function tratarPedidoCancelado(
       return 'sem-baixa';
     }
     await p.antesDoAviso?.();
+    // Estado parcial: parte já voltou. Lido ANTES de reservar e com prazo: nada novo pode consumir o aviso.
+    if (!ledger && p.lerNuncaSaiu) ledger = await semTravar(deps.baixasAbertas(admin, p.orgId, p.orderId));
     if (!await deps.reservarNotificacao(admin, p.orgId, p.userId, 'estoque_cancelado_despachado', String(p.orderId))) {
       return 'silenciado';
     }
@@ -201,29 +205,29 @@ export async function tratarPedidoCancelado(
         + (claim.desfecho ? `Desfecho: ${claim.desfecho}\n` : '')
       : '';
     const saiu = st !== null && SAIU.includes(st);
-    // Estado parcial: parte já voltou. O texto pede entrada só do que está aberto; leitura falha = texto de sempre.
-    if (!ledger && p.lerNuncaSaiu) ledger = await deps.baixasAbertas(admin, p.orgId, p.orderId).catch(() => null);
-    const aberto = ledger?.haEstornada && ledger.abertas.length > 0
-      ? 'Parte do estoque já voltou. Ainda NÃO voltaram:\n'
-        + selecionarBaixas(ledger.abertas.map((b) => ({ codigo: b.codigo, quantity: b.quantidade })))
-          .map((b) => `• ${b.codigo} — ${b.quantity} un.`).join('\n')
-      : null;
+    // Parcial: pede entrada só do que está aberto. Sem certeza do que voltou: texto neutro, nunca "NÃO reposto".
+    const abertas = ledger?.haEstornada ? ledger.abertas : [];
+    incerto ||= abertas.some((b) => b.codigo === null);
+    const parcial = incerto ? 'O estoque pode ter voltado em parte. Confira o saldo em Estoque antes de dar entrada.'
+      : abertas.length > 0
+        ? 'Parte do estoque já voltou. Ainda NÃO voltaram:\n'
+          + selecionarBaixas(abertas.map((b) => ({ codigo: b.codigo, quantity: b.quantidade })))
+            .map((b) => `• ${b.codigo} — ${b.quantity} un.`).join('\n')
+          + `\n\n👉 ${saiu ? 'Quando o produto voltar' : 'Se o produto estiver aí'}, dê entrada manual em Estoque só desses itens.`
+        : null;
+    const situacao = incerto ? 'confira o estoque' : parcial ? 'estoque reposto só em parte' : 'estoque NÃO reposto';
     await deps.notificarCategoria(
       admin, p.orgId, 'pos_venda',
       peloComprador
         ? `🚫 Comprador cancelou o pedido ${p.orderId}\n\n`
           + 'O ML já resolveu: não precisa responder nada.\n\n'
-          + (aberto
-            ? `${aberto}\n\nSe a mercadoria ainda está aí, dê entrada manual em Estoque só desses itens.`
-            : 'O estoque NÃO foi reposto. Se a mercadoria ainda está aí, dê entrada manual em Estoque.')
-        : `📦 Pedido ${p.orderId} cancelado — ${aberto ? 'estoque reposto só em parte' : 'estoque NÃO reposto'}\n\n${motivo}${situacaoEnvio}\n`
-          + (aberto
-            ? `${aberto}\n\n👉 ${saiu ? 'Quando o produto voltar' : 'Se o produto estiver aí'}, dê entrada manual em Estoque só desses itens.`
-            : saiu
+          + (parcial ?? 'O estoque NÃO foi reposto. Se a mercadoria ainda está aí, dê entrada manual em Estoque.')
+        : `📦 Pedido ${p.orderId} cancelado — ${situacao}\n\n${motivo}${situacaoEnvio}\n`
+          + (parcial ?? (saiu
             ? 'A mercadoria já saiu, por isso o PubliAI não devolveu ao estoque sozinho.\n\n'
               + '👉 Quando o produto voltar, dê entrada manual em Estoque.'
             : 'Não dá para saber se a mercadoria saiu, por isso o PubliAI não devolveu ao estoque sozinho.\n\n'
-              + '👉 Se o produto estiver aí, dê entrada manual em Estoque.')
+              + '👉 Se o produto estiver aí, dê entrada manual em Estoque.'))
           + `\n\n${urlVendaML(Number(p.orderId))}`,
     );
     return 'avisado';
@@ -231,6 +235,15 @@ export async function tratarPedidoCancelado(
     console.error('estorno_estoque_falhou', p.orderId, e);
     return 'erro';
   }
+}
+
+const PRAZO_TEXTO_MS = 3_000;
+
+/** Leitura só para o texto do aviso: erro ou demora viram null. */
+function semTravar<T>(f: Promise<T>): Promise<T | null> {
+  let t: ReturnType<typeof setTimeout> | undefined;
+  const limite = new Promise<null>((ok) => { t = setTimeout(() => ok(null), PRAZO_TEXTO_MS); });
+  return Promise.race([f.catch(() => null), limite]).finally(() => clearTimeout(t));
 }
 
 /** Credita o que o pedido baixou e despacha o push. Com o módulo de kit, pelo caminho do ADR-0200. */
@@ -250,26 +263,27 @@ async function repor(admin: SupabaseClient, deps: DepsCancelamento, p: PedidoCan
 
 /**
  * Emenda 8 ao ADR-0121: repõe as baixas abertas do LEDGER (nunca o catálogo atual) quando o histórico prova que a
- * etiqueta nunca foi impressa e ninguém mexeu no saldo depois. `avisar` = segue para o aviso, com o ledger lido.
+ * etiqueta nunca foi impressa e ninguém mexeu no saldo depois. `avisar` = segue para o aviso, com o ledger lido;
+ * `incerto` = o estorno foi pedido e o ledger não confirmou se entrou.
  */
 async function tratarNuncaSaiu(
   admin: SupabaseClient, deps: DepsCancelamento, p: PedidoCancelado,
-): Promise<ResultadoCancelamento | { avisar: BaixasAbertas | null }> {
+): Promise<ResultadoCancelamento | { avisar: BaixasAbertas | null; incerto: boolean }> {
   let ledger: BaixasAbertas | null = null;
-  const indisponivel = async (motivo: string) => {
+  const indisponivel = async (motivo: string, incerto = false) => {
     console.warn('cancelamento_nunca_saiu_indisponivel', p.orderId, motivo);
     const r = p.aoIndisponivel ? p.aoIndisponivel()
       : await deps.filaAssume(admin, p.orgId, p.orderId).catch(() => false) ? 'adiado' : 'avisar';
-    return r === 'avisar' ? { avisar: ledger } : r;
+    return r === 'avisar' ? { avisar: ledger, incerto } : r;
   };
   try {
     ledger = await deps.baixasAbertas(admin, p.orgId, p.orderId);
     if (ledger.abertas.length === 0) return 'sem-baixa';
     if (await deps.notificacaoJaEnviada(admin, p.orgId, 'estoque_cancelado_despachado', String(p.orderId))) return 'silenciado';
     const prova = await p.lerNuncaSaiu!();
-    if (prova === 'nao') return { avisar: ledger };
+    if (prova === 'nao') return { avisar: ledger, incerto: false };
     if (prova !== 'sim') return await indisponivel('histórico do envio');
-    if (await deps.saldoMexidoDepois(admin, p.orgId, p.orderId)) return { avisar: ledger };
+    if (await deps.saldoMexidoDepois(admin, p.orgId, p.orderId)) return { avisar: ledger, incerto: false };
   } catch (e) {
     return await indisponivel(String(e));
   }
@@ -280,8 +294,12 @@ async function tratarNuncaSaiu(
     return 'reposto' as const; // o ledger relido decide
   });
   if (r !== 'reposto') return r;
-  // Lança → `erro`, sem aviso: o estorno pode ter entrado, e mandar dar entrada somaria duas vezes.
-  ledger = await deps.baixasAbertas(admin, p.orgId, p.orderId);
+  // Releitura falha: o estorno pode ter entrado, e mandar dar entrada somaria duas vezes.
+  try {
+    ledger = await deps.baixasAbertas(admin, p.orgId, p.orderId);
+  } catch (e) {
+    return await indisponivel(`ledger não relido: ${String(e)}`, true);
+  }
   return ledger.abertas.length === 0 ? 'reposto' : await indisponivel('baixa aberta depois do estorno');
 }
 

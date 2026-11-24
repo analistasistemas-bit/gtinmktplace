@@ -145,17 +145,23 @@ export async function drenarCancelamentos(
     const temEnvio = p.shipping?.id != null;
     let shipmentStatus: string | null = null;
     let shipmentSubstatus: string | null = null;
+    let envioNaoLido: string | null = null;
     if (temEnvio) {
-      let s: { status: string | null; substatus?: string | null } | null;
+      let s: { status: string | null; substatus?: string | null } | null = null;
       try {
         s = await comPrazo(() => io.envio(p.shipping!.id!), ate(PRAZO_CHAMADA_MS), 'envio');
       } catch (e) {
-        return fica(e instanceof TempoEsgotado ? 'ml: tempo esgotado' : 'ml: envio não lido');
+        if (e instanceof TempoEsgotado) envioNaoLido = 'ml: tempo esgotado';
       }
-      if (typeof s?.status !== 'string' || !STATUS_ENVIO.has(s.status)) return fica('ml: envio não lido');
-      shipmentStatus = s.status;
-      // Emenda 24/11 ao ADR-0121: o substatus decide se `ready_to_ship` ainda é pré-despacho.
-      shipmentSubstatus = envioParaTratamento(s).shipmentSubstatus; // mesma normalização dos outros chamadores
+      if (typeof s?.status !== 'string' || !STATUS_ENVIO.has(s.status)) {
+        // Emenda 8: da 3ª tentativa em diante segue com status nulo, que nunca repõe e avisa. Antes, pendente.
+        envioNaoLido ??= 'ml: envio não lido';
+        if (!io.lerNuncaSaiu) return fica(envioNaoLido);
+      } else {
+        shipmentStatus = s.status;
+        // Emenda 24/11 ao ADR-0121: o substatus decide se `ready_to_ship` ainda é pré-despacho.
+        shipmentSubstatus = envioParaTratamento(s).shipmentSubstatus; // mesma normalização dos outros chamadores
+      }
     }
     const base: PedidoDaFila = {
       orderId: o.orderId, statusPedido: 'cancelled', shipmentStatus, shipmentSubstatus, temEnvio, catalogoIncompleto: false,
@@ -183,6 +189,7 @@ export async function drenarCancelamentos(
     } catch (e) { console.warn(`drenagem de cancelamentos: ${o.orderId} aindaPendente: ${msg(e)}`); return null; }
 
     const insiste = tentativas < TENTATIVAS_SEM_AVISO;
+    if (envioNaoLido && insiste) return fica(envioNaoLido);
     if (corte && !provado && insiste) return fica('parcial-sem-pre-despacho');
 
     // 6. Tratamento com os itens do ledger. Prazo vencido: nem começa.

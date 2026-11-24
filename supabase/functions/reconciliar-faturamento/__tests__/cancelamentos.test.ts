@@ -542,12 +542,14 @@ describe('drenarCancelamentos', () => {
 // Emenda 8 (24/11) ao ADR-0121: envio `cancelled` que nunca saiu, na fila, com o `tratarPedidoCancelado` real.
 describe('drenarCancelamentos: envio cancelado que nunca saiu', () => {
   type Envio = { status: string; substatus?: string | null };
-  function cenario(o: { ledger: Baixa[]; prova?: 'sim' | 'nao' | 'indisponivel'; envio?: Envio; tentativas?: number; some?: string[]; avisado?: boolean }) {
+  function cenario(o: { ledger: Baixa[]; prova?: 'sim' | 'nao' | 'indisponivel'; envio?: Envio; tentativas?: number; some?: string[]; avisado?: boolean; kit?: boolean; releituraFalha?: boolean; lerEnvio?: () => Promise<Envio | null> }) {
     const textos: string[] = [];
     const estornos: unknown[][] = [];
+    let leituras = 0;
     const lerNuncaSaiu = vi.fn(async (_s: number | string) => o.prova ?? ('sim' as const));
     const f = criarIo([ob('o1')], {
-      envio: vi.fn(async () => o.envio ?? { status: 'cancelled', substatus: null }),
+      envio: vi.fn(o.lerEnvio ?? (async () => o.envio ?? { status: 'cancelled', substatus: null })),
+      kitLigado: vi.fn(async () => !!o.kit),
       aindaPendente: vi.fn(async () => ({ tentativas: o.tentativas ?? 0 })),
       lerNuncaSaiu,
     }, { o1: o.ledger });
@@ -564,6 +566,7 @@ describe('drenarCancelamentos: envio cancelado que nunca saiu', () => {
       reservarNotificacao: async () => true,
       notificarCategoria: async (_a: unknown, _o: string, _c: string, t: string) => { textos.push(t); },
       baixasAbertas: async () => {
+        if (leituras++ > 0 && o.releituraFalha) throw new Error('fora');
         const bs = f.baixas.get('o1')!;
         return { abertas: bs.filter((b) => !b.estornada).map((b) => ({ codigoRef: b.codigoRef, codigo: b.codigoRef, quantidade: b.quantidade })), haEstornada: bs.some((b) => b.estornada) };
       },
@@ -654,5 +657,51 @@ describe('drenarCancelamentos: envio cancelado que nunca saiu', () => {
     d.io.lerNuncaSaiu = undefined as never;
     expect(await d.rodar()).toMatchObject({ concluir: true, desfecho: 'avisado' });
     expect(d.estornos).toEqual([]);
+  });
+
+  it('F48. releitura do ledger que falha depois do estorno: pendente nas 2 primeiras, texto neutro na 3ª', async () => {
+    for (const tentativas of [0, 1, 2]) {
+      const c = cenario({ ledger: [aberta('A')], releituraFalha: true, tentativas });
+      expect(await c.rodar(), String(tentativas)).toMatchObject(tentativas < 2 ? { concluir: false, desfecho: 'erro' } : { concluir: true, desfecho: 'avisado' });
+      expect(c.textos).toHaveLength(tentativas < 2 ? 0 : 1);
+      if (tentativas === 2) expect(c.textos[0]).toContain('O estoque pode ter voltado em parte');
+    }
+  });
+
+  const ENVIO_RUIM: Array<[string, () => Promise<Envio | null>]> = [
+    ['nulo', async () => null], ['fora da lista', async () => ({ status: 'xyz' })], ['que lança', async () => { throw new Error('rede'); }],
+  ];
+  it.each(ENVIO_RUIM)('F49. envio %s: pendente nas 2 primeiras; na 3ª avisa sem repor nem ler o histórico, com e sem kit, misto ou não', async (_n, lerEnvio) => {
+    for (const kit of [false, true]) for (const ledger of [[aberta('B', 2)], MISTO()]) {
+      for (const tentativas of [0, 1]) {
+        const c = cenario({ ledger, lerEnvio, kit, tentativas });
+        expect(await c.rodar()).toMatchObject({ concluir: false, desfecho: 'ml: envio não lido' });
+        expect(c.io.tratar).not.toHaveBeenCalled();
+      }
+      const c = cenario({ ledger, lerEnvio, kit, tentativas: 2 });
+      expect(await c.rodar()).toMatchObject({ concluir: true, desfecho: 'avisado' });
+      expect(c.io.tratar.mock.calls[0][0]).toMatchObject({ shipmentStatus: null, shipmentSubstatus: null, temEnvio: true, kitLigado: kit });
+      expect(c.textos[0]).toContain('não deu para consultar');
+      expect(c.estornos).toEqual([]);
+      expect(c.lerNuncaSaiu).not.toHaveBeenCalled();
+    }
+  });
+
+  it('F50. envio que não responde: tempo esgotado nas 2 primeiras, avisa na 3ª', async () => {
+    for (const tentativas of [1, 2]) {
+      vi.useFakeTimers({ now: 0 });
+      const c = cenario({ ledger: [aberta('A')], lerEnvio: () => nunca(), tentativas });
+      const p = c.rodar();
+      await vi.advanceTimersByTimeAsync(10_001);
+      expect(await p).toMatchObject(tentativas < 2 ? { concluir: false, desfecho: 'ml: tempo esgotado' } : { concluir: true, desfecho: 'avisado' });
+      vi.useRealTimers();
+    }
+  });
+
+  it('F51. sem o leitor do histórico, envio não lido fica pendente sempre (como antes da emenda)', async () => {
+    const c = cenario({ ledger: [aberta('A')], lerEnvio: async () => null, tentativas: 9 });
+    c.io.lerNuncaSaiu = undefined as never;
+    expect(await c.rodar()).toMatchObject({ concluir: false, desfecho: 'ml: envio não lido' });
+    expect(c.io.aindaPendente).not.toHaveBeenCalled();
   });
 });

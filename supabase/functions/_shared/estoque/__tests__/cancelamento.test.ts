@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { entraNoCreditoKit, envioParaTratamento, tratarPedidoCancelado, type DepsCancelamento, type PedidoCancelado } from '../cancelamento';
-import type { ProvaNuncaSaiu } from '../nunca-saiu';
+import { baixasAbertas, type ProvaNuncaSaiu } from '../nunca-saiu';
 
 /**
  * ADR-0121 — o tratamento de pedido cancelado passou a ter DOIS gatilhos (webhook e
@@ -572,7 +572,6 @@ describe('tratarPedidoCancelado: envio cancelado que nunca saiu', () => {
     const casos: Array<[string, Parameters<typeof cenario>[0]]> = [
       ['histórico indisponível', { prova: 'indisponivel' }],
       ['histórico que lança', { pedido: { lerNuncaSaiu: falha } }],
-      ['ledger não lido', { deps: { baixasAbertas: falha, houveBaixaDeVenda: () => Promise.resolve(true) } }],
       ['dedupe não lido', { deps: { notificacaoJaEnviada: falha } }],
       ['trava não lida', { deps: { saldoMexidoDepois: falha } }],
     ];
@@ -587,6 +586,25 @@ describe('tratarPedidoCancelado: envio cancelado que nunca saiu', () => {
       expect(await c.rodar()).toBe('avisado');
       expect(c.lido.fila).toBe(1);
       expect(c.chamadas.estornos).toEqual([]);
+    });
+    it('RPC do ledger não lida: a fila assume → adiado; senão, só aí o caminho antigo (houveBaixaDeVenda) decide', async () => {
+      expect(await cenario({ assume: true, deps: { baixasAbertas: falha } }).rodar()).toBe('adiado');
+      for (const [houve, esperado] of [[true, 'avisado'], [false, 'sem-baixa']] as const) {
+        const c = cenario({ deps: { baixasAbertas: falha, houveBaixaDeVenda: () => Promise.resolve(houve) } });
+        expect(await c.rodar()).toBe(esperado);
+      }
+    });
+    it('RPC confirmou baixa aberta e só a leitura do movimento falhou: avisa, sem passar por houveBaixaDeVenda', async () => {
+      const q = { select: () => q, eq: () => q, lt: () => q, like: () => Promise.resolve({ data: null, error: { message: 'fora' } }) };
+      const rpc = () => Promise.resolve({ data: [{ codigo_ref: '00000029', quantidade: 1, estornada: false }], error: null });
+      for (const o of [{ prova: 'nao' }, { prova: 'indisponivel' }] as const) {
+        const c = cenario({ ...o, deps: { baixasAbertas } });
+        const r = await tratarPedidoCancelado({ from: () => q, rpc } as never, c.deps, {
+          ...BASE, itens: [{ codigo: 'SKU-TROCADO', quantity: 9 }], shipmentStatus: 'cancelled', lerNuncaSaiu: () => Promise.resolve(o.prova),
+        });
+        expect(r).toBe('avisado');
+        expect(c.chamadas.notificacoes[0].texto).toContain('estoque NÃO reposto');
+      }
     });
     it('não deu para saber se a fila assume: avisa agora', async () => {
       let consultas = 0;
@@ -625,13 +643,38 @@ describe('tratarPedidoCancelado: envio cancelado que nunca saiu', () => {
       expect(await d.rodar()).toBe('reposto');
       expect(d.chamadas.notificacoes).toEqual([]);
     });
-    it('releitura do ledger falhou: erro, sem mandar dar entrada no que pode já ter voltado', async () => {
-      let n = 0;
-      const c = cenario({ deps: { baixasAbertas: () => (n++ === 0
-        ? Promise.resolve({ abertas: [b('00000029')], haEstornada: false }) : Promise.reject(new Error('fora'))) } });
-      expect(await c.rodar()).toBe('erro');
-      expect(n).toBe(2);
-      expect(c.chamadas.reservas).toEqual([]);
+    describe('releitura do ledger falhou: o estorno pode ter entrado', () => {
+      const semReleitura = (o: Parameters<typeof cenario>[0] = {}) => {
+        let n = 0;
+        return cenario({ ...o, deps: { ...o.deps, baixasAbertas: () => (n++ === 0
+          ? Promise.resolve({ abertas: [b('00000029')], haEstornada: false }) : Promise.reject(new Error('fora'))) } });
+      };
+      it('a fila assume: adiado; na fila, pendente; sem reservar aviso', async () => {
+        const c = semReleitura({ assume: true });
+        expect(await c.rodar()).toBe('adiado');
+        const d = semReleitura({ pedido: { aoIndisponivel: () => 'erro' } });
+        expect(await d.rodar()).toBe('erro');
+        expect([...c.chamadas.reservas, ...d.chamadas.reservas]).toEqual([]);
+      });
+      it.each([['webhook', {}], ['fila na 3ª', { pedido: { aoIndisponivel: () => 'avisar' as const } }]])(
+        '%s: avisa com texto neutro, nunca "NÃO reposto" nem "dê entrada manual"', async (_n, o) => {
+          const c = semReleitura(o);
+          expect(await c.rodar()).toBe('avisado');
+          expect(c.chamadas.reservas).toEqual([{ entidade: 'estoque_cancelado_despachado', chave: String(BASE.orderId) }]);
+          const t = c.chamadas.notificacoes[0].texto;
+          expect(t).toContain('O estoque pode ter voltado em parte');
+          expect(t).toContain('antes de dar entrada');
+          expect(t).not.toContain('NÃO');
+          expect(t).not.toContain('dê entrada manual');
+        });
+      it('cancel_purchase: mesmo texto neutro', async () => {
+        const c = semReleitura({ deps: { claimDoPedido: () => Promise.resolve({ tipo: 'cancel_purchase', motivo: null, desfecho: null }) } });
+        expect(await c.rodar()).toBe('avisado');
+        const t = c.chamadas.notificacoes[0].texto;
+        expect(t).toContain('Comprador cancelou');
+        expect(t).toContain('O estoque pode ter voltado em parte');
+        expect(t).not.toContain('NÃO');
+      });
     });
   });
 
@@ -666,6 +709,40 @@ describe('tratarPedidoCancelado: envio cancelado que nunca saiu', () => {
       const d = cenario({ ...casa, deps: { ...baixa, baixasAbertas: () => Promise.reject(new Error('fora')) } });
       expect(await d.rodar()).toBe('avisado');
       expect(d.chamadas.notificacoes[0].texto).toContain('estoque NÃO reposto');
+    });
+  });
+
+  it('parcial sem o código do movimento: texto neutro, nunca o SKU da referência', async () => {
+    const c = cenario({ prova: 'nao', deps: { baixasAbertas: () => Promise.resolve({ abertas: [{ codigoRef: 'KIT', codigo: null, quantidade: 2 }], haEstornada: true }) } });
+    expect(await c.rodar()).toBe('avisado');
+    const t = c.chamadas.notificacoes[0].texto;
+    expect(t).toContain('O estoque pode ter voltado em parte');
+    expect(t).not.toContain('KIT');
+  });
+
+  describe('a leitura do texto parcial não consome o aviso', () => {
+    afterEach(() => { vi.useRealTimers(); });
+    const DESPACHADO = { pedido: { shipmentStatus: 'shipped' } };
+    it('lê o ledger antes de reservar', async () => {
+      const ordem: string[] = [];
+      const c = cenario({ ...DESPACHADO, deps: {
+        houveBaixaDeVenda: () => Promise.resolve(true),
+        baixasAbertas: () => { ordem.push('ledger'); return Promise.resolve({ abertas: [], haEstornada: false }); },
+        reservarNotificacao: () => { ordem.push('reserva'); return Promise.resolve(true); },
+      } });
+      expect(await c.rodar()).toBe('avisado');
+      expect(ordem).toEqual(['ledger', 'reserva']);
+    });
+    it('leitura pendurada: em 3 s segue com o texto padrão', async () => {
+      vi.useFakeTimers();
+      const c = cenario({ ...DESPACHADO, deps: { houveBaixaDeVenda: () => Promise.resolve(true), baixasAbertas: () => new Promise(() => {}) } });
+      let r: string | null = null;
+      c.rodar().then((x) => { r = x; });
+      await vi.advanceTimersByTimeAsync(2_900);
+      expect(c.chamadas.reservas).toEqual([]);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(r).toBe('avisado');
+      expect(c.chamadas.notificacoes[0].texto).toContain('estoque NÃO reposto');
     });
   });
 
