@@ -54,15 +54,24 @@
 | `supabase/functions/_shared/faturamento/__tests__/io.test.ts` | alterar | só teste: `upsertVenda` não envia colunas `cancelamento_*` |
 | docs (`0211`, `0121`, `README.md`, `TASKS.md`, `project-status.md`) | alterar | status, ponteiro, índice, pendências |
 
+## Pontos da rodada 5 (ressalvas do revisor na implementação) e decisões do Diego
+
+| # | Ponto | Regra que resolve | Testes |
+|---|---|---|---|
+| a | Ensaio: esperar 6 min não muda `m.criado_em > concluido_em - 5 min`; com carência zero os `avisado` reabrem e disputam o 2º lote | Uma org de ensaio por cenário (normal, lento, reabertura), ids distintos exigidos pelo script; a reabertura usa **outra** referência de baixa (outro SKU de ensaio) no mesmo pedido | `__tests__/ensaio-cenarios.test.ts` (função pura `planoEnsaio`) |
+| b | Prazos ignoravam o tempo gasto antes da drenagem; `registrar` estourado tratado como "nada gravado" | Início da execução capturado na entrada do passo, antes de conexão/token/pendências, e passado à drenagem; 60 s e 100 s contam dele; `registrar` sem resposta = incerto, reconferido pelo ledger no ciclo seguinte | P9, F29, F30, F31 |
+| c | `PedidoML.status` é opcional: resposta sem status concluía `nao-cancelado` | `nao-cancelado` só com `status` texto não vazio e ≠ `cancelled`; sem status → `ml: sem status`, pendente | F32 |
+| D1 | Remover o trigger como rollback | Proibido (Diego, 24/11). Reversão = desligar `DRENAR_CANCELAMENTOS`; V7 removida | ADR "Como reverter" |
+
 ## Pontos da rodada 4 (REVISE sobre `abad948e`)
 
 | # | Ponto | Regra que resolve | Testes |
 |---|---|---|---|
 | 1 | Falha na leitura do envio encerra a obrigação | Pedido com `shipping.id` e envio não lido (ou sem status) fica pendente; o tratamento não é chamado | F26 |
 | 2 | Só o início tinha prazo | Toda espera da drenagem tem prazo, inclusive RPCs e o tratamento; prazo final de 100 s reserva tempo para gravar e avançar o cursor; resultado incerto fica pendente e o ledger reconfere | F27, F28, P8 |
-| 3 | Ensaio: `avisado` reabre dentro da margem e ocupa o lote | Espera de 6 min entre rodadas e conferência dos 20 ids reivindicados antes de medir | Task 6.2 |
+| 3 | Ensaio: `avisado` reabre dentro da margem e ocupa o lote | Uma org de ensaio por cenário (ver rodada 5, ponto a) e conferência dos 20 ids reivindicados antes de medir | Task 6.2 |
 | 4 | Reparo: contagem com a unidade em trânsito | Grupo A exige que a contagem tenha incluído a unidade devolvida | Reparo R2 |
-| 5 | Remover o trigger abre lacuna | Reversão operacional mantém o trigger; remoção exige janela registrada e recuperação explícita | ADR "Como reverter", V7 |
+| 5 | Remover o trigger abre lacuna | Reversão = desligar `DRENAR_CANCELAMENTOS`, trigger mantido; remover o trigger não é opção de rollback (decisão do Diego) | ADR "Como reverter" |
 
 ## Pontos da rodada 3 (REVISE sobre `d4041a3d`)
 
@@ -382,7 +391,7 @@ export interface IoFila {
 export function depsDaFila(base: DepsCancelamento): DepsCancelamento;
 
 /** Um lote. Só lança se `reivindicar`, `ledger` ou `registrar` lançarem; quem chama captura. */
-export async function drenarCancelamentos(io: IoFila, lote: string, prazoTotalMs?: number): Promise<{ concluidos: number; pendentes: number }>;
+export async function drenarCancelamentos(io: IoFila, lote: string, prazoTotalMs?: number, inicioMs?: number): Promise<{ concluidos: number; pendentes: number }>;
 ```
 
 Regra de `drenarCancelamentos`, por obrigação:
@@ -391,7 +400,7 @@ Regra de `drenarCancelamentos`, por obrigação:
 2. `pedido`. Falha de leitura, `String(pedido.id) !== orderId` ou `String(pedido.seller?.id) !== contaExternaId` → `ml: <motivo>`, não conclui. A comparação do vendedor é direta, sem `ehVendaDaConta` (que aceita qualquer vendedor quando a conta é nula).
 3. Versão: `r = Date.parse(pedido.last_updated)`, `a = Date.parse(versao)`. Qualquer um ausente ou ilegível → `ml: sem versão`, não conclui.
    - `status === 'cancelled'` e `r >= a` → segue.
-   - `status !== 'cancelled'` e `r > a` → `nao-cancelado`, `concluir=true`, `lido_em` do ledger. Fim.
+   - `status` texto não vazio, `!== 'cancelled'`, e `r > a` → `nao-cancelado`, `concluir=true`, `lido_em` do ledger. Fim. Sem `status` (`undefined`, `null`, `''`) → `ml: sem status`, não conclui.
    - senão → `ml: resposta antiga`, não conclui.
    
    O tipo `PedidoML` não declara `last_updated`: ler com um tipo local, sem alterar `venda.ts`.
@@ -410,9 +419,10 @@ Prazos (a drenagem roda antes de `perguntas` e não pode segurar a rodada). **To
 | `ledger` (primeira leitura e releitura), `aindaPendente`, `kitLigado` | 10 s cada | as obrigações afetadas ficam sem registro (pendentes) |
 | `pedido`, `envio` | 10 s cada | `ml: tempo esgotado`, não conclui |
 | `tratar` | 30 s | resultado incerto: `tratamento: tempo esgotado`, não conclui |
-| `registrar` | 10 s | a drenagem lança; nada foi gravado, tudo segue pendente |
+| `registrar` | 10 s | resultado **incerto** (pode ter gravado depois): a drenagem lança; o ciclo seguinte reconfere pelo ledger (F31) |
 
-- Antes de **começar** cada obrigação, confere `io.agora()` contra o início + `prazoTotalMs` (60 s). Estourou → as que não começaram ficam sem registro e voltam primeiro no ciclo seguinte.
+- Os prazos de 60 s e 100 s contam do **início da execução** (`inicioMs`, capturado na entrada do passo, antes de conexão, token e pendências), não do início da drenagem. Passou de 60 s antes de chamar `reivindicar` → devolve sem reivindicar.
+- Antes de **começar** cada obrigação, confere `io.agora()` contra `inicioMs` + `prazoTotalMs` (60 s). Estourou → as que não começaram ficam sem registro e voltam primeiro no ciclo seguinte.
 - Em início + `PRAZO_FINAL_MS` (100 s) a drenagem para de esperar o que estiver em andamento, chama `registrar` com o que tem e devolve. Sobram 50 s de posse para gravar e avançar o cursor.
 - **Resultado incerto fica pendente.** A operação abandonada (tratamento, RPC, leitura) pode terminar depois, sem ninguém esperando. O ciclo seguinte começa pelo ledger: se o estorno aconteceu, conclui `sem-baixa-aberta`; se não, trata de novo. O estorno é idempotente por referência e o aviso por reserva.
 - As funções de leitura do ML não aceitam sinal de cancelamento e `io.ts` não muda: a chamada abandonada segue até responder ou a execução terminar.
@@ -451,6 +461,10 @@ Prazos (a drenagem roda antes de `perguntas` e não pode segurar a rodada). **To
 | F26 | Pedido com `shipping.id`; `envio` devolve `null`; depois, `envio` devolve objeto sem `status` | nas duas: `ml: envio não lido`, não conclui, `tratar` não chamado. Pedido **sem** `shipping.id` segue para `tratar` com `temEnvio=false` |
 | F27 | Relógio falso: `tratar` de uma obrigação nunca responde | depois de 30 s vira `tratamento: tempo esgotado`, não conclui; as outras seguem; no ciclo seguinte, com o ledger já sem baixa aberta, conclui `sem-baixa-aberta` sem chamar `tratar` |
 | F28 | Relógio falso, uma dependência por vez nunca responde: `ledger`, `aindaPendente`, `kitLigado`, `registrar`, `reivindicar` | em todos a função retorna ou lança em menos de `PRAZO_FINAL_MS` + 10 s; nenhuma obrigação é concluída sem evidência |
+| F29 | Início da execução 55 s antes da drenagem; respostas de 9 s | quase nada começa; o que não começou fica sem registro |
+| F30 | Início da execução 61 s antes | `reivindicar` não é chamado; devolve zeros |
+| F31 | `registrar` nunca responde (gravou ou não, incerto) | a drenagem lança em menos de `PRAZO_FINAL_MS` + 10 s; no ciclo seguinte, ledger limpo → `sem-baixa-aberta`; `avisado` repetido → `silenciado` conclui |
+| F32 | ML responde sem `status` (`undefined`, `null`, `''`) com data mais nova | `ml: sem status`, não conclui, `tratar` não chamado |
 | F25 | Corrida da rodada 3: obrigação G1 (`versao` @30); ML ao vivo `paid@40`; antes do `registrar`, a geração da linha muda (IO falso que só aceita a geração corrente) | o registro `nao-cancelado` com G1 não conclui nada; no ciclo seguinte, com `versao` @50 e ML `cancelled@50`, trata |
 
 - [ ] **2.2 Rodar e ver falhar:** `pnpm vitest run supabase/functions/reconciliar-faturamento/__tests__/cancelamentos.test.ts`.
@@ -473,13 +487,14 @@ Prazos (a drenagem roda antes de `perguntas` e não pode segurar a rodada). **To
 | P6 | Na execução da drenagem, `processarPedidos` e `registrarPendencias` não são chamados |
 | P7 | A drenagem devolve com parte do lote pendente por prazo | o passo devolve `perguntas|` (o cursor avança) e a rodada termina `parcial` |
 | P8 | A drenagem lança por prazo de `registrar` ou `reivindicar` | o passo devolve `perguntas|` com `cancelamentosErro = 1` |
+| P9 | `inicioMs` passado à drenagem | é o instante capturado na entrada do passo, antes de `conexao`, `token` e `pendencias` |
 
 - [ ] **3.2 Rodar e ver falhar.**
 - [ ] **3.3 GREEN.** Em `DepsReconciliar`:
 
 ```ts
   /** ADR-0211: um lote da fila de cancelamento, fixado por `lote`. Devolve zeros quando desligada. */
-  drenarCancelamentos(token: string, cx: ConexaoCanal, userId: string, lote: string): Promise<{ concluidos: number; pendentes: number }>;
+  drenarCancelamentos(token: string, cx: ConexaoCanal, userId: string, lote: string, inicioMs: number): Promise<{ concluidos: number; pendentes: number }>;
 ```
 
 Na etapa `pendencias`:
@@ -489,7 +504,7 @@ Na etapa `pendencias`:
         // ADR-0211: a drenagem roda sozinha nesta execução e nunca segura as etapas seguintes.
         let acc = acumulado;
         try {
-          const d = await deps.drenarCancelamentos(token, cx, userId, params.ate);
+          const d = await deps.drenarCancelamentos(token, cx, userId, params.ate, inicioMs);
           acc = somar(somar(acc, 'cancelamentosTratados', d.concluidos), 'cancelamentosPendentes', d.pendentes);
         } catch (e) {
           console.error(`reconciliar: drenagem de cancelamentos da org ${orgId} falhou: ${(e as Error)?.message ?? e}`);
@@ -523,7 +538,7 @@ Em `fim`:
 - [ ] **4.1** Em `depsReal`, a dep nova. Nenhuma linha existente de `processarPedidos` muda.
 
 ```ts
-    async drenarCancelamentos(token, cx, userId, lote) {
+    async drenarCancelamentos(token, cx, userId, lote, inicioMs) {
       if (!drenagemLigada(Deno.env.get('DRENAR_CANCELAMENTOS'), orgId)) return { concluidos: 0, pendentes: 0 };
       if (!cx.contaExternaId) {
         console.warn(`reconciliar: drenagem de cancelamentos pulada na org ${orgId}: conexão sem conta externa`);
@@ -541,7 +556,7 @@ Em `fim`:
         tratar: (p) => tratarPedidoCancelado(admin, deps, { ...p, orgId, userId, canal: 'mercado_livre' }),
         registrar: (itens) => /* rpc registrar_cancelamentos_tratados(orgId, itens); erro lança */,
         agora: () => Date.now(),
-      }, lote, Number(Deno.env.get('DRENAR_CANCELAMENTOS_PRAZO_MS')) || PRAZO_TOTAL_MS);
+      }, lote, Number(Deno.env.get('DRENAR_CANCELAMENTOS_PRAZO_MS')) || PRAZO_TOTAL_MS, inicioMs);
     },
 ```
 
@@ -573,10 +588,10 @@ Três medições, nesta ordem. `DRENAR_CANCELAMENTOS=1` só depois das três.
 
   **Regras da opção B:**
 
-  - A org é criada pela tela para este ensaio, com nome exato `ENSAIO ADR-0211`. Módulo `kit_variacao` ligado. Sem conexão ML.
+  - Três orgs, criadas pela tela só para o ensaio, uma por cenário: `ENSAIO ADR-0211 A` (rodada normal), `ENSAIO ADR-0211 B` (rodada lenta) e `ENSAIO ADR-0211 C` (reabertura). Módulo `kit_variacao` ligado. Sem conexão ML. O teto do lote e a reabertura são por org: separar pedidos ou SKUs na mesma org não isola os cenários.
   - Os 20 SKUs são criados só para o ensaio, com saldo próprio de 10 unidades cada. 5 são marcados participantes de kit com variação por linhas de fixture (sem anúncio: a saga não tem alvo e não escreve no ML). Nenhum SKU de cliente participa.
-  - **Prévia antes de qualquer escrita.** O script imprime: nome e id da org; contagem de linhas da org em `ml_vendas`, `estoque_movimentos`, `variacoes`, `marketplace_connections`, `anuncios_externos`; a lista exata do que vai inserir. Recusa continuar se: o id não for o de `ENSAIO_ORG_ID`; o nome não for o exato; a org tiver conexão, anúncio ou venda; ou a org tiver SKU que não seja do ensaio. O Diego confere a prévia e só então o script roda com `--executar`.
-  - Toda mutação do script leva `org_id = ENSAIO_ORG_ID` no filtro ou no valor. No fim, o script confere que nenhuma linha de outra org mudou: contagem e maior `criado_em`/`atualizado_em` de `ml_vendas` e `estoque_movimentos` das outras orgs, antes e depois, só podem diferir por atividade normal (o script lista as diferenças para conferência).
+  - **Prévia antes de qualquer escrita.** O script imprime, para cada uma das três orgs: nome e id; contagem de linhas da org em `ml_vendas`, `estoque_movimentos`, `variacoes`, `marketplace_connections`, `anuncios_externos`; a lista exata do que vai inserir. Recusa continuar se: os três ids (`ENSAIO_ORG_A`, `ENSAIO_ORG_B`, `ENSAIO_ORG_C`) não forem distintos; algum nome não for o exato do seu cenário; a org tiver conexão, anúncio ou venda; ou a org tiver SKU que não seja do ensaio. O Diego confere a prévia e só então o script roda com `--executar`.
+  - Toda mutação do script leva o `org_id` da org de ensaio do cenário no filtro ou no valor. No fim, o script confere que nenhuma linha de outra org mudou: contagem e maior `criado_em`/`atualizado_em` de `ml_vendas` e `estoque_movimentos` das outras orgs, antes e depois, só podem diferir por atividade normal (o script lista as diferenças para conferência).
   - **Nada é apagado do ledger.** Os SKUs, as vendas sintéticas e os movimentos do ensaio ficam na org de ensaio, que não tem cliente. Não há limpeza que possa deixar saldo sem lastro.
 
   **Passos do script (iguais nas duas opções):**
@@ -586,13 +601,13 @@ Três medições, nesta ordem. `DRENAR_CANCELAMENTOS=1` só depois das três.
   3. Baixa de cada uma pela função real (`registrarBaixaVenda`).
   4. `raw.status='cancelled'` em cada uma (o trigger real arma).
   5. Drenagem com carência `'0 seconds'`: 10 pedidos com envio `ready_to_ship`, 10 com `shipped`. Antes de medir, confere que os 20 ids reivindicados são os 20 criados.
-  6. Espera de 6 minutos. As 10 obrigações `avisado` da primeira rodada têm baixa criada minutos antes da conclusão e reabririam dentro da margem de 5 minutos, ocupando metade do lote seguinte.
-  7. Segunda rodada **lenta**: mais 20 vendas sintéticas, `pedido` fixo com atraso de 15 s. Antes de medir, o script confere que os 20 ids reivindicados são exatamente os 20 novos; se não forem, aborta sem medir. Confere que a drenagem retorna em menos de 60 s com as 20 pendentes por `ml: tempo esgotado`.
-  8. Reabertura: nova baixa em um pedido concluído `reposto` da primeira rodada; reivindicar com lote novo → só essa obrigação reabre (conferir o id).
+  6. (Sem espera.) Esperar não muda `m.criado_em > concluido_em - 5 min`: os `avisado` da org A reabrem no próximo `reivindicar` da org A, por desenho. Por isso cada cenário tem a sua org.
+  7. Rodada **lenta**, na org B: 20 vendas sintéticas, `pedido` fixo com atraso de 15 s. Antes de medir, o script confere que os 20 ids reivindicados são exatamente os 20 criados na org B; se não forem, aborta sem medir. Confere que a drenagem retorna em menos de 60 s com as 20 pendentes por `ml: tempo esgotado`.
+  8. Reabertura, na org C: 2 vendas com baixa, canceladas, drenadas com envio `ready_to_ship` (`reposto`). Depois, uma baixa nova em um dos dois pedidos com **outra** referência (outro SKU de ensaio: a RPC de baixa recusa repetir a referência original). Reivindicar com lote novo → só esse pedido reabre (conferir o id e que o outro não reabriu).
 
   **Mede:** tempo total, tempo de cada RPC, idas ao banco, CPU do processo (`process.cpuUsage()`).
 
-  **Confere:** 10 `reposto` com saldo de volta a 10 e ledger limpo; 10 `avisado` com saldo em 9; 20 linhas com o lote; nenhuma linha da org em `worker_pendencias`.
+  **Confere:** 10 `reposto` com saldo de volta a 10 e ledger limpo; 10 `avisado` com saldo em 9; 20 linhas com o lote; nenhuma linha das orgs de ensaio em `worker_pendencias`.
 
   **Aceite:** CPU do processo abaixo de 500 ms no lote; tempo total da rodada normal abaixo de 30 s; `reivindicar_cancelamentos` abaixo de 200 ms. Rodar também `explain analyze` do `select` interno da reabertura para a maior org (somente leitura) e registrar o tempo.
 
@@ -719,23 +734,6 @@ select obrigatoria, descartado_em is not null descartada, count(*) from public.w
 ```
 
 Esperado: nenhuma linha criada pela drenagem. Em 24/11/2026 a tabela estava vazia.
-
-**V7 — recuperação depois de uma janela sem trigger (só se o trigger tiver sido removido).** Lista os cancelamentos gravados na janela, que ficaram sem geração e não rearmam sozinhos. `<inicio>` e `<fim>` são os instantes registrados do `drop` e da recriação.
-
-```sql
-select v.org_id, v.id, v.order_id, v.raw->>'last_updated' versao, v.atualizado_em
-  from public.ml_vendas v
- where v.raw->>'status' = 'cancelled' and v.cancelamento_geracao is null
-   and v.atualizado_em >= '<inicio>'::timestamptz - interval '1 hour'
-   and exists (select 1 from public.estoque_movimentos m
-                where m.org_id = v.org_id and m.motivo = 'venda' and m.quantidade < 0
-                  and starts_with(m.referencia_externa, 'mercado_livre:' || v.order_id || ':')
-                  and not exists (select 1 from public.estoque_movimentos e
-                                   where e.org_id = m.org_id and e.motivo = 'estorno_venda' and e.quantidade > 0
-                                     and e.referencia_externa = 'estorno:' || m.referencia_externa));
-```
-
-A consulta pode trazer pedido do acervo regravado na janela (`atualizado_em` muda a cada sincronização). Por isso a lista é comparada com a linha de base V0: só o que **não** está em V0 é cancelamento da janela. Esses ids entram numa migration de recuperação, revisada, que preenche `cancelamento_geracao`, `cancelamento_versao` e `cancelamento_armado_em` só para eles. A drenagem só é religada depois dessa migration.
 
 ## Reparo do acervo (separado do deploy, sem código)
 
