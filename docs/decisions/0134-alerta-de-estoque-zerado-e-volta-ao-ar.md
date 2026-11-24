@@ -82,3 +82,22 @@ assinar não recebe, como em qualquer categoria.
   cores acabando junto gera uma mensagem só.
 - `sincronizar-estoque` passa a ler `familias.nome_pai`/`ml_permalink` e `variacoes.nome/cor` para
   compor o texto — leitura a mais no caminho do push, sem escrita nova além da marca de alerta.
+
+## Adendo 2026-11-23 — filho UP fora do push avisa
+
+Incidente: o filho UP do SKU `02749572` (Avil) ficou `criado` com item no ML; `resolverAlvosPush` descarta
+todo filho fora de `ativo`, o ajuste para 0 nunca chegou ao ML e saíram 4 vendas sem estoque, sem aviso.
+
+`sincronizar-estoque` passa a avisar na categoria `estoque` quando descarta filho UP com `item_externo_id`,
+não `retirado`, fora de `ativo`, com a raiz `publicado` e sem `mudando_composicao`. O critério é "existe
+anúncio publicado", não "este push tem alvos": a exclusão do canal de origem não se aplica (na venda pelo
+ML, `alvos` vem vazio). Ficam fora: `remocao_pendente` (remoção pelo operador), participante de kit com
+variação (ADR-0200, vai à saga) e filho sem item.
+
+Dedup pelo `chave` da notificação (ADR-0173, mesmo padrão do teto da ADR-0195): `up-descartado:<item>`.
+`alertado_em` não serve: é por movimento, e o filho preso não é movimento. Sem migration. Limite: um aviso
+por item na vida dele. Falha ao notificar só loga; o push segue.
+
+Revisão Codex: o aviso sai depois dos PUTs (não atrasa o push dos irmãos) e relê filho e raiz antes de
+enviar (raiz fora de `publicado` ou em composição não avisa). O SKU descartado entra em `semPush`: o aviso
+de zerado não o marca nem afirma "anúncio pausado" por ele.

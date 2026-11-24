@@ -299,13 +299,16 @@ async function lerFamiliaComSaldo(
 
 /** Alvos de push de UMA família. `resolverAlvosPush` roda com o mapa só dela.
  *  `inativos`: filho UP que o push descarta só pelo status local (não retirado, com item). Só interessa ao
- *  kit com variação (ADR-0200): participante nessa situação vira transferência, não some em silêncio. */
+ *  kit com variação (ADR-0200): participante nessa situação vira transferência, não some em silêncio.
+ *  `descartados` (ADR-0134, adendo 23/11): o mesmo descarte, SEM a exclusão do canal de origem (na venda o
+ *  canal se exclui e `alvos` fica vazio, mas o anúncio continua publicado e defasado). Fora: remoção pelo
+ *  operador (`remocao_pendente`) e raiz com composição em andamento (`mudando_composicao`). */
 async function alvosDaFamilia(
   admin: SupabaseClient, orgId: string, codigoPai: string,
   estoquePorSku: Record<string, number>, canalOrigem: string | null,
-): Promise<{ alvos: AlvoPush[]; temAnuncio: boolean; inativos: AlvoPush[] }> {
+): Promise<{ alvos: AlvoPush[]; temAnuncio: boolean; inativos: AlvoPush[]; descartados: Descartado[] }> {
   const { data: anuncios } = await admin.from('anuncios_externos')
-    .select('id, canal, item_externo_id, variacoes_externas')
+    .select('id, canal, item_externo_id, variacoes_externas, mudando_composicao')
     .eq('org_id', orgId).eq('codigo_pai', codigoPai).eq('status', 'publicado');
   const idsAnuncio = (anuncios ?? []).map((a) => a.id as string);
   const { data: itensUP } = idsAnuncio.length > 0
@@ -317,16 +320,66 @@ async function alvosDaFamilia(
     (anuncios ?? []) as never, (itensUP ?? []) as never, estoquePorSku, canalOrigem,
   );
   const canalDe = new Map((anuncios ?? []).map((a) => [a.id as string, a.canal as string]));
+  const compondo = new Set((anuncios ?? []).filter((a) => a.mudando_composicao).map((a) => a.id as string));
   const inativos: AlvoPush[] = [];
+  const descartados: Descartado[] = [];
   for (const i of itensUP ?? []) {
     const canal = canalDe.get(i.anuncio_externo_id as string);
-    if (!canal || (canalOrigem !== null && canal === canalOrigem)) continue;
+    if (!canal) continue;
     if (i.retirado || i.status === 'ativo' || !i.item_externo_id) continue;
     const estoque = estoquePorSku[i.sku as string];
     if (estoque === undefined) continue;
+    if (i.status !== 'remocao_pendente' && !compondo.has(i.anuncio_externo_id as string)) {
+      descartados.push({ sku: i.sku as string, itemExternoId: i.item_externo_id as string });
+    }
+    if (canalOrigem !== null && canal === canalOrigem) continue;
     inativos.push({ canal, itemExternoId: i.item_externo_id as string, estoques: [{ sku: i.sku as string, estoque }] });
   }
-  return { alvos, temAnuncio: (anuncios ?? []).length > 0, inativos };
+  return { alvos, temAnuncio: (anuncios ?? []).length > 0, inativos, descartados };
+}
+
+type Descartado = { sku: string; itemExternoId: string };
+
+/**
+ * ADR-0134 (adendo 23/11): filho UP com item no ML descartado pelo status local não recebe saldo e o anúncio
+ * vende sem estoque (SKU 02749572). Avisa uma vez por item. Fora: participante de kit com variação (ADR-0200,
+ * saída pela saga). Relê filho e raiz depois do push: composição ou republicação que começou entre as leituras
+ * não pode consumir a chave. Best-effort: nada aqui derruba o push. O Telegram sem timeout (telegram.ts) segura
+ * a resposta do job como já fazem os avisos de zerado e de teto; o PUT já saiu.
+ */
+async function avisarDescartados(
+  admin: SupabaseClient, notificar: typeof notificarCategoria, orgId: string,
+  descartados: Array<Descartado & { produto: string }>, kitVariacao: boolean,
+): Promise<void> {
+  if (descartados.length === 0) return;
+  try {
+    const { data: itens, error: e1 } = await admin.from('anuncios_externos_itens')
+      .select('item_externo_id, anuncio_externo_id, status, retirado')
+      .eq('org_id', orgId).in('item_externo_id', descartados.map((d) => d.itemExternoId));
+    if (e1) throw new Error(e1.message);
+    const { data: raizes, error: e2 } = await admin.from('anuncios_externos')
+      .select('id, mudando_composicao, status').eq('org_id', orgId)
+      .in('id', [...new Set((itens ?? []).map((i) => i.anuncio_externo_id as string))]);
+    if (e2) throw new Error(e2.message);
+    // Raiz que deixou de estar `publicado` ou entrou em composição durante o push não avisa.
+    const vivas = new Set((raizes ?? []).filter((r) => r.status === 'publicado' && !r.mudando_composicao)
+      .map((r) => r.id as string));
+    const participantes = await skusParticipantes(admin, orgId, descartados.map((d) => d.sku), kitVariacao);
+    for (const d of descartados) {
+      const i = (itens ?? []).find((x) => x.item_externo_id === d.itemExternoId);
+      if (!i || i.retirado || i.status === 'ativo' || i.status === 'remocao_pendente') continue;
+      if (!vivas.has(i.anuncio_externo_id as string) || participantes.has(d.sku)) continue;
+      // ponytail: chave por item = 1 aviso na vida do item; se ele quebrar de novo depois de consertado, não
+      // reavisa. Pôr o status (ou atualizado_em) na chave quando isso aparecer.
+      await notificar(admin, orgId, 'estoque', `⚠️ Estoque não enviado ao Mercado Livre: SKU ${d.sku} (${d.produto})\n`
+        + 'O anúncio está publicado, mas o vínculo desta cor no PubliAI não está ativo, então o saldo não vai ao ML. '
+        + 'Reenvie o produto em "Atualizar tudo"; se o reenvio recusar, a cor precisa de correção manual.',
+      { chave: `up-descartado:${d.itemExternoId}` })
+        .catch((e) => console.error('estoque_alerta_up_descartado_falhou', d.itemExternoId, String(e)));
+    }
+  } catch (e) {
+    console.error('estoque_alerta_up_descartado_falhou', orgId, String(e));
+  }
 }
 
 /**
@@ -471,8 +524,9 @@ export async function processarSincronizacao(
   const estoqueBaseParaPush = job.skus && job.skus.length > 0
     ? Object.fromEntries(Object.entries(base.estoquePorSku).filter(([sku]) => job.skus!.includes(sku)))
     : base.estoquePorSku;
-  const { alvos: alvosBase, temAnuncio: baseTemAnuncio, inativos } =
+  const { alvos: alvosBase, temAnuncio: baseTemAnuncio, inativos, descartados: descBase } =
     await alvosDaFamilia(admin, org_id, codigoPaiBase, estoqueBaseParaPush, exclusao);
+  const descartados = descBase.map((d) => ({ ...d, produto: base.nome ?? codigoPaiBase }));
   // Cada alvo carrega a origem (base ou kit) de quem o gerou — sem isto, o aviso de "voltou ao
   // ar" (ADR-0111) não teria como saber, no laço de push abaixo, se quem reativou foi a base ou
   // um kit específico (AlvoPush não carrega codigo_pai — ver alvos.ts).
@@ -508,6 +562,7 @@ export async function processarSincronizacao(
       codigoPai: kit.codigo_pai, produto: kitComSaldo.nome, permalink: kitComSaldo.permalink,
     };
     alvos.push(...r.alvos.map((a) => ({ ...a, origem: origemKit })));
+    descartados.push(...r.descartados.map((d) => ({ ...d, produto: kitComSaldo.nome ?? kit.codigo_pai })));
     temAnuncio = temAnuncio || r.temAnuncio;
   }
 
@@ -536,7 +591,12 @@ export async function processarSincronizacao(
     }
   }
 
+  // O zero do filho descartado não foi ao ML: o aviso de zerado não pode afirmar "anúncio pausado" por ele.
+  for (const d of descartados) semPush.add(d.sku);
+
   const notificar = deps.notificar ?? notificarCategoria;
+  // Depois do push (o aviso não atrasa o PUT) e antes de qualquer retorno, inclusive o 500.
+  const avisar = () => avisarDescartados(admin, notificar, org_id, descartados, kitLigado(familiaDoJob));
   const ctxAlerta: ContextoAlerta = {
     orgId: org_id,
     codigoPai: codigoPaiBase,
@@ -546,8 +606,12 @@ export async function processarSincronizacao(
     estoquePorSku: base.estoquePorSku,
     temAnuncio,
   };
-  if (alvos.length === 0 && retentaveis.length > 0) return { status: 500, body: { retry: retentaveis } };
+  if (alvos.length === 0 && retentaveis.length > 0) {
+    await avisar();
+    return { status: 500, body: { retry: retentaveis } };
+  }
   if (alvos.length === 0) {
+    await avisar();
     // Sem canal publicado o saldo não pausa anúncio nenhum: fecha os movimentos sem avisar.
     await alertarEstoqueZerado(admin, notificar, ctxAlerta, { fora: [...semPush], pausadoConfirmado: semPush.size === 0 });
     return { status: 200, body: { ok: true, alvos: 0 } };
@@ -640,6 +704,7 @@ export async function processarSincronizacao(
   // Push é absoluto: repetir é seguro, então 500 para o QStash re-tentar.
   // O alerta fica para a retentativa: dizer "anúncio pausado" antes de o canal ter recebido o
   // zero seria mentira (ADR-0134).
+  await avisar();
   if (retentaveis.length > 0) return { status: 500, body: { retry: retentaveis } };
 
   await alertarEstoqueZerado(admin, notificar, ctxAlerta, { fora: [...semPush], pausadoConfirmado: semPush.size === 0 });

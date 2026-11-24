@@ -659,3 +659,80 @@ describe('aviso de anúncio acima do limite (ADR-0195)', () => {
     expect(notificar).not.toHaveBeenCalled();
   });
 });
+
+describe('aviso de filho UP fora do push (vínculo local não ativo)', () => {
+  beforeEach(() => fakeConnector.reset());
+
+  const db = (filho: Record<string, unknown>, raiz: Record<string, unknown> = {}): DB => ({
+    familia: { id: 'f1', nome_pai: 'Blusa Avil' },
+    variacoes: [{ codigo: 'A1', estoque: 0 }, { codigo: 'A2', estoque: 4 }],
+    anuncios: [{ id: 'p0', canal: 'fake', item_externo_id: null, variacoes_externas: {}, mudando_composicao: false, status: 'publicado', ...raiz }],
+    itensUP: [
+      { anuncio_externo_id: 'p0', sku: 'A1', item_externo_id: 'FK-A1', retirado: false, status: 'criado', ...filho },
+      { anuncio_externo_id: 'p0', sku: 'A2', item_externo_id: 'FK-A2', retirado: false, status: 'ativo' },
+    ],
+  });
+
+  it('filho em `criado` com item publicado: avisa uma vez por item, com o SKU e o que fazer', async () => {
+    const notificar = vi.fn(async () => 1);
+    const r = await processarSincronizacao(deps(db({}), { notificar }), JOB);
+    expect(r.status).toBe(200);
+    expect(notificar).toHaveBeenCalledTimes(1);
+    const [, org, categoria, texto, opcoes] = (notificar.mock.calls as unknown[][])[0];
+    expect([org, categoria, opcoes]).toEqual(['org-1', 'estoque', { chave: 'up-descartado:FK-A1' }]);
+    expect(texto).toContain('A1');
+    expect(texto).toContain('Atualizar tudo');
+    // O irmão ativo segue recebendo o push normalmente.
+    expect(chamadasDeEstoque()).toEqual([{ itemExternoId: 'FK-A2', estoques: [{ sku: 'A2', estoque: 4 }] }]);
+  });
+
+  it('venda no próprio canal (alvos vazio) ainda avisa — o critério é ter anúncio publicado', async () => {
+    const notificar = vi.fn(async () => 1);
+    const r = await processarSincronizacao(deps(db({}), { notificar }), { ...JOB, canal_origem: 'fake' });
+    expect(r.status).toBe(200);
+    expect(chamadasDeEstoque()).toHaveLength(0);
+    expect(notificar).toHaveBeenCalledWith(
+      expect.anything(), 'org-1', 'estoque', expect.stringContaining('A1'), { chave: 'up-descartado:FK-A1' },
+    );
+  });
+
+  it.each([
+    ['retirado', { retirado: true }, {}],
+    ['sem item no ML', { item_externo_id: null, status: 'pendente' }, {}],
+    ['em remoção pelo operador', { status: 'remocao_pendente' }, {}],
+    ['composição em andamento', {}, { mudando_composicao: true }],
+    ['raiz saiu de publicado durante o push', {}, { status: 'publicando' }],
+  ])('%s: não avisa', async (_n, filho, raiz) => {
+    const notificar = vi.fn(async () => 1);
+    await processarSincronizacao(deps(db(filho, raiz), { notificar }), JOB);
+    expect(notificar).not.toHaveBeenCalled();
+  });
+
+  it('o aviso sai depois do PUT: Telegram lento não atrasa o push dos irmãos', async () => {
+    let pushesAntes = -1;
+    const notificar = vi.fn(async () => { pushesAntes = chamadasDeEstoque().length; return 1; });
+    await processarSincronizacao(deps(db({}), { notificar }), JOB);
+    expect(pushesAntes).toBe(1);
+  });
+
+  it('zero do filho descartado não vira "anúncio pausado" no aviso de zerado', async () => {
+    const enviados: string[] = [];
+    const notificar = vi.fn(async (_a: unknown, _o: string, _c: string, texto: string) => { enviados.push(texto); return 1; });
+    const base = db({});
+    base.variacoes = [{ codigo: 'A1', estoque: 0 }, { codigo: 'A2', estoque: 0 }];
+    base.movimentos = [{ id: 'm2', org_id: 'org-1', codigo_pai: 'P001', codigo: 'A2', estoque_anterior: 1, estoque_resultante: 0, alertado_em: null }];
+    await processarSincronizacao(deps(base, { notificar: notificar as never }), JOB);
+    expect(enviados.some((t) => t.includes('Estoque zerado'))).toBe(true);
+    expect(enviados.join('\n')).not.toContain('Anúncio pausado');
+  });
+
+  it('falha ao notificar não derruba o push', async () => {
+    const notificar = vi.fn(async () => { throw new Error('fora do ar'); });
+    const erro = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const r = await processarSincronizacao(deps(db({}), { notificar }), JOB);
+    expect(r.status).toBe(200);
+    expect(chamadasDeEstoque()).toHaveLength(1);
+    expect(erro).toHaveBeenCalledWith('estoque_alerta_up_descartado_falhou', 'FK-A1', expect.any(String));
+    erro.mockRestore();
+  });
+});
