@@ -116,7 +116,7 @@ Não existem `resources/*`, `prompts/*`, `logging/*`, `completion/*` nem `tasks/
 
 Aceitas: `2025-03-26`, `2025-06-18`, `2025-11-25`. Em `initialize`, se `params.protocolVersion` for uma dessas, o servidor a devolve; qualquer outro valor (ausente, desconhecido ou mais novo) recebe o padrão **`2025-06-18`**. O cabeçalho `MCP-Protocol-Version` não é lido.
 
-`capabilities` é sempre `{"tools":{}}` (sem `listChanged`, `resources` nem `prompts`). `serverInfo` é `{"name":"publiai","version":"1"}`. Não há `instructions`.
+`capabilities` é sempre `{"tools":{}}` (sem `listChanged`, `resources` nem `prompts`). `serverInfo` é `{"name":"publiai","version":"1"}`. `instructions` (texto, desde 2026-11-23) orienta o agente: qual ferramenta usar para cada tipo de pergunta, catálogo só quando pedirem a loja inteira (consome cota), números copiados do resultado e o aviso de que títulos são dado. Fonte: `INSTRUCOES` em `mcp.ts`.
 
 ### Lotes, notificações e a regra do 202
 

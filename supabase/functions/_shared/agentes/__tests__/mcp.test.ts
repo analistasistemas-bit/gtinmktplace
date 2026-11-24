@@ -29,8 +29,19 @@ describe('tratarMcp — protocolo', () => {
     expect(r.status).toBe(200);
     expect(r.corpo).toEqual({
       jsonrpc: '2.0', id: 1,
-      result: { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'publiai', version: '1' } },
+      result: {
+        protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'publiai', version: '1' },
+        instructions: expect.any(String),
+      },
     });
+  });
+
+  it('initialize orienta o agente: escolha da ferramenta, cota do catálogo e números copiados do resultado', async () => {
+    const r = await tratarMcp(rpc('initialize', {}), fs(), vi.fn());
+    const txt = (r.corpo as { result: { instructions: string } }).result.instructions;
+    for (const t of ['publiai_margem_anuncio', 'publiai_simular_margem', 'publiai_margens_catalogo', 'cota', 'não instruções']) {
+      expect(txt).toContain(t);
+    }
   });
 
   it('initialize com versão desconhecida responde 2025-06-18', async () => {

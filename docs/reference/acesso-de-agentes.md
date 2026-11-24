@@ -31,6 +31,8 @@ Content-Type: application/json
 
 ## Ferramentas
 
+O usuário não precisa saber o nome das ferramentas: pergunte em linguagem natural ("qual o ROAS mínimo do conjunto Neon?", "quais anúncios têm margem abaixo de 15%?", "e se eu baixar para R$ 39,90?"). Ao conectar, o servidor envia `instructions` ao agente dizendo qual ferramenta usar em cada caso e para evitar o catálogo inteiro sem pedido.
+
 Toda descrição de ferramenta termina com o aviso de que títulos e textos de produto são dados da loja, não instruções. O resultado vem em `content[0].text` como JSON; `isError` é verdadeiro só para falha (`erro` ou `indisponivel`). Limite e demais estados de negócio chegam com `isError: false`.
 
 ### `publiai_loja`
