@@ -1,6 +1,6 @@
 # ADR-0211 — Obrigação de cancelamento com fila própria, armada pelo banco
 
-**Status:** Proposto (2026-11-24, revisão 4). Só desenho: nenhum código, migration ou deploy feito.
+**Status:** Proposto (2026-11-24, revisão 5). Só desenho: nenhum código, migration ou deploy feito.
 **Decisores:** Diego
 **Refina:** [ADR-0121](0121-cancelamento-tratado-tambem-pela-reconciliacao.md) (quem chama o tratamento de cancelamento). As decisões 2 e 3 (quando repor) **não mudam**.
 **Relaciona:** [ADR-0173](0173-fanout-por-org-workers-agendados-cpu.md) (fan-out, `worker_pendencias`), [ADR-0200](0200-kit-com-variacao.md) (pendência `obrigatoria`, baixa adiada), ADR-0094 D-7/D-19 (allowlist de pré-despacho, tombstone `cancelamento_sem_baixa`), ADR-0043 (migrations por canal único).
@@ -14,7 +14,8 @@
 | 1 (`771ce88d`) | — | Tabela dedicada + trigger + etapa nova de cursor |
 | 2 (`84afe109`) | REVISE, 5 pontos | Fila em colunas de `ml_vendas`; a drenagem não regrava a venda e decide pelo ledger; confirmação por geração; sem cursor novo |
 | 3 (`d4041a3d`) | REVISE, 5 pontos | O trigger só arma, nunca desarma; só a drenagem conclui, com leitura do ML ao vivo; baixa posterior reabre a obrigação; SKU com `:` corrigido; teto de 20 exato; ensaio SQL fora das tabelas reais |
-| 4 | REVISE, 5 pontos | `cancelled` mais novo renova a geração; só o ciclo corrente reivindica; prazos na drenagem; ensaio sem dado de cliente e sem exclusão no ledger; grupo A do reparo só com contagem confirmada |
+| 4 (`abad948e`) | REVISE, 5 pontos | `cancelled` mais novo renova a geração; só o ciclo corrente reivindica; prazos na drenagem; ensaio sem dado de cliente e sem exclusão no ledger; grupo A do reparo só com contagem confirmada |
+| 5 | REVISE, 5 pontos | Envio não lido deixa pendente; toda espera da drenagem tem prazo; ensaio aguarda a margem; grupo A exige a unidade contada; reversão mantém o trigger |
 
 ## Contexto
 
@@ -70,14 +71,14 @@ A versão é o `last_updated` do `raw`, comparado como texto. Em produção o fo
 
 O trigger só altera a linha que está sendo gravada, sem conversão de tipo e sem escrever em outra tabela. Não cria modo de falha novo no `upsert` de ninguém. Só `update`: venda inédita já cancelada não arma. Olha `raw`, não a coluna `status`. Não mexe em `lote`.
 
-**3. A drenagem roda no `reconciliar-faturamento`, sem etapa nova de cursor.** Roda na execução em que a etapa `pendencias` encontra a fila comum vazia, antes de `perguntas`. Liga por `DRENAR_CANCELAMENTOS` (`1` = todas as orgs; lista de ids = só essas). Nunca lança: erro vira log e `parcial`. Não roda em conexão sem `contaExternaId` (sem ela não dá para conferir o vendedor). Tem prazo: 10 s por leitura do ML e 60 s de orçamento total (ajustável por `DRENAR_CANCELAMENTOS_PRAZO_MS`), contra 150 s de posse da rodada. O que não começou dentro do orçamento fica pendente para o ciclo seguinte.
+**3. A drenagem roda no `reconciliar-faturamento`, sem etapa nova de cursor.** Roda na execução em que a etapa `pendencias` encontra a fila comum vazia, antes de `perguntas`. Liga por `DRENAR_CANCELAMENTOS` (`1` = todas as orgs; lista de ids = só essas). Nunca lança: erro vira log e `parcial`. Não roda em conexão sem `contaExternaId` (sem ela não dá para conferir o vendedor). Toda espera tem prazo: 10 s por leitura do ML e por RPC, 30 s pelo tratamento. Só começa obrigação nova até 60 s (ajustável por `DRENAR_CANCELAMENTOS_PRAZO_MS`); aos 100 s para de esperar, grava o que tem e devolve, contra 150 s de posse da rodada. O que não começou, ou ficou com resultado incerto, segue pendente e o ciclo seguinte reconfere pelo ledger.
 
 **4. O lote é fixado por ciclo e o teto é exato.** A RPC `reivindicar_cancelamentos`, sob trava por org, marca `lote` = chave do ciclo (`params.ate`) em até `20 − (linhas da org já marcadas com essa chave)` obrigações. Nada apaga `lote` durante o ciclo: nem concluir, nem rearmar, nem reabrir. Logo, no máximo 20 vendas distintas por org por ciclo, quantas vezes a execução se repetir. A RPC só reivindica se a rodada `reconciliar` da org está `rodando` com esse mesmo `params.ate`: execução atrasada de um ciclo anterior sai sem marcar nada. Entra quem tem `armado_em` há mais de 5 minutos, do menos recentemente tentado para o mais recente.
 
 **5. A drenagem decide pelo ledger e pelo ML ao vivo. Não regrava a venda.** Para cada obrigação:
 
 1. **Ledger.** `cancelamento_baixas` devolve as baixas do pedido, quais têm estorno efetivo e o instante da leitura. Sem baixa aberta → conclui `sem-baixa-aberta`, sem chamar ML nem estoque.
-2. **ML ao vivo.** Relê pedido e envio. Exige que o id seja o do pedido e o vendedor seja o da conexão. Depois compara status e versão:
+2. **ML ao vivo.** Relê pedido e envio. Exige que o id seja o do pedido e o vendedor seja o da conexão. Pedido com envio cujo status não pôde ser lido fica pendente: a fila nunca manda ao tratamento um envio "desconhecido", que cairia no aviso com a baixa pré-despacho aberta. Depois compara status e versão:
 
 | Resposta do ML | Ação |
 |---|---|
@@ -99,7 +100,8 @@ O trigger só altera a linha que está sendo gravada, sem conversão de tipo e s
 | `reposto` com baixa ainda aberta | `reposicao-incompleta` | não |
 | `avisado` ou `silenciado` | o próprio | sim |
 | Parte estornada, parte aberta, e o envio não é mais pré-despacho | `parcial-sem-pre-despacho` (não chama o tratamento) | não |
-| ML não confirmou | `ml: <motivo>` | não |
+| ML não confirmou, ou o envio não pôde ser lido | `ml: <motivo>` | não |
+| Tratamento não respondeu no prazo | `tratamento: tempo esgotado` | não |
 | `erro`, `pendente`, `repetir`, `sem-baixa`, `ignorado`, exceção, desfecho novo | o próprio | não |
 
 `cancelamento.ts` não muda; a lista vive no arquivo da fila. `desfechoKit` não participa.
@@ -175,8 +177,10 @@ O trigger só altera a linha que está sendo gravada, sem conversão de tipo e s
 
 ## Como reverter
 
-1. **Sem deploy:** remover `DRENAR_CANCELAMENTOS`. A drenagem para na rodada seguinte; as obrigações ficam guardadas.
-2. **Código:** reverter o commit do `reconciliar-faturamento` e redeployar. Não há cursor novo.
-3. **Banco:** migration nova com `drop trigger ml_vendas_cancelamento_fila on public.ml_vendas`. As colunas podem ficar ou sair depois.
+1. **Reversão operacional (a normal): remover `DRENAR_CANCELAMENTOS`.** Sem deploy. A drenagem para na rodada seguinte e **o trigger continua armando**. Nada se perde: ao religar, a fila trata o que acumulou.
+2. **Código:** reverter o commit do `reconciliar-faturamento` e redeployar. Não há cursor novo. O trigger continua.
+3. **Remover o trigger é último recurso** (só se ele próprio causar problema). Cancelamento gravado enquanto ele está fora fica sem geração e **não rearma depois**, porque a linha já estará `cancelled`. Se for preciso:
+   - registrar o instante do `drop` e o da recriação;
+   - antes de religar a drenagem, rodar a consulta V7 do plano, comparar com a linha de base V0 e armar por migration revisada só os cancelamentos da janela.
 
-Qualquer ordem é segura: sem a função, o trigger só arma; sem o trigger, a drenagem lê uma fila que só esvazia; função deployada antes da migration registra erro na drenagem e segue.
+Sem a função, o trigger só arma. Função deployada antes da migration registra erro na drenagem e segue.
