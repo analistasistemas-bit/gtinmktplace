@@ -555,7 +555,7 @@ Todos, exceto `sem_espaco_para_ads`, vêm com `margem_pct: null`.
 
 | Motivo | Significado | O que fazer |
 |---|---|---|
-| `anuncio_indisponivel` | O item (ou, fora da simulação, o preço) não veio do Mercado Livre | Tentar de novo (marca `parcial` no catálogo) |
+| `anuncio_indisponivel` | O item (ou, fora da simulação, o preço) não veio do Mercado Livre, ou o vendedor informado não é a conta da conexão | Tentar de novo (marca `parcial` no catálogo); se persistir, conferir se o anúncio é da conta conectada |
 | `sem_preco` | Sem preço utilizável (zero, ausente ou inválido) | Verificar o anúncio no app |
 | `sem_cadastro` | Anúncio sem vínculo com o cadastro de produtos | Corrigir o vínculo no app |
 | `sem_custo` | Custo do pacote ausente ou menor ou igual a zero | Preencher o custo no cadastro |
@@ -592,7 +592,7 @@ Todos os contadores ficam no Redis, com incremento e conferência de teto numa �
 Detalhes:
 
 - **Chamadas.** Cada `POST` autenticado, aceito pelo portão (conexão válida, organização ativa com o módulo), conta 1, ainda que o corpo depois seja inválido. Recusas `401` e `403` não consomem o limite da conexão.
-- **IP.** Só conta pedidos com credencial recusada; um pedido com chave válida não é checado contra esse limite. Pelo endereço `mcp.publiai.daludi.com.br`, o pedido chega à edge vindo do Worker da Cloudflare, então todas as falhas de credencial por esse endereço dividem um único contador de IP (mais restritivo, não mais permissivo: pedido com chave válida não passa por esse limite). O IP vem de `cf-connecting-ip`; senão, do **último** item de `x-forwarded-for`; senão, a string `desconhecido` (todos sem IP identificável dividem um único contador). Nos logs do gateway, `cf-connecting-ip` aparece em todas as requisições medidas; o que a função recebe, e se o cabeçalho pode ser forjado, não foi verificado (ADR-0210, "Aceite em uso real").
+- **IP.** Só conta pedidos com credencial recusada; um pedido com chave válida não é checado contra esse limite. Pelo endereço `mcp.publiai.daludi.com.br`, o pedido chega à edge vindo do Worker da Cloudflare, então todas as falhas de credencial por esse endereço dividem um único contador de IP (mais restritivo, não mais permissivo: pedido com chave válida não passa por esse limite). O IP vem de `cf-connecting-ip`; senão, do **último** item de `x-forwarded-for`; senão, a string `desconhecido` (todos sem IP identificável dividem um único contador). Medido em 2026-11-24 numa função temporária (ADR-0210, "Cabeçalho de IP"; 18 pedidos, uma origem IPv4, dois endereços diretos): `cf-connecting-ip` chegou com o IP real nos 12 pedidos que alcançaram a função, os seis pedidos que o enviavam com valor receberam 403 `error code: 1000`, o `x-forwarded-for` enviado foi descartado e o último item dele diferiu do IP de origem. Na `agentes`, em 30 pedidos sem chave no mesmo minuto, nenhuma variação testada voltou a receber `401` depois do primeiro `429`.
 - **Tarifas.** A reserva é feita antes das consultas: 2 por cor (mínimo 1 cor) de cada anúncio que tem item lido e preço utilizável. É um teto de reserva, e não a contagem de chamadas reais ao Mercado Livre (a tarifa pode vir do cache). Reserva maior que 5.000 numa só chamada → `limite_tarifas`. Se uma consulta de tarifa individual sinaliza limite, nenhuma nova consulta é feita naquela chamada e a ferramenta responde `limite_tarifas`.
 - **Leituras.** A reserva é `2 × ceil(anúncios ÷ 20)` (um multiget de item e outro de preço por bloco de 20), feita antes de tocar o Mercado Livre. Uma página de catálogo de 50 anúncios custa 6.
 - **Ordem de consumo dentro de uma chamada de margem:** alíquota (sem alíquota → `sem_aliquota`, nenhuma cota usada) → reserva de leituras → leitura de item e preço → reserva de tarifas → cálculo. Alvo inexistente, cursor inválido e preço inválido terminam antes de qualquer reserva.
@@ -628,6 +628,7 @@ Um identificador de 12 a 20 dígitos é gravado como família ainda que fosse um
 - **Isolamento por organização.** Toda consulta de banco, cache, cursor e cota leva a organização da conexão. Um MLB, MLBU, família, SKU ou título de **outra** organização responde `nao_encontrado`, idêntico a um inexistente; um cursor de outra organização responde `cursor_invalido`. Não há como enumerar outras lojas.
 - **Uma chave por loja.** Para consultar várias lojas, use uma conexão (chave) por loja; não existe chave multi-loja.
 - **Dados que nunca saem:** dados de comprador, credenciais do Mercado Livre, dados de fornecedor e `familias.custo_centavos` (custo de tokens de IA).
+- **Só anúncio da conta.** Item e preço lidos no Mercado Livre são descartados quando o `seller_id` não é o da conta da conexão, ou não vem (ADR-0210, Emenda 2): o anúncio responde `anuncio_indisponivel`. A conferência é por leitura: se só uma for recusada, o que sai veio da outra, já conferida (na simulação, com só o preço recusado, o item conferido basta para calcular, e os campos de preço vindos do ML ficam `null`).
 - **Erros opacos.** Falhas internas devolvem só `indisponivel`; a mensagem original não é exposta nem logada. Falhas de credencial não distinguem chave inexistente, revogada ou expirada.
 - **Guarde a chave como segredo.** Ela é exibida uma vez; no PubliAI fica só o hash. Revogue e crie outra em caso de vazamento.
 
@@ -640,7 +641,7 @@ Da ADR-0210 e do código:
 - Comissão e frete vêm de um cache de até 8 horas (`tarifa_idade_max_horas`); o preço é lido na hora.
 - A leitura pode renovar e regravar a credencial do Mercado Livre da organização.
 - Pendências aceitas para o piloto: o cache de comissão `promo:lp:v1` é compartilhado entre organizações; não há bloqueio por IP antes da consulta da chave; não há revalidação da conexão depois da leitura do corpo; o limite de 10 conexões ativas não é atômico.
-- Teste real em cada cliente: feito em 2026-11-23; resultado na tabela de clientes do guia ([acesso-de-agentes.md](acesso-de-agentes.md)). `/items/bulk` de outro vendedor: um único anúncio testado respondeu 403 sem corpo (vira `anuncio_indisponivel`); pendente ampliar a amostra ou validar o vendedor antes de abrir a outras lojas (ADR-0210).
+- Teste real por cliente em 2026-11-23: os testados e os pendentes estão na tabela de clientes do guia ([acesso-de-agentes.md](acesso-de-agentes.md)). `/items/bulk` de outro vendedor: 240 de 240 anúncios de terceiros responderam 403 sem corpo (amostra de 2026-11-24, não aleatória); além disso o código confere o vendedor (ADR-0210, Emenda 2). Não medido: anúncio de catálogo próprio.
 
 O que **não existe**:
 

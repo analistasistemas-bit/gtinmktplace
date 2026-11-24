@@ -145,7 +145,7 @@ Motivo por anúncio (`motivo`, com `margem_pct: null`, exceto o último):
 
 | Motivo | Significado |
 |---|---|
-| `anuncio_indisponivel` | O item ou o preço não veio do Mercado Livre |
+| `anuncio_indisponivel` | O item ou o preço não veio do Mercado Livre, ou o anúncio não é da conta conectada |
 | `sem_preco` | Sem preço utilizável |
 | `sem_custo` | Custo do pacote ausente ou zero |
 | `pacote_a_conferir` | Pacote escalado de cadastro que não é kit: não há prova de que o custo era unitário |
