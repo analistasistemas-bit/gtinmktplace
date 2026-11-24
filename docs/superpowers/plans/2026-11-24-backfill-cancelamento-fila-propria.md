@@ -26,8 +26,8 @@
 - Migration **só** via `supabase migration new ml_vendas_cancelamento_fila` + `supabase db push`. Validar com `npm run db:check`. Antes de criar: `git fetch` e conferir que o timestamp gerado é mais novo que a última migration aplicada.
 - Arquivos que **não podem aparecer no diff**:
   - `supabase/functions/backfill-faturamento/index.ts` e `passo.ts`
-  - `supabase/functions/sync-venda/`
-  - tudo em `supabase/functions/_shared/estoque/`
+  - `supabase/functions/sync-venda/` (exceto a linha que passa o substatus, emenda 24/11 ao ADR-0121)
+  - tudo em `supabase/functions/_shared/estoque/`, exceto a regra de pré-despacho de `cancelamento.ts` (emenda 24/11 ao ADR-0121, decisão do Diego)
   - `supabase/functions/_shared/faturamento/pendencias.ts`, `io.ts` e `venda.ts`
   - `supabase/functions/_shared/rodada/`
   - `supabase/functions/reconciliar-faturamento/kit.ts`

@@ -8,6 +8,8 @@
 - [ ] Deploy: V0, `supabase db push` fora de :00/:40/06:30 UTC, V1/V2, `supabase functions deploy reconciliar-faturamento` (sem `DRENAR_CANCELAMENTOS`).
 - [ ] Ensaio 6.2 (três orgs `ENSAIO ADR-0211 A/B/C`, prévia + `--executar`), canário 6.3 em duas orgs, e só então `DRENAR_CANCELAMENTOS=1`. Registrar a medição no ADR-0211.
 - [ ] Reparo do acervo (388 pedidos, planilha por org, sem estorno por script).
+- [x] Emenda 24/11 ao ADR-0121: `ready_to_ship` só repõe com substatus de preparo (`ready_to_print`, `printed`, `invoice_pending`); retirado/despachado ou desconhecido só avisa. Vale para webhook, reconciliação e a fila nova.
+- [ ] Deploy da emenda junto com o ADR-0211: todas as funções que importam `_shared/estoque/cancelamento.ts` (lista no relatório da branch).
 
 ## Mensagens: pedido cancelado com conversa ativa (emenda 23/11 ao ADR-0067) — 2026-11-23
 

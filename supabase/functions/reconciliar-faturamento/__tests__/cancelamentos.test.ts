@@ -516,4 +516,19 @@ describe('drenarCancelamentos', () => {
     expect(tratados.filter((id) => id === 'o1')).toHaveLength(1);
     expect(f.io.registrar.mock.calls.at(-1)![0].map((r) => r.id)).toEqual(['v-o2']);
   });
+
+  it('F38 (emenda ADR-0121). substatus do envio chega ao tratamento e decide o pré-despacho no estado misto', async () => {
+    const f = criarIo([ob('o1')], { envio: vi.fn(async () => ({ status: 'ready_to_ship', substatus: 'picked_up' })) });
+    await drenarCancelamentos(f.io, 'L1');
+    expect(f.io.tratar.mock.calls[0][0]).toMatchObject({ shipmentStatus: 'ready_to_ship', shipmentSubstatus: 'picked_up' });
+
+    const g = criarIo([ob('o1')], { envio: vi.fn(async () => ({ status: 'ready_to_ship', substatus: 'picked_up' })) }, { o1: [estornada('A'), aberta('B')] });
+    await drenarCancelamentos(g.io, 'L1');
+    expect(g.reg('o1')).toMatchObject({ concluir: false, desfecho: 'parcial-sem-pre-despacho' });
+    expect(g.io.tratar).not.toHaveBeenCalled();
+
+    const h = criarIo([ob('o1')], { envio: vi.fn(async () => ({ status: 'ready_to_ship', substatus: 'printed' })) }, { o1: [estornada('A'), aberta('B')] });
+    await drenarCancelamentos(h.io, 'L1');
+    expect(h.io.tratar).toHaveBeenCalledTimes(1);
+  });
 });

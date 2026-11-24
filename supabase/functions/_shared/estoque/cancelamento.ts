@@ -20,6 +20,27 @@ import type { classificarItensKit, gravarIdentidades } from '../kit-variacao/ven
  *  "não despachado" reporia estoque de mercadoria já enviada. */
 const PRE_DESPACHO = ['pending', 'handling', 'ready_to_ship'];
 
+/** Emenda 24/11/2026 (ADR-0121, decisão 3): `ready_to_ship` é guarda-chuva — o substatus diz se o pacote ainda
+ *  está com o vendedor. Allowlist de PREPARO: só estes provam que não saiu. Retirado/despachado (`picked_up`,
+ *  `dropped_off`, `in_hub`, `in_packing_list`, `in_warehouse`…) ou desconhecido → não repõe, só avisa. Substatus
+ *  ausente segue como antes (pré-despacho), para não regredir o caso comum. */
+const RTS_PREPARO = ['ready_to_print', 'printed', 'invoice_pending'];
+
+function preDespacho(st: string | null, sub: string | null | undefined): boolean {
+  if (st === null || !PRE_DESPACHO.includes(st)) return false;
+  return st !== 'ready_to_ship' || sub == null || RTS_PREPARO.includes(String(sub));
+}
+
+/** Status e substatus do shipment lido, no formato do tratamento. Todo chamador passa por aqui. */
+export function envioParaTratamento(
+  s: { status?: unknown; substatus?: unknown } | null | undefined,
+): { shipmentStatus: string | null; shipmentSubstatus: string | null } {
+  return {
+    shipmentStatus: s?.status != null ? String(s.status) : null,
+    shipmentSubstatus: s?.substatus != null ? String(s.substatus) : null,
+  };
+}
+
 /** Rótulo do tipo de claim — espelha `TIPO_LABEL` de `src/lib/devolucoes.ts` (runtimes separados). */
 const TIPO_CLAIM: Record<string, string> = {
   returns: 'Devolução', mediations: 'Mediação', cancel_purchase: 'Cancelamento (compra)',
@@ -87,6 +108,8 @@ export interface PedidoCancelado {
   statusPedido: string | null;
   /** `null` = o shipment não pôde ser lido. NUNCA equivale a "não despachado". */
   shipmentStatus: string | null;
+  /** Substatus do envio (emenda 24/11 ao ADR-0121). Ausente = comportamento anterior. */
+  shipmentSubstatus?: string | null;
   temEnvio: boolean;
   /** ADR-0200: módulo `kit_variacao` (`Catalogo.kitLigado`). Ausente = desligado, comportamento de hoje. */
   kitLigado?: boolean;
@@ -111,7 +134,7 @@ export type ResultadoCancelamento =
 export function entraNoCreditoKit(p: PedidoCancelado): boolean {
   if (p.statusPedido !== 'cancelled' || !p.kitLigado) return false;
   const st = p.shipmentStatus != null ? String(p.shipmentStatus) : null;
-  return (st !== null && PRE_DESPACHO.includes(st)) || !p.temEnvio;
+  return preDespacho(st, p.shipmentSubstatus) || !p.temEnvio;
 }
 
 /**
@@ -128,7 +151,7 @@ export async function tratarPedidoCancelado(
   if (p.statusPedido !== 'cancelled') return 'ignorado';
 
   const st = p.shipmentStatus != null ? String(p.shipmentStatus) : null;
-  const preDespachoConhecido = st !== null && PRE_DESPACHO.includes(st);
+  const preDespachoConhecido = preDespacho(st, p.shipmentSubstatus);
 
   try {
     if (entraNoCreditoKit(p)) return await reporComKit(admin, deps, p);

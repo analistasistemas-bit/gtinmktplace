@@ -105,7 +105,7 @@ O trigger só altera a linha que está sendo gravada, sem conversão de tipo e s
 | Tratamento não respondeu no prazo | `tratamento: tempo esgotado` | não |
 | `erro`, `pendente`, `repetir`, `sem-baixa`, `ignorado`, exceção, desfecho novo | o próprio | não |
 
-`cancelamento.ts` não muda; a lista vive no arquivo da fila. `desfechoKit` não participa.
+A lista vive no arquivo da fila. `desfechoKit` não participa. A regra de pré-despacho em `cancelamento.ts` ganhou o substatus do envio (emenda 24/11 ao ADR-0121, decisão do Diego): a fila passa `shipmentSubstatus` ao tratamento e ao teste de estado misto.
 
 **7. Toda confirmação usa a geração.** `registrar_cancelamentos_tratados` só altera a linha cuja `geracao` é a lida e que ainda está pendente. Devolve quantas conclusões aceitou, e é por esse número que a drenagem conta. A geração é reconferida logo antes de tratar, depois de toda espera. `nao-cancelado` e o envio exigem status da lista conhecida do ML. `concluido_em` recebe o instante da leitura do ledger que justificou a conclusão.
 
@@ -117,7 +117,7 @@ O trigger só altera a linha que está sendo gravada, sem conversão de tipo e s
 
 **11. Sem rajada no deploy.** As colunas nascem nulas e a migration não as preenche. Os 388 pedidos do acervo já estão `cancelled` em `raw` e nunca armam.
 
-**12. O que não é tocado.** `backfill-faturamento`, `sync-venda`, `_shared/estoque/` (inclui `cancelamento.ts` e `baixa.ts`), `reconciliar-faturamento/kit.ts`, `_shared/faturamento/pendencias.ts`, `io.ts` e `venda.ts`, `_shared/rodada/`, `worker_pendencias`, RPCs de estoque. Só o `reconciliar-faturamento` é deployado.
+**12. O que não é tocado.** `backfill-faturamento`, `_shared/estoque/baixa.ts` (e o resto de `_shared/estoque/`, exceto a regra de pré-despacho em `cancelamento.ts` pela emenda 24/11 ao ADR-0121, que também leva o substatus ao `sync-venda`), `reconciliar-faturamento/kit.ts`, `_shared/faturamento/pendencias.ts`, `io.ts` e `venda.ts`, `_shared/rodada/`, `worker_pendencias`, RPCs de estoque. Deploy: `reconciliar-faturamento` e, pela emenda do ADR-0121, as funções que importam `cancelamento.ts`.
 
 **13. Permissões.** Função do trigger: `security invoker`, `search_path=''`. As três RPCs: `security definer`, `search_path=''`, dono `postgres`, `revoke all` de `public`, `anon`, `authenticated`, execute só para `service_role`. Sem tabela nova: as colunas herdam a RLS de `ml_vendas`. Nenhuma RPC de estoque é criada ou alterada, então `estoque_rpc_executor` não entra. Se a implementação precisar trocar dono de função: `revoke`/`grant` antes do `alter function … owner`.
 

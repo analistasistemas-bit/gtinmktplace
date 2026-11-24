@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { tratarPedidoCancelado, type DepsCancelamento } from '../cancelamento';
+import { entraNoCreditoKit, envioParaTratamento, tratarPedidoCancelado, type DepsCancelamento } from '../cancelamento';
 
 /**
  * ADR-0121 — o tratamento de pedido cancelado passou a ter DOIS gatilhos (webhook e
@@ -411,5 +411,41 @@ describe('tratarPedidoCancelado — kit com variação', () => {
     expect(extra.agendados).toEqual([]);
     expect(extra.pendencias).toEqual([]);
     expect(extra.despachados).toEqual([['est-kit', 'outro']]);
+  });
+});
+
+// Emenda 24/11/2026 ao ADR-0121 (decisão 3): `ready_to_ship` só é pré-despacho com substatus de preparo. Com o
+// pacote já retirado/despachado (picked_up, dropped_off, in_hub…) ou com substatus desconhecido, só avisa.
+describe('tratarPedidoCancelado — ready_to_ship pelo substatus', () => {
+  it.each(['ready_to_print', 'printed', 'invoice_pending', null])('substatus de preparo "%s" repõe', async (sub) => {
+    const { chamadas, deps } = fakeDeps();
+    const r = await tratarPedidoCancelado(ADMIN, deps, { ...BASE, shipmentStatus: 'ready_to_ship', shipmentSubstatus: sub });
+    expect(r).toBe('reposto');
+    expect(chamadas.estornos).toHaveLength(1);
+  });
+
+  it.each(['picked_up', 'dropped_off', 'in_hub', 'in_packing_list', 'in_warehouse', 'xyz_desconhecido'])(
+    'substatus "%s" avisa sem repor', async (sub) => {
+      const { chamadas, deps } = fakeDeps();
+      const r = await tratarPedidoCancelado(ADMIN, deps, { ...BASE, shipmentStatus: 'ready_to_ship', shipmentSubstatus: sub });
+      expect(r).toBe('avisado');
+      expect(chamadas.estornos).toHaveLength(0);
+    });
+
+  it('substatus não muda pending/handling (fora do ready_to_ship)', async () => {
+    const { deps } = fakeDeps();
+    expect(await tratarPedidoCancelado(ADMIN, deps, { ...BASE, shipmentStatus: 'pending', shipmentSubstatus: 'buffered' })).toBe('reposto');
+  });
+
+  it('crédito de kit segue a mesma regra', () => {
+    const k = { ...BASE, shipmentStatus: 'ready_to_ship', kitLigado: true };
+    expect(entraNoCreditoKit({ ...k, shipmentSubstatus: 'printed' })).toBe(true);
+    expect(entraNoCreditoKit({ ...k, shipmentSubstatus: 'picked_up' })).toBe(false);
+  });
+
+  it('envioParaTratamento leva status e substatus do shipment lido', () => {
+    expect(envioParaTratamento({ status: 'ready_to_ship', substatus: 'picked_up' })).toEqual({ shipmentStatus: 'ready_to_ship', shipmentSubstatus: 'picked_up' });
+    expect(envioParaTratamento({ status: 'shipped', substatus: null })).toEqual({ shipmentStatus: 'shipped', shipmentSubstatus: null });
+    expect(envioParaTratamento(null)).toEqual({ shipmentStatus: null, shipmentSubstatus: null });
   });
 });

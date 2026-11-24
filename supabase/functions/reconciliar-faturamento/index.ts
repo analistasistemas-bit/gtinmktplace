@@ -14,7 +14,7 @@ import { mapearPergunta } from '../_shared/faturamento/pergunta.ts';
 import { buscarPacksNaoLidos, buscarMensagensPackEstrito, upsertMensagensEstrito, resolverMetaPack, registrarEstadoDoPack } from '../_shared/faturamento/mensagens-io.ts';
 import { recuperarComOrcamento, recuperarPendentes } from '../_shared/faturamento/posvenda-fluxo.ts';
 import { depsAcaoReal } from '../_shared/faturamento/posvenda-acao-io.ts';
-import { tratarPedidoCancelado } from '../_shared/estoque/cancelamento.ts';
+import { envioParaTratamento, tratarPedidoCancelado } from '../_shared/estoque/cancelamento.ts';
 import { despacharPushPendente, refazerBaixaAdiada } from '../_shared/estoque/baixa.ts';
 import { desfechoKit, processarClaim } from './kit.ts';
 import { depsCancelamento } from '../_shared/estoque/cancelamento-deps.ts';
@@ -178,7 +178,7 @@ async function legado(admin: ReturnType<typeof adminClient>): Promise<Response> 
                 return {
                   orgId, userId, canal: 'mercado_livre', orderId: pedido.id, itens,
                   statusPedido: pedido.status ?? null,
-                  shipmentStatus: shipment?.status != null ? String(shipment.status) : null,
+                  ...envioParaTratamento(shipment),
                   temEnvio: pedido.shipping?.id != null,
                   kitLigado, catalogoIncompleto: incompleto || gtinIncerto,
                 };
@@ -259,7 +259,7 @@ async function legado(admin: ReturnType<typeof adminClient>): Promise<Response> 
             await tratarPedidoCancelado(admin, depsCancelamento, {
               orgId, userId, canal: 'mercado_livre', orderId: pedido.id, itens,
               statusPedido: pedido.status ?? null,
-              shipmentStatus: shipment?.status != null ? String(shipment.status) : null,
+              ...envioParaTratamento(shipment),
               temEnvio: pedido.shipping?.id != null,
               kitLigado, catalogoIncompleto: incompleto || gtinIncerto,
             });
@@ -417,7 +417,7 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
                 return {
                   orgId: org, userId, canal: 'mercado_livre', orderId: pedido.id, itens,
                   statusPedido: pedido.status ?? null,
-                  shipmentStatus: shipment?.status != null ? String(shipment.status) : null,
+                  ...envioParaTratamento(shipment),
                   temEnvio: pedido.shipping?.id != null,
                   kitLigado, catalogoIncompleto: incompleto || gtinIncerto,
                 };
@@ -528,7 +528,7 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
             const cancelamento = await tratarPedidoCancelado(admin, depsCancelamento, {
               orgId: org, userId, canal: 'mercado_livre', orderId: pedido.id, itens,
               statusPedido: pedido.status ?? null,
-              shipmentStatus: shipment?.status != null ? String(shipment.status) : null,
+              ...envioParaTratamento(shipment),
               temEnvio: pedido.shipping?.id != null,
               kitLigado, catalogoIncompleto: incompleto || gtinIncerto,
             });

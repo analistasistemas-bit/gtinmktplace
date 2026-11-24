@@ -34,7 +34,7 @@ export interface IoFila {
   reivindicar(lote: string): Promise<Obrigacao[]>;
   ledger(orderIds: string[]): Promise<Map<string, Ledger>>;
   pedido(orderId: string): Promise<PedidoML>;
-  envio(shippingId: number | string): Promise<{ status: string | null } | null>;
+  envio(shippingId: number | string): Promise<{ status: string | null; substatus?: string | null } | null>;
   aindaPendente(o: Obrigacao): Promise<boolean>;
   kitLigado(): Promise<boolean>;
   tratar(p: PedidoDaFila): Promise<ResultadoCancelamento>;
@@ -138,8 +138,9 @@ export async function drenarCancelamentos(
     // 4. Envio: com envio, só segue com o status lido (null nunca equivale a "não despachado").
     const temEnvio = p.shipping?.id != null;
     let shipmentStatus: string | null = null;
+    let shipmentSubstatus: string | null = null;
     if (temEnvio) {
-      let s: { status: string | null } | null;
+      let s: { status: string | null; substatus?: string | null } | null;
       try {
         s = await comPrazo(() => io.envio(p.shipping!.id!), ate(PRAZO_CHAMADA_MS), 'envio');
       } catch (e) {
@@ -147,9 +148,11 @@ export async function drenarCancelamentos(
       }
       if (typeof s?.status !== 'string' || !STATUS_ENVIO.has(s.status)) return fica('ml: envio não lido');
       shipmentStatus = s.status;
+      // Emenda 24/11 ao ADR-0121: o substatus decide se `ready_to_ship` ainda é pré-despacho.
+      shipmentSubstatus = typeof s.substatus === 'string' ? s.substatus : null;
     }
     const base: PedidoDaFila = {
-      orderId: o.orderId, statusPedido: 'cancelled', shipmentStatus, temEnvio, catalogoIncompleto: false,
+      orderId: o.orderId, statusPedido: 'cancelled', shipmentStatus, shipmentSubstatus, temEnvio, catalogoIncompleto: false,
       itens: abertas.map((b) => ({ codigo: b.codigoRef, quantity: b.quantidade })),
     };
     const misto = abertas.length < l.baixas.filter((b) => b.codigoRef != null).length;

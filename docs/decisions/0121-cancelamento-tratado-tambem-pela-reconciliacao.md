@@ -82,6 +82,26 @@ que substitui `cancelamentoPeloComprador`); separa "a mercadoria já saiu" (`shi
 `not_delivered`) de "não dá para saber"; e leva o link do pedido. Sem claim, a linha some — nada é
 inventado. A decisão de repor **não muda**.
 
+**7. Emenda 24/11/2026 (decisão 3): `ready_to_ship` só é pré-despacho com substatus de preparo.** Motivo:
+`ready_to_ship` é guarda-chuva no ML — o substatus diz se o pacote ainda está com o vendedor. Com a coleta já
+feita (`picked_up`; em Cross Docking o pacote sai na coleta) ou o pacote entregue na agência/hub (`dropped_off`,
+`in_hub`), a regra antiga repunha estoque de mercadoria que já tinha saído, que é o erro caro (estoque
+fantasma, venda sem produto). Decisão do Diego: corrigir a regra em **todos** os caminhos (webhook
+`sync-venda`, reconciliação e a fila do ADR-0211), que passam o substatus por `envioParaTratamento`.
+
+- **Repõe** com `ready_to_ship` só se o substatus for de preparo: `ready_to_print`, `printed` (etiqueta) ou
+  `invoice_pending` (aguardando NF). É uma allowlist, como a de status: só o que prova que o pacote está com o
+  vendedor.
+- **Só avisa** com qualquer outro substatus. Os vistos em produção em 24/11 (vendas `ready_to_ship`):
+  `invoice_pending` 129, `in_hub` 72, `dropped_off` 29, `in_packing_list` 24, `printed` 11, `picked_up` 1.
+  `in_hub`, `dropped_off`, `picked_up`, `in_warehouse` são os que o próprio app já trata como "A caminho"
+  (`src/lib/ml-status.ts`). `in_packing_list` (pacote na lista da coleta) e substatus desconhecido também só
+  avisam: repor mercadoria que saiu custa mais que pedir uma entrada manual. A documentação de status do ML
+  (gerenciamento de envios) não pôde ser lida em 24/11 (403); a lista sai do código e dos dados de produção.
+- **Substatus ausente** (leitura antiga, envio sem substatus) segue como antes: `ready_to_ship` repõe, para
+  não regredir o caso comum. `pending` e `handling` não mudam.
+- O crédito de kit (`entraNoCreditoKit`, ADR-0200) segue o mesmo predicado. O texto do aviso não muda.
+
 ## Consequências
 
 **Aceitas.** A reconciliação revisita o mesmo pedido cancelado de hora em hora enquanto ele estiver

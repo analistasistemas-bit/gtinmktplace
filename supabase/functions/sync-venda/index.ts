@@ -8,7 +8,7 @@ import { registrarBaixaVenda, despacharPushPendente } from '../_shared/estoque/b
 import { avisarKitsZerados } from '../_shared/kit-variacao/venda.ts';
 import { dispararReposicao } from '../_shared/kit-variacao/reposicao.ts';
 import { registrarPendenciaKit } from '../_shared/faturamento/pendencias.ts';
-import { tratarPedidoCancelado } from '../_shared/estoque/cancelamento.ts';
+import { envioParaTratamento, tratarPedidoCancelado } from '../_shared/estoque/cancelamento.ts';
 import { depsCancelamento } from '../_shared/estoque/cancelamento-deps.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
@@ -282,7 +282,7 @@ Deno.serve(async (req) => {
     cancelamento = await tratarPedidoCancelado(admin, depsCancelamento, {
       orgId, userId, canal: 'mercado_livre', orderId: pedido.id, itens,
       statusPedido: pedido.status ?? null,
-      shipmentStatus: shipment?.status != null ? String(shipment.status) : null,
+      ...envioParaTratamento(shipment),
       temEnvio: pedido.shipping?.id != null,
       kitLigado, catalogoIncompleto: leituraIncerta,
     });
