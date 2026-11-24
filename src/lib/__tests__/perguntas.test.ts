@@ -14,7 +14,7 @@ const respostaPerguntas: { data: unknown[]; error: { message: string } | null; c
   data: [], error: null, count: 0,
 };
 const cadeiaPerguntas: Record<string, unknown> = {};
-for (const m of ['select', 'eq', 'neq', 'order', 'range']) {
+for (const m of ['select', 'eq', 'neq', 'is', 'order', 'range']) {
   cadeiaPerguntas[m] = vi.fn((...args: unknown[]) => { registrar(m, args); return cadeiaPerguntas; });
 }
 cadeiaPerguntas.then = (resolve: (v: typeof respostaPerguntas) => unknown) =>
@@ -77,6 +77,7 @@ describe('lib/perguntas — fetchPerguntasPagina', () => {
   it('filtro "pendentes" manda status = UNANSWERED', async () => {
     await fetchPerguntasPagina(1, 20, { status: 'pendentes' });
     expect(chamadas.eq).toEqual([['status', 'UNANSWERED']]);
+    expect(chamadas.is).toEqual([['dispensada_em', null]]);
   });
 
   it('filtro "respondidas" manda status <> UNANSWERED', async () => {
@@ -202,18 +203,22 @@ describe('lib/perguntas — agruparPerguntas', () => {
 
 describe('lib/perguntas — pergCasaStatus', () => {
   it('pendentes só casa com UNANSWERED', () => {
-    expect(pergCasaStatus('UNANSWERED', 'pendentes')).toBe(true);
-    expect(pergCasaStatus('ANSWERED', 'pendentes')).toBe(false);
+    expect(pergCasaStatus({ status: 'UNANSWERED' }, 'pendentes')).toBe(true);
+    expect(pergCasaStatus({ status: 'ANSWERED' }, 'pendentes')).toBe(false);
+    const dispensada = { status: 'UNANSWERED', dispensada_em: '2026-11-24T12:00:00Z' };
+    expect(pergCasaStatus(dispensada, 'pendentes')).toBe(false);
+    expect(pergCasaStatus(dispensada, 'respondidas')).toBe(false);
+    expect(pergCasaStatus(dispensada, 'todas')).toBe(true);
   });
 
   it('respondidas casa com qualquer status diferente de UNANSWERED', () => {
-    expect(pergCasaStatus('ANSWERED', 'respondidas')).toBe(true);
-    expect(pergCasaStatus('CLOSED_UNANSWERED', 'respondidas')).toBe(true);
-    expect(pergCasaStatus('UNANSWERED', 'respondidas')).toBe(false);
+    expect(pergCasaStatus({ status: 'ANSWERED' }, 'respondidas')).toBe(true);
+    expect(pergCasaStatus({ status: 'CLOSED_UNANSWERED' }, 'respondidas')).toBe(true);
+    expect(pergCasaStatus({ status: 'UNANSWERED' }, 'respondidas')).toBe(false);
   });
 
   it('todas casa com qualquer status', () => {
-    expect(pergCasaStatus('UNANSWERED', 'todas')).toBe(true);
-    expect(pergCasaStatus('ANSWERED', 'todas')).toBe(true);
+    expect(pergCasaStatus({ status: 'UNANSWERED' }, 'todas')).toBe(true);
+    expect(pergCasaStatus({ status: 'ANSWERED' }, 'todas')).toBe(true);
   });
 });

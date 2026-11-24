@@ -12,9 +12,9 @@ const DATAS_NULAS = ['date_first_printed', 'date_shipped', 'date_delivered', 'da
 
 /** GET /shipments/{id}/history prova que a etiqueta nunca foi impressa? Qualquer forma diferente não prova. */
 export function provaNuncaSaiu(h: unknown, shippingId: number | string): boolean {
-  const x = h as { id?: unknown; status?: unknown; mode?: unknown; date_history?: Record<string, unknown> | null } | null | undefined;
+  const x = h as { id?: unknown; status?: unknown; substatus?: unknown; mode?: unknown; date_history?: Record<string, unknown> | null } | null | undefined;
   const datas = x?.date_history;
-  return String(x?.id) === String(shippingId) && x?.status === 'cancelled' && x.mode === 'me2'
+  return String(x?.id) === String(shippingId) && x?.status === 'cancelled' && x.substatus === null && x.mode === 'me2'
     && !!datas && DATAS_NULAS.every((d) => datas[d] === null);
 }
 

@@ -107,7 +107,7 @@ impressa.** Decisão do Diego. Dos 9 cancelamentos que a fila do ADR-0211 conclu
 `cancelled` que nunca saiu e só avisaram: na prática a reposição automática quase não acontecia.
 
 - **Prova** (`GET /shipments/{id}/history`, lida só para envio `cancelled` sem substatus): `id` e `status=cancelled`
-  conferem, `mode=me2`, `date_first_printed` presente e nula, e `date_shipped`, `date_delivered`,
+  conferem, `substatus` nulo também no histórico, `mode=me2`, `date_first_printed` presente e nula, e `date_shipped`, `date_delivered`,
   `date_not_delivered` e `date_returned` nulas. Qualquer outra forma não prova.
 - **Por que não `date_shipped`:** está vazia também em envio `picked_up`/`dropped_off` (34 de 34 em 24/11).
 - **Medido em 24/11:** 775 envios que saíram (coletados, despachados, entregues, devolvidos), em 5 orgs, 90 dias:

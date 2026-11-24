@@ -451,7 +451,7 @@ export function buildPerguntasReport(lista: Pergunta[]): ReportData {
         item: p.item_titulo ?? p.item_id ?? '—',
         criada: fmtDataCurta(p.criada_em),
         pergunta: p.texto,
-        status: p.status !== 'UNANSWERED' ? 'Respondida' : 'Pendente',
+        status: p.status !== 'UNANSWERED' ? 'Respondida' : p.dispensada_em ? 'Dispensada' : 'Pendente',
         resposta: p.resposta ?? '—',
       },
     })),

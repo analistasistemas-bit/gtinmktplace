@@ -8,7 +8,7 @@ import {
   verificarEnvio, liberarEnvio, enviarAnexoMensagem, buscarEnvioPendente, conversaEncerrada, type Conversa, type EnvioPendente, type RespostaEnvio,
 } from '@/lib/mensagens';
 import type { ErroEdge } from '@/lib/edge';
-import { baldeDaConversa, rotuloVenda, type Balde, type ResumoMensagens } from '@/lib/mensagens-resumo';
+import { baldeDaConversa, rotuloVenda, temNaoLida, type Balde, type ResumoMensagens } from '@/lib/mensagens-resumo';
 import { tempoRelativo } from '@/lib/sonar-buscas-recentes';
 import { urlVendaML } from '@/lib/ml-status';
 import { linhasDoChat, nomeComprador } from '@/lib/mensagens-chat';
@@ -46,6 +46,7 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
   const [enviando, setEnviando] = useState(false);
   const [reclamacaoLocal, setReclamacaoLocal] = useState(false);
   const [dispensando, setDispensando] = useState(false);
+  const naoLida = temNaoLida(c);
   const marcandoRef = useRef(false);
   const [arquivo, setArquivo] = useState<File | null>(null);
   // undefined = vale o cache da lista (c.envioPendente, até 60 s defasado); null = sem pendência.
@@ -253,15 +254,15 @@ function CardConversa({ c, marcados, aberto, onAberto }: {
       <div className={cn('flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5', aberto && 'border-b')}>
         <div aria-hidden className="relative grid h-9 w-9 shrink-0 place-items-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
           {iniciais(cliente)}
-          {c.idsNaoLidosML.length > 0 && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-info ring-2 ring-card" />}
+          {naoLida && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-info ring-2 ring-card" />}
         </div>
         <div className="min-w-0 flex-1 basis-40">
           <div className="truncate text-xs text-muted-foreground">
             {rotuloVenda(c.shipping_status)}
             {ultimaMsg?.data_ml && ` · ${ultimaMsg.direcao === 'recebida' ? 'Mensagem recebida' : 'Mensagem enviada'} ${tempoRelativo(ultimaMsg.data_ml, new Date())}`}
-            {c.idsNaoLidosML.length > 0 && <span className="sr-only"> (não lida)</span>}
+            {naoLida && <span className="sr-only"> (não lida)</span>}
           </div>
-          <div className={cn('truncate text-sm', c.idsNaoLidosML.length > 0 ? 'font-semibold' : 'font-medium')}>{cliente}</div>
+          <div className={cn('truncate text-sm', naoLida ? 'font-semibold' : 'font-medium')}>{cliente}</div>
           <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
             <span className="truncate">{formatarNomeProduto(c.item_titulo) || `Pedido ${c.pack_id}`}</span>
             <a

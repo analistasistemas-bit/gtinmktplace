@@ -113,7 +113,8 @@ Migration aplicada, merge na `main` e deploy feitos em 2026-11-22 (ver "Aceite d
 
 ### Pendências aceitas para o piloto
 
-- ~~Conferir no aceite se `/items/bulk` devolve item de outro vendedor.~~ Fechada em 2026-11-23: não devolve (ver "Aceite em uso real").
+- Conferir se `/items/bulk` devolve item de outro vendedor. **Aberta:** um único anúncio de terceiro testado em 2026-11-23 voltou 403, o que é indício, não prova (ver "Aceite em uso real"). Antes de outra loja: ampliar a amostra ou validar `seller_id`.
+- Qual cabeçalho de IP chega à edge, e se ele pode ser forjado na URL direta do Supabase. **Aberta** (ver "Aceite em uso real").
 - O cache de comissão `promo:lp:v1` é compartilhado entre organizações. É anterior a este trabalho; pendência separada. Medido em 2026-11-23: a chave é categoria + tipo de anúncio + preço, sem vendedor, e guarda só a comissão (tarifa do ML), nenhum dado da loja. Zaven e Avil receberam do `/sites/MLB/listing_prices` a mesma comissão nos 4 casos testados (categoria MLB430391, clássico e premium, R$ 42,75 a R$ 150). O risco é de exatidão, não de vazamento: só apareceria se um vendedor tivesse tarifa própria (acordo comercial, loja oficial), o que não foi observado. Mantido sem mudança.
 - Não há bloqueio por IP antes da consulta da chave. Sugestão registrada: assinatura embutida na chave antes de abrir a mais lojas.
 - Sem revalidação da conexão depois da leitura do corpo (janela de até 10 s).
@@ -131,7 +132,7 @@ Chamadas reais ao servidor em produção, com uma conexão temporária da Zaven 
 - Conexão revogada: 401 na chamada seguinte. Sem chave: 401. GET: 405.
 - Auditoria: uma linha por chamada de ferramenta, com alvo canônico (`texto_livre` para a busca por título).
 
-Não coberto neste aceite: comparação lado a lado com a aba Campanhas na tela (a conta é a mesma função, coberta por teste de paridade); leitura de anúncio de outro vendedor por `/items/bulk`; qual cabeçalho de IP chega à edge; criação de chave pela tela; conexão em cada cliente. Todos cobertos em 2026-11-23 (seção seguinte), exceto os clientes marcados como não testados.
+Não coberto neste aceite: comparação lado a lado com a aba Campanhas na tela (a conta é a mesma função, coberta por teste de paridade); leitura de anúncio de outro vendedor por `/items/bulk`; qual cabeçalho de IP chega à edge; criação de chave pela tela; conexão em cada cliente. Retomados em 2026-11-23, parte deles só parcialmente: ver a seção seguinte.
 
 ## Aceite em uso real (2026-11-23)
 
@@ -140,27 +141,28 @@ Conduzido pelo Diego na Zaven, com uma chave criada pela tela (prefixo `ad62ca5f
 **Confirmado:**
 
 - **Tela de conexões:** a chave aparece uma única vez (com o endereço do servidor e o aviso), a lista mostra prefixo, validade e último uso, "Ver chamadas" mostra a auditoria traduzida, com alvo canônico ou "—". A seção só aparece para administrador da própria loja: em sessão de suporte ela some, como decidido.
-- **Paridade com a aba Campanhas, por anúncio:** `MLB5563623367` (Campanha ZAven, ativa) e os outros 8 anúncios da mesma família: tela "até 42,5%", API `42,5848…` (a tela trunca em uma casa). Família `8632963637759506`: tela "até 44,5%", API `44,5332…`. Componentes da API fecham no preço (R$ 42,75 = comissão 5,99 + frete 6,85 + imposto 1,71 + líquido 28,21; custo 10,00).
+- **Paridade com a aba Campanhas, por anúncio:** na Campanha ZAven (ativa), seis linhas da família de `MLB5563623367` foram vistas na tela com "até 42,5%" (`MLB7999179888`, `MLB7999083724`, `MLB5563669687`, `MLB5563669643`, `MLB5563669625`, `MLB5563623397`) e a API devolve `42,5848…` para cada uma (a tela trunca em uma casa). A linha do próprio `MLB5563623367` não foi vista na tela. Família `8632963637759506`: tela "até 44,5%", API `44,5332…`. Componentes da API fecham no preço (R$ 42,75 = comissão 5,99 + frete 6,85 + imposto 1,71 + líquido 28,21; custo 10,00).
 - **Clientes:** funcionam Claude Code, claude.ai, Grok Bot, OpenBot e Muse; o ChatGPT não oferece chave nem cabeçalho (só OAuth). Tabela e passo a passo em `docs/reference/acesso-de-agentes.md`.
 - **Revogação pela tela:** chamada seguinte com a mesma chave → `401 {"erro":"nao_autorizado"}`; nenhuma chamada auditada depois de `revogada_em`.
-- **`/items/bulk` de outro vendedor:** com o token da Zaven, um anúncio próprio voltou `200` com o vendedor da Zaven e um anúncio da Avil voltou `403` sem corpo. O código descarta envelope que não é `200` com corpo, então um MLB alheio viraria `anuncio_indisponivel`, nunca um número. Não é preciso validar `seller_id`.
-- **Cabeçalho de IP:** nos logs da edge (77 requisições de 9 clientes diferentes), `cf-connecting-ip` chegou em todas, sempre igual ao `x-real-ip` do gateway; `x-forwarded-for` não chegou em nenhuma. O `ipDoCliente` já prefere `cf-connecting-ip`; o limite de falhas por IP funciona como desenhado.
+- **`/items/bulk` de outro vendedor:** com o token da Zaven, um anúncio próprio voltou `200` com o vendedor da Zaven e um anúncio da Avil voltou `403` sem corpo. O código descarta envelope que não é `200` com corpo, então esse caso viraria `anuncio_indisponivel`. É um único anúncio de um único vendedor: indício de isolamento, não prova.
+- **Cabeçalho de IP:** nos logs do gateway (76 requisições, 10 user-agents, parte delas scripts da própria validação), `cf-connecting-ip` aparece em todas, sempre igual ao `x-real-ip`. O log guarda só uma lista fixa de cabeçalhos, então a ausência de `x-forwarded-for` nele não prova nada, e o que a função recebe não foi lido de dentro dela.
 
 **Continua pendente:**
 
 - Clientes não testados: OpenClaw (a CLI aceita `--header`), Hermes (servidor remoto) e Muse Code (não instalado).
 - ChatGPT só conecta com a fatia 2.
-- As pendências aceitas para o piloto listadas acima, exceto a do `/items/bulk`.
+- As pendências aceitas para o piloto listadas acima, inclusive `/items/bulk` e cabeçalho de IP.
+- A busca por título só olha `familias.nome_pai`: termo que só existe no título da variação (medido em 2026-11-24 com "Neon") responde `nao_encontrado`.
 
 ## Emenda 1 — conexão mais fácil sem OAuth (2026-11-23)
 
 Aprovada pelo Diego em 2026-11-23, depois do aceite em uso real. A fatia 2 (OAuth) fica adiada; estas mudanças reduzem o trabalho de conectar com a chave da fatia 1.
 
 1. **Validade opcional.** A decisão 1 ("sempre com validade") passa a ser: a conexão tem validade de 30, 90 ou 365 dias **ou vale até ser revogada** (`expira_em` nulo), escolha do administrador na criação; "Até revogar" é o padrão da tela. Motivo: o Diego conecta agentes de uso contínuo e não quer recriar chave; a revogação continua imediata e o "último uso" continua visível. Risco aceito: chave vazada sem data de fim vale até alguém revogar. Data presente continua limitada a 366 dias pelo banco; data inválida continua recusada.
-2. **Credencial tolerante ao formato do cliente.** O cabeçalho `Authorization` aceita `Bearer <chave>`, com `Bearer` em qualquer caixa, ou a chave sozinha. O formato da chave (`pai_<8 hex>_<43>`) continua exigido; JWT e qualquer outro valor continuam recusados com 401. Motivo: no teste, um cliente enviou `Bearer Bearer pai_…` e outro pedia só a chave.
-3. **Endereço com a marca.** `https://mcp.publiai.daludi.com.br` é um Worker da Cloudflare que só repassa o pedido para a edge `agentes` (mesmo método, corpo e cabeçalhos; sem lógica, sem guardar nem registrar cabeçalho). Dá URL curta e o ícone do PubliAI no claude.ai. O endereço do Supabase continua funcionando.
+2. **Credencial tolerante ao formato do cliente.** O cabeçalho `Authorization` aceita `Bearer <chave>`, com `Bearer` em qualquer caixa, ou a chave sozinha. O formato da chave (`pai_<8 hex>_<43>`) continua exigido; JWT e qualquer outro valor continuam recusados com 401. Motivo: no teste, um cliente mandou a chave sem o esquema. `Bearer Bearer pai_…` (relatado pelo Muse) **continua** recusado.
+3. **Endereço com a marca.** `https://mcp.publiai.daludi.com.br` é um Worker da Cloudflare que só repassa o pedido para a edge `agentes` (mesmo método, corpo e cabeçalhos; sem lógica, sem guardar nem registrar cabeçalho). Dá URL curta. **Não** põe o ícone do PubliAI no claude.ai: em 2026-11-24 o conector mostrou o ícone de `daludi.com.br` (o domínio raiz), embora o Worker sirva o do PubliAI no subdomínio. É o mesmo padrão do `supabase.co`; a regra exata do claude.ai não é documentada. O endereço do Supabase continua funcionando.
 4. **Instruções prontas por cliente** na tela, depois de criar a chave: cada campo já no formato do cliente, com botão Copiar.
 
 Não muda: uma organização por chave, isolamento, limites, auditoria, somente leitura.
 
-Revisão independente (Codex gpt-6.2-sol, high, 2026-11-23): (a) o comando do Claude Code deixava a chave no histórico do terminal: passou a ler a chave com `read -rs` e usar a variável; (b) a migration recriava o check sem necessidade: só o `NOT NULL` sai. (c) Aceito sem mudança: pelo Worker, o `cf-connecting-ip` que chega à edge é o da Cloudflare, então todas as falhas de credencial por esse endereço dividem um contador de IP. Chave válida não passa por esse limite (`auth-agente.ts`), então só quem erra a chave enquanto outro também erra pode receber 429 em vez de 401. Encaminhar o IP original assinado pelo Worker fica para se isso aparecer. Segunda revisão independente (Grok 4.7 xhigh, 2026-11-24): sem bloqueadores; o mesmo item do IP, classificado como menor.
+Revisão independente (Codex gpt-6.2-sol, high, 2026-11-23): (a) o comando do Claude Code deixava a chave no histórico do terminal: passou a ler a chave com `read -rs` e usar a variável; (b) a migration recriava o check sem necessidade: só o `NOT NULL` sai. (c) Aceito sem mudança: pelo Worker, o `cf-connecting-ip` que chega à edge é o da Cloudflare, então todas as falhas de credencial por esse endereço dividem um contador de IP (medido em 2026-11-24: um único IP, faixa `2a06:98c0:3600::/48`). Chave válida não passa por esse limite (`auth-agente.ts`), então só quem erra a chave enquanto outro também erra pode receber 429 em vez de 401. Encaminhar o IP original assinado pelo Worker fica para se isso aparecer. Segunda revisão independente (Grok 4.7 xhigh, 2026-11-24): sem bloqueadores; o mesmo item do IP, classificado como menor.

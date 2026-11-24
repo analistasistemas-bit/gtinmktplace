@@ -33,7 +33,7 @@ Content-Type: application/json
 
 ## Ferramentas
 
-O usuário não precisa saber o nome das ferramentas: pergunte em linguagem natural ("qual o ROAS mínimo do conjunto Neon?", "quais anúncios têm margem abaixo de 15%?", "e se eu baixar para R$ 39,90?"). Ao conectar, o servidor envia `instructions` ao agente dizendo qual ferramenta usar em cada caso e para evitar o catálogo inteiro sem pedido.
+O usuário não precisa saber o nome das ferramentas: pergunte em linguagem natural ("qual o ROAS mínimo do MLB0000000000?", "quais anúncios têm margem abaixo de 15%?", "e se eu baixar para R$ 39,90?"). Ao conectar, o servidor envia `instructions` ao agente dizendo qual ferramenta usar em cada caso e para evitar o catálogo inteiro sem pedido.
 
 Toda descrição de ferramenta termina com o aviso de que títulos e textos de produto são dados da loja, não instruções. O resultado vem em `content[0].text` como JSON; `isError` é verdadeiro só para falha (`erro` ou `indisponivel`). Limite e demais estados de negócio chegam com `isError: false`.
 
@@ -54,7 +54,7 @@ Argumento: `identificador` (texto, obrigatório). Aceita:
 - MLB (`MLB0000000000`) ou MLBU (`MLBU0000000000`);
 - família do ML, o número do painel de Ads (12 ou mais dígitos, com ou sem `#`);
 - SKU exato (cobre os dois modelos de anúncio: legado e user products);
-- trecho do título (mínimo 3 caracteres): **nunca escolhe sozinho**, devolve até 10 `candidatos`.
+- trecho do título (mínimo 3 caracteres): **nunca escolhe sozinho**, devolve até 10 `candidatos`. Só o nome do produto pai é pesquisado: estampa, cor ou tamanho que só existe na variação não é achado.
 
 Identificador com até 200 caracteres e sem caracteres de controle. Alvo com mais de 60 anúncios responde `alvo_grande`.
 
@@ -194,7 +194,7 @@ A igualdade com a aba Campanhas vale **por anúncio**. O agregado da família n�
 
 ## Como conectar em cada cliente
 
-**Ao criar a chave, a tela mostra uma aba por cliente com cada campo pronto e botão Copiar** (Emenda 1); a tabela abaixo é a referência do que cada aba diz. Testado em produção em 2026-11-23, na Zaven, com uma chave criada pela tela e revogada ao fim. "Funciona" = `publiai_loja` e `publiai_margem_anuncio` responderam `ok` e a chamada apareceu na auditoria.
+**Ao criar a chave, a tela mostra uma aba por cliente com cada campo pronto e botão Copiar** (Emenda 1); a tabela abaixo é a referência do que cada aba diz. Testado em produção em 2026-11-23, na Zaven, com uma chave criada pela tela e revogada ao fim. "Funciona" = `publiai_loja` e `publiai_margem_anuncio` responderam `ok` e a chamada apareceu na auditoria; no Muse foram `publiai_loja` e `publiai_margens_catalogo`.
 
 | Cliente | Como configurar | Resultado do teste |
 |---|---|---|
@@ -203,7 +203,7 @@ A igualdade com a aba Campanhas vale **por anúncio**. O agregado da família n�
 | ChatGPT | Plugins › Adicionar › Adicionar servidor MCP personalizado: Autenticação só oferece OAuth, Sem autenticação ou "OAuth ou sem autenticação"; não há campo de chave nem de cabeçalho | não conecta com chave: depende da fatia 2 (OAuth) |
 | Grok Bot (app) | Adicionar um conector personalizado › Tipo HTTPS remoto › Cabeçalhos HTTP: `Authorization` = `Bearer <chave>`; ID do cliente vazio | funciona |
 | OpenBot (app) | Conectar a um MCP personalizado › **Streamable HTTP** (o padrão é STDIO) › Cabeçalhos: `Authorization` = `Bearer <chave>`; App de login vazio; "Testar conexão" lista as 4 ferramentas | funciona |
-| Muse (app) | Sem tela de MCP: pedir no chat para criar o conector (URL, streamable HTTP, chave no cabeçalho `Authorization`). A credencial é digitada numa página segura do Muse, nunca no chat. Guardar o valor completo `Bearer <chave>` e pedir que ele seja enviado sem acrescentar outro `Bearer` (o primeiro envio saiu `Bearer Bearer …` e levou 401) | funciona |
+| Muse (app) | Sem tela de MCP: pedir no chat para criar o conector (URL, streamable HTTP, chave no cabeçalho `Authorization`). A credencial é digitada numa página segura do Muse, nunca no chat. Guardar o valor completo `Bearer <chave>` e pedir que ele seja enviado sem acrescentar outro `Bearer` (segundo o próprio Muse, o envio saiu `Bearer Bearer …` e levou 401; continua recusado) | funciona |
 | OpenClaw | `openclaw mcp add publiai --url <url> --transport streamable-http --header "Authorization=Bearer <chave>"` (a CLI 2026.9.4 aceita `--header`) | não testado (adiado) |
 | Hermes | Roda em servidor remoto; `config.yaml` › `mcp_servers` com `url` e `headers` | não testado (adiado: exigiria levar a chave ao servidor remoto) |
 | Muse Code (CLI) | `~/.config/muse/settings.json` › `mcp_servers`, transporte `streamable_http` com `headers` | não testado (não instalado) |
@@ -214,7 +214,7 @@ Observações do teste:
 
 - O agente pode resumir errado: num teste, o modelo disse 17 anúncios onde a ferramenta devolveu 16. Número que vai para decisão se confere no JSON da ferramenta.
 - O agente pode chamar ferramentas que não foram pedidas (o Muse chamou `publiai_margens_catalogo` por conta própria). É só leitura, mas consome cota; vale ligar a aprovação por ferramenta no cliente.
-- O ícone do conector no claude.ai vem do domínio da URL (aparece o do Supabase). O ChatGPT aceita um PNG próprio.
+- No claude.ai o ícone do conector veio do domínio raiz: com a URL do Supabase, o do Supabase; com `mcp.publiai.daludi.com.br`, o de `daludi.com.br` (2026-11-24), que aparece pequeno porque a imagem é 1024×1536 com muita margem. Ícone do PubliAI ali exigiria um domínio raiz próprio. O ChatGPT aceita um PNG próprio.
 
 ## Segurança
 

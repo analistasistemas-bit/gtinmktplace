@@ -2560,6 +2560,7 @@ export type Database = {
           comprador_id: number | null
           comprador_nick: string | null
           criada_em: string | null
+          dispensada_em: string | null
           id: string
           item_id: string | null
           item_titulo: string | null
@@ -2577,6 +2578,7 @@ export type Database = {
           comprador_id?: number | null
           comprador_nick?: string | null
           criada_em?: string | null
+          dispensada_em?: string | null
           id?: string
           item_id?: string | null
           item_titulo?: string | null
@@ -2594,6 +2596,7 @@ export type Database = {
           comprador_id?: number | null
           comprador_nick?: string | null
           criada_em?: string | null
+          dispensada_em?: string | null
           id?: string
           item_id?: string | null
           item_titulo?: string | null
@@ -6315,6 +6318,7 @@ export type Database = {
       limpar_movimentos_orfaos: { Args: { p_org: string }; Returns: number }
       marca_da_org: { Args: never; Returns: Json }
       marca_dos_atributos: { Args: { p_attrs: Json }; Returns: Json }
+      dispensar_perguntas: { Args: { p_question_ids: number[] }; Returns: number }
       marcar_mensagens_lidas: { Args: { p_pack_id: string }; Returns: number }
       marcar_notificacoes_lidas: { Args: { p_ids?: string[] }; Returns: number }
       marcar_notificado: {

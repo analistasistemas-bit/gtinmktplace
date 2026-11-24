@@ -14,6 +14,8 @@ export interface Pergunta {
   resposta: string | null;
   respondida_em: string | null;
   criada_em: string | null;
+  /** Dispensada pela org: sai de Pendentes e do badge, continua em Todas. Local, não é estado do ML. */
+  dispensada_em?: string | null;
   /** Status do anúncio no ML (`ml_trafego_item`, coletor de tráfego); null = desconhecido. O ML
    *  recusa resposta em anúncio não ativo (400 `not_active_item`). */
   anuncio_status?: string | null;
@@ -41,7 +43,7 @@ async function nomesPorComprador(ids: number[]): Promise<Map<number, string>> {
 export async function buscarPerguntas(): Promise<Pergunta[]> {
   const { data, error } = await supabase
     .from('ml_perguntas')
-    .select('id, question_id, item_id, item_titulo, comprador_id, comprador_nick, texto, status, resposta, respondida_em, criada_em')
+    .select('id, question_id, item_id, item_titulo, comprador_id, comprador_nick, texto, status, resposta, respondida_em, criada_em, dispensada_em')
     .order('criada_em', { ascending: false });
   if (error) throw new Error(error.message);
   const lista = (data ?? []) as Pergunta[];
@@ -77,7 +79,7 @@ export function agruparPerguntas(itens: Pergunta[]): GrupoPerguntas[] {
     const texto = normalizarTexto(p.texto);
     const agrupavel = p.status === 'UNANSWERED' && p.comprador_id != null && texto !== '';
     // Não-agrupável usa a posição, não o id: chave por id junta linhas repetidas na lista.
-    const chave = agrupavel ? `${p.comprador_id}|${texto}` : `solo:${i}:${p.id}`;
+    const chave = agrupavel ? `${p.comprador_id}|${!!p.dispensada_em}|${texto}` : `solo:${i}:${p.id}`;
     const existente = indice.get(chave);
     if (existente) { existente.perguntas.push(p); continue; }
     const grupo: GrupoPerguntas = { chave, principal: p, perguntas: [p] };
@@ -100,14 +102,14 @@ export interface PaginaPerguntas {
 
 /** Mesmo recorte do filtro server-side, mas em memória — usado por Exportar, que sempre lê a
  *  lista inteira via buscarPerguntas(), independente da página/aba aberta na tela. */
-export function pergCasaStatus(status: string, filtro: FiltroStatusPergunta): boolean {
-  if (filtro === 'pendentes') return status === 'UNANSWERED';
-  if (filtro === 'respondidas') return status !== 'UNANSWERED';
+export function pergCasaStatus(p: Pick<Pergunta, 'status' | 'dispensada_em'>, filtro: FiltroStatusPergunta): boolean {
+  if (filtro === 'pendentes') return p.status === 'UNANSWERED' && !p.dispensada_em;
+  if (filtro === 'respondidas') return p.status !== 'UNANSWERED';
   return true;
 }
 
 const COLUNAS_PERGUNTA =
-  'id, question_id, item_id, item_titulo, comprador_id, comprador_nick, texto, status, resposta, respondida_em, criada_em';
+  'id, question_id, item_id, item_titulo, comprador_id, comprador_nick, texto, status, resposta, respondida_em, criada_em, dispensada_em';
 
 /** Status no ML dos anúncios da página (RLS por org). Falha na leitura = desconhecido: o aviso no
  *  card some, mas a resposta segue possível e o erro da edge orienta. */
@@ -130,7 +132,7 @@ export async function fetchPerguntasPagina(
 ): Promise<PaginaPerguntas> {
   const de = (Math.max(1, Math.floor(pagina) || 1) - 1) * tamanho;
   let q = supabase.from('ml_perguntas').select(COLUNAS_PERGUNTA, { count: 'exact' });
-  if (filtro.status === 'pendentes') q = q.eq('status', 'UNANSWERED');
+  if (filtro.status === 'pendentes') q = q.eq('status', 'UNANSWERED').is('dispensada_em', null);
   else if (filtro.status === 'respondidas') q = q.neq('status', 'UNANSWERED');
 
   const { data, error, count } = await q
@@ -167,6 +169,13 @@ async function postEdge<T>(fn: string, body: unknown): Promise<T> {
 
 export function responderPergunta(question_id: number, text: string): Promise<{ ok: true }> {
   return postEdge('responder-pergunta', { question_id, text });
+}
+
+/** Tira as perguntas de Pendentes e do badge (nada muda no ML). Retorna quantas foram dispensadas. */
+export async function dispensarPerguntas(question_ids: number[]): Promise<number> {
+  const { data, error } = await supabase.rpc('dispensar_perguntas', { p_question_ids: question_ids });
+  if (error) throw new Error(error.message);
+  return data ?? 0;
 }
 
 export function sugerirResposta(pergunta: string, item_titulo: string | null): Promise<{ ok: true; sugestao: string }> {

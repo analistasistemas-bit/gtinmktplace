@@ -29,7 +29,7 @@ describe('provaNuncaSaiu', () => {
   });
   it.each([
     ['outro id', { id: 46 }], ['sem id', { id: undefined }], ['outro status', { status: 'shipped' }], ['sem status', { status: undefined }],
-    ['mode me1', { mode: 'me1' }], ['sem mode', { mode: undefined }], ['sem date_history', { date_history: undefined }],
+    ['pack_splitted', { substatus: 'pack_splitted' }], ['sem substatus no corpo', { substatus: undefined }], ['mode me1', { mode: 'me1' }], ['sem mode', { mode: undefined }], ['sem date_history', { date_history: undefined }],
     ['date_history nulo', { date_history: null }], ['date_history lista', { date_history: [] }],
   ])('%s: não prova', (_n, over) => expect(provaNuncaSaiu(historico(over), 45)).toBe(false));
   it.each([[null], [undefined], ['x'], [7], [[]], [{}]])('corpo %j: não prova', (h) => expect(provaNuncaSaiu(h, 45)).toBe(false));
