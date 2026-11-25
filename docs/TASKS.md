@@ -8,7 +8,9 @@
 - [x] 1º caso real: Avil, SKU `02844290`, 560 → 561 no app e no ML, pela fila às 21:00.
 - [x] Emenda 9 (código): claim com pedido cancelado dispara o `sync-venda`; envio não lido fica para a fila.
 - [x] Emenda 9: Codex (consultor) e Grok 4.7 xhigh (revisor, sem bloqueio); deploy de `sync-devolucao`, `sync-venda` e `reconciliar-faturamento`.
-- [ ] Emenda 9: 1º caso real na hora.
+- [x] Emenda 9 no ar 24/11 22:16 BRT (main `7a356e4e`; `sync-devolucao` v100, `sync-venda` v145, `reconciliar-faturamento` v135).
+- [x] 1º caso real na hora: Avil, SKU `03073203`, 600 → 601 no app e no ML, 9 s depois de gravado (22 s depois do cancelamento no ML). A fila da 00:00 concluiu `sem-baixa-aberta`, sem somar de novo.
+- [ ] Achados do Codex anteriores a esta mudança: reserva de aviso que falha conclui calada; SKU trocado com falha de leitura; `estorno_sku_nao_encontrado` em pedido sem envio nunca avisa.
 
 ## Dispensar: contador de mensagens e perguntas (emendas 24/11 aos ADR-0067 e 0037) — 2026-11-24
 

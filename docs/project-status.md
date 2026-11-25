@@ -2,12 +2,13 @@
 
 > Documento vivo. Este e o retrato curto do estado atual do projeto. Historico detalhado fica em `project-history.md`.
 
-**Ultima atualizacao:** 2026-11-24
+**Ultima atualizacao:** 2026-11-25
 
 ## Cancelamento e estoque (ADR-0211 + emenda 7 do ADR-0121): no ar e ligado desde 2026-11-24
 
 - **Fila própria de cancelamento (ADR-0211):** trigger `ml_vendas_cancelamento_fila` arma a obrigação quando a venda vira `cancelled` (qualquer caminho, inclusive o `backfill-faturamento`, que antes gravava o cancelamento sem estorno nem aviso); a etapa nova do `reconciliar-faturamento` decide pelo ledger + leitura ao vivo do ML. `DRENAR_CANCELAMENTOS=1` ligado às 08:43 BRT após ensaio em 3 orgs de teste (arquivadas). Migration `20261124091308`; `reconciliar-faturamento` v132, `sync-venda` v142. 1º caso real (Avil, entregue → cancelado) concluiu `avisado`. Reversão = desligar a flag; **nunca remover o trigger**.
 - **Regra de reposição (emenda 7 do ADR-0121):** `ready_to_ship` só repõe com substatus ausente ou `ready_to_print`/`printed`/`invoice_pending`; coleta/despacho (`picked_up`, `in_hub`, `dropped_off`, `in_packing_list`) ou desconhecido só avisa. Vale para webhook, reconciliação e fila.
+- **Reposição de envio nunca impresso (emendas 8 e 9 do ADR-0121, 24/11):** cancelado com `date_first_printed` nulo no histórico do ML volta ao estoque; pelo claim, em segundos; sem claim, na hora cheia. 1º caso na hora validado (Avil, 9 s, app e ML). Travas: entrada/ajuste ou planilha depois da venda, pedido já avisado.
 - **Acervo:** ~388 cancelados antigos com baixa sem estorno. Avil, DSA, Hairfly e Daludi dispensados pelo Diego (relatório semanal de estoque); Zaven: 2 estornados com conferência física, 6 entregues aguardam devolução.
 - **Também em 23/11:** `reposicao_sem_item` (somente-estoque recusa cor presa em `criado` com item no ML — causa da divergência do SKU Avil 02749572, que vendeu 4 unidades sem estoque) e alerta no sino/Telegram quando o push de estoque descarta SKU UP publicado (`sincronizar-estoque` v83, emenda ao ADR-0134).
 - **Decisão de produto:** "pausar SKU ao zerar" descartado — em User Products o ML já pausa e esconde do seletor o SKU zerado (teste real em 23/11).
