@@ -281,6 +281,10 @@ Pendência separada (anterior, fora desta ADR): `enviarTelegram` (`_shared/notif
 
 **Segundo deploy (2026-11-25):** main `380e23df`, `agentes` v7 (47 de 47 arquivos iguais), só com o ajuste de singular e plural. Na Zaven: `blusas pretas M`, `jaquetas azuis G` e `regata marrons M` acham as cores no singular; `neon 4`, o isolamento (`croche rosa`) e a margem de `MLB5563623367` iguais ao aceite acima.
 
+**Falha pontual de tarifa (2026-11-25).** Medido na família `8632963637759506` (16 anúncios de mesmo preço e categoria), em quatro séries com preço provavelmente ainda sem cache (o acerto de cache não foi registrado): preço real 56,45 → 1 anúncio em `erro_tarifa` (o 4º) e 16 de 16 na reconsulta segundos depois; simulação 57,13 → 2 (o 1º e o 4º); 58,27 e 59,41 → 16 de 16. As três falhas caíram nos quatro primeiros, consultados ao mesmo tempo. A resposta falhou fechada: sem número e com a referência vazia. Os arquivos de tarifa não mudaram desde antes deste trabalho (`b43664bc`), mas a versão anterior do código não foi testada sob essa carga.
+
+**Inferência:** o padrão é compatível com a rajada de consultas idênticas antes de o cache ser gravado, sem retentativa de comissão (desligada para o teto de cota ser real). O `erro_tarifa` não diz se a falha foi comissão, frete ou validação, e o log não registrou o motivo. Consultoria do Codex gpt-6.2-sol (high): não impede encerrar nem ligar outra loja em somente leitura; investigar registrando componente, classe do erro, status e acerto de cache, sem mexer no teto de duas consultas por cor.
+
 ## Pode ligar em outra loja? (2026-11-25)
 
 **Recomendação: sim, uma segunda loja em piloto, e depois uma por vez, com o roteiro abaixo.** As duas condições do piloto que bloqueavam (vendedor do anúncio e cabeçalho de IP) estão fechadas, o alarme está no ar e a assinatura na chave deixou de ser condição (Emenda 3). Se forem várias lojas em pouco tempo, reavaliar a assinatura **antes** de criar as chaves: hoje só 1 precisaria ser refeita.
