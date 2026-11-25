@@ -167,9 +167,10 @@ export async function buscarPorTitulo(admin: SupabaseClient, orgId: string, trec
       const f = um(l.familias);
       if (!f) continue;
       for (const p of paisDe.get(f.codigo_pai) ?? []) {
-        const mlb = (filhosDe.get(p.id) ?? []).find((x) => x.sku === l.codigo)?.item_externo_id
-          ?? (p.item_externo_id && p.item_externo_id === f.ml_item_id ? p.item_externo_id : null);
-        if (mlb && !m.has(`${mlb}|${l.codigo}`)) {
+        const filho = (filhosDe.get(p.id) ?? []).find((x) => x.sku === l.codigo)?.item_externo_id;
+        const legado = p.item_externo_id === f.ml_item_id ? p.item_externo_id : null;
+        for (const mlb of [filho, legado]) {
+          if (!mlb || m.has(`${mlb}|${l.codigo}`)) continue;
           m.set(`${mlb}|${l.codigo}`, { codigo_pai: f.codigo_pai, sku: l.codigo, mlb, nome: l.nome, cor: l.cor, tamanho: l.tamanho });
         }
       }

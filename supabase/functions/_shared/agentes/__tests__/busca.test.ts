@@ -12,8 +12,13 @@ describe('palavras', () => {
     for (const t of ['tamanho XXL', 'GGG', 'exg', 'tamanho 2XL']) expect(palavras(t)).toEqual([]);
     expect(palavras('gel')).toEqual(['gel']);
   });
-  it('sem nenhuma palavra de 3 caracteres, ou com mais de 20, não busca', () => {
-    for (const t of ['4', 'G M', '***', '', '  ', Array.from({ length: 21 }, (_, i) => `pal${i}`).join(' ')]) {
+  it('com mais de 20 palavras, fica com as 20 mais longas', () => {
+    const ps = palavras(['ab', ...Array.from({ length: 20 }, (_, i) => `palavra${i}`)].join(' '));
+    expect(ps).toHaveLength(20);
+    expect(ps).not.toContain('ab');
+  });
+  it('sem nenhuma palavra de 3 caracteres não busca', () => {
+    for (const t of ['4', 'G M', '***', '', '  ']) {
       expect(palavras(t)).toEqual([]);
     }
   });
@@ -89,6 +94,15 @@ describe('montarCandidatos', () => {
       expect(buscar(`camisetas ${t}`, [c], [va('1', 'a', 'MA', cor, 'M')]).candidatos).toMatchObject([{ mlbs: ['MA'] }]);
     }
     expect(filtrosVariacoes(palavras('camisetas azuis'), [c])[0].filtro).toContain('cor.ilike.%_z_%');
+  });
+
+  it('casa pelo começo da palavra, não pelo meio: tênis não acha sustentável nem autêntico', () => {
+    expect(buscar('tenis', [an('1', ['Camiseta Sustentável']), an('2', ['Boné Autêntico']), an('3', ['Tênis Casual'])]).candidatos.map((c) => c.codigo_pai))
+      .toEqual(['3']);
+  });
+
+  it('tamanho por extenso aceita gênero e plural: única acha Único', () => {
+    expect(buscar('bolsa unica', [an('1', ['Bolsa Feminina'])], [va('1', 'a', 'MA', 'Preta', 'Único')]).candidatos).toMatchObject([{ mlbs: ['MA'] }]);
   });
 
   it('cor só no nome da variação (cor nula) também casa', () => {

@@ -254,6 +254,15 @@ describe('buscarPorTitulo', () => {
     expect(await buscarPorTitulo(admin, ORG, 'conjunto neon 4')).toEqual(VAZIA);
   });
 
+  it('pai com MLB próprio e filho ativo do mesmo SKU: os dois anúncios aparecem', async () => {
+    const { admin } = fake({
+      anuncios_externos: [ok([pub('a1', 'P1', 'MLB100')])], familias: [ok([fam('P1', 'Fita')])],
+      anuncios_externos_itens: [ok([filho('a1', 's1', 'MLB200')])],
+      variacoes: duas([vari('s1', 'P1', 'Azul', null, { familias: { org_id: ORG, codigo_pai: 'P1', ml_item_id: 'MLB100' } })]),
+    });
+    expect((await buscarPorTitulo(admin, ORG, 'azul')).candidatos).toMatchObject([{ mlbs: ['MLB200', 'MLB100'] }]);
+  });
+
   it('teto global de leituras por busca: para e avisa', async () => {
     const pais = Array.from({ length: 5000 }, (_, i) => pub(`a${i}`, `P${i}`, `MLB${i}`));
     const { admin, chamadas } = fake({

@@ -26,23 +26,22 @@ const LETRAS_TAMANHO = /^\d{0,2}(?:p{1,4}|g{1,5}|m|x+[pgsl]{1,3}|e[xg]g*)$/;
 const partes = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
 const forte = (p: string) => p.length >= 3 && !LETRAS_TAMANHO.test(p);
 
-/** Palavras da busca. Enfeite sai se sobrar palavra de 3+ caracteres; sem nenhuma (ou com mais de 20), não busca. */
+/** Palavras da busca. Enfeite sai se sobrar palavra de 3+ caracteres; sem nenhuma, não busca. Acima de 20, as mais longas. */
 export function palavras(trecho: string): string[] {
   const todas = [...new Set(partes(trecho))].filter((p) => !MARCADOR.has(p));
-  if (todas.length > MAX_PALAVRAS) return [];
   const uteis = todas.filter((p) => !ENFEITE.has(p));
-  if (uteis.some(forte)) return uteis;
-  return todas.some(forte) ? todas : [];
+  const ps = uteis.some(forte) ? uteis : todas.some(forte) ? todas : [];
+  return ps.length > MAX_PALAVRAS ? [...ps].sort((a, b) => b.length - a.length).slice(0, MAX_PALAVRAS) : ps;
 }
 
 /** "pretas" → "pret": gênero e plural de palavra com 5+ letras. ponytail: sem sinônimo nem correção de digitação. */
-const raiz = (p: string) => (/^[a-z]{5,}$/.test(p) ? p.replace(/(?:oes|aes|os|as|es|is|ns|o|a|s)$/, '') : p);
+const raiz = (p: string) => (/^[a-z]{5,}$/.test(p) ? p.replace(/(?:oes|aes|os|as|es|(?<=[aeou])is|ns|o|a|s)$/, '') : p);
 
-/** Palavra com número, de até 2 letras ou tamanho só casa inteira; o resto casa por trecho. */
-function casador(textos: (string | null)[], tamanho: string | null = null) {
+/** Palavra com número, de até 2 letras ou com cara de tamanho só casa inteira; o resto casa pelo começo da palavra. */
+function casador(textos: (string | null)[]) {
   const ps = textos.flatMap((t) => (t ? partes(t) : []));
-  const inteiras = new Set([...ps, ...(tamanho ? partes(tamanho) : [])]);
-  return (p: string) => inteiras.has(p) || (forte(p) && /^[a-z]+$/.test(p) && ps.some((x) => x.includes(raiz(p))));
+  const inteiras = new Set(ps);
+  return (p: string) => inteiras.has(p) || (forte(p) && /^[a-z]+$/.test(p) && ps.some((x) => x.startsWith(raiz(p))));
 }
 
 const faltam = (ps: string[], a: AnuncioBusca) => {
@@ -69,7 +68,7 @@ export function filtrosVariacoes(ps: string[], anuncios: AnuncioBusca[]): { codi
 
 /** Variações de um anúncio em que casam todas as palavras que faltam no título; a que casa mais palavras primeiro. */
 const doAnuncio = (ps: string[], f: string[], vs: VariacaoBusca[]) => vs
-  .map((v) => ({ v, casa: casador([v.nome, v.cor], v.tamanho) }))
+  .map((v) => ({ v, casa: casador([v.nome, v.cor, v.tamanho]) }))
   .filter(({ casa }) => f.every(casa))
   .map(({ v, casa }) => ({ v, n: ps.filter(casa).length }))
   .sort((x, y) => y.n - x.n)
