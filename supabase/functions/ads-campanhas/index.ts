@@ -6,6 +6,7 @@ import { requireUserOrg } from '../_shared/auth.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
+import { lerPrecosComprador } from '../_shared/ml/preco-comprador.ts';
 import { redisGet, redisSet } from '../_shared/redis/client.ts';
 import { buscarItensML, criarGetJson } from '../_shared/promocoes/ml.ts';
 import { carregarCadastro, criarTarifaEm, lerAliquotas } from '../_shared/promocoes/deps.ts';
@@ -39,7 +40,7 @@ Deno.serve(async (req) => {
     const token = await getValidAccessTokenConexao(conexao);
     const cx = { orgId, mlUserId: conexao.contaExternaId, token };
 
-    const chave = `ads:camp:v1:${orgId}`;
+    const chave = `ads:camp:v2:${orgId}`;
     if (!fresco) {
       try {
         const hit = await redisGet(chave);
@@ -65,6 +66,8 @@ Deno.serve(async (req) => {
       lerAliquotas: () => lerAliquotas(admin, orgId),
       buscarItensML: (ids) => buscarItensML(criarGetJson(token), ids),
       tarifaEm: criarTarifaEm(cx, { fresco }),
+      contaId: conexao.contaExternaId,
+      lerPrecos: (ids) => lerPrecosComprador(token, ids),
       async lerPublicados() {
         const pais = await lerTodasPaginas(async (de, ate) => {
           const { data, error } = await admin.from('anuncios_externos').select('id, codigo_pai, item_externo_id')

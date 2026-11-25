@@ -1,7 +1,8 @@
 // Acesso de agentes (ADR-0210, fatia 1): margem e ROAS mínimo por anúncio de UMA organização. Puro: todo IO chega
 // pelas deps, já fechadas na organização da conexão (edge `agentes`); `orgId` só assina o cursor do catálogo.
 // O cálculo é o do ACOS de equilíbrio da aba Campanhas (`detalheEquilibrioDoMlb`), sem fórmula própria.
-import { detalheEquilibrioDoMlb, LimiteTarifa, type ItemAgora } from '../ads/campanhas.ts';
+import { detalheEquilibrioDoMlb, LimiteTarifa } from '../ads/campanhas.ts';
+import type { PrecoComprador } from '../ml/preco-comprador.ts';
 import type { Cadastro } from '../promocoes/cadastro.ts';
 import { emParalelo, type QueryTarifa } from '../promocoes/sincronizar.ts';
 import type { Aliquotas, ItemML, Tarifa } from '../promocoes/tipos.ts';
@@ -14,10 +15,13 @@ export interface DepsMargens {
   carregarCadastro(): Promise<Cadastro>;
   lerAliquotas(): Promise<Aliquotas | null>;
   buscarItensML(ids: string[]): Promise<Map<string, ItemML>>;
-  lerPrecos(ids: string[]): Promise<Map<string, ItemAgora>>;
+  /** Preço que o comprador paga (`/sale_price`), só de MLB que `buscarItensML` confirmou ser da conta. Ausente = não verificado. */
+  lerPrecos(ids: string[]): Promise<Map<string, PrecoComprador>>;
+  /** Fim da promoção vigente; ausente = não sabido. */
+  lerFimPromocao(alvos: { mlb: string; priceId: string; preco: number }[]): Promise<Map<string, string>>;
   tarifaEm(q: QueryTarifa): Promise<Tarifa>;
   reservarTarifas(n: number): Promise<'ok' | 'limite' | 'falha'>;
-  /** Leituras de item e preço no ML (multigets de 20). */
+  /** Leituras no ML: multigets de itens (20 por vez) e uma por preço ou fim de promoção. */
   reservarLeituras(n: number): Promise<'ok' | 'limite' | 'falha'>;
   listarMlbs(depois: string | null, limite: number): Promise<string[]>;
   agora: Date;
@@ -25,15 +29,18 @@ export interface DepsMargens {
 
 export type MargemAnuncio = {
   mlb: string; titulo: string | null; sku: string | null; preco_brl: number | null; preco_tabela_brl: number | null;
-  em_promocao: boolean | null; custo_brl: number | null; comissao_brl: number | null; frete_brl: number | null;
+  em_promocao: boolean | null; promocao_tipo: string | null; preco_lido_em: string | null; custo_brl: number | null; comissao_brl: number | null; frete_brl: number | null;
   imposto_brl: number | null; liquido_brl: number | null; margem_pct: number | null; roas_minimo: number | null;
   motivo: string | null;
 };
 export type MargemSimulada = MargemAnuncio & { preco_atual_brl: number | null };
+/** Só na consulta pontual: no catálogo seria uma leitura a mais por anúncio. */
+export type MargemPontual = MargemAnuncio & { promocao_fim: string | null };
+type Calculada = { saida: MargemSimulada; lido: PrecoComprador | null };
 export type Referencia = { margem_pct: number | null; roas_minimo: number | null; mlb: string | null; motivo: string | null };
 type Falha = { estado: 'sem_aliquota' | 'limite_tarifas' | 'limite_leituras' | 'indisponivel' };
 type Lido = { lido_em: string; tarifa_idade_max_horas: number };
-export type RespostaAlvo<A = MargemAnuncio> =
+export type RespostaAlvo<A = MargemPontual> =
   | ({ estado: 'ok'; anuncios: A[]; referencia: Referencia } & Lido)
   | { estado: 'candidatos'; candidatos: Candidato[]; lista_cortada: boolean }
   | { estado: 'nao_encontrado' | 'alvo_grande' }
@@ -50,6 +57,7 @@ const POR_PAGINA = 50;
 const MULTIGET = 20;
 const PRECO_MAX = 1_000_000;
 const MLB_RE = /^MLB\d+$/;
+const FALHA_LEITURA = new Set(['erro_tarifa', 'anuncio_indisponivel', 'preco_nao_verificado']);
 const r2 = (x: number) => Math.round(x * 100) / 100;
 const roas = (m: number | null) => (m != null && m > 0 ? 100 / m : null);
 const espaco = (m: number | null) => (m != null && m <= 0 ? 'sem_espaco_para_ads' : null);
@@ -63,17 +71,19 @@ const tarifaValida = (t: unknown): t is Tarifa =>
 
 /**
  * Margem de cada MLB, na ordem pedida. `precoSimulado` substitui o preço lido em todos. Reserva o orçamento de
- * tarifas uma vez, antes de calcular (2 consultas por cor). Sem item → `anuncio_indisponivel`; fora da simulação,
- * também sem a leitura de preço. A primeira `LimiteTarifa` para a fila: nada novo consulta tarifa depois dela.
+ * tarifas uma vez, antes de calcular (2 consultas por cor). Sem item → `anuncio_indisponivel`; fora da simulação, sem
+ * o preço do comprador → `preco_nao_verificado` (nunca o `price` do item: emenda 5 da ADR-0210). A primeira `LimiteTarifa` para a fila: nada novo consulta tarifa depois dela.
  */
-async function calcular(mlbs: string[], d: DepsMargens, precoSimulado: number | null): Promise<MargemSimulada[] | Falha> {
+async function calcular(mlbs: string[], d: DepsMargens, precoSimulado: number | null): Promise<Calculada[] | Falha> {
   const aliq = await d.lerAliquotas();
   if (!aliquotasValidas(aliq)) return { estado: 'sem_aliquota' };
-  // Orçamento de leituras antes de tocar o ML: itens + preços, um multiget de 20 MLBs cada.
-  const leituras = await d.reservarLeituras(2 * Math.ceil(mlbs.length / MULTIGET));
+  // Orçamento de leituras antes de tocar o ML: multigets de 20 itens + um preço por MLB.
+  const leituras = await d.reservarLeituras(Math.ceil(mlbs.length / MULTIGET) + mlbs.length);
   if (leituras === 'limite') return { estado: 'limite_leituras' };
   if (leituras !== 'ok') return { estado: 'indisponivel' };
-  const [itens, precos] = await Promise.all([d.buscarItensML(mlbs), d.lerPrecos(mlbs)]);
+  const itens = await d.buscarItensML(mlbs);
+  // Em sequência: o preço só é lido do MLB que o multiget confirmou ser da conta da conexão (emenda 2).
+  const precos = await d.lerPrecos(mlbs.filter((m) => itens.has(m)));
   // 2 consultas por cor é teto real porque a edge desliga as retentativas de comissão (Tarefa 6).
   // Um só predicado decide reserva e cálculo: anúncio sem preço utilizável nunca consulta tarifa.
   const atualDe = (m: string) => { const p = precos.get(m)?.preco; return utilizavel(p) ? p : null; };
@@ -103,34 +113,36 @@ async function calcular(mlbs: string[], d: DepsMargens, precoSimulado: number | 
     return t;
   };
   try {
-    return await emParalelo(mlbs, 4, async (mlb): Promise<MargemSimulada> => {
+    return await emParalelo(mlbs, 4, async (mlb): Promise<Calculada> => {
       if (parou) throw new LimiteTarifa();
       const ml = itens.get(mlb) ?? null;
-      const agora = precos.get(mlb) ?? null;
+      const lidoAgora = precos.get(mlb) ?? null;
       const atual = atualDe(mlb);
-      const tabela = utilizavel(agora?.precoTabela) ? agora!.precoTabela : null;
+      const tabela = utilizavel(lidoAgora?.precoTabela) ? lidoAgora!.precoTabela : null;
       const preco = precoDe(mlb);
       const base: MargemSimulada = {
         mlb, titulo: ml?.titulo ?? null, sku: null, preco_brl: preco == null ? null : r2(preco),
         preco_tabela_brl: tabela == null ? null : r2(tabela),
-        em_promocao: atual == null ? null : tabela != null && tabela > atual,
+        em_promocao: atual == null ? null : lidoAgora!.emPromocao,
+        promocao_tipo: atual == null ? null : lidoAgora!.promocaoTipo, preco_lido_em: atual == null ? null : lidoAgora!.lidoEm,
         custo_brl: null, comissao_brl: null, frete_brl: null, imposto_brl: null, liquido_brl: null,
         margem_pct: null, roas_minimo: null, motivo: null, preco_atual_brl: atual == null ? null : r2(atual),
       };
-      if (!ml || (precoSimulado == null && !agora)) return { ...base, motivo: 'anuncio_indisponivel' };
-      if (preco == null) return { ...base, motivo: 'sem_preco' };
+      const com = (x: Partial<MargemSimulada>): Calculada => ({ saida: { ...base, ...x }, lido: atual == null ? null : lidoAgora });
+      if (!ml) return com({ motivo: 'anuncio_indisponivel' });
+      if (preco == null) return com({ motivo: 'preco_nao_verificado' });
       const det = await detalheEquilibrioDoMlb(ml, preco, cad, aliq, tarifa);
       const p = det.pior;
-      if (det.motivo || !p || det.acosPct == null) return { ...base, motivo: det.motivo ?? 'sem_preco' };
+      if (det.motivo || !p || det.acosPct == null) return com({ motivo: det.motivo ?? 'sem_preco' });
       const finitos = [det.acosPct, p.custo, p.comissao, p.frete, p.imposto, p.liquido].every(Number.isFinite);
-      if (!finitos) return { ...base, motivo: 'erro_calculo' };
+      if (!finitos) return com({ motivo: 'erro_calculo' });
       // Cada componente `_brl` é arredondado à parte (soma pode diferir 1–2 centavos); `margem_pct` vem do cálculo cru.
-      return {
-        ...base, sku: p.sku, custo_brl: r2(p.custo), comissao_brl: r2(p.comissao), frete_brl: r2(p.frete),
+      return com({
+        sku: p.sku, custo_brl: r2(p.custo), comissao_brl: r2(p.comissao), frete_brl: r2(p.frete),
         imposto_brl: r2(p.imposto), liquido_brl: r2(p.liquido),
         // Sem arredondar: quem compara com ACOS-alvo arredonda na tela.
         margem_pct: det.acosPct, roas_minimo: roas(det.acosPct), motivo: espaco(det.acosPct),
-      };
+      });
     });
   } catch (e) {
     if (e instanceof LimiteTarifa) return { estado: 'limite_tarifas' };
@@ -151,7 +163,7 @@ const lido = (d: DepsMargens): Lido => ({ lido_em: d.agora.toISOString(), tarifa
 const semAtual = ({ preco_atual_brl: _, ...a }: MargemSimulada): MargemAnuncio => a;
 
 async function doAlvo<A extends MargemAnuncio>(
-  identificador: string, d: DepsMargens, precoSimulado: number | null, saida: (a: MargemSimulada) => A,
+  identificador: string, d: DepsMargens, precoSimulado: number | null, saida: (cs: Calculada[]) => A[] | Promise<A[]>,
 ): Promise<RespostaAlvo<A>> {
   const alvo = await resolverAlvo(identificador, d.resolver);
   if (alvo.tipo === 'candidatos') return { estado: 'candidatos', candidatos: alvo.candidatos, lista_cortada: alvo.lista_cortada };
@@ -159,12 +171,22 @@ async function doAlvo<A extends MargemAnuncio>(
   if (alvo.mlbs.length > MAX_MLBS_ALVO) return { estado: 'alvo_grande' };
   const r = await calcular(alvo.mlbs, d, precoSimulado);
   if (!Array.isArray(r)) return r;
-  const anuncios = r.map(saida);
+  const anuncios = await saida(r);
   return { estado: 'ok', ...lido(d), anuncios, referencia: referenciaDe(anuncios) };
 }
 
 export function margemDoAlvo(identificador: string, d: DepsMargens): Promise<RespostaAlvo> {
-  return doAlvo(identificador, d, null, semAtual);
+  return doAlvo(identificador, d, null, async (cs) => {
+    const fins = await fimDasPromocoes(cs, d);
+    return cs.map((c) => ({ ...semAtual(c.saida), promocao_fim: fins.get(c.saida.mlb) ?? null }));
+  });
+}
+
+/** Complemento: sem cota ou com falha, o fim fica desconhecido e o preço continua valendo. */
+async function fimDasPromocoes(cs: Calculada[], d: DepsMargens): Promise<Map<string, string>> {
+  const alvos = cs.flatMap(({ saida, lido: l }) => (l?.emPromocao && l.priceId ? [{ mlb: saida.mlb, priceId: l.priceId, preco: l.preco }] : []));
+  if (!alvos.length || await d.reservarLeituras(alvos.length) !== 'ok') return new Map();
+  return await d.lerFimPromocao(alvos).catch(() => new Map());
 }
 
 /** Mesmo retorno de `margemDoAlvo` com o preço informado em todos os anúncios; `preco_atual_brl` traz o lido. */
@@ -174,7 +196,7 @@ export function simularMargem(
   // O ML só aceita 2 casas: arredonda antes de validar, e `preco_brl` é exatamente o preço da conta.
   const preco = typeof precoBrl === 'number' && Number.isFinite(precoBrl) ? r2(precoBrl) : NaN;
   if (!(preco > 0 && preco <= PRECO_MAX)) return Promise.resolve({ estado: 'preco_invalido' });
-  return doAlvo(identificador, d, preco, (a) => a);
+  return doAlvo(identificador, d, preco, (cs) => cs.map((c) => c.saida));
 }
 
 // Cursor opaco, não secreto: o campo `o` amarra a página à organização da conexão.
@@ -205,7 +227,7 @@ export async function margensDoCatalogo(cursor: string | null | undefined, d: De
   if (!pagina.length) return { estado: 'ok', ...lido(d), anuncios: [], proximo_cursor, parcial: false };
   const r = await calcular(pagina, d, null);
   if (!Array.isArray(r)) return r;
-  const anuncios = r.map(semAtual);
-  const parcial = anuncios.some((a) => a.motivo === 'erro_tarifa' || a.motivo === 'anuncio_indisponivel');
+  const anuncios = r.map((c) => semAtual(c.saida));
+  const parcial = anuncios.some((a) => a.motivo != null && FALHA_LEITURA.has(a.motivo));
   return { estado: 'ok', ...lido(d), anuncios, proximo_cursor, parcial };
 }

@@ -30,6 +30,7 @@ export const ROTULO_MOTIVO: Record<string, string> = {
   sem_origem: 'Sem origem (nacional/importado)',
   sem_dimensao: 'Sem medidas do pacote',
   sem_preco: 'Sem preço no anúncio',
+  preco_nao_verificado: 'Preço não verificado',
   sem_categoria: 'Sem categoria',
   erro_tarifa: 'Tarifa indisponível',
   erro_item: 'Anúncio indisponível no ML',

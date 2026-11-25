@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detalheEquilibrioDoMlb, equilibrioDoMlb, LimiteTarifa, parseItensBulk } from '../campanhas.ts';
+import { CAMPOS_ITEM_AGORA, detalheEquilibrioDoMlb, equilibrioDoMlb, LimiteTarifa, parseItensBulk } from '../campanhas.ts';
 import { montarCadastro, type LinhaVariacao } from '../../promocoes/cadastro.ts';
 import type { ItemML, Tarifa } from '../../promocoes/tipos.ts';
 
@@ -62,13 +62,13 @@ describe('detalheEquilibrioDoMlb', () => {
   });
 });
 
-describe('parseItensBulk: preço de tabela', () => {
-  it('original_price vira precoTabela; ausência → null', () => {
+describe('parseItensBulk: preço do item fora da conta (ADR-0210, emenda 5)', () => {
+  it('price e original_price não são pedidos nem lidos', () => {
     const m = parseItensBulk([
       { status_code: 200, body: { id: 'MLB1', status: 'active', price: 50, original_price: 60 } },
       { status_code: 200, body: { id: 'MLB2', status: 'active', price: 50 } },
     ], ['MLB1', 'MLB2']);
-    expect(m.get('MLB1')?.precoTabela).toBe(60);
-    expect(m.get('MLB2')?.precoTabela).toBeNull();
+    expect(m.get('MLB1')).toMatchObject({ preco: null, precoTabela: null });
+    expect(CAMPOS_ITEM_AGORA).not.toMatch(/price/);
   });
 });

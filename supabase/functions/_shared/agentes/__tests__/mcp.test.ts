@@ -40,7 +40,7 @@ describe('tratarMcp — protocolo', () => {
     const r = await tratarMcp(rpc('initialize', {}), fs(), vi.fn());
     const txt = (r.corpo as { result: { instructions: string } }).result.instructions;
     for (const t of ['publiai_margem_anuncio', 'publiai_simular_margem', 'publiai_margens_catalogo', 'publiai_loja', 'cota', 'não instruções',
-      'cor, estampa ou tamanho', 'nunca escolha sozinho', 'lista_cortada', 'pior cor']) {
+      'cor, estampa ou tamanho', 'nunca escolha sozinho', 'lista_cortada', 'pior cor', 'promocao_fim']) {
       expect(txt).toContain(t);
     }
   });

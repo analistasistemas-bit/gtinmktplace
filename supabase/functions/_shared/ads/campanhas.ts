@@ -6,6 +6,7 @@ import { liquidoNoPreco } from '../promocoes/projecao.ts';
 import { emParalelo, type QueryTarifa } from '../promocoes/sincronizar.ts';
 import type { Aliquotas, ItemML, Tarifa } from '../promocoes/tipos.ts';
 import { caminhoMultiget, comoEnvelopeAntigo } from '../ml/multiget.ts';
+import type { PrecoComprador } from '../ml/preco-comprador.ts';
 import { HEADERS_ADS, HEADERS_ADVERTISER, urlAdvertiser } from './fiacao.ts';
 import { classificarResposta, parseAdvertiser } from './parsers.ts';
 
@@ -41,6 +42,10 @@ export interface DepsCampanhas {
   lerAliquotas(): Promise<Aliquotas | null>;
   buscarItensML(ids: string[]): Promise<Map<string, ItemML>>;
   tarifaEm(q: QueryTarifa): Promise<Tarifa>;
+  /** Conta ML da conexão: preço só de anúncio dela. */
+  contaId: string;
+  /** Preço que o comprador paga (`/sale_price`); ausente = não verificado. */
+  lerPrecos(ids: string[]): Promise<Map<string, PrecoComprador>>;
   lerPublicados(): Promise<Record<string, string[]>>;
 }
 
@@ -103,11 +108,12 @@ export function parseAnunciosPatrocinados(corpo: unknown): { total: number; anun
   return { total, anuncios };
 }
 
-export const CAMPOS_ITEM_AGORA = 'id,status,sub_status,available_quantity,price,original_price';
+/** Sem `price`: ele não acompanha promoção. O preço vem de `lerPrecos` (ADR-0210, emenda 5). */
+export const CAMPOS_ITEM_AGORA = 'id,seller_id,status,sub_status,available_quantity';
 
 /** `/items/bulk` com CAMPOS_ITEM_AGORA → status por MLB. Só entra o 200 com `status`; o resto fica desconhecido. */
-export function parseItensBulk(json: unknown, ids: readonly string[]): Map<string, ItemAgora> {
-  const m = new Map<string, ItemAgora>();
+export function parseItensBulk(json: unknown, ids: readonly string[]): Map<string, ItemAgora & { vendedor: string | null }> {
+  const m = new Map<string, ItemAgora & { vendedor: string | null }>();
   const env = comoEnvelopeAntigo(json, ids);
   if (!Array.isArray(env)) return m;
   for (const e of env) {
@@ -118,7 +124,7 @@ export function parseItensBulk(json: unknown, ids: readonly string[]): Map<strin
     m.set(b.id, {
       status: b.status,
       subStatus: Array.isArray(b.sub_status) ? b.sub_status.filter((s): s is string => typeof s === 'string') : [],
-      estoque, preco: numOuNull(b.price), precoTabela: numOuNull(b.original_price),
+      estoque, preco: null, precoTabela: null, vendedor: typeof b.seller_id === 'string' || Number.isSafeInteger(b.seller_id) ? String(b.seller_id) : null,
     });
   }
   return m;
@@ -288,11 +294,17 @@ export async function lerCampanhasAds(deps: DepsCampanhas, lidoEm: string): Prom
   // Status do item agora: bloco com erro → itens desconhecidos (nunca "parado").
   const mlbs = [...new Set(bases.map((a) => a.mlb))];
   const itens = new Map<string, ItemAgora>();
+  const daConta = new Set<string>();
   const blocos = Array.from({ length: Math.ceil(mlbs.length / 20) }, (_, i) => mlbs.slice(i * 20, i * 20 + 20));
   await emParalelo(blocos, 4, async (bloco) => {
     try {
       const r = await deps.get(caminhoMultiget(bloco, CAMPOS_ITEM_AGORA), {});
-      if (r.status >= 200 && r.status < 300) for (const [k, v] of parseItensBulk(r.corpo, bloco)) itens.set(k, v);
+      if (r.status >= 200 && r.status < 300) {
+        for (const [k, { vendedor, ...v }] of parseItensBulk(r.corpo, bloco)) {
+          itens.set(k, v);
+          if (vendedor === deps.contaId) daConta.add(k);
+        }
+      }
     } catch (e) {
       console.warn('[ads-campanhas] items/bulk indisponível', { erro: e instanceof Error ? e.message : String(e) });
     }
@@ -326,6 +338,12 @@ export async function lerCampanhasAds(deps: DepsCampanhas, lidoEm: string): Prom
       restante -= n;
       selecionados.push({ mlb: m, ml: it });
     }
+    // Só os anúncios que entram na conta, e só da conta da conexão. Os demais ficam sem preço (nunca o `price` do item).
+    const precos = await deps.lerPrecos(selecionados.map((s) => s.mlb).filter((m) => daConta.has(m)));
+    for (const [m, p] of precos) {
+      const it = itens.get(m);
+      if (it) itens.set(m, { ...it, preco: p.preco, precoTabela: p.precoTabela });
+    }
     let consultas = 0;
     const tarifaLimitada = (q: QueryTarifa) => {
       if (++consultas > LIMITES_CAMPANHAS.tarifas) return Promise.reject(new LimiteTarifa());
@@ -333,7 +351,10 @@ export async function lerCampanhasAds(deps: DepsCampanhas, lidoEm: string): Prom
     };
     await emParalelo(selecionados, 8, async ({ mlb, ml: it }) => {
       try {
-        equilibrio.set(mlb, await equilibrioDoMlb(it, itens.get(mlb)?.preco ?? null, cad, aliq, tarifaLimitada));
+        const preco = itens.get(mlb)?.preco ?? null;
+        equilibrio.set(mlb, preco == null
+          ? { acosPct: null, motivo: 'preco_nao_verificado' }
+          : await equilibrioDoMlb(it, preco, cad, aliq, tarifaLimitada));
       } catch (e) {
         if (!(e instanceof LimiteTarifa)) throw e;
         projecaoLimitada = true;

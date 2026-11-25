@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CAMPOS_ITEM_AGORA, parseItensBulk } from '../../ads/campanhas.ts';
+import { parseItensBulk } from '../../ads/campanhas.ts';
 import { caminhoMultiget } from '../../ml/multiget.ts';
 import { montarCadastro } from '../../promocoes/cadastro.ts';
 import { buscarItensML } from '../../promocoes/ml.ts';
@@ -8,6 +8,7 @@ import { type DepsMargens, margemDoAlvo, margensDoCatalogo, simularMargem } from
 import { soDoVendedor } from '../so-do-vendedor.ts';
 
 const CONTA = '111222333';
+const CAMPOS = 'id,status,original_price';
 const corpo = (id: string, seller_id?: unknown) =>
   ({ id, title: 'T', status: 'active', price: 10, ...(seller_id === undefined ? {} : { seller_id }) });
 const ok = (id: string, seller_id?: unknown) => ({ status_code: 200, body: corpo(id, seller_id) });
@@ -20,13 +21,13 @@ function fakeML(resposta: unknown) {
   return { caminhos, get: (p: string) => { caminhos.push(p); return Promise.resolve(resposta); } };
 }
 const precos = async (resposta: unknown, ids: string[]) =>
-  parseItensBulk(await soDoVendedor(fakeML(resposta).get, CONTA)(caminhoMultiget(ids, CAMPOS_ITEM_AGORA)), ids);
+  parseItensBulk(await soDoVendedor(fakeML(resposta).get, CONTA)(caminhoMultiget(ids, CAMPOS)), ids);
 
 describe('soDoVendedor', () => {
   it('pede o vendedor e preserva os campos do app nas duas leituras', async () => {
     const ml = fakeML([ok('MLB1', 111222333)]);
     const get = soDoVendedor(ml.get, CONTA);
-    await get(caminhoMultiget(['MLB1'], CAMPOS_ITEM_AGORA));
+    await get(caminhoMultiget(['MLB1'], CAMPOS));
     await buscarItensML(get, ['MLB1']);
     expect(ml.caminhos).toHaveLength(2);
     for (const c of ml.caminhos) {
@@ -63,7 +64,7 @@ describe('soDoVendedor', () => {
     const ids = ['MLB1', 'MLB2', 'MLB3', 'MLB4'];
     const get = soDoVendedor(
       fakeML([ok('MLB1', 1), { status_code: 404 }, { status_code: 403 }, ok('MLB4', 111222333)]).get, CONTA);
-    expect(await get(caminhoMultiget(ids, CAMPOS_ITEM_AGORA)))
+    expect(await get(caminhoMultiget(ids, CAMPOS)))
       .toEqual([{ status_code: 403 }, { status_code: 404 }, { status_code: 403 }, ok('MLB4', 111222333)]);
     expect(aviso.mock.calls).toEqual([['[agentes] anúncio fora da conta descartado', { quantidade: 1 }]]);
   });
@@ -99,10 +100,12 @@ describe('soDoVendedor', () => {
     expect(ml.caminhos).toEqual([]);
   });
 
-  it('a edge embrulha no filtro o único criarGetJson, usado para item e preço', () => {
+  it('a edge embrulha no filtro o único criarGetJson, usado para o item', () => {
     const edge = readFileSync('supabase/functions/agentes/index.ts', 'utf8');
     expect(edge.match(/criarGetJson\(/g)).toHaveLength(1);
     expect(edge).toContain('get: soDoVendedor(criarGetJson(token), cx.contaExternaId)');
+    // O preço usa o token direto, mas só de MLB que o multiget filtrado confirmou (`margens.ts`, testes abaixo).
+    expect(edge).toContain('lerPrecosComprador((await doML()).token, ids)');
   });
 });
 
@@ -122,6 +125,8 @@ describe('vínculo velho de uma conta trocada (o ML devolve 200 de outro vendedo
       (p) => Promise.resolve(new URL(`https://x${p}`).searchParams.get('ids')!.split(',').map((id) => todos[id])), CONTA);
     const vinculo = (mlb: string) => ({ mlb, mlbu: null, familia_ml: '1', sku: `SKU-${mlb}`, codigo_pai: 'P1' });
     const tarifaEm = vi.fn(async () => ({ comissao: { percentual: 12, fixa: 6 }, frete: 0 }));
+    const lerPrecos = vi.fn(async (ids: string[]) => new Map(ids.map((id) =>
+      [id, { preco: 50, precoTabela: null, emPromocao: false, promocaoTipo: null, priceId: '1', lidoEm: 'T' }])));
     const d: DepsMargens = {
       orgId: 'org-A', agora: new Date('2026-11-24T12:00:00Z'),
       resolver: { vinculos: async (f) => ['MLB1', 'MLB2'].filter((m) => !f.mlb || f.mlb === m).map(vinculo), buscarPorTitulo: async () => ({ candidatos: [], lista_cortada: false }) },
@@ -132,34 +137,38 @@ describe('vínculo velho de uma conta trocada (o ML devolve 200 de outro vendedo
       })), []),
       lerAliquotas: async () => ({ nacional: 8, importado: 16 }),
       buscarItensML: (ids) => buscarItensML(get, ids),
-      lerPrecos: async (ids) => parseItensBulk(await get(caminhoMultiget(ids, CAMPOS_ITEM_AGORA)), ids),
+      lerPrecos,
+      lerFimPromocao: async () => new Map(),
       tarifaEm, reservarTarifas: async () => 'ok', reservarLeituras: async () => 'ok',
       listarMlbs: async () => ['MLB1', 'MLB2'],
     };
-    return { d, tarifaEm };
+    return { d, tarifaEm, lerPrecos };
   }
   const VAZIO = {
-    mlb: 'MLB2', titulo: null, sku: null, preco_brl: null, preco_tabela_brl: null, em_promocao: null, custo_brl: null, comissao_brl: null,
+    mlb: 'MLB2', titulo: null, sku: null, preco_brl: null, preco_tabela_brl: null, em_promocao: null, promocao_tipo: null,
+    preco_lido_em: null, custo_brl: null, comissao_brl: null,
     frete_brl: null, imposto_brl: null, liquido_brl: null, margem_pct: null, roas_minimo: null, motivo: 'anuncio_indisponivel',
   };
 
   it('margem, catálogo e simulação não entregam nada do outro vendedor nem consultam tarifa dele', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const casos: [(d: DepsMargens) => Promise<unknown>, unknown][] = [
-      [(d) => margemDoAlvo('MLB2', d), VAZIO],
+      [(d) => margemDoAlvo('MLB2', d), { ...VAZIO, promocao_fim: null }],
       // Na simulação, `preco_brl` é o preço digitado pelo agente, não dado do ML.
       [(d) => simularMargem('MLB2', 80, d), { ...VAZIO, preco_brl: 80, preco_atual_brl: null }],
     ];
     for (const [chamar, esperado] of casos) {
-      const { d, tarifaEm } = deps();
+      const { d, tarifaEm, lerPrecos } = deps();
       const r = await chamar(d) as { anuncios: unknown[] };
       expect(r.anuncios).toEqual([esperado]);
       expect(tarifaEm).not.toHaveBeenCalled();
+      expect(lerPrecos).toHaveBeenCalledWith([]);
     }
-    const { d } = deps();
+    const { d, lerPrecos } = deps();
     const r = await margensDoCatalogo(null, d);
     expect(r).toMatchObject({ estado: 'ok', parcial: true, anuncios: [{ mlb: 'MLB1', titulo: 'Titulo MLB1', preco_brl: 50, margem_pct: 40 }, VAZIO] });
     expect((r as { anuncios: unknown[] }).anuncios[1]).toEqual(VAZIO);
+    expect(lerPrecos).toHaveBeenCalledWith(['MLB1']);
   });
 
   it('na família, o anúncio alheio zera a referência e o próprio mantém o número', async () => {

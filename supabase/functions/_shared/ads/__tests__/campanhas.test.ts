@@ -1,3 +1,4 @@
+import type { PrecoComprador } from '../../ml/preco-comprador.ts';
 import { describe, expect, it, vi } from 'vitest';
 import {
   equilibrioDoMlb, LIMITES_CAMPANHAS, LimiteTarifa, lerCampanhasAds, lerTodasPaginas, montarPublicados,
@@ -69,7 +70,7 @@ describe('parseItensBulk', () => {
       { status_code: 500 },
       { status_code: 200, body: { id: 'MLB4' } },
     ], ['MLB1', 'MLB2', 'MLB3', 'MLB4']);
-    expect([...m.entries()]).toEqual([['MLB1', { status: 'paused', subStatus: ['out_of_stock'], estoque: 0, preco: 30, precoTabela: null }]]);
+    expect([...m.entries()]).toEqual([['MLB1', { status: 'paused', subStatus: ['out_of_stock'], estoque: 0, preco: null, precoTabela: null, vendedor: null }]]);
     expect(parseItensBulk({ erro: 1 }, ['MLB1']).size).toBe(0);
     expect(parseItensBulk([{ status_code: 200, body: { id: 'MLB1', status: '' } }], ['MLB1']).size).toBe(0);
   });
@@ -203,7 +204,7 @@ describe('lerCampanhasAds', () => {
   const pagina = (results: unknown[], total = results.length) => ({ status: 200, corpo: { paging: { total }, results } });
   const bulk = (path: string) => {
     const ids = decodeURIComponent(path.split('ids=')[1].split('&')[0]).split(',');
-    return { status: 200, corpo: ids.map((id) => ({ status_code: 200, body: { id, status: 'active', sub_status: [], available_quantity: 3, price: 50 } })) };
+    return { status: 200, corpo: ids.map((id) => ({ status_code: 200, body: { id, status: 'active', sub_status: [], available_quantity: 3, price: 99, seller_id: 777 } })) };
   };
   const deps = (rota: Rota, o: Partial<DepsCampanhas> = {}): DepsCampanhas & { get: ReturnType<typeof vi.fn> } => ({
     hoje: '2026-10-20',
@@ -213,9 +214,13 @@ describe('lerCampanhasAds', () => {
     lerAliquotas: async () => ALIQ,
     buscarItensML: async (ids) => new Map(ids.map((id) => [id, itemML({ id })])),
     tarifaEm: async () => TARIFA,
+    contaId: '777',
+    lerPrecos: vi.fn(async (ids: string[]) => new Map(ids.map((id) => [id, precoDe(50)]))),
     lerPublicados: async () => ({ '100': ['MLB1'] }),
     ...o,
   }) as never;
+  const precoDe = (preco: number): PrecoComprador =>
+    ({ preco, precoTabela: null, emPromocao: false, promocaoTipo: null, priceId: '1', lidoEm: 'T' });
   const comAnuncios = (porCampanha: Record<number, unknown[]>, campanhas = [CAMPANHA_HAIRFLY]): Rota => (path) => {
     if (path.startsWith('/advertising/advertisers')) return ADV;
     if (path.includes('/campaigns/search')) return pagina(campanhas);
@@ -243,6 +248,35 @@ describe('lerCampanhasAds', () => {
     const camp = d.get.mock.calls.map((c) => c[0] as string).find((p) => p.includes('/campaigns/search'))!;
     expect(camp).toContain('date_from=2026-10-13&date_to=2026-10-20');
     expect(camp).toContain('filters[status]=active,paused');
+  });
+
+  it('emenda 5: usa o preço do comprador, nunca o price do item; sem leitura → preco_nao_verificado e sem preço na linha', async () => {
+    const rota = comAnuncios({ 7500229: [anuncio({ item_id: 'MLB1' }), anuncio({ item_id: 'MLB2' })] });
+    const tarifaEm = vi.fn(async () => TARIFA);
+    const r = await lerCampanhasAds(deps(rota, {
+      tarifaEm, lerPrecos: async () => new Map([['MLB1', { ...precoDe(80), precoTabela: 99 }]]),
+      carregarCadastro: async () => montarCadastro([
+        v({ id: 'a', familias: { ml_item_id: 'MLB1', origem: 'nacional' } }), v({ id: 'b', familias: { ml_item_id: 'MLB2', origem: 'nacional' } }),
+      ], []),
+    }), 'T');
+    if (r.estado !== 'ok') throw new Error(r.estado);
+    expect(r.anuncios[0].item).toMatchObject({ preco: 80, precoTabela: 99, status: 'active', estoque: 3 });
+    expect(r.anuncios[0].equilibrio.acosPct).not.toBeNull();
+    expect(r.anuncios[1].item).toMatchObject({ preco: null, precoTabela: null, status: 'active', estoque: 3 });
+    expect(r.anuncios[1].equilibrio).toEqual({ acosPct: null, motivo: 'preco_nao_verificado' });
+    expect(tarifaEm.mock.calls.map(([q]) => (q as unknown as { preco: number }).preco)).toEqual([80]);
+    expect(JSON.stringify(r)).not.toContain('vendedor');
+  });
+
+  it('emenda 5: preço só é lido de anúncio da conta da conexão', async () => {
+    const lerPrecos = vi.fn(async () => new Map<string, PrecoComprador>());
+    const rota: Rota = (p) => (p.startsWith('/items/bulk')
+      ? { status: 200, corpo: [{ status_code: 200, body: { id: 'MLB1', status: 'active', seller_id: 888 } }, { status_code: 200, body: { id: 'MLB2', status: 'active' } }] }
+      : comAnuncios({ 7500229: [anuncio({ item_id: 'MLB1' }), anuncio({ item_id: 'MLB2' })] })(p));
+    const r = await lerCampanhasAds(deps(rota, { lerPrecos }), 'T');
+    if (r.estado !== 'ok') throw new Error(r.estado);
+    expect(lerPrecos).toHaveBeenCalledWith([]);
+    expect(r.anuncios.map((a) => a.equilibrio.motivo)).toEqual(['preco_nao_verificado', 'preco_nao_verificado']);
   });
 
   it('pagina campanhas e anúncios', async () => {

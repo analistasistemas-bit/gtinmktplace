@@ -7,12 +7,11 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { adminClient } from '../_shared/supabase.ts';
 import { resolverConexaoEstrita } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
-import { caminhoMultiget } from '../_shared/ml/multiget.ts';
+import { lerFimPromocao, lerPrecosComprador } from '../_shared/ml/preco-comprador.ts';
 import { buscarItensML, criarGetJson, type GetJson } from '../_shared/promocoes/ml.ts';
 import { carregarCadastro, criarTarifaEm, lerAliquotas } from '../_shared/promocoes/deps.ts';
 import type { QueryTarifa } from '../_shared/promocoes/sincronizar.ts';
 import type { Tarifa } from '../_shared/promocoes/tipos.ts';
-import { CAMPOS_ITEM_AGORA, type ItemAgora, parseItensBulk } from '../_shared/ads/campanhas.ts';
 import { autenticarAgente } from '../_shared/agentes/auth-agente.ts';
 import { comDiagnostico } from '../_shared/agentes/diagnostico-tarifa.ts';
 import { reservarLeituras, reservarTarifas } from '../_shared/agentes/limite.ts';
@@ -31,29 +30,16 @@ declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
 /** A org não tem conta ML conectada: vira `estado: 'sem_conexao_ml'` na ferramenta. */
 class SemConexaoML extends Error {}
 
-/** Preço e preço de tabela agora, em blocos de 20. Bloco que falha fica desconhecido (vira `anuncio_indisponivel`). */
-async function lerPrecos(get: GetJson, ids: string[]): Promise<Map<string, ItemAgora>> {
-  const m = new Map<string, ItemAgora>();
-  for (let i = 0; i < ids.length; i += 20) {
-    const bloco = ids.slice(i, i + 20);
-    try {
-      for (const [k, v] of parseItensBulk(await get(caminhoMultiget(bloco, CAMPOS_ITEM_AGORA)), bloco)) m.set(k, v);
-    } catch {
-      console.warn('[agentes] items/bulk indisponível');
-    }
-  }
-  return m;
-}
-
 /** Deps de margem de UMA chamada de ferramenta, fechadas na org; o ML só é tocado na primeira dep que precisa dele. */
 function depsMargens(admin: SupabaseClient, orgId: string): DepsMargens {
-  type ML = { get: GetJson; tarifaEm: (q: QueryTarifa) => Promise<Tarifa> };
+  type ML = { token: string; get: GetJson; tarifaEm: (q: QueryTarifa) => Promise<Tarifa> };
   let ml: Promise<ML> | null = null;
   const doML = () => ml ??= (async () => {
     const cx = await resolverConexaoEstrita(admin, orgId, 'mercado_livre');
     if (!cx?.contaExternaId) throw new SemConexaoML();
     const token = await getValidAccessTokenConexao(cx);
     return {
+      token,
       get: soDoVendedor(criarGetJson(token), cx.contaExternaId),
       // Uma instância por chamada: o disjuntor de `semRetentativa` vale para a chamada inteira.
       tarifaEm: comDiagnostico(criarTarifaEm({ orgId, mlUserId: cx.contaExternaId, token }, { semRetentativa: true })),
@@ -69,7 +55,8 @@ function depsMargens(admin: SupabaseClient, orgId: string): DepsMargens {
     carregarCadastro: () => carregarCadastro(admin, orgId),
     lerAliquotas: () => lerAliquotas(admin, orgId),
     buscarItensML: async (ids) => buscarItensML((await doML()).get, ids),
-    lerPrecos: async (ids) => lerPrecos((await doML()).get, ids),
+    lerPrecos: async (ids) => lerPrecosComprador((await doML()).token, ids),
+    lerFimPromocao: async (alvos) => lerFimPromocao((await doML()).token, alvos, { agora }),
     tarifaEm: async (q) => (await doML()).tarifaEm(q),
     reservarTarifas: (n) => reservarTarifas(orgId, n, agora),
     reservarLeituras: (n) => reservarLeituras(orgId, n, agora),
