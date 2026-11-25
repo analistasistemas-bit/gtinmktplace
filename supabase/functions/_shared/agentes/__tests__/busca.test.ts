@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type AnuncioBusca, filtroVariacoes, montarCandidatos, palavras, type VariacaoBusca, variacoesQueCasam } from '../busca.ts';
+import { type AnuncioBusca, filtrosVariacoes, montarCandidatos, palavras, type VariacaoBusca, variacoesQueCasam } from '../busca.ts';
 
 describe('palavras', () => {
   it('minúsculas, sem acento, sem repetição, separadas por qualquer pontuação', () => {
@@ -63,6 +63,13 @@ describe('montarCandidatos', () => {
     expect(buscar('camiseta xxl', [c], [va('1', 'a', 'MA', 'Azul', 'XXXL', 'Camiseta Azul XXXL'), va('1', 'b', 'MB', 'Azul', 'XXL')]).candidatos).toMatchObject([{ mlbs: ['MB'] }]);
   });
 
+  it('tamanho com número e letras é exato: 2XL não acha 12XL; XXXXL não acha XXXXXL', () => {
+    const c = an('1', ['Camiseta Lisa']);
+    const v = [va('1', 'a', 'MA', 'Azul', '12XL', 'Camiseta 12XL'), va('1', 'b', 'MB', 'Azul', 'XXXXXL', 'Camiseta XXXXXL')];
+    expect(buscar('camiseta 2xl', [c], v).candidatos).toEqual([]);
+    expect(buscar('camiseta xxxxl', [c], v).candidatos).toEqual([]);
+  });
+
   it('número do título não vale por tamanho parcial: "kit 2" não acha "Kit 25"', () => {
     expect(buscar('kit 2', [an('1', ['Kit 25 Agulhas']), an('2', ['Kit 2 Blusas'])]).candidatos.map((c) => c.codigo_pai)).toEqual(['2']);
   });
@@ -110,15 +117,17 @@ describe('montarCandidatos', () => {
   });
 });
 
-describe('filtroVariacoes', () => {
-  it('a palavra mais longa que falta em cada título, sem repetir, com curinga no lugar de vogal e c', () => {
-    expect(filtroVariacoes(palavras('conjunto neon 4'), [an('1', ['Conjunto']), an('2', ['Conjunto Neon'])]))
-      .toBe('cor.ilike.%n__n%,nome.ilike.%n__n%,tamanho.ilike.%n__n%,cor.ilike.%4%,nome.ilike.%4%,tamanho.ilike.%4%');
+describe('filtrosVariacoes', () => {
+  it('cada código só leva a palavra mais longa que falta no título dele, com curinga no lugar de vogal e c', () => {
+    expect(filtrosVariacoes(palavras('conjunto neon 4'), [an('1', ['Conjunto']), an('2', ['Conjunto Neon']), an('3', ['Conjunto Azul'])])).toEqual([
+      { codigos: ['1', '3'], filtro: 'cor.ilike.%n__n%,nome.ilike.%n__n%,tamanho.ilike.%n__n%' },
+      { codigos: ['2'], filtro: 'cor.ilike.%4%,nome.ilike.%4%,tamanho.ilike.%4%' },
+    ]);
   });
-  it('tudo no título → null; nunca sai caractere que mude o filtro do PostgREST', () => {
-    expect(filtroVariacoes(palavras('conjunto'), [an('1', ['Conjunto'])])).toBeNull();
-    const f = filtroVariacoes(palavras('a,b),org_id.eq.outra(or"\\%*neon'), [an('1', ['Conjunto'])])!;
-    expect(f).toMatch(/^(?:(?:cor|nome|tamanho)\.ilike\.%[a-z0-9_]+%,?)+$/);
+  it('tudo no título → nenhum; nunca sai caractere que mude o filtro do PostgREST', () => {
+    expect(filtrosVariacoes(palavras('conjunto'), [an('1', ['Conjunto'])])).toEqual([]);
+    const [{ filtro }] = filtrosVariacoes(palavras('a,b),org_id.eq.outra(or"\\%*neon'), [an('1', ['Conjunto'])]);
+    expect(filtro).toMatch(/^(?:(?:cor|nome|tamanho)\.ilike\.%[a-z0-9_]+%,?)+$/);
   });
 });
 

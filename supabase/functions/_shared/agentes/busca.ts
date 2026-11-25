@@ -20,8 +20,8 @@ const MAX_PALAVRAS = 20;
 const ENFEITE = new Set(['de', 'da', 'do', 'das', 'dos', 'com', 'e', 'em', 'para', 'o', 'a', 'cor', 'estampa', 'est']);
 /** Marcador de tamanho nunca é procurado: "tamanho 4" é só o tamanho, que sozinho não busca. */
 const MARCADOR = new Set(['tamanho', 'tam']);
-/** Cara de tamanho por letras (GGG, XXL, EXG): casa inteira, também em nome e título. */
-const LETRAS_TAMANHO = /^[xpmgles]{1,4}$/;
+/** Cara de tamanho por letras (GGG, XXL, EXG, XXXXL): casa inteira, também em nome e título. */
+const LETRAS_TAMANHO = /^(?:[xpmgles]{1,4}|x{2,}[a-z])$/;
 
 const partes = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
 const forte = (p: string) => p.length >= 3;
@@ -38,11 +38,11 @@ export function palavras(trecho: string): string[] {
 /** "pretas" → "pret": gênero e plural de palavra com 5+ letras. ponytail: sem sinônimo nem correção de digitação. */
 const raiz = (p: string) => (/^[a-z]{5,}$/.test(p) ? p.replace(/(?:os|as|o|a|s)$/, '') : p);
 
-/** Número, palavra de até 2 letras e tamanho só casam inteiros; o resto casa por trecho. */
+/** Palavra com número, de até 2 letras ou tamanho só casa inteira; o resto casa por trecho. */
 function casador(textos: (string | null)[], tamanho: string | null = null) {
   const ps = textos.flatMap((t) => (t ? partes(t) : []));
   const inteiras = new Set([...ps, ...(tamanho ? partes(tamanho) : [])]);
-  return (p: string) => inteiras.has(p) || (forte(p) && /[a-z]/.test(p) && !LETRAS_TAMANHO.test(p) && ps.some((x) => x.includes(raiz(p))));
+  return (p: string) => inteiras.has(p) || (forte(p) && /^[a-z]+$/.test(p) && !LETRAS_TAMANHO.test(p) && ps.some((x) => x.includes(raiz(p))));
 }
 
 const faltam = (ps: string[], a: AnuncioBusca) => {
@@ -50,18 +50,21 @@ const faltam = (ps: string[], a: AnuncioBusca) => {
   return ps.filter((p) => !casa(p));
 };
 
-/** Filtro `or` do PostgREST que traz as variações possíveis (a conferência exata é em `montarCandidatos`): a palavra
- *  mais longa que falta em cada título. Curinga no lugar de vogal e "c" porque o banco guarda acento e cedilha. Só
- *  saem [a-z0-9_], então o texto do agente não altera o filtro. `null` = os títulos bastam. */
-export function filtroVariacoes(ps: string[], anuncios: AnuncioBusca[]): string | null {
-  const chaves = new Set<string>();
+/** Filtros `or` do PostgREST que trazem as variações possíveis (a conferência exata é em `montarCandidatos`): por
+ *  código, a palavra mais longa que falta no título dele. Curinga no lugar de vogal e "c" porque o banco guarda acento
+ *  e cedilha. Só saem [a-z0-9_], então o texto do agente não altera o filtro. Vazio = os títulos bastam. */
+export function filtrosVariacoes(ps: string[], anuncios: AnuncioBusca[]): { codigos: string[]; filtro: string }[] {
+  const porPalavra = new Map<string, string[]>();
   for (const a of anuncios) {
     const f = faltam(ps, a);
-    if (f.length) chaves.add(f.reduce((m, p) => (p.length > m.length ? p : m)));
+    if (!f.length) continue;
+    const chave = f.reduce((m, p) => (p.length > m.length ? p : m));
+    porPalavra.set(chave, [...(porPalavra.get(chave) ?? []), a.codigo_pai]);
   }
-  const filtros = [...chaves].map((p) => raiz(p).replace(/[aeiouc]/g, '_'))
-    .flatMap((p) => ['cor', 'nome', 'tamanho'].map((c) => `${c}.ilike.%${p}%`));
-  return filtros.length ? filtros.join(',') : null;
+  return [...porPalavra].map(([p, codigos]) => {
+    const padrao = raiz(p).replace(/[aeiouc]/g, '_');
+    return { codigos, filtro: ['cor', 'nome', 'tamanho'].map((c) => `${c}.ilike.%${padrao}%`).join(',') };
+  });
 }
 
 /** Variações de um anúncio em que casam todas as palavras que faltam no título; a que casa mais palavras primeiro. */

@@ -2,7 +2,7 @@
 // role (RLS não protege): toda consulta de domínio leva o `orgId` da conexão autenticada. Erro de leitura LANÇA.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import type { DepsAlvo, Vinculo } from './alvo.ts';
-import { type Busca, filtroVariacoes, montarCandidatos, palavras, type VariacaoBusca, variacoesQueCasam } from './busca.ts';
+import { type Busca, filtrosVariacoes, montarCandidatos, palavras, type VariacaoBusca, variacoesQueCasam } from './busca.ts';
 import type { LinhaConexao } from './credencial.ts';
 
 type Filtro = Parameters<DepsAlvo['vinculos']>[0];
@@ -176,12 +176,11 @@ export async function buscarPorTitulo(admin: SupabaseClient, orgId: string, trec
     }
     return [...m.values()];
   };
-  const filtro = filtroVariacoes(ps, anuncios);
   const peloTexto: VariacaoTexto[] = [];
-  for (const bloco of filtro ? blocos(codigos) : []) {
+  for (const { bloco, filtro } of filtrosVariacoes(ps, anuncios).flatMap((g) => blocos(g.codigos).map((bloco) => ({ bloco, filtro: g.filtro })))) {
     peloTexto.push(...await ler<VariacaoTexto>('titulo.variacoes', (de, ate) =>
       admin.from('variacoes').select(COLUNAS).eq('org_id', orgId).eq('familias.org_id', orgId)
-        .in('familias.codigo_pai', bloco).or(filtro!)
+        .in('familias.codigo_pai', bloco).or(filtro)
         .order('criado_em', { ascending: false }).order('id').range(de, ate)));
   }
   // O filtro de texto pode ter trazido só um lote velho do SKU: relê os SKUs achados e confere na variação vigente.
