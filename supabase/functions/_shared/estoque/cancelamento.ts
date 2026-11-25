@@ -117,7 +117,7 @@ export interface PedidoCancelado {
   /** Substatus do envio (emenda 24/11 ao ADR-0121). Ausente = comportamento anterior. */
   shipmentSubstatus?: string | null;
   temEnvio: boolean;
-  /** Emenda 9: disparado pelo claim. Só repõe com o envio cancelado e nunca impresso, estado que não muda mais. */
+  /** Emenda 9: disparado pelo claim. Só repõe com o envio cancelado e nunca impresso; nunca avisa. */
   naHora?: boolean;
   /** Emenda 8: quem chama já viu no ledger que parte foi estornada; releitura falha usa o texto neutro. */
   parcialConhecido?: boolean;
@@ -177,8 +177,9 @@ export async function tratarPedidoCancelado(
   const preDespachoConhecido = preDespacho(st, p.shipmentSubstatus);
 
   try {
-    // Emenda 9: o disparo do claim pode atrasar e a fila concluir antes; com status que ainda muda, quem decide é ela.
-    if (p.naHora && (preDespachoConhecido || !p.temEnvio)) return 'adiado';
+    // Emenda 9: o disparo do claim pode atrasar e cruzar com a fila. Só repõe com a prova forte, que não muda mais;
+    // nunca avisa (o aviso trava a reposição). Todo o resto é da fila.
+    if (p.naHora && !candidatoNuncaSaiu(p)) return 'adiado';
     if (preDespachoConhecido || !p.temEnvio) return await repor(admin, deps, p);
     // Emenda 9: envio não lido. Avisar agora travaria a reposição; a fila relê e, se seguir sem ler, avisa na 3ª tentativa.
     if (st === null && p.lerNuncaSaiu && !p.aoIndisponivel
@@ -188,6 +189,7 @@ export async function tratarPedidoCancelado(
     if (candidatoNuncaSaiu(p)) {
       const r = await tratarNuncaSaiu(admin, deps, p);
       if (typeof r === 'string') return r;
+      if (p.naHora) return 'adiado';
       ledger = r.avisar;
       incerto = r.incerto;
     }

@@ -138,9 +138,9 @@ cancelamentos só foram tratados na rodada da hora cheia. O `ml-webhook` dedupli
 
 - O `sync-devolucao`, depois de gravar a venda cancelada, publica o pedido no `sync-venda`, só se a fila do ADR-0211 o
   assume (obrigação armada e pendente). Nada retroativo; falha ao publicar fica para a hora cheia.
-- **Nesse disparo só a prova forte repõe** (envio `cancelled` e nunca impresso, estado que não muda mais). Pré-despacho
-  (`pending`, `handling`, `ready_to_ship`) e pedido sem envio ficam para a fila: um disparo atrasado poderia repor depois
-  de ela ter visto o envio sair.
+- **Nesse disparo só a prova forte repõe** (envio `cancelled` e nunca impresso, estado que não muda mais) **e nada avisa**.
+  Todo o resto devolve `adiado` e fica para a fila: um disparo atrasado poderia repor ou avisar depois de ela decidir, e o
+  aviso trava a reposição.
 - **Envio não lido** (`/shipments` falhou) no webhook ou na reconciliação: se a fila assume, `adiado` em vez de aviso, que
   travaria a reposição. A fila relê e avisa da 3ª tentativa em diante. Sem fila, avisa na hora, como antes.
 - **Não cobre** cancelamento sem claim: continua na hora cheia. Mudar o dedup de `orders_v2` foi descartado: o ML manda

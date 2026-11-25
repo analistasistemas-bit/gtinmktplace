@@ -740,6 +740,29 @@ describe('tratarPedidoCancelado: envio cancelado que nunca saiu', () => {
       expect(await c.rodar()).toBe('adiado');
       expect(c.chamadas.estornos).toEqual([]);
     });
+    const baixou = { houveBaixaDeVenda: () => Promise.resolve(true) };
+    it.each<[string, Parameters<typeof cenario>[0]]>([
+      ['envio não lido', { pedido: { shipmentStatus: null } }],
+      ['reabertura: a fila ainda não assume', { assume: false, pedido: { shipmentStatus: null } }],
+      ['já enviado', { pedido: { shipmentStatus: 'shipped' } }],
+      ['entregue', { pedido: { shipmentStatus: 'delivered' } }],
+      ['substatus', { pedido: { shipmentSubstatus: 'pack_splitted' } }],
+      ['etiqueta impressa', { prova: 'nao' }],
+      ['histórico indisponível e a fila não assume', { prova: 'indisponivel', assume: false }],
+      ['saldo mexido depois', { mexido: true }],
+      ['sem leitor do histórico', { pedido: { lerNuncaSaiu: undefined } }],
+    ])('%s: adiado; nunca avisa, reserva nem estorna, com e sem kit', async (_n, o) => {
+      for (const kitLigado of [false, true]) {
+        const c = cenario({ ...o, deps: baixou, pedido: { ...o!.pedido, naHora: true, kitLigado } });
+        expect(await c.rodar()).toBe('adiado');
+        expect([c.chamadas.reservas, c.chamadas.notificacoes, c.chamadas.estornos]).toEqual([[], [], []]);
+      }
+    });
+    it('estorno que deixa baixa aberta: adiado, sem avisar', async () => {
+      const c = cenario({ ledger: [{ ...b('00000029'), some: true } as never], pedido: { naHora: true } });
+      expect(await c.rodar()).toBe('adiado');
+      expect([c.chamadas.reservas, c.chamadas.notificacoes]).toEqual([[], []]);
+    });
     it('cancelado e nunca impresso: repõe na hora', async () => {
       const c = cenario({ pedido: { naHora: true } });
       expect(await c.rodar()).toBe('reposto');
