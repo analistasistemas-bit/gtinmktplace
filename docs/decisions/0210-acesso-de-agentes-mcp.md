@@ -253,8 +253,10 @@ Aprovada pelo Diego em 2026-11-24.
 **Medido** (2026-11-24, cadastro real lido por SQL só leitura e passado pelo código num cliente de banco simulado; 24 buscas: 16 na Zaven, 5 e 3 em outras duas lojas):
 
 - `neon` acha as 3 variações; `neon 4` e `conjunto neon tamanho 4`, 1; `blusa preta M`, 4 produtos na cor Preto; `calça 4` e `tamanho 4`, nenhum; `caqui` acha `Caqui` e `Cáqui`.
-- Custo por busca: 4 leituras e até 488 linhas na Zaven; até 12 leituras e 6.748 linhas na loja maior (170 códigos publicados), com até 6 ms de CPU fora da simulação, numa máquina de desenvolvimento.
+- Custo por busca: 4 ou 5 leituras e até 488 linhas na Zaven; até 13 leituras e 6.763 linhas na loja maior (170 códigos publicados), com até 14 ms de CPU fora da simulação, numa máquina de desenvolvimento. O código para em 40 leituras por busca e avisa em `lista_cortada`.
 - A sintaxe do filtro foi aceita pelo PostgREST de produção (um pedido com a chave anônima, que não lê linhas: 200 e lista vazia).
 - Cadastro: tamanho preenchido em 323 de 323 variações da Zaven e em nenhuma das 14.954 linhas da loja maior.
 
-**Não medido:** a busca pela edge em produção, o tempo de resposta e outras lojas. **Limites conhecidos:** sem sinônimo nem correção de digitação; `G` depende do cadastro; palavra que está no título não filtra cor (por exemplo, "short preto" num produto cujo nome já traz "Preto" devolve todas as cores).
+**Não medido:** a busca pela edge em produção, o tempo de resposta e outras lojas. **Limites conhecidos:** sem sinônimo nem correção de digitação; tamanho depende do cadastro; cor com `ñ` só na variação não é achada digitando `n`; palavra que está no título não filtra cor (por exemplo, "short preto" num produto cujo nome já traz "Preto" devolve todas as cores).
+
+Revisão independente do código (Codex gpt-6.2-sol, high, 2026-11-24): (a) a variação vale pelo lote mais recente do SKU, e não por um lote velho que o filtro de texto trouxesse; (b) tamanho por letras também é exato (`XXL` não acha `XXXL`); (c) teto global de leituras por busca. Não aceito: filtro de organização também no pai embutido da resolução por SKU, que é anterior a esta emenda e já tem a chave composta com a organização e a conferência contra os publicados da loja.

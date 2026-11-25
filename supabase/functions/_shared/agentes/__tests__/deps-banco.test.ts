@@ -165,6 +165,7 @@ describe('buscarPorTitulo', () => {
   const vari = (codigo: string, codigo_pai: string, cor: string | null, tamanho: string | null, o: object = {}) =>
     ({ org_id: ORG, codigo, nome: cor, cor, tamanho, familias: { org_id: ORG, codigo_pai, ml_item_id: null }, ...o });
   const VAZIA = { candidatos: [], lista_cortada: false };
+  const duas = (l: unknown[]) => [filtrar(l), filtrar(l)];
 
   it('texto sem palavra de 3 caracteres não consulta o banco', async () => {
     const { admin, chamadas } = fake({});
@@ -212,7 +213,7 @@ describe('buscarPorTitulo', () => {
       anuncios_externos: [filtrar([pub('a1', 'UP', null), pub('a2', 'LEG', 'MLB9')])],
       familias: [ok([fam('UP', 'Conjunto'), fam('LEG', 'Fita')])],
       anuncios_externos_itens: [filtrar([filho('a1', 's1', 'MLB1'), filho('a1', 's2', 'MLB2', { retirado: true })])],
-      variacoes: [filtrar([
+      variacoes: duas([
         vari('s1', 'UP', 'Estampa Neon', '4'),
         vari('s1', 'UP', 'Neon lote velho', '6'), // mesmo SKU em lote antigo: vale a primeira (mais recente)
         vari('s2', 'UP', 'Estampa Neon', '6'), // filho retirado
@@ -220,7 +221,7 @@ describe('buscarPorTitulo', () => {
         vari('c1', 'LEG', 'Neon', null, { familias: { org_id: ORG, codigo_pai: 'LEG', ml_item_id: 'MLB9' } }),
         vari('c2', 'LEG', 'Neon', null, { familias: { org_id: ORG, codigo_pai: 'LEG', ml_item_id: 'MLB8' } }), // outro anúncio
         vari('c3', 'LEG', 'Neon', null), // lote nunca publicado
-      ])],
+      ]),
     });
     expect(await buscarPorTitulo(admin, ORG, 'neon')).toEqual({
       candidatos: [
@@ -228,12 +229,39 @@ describe('buscarPorTitulo', () => {
         { codigo_pai: 'LEG', titulo: 'Fita', mlbs: ['MLB9'], variacoes: [{ sku: 'c1', cor: 'Neon', tamanho: null, mlb: 'MLB9' }] },
       ], lista_cortada: false,
     });
-    const v = chamadas.find((c) => c.tabela === 'variacoes')!;
-    expect(tem(v, 'eq', 'org_id', ORG)).toBe(true);
-    expect(tem(v, 'eq', 'familias.org_id', ORG)).toBe(true);
+    const [v, vigentes] = chamadas.filter((c) => c.tabela === 'variacoes');
+    for (const c of [v, vigentes]) {
+      expect(tem(c, 'eq', 'org_id', ORG)).toBe(true);
+      expect(tem(c, 'eq', 'familias.org_id', ORG)).toBe(true);
+      expect(tem(c, 'order', 'criado_em', { ascending: false })).toBe(true);
+    }
+    expect(tem(vigentes, 'in', 'codigo', ['s1', 'c1'])).toBe(true);
+    expect(vigentes.ops.some(([m]) => m === 'or')).toBe(false);
     expect(tem(v, 'in', 'familias.codigo_pai', ['UP', 'LEG'])).toBe(true);
     expect(tem(v, 'or', 'cor.ilike.%n__n%,nome.ilike.%n__n%,tamanho.ilike.%n__n%')).toBe(true);
     expect(tem(v, 'order', 'criado_em', { ascending: false })).toBe(true);
+  });
+
+  it('vale a variação vigente: cor que só existe num lote antigo do mesmo SKU não é achada', async () => {
+    const velha = vari('s1', 'P1', 'Neon', '4');
+    const nova = vari('s1', 'P1', 'Azul', '6');
+    const { admin } = fake({
+      anuncios_externos: [ok([pub('a1', 'P1', null)])], familias: [ok([fam('P1', 'Conjunto')])],
+      anuncios_externos_itens: [ok([filho('a1', 's1', 'MLB1')])],
+      // O filtro de texto do banco só devolve o lote velho; a segunda leitura traz os dois, o mais recente antes.
+      variacoes: [ok([velha]), ok([nova, velha])],
+    });
+    expect(await buscarPorTitulo(admin, ORG, 'conjunto neon 4')).toEqual(VAZIA);
+  });
+
+  it('teto global de leituras por busca: para e avisa', async () => {
+    const pais = Array.from({ length: 5000 }, (_, i) => pub(`a${i}`, `P${i}`, `MLB${i}`));
+    const { admin, chamadas } = fake({
+      anuncios_externos: Array.from({ length: 5 }, (_, i) => ok(pais.slice(i * 1000, (i + 1) * 1000))),
+      familias: Array.from({ length: 60 }, () => ok([])), anuncios_externos_itens: Array.from({ length: 60 }, () => ok([])),
+    });
+    expect((await buscarPorTitulo(admin, ORG, 'neon')).lista_cortada).toBe(true);
+    expect(chamadas.length).toBeLessThanOrEqual(40);
   });
 
   it('isolamento: outra organização não aparece em nenhuma fonte, nem com o mesmo código e SKU', async () => {
@@ -242,10 +270,10 @@ describe('buscarPorTitulo', () => {
       anuncios_externos: [filtrar([pub('a1', 'P1', null), pub('b1', 'P1', 'MLBX', X), pub('b2', 'P2', 'MLBY', X), pub('a3', 'P3', 'MLB3', { status: 'erro' })])],
       familias: [filtrar([fam('P1', 'Conjunto'), fam('P1', 'Conjunto Neon alheio', X), fam('P2', 'Neon alheio', X)])],
       anuncios_externos_itens: [filtrar([filho('a1', 's1', 'MLB1'), filho('a1', 's9', 'MLBZ', X)])],
-      variacoes: [filtrar([
+      variacoes: duas([
         vari('s9', 'P1', 'Neon', '4', { ...X, familias: { org_id: 'org-B', codigo_pai: 'P1', ml_item_id: 'MLBX' } }),
         vari('s1', 'P1', 'Neon', '4', { familias: { org_id: 'org-B', codigo_pai: 'P1', ml_item_id: null } }),
-      ])],
+      ]),
     });
     expect(await buscarPorTitulo(admin, ORG, 'neon')).toEqual(VAZIA);
   });

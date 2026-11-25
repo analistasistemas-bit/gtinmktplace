@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type AnuncioBusca, filtroVariacoes, montarCandidatos, palavras, type VariacaoBusca } from '../busca.ts';
+import { type AnuncioBusca, filtroVariacoes, montarCandidatos, palavras, type VariacaoBusca, variacoesQueCasam } from '../busca.ts';
 
 describe('palavras', () => {
   it('minúsculas, sem acento, sem repetição, separadas por qualquer pontuação', () => {
@@ -58,6 +58,11 @@ describe('montarCandidatos', () => {
     expect(buscar('short z', [c, s], v).candidatos).toEqual([]);
   });
 
+  it('tamanho por letras também é exato: XXL não acha XXXL', () => {
+    const c = an('1', ['Camiseta Lisa']);
+    expect(buscar('camiseta xxl', [c], [va('1', 'a', 'MA', 'Azul', 'XXXL'), va('1', 'b', 'MB', 'Azul', 'XXL')]).candidatos).toMatchObject([{ mlbs: ['MB'] }]);
+  });
+
   it('número do título não vale por tamanho parcial: "kit 2" não acha "Kit 25"', () => {
     expect(buscar('kit 2', [an('1', ['Kit 25 Agulhas']), an('2', ['Kit 2 Blusas'])]).candidatos.map((c) => c.codigo_pai)).toEqual(['2']);
   });
@@ -114,5 +119,13 @@ describe('filtroVariacoes', () => {
     expect(filtroVariacoes(palavras('conjunto'), [an('1', ['Conjunto'])])).toBeNull();
     const f = filtroVariacoes(palavras('a,b),org_id.eq.outra(or"\\%*neon'), [an('1', ['Conjunto'])])!;
     expect(f).toMatch(/^(?:(?:cor|nome|tamanho)\.ilike\.%[a-z0-9_]+%,?)+$/);
+  });
+});
+
+describe('variacoesQueCasam', () => {
+  it('só as que completam o título do próprio código, sem corte', () => {
+    const v = Array.from({ length: 30 }, (_, i) => va('1', `s${i}`, `M${i}`, i % 2 ? 'Azul' : 'Rosa', null));
+    expect(variacoesQueCasam(palavras('item azul'), [an('1', ['Item'])], v)).toHaveLength(15);
+    expect(variacoesQueCasam(palavras('item'), [an('1', ['Item'])], v)).toEqual([]);
   });
 });

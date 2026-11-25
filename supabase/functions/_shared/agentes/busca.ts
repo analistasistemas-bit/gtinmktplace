@@ -34,11 +34,11 @@ export function palavras(trecho: string): string[] {
 /** "pretas" → "pret": gênero e plural de palavra com 5+ letras. ponytail: sem sinônimo nem correção de digitação. */
 const raiz = (p: string) => (/^[a-z]{5,}$/.test(p) ? p.replace(/(?:os|as|o|a|s)$/, '') : p);
 
-/** Número e palavra de até 2 letras (tamanho) só casam inteiros; o resto casa por trecho. */
-function casador(textos: (string | null)[]) {
+/** Número e palavra de até 2 letras só casam inteiros, e o tamanho sempre; o resto casa por trecho. */
+function casador(textos: (string | null)[], tamanho: string | null = null) {
   const ps = textos.flatMap((t) => (t ? partes(t) : []));
-  const inteiras = new Set(ps);
-  return (p: string) => (forte(p) && /[a-z]/.test(p) ? ps.some((x) => x.includes(raiz(p))) : inteiras.has(p));
+  const inteiras = new Set([...ps, ...(tamanho ? partes(tamanho) : [])]);
+  return (p: string) => inteiras.has(p) || (forte(p) && /[a-z]/.test(p) && ps.some((x) => x.includes(raiz(p))));
 }
 
 const faltam = (ps: string[], a: AnuncioBusca) => {
@@ -60,25 +60,42 @@ export function filtroVariacoes(ps: string[], anuncios: AnuncioBusca[]): string 
   return filtros.length ? filtros.join(',') : null;
 }
 
+/** Variações de um anúncio em que casam todas as palavras que faltam no título; a que casa mais palavras primeiro. */
+const doAnuncio = (ps: string[], f: string[], vs: VariacaoBusca[]) => vs
+  .map((v) => ({ v, casa: casador([v.nome, v.cor], v.tamanho) }))
+  .filter(({ casa }) => f.every(casa))
+  .map(({ v, casa }) => ({ v, n: ps.filter(casa).length }))
+  .sort((x, y) => y.n - x.n)
+  .map(({ v }) => v);
+
+function agrupar(variacoes: VariacaoBusca[]): Map<string, VariacaoBusca[]> {
+  const m = new Map<string, VariacaoBusca[]>();
+  for (const v of variacoes) {
+    const vs = m.get(v.codigo_pai);
+    if (vs) vs.push(v);
+    else m.set(v.codigo_pai, [v]);
+  }
+  return m;
+}
+
+/** Variações que fariam algum anúncio aparecer, sem corte. */
+export function variacoesQueCasam(ps: string[], anuncios: AnuncioBusca[], variacoes: VariacaoBusca[]): VariacaoBusca[] {
+  const porCodigo = agrupar(variacoes);
+  return anuncios.flatMap((a) => {
+    const f = faltam(ps, a);
+    return f.length ? doAnuncio(ps, f, porCodigo.get(a.codigo_pai) ?? []) : [];
+  });
+}
+
 /** Todas as palavras precisam casar: no título, ou o que faltar nele numa MESMA variação (nome, cor ou tamanho). */
 export function montarCandidatos(ps: string[], anuncios: AnuncioBusca[], variacoes: VariacaoBusca[]): Busca {
   const achados: Candidato[] = [];
   let lista_cortada = false;
   if (!ps.length) return { candidatos: achados, lista_cortada };
-  const porCodigo = new Map<string, VariacaoBusca[]>();
-  for (const v of variacoes) {
-    const vs = porCodigo.get(v.codigo_pai);
-    if (vs) vs.push(v);
-    else porCodigo.set(v.codigo_pai, [v]);
-  }
+  const porCodigo = agrupar(variacoes);
   for (const a of anuncios) {
     const f = faltam(ps, a);
-    const vs = !f.length ? null : (porCodigo.get(a.codigo_pai) ?? [])
-      .map((v) => ({ v, casa: casador([v.nome, v.cor, v.tamanho]) }))
-      .filter(({ casa }) => f.every(casa))
-      .map(({ v, casa }) => ({ v, n: ps.filter(casa).length }))
-      .sort((x, y) => y.n - x.n)
-      .map(({ v }) => v);
+    const vs = f.length ? doAnuncio(ps, f, porCodigo.get(a.codigo_pai) ?? []) : null;
     const mlbs = [...new Set(vs ? vs.map((v) => v.mlb) : a.mlbs)];
     if (!mlbs.length) continue;
     if (achados.length === MAX_CANDIDATOS) {

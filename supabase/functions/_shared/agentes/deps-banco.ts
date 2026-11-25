@@ -2,16 +2,17 @@
 // role (RLS não protege): toda consulta de domínio leva o `orgId` da conexão autenticada. Erro de leitura LANÇA.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import type { DepsAlvo, Vinculo } from './alvo.ts';
-import { type Busca, filtroVariacoes, montarCandidatos, palavras, type VariacaoBusca } from './busca.ts';
+import { type Busca, filtroVariacoes, montarCandidatos, palavras, type VariacaoBusca, variacoesQueCasam } from './busca.ts';
 import type { LinhaConexao } from './credencial.ts';
 
 type Filtro = Parameters<DepsAlvo['vinculos']>[0];
 type Res<T> = { data: T | null; error: { message: string } | null };
 
 const LIMITE = 200;
-/** Busca por texto: página do PostgREST (teto de 1000 linhas) e páginas por leitura (5.000 linhas). */
+/** Busca por texto: página do PostgREST (teto de 1000 linhas), páginas por leitura e leituras por busca. */
 const PAGINA = 1000;
 const MAX_PAGINAS = 5;
+const MAX_LEITURAS = 40;
 const MAX_IN = 100;
 /** Fatias de até 100 valores para `.in()`; lista vazia → nenhuma fatia (nunca `.in()` vazio). */
 const blocos = <T>(xs: T[]): T[][] => Array.from({ length: Math.ceil(xs.length / MAX_IN) }, (_, i) => xs.slice(i * MAX_IN, (i + 1) * MAX_IN));
@@ -86,12 +87,13 @@ export async function vinculos(admin: SupabaseClient, orgId: string, f: Filtro):
   return porMlb(out).slice(0, LIMITE);
 }
 
-/** Todas as linhas de uma leitura, em páginas; `cortou` = parou no teto e pode haver mais. */
+/** Todas as linhas de uma leitura, em páginas; `cortou` = parou num teto (páginas ou `saldo`) e pode haver mais. */
 async function paginar<T>(
-  onde: string, pagina: (de: number, ate: number) => PromiseLike<unknown>,
+  onde: string, saldo: { leituras: number }, pagina: (de: number, ate: number) => PromiseLike<unknown>,
 ): Promise<{ linhas: T[]; cortou: boolean }> {
   const linhas: T[] = [];
-  for (let i = 0; i < MAX_PAGINAS; i++) {
+  for (let i = 0; i < MAX_PAGINAS && saldo.leituras > 0; i++) {
+    saldo.leituras--;
     const r = dado(onde, await pagina(i * PAGINA, (i + 1) * PAGINA - 1) as Res<T[]>) ?? [];
     linhas.push(...r);
     if (r.length < PAGINA) return { linhas, cortou: false };
@@ -109,14 +111,16 @@ type VariacaoTexto = {
 
 /** Texto livre → candidatos, só entre anúncios publicados da org, nos dois modelos. As palavras casam no nome ou no
  *  título de qualquer lote do código pai; o que faltar, numa variação do anúncio (nome, cor ou tamanho): em user
- *  products pelo SKU do filho ativo, no legado pelo lote cujo MLB é o publicado. Regra em `busca.ts`.
+ *  products pelo SKU do filho ativo, no legado pelo lote cujo MLB é o publicado. Vale a variação do lote mais recente
+ *  do SKU. Regra em `busca.ts`.
  *  ponytail: lê o cadastro publicado da org a cada busca (sem índice de texto); RPC se a loja passar de 5.000. */
 export async function buscarPorTitulo(admin: SupabaseClient, orgId: string, trecho: string): Promise<Busca> {
   const ps = palavras(trecho);
   if (!ps.length) return { candidatos: [], lista_cortada: false };
   let cortou = false;
+  const saldo = { leituras: MAX_LEITURAS };
   const ler = async <T>(onde: string, pagina: (de: number, ate: number) => PromiseLike<unknown>): Promise<T[]> => {
-    const r = await paginar<T>(onde, pagina);
+    const r = await paginar<T>(onde, saldo, pagina);
     cortou ||= r.cortou;
     return r.linhas;
   };
@@ -154,29 +158,40 @@ export async function buscarPorTitulo(admin: SupabaseClient, orgId: string, trec
       [...(p.item_externo_id ? [p.item_externo_id] : []), ...(filhosDe.get(p.id) ?? []).map((f) => f.item_externo_id)]),
   }));
 
-  const filtro = filtroVariacoes(ps, anuncios);
-  const variacoes = new Map<string, VariacaoBusca>();
-  for (const bloco of filtro ? blocos(codigos) : []) {
-    const linhas = await ler<VariacaoTexto>('titulo.variacoes', (de, ate) =>
-      admin.from('variacoes').select('codigo, nome, cor, tamanho, familias!inner(codigo_pai, ml_item_id)')
-        .eq('org_id', orgId).eq('familias.org_id', orgId).in('familias.codigo_pai', bloco).or(filtro!)
-        .order('criado_em', { ascending: false }).order('id').range(de, ate));
+  const COLUNAS = 'codigo, nome, cor, tamanho, familias!inner(codigo_pai, ml_item_id)';
+  /** Variação do anúncio publicado, por MLB e SKU; lotes repetem o SKU e as linhas chegam da mais recente à mais antiga. */
+  const doPublicado = (linhas: VariacaoTexto[]): VariacaoBusca[] => {
+    const m = new Map<string, VariacaoBusca>();
     for (const l of linhas) {
       const f = um(l.familias);
       if (!f) continue;
       for (const p of paisDe.get(f.codigo_pai) ?? []) {
         const mlb = (filhosDe.get(p.id) ?? []).find((x) => x.sku === l.codigo)?.item_externo_id
           ?? (p.item_externo_id && p.item_externo_id === f.ml_item_id ? p.item_externo_id : null);
-        // Lotes repetem o SKU: fica o mais recente.
-        if (mlb && !variacoes.has(`${mlb}|${l.codigo}`)) {
-          variacoes.set(`${mlb}|${l.codigo}`, {
-            codigo_pai: f.codigo_pai, sku: l.codigo, mlb, nome: l.nome, cor: l.cor, tamanho: l.tamanho,
-          });
+        if (mlb && !m.has(`${mlb}|${l.codigo}`)) {
+          m.set(`${mlb}|${l.codigo}`, { codigo_pai: f.codigo_pai, sku: l.codigo, mlb, nome: l.nome, cor: l.cor, tamanho: l.tamanho });
         }
       }
     }
+    return [...m.values()];
+  };
+  const filtro = filtroVariacoes(ps, anuncios);
+  const peloTexto: VariacaoTexto[] = [];
+  for (const bloco of filtro ? blocos(codigos) : []) {
+    peloTexto.push(...await ler<VariacaoTexto>('titulo.variacoes', (de, ate) =>
+      admin.from('variacoes').select(COLUNAS).eq('org_id', orgId).eq('familias.org_id', orgId)
+        .in('familias.codigo_pai', bloco).or(filtro!)
+        .order('criado_em', { ascending: false }).order('id').range(de, ate)));
   }
-  const r = montarCandidatos(ps, anuncios, [...variacoes.values()]);
+  // O filtro de texto pode ter trazido só um lote velho do SKU: relê os SKUs achados e confere na variação vigente.
+  const skus = [...new Set(variacoesQueCasam(ps, anuncios, doPublicado(peloTexto)).map((v) => v.sku))];
+  const vigentes: VariacaoTexto[] = [];
+  for (const bloco of blocos(skus)) {
+    vigentes.push(...await ler<VariacaoTexto>('titulo.vigentes', (de, ate) =>
+      admin.from('variacoes').select(COLUNAS).eq('org_id', orgId).eq('familias.org_id', orgId).in('codigo', bloco)
+        .order('criado_em', { ascending: false }).order('id').range(de, ate)));
+  }
+  const r = montarCandidatos(ps, anuncios, doPublicado(vigentes));
   return { candidatos: r.candidatos, lista_cortada: r.lista_cortada || cortou };
 }
 
