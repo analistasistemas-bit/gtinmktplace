@@ -3,9 +3,11 @@
 ## Repor envio cancelado cuja etiqueta nunca foi impressa (emenda 8 ao ADR-0121) — 2026-11-24
 
 - [x] Código na branch `fix/repor-envio-nunca-impresso`: `_shared/estoque/nunca-saiu.ts` (prova pelo histórico do envio, baixas abertas do ledger, trava de saldo mexido, dedupe e fila que assume), ramo novo em `tratarPedidoCancelado`, estado misto e 3ª tentativa na fila do ADR-0211, claims com `repetir`. Sem migration.
-- [ ] Revisão independente (crítica) antes do merge.
-- [ ] Deploy: `sync-venda` e `reconciliar-faturamento` (reversão: versão anterior).
-- [ ] Acompanhar os primeiros casos em produção (saldo + ML). Sem reposição retroativa.
+- [x] Revisões: Grok 4.7 xhigh APROVAR; Codex BLOQUEAR (1 achado corrigido, 3 anteriores à mudança; Diego decidiu publicar).
+- [x] Deploy 24/11 20:48 BRT: `sync-venda` v144, `reconciliar-faturamento` v134 (main `d15b5ff5`).
+- [x] 1º caso real: Avil, SKU `02844290`, 560 → 561 no app e no ML, pela fila às 21:00.
+- [x] Emenda 9 (código): claim com pedido cancelado dispara o `sync-venda`; envio não lido fica para a fila.
+- [ ] Emenda 9: revisão, deploy de `sync-devolucao`, `sync-venda` e `reconciliar-faturamento`, 1º caso na hora.
 
 ## Dispensar: contador de mensagens e perguntas (emendas 24/11 aos ADR-0067 e 0037) — 2026-11-24
 

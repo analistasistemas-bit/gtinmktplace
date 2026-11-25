@@ -36,3 +36,18 @@ describe('fiação do envio que nunca saiu', () => {
     expect(t).toMatch(/drenar: Deno\.env\.get\('DRENAR_CANCELAMENTOS'\), fanout: fanoutAtivo\('FANOUT_RECONCILIAR'\)/);
   });
 });
+
+// Emenda 9: sync-devolucao dispara depois de gravar a venda e ANTES do 502 do MP, com as duas flags da fila.
+describe('fiação do cancelamento na hora', () => {
+  const t = ler('sync-devolucao/index.ts');
+  it('depois do upsertVenda e antes do retorno por MP indisponível', () => {
+    const [u, d, mp] = ['await upsertVenda(', 'await dispararCancelamentoNaHora(', 'mpIndisponivel: true'].map((x) => t.indexOf(x));
+    expect(u).toBeGreaterThan(0);
+    expect(d).toBeGreaterThan(u);
+    expect(mp).toBeGreaterThan(d);
+  });
+  it('publica no sync-venda e consulta a fila com as flags', () => {
+    expect(t).toMatch(/functions\/v1\/sync-venda/);
+    expect(t).toMatch(/drenar: Deno\.env\.get\('DRENAR_CANCELAMENTOS'\), fanout: fanoutAtivo\('FANOUT_RECONCILIAR'\)/);
+  });
+});

@@ -529,7 +529,7 @@ describe('tratarPedidoCancelado: envio cancelado que nunca saiu', () => {
   ])('%s: não lê o histórico nem repõe, aviso de hoje', async (_n, pedido) => {
     const c = cenario({ pedido, deps: { houveBaixaDeVenda: () => Promise.resolve(true) } });
     expect(await c.rodar()).toBe('avisado');
-    expect(c.lido).toMatchObject({ prova: 0, saldo: 0, dedupe: 0, fila: 0 });
+    expect(c.lido).toMatchObject({ prova: 0, saldo: 0, dedupe: 0, fila: _n === 'envio não lido' ? 1 : 0 }); // emenda 9
     expect(c.chamadas.estornos).toEqual([]);
   });
 
@@ -718,6 +718,31 @@ describe('tratarPedidoCancelado: envio cancelado que nunca saiu', () => {
     const t = c.chamadas.notificacoes[0].texto;
     expect(t).toContain('O estoque pode ter voltado em parte');
     expect(t).not.toContain('KIT');
+  });
+
+  describe('envio não lido (emenda 9)', () => {
+    const NULO = { shipmentStatus: null, shipmentSubstatus: null };
+    const baixou = { houveBaixaDeVenda: () => Promise.resolve(true) };
+    it('a fila assume: adiado, sem reservar aviso nem estornar', async () => {
+      const c = cenario({ assume: true, pedido: NULO, deps: baixou });
+      expect(await c.rodar()).toBe('adiado');
+      expect(c.chamadas.reservas).toEqual([]);
+      expect(c.chamadas.estornos).toEqual([]);
+    });
+    it('a fila não assume, ou a leitura dela falha: avisa agora, sem estornar', async () => {
+      for (const deps of [baixou, { ...baixou, filaAssume: () => Promise.reject(new Error('banco')) }]) {
+        const c = cenario({ pedido: NULO, deps });
+        expect(await c.rodar()).toBe('avisado');
+        expect(c.chamadas.estornos).toEqual([]);
+      }
+    });
+    it('na fila (aoIndisponivel) e sem thunk: igual a antes, não consulta a fila', async () => {
+      for (const over of [{ aoIndisponivel: () => 'avisar' as const }, { lerNuncaSaiu: undefined }]) {
+        const c = cenario({ assume: true, pedido: { ...NULO, ...over }, deps: baixou });
+        expect(await c.rodar()).toBe('avisado');
+        expect(c.lido.fila).toBe(0);
+      }
+    });
   });
 
   describe('a leitura do texto parcial não consome o aviso', () => {

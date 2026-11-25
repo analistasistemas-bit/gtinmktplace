@@ -176,6 +176,9 @@ export async function tratarPedidoCancelado(
 
   try {
     if (preDespachoConhecido || !p.temEnvio) return await repor(admin, deps, p);
+    // Emenda 9: envio não lido. Avisar agora travaria a reposição; a fila relê e, se seguir sem ler, avisa na 3ª tentativa.
+    if (st === null && p.lerNuncaSaiu && !p.aoIndisponivel
+      && await deps.filaAssume(admin, p.orgId, p.orderId).catch(() => false)) return 'adiado';
     let ledger: BaixasAbertas | null = null;
     let incerto = false; // estorno pedido e não confirmado
     if (candidatoNuncaSaiu(p)) {

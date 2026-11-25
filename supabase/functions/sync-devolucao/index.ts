@@ -1,7 +1,10 @@
 // Worker de sincronização de devolução/claim (ADR-0037). Consome QStash. Job: { user_id, claim_id }.
 import { corsHeaders } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { verificarAssinatura } from '../_shared/queue.ts';
+import { qstashClient, verificarAssinatura } from '../_shared/queue.ts';
+import { dispararCancelamentoNaHora } from '../_shared/estoque/cancelamento-na-hora.ts';
+import { filaAssume } from '../_shared/estoque/nunca-saiu.ts';
+import { fanoutAtivo } from '../_shared/rodada/deps.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao, resolverConexaoPorId, type ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { buscarClaim, lerReturnEExtras, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
@@ -119,6 +122,13 @@ Deno.serve(async (req) => {
         freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver, contaExternaId: conexao.contaExternaId,
         liquidoPorPayment: liquidoPorPayment ?? undefined,
       });
+      // ADR-0121, emenda 9. Antes do 502 do MP: o estoque não espera o Mercado Pago.
+      await dispararCancelamentoNaHora({
+        filaAssume: (org, id) => filaAssume(admin, org, id, {
+          drenar: Deno.env.get('DRENAR_CANCELAMENTOS'), fanout: fanoutAtivo('FANOUT_RECONCILIAR'),
+        }),
+        publicar: (body) => qstashClient().publishJSON({ url: `${Deno.env.get('SUPABASE_URL')}/functions/v1/sync-venda`, body, retries: 3 }),
+      }, { orgId, userId: job.user_id, orderId: pedido.id, status: pedido.status });
       // Leitura do MP falhou justamente no worker que existe para capturar o estorno. O claim e a
       // venda já estão gravados (upsertVenda é idempotente; preservarDadosMP manteve o estorno
       // anterior), mas o número está defasado e nada mais volta a este pedido — devolução chega

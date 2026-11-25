@@ -132,6 +132,17 @@ impressa.** Decisão do Diego. Dos 9 cancelamentos que a fila do ADR-0211 conclu
 - **Risco aceito:** um ajuste feito fora do app (balcão) não deixa rastro; e as travas são lidas antes do estorno, não
   na mesma transação.
 
+**9. Emenda 24/11/2026: cancelamento tratado na hora pelo claim.** Decisão do Diego. Medido em 24/11: 11 de 12
+cancelamentos só foram tratados na rodada da hora cheia. O `ml-webhook` deduplica por (topic, resource) e descarta o 2º
+`orders_v2`/`shipments` do mesmo pedido; o claim reprocessa, mas o `sync-devolucao` só gravava a venda.
+
+- O `sync-devolucao`, depois de gravar a venda cancelada, publica o pedido no `sync-venda`, só se a fila do ADR-0211 o
+  assume (obrigação armada e pendente). Nada retroativo; falha ao publicar fica para a hora cheia.
+- **Envio não lido** (`/shipments` falhou) no webhook ou na reconciliação: se a fila assume, `adiado` em vez de aviso, que
+  travaria a reposição. A fila relê e avisa da 3ª tentativa em diante. Sem fila, avisa na hora, como antes.
+- **Não cobre** cancelamento sem claim: continua na hora cheia. Mudar o dedup de `orders_v2` foi descartado: o ML manda
+  vários eventos por pedido e cada um viraria um `sync-venda`.
+
 ## Consequências
 
 **Aceitas.** A reconciliação revisita o mesmo pedido cancelado de hora em hora enquanto ele estiver
