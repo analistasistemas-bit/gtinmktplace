@@ -16,7 +16,7 @@ function fake(filas: Record<string, (Res | ((c: Chamada) => Res))[]>) {
       const c: Chamada = { tabela, ops: [] };
       chamadas.push(c);
       const b: Record<string, unknown> = {};
-      for (const m of ['select', 'eq', 'not', 'in', 'gt', 'order', 'limit', 'ilike', 'maybeSingle', 'update', 'insert']) {
+      for (const m of ['select', 'eq', 'not', 'in', 'gt', 'order', 'limit', 'range', 'or', 'ilike', 'maybeSingle', 'update', 'insert']) {
         b[m] = (...a: unknown[]) => { c.ops.push([m, ...a]); return b; };
       }
       b.then = (ok: (r: Res) => unknown, falha: (e: unknown) => unknown) => {
@@ -156,110 +156,127 @@ describe('vinculos', () => {
 });
 
 describe('buscarPorTitulo', () => {
-  it('escapa %, _ e \\, tira * e lê até 200 famílias da mais recente para a mais antiga', async () => {
-    const { admin, chamadas } = fake({ familias: [ok([])] });
-    expect(await buscarPorTitulo(admin, ORG, '50%_*off\\')).toEqual([]);
-    const [fam] = chamadas;
-    expect(tem(fam, 'ilike', 'nome_pai', '%50\\%\\_off\\\\%')).toBe(true);
-    expect(tem(fam, 'order', 'criado_em', { ascending: false })).toBe(true);
-    expect(tem(fam, 'limit', 200)).toBe(true);
-    expect(tem(fam, 'eq', 'org_id', ORG)).toBe(true);
-    expect(chamadas).toHaveLength(1);
-  });
+  const pub = (id: string, codigo_pai: string, item_externo_id: string | null, o: object = {}) =>
+    ({ id, org_id: ORG, canal: 'mercado_livre', status: 'publicado', codigo_pai, item_externo_id, ...o });
+  const fam = (codigo_pai: string, nome_pai: string, o: object = {}) =>
+    ({ org_id: ORG, codigo_pai, nome_pai, titulo_ml: null, criado_em: '2026-10-01', ...o });
+  const filho = (anuncio_externo_id: string, sku: string, item_externo_id: string, o: object = {}) =>
+    ({ org_id: ORG, retirado: false, anuncio_externo_id, sku, item_externo_id, ...o });
+  const vari = (codigo: string, codigo_pai: string, cor: string | null, tamanho: string | null, o: object = {}) =>
+    ({ org_id: ORG, codigo, nome: cor, cor, tamanho, familias: { org_id: ORG, codigo_pai, ml_item_id: null }, ...o });
+  const VAZIA = { candidatos: [], lista_cortada: false };
 
-  it('trecho só de * não busca', async () => {
+  it('texto sem palavra de 3 caracteres não consulta o banco', async () => {
     const { admin, chamadas } = fake({});
-    expect(await buscarPorTitulo(admin, ORG, '***')).toEqual([]);
+    for (const t of ['***', 'G M', '4']) expect(await buscarPorTitulo(admin, ORG, t)).toEqual(VAZIA);
     expect(chamadas).toHaveLength(0);
   });
 
-  it('15 lotes do mesmo código + 1 outro publicado → 2 candidatos; sem anúncio publicado não vira candidato', async () => {
-    const fams = [
-      ...Array.from({ length: 15 }, (_, i) => ({ codigo_pai: 'P1', nome_pai: i === 0 ? 'Camisa nova' : `Camisa velha ${i}` })),
-      { codigo_pai: 'P2', nome_pai: 'Camisa UP' },
-      { codigo_pai: 'P3', nome_pai: 'Camisa rascunho' },
-    ];
-    // P1 legado (MLB no pai); P2 user products (pai sem MLB, filhos com MLB).
-    const pais = [
-      { id: 'a1', codigo_pai: 'P1', item_externo_id: 'MLB1' },
-      { id: 'a2', codigo_pai: 'P2', item_externo_id: null },
-    ];
-    const { admin, chamadas } = fake({
-      familias: [ok(fams)],
-      anuncios_externos: [ok(pais)],
-      anuncios_externos_itens: [ok([{ anuncio_externo_id: 'a2', item_externo_id: 'MLB5' }, { anuncio_externo_id: 'a2', item_externo_id: 'MLB6' }])],
-    });
-    expect(await buscarPorTitulo(admin, ORG, 'Camisa')).toEqual([
-      { codigo_pai: 'P1', titulo: 'Camisa nova', mlbs: ['MLB1'] },
-      { codigo_pai: 'P2', titulo: 'Camisa UP', mlbs: ['MLB5', 'MLB6'] },
-    ]);
-    const [, paisC, filhosC] = chamadas;
-    for (const c of chamadas) expect(tem(c, 'eq', 'org_id', ORG)).toBe(true);
-    expect(tem(paisC, 'in', 'codigo_pai', ['P1', 'P2', 'P3'])).toBe(true);
-    expect(tem(paisC, 'eq', 'status', 'publicado')).toBe(true);
-    // pai de user products tem MLB nulo: não pode ser excluído
-    expect(paisC.ops.some(([m]) => m === 'not')).toBe(false);
-    expect(tem(filhosC, 'in', 'anuncio_externo_id', ['a1', 'a2'])).toBe(true);
-    expect(tem(filhosC, 'eq', 'retirado', false)).toBe(true);
+  it('sem anúncio publicado não lê cadastro', async () => {
+    const { admin, chamadas } = fake({ anuncios_externos: [ok([])] });
+    expect(await buscarPorTitulo(admin, ORG, 'Camisa')).toEqual(VAZIA);
+    expect(chamadas).toHaveLength(1);
   });
 
-  it('decide os 11 candidatos antes de ler os filhos: 150 códigos UP com 20 filhos cada', async () => {
-    const fams = Array.from({ length: 150 }, (_, i) => ({ org_id: ORG, codigo_pai: `P${i}`, nome_pai: `Vestido ${i}` }));
-    const pais = fams.map((f, i) => ({
-      org_id: ORG, canal: 'mercado_livre', status: 'publicado', id: `a${i}`, codigo_pai: f.codigo_pai, item_externo_id: null,
-    }));
-    const mlb = (i: number, j: number) => `MLB${1000 + i * 100 + j}`;
-    const filhos = pais.flatMap((p, i) => Array.from({ length: 20 }, (_, j) => ({
-      org_id: ORG, retirado: false, anuncio_externo_id: p.id, item_externo_id: mlb(i, j),
-    })));
+  it('título: os dois modelos, do mais recente ao mais antigo, com o nome mais recente; título bastando não lê variações', async () => {
     const { admin, chamadas } = fake({
-      familias: [filtrar(fams)],
-      anuncios_externos: [filtrar(pais), filtrar(pais)],
-      anuncios_externos_itens: [filtrar(filhos)],
+      anuncios_externos: [filtrar([pub('a1', 'P1', 'MLB1'), pub('a2', 'P2', null), pub('a3', 'P3', 'MLB3')])],
+      familias: [ok([fam('P2', 'Camisa UP', { criado_em: '2026-10-03' }), fam('P1', 'Camisa nova', { criado_em: '2026-10-02' }), fam('P1', 'Camisa velha'),
+        fam('P3', 'Calça', { titulo_ml: 'Calça e Camisa' })])],
+      anuncios_externos_itens: [filtrar([filho('a2', 's5', 'MLB5'), filho('a2', 's6', 'MLB6'), filho('a2', 's7', 'MLB7', { retirado: true })])],
     });
-    const r = await buscarPorTitulo(admin, ORG, 'Vestido');
-    expect(r).toHaveLength(11);
-    r.forEach((c, i) => {
-      expect(c.codigo_pai).toBe(`P${i}`);
-      expect(c.mlbs).toEqual(Array.from({ length: 20 }, (_, j) => mlb(i, j)));
+    expect(await buscarPorTitulo(admin, ORG, 'camisa')).toEqual({
+      candidatos: [
+        { codigo_pai: 'P2', titulo: 'Camisa UP', mlbs: ['MLB5', 'MLB6'] },
+        { codigo_pai: 'P1', titulo: 'Camisa nova', mlbs: ['MLB1'] },
+        { codigo_pai: 'P3', titulo: 'Calça', mlbs: ['MLB3'] },
+      ], lista_cortada: false,
     });
+    expect(chamadas.some((c) => c.tabela === 'variacoes')).toBe(false);
     for (const c of chamadas) {
       expect(tem(c, 'eq', 'org_id', ORG)).toBe(true);
-      for (const [m, , lista] of c.ops) {
-        if (m === 'in') {
-          expect((lista as unknown[]).length).toBeGreaterThan(0);
-          expect((lista as unknown[]).length).toBeLessThanOrEqual(100);
-        }
-      }
+      expect(c.ops.some(([m]) => m === 'range')).toBe(true);
     }
-    const consultasFilhos = chamadas.filter((c) => c.tabela === 'anuncios_externos_itens');
-    expect(consultasFilhos).toHaveLength(1);
-    const ids = consultasFilhos[0].ops.find(([m]) => m === 'in')![2] as string[];
-    expect(ids.length).toBeLessThanOrEqual(11);
-    expect(tem(consultasFilhos[0], 'eq', 'retirado', false)).toBe(true);
-    expect(tem(consultasFilhos[0], 'order', 'item_externo_id')).toBe(true);
-    // o primeiro bloco de 100 códigos já tem 11 publicados: o segundo bloco não é lido
-    expect(chamadas.filter((c) => c.tabela === 'anuncios_externos')).toHaveLength(1);
+    const [pais] = chamadas;
+    expect(tem(pais, 'eq', 'status', 'publicado')).toBe(true);
+    expect(tem(pais, 'eq', 'canal', 'mercado_livre')).toBe(true);
+    // pai de user products tem MLB nulo: não pode ser excluído
+    expect(pais.ops.some(([m]) => m === 'not')).toBe(false);
+    const itens = chamadas.find((c) => c.tabela === 'anuncios_externos_itens')!;
+    expect(tem(itens, 'eq', 'retirado', false)).toBe(true);
+    expect(tem(itens, 'in', 'anuncio_externo_id', ['a1', 'a2', 'a3'])).toBe(true);
   });
 
-  it('MLBs por candidato cortados em 60', async () => {
-    const { admin } = fake({
-      familias: [ok([{ codigo_pai: 'P1', nome_pai: 'Saia' }])],
-      anuncios_externos: [ok([{ id: 'a1', codigo_pai: 'P1', item_externo_id: null }])],
-      anuncios_externos_itens: [ok(Array.from({ length: 70 }, (_, j) => ({ anuncio_externo_id: 'a1', item_externo_id: `MLB${100 + j}` })))],
+  it('cor e tamanho: user products pelo SKU do filho ativo; legado pelo MLB publicado da família', async () => {
+    const { admin, chamadas } = fake({
+      anuncios_externos: [filtrar([pub('a1', 'UP', null), pub('a2', 'LEG', 'MLB9')])],
+      familias: [ok([fam('UP', 'Conjunto'), fam('LEG', 'Fita')])],
+      anuncios_externos_itens: [filtrar([filho('a1', 's1', 'MLB1'), filho('a1', 's2', 'MLB2', { retirado: true })])],
+      variacoes: [filtrar([
+        vari('s1', 'UP', 'Estampa Neon', '4'),
+        vari('s1', 'UP', 'Neon lote velho', '6'), // mesmo SKU em lote antigo: vale a primeira (mais recente)
+        vari('s2', 'UP', 'Estampa Neon', '6'), // filho retirado
+        vari('s3', 'UP', 'Estampa Neon', '8'), // nunca publicada
+        vari('c1', 'LEG', 'Neon', null, { familias: { org_id: ORG, codigo_pai: 'LEG', ml_item_id: 'MLB9' } }),
+        vari('c2', 'LEG', 'Neon', null, { familias: { org_id: ORG, codigo_pai: 'LEG', ml_item_id: 'MLB8' } }), // outro anúncio
+        vari('c3', 'LEG', 'Neon', null), // lote nunca publicado
+      ])],
     });
-    const [c] = await buscarPorTitulo(admin, ORG, 'Saia');
-    expect(c.mlbs).toHaveLength(60);
+    expect(await buscarPorTitulo(admin, ORG, 'neon')).toEqual({
+      candidatos: [
+        { codigo_pai: 'UP', titulo: 'Conjunto', mlbs: ['MLB1'], variacoes: [{ sku: 's1', cor: 'Estampa Neon', tamanho: '4', mlb: 'MLB1' }] },
+        { codigo_pai: 'LEG', titulo: 'Fita', mlbs: ['MLB9'], variacoes: [{ sku: 'c1', cor: 'Neon', tamanho: null, mlb: 'MLB9' }] },
+      ], lista_cortada: false,
+    });
+    const v = chamadas.find((c) => c.tabela === 'variacoes')!;
+    expect(tem(v, 'eq', 'org_id', ORG)).toBe(true);
+    expect(tem(v, 'eq', 'familias.org_id', ORG)).toBe(true);
+    expect(tem(v, 'in', 'familias.codigo_pai', ['UP', 'LEG'])).toBe(true);
+    expect(tem(v, 'or', 'cor.ilike.%n__n%,nome.ilike.%n__n%,tamanho.ilike.%n__n%')).toBe(true);
+    expect(tem(v, 'order', 'criado_em', { ascending: false })).toBe(true);
   });
 
-  it('corta em 11 candidatos depois de filtrar', async () => {
-    const fams = Array.from({ length: 20 }, (_, i) => ({ codigo_pai: `P${i}`, nome_pai: `Item ${i}` }));
+  it('isolamento: outra organização não aparece em nenhuma fonte, nem com o mesmo código e SKU', async () => {
+    const X = { org_id: 'org-B' };
     const { admin } = fake({
-      familias: [ok(fams)],
-      anuncios_externos: [ok(fams.map((f, i) => ({ id: `a${i}`, codigo_pai: f.codigo_pai, item_externo_id: `MLB${i}` })))],
-      anuncios_externos_itens: [ok([])],
+      anuncios_externos: [filtrar([pub('a1', 'P1', null), pub('b1', 'P1', 'MLBX', X), pub('b2', 'P2', 'MLBY', X), pub('a3', 'P3', 'MLB3', { status: 'erro' })])],
+      familias: [filtrar([fam('P1', 'Conjunto'), fam('P1', 'Conjunto Neon alheio', X), fam('P2', 'Neon alheio', X)])],
+      anuncios_externos_itens: [filtrar([filho('a1', 's1', 'MLB1'), filho('a1', 's9', 'MLBZ', X)])],
+      variacoes: [filtrar([
+        vari('s9', 'P1', 'Neon', '4', { ...X, familias: { org_id: 'org-B', codigo_pai: 'P1', ml_item_id: 'MLBX' } }),
+        vari('s1', 'P1', 'Neon', '4', { familias: { org_id: 'org-B', codigo_pai: 'P1', ml_item_id: null } }),
+      ])],
     });
-    expect(await buscarPorTitulo(admin, ORG, 'Item')).toHaveLength(11);
+    expect(await buscarPorTitulo(admin, ORG, 'neon')).toEqual(VAZIA);
+  });
+
+  it('lê em páginas de 1000 e blocos de 100 códigos', async () => {
+    const pais = Array.from({ length: 1001 }, (_, i) => pub(`a${i}`, `P${i}`, `MLB${i}`));
+    const { admin, chamadas } = fake({
+      anuncios_externos: [ok(pais.slice(0, 1000)), ok(pais.slice(1000))],
+      familias: Array.from({ length: 11 }, () => filtrar(pais.map((p) => fam(p.codigo_pai, `Item ${p.id}`)))),
+      anuncios_externos_itens: Array.from({ length: 11 }, () => ok([])),
+    });
+    const r = await buscarPorTitulo(admin, ORG, 'item');
+    expect(r.candidatos).toHaveLength(10);
+    expect(r.lista_cortada).toBe(true);
+    const ps = chamadas.filter((c) => c.tabela === 'anuncios_externos');
+    expect(ps.map((c) => c.ops.find(([m]) => m === 'range'))).toEqual([['range', 0, 999], ['range', 1000, 1999]]);
+    for (const c of chamadas) for (const [m, , l] of c.ops) if (m === 'in') expect((l as unknown[]).length).toBeLessThanOrEqual(100);
+  });
+
+  it('teto de leitura de variações: avisa que a lista foi cortada, mesmo sem candidato', async () => {
+    const cheia = ok(Array.from({ length: 1000 }, (_, i) => vari(`v${i}`, 'P1', 'Nada', null)));
+    const { admin, chamadas } = fake({
+      anuncios_externos: [ok([pub('a1', 'P1', 'MLB1')])], familias: [ok([fam('P1', 'Fita')])], anuncios_externos_itens: [ok([])],
+      variacoes: Array.from({ length: 5 }, () => cheia),
+    });
+    expect(await buscarPorTitulo(admin, ORG, 'neon')).toEqual({ candidatos: [], lista_cortada: true });
+    expect(chamadas.filter((c) => c.tabela === 'variacoes')).toHaveLength(5);
+  });
+
+  it('erro de leitura lança', async () => {
+    await expect(buscarPorTitulo(fake({ anuncios_externos: [ERRO] }).admin, ORG, 'neon')).rejects.toThrow('agentes.titulo.pais');
   });
 });
 

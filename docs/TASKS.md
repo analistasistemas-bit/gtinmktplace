@@ -53,7 +53,9 @@
 - [ ] Diego: gerar a primeira chave pela tela (Configurações › Conexões de agentes) e testar em cada cliente (tabela do guia).
 - [x] Vendedor do anúncio (Emenda 2 da ADR-0210): amostra de 24/11 (240 de terceiros recusados, 340 próprios com dono certo) e filtro por `seller_id` no ar (`ff4e7729`, `agentes` v5).
 - [x] Cabeçalho de IP (24/11): na `agentes`, depois do primeiro 429 nenhuma variação de cabeçalho testada voltou a receber 401; sem mudança de código.
-- [x] Assinatura na chave: avaliada e adiada em 24/11, com gatilho e sem alarme (ADR-0210, Emenda 3); não é mais condição para abrir a outras lojas.
+- [x] Assinatura na chave: avaliada e adiada em 24/11, com gatilho (ADR-0210, Emenda 3); não é mais condição para abrir a outras lojas.
+- [ ] Busca por palavras, com cor e tamanho (ADR-0210, Emenda 4): código e testes prontos; falta deploy de `agentes` e aceite.
+- [ ] Antes da segunda loja: alarme automático de recusas na `agentes` (ADR-0210, Emenda 4, decisão 2).
 
 ## Central de Promoções: descoberta pela visão por anúncio (emenda 22/11 ao ADR-0170) — 2026-11-22
 

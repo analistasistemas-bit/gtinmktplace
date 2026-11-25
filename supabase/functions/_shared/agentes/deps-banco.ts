@@ -1,18 +1,17 @@
 // Acesso de agentes (ADR-0210, fatia 1): leituras e escritas no banco da edge `agentes`. A edge roda com service
 // role (RLS não protege): toda consulta de domínio leva o `orgId` da conexão autenticada. Erro de leitura LANÇA.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import type { Candidato, DepsAlvo, Vinculo } from './alvo.ts';
+import type { DepsAlvo, Vinculo } from './alvo.ts';
+import { type Busca, filtroVariacoes, montarCandidatos, palavras, type VariacaoBusca } from './busca.ts';
 import type { LinhaConexao } from './credencial.ts';
 
 type Filtro = Parameters<DepsAlvo['vinculos']>[0];
 type Res<T> = { data: T | null; error: { message: string } | null };
 
 const LIMITE = 200;
-const MAX_TITULO = 11;
-/** Pais/filhos dos candidatos de título (teto do PostgREST): um anúncio user products tem uma linha por variação. */
-const LIMITE_LEITURA = 1000;
-/** Teto de anúncios por alvo (`MAX_MLBS_ALVO` de margens.ts). */
-const MAX_MLBS_CANDIDATO = 60;
+/** Busca por texto: página do PostgREST (teto de 1000 linhas) e páginas por leitura (5.000 linhas). */
+const PAGINA = 1000;
+const MAX_PAGINAS = 5;
 const MAX_IN = 100;
 /** Fatias de até 100 valores para `.in()`; lista vazia → nenhuma fatia (nunca `.in()` vazio). */
 const blocos = <T>(xs: T[]): T[][] => Array.from({ length: Math.ceil(xs.length / MAX_IN) }, (_, i) => xs.slice(i * MAX_IN, (i + 1) * MAX_IN));
@@ -87,51 +86,98 @@ export async function vinculos(admin: SupabaseClient, orgId: string, f: Filtro):
   return porMlb(out).slice(0, LIMITE);
 }
 
-/** Trecho do título (`familias.nome_pai`) → candidatos com os MLBs publicados de cada código pai da org, nos dois
- *  modelos (MLB no pai legado ou nos filhos de user products). `familias` repete o código por lote: lê até 200
- *  linhas da mais recente para a mais antiga e deduplica (fica o título mais recente). Decide os 11 candidatos pelos
- *  pais publicados ANTES de ler os filhos, para que nenhum limite de leitura corte MLBs de candidato em silêncio. */
-export async function buscarPorTitulo(admin: SupabaseClient, orgId: string, trecho: string): Promise<Candidato[]> {
-  // `*` vira curinga no PostgREST: sai do trecho. `\` antes de `%`/`_`: senão escaparia a barra dos outros escapes.
-  const limpo = trecho.replace(/\*/g, '');
-  if (!limpo.trim()) return [];
-  const padrao = `%${limpo.replace(/\\/g, '\\\\').replace(/[%_]/g, '\\$&')}%`;
-  const fams = dado('titulo.familias', await admin.from('familias').select('codigo_pai, nome_pai')
-    .eq('org_id', orgId).ilike('nome_pai', padrao).order('criado_em', { ascending: false }).limit(LIMITE) as
-    Res<{ codigo_pai: string; nome_pai: string }[]>) ?? [];
-  const titulos = new Map<string, string>();
-  for (const f of fams) if (!titulos.has(f.codigo_pai)) titulos.set(f.codigo_pai, f.nome_pai);
+/** Todas as linhas de uma leitura, em páginas; `cortou` = parou no teto e pode haver mais. */
+async function paginar<T>(
+  onde: string, pagina: (de: number, ate: number) => PromiseLike<unknown>,
+): Promise<{ linhas: T[]; cortou: boolean }> {
+  const linhas: T[] = [];
+  for (let i = 0; i < MAX_PAGINAS; i++) {
+    const r = dado(onde, await pagina(i * PAGINA, (i + 1) * PAGINA - 1) as Res<T[]>) ?? [];
+    linhas.push(...r);
+    if (r.length < PAGINA) return { linhas, cortou: false };
+  }
+  return { linhas, cortou: true };
+}
 
-  // 1) Candidatos primeiro: os 11 primeiros códigos (ordem das famílias) com anúncio publicado. Blocos de 100 em
-  //    ordem; para assim que os blocos já lidos somam 11 códigos publicados.
-  type Pai = { id: string; codigo_pai: string; item_externo_id: string | null };
-  const codigos = [...titulos.keys()];
-  const paisPorCodigo = new Map<string, Pai[]>();
+type Pai = { id: string; codigo_pai: string; item_externo_id: string | null };
+type FamiliaTexto = { codigo_pai: string; nome_pai: string; titulo_ml: string | null; criado_em: string };
+type FilhoTexto = { anuncio_externo_id: string; sku: string; item_externo_id: string };
+type VariacaoTexto = {
+  codigo: string; nome: string | null; cor: string | null; tamanho: string | null;
+  familias: { codigo_pai: string; ml_item_id: string | null } | { codigo_pai: string; ml_item_id: string | null }[] | null;
+};
+
+/** Texto livre → candidatos, só entre anúncios publicados da org, nos dois modelos. As palavras casam no nome ou no
+ *  título de qualquer lote do código pai; o que faltar, numa variação do anúncio (nome, cor ou tamanho): em user
+ *  products pelo SKU do filho ativo, no legado pelo lote cujo MLB é o publicado. Regra em `busca.ts`.
+ *  ponytail: lê o cadastro publicado da org a cada busca (sem índice de texto); RPC se a loja passar de 5.000. */
+export async function buscarPorTitulo(admin: SupabaseClient, orgId: string, trecho: string): Promise<Busca> {
+  const ps = palavras(trecho);
+  if (!ps.length) return { candidatos: [], lista_cortada: false };
+  let cortou = false;
+  const ler = async <T>(onde: string, pagina: (de: number, ate: number) => PromiseLike<unknown>): Promise<T[]> => {
+    const r = await paginar<T>(onde, pagina);
+    cortou ||= r.cortou;
+    return r.linhas;
+  };
+
+  const pais = await ler<Pai>('titulo.pais', (de, ate) =>
+    paisPublicados(admin, orgId, 'id, codigo_pai, item_externo_id').order('id').range(de, ate));
+  if (!pais.length) return { candidatos: [], lista_cortada: false };
+  const paisDe = new Map<string, Pai[]>();
+  for (const p of pais) paisDe.set(p.codigo_pai, [...(paisDe.get(p.codigo_pai) ?? []), p]);
+  const codigos = [...paisDe.keys()];
+
+  const fams: FamiliaTexto[] = [];
   for (const bloco of blocos(codigos)) {
-    const pais = dado('titulo.pais', await paisPublicados(admin, orgId, 'id, codigo_pai, item_externo_id')
-      .in('codigo_pai', bloco).limit(LIMITE_LEITURA) as Res<Pai[]>) ?? [];
-    for (const p of pais) paisPorCodigo.set(p.codigo_pai, [...(paisPorCodigo.get(p.codigo_pai) ?? []), p]);
-    if (paisPorCodigo.size >= MAX_TITULO) break;
+    fams.push(...await ler<FamiliaTexto>('titulo.familias', (de, ate) =>
+      admin.from('familias').select('codigo_pai, nome_pai, titulo_ml, criado_em').eq('org_id', orgId)
+        .in('codigo_pai', bloco).order('criado_em', { ascending: false }).order('id').range(de, ate)));
   }
-  const escolhidos = codigos.filter((c) => paisPorCodigo.has(c)).slice(0, MAX_TITULO);
-
-  // 2) Só então os filhos ativos (modelo user products) apenas dos pais escolhidos, em ordem estável de MLB.
-  const ids = escolhidos.flatMap((c) => paisPorCodigo.get(c)!.map((p) => p.id));
-  const filhosDe = new Map<string, string[]>();
-  for (const bloco of blocos(ids)) {
-    const filhos = dado('titulo.filhos', await admin.from('anuncios_externos_itens').select('anuncio_externo_id, item_externo_id')
-      .eq('org_id', orgId).eq('retirado', false).not('item_externo_id', 'is', null)
-      .in('anuncio_externo_id', bloco).order('item_externo_id').limit(LIMITE_LEITURA) as
-      Res<{ anuncio_externo_id: string; item_externo_id: string }[]>) ?? [];
-    for (const f of filhos) filhosDe.set(f.anuncio_externo_id, [...(filhosDe.get(f.anuncio_externo_id) ?? []), f.item_externo_id]);
+  const filhosDe = new Map<string, FilhoTexto[]>();
+  for (const bloco of blocos(pais.map((p) => p.id))) {
+    const filhos = await ler<FilhoTexto>('titulo.filhos', (de, ate) =>
+      admin.from('anuncios_externos_itens').select('anuncio_externo_id, sku, item_externo_id').eq('org_id', orgId)
+        .eq('retirado', false).not('item_externo_id', 'is', null).in('anuncio_externo_id', bloco)
+        .order('item_externo_id').order('id').range(de, ate));
+    for (const f of filhos) filhosDe.set(f.anuncio_externo_id, [...(filhosDe.get(f.anuncio_externo_id) ?? []), f]);
   }
 
-  // 3) MLBs do pai legado e/ou dos filhos, no teto de anúncios por alvo.
-  return escolhidos.flatMap((codigo_pai) => {
-    const mlbs = [...new Set(paisPorCodigo.get(codigo_pai)!.flatMap((p) =>
-      [...(p.item_externo_id ? [p.item_externo_id] : []), ...(filhosDe.get(p.id) ?? [])]))].slice(0, MAX_MLBS_CANDIDATO);
-    return mlbs.length ? [{ codigo_pai, titulo: titulos.get(codigo_pai)!, mlbs }] : [];
-  });
+  // Do código mais recente ao mais antigo; o título exibido é o nome mais recente.
+  const textos = new Map<string, FamiliaTexto[]>();
+  for (const f of fams.sort((x, y) => (x.criado_em < y.criado_em ? 1 : x.criado_em > y.criado_em ? -1 : 0))) {
+    textos.set(f.codigo_pai, [...(textos.get(f.codigo_pai) ?? []), f]);
+  }
+  const anuncios = [...textos].map(([codigo_pai, fs]) => ({
+    codigo_pai, titulo: fs[0].nome_pai, textos: [...new Set(fs.flatMap((f) => [f.nome_pai, ...(f.titulo_ml ? [f.titulo_ml] : [])]))],
+    mlbs: (paisDe.get(codigo_pai) ?? []).flatMap((p) =>
+      [...(p.item_externo_id ? [p.item_externo_id] : []), ...(filhosDe.get(p.id) ?? []).map((f) => f.item_externo_id)]),
+  }));
+
+  const filtro = filtroVariacoes(ps, anuncios);
+  const variacoes = new Map<string, VariacaoBusca>();
+  for (const bloco of filtro ? blocos(codigos) : []) {
+    const linhas = await ler<VariacaoTexto>('titulo.variacoes', (de, ate) =>
+      admin.from('variacoes').select('codigo, nome, cor, tamanho, familias!inner(codigo_pai, ml_item_id)')
+        .eq('org_id', orgId).eq('familias.org_id', orgId).in('familias.codigo_pai', bloco).or(filtro!)
+        .order('criado_em', { ascending: false }).order('id').range(de, ate));
+    for (const l of linhas) {
+      const f = um(l.familias);
+      if (!f) continue;
+      for (const p of paisDe.get(f.codigo_pai) ?? []) {
+        const mlb = (filhosDe.get(p.id) ?? []).find((x) => x.sku === l.codigo)?.item_externo_id
+          ?? (p.item_externo_id && p.item_externo_id === f.ml_item_id ? p.item_externo_id : null);
+        // Lotes repetem o SKU: fica o mais recente.
+        if (mlb && !variacoes.has(`${mlb}|${l.codigo}`)) {
+          variacoes.set(`${mlb}|${l.codigo}`, {
+            codigo_pai: f.codigo_pai, sku: l.codigo, mlb, nome: l.nome, cor: l.cor, tamanho: l.tamanho,
+          });
+        }
+      }
+    }
+  }
+  const r = montarCandidatos(ps, anuncios, [...variacoes.values()]);
+  return { candidatos: r.candidatos, lista_cortada: r.lista_cortada || cortou };
 }
 
 /** Até `limite` MLBs distintos de uma fonte acima de `depois`. A fonte repete MLB (legado: uma linha por cor),

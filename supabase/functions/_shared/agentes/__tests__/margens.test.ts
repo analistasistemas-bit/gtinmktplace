@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { margemDoAlvo, margensDoCatalogo, simularMargem, type DepsMargens } from '../margens.ts';
 import type { Vinculo } from '../alvo.ts';
+import type { Busca } from '../busca.ts';
 import { LimiteTarifa, type ItemAgora } from '../../ads/campanhas.ts';
 import { montarCadastro, type LinhaVariacao } from '../../promocoes/cadastro.ts';
 import type { ItemML, Tarifa } from '../../promocoes/tipos.ts';
@@ -36,7 +37,7 @@ function deps(anuncios: Anuncio[], o: Partial<DepsMargens> & { semItem?: string[
     resolver: {
       vinculos: vi.fn(async (f: { mlb?: string; mlbu?: string; familia_ml?: string; sku?: string }) =>
         vinculos.filter((v) => (f.mlb ? v.mlb === f.mlb : f.familia_ml ? v.familia_ml === f.familia_ml : v.sku === f.sku))),
-      buscarPorTitulo: vi.fn(async () => []),
+      buscarPorTitulo: vi.fn(async (): Promise<Busca> => ({ candidatos: [], lista_cortada: false })),
     },
     carregarCadastro: vi.fn(async () => montarCadastro(anuncios.map((a, i) => linha(a, i + 1)), [])),
     lerAliquotas: vi.fn(async () => ({ nacional: 8, importado: 16 })),
@@ -196,8 +197,8 @@ describe('margemDoAlvo', () => {
   it('candidatos e nao_encontrado passam direto, sem ler alíquota', async () => {
     const cand = [{ codigo_pai: 'P1', titulo: 'Camiseta', mlbs: ['MLB1'] }];
     const d = deps([]);
-    d.resolver.buscarPorTitulo = vi.fn(async () => cand);
-    expect(await margemDoAlvo('camiseta', d)).toEqual({ estado: 'candidatos', candidatos: cand });
+    d.resolver.buscarPorTitulo = vi.fn(async () => ({ candidatos: cand, lista_cortada: true }));
+    expect(await margemDoAlvo('camiseta', d)).toEqual({ estado: 'candidatos', candidatos: cand, lista_cortada: true });
     expect(await margemDoAlvo('MLB999', d)).toEqual({ estado: 'nao_encontrado' });
     expect(d.lerAliquotas).not.toHaveBeenCalled();
   });

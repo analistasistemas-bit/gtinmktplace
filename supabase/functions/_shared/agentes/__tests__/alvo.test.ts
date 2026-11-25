@@ -1,15 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 import { classificarIdentificador, resolverAlvo, type Vinculo } from '../alvo.ts';
+import type { Candidato } from '../busca.ts';
 
 const vin = (mlb: string, o: Partial<Vinculo> = {}): Vinculo =>
   ({ mlb, mlbu: null, familia_ml: null, sku: 'X', codigo_pai: 'P', ...o });
 
-function deps(vs: Vinculo[] = [], titulos: { codigo_pai: string; titulo: string; mlbs: string[] }[] = []) {
+function deps(vs: Vinculo[] = [], titulos: Candidato[] = [], lista_cortada = false) {
   return {
     vinculos: vi.fn(async (f: { mlb?: string; mlbu?: string; familia_ml?: string; sku?: string }) =>
       vs.filter((v) => (f.mlb ? v.mlb === f.mlb : f.mlbu ? v.mlbu === f.mlbu
         : f.familia_ml ? v.familia_ml === f.familia_ml : v.sku === f.sku))),
-    buscarPorTitulo: vi.fn(async () => titulos),
+    buscarPorTitulo: vi.fn(async () => ({ candidatos: titulos, lista_cortada })),
   };
 }
 
@@ -81,13 +82,13 @@ describe('resolverAlvo', () => {
     expect(d.buscarPorTitulo).not.toHaveBeenCalled();
   });
 
-  it('título com 15 resultados → 10 candidatos, nunca resolve sozinho', async () => {
-    const quinze = Array.from({ length: 15 }, (_, i) => ({ codigo_pai: `P${i}`, titulo: `Camiseta ${i}`, mlbs: [`MLB${i}`] }));
-    const r = await resolverAlvo('camiseta', deps([], quinze));
-    expect(r.tipo).toBe('candidatos');
-    if (r.tipo === 'candidatos') expect(r.candidatos).toHaveLength(10);
-    const um = await resolverAlvo('camiseta', deps([], quinze.slice(0, 1)));
-    expect(um.tipo).toBe('candidatos');
+  it('título nunca resolve sozinho, nem com um candidato só', async () => {
+    const um = [{ codigo_pai: 'P', titulo: 'Camiseta', mlbs: ['MLB1'] }];
+    expect(await resolverAlvo('camiseta', deps([], um))).toEqual({ tipo: 'candidatos', candidatos: um, lista_cortada: false });
+  });
+
+  it('lista cortada passa adiante, inclusive sem candidato (não vira nao_encontrado)', async () => {
+    expect(await resolverAlvo('camiseta', deps([], [], true))).toEqual({ tipo: 'candidatos', candidatos: [], lista_cortada: true });
   });
 
   it('título sem resultado → nao_encontrado', async () => {
@@ -105,9 +106,15 @@ describe('resolverAlvo', () => {
   });
 
   it('candidatos projetados: campo extra da dep não sai', async () => {
-    const extra = [{ codigo_pai: 'P', titulo: 'Camiseta', mlbs: ['MLB1'], custo_centavos: 1 }];
-    const r = await resolverAlvo('camiseta', deps([], extra));
-    expect(r).toEqual({ tipo: 'candidatos', candidatos: [{ codigo_pai: 'P', titulo: 'Camiseta', mlbs: ['MLB1'] }] });
+    const v = { sku: 's', cor: 'Azul', tamanho: null, mlb: 'MLB1' };
+    const extra = [
+      { codigo_pai: 'P', titulo: 'Camiseta', mlbs: ['MLB1'], custo_centavos: 1, variacoes: [{ ...v, custo: 9 }] },
+      { codigo_pai: 'Q', titulo: 'Camiseta', mlbs: ['MLB2'] },
+    ];
+    expect(await resolverAlvo('camiseta', deps([], extra))).toEqual({
+      tipo: 'candidatos', lista_cortada: false,
+      candidatos: [{ codigo_pai: 'P', titulo: 'Camiseta', mlbs: ['MLB1'], variacoes: [v] }, { codigo_pai: 'Q', titulo: 'Camiseta', mlbs: ['MLB2'] }],
+    });
   });
 
   it('vazio, só espaços, > 200 caracteres, bruto > 400, caractere de controle ou não-string → nao_encontrado sem deps', async () => {

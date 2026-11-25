@@ -124,7 +124,7 @@ describe('vínculo velho de uma conta trocada (o ML devolve 200 de outro vendedo
     const tarifaEm = vi.fn(async () => ({ comissao: { percentual: 12, fixa: 6 }, frete: 0 }));
     const d: DepsMargens = {
       orgId: 'org-A', agora: new Date('2026-11-24T12:00:00Z'),
-      resolver: { vinculos: async (f) => ['MLB1', 'MLB2'].filter((m) => !f.mlb || f.mlb === m).map(vinculo), buscarPorTitulo: async () => [] },
+      resolver: { vinculos: async (f) => ['MLB1', 'MLB2'].filter((m) => !f.mlb || f.mlb === m).map(vinculo), buscarPorTitulo: async () => ({ candidatos: [], lista_cortada: false }) },
       carregarCadastro: async () => montarCadastro(['MLB1', 'MLB2'].map((m, i) => ({
         id: `v-${m}`, custo: 14, preco: 18, cor: 'Azul', codigo: null, gtin: null, ml_variation_id: String(i + 1),
         peso_gramas: 200, altura_cm: 5, largura_cm: 10, comprimento_cm: 15, atualizado_em: '2026-09-01T00:00:00Z',

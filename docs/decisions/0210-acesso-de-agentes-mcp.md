@@ -152,7 +152,7 @@ Conduzido pelo Diego na Zaven, com uma chave criada pela tela (prefixo `ad62ca5f
 - Clientes não testados: OpenClaw (a CLI aceita `--header`), Hermes (servidor remoto) e Muse Code (não instalado).
 - ChatGPT só conecta com a fatia 2.
 - As pendências aceitas para o piloto listadas acima, menos as duas já fechadas (`/items/bulk`, Emenda 2; cabeçalho de IP, seção própria).
-- A busca por título só olha `familias.nome_pai`: termo que só existe no título da variação (medido em 2026-11-24 com "Neon") responde `nao_encontrado`.
+- A busca por título só olha `familias.nome_pai`: termo que só existe no título da variação (medido em 2026-11-24 com "Neon") responde `nao_encontrado`. Tratado na Emenda 4.
 
 ## Emenda 1 — conexão mais fácil sem OAuth (2026-11-23)
 
@@ -232,7 +232,7 @@ Aprovada pelo Diego em 2026-11-24 entre três opções. Sem mudança de código;
 
 **Inferência e risco aceito:** o custo da consulta sob carga não foi medido, e uma conexão ativa com índice único não mostra a capacidade do banco. Chave inventada no formato certo continua chegando a ele depois do limite por IP (sem linha, a função ainda chama o Redis; se a busca falha, responde 503 e registra um aviso sem debitar o IP), e uma carga alta afetaria **todas as lojas, que dividem o mesmo banco**. O risco é de indisponibilidade, não de acesso a dados, e abrir a outras lojas o aceita também abaixo do gatilho. As 56 entradas acima só dizem que o gateway não exige JWT nessas funções, não quais chegam ao banco sem credencial própria, e por isso não sustentam a decisão.
 
-**Gatilho para reabrir:** mais de 1.000 recusas por dia (00h às 24h de Brasília) na função `agentes`, e não em `agente-conexoes`, somando 401, 429 e 503, ou lentidão do banco atribuída à autenticação. É um indicador bruto: inclui chave malformada (que não chega ao banco) e chave válida acima da própria cota. Só o 401 contaria de menos, porque, esgotada a cota de falhas do IP, a recusa de credencial vira 429 e a consulta já foi feita. O valor é um ponto de revisão escolhido, sem relação demonstrada com a capacidade do banco, e o indicador não foi medido nesse recorte (a amostra acima usa outra janela e outro filtro e serve só de contexto). **Não há alarme.** Conferência manual do log do gateway, pelo Diego: ao ligar cada loja, uma vez por semana enquanto houver mais de uma loja com o módulo, e em caso de lentidão. Um pico entre conferências pode passar despercebido.
+**Gatilho para reabrir:** mais de 1.000 recusas por dia (00h às 24h de Brasília) na função `agentes`, e não em `agente-conexoes`, somando 401, 429 e 503, ou lentidão do banco atribuída à autenticação. É um indicador bruto: inclui chave malformada (que não chega ao banco) e chave válida acima da própria cota. Só o 401 contaria de menos, porque, esgotada a cota de falhas do IP, a recusa de credencial vira 429 e a consulta já foi feita. O valor é um ponto de revisão escolhido, sem relação demonstrada com a capacidade do banco, e o indicador não foi medido nesse recorte (a amostra acima usa outra janela e outro filtro e serve só de contexto). **Não há alarme.** Conferência manual do log do gateway, pelo Diego: ao ligar cada loja, uma vez por semana enquanto houver mais de uma loja com o módulo, e em caso de lentidão (a parte semanal foi trocada pelo alarme, Emenda 4). Um pico entre conferências pode passar despercebido.
 
 **Opções não escolhidas:**
 
@@ -241,3 +241,20 @@ Aprovada pelo Diego em 2026-11-24 entre três opções. Sem mudança de código;
 - **Descartadas sem detalhar:** verificador sem segredo (qualquer um calcula) e token autocontido (revogação imediata ainda exige consultar um estado atualizado).
 
 Revisão independente do texto (Codex gpt-6.2-sol, high, 2026-11-24, três rodadas): considerou defensável adiar no piloto e pediu que o gatilho contasse também 429 e 503, que o risco de indisponibilidade ficasse escrito e que a conferência tivesse responsável e frequência. Aplicado; as três terminaram em "revisar", e os últimos ajustes não passaram por nova rodada.
+
+## Emenda 4 — busca por palavras, com cor e tamanho; alarme antes da segunda loja (2026-11-24)
+
+Aprovada pelo Diego em 2026-11-24.
+
+**Decisão 1, busca.** O texto livre passa a casar por palavras, e não por frase: todas precisam casar, em qualquer ordem, sem acento, no nome ou título do código pai; as que faltarem, numa mesma variação do anúncio (nome, cor ou tamanho). Continua **sem escolher sozinho**: devolve candidatos, mesmo com um só. `candidatos` ganha `variacoes` (opcional) e a resposta ganha `lista_cortada`, porque antes o corte era silencioso. Regra e limites em `docs/reference/api-agentes.md`, seção 5.2. Sem migration e sem chamada ao Mercado Livre. Toda leitura leva a organização da conexão (na variação, também a da família) e só considera anúncio publicado e item não retirado.
+
+**Decisão 2, alarme.** O Diego pretende ligar mais de uma loja. Um alarme automático de recusas na `agentes` (o gatilho da Emenda 3) passa a ser condição para ligar a segunda loja, no lugar da conferência semanal. Até lá, conferência a pedido dele. Ainda não construído; plano próprio.
+
+**Medido** (2026-11-24, cadastro real lido por SQL só leitura e passado pelo código num cliente de banco simulado; 24 buscas: 16 na Zaven, 5 e 3 em outras duas lojas):
+
+- `neon` acha as 3 variações; `neon 4` e `conjunto neon tamanho 4`, 1; `blusa preta M`, 4 produtos na cor Preto; `calça 4` e `tamanho 4`, nenhum; `caqui` acha `Caqui` e `Cáqui`.
+- Custo por busca: 4 leituras e até 488 linhas na Zaven; até 12 leituras e 6.748 linhas na loja maior (170 códigos publicados), com até 6 ms de CPU fora da simulação, numa máquina de desenvolvimento.
+- A sintaxe do filtro foi aceita pelo PostgREST de produção (um pedido com a chave anônima, que não lê linhas: 200 e lista vazia).
+- Cadastro: tamanho preenchido em 323 de 323 variações da Zaven e em nenhuma das 14.954 linhas da loja maior.
+
+**Não medido:** a busca pela edge em produção, o tempo de resposta e outras lojas. **Limites conhecidos:** sem sinônimo nem correção de digitação; `G` depende do cadastro; palavra que está no título não filtra cor (por exemplo, "short preto" num produto cujo nome já traz "Preto" devolve todas as cores).

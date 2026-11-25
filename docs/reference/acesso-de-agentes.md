@@ -54,7 +54,7 @@ Argumento: `identificador` (texto, obrigatório). Aceita:
 - MLB (`MLB0000000000`) ou MLBU (`MLBU0000000000`);
 - família do ML, o número do painel de Ads (12 ou mais dígitos, com ou sem `#`);
 - SKU exato (cobre os dois modelos de anúncio: legado e user products);
-- trecho do título (mínimo 3 caracteres): **nunca escolhe sozinho**, devolve até 10 `candidatos`. Só o nome do produto pai é pesquisado: estampa, cor ou tamanho que só existe na variação não é achado.
+- palavras do nome, título, cor, estampa ou tamanho, em qualquer ordem e sem acento (`blusa preta M`, `neon 4`): **nunca escolhe sozinho**, devolve até 10 `candidatos`. Todas as palavras precisam casar; tamanho é exato (`G` não acha `GG`) e, sozinho, não busca. Não há sinônimo nem correção de digitação. Em anúncio com várias cores no mesmo MLB, a margem é a da pior cor do anúncio, não a da cor procurada.
 
 Identificador com até 200 caracteres e sem caracteres de controle. Alvo com mais de 60 anúncios responde `alvo_grande`.
 
@@ -75,7 +75,7 @@ Identificador com até 200 caracteres e sem caracteres de controle. Alvo com mai
 }
 ```
 
-Com título ambíguo: `{ "estado": "candidatos", "candidatos": [{ "codigo_pai": "...", "titulo": "...", "mlbs": ["MLB0000000000"] }] }`.
+Com palavras: `{ "estado": "candidatos", "lista_cortada": false, "candidatos": [{ "codigo_pai": "...", "titulo": "...", "mlbs": ["MLB0000000000"], "variacoes": [{ "sku": "...", "cor": "Azul", "tamanho": "4", "mlb": "MLB0000000000" }] }] }`. `variacoes` só vem quando cor, estampa ou tamanho fizeram o produto aparecer.
 
 ### `publiai_margens_catalogo`
 
@@ -128,7 +128,7 @@ Estado da resposta (`estado`, nível da ferramenta):
 | Estado | Significado |
 |---|---|
 | `ok` | Resposta com anúncios (e, no catálogo, `parcial` e `proximo_cursor`) |
-| `candidatos` | Título ambíguo: escolha um `codigo_pai`/MLB e consulte de novo |
+| `candidatos` | Busca por palavras: escolha um MLB e consulte de novo. `lista_cortada` verdadeiro: há mais resultados, dê mais detalhes |
 | `nao_encontrado` | Nada na loja com esse identificador (alvo de outra loja responde igual) |
 | `alvo_grande` | O alvo resolve para mais de 60 anúncios |
 | `cursor_invalido` | Cursor malformado ou de outra organização |
@@ -172,7 +172,7 @@ Na `referencia`: `anuncio_sem_numero` quando algum anúncio do alvo está sem n�
 | Validade da chave | Até revogar, 30, 90 ou 365 dias | Expirada ou revogada = `401` |
 | Corpo da requisição | 64 KiB, 10 s de leitura | `413` / `408` |
 | Anúncios por alvo | 60 | `alvo_grande` |
-| Candidatos de título | 10 | — |
+| Candidatos por palavras | 10 | `lista_cortada: true` |
 | Página do catálogo | 50 anúncios | `proximo_cursor` |
 
 Os limites recusam quando o Redis falha (`503`/`indisponivel`), nunca liberam.

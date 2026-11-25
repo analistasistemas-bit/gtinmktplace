@@ -5,7 +5,8 @@ import { detalheEquilibrioDoMlb, LimiteTarifa, type ItemAgora } from '../ads/cam
 import type { Cadastro } from '../promocoes/cadastro.ts';
 import { emParalelo, type QueryTarifa } from '../promocoes/sincronizar.ts';
 import type { Aliquotas, ItemML, Tarifa } from '../promocoes/tipos.ts';
-import { type Candidato, type DepsAlvo, resolverAlvo } from './alvo.ts';
+import { type DepsAlvo, resolverAlvo } from './alvo.ts';
+import type { Candidato } from './busca.ts';
 
 export interface DepsMargens {
   orgId: string;
@@ -34,7 +35,7 @@ type Falha = { estado: 'sem_aliquota' | 'limite_tarifas' | 'limite_leituras' | '
 type Lido = { lido_em: string; tarifa_idade_max_horas: number };
 export type RespostaAlvo<A = MargemAnuncio> =
   | ({ estado: 'ok'; anuncios: A[]; referencia: Referencia } & Lido)
-  | { estado: 'candidatos'; candidatos: Candidato[] }
+  | { estado: 'candidatos'; candidatos: Candidato[]; lista_cortada: boolean }
   | { estado: 'nao_encontrado' | 'alvo_grande' }
   | Falha;
 export type RespostaCatalogo =
@@ -153,7 +154,7 @@ async function doAlvo<A extends MargemAnuncio>(
   identificador: string, d: DepsMargens, precoSimulado: number | null, saida: (a: MargemSimulada) => A,
 ): Promise<RespostaAlvo<A>> {
   const alvo = await resolverAlvo(identificador, d.resolver);
-  if (alvo.tipo === 'candidatos') return { estado: 'candidatos', candidatos: alvo.candidatos };
+  if (alvo.tipo === 'candidatos') return { estado: 'candidatos', candidatos: alvo.candidatos, lista_cortada: alvo.lista_cortada };
   if (alvo.tipo === 'nao_encontrado') return { estado: 'nao_encontrado' };
   if (alvo.mlbs.length > MAX_MLBS_ALVO) return { estado: 'alvo_grande' };
   const r = await calcular(alvo.mlbs, d, precoSimulado);

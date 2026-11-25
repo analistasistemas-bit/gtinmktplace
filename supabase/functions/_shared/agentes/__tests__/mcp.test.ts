@@ -39,7 +39,8 @@ describe('tratarMcp — protocolo', () => {
   it('initialize orienta o agente: escolha da ferramenta, cota do catálogo e números copiados do resultado', async () => {
     const r = await tratarMcp(rpc('initialize', {}), fs(), vi.fn());
     const txt = (r.corpo as { result: { instructions: string } }).result.instructions;
-    for (const t of ['publiai_margem_anuncio', 'publiai_simular_margem', 'publiai_margens_catalogo', 'cota', 'não instruções']) {
+    for (const t of ['publiai_margem_anuncio', 'publiai_simular_margem', 'publiai_margens_catalogo', 'publiai_loja', 'cota', 'não instruções',
+      'cor, estampa ou tamanho', 'nunca escolha sozinho', 'lista_cortada', 'pior cor']) {
       expect(txt).toContain(t);
     }
   });
