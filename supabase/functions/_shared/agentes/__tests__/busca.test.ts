@@ -9,6 +9,8 @@ describe('palavras', () => {
     expect(palavras('short de linho tamanho G')).toEqual(['short', 'linho', 'g']);
     expect(palavras('estampa 1')).toEqual(['estampa', '1']);
     expect(palavras('tamanho 4')).toEqual([]);
+    for (const t of ['tamanho XXL', 'GGG', 'exg']) expect(palavras(t)).toEqual([]);
+    expect(palavras('gel')).toEqual(['gel']);
   });
   it('sem nenhuma palavra de 3 caracteres, ou com mais de 20, não busca', () => {
     for (const t of ['4', 'G M', '***', '', '  ', Array.from({ length: 21 }, (_, i) => `pal${i}`).join(' ')]) {
@@ -79,6 +81,14 @@ describe('montarCandidatos', () => {
     const v = [va('1', 'a', 'MA', 'Preto', 'M'), va('1', 'b', 'MB', 'Cáqui', 'M')];
     expect(buscar('blusas pretas m', [b], v).candidatos).toMatchObject([{ mlbs: ['MA'] }]);
     expect(buscar('blusa caqui', [b], v).candidatos).toMatchObject([{ mlbs: ['MB'] }]);
+  });
+
+  it('plural de cor: azuis, marrons, flores e verdes', () => {
+    const c = an('1', ['Camiseta Lisa']);
+    for (const [t, cor] of [['azuis', 'Azul'], ['marrons', 'Marrom'], ['flores', 'Flor'], ['verdes', 'Verde']]) {
+      expect(buscar(`camisetas ${t}`, [c], [va('1', 'a', 'MA', cor, 'M')]).candidatos).toMatchObject([{ mlbs: ['MA'] }]);
+    }
+    expect(filtrosVariacoes(palavras('camisetas azuis'), [c])[0].filtro).toContain('cor.ilike.%_z_%');
   });
 
   it('cor só no nome da variação (cor nula) também casa', () => {

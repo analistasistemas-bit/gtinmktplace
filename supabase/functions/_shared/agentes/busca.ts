@@ -21,10 +21,10 @@ const ENFEITE = new Set(['de', 'da', 'do', 'das', 'dos', 'com', 'e', 'em', 'para
 /** Marcador de tamanho nunca é procurado: "tamanho 4" é só o tamanho, que sozinho não busca. */
 const MARCADOR = new Set(['tamanho', 'tam']);
 /** Cara de tamanho por letras (GGG, XXL, EXG, XXXXL): casa inteira, também em nome e título. */
-const LETRAS_TAMANHO = /^(?:[xpmgles]{1,4}|x{2,}[a-z])$/;
+const LETRAS_TAMANHO = /^(?:p{1,4}|g{1,5}|m|x+[pgsl]{1,3}|e[xg]g*)$/;
 
 const partes = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-const forte = (p: string) => p.length >= 3;
+const forte = (p: string) => p.length >= 3 && !LETRAS_TAMANHO.test(p);
 
 /** Palavras da busca. Enfeite sai se sobrar palavra de 3+ caracteres; sem nenhuma (ou com mais de 20), não busca. */
 export function palavras(trecho: string): string[] {
@@ -36,13 +36,13 @@ export function palavras(trecho: string): string[] {
 }
 
 /** "pretas" → "pret": gênero e plural de palavra com 5+ letras. ponytail: sem sinônimo nem correção de digitação. */
-const raiz = (p: string) => (/^[a-z]{5,}$/.test(p) ? p.replace(/(?:os|as|o|a|s)$/, '') : p);
+const raiz = (p: string) => (/^[a-z]{5,}$/.test(p) ? p.replace(/(?:os|as|es|is|ns|o|a|s)$/, '') : p);
 
 /** Palavra com número, de até 2 letras ou tamanho só casa inteira; o resto casa por trecho. */
 function casador(textos: (string | null)[], tamanho: string | null = null) {
   const ps = textos.flatMap((t) => (t ? partes(t) : []));
   const inteiras = new Set([...ps, ...(tamanho ? partes(tamanho) : [])]);
-  return (p: string) => inteiras.has(p) || (forte(p) && /^[a-z]+$/.test(p) && !LETRAS_TAMANHO.test(p) && ps.some((x) => x.includes(raiz(p))));
+  return (p: string) => inteiras.has(p) || (forte(p) && /^[a-z]+$/.test(p) && ps.some((x) => x.includes(raiz(p))));
 }
 
 const faltam = (ps: string[], a: AnuncioBusca) => {
