@@ -287,6 +287,38 @@ Pendência separada (anterior, fora desta ADR): `enviarTelegram` (`_shared/notif
 
 **Diagnóstico (2026-11-25).** Com OK do Diego, a edge passou a registrar o componente (comissão, frete ou outro), a classe do erro e o status HTTP quando a tarifa falha, sem mensagem, URL, corpo nem token (`_shared/agentes/diagnostico-tarifa.ts`; main `f595b45a`, `agentes` v8, 48 de 48 arquivos iguais; Grok 4.7 xhigh: aprovado). Seis novas séries com preços inéditos (60,17 a 65,61) vieram completas, 96 de 96 anúncios, e o log não teve registro. Somando, 2 de 10 séries falharam. **A causa segue não medida**: o registro fica ligado e mostra o motivo na próxima ocorrência; ele não foi exercitado por uma falha real. Nenhuma correção foi feita.
 
+## Emenda 5 — preço que o comprador paga (2026-11-25)
+
+**Status:** PROPOSTA, aguardando aprovação do Diego. Sem código.
+
+**Defeito.** `preco_brl` vem de `price` do `/items/bulk` (`agentes/index.ts`, `lerPrecos`; `_shared/ads/campanhas.ts`, `CAMPOS_ITEM_AGORA`), que não acompanhou as promoções ativas. A fórmula está certa; o preço de entrada, não. A aba Campanhas usa a mesma leitura. O glossário já define o número como "preço vivo, com promoção ativa": o código descumpre a definição. O mesmo defeito foi corrigido em Publicados em 2026-10-20 (ADR-0170).
+
+**Medido (Zaven, 2026-11-25, 17h51 a 18h, só leitura, 127 chamadas).**
+
+- 5 casos do relato, os 5 reproduzidos: `price` 56,90 (4) e 42,75 (1); `sale_price` 53,59 (3), 53,99 (1) e 36,09 (1), iguais ao que o relato viu na página. Os 5 com `promotion_type: lightning`.
+- Amostra aleatória de 100 anúncios dos 285 com foto de preço no dia (48 ativos, 26 pausados, 26 encerrados): 61 com `price` acima do `sale_price`, 39 iguais, nenhum abaixo. Desvio nos 61: de 0,4% a 133,8%, mediana 18,5%. `em_promocao` errado em 40. O recorte só dos ativos não foi separado.
+- `sale_price` respondeu 200 nos 100; com 8 em paralelo, 3,2 s no total (metade das chamadas em até 0,24 s; máxima 0,56 s).
+- `/prices`: a linha cujo `id` é o `price_id` do `sale_price` traz `conditions.end_time` (3 de 3; fim em 2026-11-26 00h BRT).
+- O Conjunto UV já aparecia a 37,19 na foto diária de `sale_price` desde 21/11. Não é cache: o preço é lido a cada chamada.
+- Nenhum dos 5 casos e nenhum dos 100 da amostra tem preços diferentes entre variações do mesmo MLB.
+
+**Não medido:** documentação oficial do ML (o site recusou acesso automatizado, 403); preço por nível de fidelidade e cupom; promoção encerrando durante a leitura; outras lojas. Os 56,90 serem resto de preço anterior é inferência.
+
+**Decisão.**
+
+1. Preço = `GET /items/{id}/sale_price?context=channel_marketplace` por MLB, sem cache, na API **e** na aba Campanhas. `preco_brl` = `amount`; `preco_tabela_brl` = `regular_amount` quando maior; `em_promocao` sai dos dois. `price` e `original_price` deixam de entrar na conta.
+2. Só lê `sale_price` de MLB que passou pelo `/items/bulk` com `seller_id` da conexão (Emenda 2). O caminho novo é uma leitura própria; `soDoVendedor` continua recusando tudo que não é bulk.
+3. Falha fechada: sem `sale_price` legível, sem número e `motivo: preco_nao_verificado`, sem recorrer a `price`. Na simulação, `preco_atual_brl: null` e a conta com o preço simulado segue.
+4. Campos novos: `promocao_tipo` (`metadata.promotion_type`, texto do ML, `null` sem promoção) nas três ferramentas de margem; `promocao_fim` só em `publiai_margem_anuncio`, por `/prices` e `price_id`, `null` quando não souber. Não derruba o preço se falhar.
+5. Não entram `preco_comprador_brl`, `preco_base_brl` e `preco_lido_em`: seriam cópia de `preco_brl`, `preco_tabela_brl` e `lido_em`.
+6. Cota `leiturasDia` (3.000) conta as leituras novas: 1 por MLB, mais 1 por MLB em promoção na consulta pontual. Página do catálogo passa de 6 para até 56; uma varredura da Zaven (285 MLBs) custa cerca de 320 por dia. O teto não muda.
+7. Na aba Campanhas, `sale_price` só dos anúncios que entram no cálculo (teto 200, 8 em paralelo; cerca de 6 s pela amostra). Os demais seguem sem equilíbrio, como hoje, e sem preço exibido, para não mostrar número que pode estar errado.
+8. Fórmula, imposto, tarifa e o limite do cupom do vendedor não mudam. `meli_percentage` continua fora (ADR-0170, decisão 7).
+
+**Alternativas descartadas.** Ler promoções e escolher a vencedora: refaz a regra do ML e a visão por item atrasa (a Relâmpago ativa não veio como `started`). Foto diária do banco: perde Relâmpago. Só a API: divergiria da aba Campanhas. Cache de 15 min: sem cache já cabe na cota.
+
+**Aceite.** Os 5 MLBs com `preco_brl` igual ao `sale_price` na hora (tolerância 0,01) e o mesmo número na aba Campanhas para anúncio em campanha ativa; amostra nova comparada com `sale_price`; Relâmpago com `promocao_tipo` e `promocao_fim`; depois das 00h de 26/11, preço de volta ao da promoção que sobrar; testes com respostas gravadas para: promoção, sem promoção, falha, anúncio de terceiro, cota.
+
 ## Pode ligar em outra loja? (2026-11-25)
 
 **Recomendação: sim, uma segunda loja em piloto, e depois uma por vez, com o roteiro abaixo.** As duas condições do piloto que bloqueavam (vendedor do anúncio e cabeçalho de IP) estão fechadas, o alarme está no ar e a assinatura na chave deixou de ser condição (Emenda 3). Se forem várias lojas em pouco tempo, reavaliar a assinatura **antes** de criar as chaves: hoje só 1 precisaria ser refeita.
