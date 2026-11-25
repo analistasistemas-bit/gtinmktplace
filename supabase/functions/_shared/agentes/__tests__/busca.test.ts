@@ -85,7 +85,7 @@ describe('montarCandidatos', () => {
 
   it('plural de cor: azuis, marrons, flores e verdes', () => {
     const c = an('1', ['Camiseta Lisa']);
-    for (const [t, cor] of [['azuis', 'Azul'], ['marrons', 'Marrom'], ['flores', 'Flor'], ['verdes', 'Verde']]) {
+    for (const [t, cor] of [['azuis', 'Azul'], ['marrons', 'Marrom'], ['flores', 'Flor'], ['verdes', 'Verde'], ['botões', 'Botão'], ['macacões', 'Macacão']]) {
       expect(buscar(`camisetas ${t}`, [c], [va('1', 'a', 'MA', cor, 'M')]).candidatos).toMatchObject([{ mlbs: ['MA'] }]);
     }
     expect(filtrosVariacoes(palavras('camisetas azuis'), [c])[0].filtro).toContain('cor.ilike.%_z_%');

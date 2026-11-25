@@ -36,7 +36,7 @@ export function palavras(trecho: string): string[] {
 }
 
 /** "pretas" → "pret": gênero e plural de palavra com 5+ letras. ponytail: sem sinônimo nem correção de digitação. */
-const raiz = (p: string) => (/^[a-z]{5,}$/.test(p) ? p.replace(/(?:os|as|es|is|ns|o|a|s)$/, '') : p);
+const raiz = (p: string) => (/^[a-z]{5,}$/.test(p) ? p.replace(/(?:oes|aes|os|as|es|is|ns|o|a|s)$/, '') : p);
 
 /** Palavra com número, de até 2 letras ou tamanho só casa inteira; o resto casa por trecho. */
 function casador(textos: (string | null)[], tamanho: string | null = null) {
