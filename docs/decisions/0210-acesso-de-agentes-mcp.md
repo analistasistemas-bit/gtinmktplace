@@ -300,7 +300,7 @@ Pendência separada (anterior, fora desta ADR): `enviarTelegram` (`_shared/notif
 - `sale_price` respondeu 200 nos 100; com 8 em paralelo, 3,2 s no total (metade das chamadas em até 0,24 s; máxima 0,56 s).
 - `/prices`: a linha cujo `id` é o `price_id` do `sale_price` traz `conditions.end_time` (3 de 3; fim em 2026-11-26 00h BRT).
 - O Conjunto UV já aparecia a 37,19 na foto diária de `sale_price` desde 21/11. Não é cache: o preço é lido a cada chamada.
-- Nenhum dos 5 casos e nenhum dos 100 da amostra tem preços diferentes entre variações do mesmo MLB.
+- Os 5 casos e os 100 da amostra são um MLB por SKU, sem variações dentro: a faixa de preço do painel corresponde a duas promoções do mesmo MLB (Black Friday e Relâmpago), e MLB com variações não foi testado.
 
 **Não medido:** documentação oficial do ML (o site recusou acesso automatizado, 403); preço por nível de fidelidade e cupom; promoção encerrando durante a leitura; outras lojas. Os 56,90 serem resto de preço anterior é inferência.
 
