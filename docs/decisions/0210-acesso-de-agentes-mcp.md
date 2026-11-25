@@ -274,20 +274,20 @@ Pendência separada (anterior, fora desta ADR): `enviarTelegram` (`_shared/notif
 
 **Deploy e aceite (2026-11-25):** main `f72ea1cb`, `agentes` v6 (47 de 47 arquivos baixados iguais ao commit, `verify_jwt` falso). Na Zaven, pelo conector do claude.ai:
 
-- Busca: `neon` → 3 variações; `neon 4` → `MLB5563623367`; `blusa preta M` → 4 produtos; `tamanho 4` → `nao_encontrado`; `MLB5563623367` → 42,5848%, como em 23/11. `linha croche rosa` e `fita cetim` (produtos de outra loja) → `nao_encontrado`.
-- Tempo na edge (log do gateway): as 8 chamadas do aceite, incluindo a margem e a loja, entre 353 e 1.801 ms, a mais lenta sendo a primeira.
-- Alarme: 1.010 pedidos sem chave em 47 s, de um único IP: 20 respostas 401 e 990 respostas 429, mediana de 0,22 s. Contador em 1.010 e aviso confirmado (a validade de 48 h só é gravada quando o Telegram aceita). Uma chamada com chave válida logo depois respondeu normalmente. O recebimento na tela do Diego é dele confirmar. Por ser um aviso por dia, novas recusas de 25/11 não avisam de novo.
+- Busca: `neon` → 3 variações; `neon 4` → `MLB5563623367`; `blusa preta M` → 4 produtos; `tamanho 4` → `nao_encontrado`; `MLB5563623367` → 42,5848%, como em 23/11. Com a chave da Zaven, `croche rosa` e `fita cetim azul` (que acham produto na simulação com o cadastro de outra loja), um MLB e um SKU publicados dela → `nao_encontrado`. `linha preta` devolveu só produtos da própria Zaven, porque a raiz de `linha` casa com "linho": ruído esperado do gênero. A consulta inversa (chave da outra loja) fica para o roteiro.
+- Tempo na edge (log do gateway): as 8 primeiras chamadas do aceite, incluindo a margem e a loja, entre 353 e 1.801 ms, a mais lenta sendo a primeira.
+- Alarme: 1.010 pedidos sem chave em 47 s, de um único IP: 20 respostas 401 e 990 respostas 429, mediana de 0,22 s. Contador em 1.010 e envio aceito pelo Telegram (a validade de 48 h só é gravada nesse caso). Uma chamada com chave válida logo depois respondeu normalmente. Falta o Diego confirmar que viu a mensagem. Cobriu uma rajada de um IP. Com o envio confirmado, o desenho não repete o aviso de 25/11.
 - Não verificado ao vivo: o texto novo de `instructions` (coberto por teste e pela igualdade do código) e o script do alarme fora do caminho acima.
 
 ## Pode ligar em outra loja? (2026-11-25)
 
-**Recomendação: sim, uma loja por vez, com o roteiro abaixo.** As duas condições do piloto que bloqueavam (vendedor do anúncio e cabeçalho de IP) estão fechadas, o alarme está no ar e a assinatura na chave deixou de ser condição (Emenda 3). Se forem várias lojas em pouco tempo, reavaliar a assinatura **antes** de criar as chaves: hoje só 1 precisaria ser refeita.
+**Recomendação: sim, uma segunda loja em piloto, e depois uma por vez, com o roteiro abaixo.** As duas condições do piloto que bloqueavam (vendedor do anúncio e cabeçalho de IP) estão fechadas, o alarme está no ar e a assinatura na chave deixou de ser condição (Emenda 3). Se forem várias lojas em pouco tempo, reavaliar a assinatura **antes** de criar as chaves: hoje só 1 precisaria ser refeita.
 
 Roteiro por loja, com o OK do Diego e autorização do administrador dela:
 
-1. Alíquota confirmada, custo e origem preenchidos (sem isso a resposta é `sem_aliquota`, `sem_custo` ou `sem_origem`, nunca um número errado).
+1. Alíquota confirmada, custo e origem preenchidos (sem isso a resposta é `sem_aliquota`, `sem_custo` ou `sem_origem`, em vez de número).
 2. Ligar o módulo `agentes`; o administrador da loja cria a chave.
 3. `publiai_loja` confere a conta; a primeira página do catálogo não pode vir com anúncio próprio em `anuncio_indisponivel`. Se houver anúncio de catálogo do Mercado Livre, conferir um: é o caso que a amostra da Emenda 2 não cobriu.
-4. Comparar um anúncio com a aba Campanhas; testar SKU, palavra e um MLB de outra loja (`nao_encontrado`).
+4. Comparar um anúncio com a aba Campanhas; testar SKU e palavra; um MLB dela responde com a chave dela e dá `nao_encontrado` com a chave de outra loja, e vice-versa.
 
 Continua aceito: cache de comissão `promo:lp:v1` compartilhado (exatidão, não vazamento), conexão não revalidada depois da leitura do corpo, limite de 10 conexões não atômico, ChatGPT só com a fatia 2, OpenClaw, Hermes e Muse Code não testados.
