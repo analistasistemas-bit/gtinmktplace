@@ -37,11 +37,23 @@ export function palavras(trecho: string): string[] {
 /** "pretas" → "pret": gênero e plural de palavra com 5+ letras. ponytail: sem sinônimo nem correção de digitação. */
 const raiz = (p: string) => (/^[a-z]{5,}$/.test(p) ? p.replace(/(?:oes|aes|os|as|es|(?<=[aeou])is|ns|o|a|s)$/, '') : p);
 
+/** "botoes" → "botao", "azuis" → "azul", "marrons" → "marrom": igualdade nos dois sentidos, sem alargar a raiz. */
+const singular = (p: string) =>
+  p.replace(/(?:oes|aes)$/, 'ao').replace(/(?<=[aeou])is$/, 'l').replace(/ns$/, 'm').replace(/s$/, '');
+
+/** Formas a procurar no banco: plural que troca a última letra (azul/azuis, marrom/marrons) vai nas duas; o resto, pela raiz. */
+function formas(p: string): string[] {
+  if (/[aeou]l$/.test(p)) return [p, p.replace(/l$/, 'is')];
+  if (/[aeiou]m$/.test(p)) return [p, p.replace(/m$/, 'ns')];
+  return /(?:[aeou]is|[aeiou]ns)$/.test(p) ? [p, singular(p)] : [raiz(p)];
+}
+
 /** Palavra com número, de até 2 letras ou com cara de tamanho só casa inteira; o resto casa pelo começo da palavra. */
 function casador(textos: (string | null)[]) {
   const ps = textos.flatMap((t) => (t ? partes(t) : []));
   const inteiras = new Set(ps);
-  return (p: string) => inteiras.has(p) || (forte(p) && /^[a-z]+$/.test(p) && ps.some((x) => x.startsWith(raiz(p))));
+  return (p: string) => inteiras.has(p)
+    || (forte(p) && /^[a-z]+$/.test(p) && ps.some((x) => x.startsWith(raiz(p)) || singular(x) === singular(p)));
 }
 
 const faltam = (ps: string[], a: AnuncioBusca) => {
@@ -61,8 +73,8 @@ export function filtrosVariacoes(ps: string[], anuncios: AnuncioBusca[]): { codi
     porPalavra.set(chave, [...(porPalavra.get(chave) ?? []), a.codigo_pai]);
   }
   return [...porPalavra].map(([p, codigos]) => {
-    const padrao = raiz(p).replace(/[aeiouc]/g, '_');
-    return { codigos, filtro: ['cor', 'nome', 'tamanho'].map((c) => `${c}.ilike.%${padrao}%`).join(',') };
+    const padroes = formas(p).map((x) => x.replace(/[aeiouc]/g, '_'));
+    return { codigos, filtro: padroes.flatMap((x) => ['cor', 'nome', 'tamanho'].map((c) => `${c}.ilike.%${x}%`)).join(',') };
   });
 }
 

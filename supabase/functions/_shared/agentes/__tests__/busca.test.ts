@@ -93,7 +93,16 @@ describe('montarCandidatos', () => {
     for (const [t, cor] of [['azuis', 'Azul'], ['marrons', 'Marrom'], ['flores', 'Flor'], ['verdes', 'Verde'], ['botões', 'Botão'], ['macacões', 'Macacão']]) {
       expect(buscar(`camisetas ${t}`, [c], [va('1', 'a', 'MA', cor, 'M')]).candidatos).toMatchObject([{ mlbs: ['MA'] }]);
     }
-    expect(filtrosVariacoes(palavras('camisetas azuis'), [c])[0].filtro).toContain('cor.ilike.%_z_%');
+    expect(filtrosVariacoes(palavras('camisetas azuis'), [c])[0].filtro).toContain('cor.ilike.%_z_l%');
+    expect(filtrosVariacoes(palavras('camiseta azul'), [c])[0].filtro).not.toContain('%_z_%');
+  });
+
+  it('singular na busca acha o plural do título, e o contrário', () => {
+    for (const [um, varios] of [['botão', 'Botões'], ['promoção', 'Promoções'], ['azul', 'Azuis'], ['marrom', 'Marrons'], ['flor', 'Flores'], ['short', 'Shorts']]) {
+      expect(buscar(`camisa ${um}`, [an('1', [`Camisa ${varios}`])]).candidatos, um).toHaveLength(1);
+      expect(buscar(`camisa ${varios}`, [an('1', [`Camisa ${um}`])]).candidatos, varios).toHaveLength(1);
+    }
+    expect(buscar('verao', [an('1', ['Blusa Verde'])]).candidatos).toEqual([]);
   });
 
   it('casa pelo começo da palavra, não pelo meio: tênis não acha sustentável nem autêntico', () => {
@@ -147,6 +156,19 @@ describe('filtrosVariacoes', () => {
       { codigos: ['1', '3'], filtro: 'cor.ilike.%n__n%,nome.ilike.%n__n%,tamanho.ilike.%n__n%' },
       { codigos: ['2'], filtro: 'cor.ilike.%4%,nome.ilike.%4%,tamanho.ilike.%4%' },
     ]);
+  });
+  it('o padrão do banco cobre singular e plural: todo texto que o casador aceita passa no filtro', () => {
+    const passa = (filtro: string, texto: string) => {
+      const ps = filtro.split(',').filter((f) => f.startsWith('cor.')).map((f) => f.slice('cor.ilike.%'.length, -1));
+      return ps.some((p) => new RegExp(p.replace(/_/g, '.')).test(texto.toLowerCase()));
+    };
+    const pares = [['floral', 'Florais'], ['azul', 'Azuis'], ['marrom', 'Marrons'], ['coração', 'Corações'], ['botões', 'Botão'], ['preta', 'Preto'], ['flores', 'Flor'], ['azuis', 'Azul'], ['marrons', 'Marrom'], ['florais', 'Floral']];
+    for (const [busca, cor] of pares) {
+      const [{ filtro }] = filtrosVariacoes(palavras(`camisa ${busca}`), [an('1', ['Camisa'])]);
+      expect(passa(filtro, cor), `${busca} × ${cor}`).toBe(true);
+      expect(buscar(`camisa ${busca}`, [an('1', ['Camisa'])], [va('1', 'a', 'MA', cor, null)]).candidatos, `${busca} × ${cor}`).toHaveLength(1);
+    }
+    expect(filtrosVariacoes(['gel'], [an('1', ['Camisa'])])[0].filtro).toContain('%g_l%');
   });
   it('tudo no título → nenhum; nunca sai caractere que mude o filtro do PostgREST', () => {
     expect(filtrosVariacoes(palavras('conjunto'), [an('1', ['Conjunto'])])).toEqual([]);
