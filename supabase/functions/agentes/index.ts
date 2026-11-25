@@ -14,6 +14,7 @@ import type { QueryTarifa } from '../_shared/promocoes/sincronizar.ts';
 import type { Tarifa } from '../_shared/promocoes/tipos.ts';
 import { CAMPOS_ITEM_AGORA, type ItemAgora, parseItensBulk } from '../_shared/ads/campanhas.ts';
 import { autenticarAgente } from '../_shared/agentes/auth-agente.ts';
+import { comDiagnostico } from '../_shared/agentes/diagnostico-tarifa.ts';
 import { reservarLeituras, reservarTarifas } from '../_shared/agentes/limite.ts';
 import { avisarDono, registrarRecusa } from '../_shared/agentes/recusas.ts';
 import { soDoVendedor } from '../_shared/agentes/so-do-vendedor.ts';
@@ -55,7 +56,7 @@ function depsMargens(admin: SupabaseClient, orgId: string): DepsMargens {
     return {
       get: soDoVendedor(criarGetJson(token), cx.contaExternaId),
       // Uma instância por chamada: o disjuntor de `semRetentativa` vale para a chamada inteira.
-      tarifaEm: criarTarifaEm({ orgId, mlUserId: cx.contaExternaId, token }, { semRetentativa: true }),
+      tarifaEm: comDiagnostico(criarTarifaEm({ orgId, mlUserId: cx.contaExternaId, token }, { semRetentativa: true })),
     };
   })();
   const agora = new Date();
