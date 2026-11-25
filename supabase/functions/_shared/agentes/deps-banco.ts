@@ -113,7 +113,8 @@ type VariacaoTexto = {
  *  título de qualquer lote do código pai; o que faltar, numa variação do anúncio (nome, cor ou tamanho): em user
  *  products pelo SKU do filho ativo, no legado pelo lote cujo MLB é o publicado. Vale a variação do lote mais recente
  *  do SKU. Regra em `busca.ts`.
- *  ponytail: lê o cadastro publicado da org a cada busca (sem índice de texto); RPC se a loja passar de 5.000. */
+ *  ponytail: lê o cadastro publicado da org a cada busca (sem índice de texto). Acima de ~1.500 códigos publicados o
+ *  teto de leituras esgota antes das variações (a maior loja tem 170): aí vira RPC. */
 export async function buscarPorTitulo(admin: SupabaseClient, orgId: string, trecho: string): Promise<Busca> {
   const ps = palavras(trecho);
   if (!ps.length) return { candidatos: [], lista_cortada: false };

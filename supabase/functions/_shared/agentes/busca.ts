@@ -17,14 +17,18 @@ const MAX_CANDIDATOS = 10;
 const MAX_MLBS = 60;
 const MAX_VARIACOES = 20;
 const MAX_PALAVRAS = 20;
-const ENFEITE = new Set(['de', 'da', 'do', 'das', 'dos', 'com', 'e', 'em', 'para', 'o', 'a', 'cor', 'tamanho', 'tam', 'estampa', 'est']);
+const ENFEITE = new Set(['de', 'da', 'do', 'das', 'dos', 'com', 'e', 'em', 'para', 'o', 'a', 'cor', 'estampa', 'est']);
+/** Marcador de tamanho nunca é procurado: "tamanho 4" é só o tamanho, que sozinho não busca. */
+const MARCADOR = new Set(['tamanho', 'tam']);
+/** Cara de tamanho por letras (GGG, XXL, EXG): casa inteira, também em nome e título. */
+const LETRAS_TAMANHO = /^[xpmgles]{1,4}$/;
 
 const partes = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
 const forte = (p: string) => p.length >= 3;
 
 /** Palavras da busca. Enfeite sai se sobrar palavra de 3+ caracteres; sem nenhuma (ou com mais de 20), não busca. */
 export function palavras(trecho: string): string[] {
-  const todas = [...new Set(partes(trecho))];
+  const todas = [...new Set(partes(trecho))].filter((p) => !MARCADOR.has(p));
   if (todas.length > MAX_PALAVRAS) return [];
   const uteis = todas.filter((p) => !ENFEITE.has(p));
   if (uteis.some(forte)) return uteis;
@@ -34,11 +38,11 @@ export function palavras(trecho: string): string[] {
 /** "pretas" → "pret": gênero e plural de palavra com 5+ letras. ponytail: sem sinônimo nem correção de digitação. */
 const raiz = (p: string) => (/^[a-z]{5,}$/.test(p) ? p.replace(/(?:os|as|o|a|s)$/, '') : p);
 
-/** Número e palavra de até 2 letras só casam inteiros, e o tamanho sempre; o resto casa por trecho. */
+/** Número, palavra de até 2 letras e tamanho só casam inteiros; o resto casa por trecho. */
 function casador(textos: (string | null)[], tamanho: string | null = null) {
   const ps = textos.flatMap((t) => (t ? partes(t) : []));
   const inteiras = new Set([...ps, ...(tamanho ? partes(tamanho) : [])]);
-  return (p: string) => inteiras.has(p) || (forte(p) && /[a-z]/.test(p) && ps.some((x) => x.includes(raiz(p))));
+  return (p: string) => inteiras.has(p) || (forte(p) && /[a-z]/.test(p) && !LETRAS_TAMANHO.test(p) && ps.some((x) => x.includes(raiz(p))));
 }
 
 const faltam = (ps: string[], a: AnuncioBusca) => {

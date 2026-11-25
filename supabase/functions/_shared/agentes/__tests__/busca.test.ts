@@ -8,7 +8,7 @@ describe('palavras', () => {
   it('tira palavra de enfeite quando sobra outra de 3 letras; senão mantém', () => {
     expect(palavras('short de linho tamanho G')).toEqual(['short', 'linho', 'g']);
     expect(palavras('estampa 1')).toEqual(['estampa', '1']);
-    expect(palavras('tamanho 4')).toEqual(['tamanho', '4']);
+    expect(palavras('tamanho 4')).toEqual([]);
   });
   it('sem nenhuma palavra de 3 caracteres, ou com mais de 20, não busca', () => {
     for (const t of ['4', 'G M', '***', '', '  ', Array.from({ length: 21 }, (_, i) => `pal${i}`).join(' ')]) {
@@ -60,7 +60,7 @@ describe('montarCandidatos', () => {
 
   it('tamanho por letras também é exato: XXL não acha XXXL', () => {
     const c = an('1', ['Camiseta Lisa']);
-    expect(buscar('camiseta xxl', [c], [va('1', 'a', 'MA', 'Azul', 'XXXL'), va('1', 'b', 'MB', 'Azul', 'XXL')]).candidatos).toMatchObject([{ mlbs: ['MB'] }]);
+    expect(buscar('camiseta xxl', [c], [va('1', 'a', 'MA', 'Azul', 'XXXL', 'Camiseta Azul XXXL'), va('1', 'b', 'MB', 'Azul', 'XXL')]).candidatos).toMatchObject([{ mlbs: ['MB'] }]);
   });
 
   it('número do título não vale por tamanho parcial: "kit 2" não acha "Kit 25"', () => {
