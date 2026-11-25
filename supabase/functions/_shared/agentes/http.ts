@@ -10,7 +10,11 @@ export const TEMPO_LEITURA_MS = 10_000;
 export interface DepsHttp {
   autenticar(req: Request): Promise<ResultadoAuthAgente>;
   despachar(corpo: unknown, auth: { conexaoId: string; orgId: string }): Promise<{ status: number; corpo: unknown | null }>;
+  /** Alarme de recusas: chamado uma vez por resposta 401, 429 ou 503, sem esperar e sem mudar a resposta. */
+  aoRecusar?(): void;
 }
+
+const RECUSAS = new Set([401, 429, 503]);
 
 const json = (body: unknown, status: number, extra: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...extra } });
@@ -51,6 +55,18 @@ async function lerCorpo(req: Request, max: number, tempoMs: number): Promise<str
 }
 
 export async function tratarRequisicao(req: Request, d: DepsHttp, tempoMs = TEMPO_LEITURA_MS): Promise<Response> {
+  const r = await responder(req, d, tempoMs);
+  if (RECUSAS.has(r.status)) {
+    try {
+      d.aoRecusar?.();
+    } catch {
+      console.warn('[agentes] alarme de recusas indisponível');
+    }
+  }
+  return r;
+}
+
+async function responder(req: Request, d: DepsHttp, tempoMs: number): Promise<Response> {
   if (req.method !== 'POST') return json({ erro: 'metodo_nao_permitido' }, 405, { Allow: 'POST' });
   if (Number(req.headers.get('content-length') ?? 0) > MAX_CORPO) return json({ erro: 'corpo_grande' }, 413);
   try {

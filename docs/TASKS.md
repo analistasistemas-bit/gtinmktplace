@@ -55,7 +55,7 @@
 - [x] Cabeçalho de IP (24/11): na `agentes`, depois do primeiro 429 nenhuma variação de cabeçalho testada voltou a receber 401; sem mudança de código.
 - [x] Assinatura na chave: avaliada e adiada em 24/11, com gatilho (ADR-0210, Emenda 3); não é mais condição para abrir a outras lojas.
 - [ ] Busca por palavras, com cor e tamanho (ADR-0210, Emenda 4): código e testes prontos; falta deploy de `agentes` e aceite.
-- [ ] Antes da segunda loja: alarme automático de recusas na `agentes` (ADR-0210, Emenda 4, decisão 2).
+- [ ] Alarme de recusas na `agentes`, condição para a segunda loja (ADR-0210, Emenda 4, decisão 2): código e testes prontos; falta deploy e aceite com um aviso real.
 
 ## Central de Promoções: descoberta pela visão por anúncio (emenda 22/11 ao ADR-0170) — 2026-11-22
 

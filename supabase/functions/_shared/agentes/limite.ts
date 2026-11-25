@@ -18,7 +18,7 @@ return total
 `;
 
 const minutoUtc = (d: Date) => d.toISOString().slice(0, 16).replace(/\D/g, ''); // yyyymmddhhmm
-const diaBrt = (d: Date) =>
+export const diaBrt = (d: Date) =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(d).replace(/\D/g, ''); // yyyymmdd
 
 type Resultado = 'ok' | 'limite' | 'falha';

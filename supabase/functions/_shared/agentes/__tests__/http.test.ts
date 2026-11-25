@@ -130,3 +130,39 @@ describe('tratarRequisicao', () => {
     for (const c of d.despachar.mock.calls) expect(Object.keys(c[1]).sort()).toEqual(['conexaoId', 'orgId']);
   });
 });
+
+describe('alarme de recusas', () => {
+  const recusa = (status: 401 | 403 | 429 | 503, codigo: 'nao_autorizado' | 'acesso_desligado' | 'limite' | 'indisponivel') =>
+    ({ ...deps({ ok: false, status, codigo }), aoRecusar: vi.fn() });
+
+  it.each([[401, 'nao_autorizado'], [429, 'limite'], [503, 'indisponivel']] as const)('%i conta uma vez e responde igual', async (status, codigo) => {
+    const d = recusa(status, codigo);
+    const r = await tratarRequisicao(post('{}'), d);
+    const igual = await tratarRequisicao(post('{}'), deps({ ok: false, status, codigo }));
+    expect(d.aoRecusar).toHaveBeenCalledTimes(1);
+    expect([r.status, await r.text(), [...r.headers]]).toEqual([igual.status, await igual.text(), [...igual.headers]]);
+  });
+
+  it('503 por exceção inesperada também conta', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const d = { ...deps(), despachar: vi.fn(async () => { throw new Error('x'); }), aoRecusar: vi.fn() };
+    expect((await tratarRequisicao(post('{}'), d)).status).toBe(503);
+    expect(d.aoRecusar).toHaveBeenCalledTimes(1);
+  });
+
+  it('403, 405, 413 e sucesso não contam', async () => {
+    const d = recusa(403, 'acesso_desligado');
+    await tratarRequisicao(post('{}'), d);
+    await tratarRequisicao(new Request('https://x/agentes'), d);
+    await tratarRequisicao(post('{}', { 'content-length': '65537' }), d);
+    const bom = { ...deps(), aoRecusar: vi.fn() };
+    await tratarRequisicao(post('{}'), bom);
+    expect(d.aoRecusar).not.toHaveBeenCalled();
+    expect(bom.aoRecusar).not.toHaveBeenCalled();
+  });
+
+  it('alarme que lança não muda a recusa', async () => {
+    const d = { ...recusa(401, 'nao_autorizado'), aoRecusar: () => { throw new Error('x'); } };
+    expect((await tratarRequisicao(post('{}'), d)).status).toBe(401);
+  });
+});
