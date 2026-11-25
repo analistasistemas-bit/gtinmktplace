@@ -285,6 +285,8 @@ Pendência separada (anterior, fora desta ADR): `enviarTelegram` (`_shared/notif
 
 **Inferência:** o padrão é compatível com a rajada de consultas idênticas antes de o cache ser gravado, sem retentativa de comissão (desligada para o teto de cota ser real). O `erro_tarifa` não diz se a falha foi comissão, frete ou validação, e o log não registrou o motivo. Consultoria do Codex gpt-6.2-sol (high): não impede encerrar nem ligar outra loja em somente leitura; investigar registrando componente, classe do erro, status e acerto de cache, sem mexer no teto de duas consultas por cor.
 
+**Diagnóstico (2026-11-25).** Com OK do Diego, a edge passou a registrar o componente (comissão, frete ou outro), a classe do erro e o status HTTP quando a tarifa falha, sem mensagem, URL, corpo nem token (`_shared/agentes/diagnostico-tarifa.ts`; main `f595b45a`, `agentes` v8, 48 de 48 arquivos iguais; Grok 4.7 xhigh: aprovado). Seis novas séries com preços inéditos (60,17 a 65,61) vieram completas, 96 de 96 anúncios, e o log não teve registro. Somando, 2 de 10 séries falharam. **A causa segue não medida**: o registro fica ligado e mostra o motivo na próxima ocorrência; ele não foi exercitado por uma falha real. Nenhuma correção foi feita.
+
 ## Pode ligar em outra loja? (2026-11-25)
 
 **Recomendação: sim, uma segunda loja em piloto, e depois uma por vez, com o roteiro abaixo.** As duas condições do piloto que bloqueavam (vendedor do anúncio e cabeçalho de IP) estão fechadas, o alarme está no ar e a assinatura na chave deixou de ser condição (Emenda 3). Se forem várias lojas em pouco tempo, reavaliar a assinatura **antes** de criar as chaves: hoje só 1 precisaria ser refeita.
