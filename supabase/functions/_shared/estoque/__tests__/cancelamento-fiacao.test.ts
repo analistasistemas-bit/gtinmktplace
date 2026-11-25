@@ -53,4 +53,7 @@ describe('fiação do cancelamento na hora', () => {
   it('sync-venda usa a org do job quando vem, e só resolve por usuário sem ela', () => {
     expect(ler('sync-venda/index.ts')).toMatch(/const orgId = job\.org_id \?\? await resolverOrgPorUserId\(admin, userId\);/);
   });
+  it('sync-venda leva na_hora ao tratamento', () => {
+    expect(ler('sync-venda/index.ts')).toMatch(/naHora: job\.na_hora === true,/);
+  });
 });

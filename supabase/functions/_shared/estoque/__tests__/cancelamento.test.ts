@@ -720,6 +720,37 @@ describe('tratarPedidoCancelado: envio cancelado que nunca saiu', () => {
     expect(t).not.toContain('KIT');
   });
 
+  describe('claim na hora (emenda 9): só age com a prova forte', () => {
+    it.each([['pending', null], ['handling', null], ['ready_to_ship', null], ['ready_to_ship', 'printed']])(
+      'pré-despacho %s/%s: adiado para a fila, sem estornar, sem avisar, com e sem kit', async (shipmentStatus, shipmentSubstatus) => {
+        for (const kitLigado of [false, true]) {
+          const c = cenario({ pedido: { shipmentStatus, shipmentSubstatus, naHora: true, kitLigado } });
+          expect(await c.rodar()).toBe('adiado');
+          expect(c.chamadas.estornos).toEqual([]);
+          expect(c.chamadas.reservas).toEqual([]);
+        }
+      });
+    it('sequência: lê printed, a fila conclui como avisado e só então retoma: não estorna', async () => {
+      const c = cenario({ assume: false, avisado: true, pedido: { shipmentStatus: 'ready_to_ship', shipmentSubstatus: 'printed', naHora: true } });
+      expect(await c.rodar()).toBe('adiado');
+      expect(c.chamadas.estornos).toEqual([]);
+    });
+    it('sem envio: adiado', async () => {
+      const c = cenario({ pedido: { shipmentStatus: null, temEnvio: false, naHora: true } });
+      expect(await c.rodar()).toBe('adiado');
+      expect(c.chamadas.estornos).toEqual([]);
+    });
+    it('cancelado e nunca impresso: repõe na hora', async () => {
+      const c = cenario({ pedido: { naHora: true } });
+      expect(await c.rodar()).toBe('reposto');
+      expect(c.chamadas.estornos).toHaveLength(1);
+    });
+    it('sem naHora o pré-despacho segue como antes', async () => {
+      const c = cenario({ pedido: { shipmentStatus: 'ready_to_ship', shipmentSubstatus: 'printed' } });
+      expect(await c.rodar()).toBe('reposto');
+    });
+  });
+
   describe('envio não lido (emenda 9)', () => {
     const NULO = { shipmentStatus: null, shipmentSubstatus: null };
     const baixou = { houveBaixaDeVenda: () => Promise.resolve(true) };

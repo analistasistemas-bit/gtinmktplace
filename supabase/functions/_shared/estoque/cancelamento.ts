@@ -117,6 +117,8 @@ export interface PedidoCancelado {
   /** Substatus do envio (emenda 24/11 ao ADR-0121). Ausente = comportamento anterior. */
   shipmentSubstatus?: string | null;
   temEnvio: boolean;
+  /** Emenda 9: disparado pelo claim. Só repõe com o envio cancelado e nunca impresso, estado que não muda mais. */
+  naHora?: boolean;
   /** Emenda 8: quem chama já viu no ledger que parte foi estornada; releitura falha usa o texto neutro. */
   parcialConhecido?: boolean;
   /** ADR-0200: módulo `kit_variacao` (`Catalogo.kitLigado`). Ausente = desligado, comportamento de hoje. */
@@ -175,6 +177,8 @@ export async function tratarPedidoCancelado(
   const preDespachoConhecido = preDespacho(st, p.shipmentSubstatus);
 
   try {
+    // Emenda 9: o disparo do claim pode atrasar e a fila concluir antes; com status que ainda muda, quem decide é ela.
+    if (p.naHora && (preDespachoConhecido || !p.temEnvio)) return 'adiado';
     if (preDespachoConhecido || !p.temEnvio) return await repor(admin, deps, p);
     // Emenda 9: envio não lido. Avisar agora travaria a reposição; a fila relê e, se seguir sem ler, avisa na 3ª tentativa.
     if (st === null && p.lerNuncaSaiu && !p.aoIndisponivel

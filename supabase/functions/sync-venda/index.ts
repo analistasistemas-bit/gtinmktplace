@@ -29,7 +29,7 @@ import { classificarErroML, MLApiError } from '../_shared/ml/erro-ml.ts';
 import { registrarFalhaAuth, registrarSyncOk } from '../_shared/ml/liveness.ts';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 
-interface Job { user_id?: string; order_id?: string; shipping_id?: string; org_id?: string }
+interface Job { user_id?: string; order_id?: string; shipping_id?: string; org_id?: string; na_hora?: boolean }
 
 /** Classifica o erro (token ou fetch do recurso) e trata conforme a liveness (ADR-0069):
  * permanente-auth → registra + alerta (só na 1ª falha) e responde 200 (não re-tenta sozinho,
@@ -288,6 +288,7 @@ Deno.serve(async (req) => {
       lerNuncaSaiu: () => lerNuncaSaiu(token, shippingId!),
       temEnvio: pedido.shipping?.id != null,
       kitLigado, catalogoIncompleto: leituraIncerta,
+      naHora: job.na_hora === true,
     });
   }
 
