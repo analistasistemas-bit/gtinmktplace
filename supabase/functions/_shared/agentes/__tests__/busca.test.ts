@@ -9,7 +9,7 @@ describe('palavras', () => {
     expect(palavras('short de linho tamanho G')).toEqual(['short', 'linho', 'g']);
     expect(palavras('estampa 1')).toEqual(['estampa', '1']);
     expect(palavras('tamanho 4')).toEqual([]);
-    for (const t of ['tamanho XXL', 'GGG', 'exg']) expect(palavras(t)).toEqual([]);
+    for (const t of ['tamanho XXL', 'GGG', 'exg', 'tamanho 2XL']) expect(palavras(t)).toEqual([]);
     expect(palavras('gel')).toEqual(['gel']);
   });
   it('sem nenhuma palavra de 3 caracteres, ou com mais de 20, não busca', () => {

@@ -21,7 +21,7 @@ const ENFEITE = new Set(['de', 'da', 'do', 'das', 'dos', 'com', 'e', 'em', 'para
 /** Marcador de tamanho nunca é procurado: "tamanho 4" é só o tamanho, que sozinho não busca. */
 const MARCADOR = new Set(['tamanho', 'tam']);
 /** Cara de tamanho por letras (GGG, XXL, EXG, XXXXL): casa inteira, também em nome e título. */
-const LETRAS_TAMANHO = /^(?:p{1,4}|g{1,5}|m|x+[pgsl]{1,3}|e[xg]g*)$/;
+const LETRAS_TAMANHO = /^\d{0,2}(?:p{1,4}|g{1,5}|m|x+[pgsl]{1,3}|e[xg]g*)$/;
 
 const partes = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
 const forte = (p: string) => p.length >= 3 && !LETRAS_TAMANHO.test(p);
