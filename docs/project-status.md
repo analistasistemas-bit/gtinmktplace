@@ -15,7 +15,7 @@
 
 ## Acesso de agentes (ADR-0210, fatia 1): no ar em piloto na Zaven desde 2026-11-22
 
-Servidor MCP somente leitura (`agentes`) e tela de conexões em produção (`main` `12d00860`); guia em `docs/reference/acesso-de-agentes.md`. Módulo `agentes` ligado só na Zaven, desligado por padrão nas demais. Aceite por chamadas reais feito em 22/11; falta a primeira chave gerada pela tela e o teste em cada cliente. Pendências aceitas para o piloto na seção final da ADR-0210. Fatias 2 (autorização OAuth) e 3 (chave de plataforma) não iniciadas.
+Servidor MCP somente leitura (`agentes`) e tela de conexões em produção (`main` `12d00860`); guia em `docs/reference/acesso-de-agentes.md`. Módulo `agentes` ligado só na Zaven, desligado por padrão nas demais. Aceite por chamadas reais feito em 22/11; chave pela tela e 5 clientes aceitos em 23/11. Em 25/11 (`f72ea1cb`, `agentes` v6): só anúncio da conta conectada, busca por palavras com cor e tamanho, e alarme de recusas no Telegram. Roteiro para ligar outra loja na ADR-0210. Fatias 2 (autorização OAuth) e 3 (chave de plataforma) não iniciadas.
 
 ## Alíquota com vigência (ADR-0208): schema no ar, código na branch
 

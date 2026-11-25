@@ -1,6 +1,6 @@
 # ADR-0210 — Acesso de agentes: servidor MCP, conexão por organização, leitura de margens, em três fatias
 
-**Status:** Aceito — fatia 1 em produção, em piloto na Zaven (main `12d00860`, deploy e aceite em 2026-11-22); fatias 2 e 3 a implementar (aprovado pelo Diego em 2026-11-22, após entrevista grill-with-docs e revisão de Codex gpt-6.2-sol high e Grok 4.7 xhigh). Plano da fatia 1: `docs/superpowers/plans/2026-11-22-acesso-de-agentes-fatia-1.md`
+**Status:** Aceito — fatia 1 em produção, em piloto na Zaven (main `12d00860`, deploy e aceite em 2026-11-22; emendas 1 a 4 no ar, `agentes` v6 em 2026-11-25); fatias 2 e 3 a implementar (aprovado pelo Diego em 2026-11-22, após entrevista grill-with-docs e revisão de Codex gpt-6.2-sol high e Grok 4.7 xhigh). Plano da fatia 1: `docs/superpowers/plans/2026-11-22-acesso-de-agentes-fatia-1.md`
 **Data:** 2026-11-22
 **Decisores:** Diego
 **Relaciona:** [0027](0027-multi-tenancy-organizations.md) (organização), [0092](0092-identidade-da-plataforma-e-acesso-super-admin.md) (acesso da plataforma a dados de cliente), [0179](0179-painel-de-ads.md) (ACOS de equilíbrio pelo preço, emenda de 2026-10-20), [0170](0170-central-de-promocoes-ml.md) (projeção do líquido), [0055](0055-imposto-por-origem-nacional-importado.md) e [0208](0208-aliquota-com-vigencia.md) (imposto), [0189](0189-extensao-publiai-navegador.md) (precedente de cliente fora do app).
@@ -259,7 +259,7 @@ Melhor esforço: Redis fora não conta, o aviso pode repetir se a confirmação 
 - A sintaxe do filtro foi aceita pelo PostgREST de produção (um pedido com a chave anônima, que não lê linhas: 200 e lista vazia).
 - Cadastro: tamanho preenchido em 323 de 323 variações da Zaven e em nenhuma das 14.954 linhas da loja maior.
 
-**Não medido:** a busca pela edge em produção, o tempo de resposta e outras lojas. **Limites conhecidos:** sem sinônimo nem correção de digitação; tamanho depende do cadastro; cor com `ñ` ou acento decomposto só na variação não é achada (nenhuma das 15.551 variações do banco tem um ou outro); com mais de cerca de 1.500 códigos publicados o teto esgota antes das variações, e a resposta avisa; linha apagada no meio de uma leitura paginada pode fazer a busca pular outra; palavra que está no título não filtra cor (por exemplo, "short preto" num produto cujo nome já traz "Preto" devolve todas as cores).
+**Não medido:** outras lojas pela edge. **Limites conhecidos:** sem sinônimo nem correção de digitação; tamanho depende do cadastro; cor com `ñ` ou acento decomposto só na variação não é achada (nenhuma das 15.551 variações do banco tem um ou outro); com mais de cerca de 1.500 códigos publicados o teto esgota antes das variações, e a resposta avisa; linha apagada no meio de uma leitura paginada pode fazer a busca pular outra; palavra que está no título não filtra cor (por exemplo, "short preto" num produto cujo nome já traz "Preto" devolve todas as cores).
 
 Revisão independente do código (Codex gpt-6.2-sol, high, 2026-11-24, cinco rodadas, nenhuma com vazamento entre organizações ou injeção). Corrigido com teste: a variação vale pelo lote mais recente do SKU, e não por um lote velho que o filtro trouxesse; tamanho por letras ou com número é exato, inclusive no nome, e sozinho não busca; teto global de leituras; cada produto só é filtrado pela palavra que falta nele; plural de cor. As cinco terminaram em "revisar"; o ajuste da última não passou por nova rodada. Não aceito:
 
@@ -271,3 +271,23 @@ Revisão independente do código (Codex gpt-6.2-sol, high, 2026-11-24, cinco rod
 Revisor definido pelo Diego (Grok 4.7 xhigh, 2026-11-25, uma rodada dividida em três; as duas primeiras tentativas, com tudo junto, não responderam em 25 e 30 min). Corrigido com teste: a palavra casa pelo começo e não pelo meio (`tênis` achava `sustentável`); tamanho por extenso aceita gênero e plural; acima de 20 palavras valem as mais longas; pai com MLB e filho ativo do mesmo SKU trazem os dois; no alarme, envio com prazo de 10 s (menor que a reserva) e sem mensagem crua no log. Não aceito: SKU que mudou de cor entre lotes (vale o mais recente) e títulos de lotes diferentes do mesmo código somados. Com o travamento, o Fable 5.2 foi consultado: sem bloqueador; sugeriu o plural em `-ões`, aplicado. Essas correções não passaram por nova rodada.
 
 Pendência separada (anterior, fora desta ADR): `enviarTelegram` (`_shared/notificacoes/telegram.ts`), usado por várias edges, registra a mensagem crua do erro de rede, que no Deno pode trazer a URL com o token do bot. Observado na leitura do código; não verificado em log real.
+
+**Deploy e aceite (2026-11-25):** main `f72ea1cb`, `agentes` v6 (47 de 47 arquivos baixados iguais ao commit, `verify_jwt` falso). Na Zaven, pelo conector do claude.ai:
+
+- Busca: `neon` → 3 variações; `neon 4` → `MLB5563623367`; `blusa preta M` → 4 produtos; `tamanho 4` → `nao_encontrado`; `MLB5563623367` → 42,5848%, como em 23/11. `linha croche rosa` e `fita cetim` (produtos de outra loja) → `nao_encontrado`.
+- Tempo na edge (log do gateway): as 8 chamadas do aceite, incluindo a margem e a loja, entre 353 e 1.801 ms, a mais lenta sendo a primeira.
+- Alarme: 1.010 pedidos sem chave em 47 s, de um único IP: 20 respostas 401 e 990 respostas 429, mediana de 0,22 s. Contador em 1.010 e aviso confirmado (a validade de 48 h só é gravada quando o Telegram aceita). Uma chamada com chave válida logo depois respondeu normalmente. O recebimento na tela do Diego é dele confirmar. Por ser um aviso por dia, novas recusas de 25/11 não avisam de novo.
+- Não verificado ao vivo: o texto novo de `instructions` (coberto por teste e pela igualdade do código) e o script do alarme fora do caminho acima.
+
+## Pode ligar em outra loja? (2026-11-25)
+
+**Recomendação: sim, uma loja por vez, com o roteiro abaixo.** As duas condições do piloto que bloqueavam (vendedor do anúncio e cabeçalho de IP) estão fechadas, o alarme está no ar e a assinatura na chave deixou de ser condição (Emenda 3). Se forem várias lojas em pouco tempo, reavaliar a assinatura **antes** de criar as chaves: hoje só 1 precisaria ser refeita.
+
+Roteiro por loja, com o OK do Diego e autorização do administrador dela:
+
+1. Alíquota confirmada, custo e origem preenchidos (sem isso a resposta é `sem_aliquota`, `sem_custo` ou `sem_origem`, nunca um número errado).
+2. Ligar o módulo `agentes`; o administrador da loja cria a chave.
+3. `publiai_loja` confere a conta; a primeira página do catálogo não pode vir com anúncio próprio em `anuncio_indisponivel`. Se houver anúncio de catálogo do Mercado Livre, conferir um: é o caso que a amostra da Emenda 2 não cobriu.
+4. Comparar um anúncio com a aba Campanhas; testar SKU, palavra e um MLB de outra loja (`nao_encontrado`).
+
+Continua aceito: cache de comissão `promo:lp:v1` compartilhado (exatidão, não vazamento), conexão não revalidada depois da leitura do corpo, limite de 10 conexões não atômico, ChatGPT só com a fatia 2, OpenClaw, Hermes e Muse Code não testados.
