@@ -7,7 +7,8 @@
 - [x] Deploy 24/11 20:48 BRT: `sync-venda` v144, `reconciliar-faturamento` v134 (main `d15b5ff5`).
 - [x] 1º caso real: Avil, SKU `02844290`, 560 → 561 no app e no ML, pela fila às 21:00.
 - [x] Emenda 9 (código): claim com pedido cancelado dispara o `sync-venda`; envio não lido fica para a fila.
-- [ ] Emenda 9: revisão, deploy de `sync-devolucao`, `sync-venda` e `reconciliar-faturamento`, 1º caso na hora.
+- [x] Emenda 9: Codex (consultor) e Grok 4.7 xhigh (revisor, sem bloqueio); deploy de `sync-devolucao`, `sync-venda` e `reconciliar-faturamento`.
+- [ ] Emenda 9: 1º caso real na hora.
 
 ## Dispensar: contador de mensagens e perguntas (emendas 24/11 aos ADR-0067 e 0037) — 2026-11-24
 

@@ -141,6 +141,11 @@ cancelamentos só foram tratados na rodada da hora cheia. O `ml-webhook` dedupli
 - **Nesse disparo só a prova forte repõe** (envio `cancelled` e nunca impresso, estado que não muda mais) **e nada avisa**.
   Todo o resto devolve `adiado` e fica para a fila: um disparo atrasado poderia repor ou avisar depois de ela decidir, e o
   aviso trava a reposição.
+- **Exceção:** se a prova autoriza e o crédito de **kit** falha, sai o aviso próprio do ADR-0200
+  (`estoque_cancelado_kit_pendente`, "não dê entrada"), como nos outros caminhos. Tem outra chave e não trava a reposição.
+- **Revisões (24/11):** Codex gpt-6.2-sol high (consultor) e Grok 4.7 xhigh (revisor, RESSALVAS sem bloqueio). Os três
+  itens que o Codex manteve (o da exceção acima, uma leitura a mais de `filaAssume` e o trabalho normal de venda paga se o
+  pedido voltar a `paid`) não erram saldo.
 - **Envio não lido** (`/shipments` falhou) no webhook ou na reconciliação: se a fila assume, `adiado` em vez de aviso, que
   travaria a reposição. A fila relê e avisa da 3ª tentativa em diante. Sem fila, avisa na hora, como antes.
 - **Não cobre** cancelamento sem claim: continua na hora cheia. Mudar o dedup de `orders_v2` foi descartado: o ML manda
