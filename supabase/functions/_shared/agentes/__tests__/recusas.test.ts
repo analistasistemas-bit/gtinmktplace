@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as redis from '../../redis/client.ts';
-import { LIMITE_RECUSAS_DIA, registrarRecusa } from '../recusas.ts';
+import { avisarDono, LIMITE_RECUSAS_DIA, registrarRecusa } from '../recusas.ts';
 
 vi.mock('../../redis/client.ts', () => ({ redisEvalInteiro: vi.fn(), redisSet: vi.fn() }));
 const evalRedis = vi.mocked(redis.redisEvalInteiro);
@@ -83,3 +83,33 @@ describe('registrarRecusa', () => {
     await expect(registrarRecusa(new Date(NaN), async () => true)).resolves.toBeUndefined();
   });
 });
+
+describe('avisarDono', () => {
+  const logs = () => JSON.stringify(vi.mocked(console.warn).mock.calls);
+
+  it('envia ao chat do dono, com prazo menor que a reserva', async () => {
+    const f = vi.fn(async (_u: unknown, _i?: RequestInit) => new Response('{}'));
+    const prazo = vi.spyOn(AbortSignal, 'timeout');
+    expect(await avisarDono('TOKEN', 'CHAT', 'oi', f as typeof fetch)).toBe(true);
+    expect(f.mock.calls[0][0]).toBe('https://api.telegram.org/botTOKEN/sendMessage');
+    expect(JSON.parse(f.mock.calls[0][1]!.body as string)).toEqual({ chat_id: 'CHAT', text: 'oi' });
+    expect(f.mock.calls[0][1]!.signal).toBeInstanceOf(AbortSignal);
+    expect(prazo).toHaveBeenCalledWith(10_000);
+  });
+
+  it('falha de rede ou recusa do Telegram → false, e o token nunca vai ao log', async () => {
+    const rede = vi.fn(async () => { throw new Error('error sending request for url (https://api.telegram.org/botTOKEN/sendMessage)'); });
+    expect(await avisarDono('TOKEN', 'CHAT', 'oi', rede as typeof fetch)).toBe(false);
+    expect(await avisarDono('TOKEN', 'CHAT', 'oi', (async () => new Response('botTOKEN', { status: 403 })) as typeof fetch)).toBe(false);
+    expect(logs()).not.toContain('TOKEN');
+    expect(logs()).toContain('403');
+  });
+
+  it('sem credencial → false, sem chamar a rede', async () => {
+    const f = vi.fn();
+    expect(await avisarDono(null, 'CHAT', 'oi', f)).toBe(false);
+    expect(await avisarDono('TOKEN', null, 'oi', f)).toBe(false);
+    expect(f).not.toHaveBeenCalled();
+  });
+});
+

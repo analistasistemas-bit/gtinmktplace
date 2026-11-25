@@ -8,6 +8,7 @@ const TTL_DIA_S = 2 * 86_400;
 /** Quem cruza o limite reserva o aviso por 60 s; se o envio falhar, a primeira recusa depois disso tenta de novo. */
 const RESERVA_S = 60;
 const TEMPO_REDIS_MS = 2000;
+const TEMPO_TELEGRAM_MS = 10_000;
 
 // KEYS = contador, aviso; ARGV = limite, ttl do contador, ttl da reserva. 1 = este chamador deve avisar.
 const SCRIPT = `
@@ -33,5 +34,27 @@ export async function registrarRecusa(agora: Date, enviar: (texto: string) => Pr
   } catch {
     // Nunca a mensagem crua: pode carregar endereço ou credencial.
     console.warn('[agentes] alarme de recusas indisponível');
+  }
+}
+
+/** Envio próprio em vez de `enviarTelegram`: prazo menor que a reserva (senão um envio lento duplica o aviso) e log sem
+ *  a mensagem do erro, que no Deno traz a URL com o token do bot. */
+export async function avisarDono(
+  token: string | null, chat: string | null, texto: string, f: typeof fetch = fetch,
+): Promise<boolean> {
+  if (!token || !chat) {
+    console.warn('[agentes] alarme de recusas sem credencial do Telegram');
+    return false;
+  }
+  try {
+    const r = await f(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(TEMPO_TELEGRAM_MS),
+      body: JSON.stringify({ chat_id: chat, text: texto }),
+    });
+    if (!r.ok) console.warn(`[agentes] alarme de recusas: Telegram ${r.status}`);
+    return r.ok;
+  } catch {
+    console.warn('[agentes] alarme de recusas: Telegram indisponível');
+    return false;
   }
 }

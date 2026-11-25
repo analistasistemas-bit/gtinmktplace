@@ -5,7 +5,6 @@
 // alvo inexistente, cursor/preço inválido, sem alíquota ou cota esgotada não renovam token nem tocam o ML.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { adminClient } from '../_shared/supabase.ts';
-import { enviarTelegram } from '../_shared/notificacoes/telegram.ts';
 import { resolverConexaoEstrita } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { caminhoMultiget } from '../_shared/ml/multiget.ts';
@@ -16,7 +15,7 @@ import type { Tarifa } from '../_shared/promocoes/tipos.ts';
 import { CAMPOS_ITEM_AGORA, type ItemAgora, parseItensBulk } from '../_shared/ads/campanhas.ts';
 import { autenticarAgente } from '../_shared/agentes/auth-agente.ts';
 import { reservarLeituras, reservarTarifas } from '../_shared/agentes/limite.ts';
-import { registrarRecusa } from '../_shared/agentes/recusas.ts';
+import { avisarDono, registrarRecusa } from '../_shared/agentes/recusas.ts';
 import { soDoVendedor } from '../_shared/agentes/so-do-vendedor.ts';
 import { type DepsMargens, margemDoAlvo, margensDoCatalogo, simularMargem } from '../_shared/agentes/margens.ts';
 import { type Ferramentas, ipDoCliente, tratarMcp } from '../_shared/agentes/mcp.ts';
@@ -103,7 +102,7 @@ Deno.serve((req) => {
     },
     // Bot da Daludi no chat do dono do SaaS, como em varrer-anuncios-orfaos.
     aoRecusar: () => EdgeRuntime.waitUntil(registrarRecusa(new Date(), (texto) =>
-      enviarTelegram(Deno.env.get('TELEGRAM_BOT_TOKEN') ?? null, Deno.env.get('TELEGRAM_LEADS_CHAT_ID') ?? null, texto))),
+      avisarDono(Deno.env.get('TELEGRAM_BOT_TOKEN') ?? null, Deno.env.get('TELEGRAM_LEADS_CHAT_ID') ?? null, texto))),
     despachar(corpo, { orgId, conexaoId }) {
       const db = admin();
       const ferramentas: Ferramentas = {
