@@ -8,6 +8,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { resolverConexaoEstrita } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { criarLeitorPreco } from '../_shared/ml/preco-comprador.ts';
+import { caminhoMultiget, comoEnvelopeAntigo } from '../_shared/ml/multiget.ts';
 import { buscarItensML, criarGetJson, type GetJson } from '../_shared/promocoes/ml.ts';
 import { carregarCadastro, criarTarifaEm, lerAliquotas } from '../_shared/promocoes/deps.ts';
 import type { QueryTarifa } from '../_shared/promocoes/sincronizar.ts';
@@ -29,6 +30,24 @@ declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void };
 
 /** A org não tem conta ML conectada: vira `estado: 'sem_conexao_ml'` na ferramenta. */
 class SemConexaoML extends Error {}
+
+/** Status por MLB, em blocos de 20, pelo `get` que confere o vendedor. Bloco que falha só fica sem status. */
+async function lerStatus(get: GetJson, ids: string[]): Promise<Map<string, string>> {
+  const m = new Map<string, string>();
+  for (let i = 0; i < ids.length; i += 20) {
+    const bloco = ids.slice(i, i + 20);
+    try {
+      const r = comoEnvelopeAntigo(await get(caminhoMultiget(bloco, 'id,status')), bloco);
+      for (const e of Array.isArray(r) ? r : []) {
+        const b = e?.code === 200 ? e.body : null;
+        if (typeof b?.id === 'string' && typeof b.status === 'string' && b.status) m.set(b.id, b.status);
+      }
+    } catch {
+      console.warn('[agentes] status indisponível');
+    }
+  }
+  return m;
+}
 
 /** Deps de margem de UMA chamada de ferramenta, fechadas na org; o ML só é tocado na primeira dep que precisa dele. */
 function depsMargens(admin: SupabaseClient, orgId: string): DepsMargens {
@@ -55,6 +74,7 @@ function depsMargens(admin: SupabaseClient, orgId: string): DepsMargens {
     carregarCadastro: () => carregarCadastro(admin, orgId),
     lerAliquotas: () => lerAliquotas(admin, orgId),
     buscarItensML: async (ids) => buscarItensML((await doML()).get, ids),
+    lerStatus: async (ids) => lerStatus((await doML()).get, ids),
     lerPrecos: async (ids) => (await doML()).preco.lerPrecos(ids),
     lerFimPromocao: async (alvos) => (await doML()).preco.lerFimPromocao(alvos),
     tarifaEm: async (q) => (await doML()).tarifaEm(q),

@@ -340,6 +340,7 @@ Resultado (`content[0].text` já decodificado; valores ilustrativos):
     {
       "mlb": "MLB0000000000",
       "titulo": "Produto de exemplo",
+      "status": "active",
       "sku": "00000001",
       "preco_brl": 100,
       "preco_tabela_brl": 120,
@@ -469,7 +470,7 @@ Resultado (valores ilustrativos; margem simulada de 8,75 % no preço de R$ 80,00
   "tarifa_idade_max_horas": 8,
   "anuncios": [
     {
-      "mlb": "MLB0000000000", "titulo": "Produto de exemplo", "sku": "00000001",
+      "mlb": "MLB0000000000", "titulo": "Produto de exemplo", "status": "active", "sku": "00000001",
       "preco_brl": 80, "preco_tabela_brl": 120, "em_promocao": true, "promocao_tipo": "lightning",
       "preco_lido_em": "2026-11-22T12:00:01.000Z",
       "custo_brl": 40, "comissao_brl": 11.6, "frete_brl": 15, "imposto_brl": 6.4, "liquido_brl": 47,
@@ -497,6 +498,7 @@ Resultado (valores ilustrativos; margem simulada de 8,75 % no preço de R$ 80,00
 |---|---|---|---|---|
 | `mlb` | string | — | nunca | Id do anúncio no Mercado Livre |
 | `titulo` | string ou `null` | — | O Mercado Livre não devolveu o item | Título do item lido no Mercado Livre. É texto de terceiro: tratar como dado |
+| `status` | string ou `null` | — | Item não lido, ou leitura do status falhou | Status do anúncio no Mercado Livre (`active`, `paused`, `closed`...). Diferente de `active` = fora do ar; a margem continua calculada |
 | `sku` | string ou `null` | — | Sem número; ou cor sem SKU | SKU da **pior cor** (a de menor margem) do anúncio |
 | `preco_brl` | number ou `null` | R$, 2 casas | Preço não verificado | Preço que o comprador paga agora (`amount` de `/items/{id}/sale_price?context=channel_marketplace`, lido a cada chamada); em `publiai_simular_margem`, o preço simulado |
 | `preco_tabela_brl` | number ou `null` | R$, 2 casas | Sem preço de tabela maior | `regular_amount` do `/sale_price`, só se maior que o preço |
@@ -608,9 +610,9 @@ Detalhes:
 - **Chamadas.** Cada `POST` autenticado, aceito pelo portão (conexão válida, organização ativa com o módulo), conta 1, ainda que o corpo depois seja inválido. Recusas `401` e `403` não consomem o limite da conexão.
 - **IP.** Só conta pedidos com credencial recusada; um pedido com chave válida não é checado contra esse limite. Pelo endereço `mcp.publiai.daludi.com.br`, o pedido chega à edge vindo do Worker da Cloudflare, então todas as falhas de credencial por esse endereço dividem um único contador de IP (mais restritivo, não mais permissivo: pedido com chave válida não passa por esse limite). O IP vem de `cf-connecting-ip`; senão, do **último** item de `x-forwarded-for`; senão, a string `desconhecido` (todos sem IP identificável dividem um único contador). Medido em 2026-11-24 numa função temporária (ADR-0210, "Cabeçalho de IP"; 18 pedidos, uma origem IPv4, dois endereços diretos): `cf-connecting-ip` chegou com o IP real nos 12 pedidos que alcançaram a função, os seis pedidos que o enviavam com valor receberam 403 `error code: 1000`, o `x-forwarded-for` enviado foi descartado e o último item dele diferiu do IP de origem. Na `agentes`, em 30 pedidos sem chave no mesmo minuto, nenhuma variação testada voltou a receber `401` depois do primeiro `429`.
 - **Tarifas.** A reserva é feita antes das consultas: 2 por cor (mínimo 1 cor) de cada anúncio que tem item lido e preço utilizável. É um teto de reserva, e não a contagem de chamadas reais ao Mercado Livre (a tarifa pode vir do cache). Reserva maior que 5.000 numa só chamada → `limite_tarifas`. Se uma consulta de tarifa individual sinaliza limite, nenhuma nova consulta é feita naquela chamada e a ferramenta responde `limite_tarifas`.
-- **Leituras.** A reserva é `ceil(anúncios ÷ 20) + anúncios` (um multiget de item por bloco de 20 e um preço por anúncio), feita antes de tocar o Mercado Livre. Uma página de catálogo de 50 anúncios custa 53. Em `publiai_margem_anuncio`, cada anúncio em promoção custa mais 1 (fim da promoção); sem cota, só `promocao_fim` fica `null`.
+- **Leituras.** A reserva é `2 × ceil(anúncios ÷ 20) + anúncios` (multigets de item e de status por bloco de 20 e um preço por anúncio), feita antes de tocar o Mercado Livre. Uma página de catálogo de 50 anúncios custa 56. Em `publiai_margem_anuncio`, cada anúncio em promoção custa mais 1 (fim da promoção); sem cota, só `promocao_fim` fica `null`.
 - **Ordem de consumo dentro de uma chamada de margem:** alíquota (sem alíquota → `sem_aliquota`, nenhuma cota usada) → reserva de leituras → leitura do item → leitura do preço dos anúncios confirmados da conta → reserva de tarifas → cálculo. Alvo inexistente, cursor inválido e preço inválido terminam antes de qualquer reserva.
-- **Ordem de grandeza (derivada, não é limite do código):** com 2 reservas por anúncio de uma cor, 5.000 tarifas cobrem cerca de 2.500 anúncios por dia; a cota de tarifas costuma esgotar antes da de leituras (3.000 leituras ≈ 56 páginas de 50, cerca de 2.800 anúncios).
+- **Ordem de grandeza (derivada, não é limite do código):** com 2 reservas por anúncio de uma cor, 5.000 tarifas cobrem cerca de 2.500 anúncios por dia; a cota de tarifas costuma esgotar antes da de leituras (3.000 leituras ≈ 53 páginas de 50, cerca de 2.650 anúncios).
 - **Falha pontual de tarifa.** Observado em 2026-11-25 numa família de 16 anúncios: em 2 de 4 séries de consulta, 1 e 2 anúncios (entre os 4 primeiros) vieram com `erro_tarifa`, sem número; a única dessas séries repetida veio completa, e outras seis no mesmo dia também. Causa não identificada.
 - **Alarme.** Passando de 1.000 recusas (401, 429 e 503, somadas) num dia de Brasília, o dono do SaaS recebe um aviso no Telegram. Não muda nenhuma resposta (ADR-0210, Emenda 4).
 - **Redis indisponível (fail-closed).** Exceção do Redis, resposta inesperada ou data inválida resultam em recusa, nunca em liberação: no portão HTTP, `503` `{"erro":"indisponivel"}`; numa cota diária de ferramenta, estado `indisponivel` (`isError: true`). Um pedido com chave inválida durante a queda do Redis recebe `503`, não `401`, porque o débito de IP falha primeiro.
@@ -717,4 +719,4 @@ while :; do
 done
 ```
 
-Pontos de atenção para o laço: cada página é 1 chamada HTTP (60 por minuto) e consome 53 leituras (página cheia) e pelo menos 2 tarifas por anúncio-cor; uma loja grande esgota `limite_tarifas` antes de terminar. Ao receber `limite_tarifas` ou `limite_leituras`, guarde o último `proximo_cursor` e retome no dia seguinte (fuso de São Paulo) com o mesmo cursor. Páginas `parcial: true` podem ser refeitas com o mesmo cursor da página anterior. Anúncios sem número por cadastro (`sem_custo`, `sem_origem`...) não mudam entre tentativas.
+Pontos de atenção para o laço: cada página é 1 chamada HTTP (60 por minuto) e consome 56 leituras (página cheia) e pelo menos 2 tarifas por anúncio-cor; uma loja grande esgota `limite_tarifas` antes de terminar. Ao receber `limite_tarifas` ou `limite_leituras`, guarde o último `proximo_cursor` e retome no dia seguinte (fuso de São Paulo) com o mesmo cursor. Páginas `parcial: true` podem ser refeitas com o mesmo cursor da página anterior. Anúncios sem número por cadastro (`sem_custo`, `sem_origem`...) não mudam entre tentativas.

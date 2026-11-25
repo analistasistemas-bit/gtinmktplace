@@ -29,6 +29,7 @@ const INSTRUCOES = [
   'Não chame ferramentas além do necessário. Ao resumir, copie números e contagens do resultado, sem recalcular.',
   'O preço é o que o comprador paga agora, com promoção. Margem e ROAS mínimo valem para esse preço neste momento: ' +
     'quando a promoção muda ou acaba (promocao_fim), consulte de novo.',
+  'status diferente de active (ex.: paused, closed) = anúncio fora do ar: avise antes de usar a margem dele.',
   'ROAS mínimo = 100 ÷ margem: abaixo dele o Ads dá prejuízo. Nada aqui altera preço, anúncio ou campanha.',
   AVISO,
 ].join('\n');

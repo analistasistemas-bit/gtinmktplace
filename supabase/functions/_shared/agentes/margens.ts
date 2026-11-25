@@ -15,6 +15,8 @@ export interface DepsMargens {
   carregarCadastro(): Promise<Cadastro>;
   lerAliquotas(): Promise<Aliquotas | null>;
   buscarItensML(ids: string[]): Promise<Map<string, ItemML>>;
+  /** Status do anúncio no ML (`active`, `paused`, `closed`...), multiget próprio; ausente = não lido, nunca bloqueia a margem. */
+  lerStatus(ids: string[]): Promise<Map<string, string>>;
   /** Preço que o comprador paga (`/sale_price`), só de MLB que `buscarItensML` confirmou ser da conta. Ausente = não verificado. */
   lerPrecos(ids: string[]): Promise<Map<string, PrecoComprador>>;
   /** Fim da promoção vigente; ausente = não sabido. */
@@ -28,7 +30,7 @@ export interface DepsMargens {
 }
 
 export type MargemAnuncio = {
-  mlb: string; titulo: string | null; sku: string | null; preco_brl: number | null; preco_tabela_brl: number | null;
+  mlb: string; titulo: string | null; status: string | null; sku: string | null; preco_brl: number | null; preco_tabela_brl: number | null;
   em_promocao: boolean | null; promocao_tipo: string | null; preco_lido_em: string | null; custo_brl: number | null; comissao_brl: number | null; frete_brl: number | null;
   imposto_brl: number | null; liquido_brl: number | null; margem_pct: number | null; roas_minimo: number | null;
   motivo: string | null;
@@ -77,11 +79,11 @@ const tarifaValida = (t: unknown): t is Tarifa =>
 async function calcular(mlbs: string[], d: DepsMargens, precoSimulado: number | null): Promise<Calculada[] | Falha> {
   const aliq = await d.lerAliquotas();
   if (!aliquotasValidas(aliq)) return { estado: 'sem_aliquota' };
-  // Orçamento de leituras antes de tocar o ML: multigets de 20 itens + um preço por MLB.
-  const leituras = await d.reservarLeituras(Math.ceil(mlbs.length / MULTIGET) + mlbs.length);
+  // Orçamento de leituras antes de tocar o ML: multigets de 20 (item e status) + um preço por MLB.
+  const leituras = await d.reservarLeituras(2 * Math.ceil(mlbs.length / MULTIGET) + mlbs.length);
   if (leituras === 'limite') return { estado: 'limite_leituras' };
   if (leituras !== 'ok') return { estado: 'indisponivel' };
-  const itens = await d.buscarItensML(mlbs);
+  const [itens, status] = await Promise.all([d.buscarItensML(mlbs), d.lerStatus(mlbs).catch(() => new Map<string, string>())]);
   // Em sequência: o preço só é lido do MLB que o multiget confirmou ser da conta da conexão (emenda 2).
   const precos = await d.lerPrecos(mlbs.filter((m) => itens.has(m)));
   // 2 consultas por cor é teto real porque a edge desliga as retentativas de comissão (Tarefa 6).
@@ -121,7 +123,7 @@ async function calcular(mlbs: string[], d: DepsMargens, precoSimulado: number | 
       const tabela = utilizavel(lidoAgora?.precoTabela) ? lidoAgora!.precoTabela : null;
       const preco = precoDe(mlb);
       const base: MargemSimulada = {
-        mlb, titulo: ml?.titulo ?? null, sku: null, preco_brl: preco == null ? null : r2(preco),
+        mlb, titulo: ml?.titulo ?? null, status: ml ? status.get(mlb) ?? null : null, sku: null, preco_brl: preco == null ? null : r2(preco),
         preco_tabela_brl: tabela == null ? null : r2(tabela),
         em_promocao: atual == null ? null : lidoAgora!.emPromocao,
         promocao_tipo: atual == null ? null : lidoAgora!.promocaoTipo, preco_lido_em: atual == null ? null : lidoAgora!.lidoEm,

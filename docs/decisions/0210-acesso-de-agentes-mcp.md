@@ -327,6 +327,8 @@ Pendência separada (anterior, fora desta ADR): `enviarTelegram` (`_shared/notif
 
 **Revisão de código (GPT 6.2 Sol, high, duas rodadas).** Corrigidos: cache por conta ML, prazo e parada por 429 divididos com `/prices`, falha na reserva do complemento, relógio do fim. Mantidos por decisão: linha fora do cálculo sem preço na aba Campanhas; a cota do complemento pode ser reservada depois de um 429 sem leitura (até 60 de 3.000; a cota é teto de reserva, como a de tarifas). Veredito final do revisor: REVISAR, só por este último ponto.
 
+**Ajuste pedido no aceite (2026-11-25): status do anúncio.** O aceite do Diego notou um anúncio pausado sem aviso. As três ferramentas de margem passam a trazer `status` (texto do ML: `active`, `paused`, `closed`...), lido num multiget próprio `id,status` pelo mesmo filtro de vendedor; falha deixa `status: null` sem tirar a margem nem marcar `parcial`. Pausado mantém a margem (decisão da consulta: não apagar número correto); as instruções do `initialize` mandam avisar. Custo: +1 leitura por bloco de 20 (página do catálogo de 53 para 56). Leitura separada para não mexer em `buscarItensML`, usado por outras cinco funções.
+
 ## Pode ligar em outra loja? (2026-11-25)
 
 **Recomendação: sim, uma segunda loja em piloto, e depois uma por vez, com o roteiro abaixo.** As duas condições do piloto que bloqueavam (vendedor do anúncio e cabeçalho de IP) estão fechadas, o alarme está no ar e a assinatura na chave deixou de ser condição (Emenda 3). Se forem várias lojas em pouco tempo, reavaliar a assinatura **antes** de criar as chaves: hoje só 1 precisaria ser refeita.

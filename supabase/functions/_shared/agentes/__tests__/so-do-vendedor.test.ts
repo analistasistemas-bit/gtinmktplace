@@ -138,6 +138,7 @@ describe('vínculo velho de uma conta trocada (o ML devolve 200 de outro vendedo
       lerAliquotas: async () => ({ nacional: 8, importado: 16 }),
       buscarItensML: (ids) => buscarItensML(get, ids),
       lerPrecos,
+      lerStatus: async () => new Map(),
       lerFimPromocao: async () => new Map(),
       tarifaEm, reservarTarifas: async () => 'ok', reservarLeituras: async () => 'ok',
       listarMlbs: async () => ['MLB1', 'MLB2'],
@@ -145,7 +146,7 @@ describe('vínculo velho de uma conta trocada (o ML devolve 200 de outro vendedo
     return { d, tarifaEm, lerPrecos };
   }
   const VAZIO = {
-    mlb: 'MLB2', titulo: null, sku: null, preco_brl: null, preco_tabela_brl: null, em_promocao: null, promocao_tipo: null,
+    mlb: 'MLB2', titulo: null, status: null, sku: null, preco_brl: null, preco_tabela_brl: null, em_promocao: null, promocao_tipo: null,
     preco_lido_em: null, custo_brl: null, comissao_brl: null,
     frete_brl: null, imposto_brl: null, liquido_brl: null, margem_pct: null, roas_minimo: null, motivo: 'anuncio_indisponivel',
   };

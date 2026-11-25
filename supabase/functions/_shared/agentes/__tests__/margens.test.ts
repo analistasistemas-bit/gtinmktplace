@@ -54,6 +54,7 @@ function deps(anuncios: Anuncio[], o: Partial<DepsMargens> & { semItem?: string[
         preco: a.preco!, precoTabela: a.precoTabela ?? null, emPromocao: a.precoTabela != null,
         promocaoTipo: a.precoTabela != null ? 'lightning' : null, priceId: '4', lidoEm: LIDO,
       }]))),
+    lerStatus: vi.fn(async (ids: string[]) => new Map(ids.filter((m) => !o.semItem?.includes(m)).map((m) => [m, 'active']))),
     lerFimPromocao: vi.fn(async (alvos: { mlb: string }[]) => new Map(alvos.map((x) => [x.mlb, FIM]))),
     tarifaEm: vi.fn(async () => TARIFA),
     reservarTarifas: vi.fn(async () => 'ok' as const),
@@ -75,7 +76,7 @@ describe('margemDoAlvo', () => {
     expect(r).toEqual({
       estado: 'ok', lido_em: AGORA.toISOString(), tarifa_idade_max_horas: 8,
       anuncios: [{
-        mlb: 'MLB1', titulo: 'Produto MLB1', sku: 'SKU-MLB1', preco_brl: 50, preco_tabela_brl: 60, em_promocao: true,
+        mlb: 'MLB1', titulo: 'Produto MLB1', status: 'active', sku: 'SKU-MLB1', preco_brl: 50, preco_tabela_brl: 60, em_promocao: true,
         promocao_tipo: 'lightning', preco_lido_em: LIDO, promocao_fim: FIM, custo_brl: 14, comissao_brl: 12, frete_brl: 0, imposto_brl: 4, liquido_brl: 34, margem_pct: 40, roas_minimo: 2.5,
         motivo: null,
       }],
@@ -123,7 +124,7 @@ describe('margemDoAlvo', () => {
     if (r.estado !== 'ok') throw new Error(r.estado);
     expect(r.anuncios[0]).toMatchObject({ mlb: 'MLB1', margem_pct: 40, roas_minimo: 2.5, motivo: null });
     expect(r.anuncios[1]).toEqual({
-      mlb: 'MLB2', titulo: 'Produto MLB2', sku: null, preco_brl: 55, preco_tabela_brl: 70, em_promocao: true,
+      mlb: 'MLB2', titulo: 'Produto MLB2', status: 'active', sku: null, preco_brl: 55, preco_tabela_brl: 70, em_promocao: true,
       promocao_tipo: 'lightning', preco_lido_em: LIDO, promocao_fim: FIM, custo_brl: null, comissao_brl: null, frete_brl: null, imposto_brl: null, liquido_brl: null, margem_pct: null,
       roas_minimo: null, motivo: 'sem_custo',
     });
@@ -153,9 +154,10 @@ describe('margemDoAlvo', () => {
     for (const [res, estado] of [['limite', 'limite_leituras'], ['falha', 'indisponivel']] as const) {
       const d = deps([{ mlb: 'MLB1', custo: 14, preco: 50 }], { reservarLeituras: vi.fn(async () => res) });
       expect(await margemDoAlvo('MLB1', d)).toEqual({ estado });
-      expect(d.reservarLeituras).toHaveBeenCalledWith(2);
+      expect(d.reservarLeituras).toHaveBeenCalledWith(3);
       expect(d.buscarItensML).not.toHaveBeenCalled();
       expect(d.lerPrecos).not.toHaveBeenCalled();
+      expect(d.lerStatus).not.toHaveBeenCalled();
       expect(d.reservarTarifas).not.toHaveBeenCalled();
     }
   });
@@ -165,7 +167,7 @@ describe('margemDoAlvo', () => {
     const d = deps(anuncios);
     await margensDoCatalogo(null, d);
     expect(d.reservarLeituras).toHaveBeenCalledTimes(1);
-    expect(d.reservarLeituras).toHaveBeenCalledWith(3 + 41);
+    expect(d.reservarLeituras).toHaveBeenCalledWith(2 * 3 + 41);
   });
 
   it('sem alíquota não reserva nem lê o ML', async () => {
@@ -490,7 +492,7 @@ describe('emenda 5: preço que o comprador paga', () => {
     if (r.estado !== 'ok') throw new Error(r.estado);
     expect(r.anuncios.map((x) => x.promocao_fim)).toEqual([FIM, null]);
     expect(d.lerFimPromocao).toHaveBeenCalledWith([{ mlb: 'MLB1', priceId: '4', preco: 50 }]);
-    expect(vi.mocked(d.reservarLeituras).mock.calls).toEqual([[3], [1]]);
+    expect(vi.mocked(d.reservarLeituras).mock.calls).toEqual([[4], [1]]);
     for (const outra of [() => margensDoCatalogo(null, deps(a)), () => simularMargem('S', 70, deps(a))]) {
       const x = await outra() as { anuncios: object[] };
       for (const y of x.anuncios) expect(y).not.toHaveProperty('promocao_fim');
@@ -526,5 +528,25 @@ describe('emenda 5: preço que o comprador paga', () => {
     const r = await simularMargem('MLB1', 50, deps([{ mlb: 'MLB1', custo: 14, preco: 80, precoTabela: 99 }]));
     if (r.estado !== 'ok') throw new Error(r.estado);
     expect(r.anuncios[0]).toMatchObject({ preco_brl: 50, preco_atual_brl: 80, promocao_tipo: 'lightning', preco_lido_em: LIDO, margem_pct: 40 });
+  });
+});
+
+describe('status do anúncio', () => {
+  it('pausado vem com status e margem; falha no status deixa null e não tira a margem', async () => {
+    const um = [{ mlb: 'MLB1', custo: 14, preco: 50 }];
+    const r = await margemDoAlvo('MLB1', deps(um, { lerStatus: vi.fn(async () => new Map([['MLB1', 'paused']])) }));
+    if (r.estado !== 'ok') throw new Error(r.estado);
+    expect(r.anuncios[0]).toMatchObject({ status: 'paused', margem_pct: 40 });
+    const f = await margensDoCatalogo(null, deps(um, { lerStatus: vi.fn(async () => { throw new Error('x'); }) }));
+    if (f.estado !== 'ok') throw new Error(f.estado);
+    expect(f.anuncios[0]).toMatchObject({ status: null, margem_pct: 40 });
+    expect(f.parcial).toBe(false);
+  });
+  it('status de MLB que o item não confirmou não sai', async () => {
+    const r = await margemDoAlvo('MLB1', deps([{ mlb: 'MLB1', custo: 14, preco: 50 }], {
+      semItem: ['MLB1'], lerStatus: vi.fn(async () => new Map([['MLB1', 'active']])),
+    }));
+    if (r.estado !== 'ok') throw new Error(r.estado);
+    expect(r.anuncios[0]).toMatchObject({ status: null, motivo: 'anuncio_indisponivel' });
   });
 });

@@ -65,7 +65,7 @@ Identificador com até 200 caracteres e sem caracteres de controle. Alvo com mai
   "tarifa_idade_max_horas": 8,
   "anuncios": [
     {
-      "mlb": "MLB0000000000", "titulo": "Produto de exemplo", "sku": "00000001",
+      "mlb": "MLB0000000000", "titulo": "Produto de exemplo", "status": "active", "sku": "00000001",
       "preco_brl": 59.9, "preco_tabela_brl": 69.9, "em_promocao": true, "promocao_tipo": "lightning",
       "preco_lido_em": "2026-11-22T12:00:01.000Z", "promocao_fim": "2026-11-23T03:00:00.000Z",
       "custo_brl": 18.5, "comissao_brl": 9.88, "frete_brl": 6.75, "imposto_brl": 4.79, "liquido_brl": 38.48,
@@ -110,6 +110,7 @@ Argumentos: `identificador` (igual à ferramenta de margem) e `preco_brl` (núme
 
 | Campo | Origem |
 |---|---|
+| `status` | Status do anúncio no Mercado Livre (`active`, `paused`, `closed`...); fora de `active`, o anúncio não está à venda, mas a margem é calculada |
 | `preco_brl` | Preço que o comprador paga agora, com promoção (`amount` do `/sale_price`, por MLB, sem cache); na simulação, o `preco_brl` informado |
 | `preco_tabela_brl` | `regular_amount` do `/sale_price`, quando maior que o preço; `em_promocao` = há preço de tabela maior (`null` se o Mercado Livre informa promoção sem preço de tabela) |
 | `promocao_tipo` | `promotion_type` do Mercado Livre (ex.: `lightning`); na simulação, o da promoção atual |
@@ -171,7 +172,7 @@ Na `referencia`: `anuncio_sem_numero` quando algum anúncio do alvo está sem n�
 | Chamadas | 60 por minuto, por conexão | `429` |
 | Falhas de credencial | 20 por minuto, por IP (só pedido sem chave válida) | `429` |
 | Tarifas | 5.000 por dia (fuso de São Paulo), por organização; 2 consultas por cor de anúncio | `limite_tarifas` |
-| Leituras | 3.000 por dia (fuso de São Paulo), por organização; 1 por bloco de até 20 anúncios, mais 1 por preço e 1 por anúncio em promoção na consulta pontual | `limite_leituras` |
+| Leituras | 3.000 por dia (fuso de São Paulo), por organização; 2 por bloco de até 20 anúncios (item e status), mais 1 por preço e 1 por anúncio em promoção na consulta pontual | `limite_leituras` |
 | Conexões ativas | 10 por organização | 409 na criação |
 | Validade da chave | Até revogar, 30, 90 ou 365 dias | Expirada ou revogada = `401` |
 | Corpo da requisição | 64 KiB, 10 s de leitura | `413` / `408` |
