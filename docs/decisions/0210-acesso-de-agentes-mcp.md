@@ -1,6 +1,6 @@
 # ADR-0210 — Acesso de agentes: servidor MCP, conexão por organização, leitura de margens, em três fatias
 
-**Status:** Aceito — fatia 1 em produção, em piloto na Zaven (main `12d00860`, deploy e aceite em 2026-11-22; emendas 1 a 4 no ar, `agentes` v6 em 2026-11-25); fatias 2 e 3 a implementar (aprovado pelo Diego em 2026-11-22, após entrevista grill-with-docs e revisão de Codex gpt-6.2-sol high e Grok 4.7 xhigh). Plano da fatia 1: `docs/superpowers/plans/2026-11-22-acesso-de-agentes-fatia-1.md`
+**Status:** Aceito — fatia 1 em produção, em piloto na Zaven (main `12d00860`, deploy e aceite em 2026-11-22; emendas 1 a 4 no ar, `agentes` v7 em 2026-11-25); fatias 2 e 3 a implementar (aprovado pelo Diego em 2026-11-22, após entrevista grill-with-docs e revisão de Codex gpt-6.2-sol high e Grok 4.7 xhigh). Plano da fatia 1: `docs/superpowers/plans/2026-11-22-acesso-de-agentes-fatia-1.md`
 **Data:** 2026-11-22
 **Decisores:** Diego
 **Relaciona:** [0027](0027-multi-tenancy-organizations.md) (organização), [0092](0092-identidade-da-plataforma-e-acesso-super-admin.md) (acesso da plataforma a dados de cliente), [0179](0179-painel-de-ads.md) (ACOS de equilíbrio pelo preço, emenda de 2026-10-20), [0170](0170-central-de-promocoes-ml.md) (projeção do líquido), [0055](0055-imposto-por-origem-nacional-importado.md) e [0208](0208-aliquota-com-vigencia.md) (imposto), [0189](0189-extensao-publiai-navegador.md) (precedente de cliente fora do app).
@@ -278,6 +278,8 @@ Pendência separada (anterior, fora desta ADR): `enviarTelegram` (`_shared/notif
 - Tempo na edge (log do gateway): as 8 primeiras chamadas do aceite, incluindo a margem e a loja, entre 353 e 1.801 ms, a mais lenta sendo a primeira.
 - Alarme: 1.010 pedidos sem chave em 47 s, de um único IP: 20 respostas 401 e 990 respostas 429, mediana de 0,22 s. Contador em 1.010 e envio aceito pelo Telegram (a validade de 48 h só é gravada nesse caso). Uma chamada com chave válida logo depois respondeu normalmente. Falta o Diego confirmar que viu a mensagem. Cobriu uma rajada de um IP. Com o envio confirmado, o desenho não repete o aviso de 25/11.
 - Não verificado ao vivo: o texto novo de `instructions` (coberto por teste e pela igualdade do código) e o script do alarme fora do caminho acima.
+
+**Segundo deploy (2026-11-25):** main `380e23df`, `agentes` v7 (47 de 47 arquivos iguais), só com o ajuste de singular e plural. Na Zaven: `blusas pretas M`, `jaquetas azuis G` e `regata marrons M` acham as cores no singular; `neon 4`, o isolamento (`croche rosa`) e a margem de `MLB5563623367` iguais ao aceite acima.
 
 ## Pode ligar em outra loja? (2026-11-25)
 
