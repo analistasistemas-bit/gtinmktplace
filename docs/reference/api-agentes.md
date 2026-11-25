@@ -344,6 +344,9 @@ Resultado (`content[0].text` já decodificado; valores ilustrativos):
       "preco_brl": 100,
       "preco_tabela_brl": 120,
       "em_promocao": true,
+      "promocao_tipo": "lightning",
+      "preco_lido_em": "2026-11-22T12:00:01.000Z",
+      "promocao_fim": "2026-11-23T03:00:00.000Z",
       "custo_brl": 40,
       "comissao_brl": 14,
       "frete_brl": 15,
@@ -363,7 +366,8 @@ Anúncio sem número (todos os campos de custo e margem `null`, com `motivo`):
 ```json
 {
   "mlb": "MLB0000000001", "titulo": "Outro produto", "sku": null,
-  "preco_brl": 80, "preco_tabela_brl": null, "em_promocao": false,
+  "preco_brl": 80, "preco_tabela_brl": null, "em_promocao": false, "promocao_tipo": null,
+  "preco_lido_em": "2026-11-22T12:00:01.000Z", "promocao_fim": null,
   "custo_brl": null, "comissao_brl": null, "frete_brl": null, "imposto_brl": null, "liquido_brl": null,
   "margem_pct": null, "roas_minimo": null, "motivo": "sem_custo"
 }
@@ -403,7 +407,7 @@ Uma consulta por família devolve cada anúncio com o seu número. `referencia` 
 - Para paginar até o fim: repita a chamada com `cursor` igual ao `proximo_cursor` anterior até receber `proximo_cursor: null`.
 - Invalida (`cursor_invalido`): texto fora de `[A-Za-z0-9_-]`, conteúdo que não decodifica para a estrutura esperada, MLB interno fora de `MLB<dígitos>` ou cursor emitido para **outra organização** (inclusive de outra chave). Um cursor de uma chave da mesma organização serve.
 
-**`parcial`.** `true` quando ao menos um anúncio da página ficou sem número por `erro_tarifa` ou `anuncio_indisponivel` (falha de leitura no Mercado Livre, que pode desaparecer em nova consulta). Anúncio sem número por outro motivo (`sem_custo`, `sem_origem`, `pacote_a_conferir`...) é problema de cadastro e **não** marca `parcial`. Não há `referencia` no catálogo.
+**`parcial`.** `true` quando ao menos um anúncio da página ficou sem número por `erro_tarifa`, `anuncio_indisponivel` ou `preco_nao_verificado` (falha de leitura no Mercado Livre, que pode desaparecer em nova consulta). Anúncio sem número por outro motivo (`sem_custo`, `sem_origem`, `pacote_a_conferir`...) é problema de cadastro e **não** marca `parcial`. Não há `referencia` no catálogo.
 
 **Estados de resposta:** `ok` (`{ estado, lido_em, tarifa_idade_max_horas, anuncios, proximo_cursor, parcial }`), `cursor_invalido`, `sem_aliquota`, `limite_tarifas`, `limite_leituras`, `sem_conexao_ml`, `indisponivel`, mais `argumento_invalido` e `{"erro":"indisponivel"}`. Se o teto de tarifas é atingido no meio da página, a página inteira vira `limite_tarifas`: não há página parcial por limite.
 
@@ -445,8 +449,8 @@ Resultado (cada item de `anuncios` tem os mesmos campos da seção 6; aqui resum
 **Comportamento.** Mesmas regras de resolução, limite de 60 anúncios, estados e forma de `ok` de `publiai_margem_anuncio`, com o preço informado aplicado a **todos** os anúncios do alvo. Diferenças:
 
 - Cada anúncio traz o campo extra `preco_atual_brl`: o preço no ar lido agora no Mercado Livre (`null` se não veio).
-- `preco_brl` é o preço simulado; `em_promocao` e `preco_tabela_brl` continuam descrevendo o preço **atual**, não o simulado.
-- A leitura de preço do item pode faltar sem impedir a conta (ao contrário de `publiai_margem_anuncio`): sem o item inteiro (`titulo` indisponível) o anúncio é `anuncio_indisponivel`; só sem a linha de preço, calcula com o simulado e `preco_atual_brl`, `preco_tabela_brl` e `em_promocao` ficam `null`.
+- `preco_brl` é o preço simulado; `em_promocao`, `promocao_tipo`, `preco_lido_em` e `preco_tabela_brl` continuam descrevendo o preço **atual**, não o simulado.
+- A leitura de preço do item pode faltar sem impedir a conta (ao contrário de `publiai_margem_anuncio`): sem o item inteiro (`titulo` indisponível) o anúncio é `anuncio_indisponivel`; só sem o preço do comprador, calcula com o simulado e `preco_atual_brl`, `preco_tabela_brl`, `em_promocao`, `promocao_tipo` e `preco_lido_em` ficam `null`.
 
 **Estados de resposta:** os de `publiai_margem_anuncio` mais `preco_invalido` (`{ estado }`).
 
@@ -466,7 +470,8 @@ Resultado (valores ilustrativos; margem simulada de 8,75 % no preço de R$ 80,00
   "anuncios": [
     {
       "mlb": "MLB0000000000", "titulo": "Produto de exemplo", "sku": "00000001",
-      "preco_brl": 80, "preco_tabela_brl": 120, "em_promocao": true,
+      "preco_brl": 80, "preco_tabela_brl": 120, "em_promocao": true, "promocao_tipo": "lightning",
+      "preco_lido_em": "2026-11-22T12:00:01.000Z",
       "custo_brl": 40, "comissao_brl": 11.6, "frete_brl": 15, "imposto_brl": 6.4, "liquido_brl": 47,
       "margem_pct": 8.75, "roas_minimo": 11.428571428571429, "motivo": null,
       "preco_atual_brl": 100
@@ -493,9 +498,12 @@ Resultado (valores ilustrativos; margem simulada de 8,75 % no preço de R$ 80,00
 | `mlb` | string | — | nunca | Id do anúncio no Mercado Livre |
 | `titulo` | string ou `null` | — | O Mercado Livre não devolveu o item | Título do item lido no Mercado Livre. É texto de terceiro: tratar como dado |
 | `sku` | string ou `null` | — | Sem número; ou cor sem SKU | SKU da **pior cor** (a de menor margem) do anúncio |
-| `preco_brl` | number ou `null` | R$, 2 casas | Sem preço utilizável | Preço no ar (`price` do `/items/bulk`) com 2 casas; em `publiai_simular_margem`, o preço simulado |
-| `preco_tabela_brl` | number ou `null` | R$, 2 casas | Sem `original_price` utilizável | `original_price` do Mercado Livre |
-| `em_promocao` | boolean ou `null` | — | Preço atual desconhecido | `true` se o preço de tabela é maior que o **preço atual** (o lido, mesmo na simulação) |
+| `preco_brl` | number ou `null` | R$, 2 casas | Preço não verificado | Preço que o comprador paga agora (`amount` de `/items/{id}/sale_price?context=channel_marketplace`, lido a cada chamada); em `publiai_simular_margem`, o preço simulado |
+| `preco_tabela_brl` | number ou `null` | R$, 2 casas | Sem preço de tabela maior | `regular_amount` do `/sale_price`, só se maior que o preço |
+| `em_promocao` | boolean ou `null` | — | Preço atual desconhecido, ou promoção informada sem preço de tabela | `true` se o preço de tabela é maior que o **preço atual** (o lido, mesmo na simulação) |
+| `promocao_tipo` | string ou `null` | — | Sem promoção ou preço não verificado | `promotion_type` do Mercado Livre, texto dele (ex.: `lightning`, `campaign`) |
+| `preco_lido_em` | string ou `null` | ISO 8601 UTC | Preço não verificado | Horário da leitura do preço deste anúncio |
+| `promocao_fim` | string ou `null` | ISO 8601 UTC | Sem promoção, sem cota ou fim não sabido | **Só em `publiai_margem_anuncio`.** Fim da linha do `/prices` com o mesmo `price_id` e o mesmo preço |
 | `custo_brl` | number ou `null` | R$, 2 casas | Sem número | Custo do pacote resolvido (`variacoes.custo`, com escala de kit) da pior cor. Nunca `familias.custo_centavos` |
 | `comissao_brl` | number ou `null` | R$, 2 casas | Sem número | Percentual mais parte fixa da tarifa do Mercado Livre, no preço usado (cache de até 8 h) |
 | `frete_brl` | number ou `null` | R$, 2 casas | Sem número | Frete da tarifa do Mercado Livre pelas dimensões do pacote (mesmo cache) |
@@ -511,7 +519,7 @@ Regras de leitura dos números:
 - `margem_pct` e `roas_minimo` **não são arredondados**: o arredondamento é de quem exibe (por exemplo, 19,996 % arredondado para 20 % esconderia um alerta contra um ACOS-alvo de 20 %).
 - Os campos `_brl` são arredondados **um a um** a 2 casas; por isso `comissao_brl + frete_brl + imposto_brl + liquido_brl` pode diferir de `preco_brl` em 1 ou 2 centavos. `margem_pct` vem do cálculo cru, não dos campos arredondados.
 - `margem_pct ≤ 0` vem com `roas_minimo: null` e `motivo: "sem_espaco_para_ads"`; é o único motivo que acompanha um número.
-- Sem número, os campos de custo, comissão, frete, imposto, líquido, `margem_pct` e `roas_minimo` são todos `null`; `preco_brl`, `preco_tabela_brl`, `em_promocao` e `titulo` continuam preenchidos quando foram lidos.
+- Sem número, os campos de custo, comissão, frete, imposto, líquido, `margem_pct` e `roas_minimo` são todos `null`; `preco_brl`, `preco_tabela_brl`, `em_promocao`, `promocao_tipo`, `preco_lido_em`, `promocao_fim` e `titulo` continuam preenchidos quando foram lidos.
 - Insumo ausente nunca vira zero.
 - Um anúncio com várias cores é uma única entrada: os números são da cor de menor margem. Se qualquer cor estiver sem referência, o anúncio inteiro fica sem número.
 
@@ -553,7 +561,7 @@ Erros de chamada (resultado com `erro` e sem `estado`, `isError: true`):
 | `argumento_invalido` | `arguments` fora do esquema (campo obrigatório ausente, tipo errado, `arguments` que não é objeto) |
 | `indisponivel` | Exceção interna (banco, token ou leitura do Mercado Livre falhou; mensagem nunca exposta) ou falha da auditoria |
 
-Observações: uma exceção na leitura do **item** ou do token do Mercado Livre interrompe a ferramenta como `{"erro":"indisponivel"}`; já a falha de leitura do **preço** de um bloco de 20 só deixa aqueles anúncios em `anuncio_indisponivel`. `sem_conexao_ml` só aparece depois da checagem de alíquota e da reserva de cota de leituras (a reserva já foi debitada).
+Observações: uma exceção na leitura do **item** ou do token do Mercado Livre interrompe a ferramenta como `{"erro":"indisponivel"}`; já a falha de leitura do **preço** de um anúncio só o deixa em `preco_nao_verificado`; um `429` do Mercado Livre ou 20 s de leitura de preços param as restantes da chamada. `sem_conexao_ml` só aparece depois da checagem de alíquota e da reserva de cota de leituras (a reserva já foi debitada).
 
 ### Motivos por anúncio (`motivo`)
 
@@ -561,8 +569,8 @@ Todos, exceto `sem_espaco_para_ads`, vêm com `margem_pct: null`.
 
 | Motivo | Significado | O que fazer |
 |---|---|---|
-| `anuncio_indisponivel` | O item (ou, fora da simulação, o preço) não veio do Mercado Livre, ou o vendedor informado não é a conta da conexão | Tentar de novo (marca `parcial` no catálogo); se persistir, conferir se o anúncio é da conta conectada |
-| `sem_preco` | Sem preço utilizável (zero, ausente ou inválido) | Verificar o anúncio no app |
+| `anuncio_indisponivel` | O item não veio do Mercado Livre, ou o vendedor informado não é a conta da conexão | Tentar de novo (marca `parcial` no catálogo); se persistir, conferir se o anúncio é da conta conectada |
+| `preco_nao_verificado` | O preço que o comprador paga não pôde ser lido; nunca se usa outro preço no lugar | Tentar de novo (marca `parcial` no catálogo) |
 | `sem_cadastro` | Anúncio sem vínculo com o cadastro de produtos | Corrigir o vínculo no app |
 | `sem_custo` | Custo do pacote ausente ou menor ou igual a zero | Preencher o custo no cadastro |
 | `pacote_a_conferir` | Pacote escalado a partir de um cadastro que não é kit próprio: não há prova de que o custo era unitário | Conferir o kit no app |
@@ -576,7 +584,7 @@ Todos, exceto `sem_espaco_para_ads`, vêm com `margem_pct: null`.
 
 Motivos que não são de anúncio, em `referencia.motivo`: `anuncio_sem_numero` e `sem_espaco_para_ads`.
 
-Os motivos `sem_cadastro`, `sem_custo`, `sem_origem`, `sem_preco`, `sem_categoria`, `erro_tarifa`, `kit_*`, `pacote_a_conferir` e `sem_dimensao` vêm de `detalheEquilibrioDoMlb` (`_shared/ads/campanhas.ts`) e de `_shared/promocoes/` (`cadastro.ts`, `tipos.ts`). Os demais (`anuncio_indisponivel`, `erro_calculo`, `sem_espaco_para_ads`) são desta API (`margens.ts`).
+Os motivos `sem_cadastro`, `sem_custo`, `sem_origem`, `sem_categoria`, `erro_tarifa`, `kit_*`, `pacote_a_conferir` e `sem_dimensao` vêm de `detalheEquilibrioDoMlb` (`_shared/ads/campanhas.ts`) e de `_shared/promocoes/` (`cadastro.ts`, `tipos.ts`). Os demais (`anuncio_indisponivel`, `erro_calculo`, `sem_espaco_para_ads`) são desta API (`margens.ts`).
 
 ## 8. Limites e cotas
 
@@ -600,9 +608,9 @@ Detalhes:
 - **Chamadas.** Cada `POST` autenticado, aceito pelo portão (conexão válida, organização ativa com o módulo), conta 1, ainda que o corpo depois seja inválido. Recusas `401` e `403` não consomem o limite da conexão.
 - **IP.** Só conta pedidos com credencial recusada; um pedido com chave válida não é checado contra esse limite. Pelo endereço `mcp.publiai.daludi.com.br`, o pedido chega à edge vindo do Worker da Cloudflare, então todas as falhas de credencial por esse endereço dividem um único contador de IP (mais restritivo, não mais permissivo: pedido com chave válida não passa por esse limite). O IP vem de `cf-connecting-ip`; senão, do **último** item de `x-forwarded-for`; senão, a string `desconhecido` (todos sem IP identificável dividem um único contador). Medido em 2026-11-24 numa função temporária (ADR-0210, "Cabeçalho de IP"; 18 pedidos, uma origem IPv4, dois endereços diretos): `cf-connecting-ip` chegou com o IP real nos 12 pedidos que alcançaram a função, os seis pedidos que o enviavam com valor receberam 403 `error code: 1000`, o `x-forwarded-for` enviado foi descartado e o último item dele diferiu do IP de origem. Na `agentes`, em 30 pedidos sem chave no mesmo minuto, nenhuma variação testada voltou a receber `401` depois do primeiro `429`.
 - **Tarifas.** A reserva é feita antes das consultas: 2 por cor (mínimo 1 cor) de cada anúncio que tem item lido e preço utilizável. É um teto de reserva, e não a contagem de chamadas reais ao Mercado Livre (a tarifa pode vir do cache). Reserva maior que 5.000 numa só chamada → `limite_tarifas`. Se uma consulta de tarifa individual sinaliza limite, nenhuma nova consulta é feita naquela chamada e a ferramenta responde `limite_tarifas`.
-- **Leituras.** A reserva é `2 × ceil(anúncios ÷ 20)` (um multiget de item e outro de preço por bloco de 20), feita antes de tocar o Mercado Livre. Uma página de catálogo de 50 anúncios custa 6.
-- **Ordem de consumo dentro de uma chamada de margem:** alíquota (sem alíquota → `sem_aliquota`, nenhuma cota usada) → reserva de leituras → leitura de item e preço → reserva de tarifas → cálculo. Alvo inexistente, cursor inválido e preço inválido terminam antes de qualquer reserva.
-- **Ordem de grandeza (derivada, não é limite do código):** com 2 reservas por anúncio de uma cor, 5.000 tarifas cobrem cerca de 2.500 anúncios por dia; a cota de tarifas costuma esgotar antes da de leituras (3.000 leituras ≈ 500 páginas de 50).
+- **Leituras.** A reserva é `ceil(anúncios ÷ 20) + anúncios` (um multiget de item por bloco de 20 e um preço por anúncio), feita antes de tocar o Mercado Livre. Uma página de catálogo de 50 anúncios custa 53. Em `publiai_margem_anuncio`, cada anúncio em promoção custa mais 1 (fim da promoção); sem cota, só `promocao_fim` fica `null`.
+- **Ordem de consumo dentro de uma chamada de margem:** alíquota (sem alíquota → `sem_aliquota`, nenhuma cota usada) → reserva de leituras → leitura do item → leitura do preço dos anúncios confirmados da conta → reserva de tarifas → cálculo. Alvo inexistente, cursor inválido e preço inválido terminam antes de qualquer reserva.
+- **Ordem de grandeza (derivada, não é limite do código):** com 2 reservas por anúncio de uma cor, 5.000 tarifas cobrem cerca de 2.500 anúncios por dia; a cota de tarifas costuma esgotar antes da de leituras (3.000 leituras ≈ 56 páginas de 50, cerca de 2.800 anúncios).
 - **Falha pontual de tarifa.** Observado em 2026-11-25 numa família de 16 anúncios: em 2 de 4 séries de consulta, 1 e 2 anúncios (entre os 4 primeiros) vieram com `erro_tarifa`, sem número; a única dessas séries repetida veio completa, e outras seis no mesmo dia também. Causa não identificada.
 - **Alarme.** Passando de 1.000 recusas (401, 429 e 503, somadas) num dia de Brasília, o dono do SaaS recebe um aviso no Telegram. Não muda nenhuma resposta (ADR-0210, Emenda 4).
 - **Redis indisponível (fail-closed).** Exceção do Redis, resposta inesperada ou data inválida resultam em recusa, nunca em liberação: no portão HTTP, `503` `{"erro":"indisponivel"}`; numa cota diária de ferramenta, estado `indisponivel` (`isError: true`). Um pedido com chave inválida durante a queda do Redis recebe `503`, não `401`, porque o débito de IP falha primeiro.
@@ -636,7 +644,7 @@ Um identificador de 12 a 20 dígitos é gravado como família ainda que fosse um
 - **Isolamento por organização.** Toda consulta de banco, cache, cursor e cota leva a organização da conexão. Um MLB, MLBU, família, SKU ou título de **outra** organização responde `nao_encontrado`, idêntico a um inexistente; um cursor de outra organização responde `cursor_invalido`. Não há como enumerar outras lojas.
 - **Uma chave por loja.** Para consultar várias lojas, use uma conexão (chave) por loja; não existe chave multi-loja.
 - **Dados que nunca saem:** dados de comprador, credenciais do Mercado Livre, dados de fornecedor e `familias.custo_centavos` (custo de tokens de IA).
-- **Só anúncio da conta.** Item e preço lidos no Mercado Livre são descartados quando o `seller_id` não é o da conta da conexão, ou não vem (ADR-0210, Emenda 2): o anúncio responde `anuncio_indisponivel`. A conferência é por leitura: se só uma for recusada, o que sai veio da outra, já conferida (na simulação, com só o preço recusado, o item conferido basta para calcular, e os campos de preço vindos do ML ficam `null`).
+- **Só anúncio da conta.** O item lido no Mercado Livre é descartado quando o `seller_id` não é o da conta da conexão, ou não vem (ADR-0210, Emenda 2): o anúncio responde `anuncio_indisponivel`. O preço só é pedido para MLB que essa leitura confirmou na mesma chamada (Emenda 5).
 - **Erros opacos.** Falhas internas devolvem só `indisponivel`; a mensagem original não é exposta nem logada. Falhas de credencial não distinguem chave inexistente, revogada ou expirada.
 - **Guarde a chave como segredo.** Ela é exibida uma vez; no PubliAI fica só o hash. Revogue e crie outra em caso de vazamento.
 
@@ -709,4 +717,4 @@ while :; do
 done
 ```
 
-Pontos de atenção para o laço: cada página é 1 chamada HTTP (60 por minuto) e consome pelo menos 6 leituras e 2 tarifas por anúncio-cor; uma loja grande esgota `limite_tarifas` antes de terminar. Ao receber `limite_tarifas` ou `limite_leituras`, guarde o último `proximo_cursor` e retome no dia seguinte (fuso de São Paulo) com o mesmo cursor. Páginas `parcial: true` podem ser refeitas com o mesmo cursor da página anterior. Anúncios sem número por cadastro (`sem_custo`, `sem_origem`...) não mudam entre tentativas.
+Pontos de atenção para o laço: cada página é 1 chamada HTTP (60 por minuto) e consome 53 leituras (página cheia) e pelo menos 2 tarifas por anúncio-cor; uma loja grande esgota `limite_tarifas` antes de terminar. Ao receber `limite_tarifas` ou `limite_leituras`, guarde o último `proximo_cursor` e retome no dia seguinte (fuso de São Paulo) com o mesmo cursor. Páginas `parcial: true` podem ser refeitas com o mesmo cursor da página anterior. Anúncios sem número por cadastro (`sem_custo`, `sem_origem`...) não mudam entre tentativas.

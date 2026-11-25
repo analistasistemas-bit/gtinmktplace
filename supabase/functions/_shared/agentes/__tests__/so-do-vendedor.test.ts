@@ -105,7 +105,7 @@ describe('soDoVendedor', () => {
     expect(edge.match(/criarGetJson\(/g)).toHaveLength(1);
     expect(edge).toContain('get: soDoVendedor(criarGetJson(token), cx.contaExternaId)');
     // O preço usa o token direto, mas só de MLB que o multiget filtrado confirmou (`margens.ts`, testes abaixo).
-    expect(edge).toContain('lerPrecosComprador((await doML()).token, ids)');
+    expect(edge).toContain('(await doML()).preco.lerPrecos(ids)');
   });
 });
 

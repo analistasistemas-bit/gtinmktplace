@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { lerFimPromocao, lerPrecosComprador, parsePrecoComprador } from '../preco-comprador.ts';
+import { criarLeitorPreco, parsePrecoComprador } from '../preco-comprador.ts';
 
 const LIDO = '2026-11-25T20:55:32.000Z';
 // Respostas reais (2026-11-25), só os campos usados.
@@ -36,10 +36,10 @@ describe('parsePrecoComprador', () => {
     'leitura inválida → null (%#)', (x) => expect(parsePrecoComprador(x, LIDO)).toBeNull());
 });
 
-describe('lerPrecosComprador', () => {
+describe('lerPrecos', () => {
   it('um GET por MLB no contexto do marketplace; falha isolada não afeta os outros', async () => {
     const f = vi.fn(async (u: string | URL | Request) => String(u).includes('MLB2') ? resp({}, 500) : resp(relampago));
-    const m = await lerPrecosComprador('tok', ['MLB1', 'MLB2', 'MLB3'], { f: f as typeof fetch });
+    const m = await criarLeitorPreco('tok', { f: f as typeof fetch }).lerPrecos(['MLB1', 'MLB2', 'MLB3']);
     expect([...m.keys()].sort()).toEqual(['MLB1', 'MLB3']);
     expect(String(f.mock.calls[0][0])).toBe('https://api.mercadolibre.com/items/MLB1/sale_price?context=channel_marketplace');
     expect(f).toHaveBeenCalledTimes(3);
@@ -47,7 +47,7 @@ describe('lerPrecosComprador', () => {
   it('429 para de iniciar chamadas, sem repetir', async () => {
     const f = vi.fn(async () => resp({}, 429));
     const ids = Array.from({ length: 50 }, (_, i) => `MLB${i}`);
-    expect((await lerPrecosComprador('tok', ids, { f: f as unknown as typeof fetch })).size).toBe(0);
+    expect((await criarLeitorPreco('tok', { f: f as unknown as typeof fetch }).lerPrecos(ids)).size).toBe(0);
     expect(f.mock.calls.length).toBeLessThanOrEqual(8);
   });
   it('prazo total: chamadas penduradas são abortadas e o resto não começa', async () => {
@@ -56,18 +56,18 @@ describe('lerPrecosComprador', () => {
     }));
     const ids = Array.from({ length: 50 }, (_, i) => `MLB${i}`);
     const t0 = Date.now();
-    expect((await lerPrecosComprador('tok', ids, { f: f as unknown as typeof fetch, prazoMs: 60 })).size).toBe(0);
+    expect((await criarLeitorPreco('tok', { f: f as unknown as typeof fetch, prazoMs: 60 }).lerPrecos(ids)).size).toBe(0);
     expect(Date.now() - t0).toBeLessThan(1000);
     expect(f).toHaveBeenCalledTimes(8);
   });
   it('lista vazia não toca o ML', async () => {
     const f = vi.fn();
-    await lerPrecosComprador('tok', [], { f: f as unknown as typeof fetch });
+    await criarLeitorPreco('tok', { f: f as unknown as typeof fetch }).lerPrecos([]);
     expect(f).not.toHaveBeenCalled();
   });
   it('nunca loga o token nem o corpo', async () => {
     const w = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    await lerPrecosComprador('segredo', ['MLB1'], { f: (async () => { throw new Error('segredo'); }) as unknown as typeof fetch });
+    await criarLeitorPreco('segredo', { f: (async () => { throw new Error('segredo'); }) as unknown as typeof fetch }).lerPrecos(['MLB1']);
     expect(JSON.stringify(w.mock.calls)).not.toContain('segredo');
     w.mockRestore();
   });
@@ -76,8 +76,8 @@ describe('lerPrecosComprador', () => {
 describe('lerFimPromocao', () => {
   const agora = new Date('2026-11-25T21:00:00Z');
   const ler = (corpo: unknown, o: { priceId?: string; preco?: number; agora?: Date; status?: number } = {}) =>
-    lerFimPromocao('tok', [{ mlb: 'MLB1', priceId: o.priceId ?? '4', preco: o.preco ?? 36.09 }],
-      { f: (async () => resp(corpo, o.status ?? 200)) as unknown as typeof fetch, agora: o.agora ?? agora });
+    criarLeitorPreco('tok', { f: (async () => resp(corpo, o.status ?? 200)) as unknown as typeof fetch, agora: () => (o.agora ?? agora).getTime() })
+      .lerFimPromocao([{ mlb: 'MLB1', priceId: o.priceId ?? '4', preco: o.preco ?? 36.09 }]);
   it('fim da linha do price_id', async () => {
     expect((await ler(prices)).get('MLB1')).toBe('2026-11-26T03:00:00.000Z');
   });
@@ -92,5 +92,32 @@ describe('lerFimPromocao', () => {
     for (const end_time of [null, 'xx']) {
       expect((await ler({ prices: [{ id: '4', amount: 36.09, conditions: { end_time } }] })).has('MLB1')).toBe(false);
     }
+  });
+});
+
+describe('leitor da requisição: prazo e parada divididos', () => {
+  const alvo = [{ mlb: 'MLB1', priceId: '4', preco: 36.09 }];
+  it('preço lido e depois 429: /prices não começa', async () => {
+    const f = vi.fn(async (u: string | URL | Request) => String(u).includes('MLB2') ? resp({}, 429) : resp(relampago));
+    const l = criarLeitorPreco('tok', { f: f as typeof fetch });
+    expect([...(await l.lerPrecos(['MLB1', 'MLB2'])).keys()]).toEqual(['MLB1']);
+    expect((await l.lerFimPromocao(alvo)).size).toBe(0);
+    expect(f).toHaveBeenCalledTimes(2);
+  });
+  it('prazo gasto no preço: /prices não ganha prazo novo', async () => {
+    const f = vi.fn(async () => resp(relampago));
+    const l = criarLeitorPreco('tok', { f: f as unknown as typeof fetch, prazoMs: 30 });
+    await l.lerPrecos(['MLB1']);
+    await new Promise((r) => setTimeout(r, 50));
+    expect((await l.lerFimPromocao(alvo)).size).toBe(0);
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+  it('promoção que vence entre as duas leituras → sem fim', async () => {
+    let t = Date.parse('2026-11-26T02:59:59Z');
+    const f = vi.fn(async (u: string | URL | Request) => resp(String(u).endsWith('/prices') ? prices : relampago));
+    const l = criarLeitorPreco('tok', { f: f as typeof fetch, agora: () => t });
+    await l.lerPrecos(['MLB1']);
+    t += 2000;
+    expect((await l.lerFimPromocao(alvo)).size).toBe(0);
   });
 });

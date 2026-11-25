@@ -289,7 +289,7 @@ Pendência separada (anterior, fora desta ADR): `enviarTelegram` (`_shared/notif
 
 ## Emenda 5 — preço que o comprador paga (2026-11-25)
 
-**Status:** PROPOSTA, aguardando aprovação do Diego. Sem código.
+**Status:** Aprovada pelo Diego em 2026-11-25, com as mudanças da consulta ao GPT 6.2 Sol (high). Código revisado; deploy e aceite registrados abaixo quando feitos.
 
 **Defeito.** `preco_brl` vem de `price` do `/items/bulk` (`agentes/index.ts`, `lerPrecos`; `_shared/ads/campanhas.ts`, `CAMPOS_ITEM_AGORA`), que não acompanhou as promoções ativas. A fórmula está certa; o preço de entrada, não. A aba Campanhas usa a mesma leitura. O glossário já define o número como "preço vivo, com promoção ativa": o código descumpre a definição. O mesmo defeito foi corrigido em Publicados em 2026-10-20 (ADR-0170).
 
@@ -297,6 +297,8 @@ Pendência separada (anterior, fora desta ADR): `enviarTelegram` (`_shared/notif
 
 - 5 casos do relato, os 5 reproduzidos: `price` 56,90 (4) e 42,75 (1); `sale_price` 53,59 (3), 53,99 (1) e 36,09 (1), iguais ao que o relato viu na página. Os 5 com `promotion_type: lightning`.
 - Amostra aleatória de 100 anúncios dos 285 com foto de preço no dia (48 ativos, 26 pausados, 26 encerrados): 61 com `price` acima do `sale_price`, 39 iguais, nenhum abaixo. Desvio nos 61: de 0,4% a 133,8%, mediana 18,5%. `em_promocao` errado em 40. O recorte só dos ativos não foi separado.
+- **Só ativos** (segunda amostra aleatória, 80 dos 158 ativos de 285; 95 chamadas, 18h06): 79 com `price` acima, 1 igual; mediana 18,4%, até 77,6%; `em_promocao` errado em 50. Tipos: `lightning` 49, `campaign` 27, `marketplace_campaign` 3, nenhum 1. Dos 285, nenhum tem variações dentro do MLB.
+- **SMART** (`marketplace_campaign`; vendas no banco desde o início de cada campanha, consulta limitada a 40 linhas, com repetição por venda que está em mais de uma campanha): nas vendas em que o preço vendido é o promocional, a comissão ficou em 9,9% a 14%, nunca acima de 14%; nas com desconto bancado pelo ML a diferença aparece como comissão menor. A conta sem subsídio é conservadora nessas vendas. Não foi provado em outras categorias nem lojas.
 - `sale_price` respondeu 200 nos 100; com 8 em paralelo, 3,2 s no total (metade das chamadas em até 0,24 s; máxima 0,56 s).
 - `/prices`: a linha cujo `id` é o `price_id` do `sale_price` traz `conditions.end_time` (3 de 3; fim em 2026-11-26 00h BRT).
 - O Conjunto UV já aparecia a 37,19 na foto diária de `sale_price` desde 21/11. Não é cache: o preço é lido a cada chamada.
@@ -304,14 +306,16 @@ Pendência separada (anterior, fora desta ADR): `enviarTelegram` (`_shared/notif
 
 **Não medido:** documentação oficial do ML (o site recusou acesso automatizado, 403); preço por nível de fidelidade e cupom; promoção encerrando durante a leitura; outras lojas. Os 56,90 serem resto de preço anterior é inferência.
 
+**Mudanças da consulta (GPT 6.2 Sol, high, sem ver o repositório; aceitas):** prazo total de 20 s e timeout de 5 s por leitura; `429` para as leituras restantes, sem repetir, inclusive as de `/prices`; cache da aba Campanhas com versão e conta ML na chave; `preco_lido_em` por anúncio; `em_promocao` nulo quando metadado e valores divergem; `promocao_fim` só com `price_id` e preço iguais e data futura; vendedor conferido também na aba Campanhas; margem rotulada como do momento. **Recusadas:** margem pelo preço base (o base da calça é 89,90, mas sem a Relâmpago o preço volta a 54,90: a margem base sairia otimista), meta semanal, apagar número de pausado ou de promoção ainda não validada, testes de carga.
+
 **Decisão.**
 
 1. Preço = `GET /items/{id}/sale_price?context=channel_marketplace` por MLB, sem cache, na API **e** na aba Campanhas. `preco_brl` = `amount`; `preco_tabela_brl` = `regular_amount` quando maior; `em_promocao` sai dos dois. `price` e `original_price` deixam de entrar na conta.
 2. Só lê `sale_price` de MLB que passou pelo `/items/bulk` com `seller_id` da conexão (Emenda 2). O caminho novo é uma leitura própria; `soDoVendedor` continua recusando tudo que não é bulk.
 3. Falha fechada: sem `sale_price` legível, sem número e `motivo: preco_nao_verificado`, sem recorrer a `price`. Na simulação, `preco_atual_brl: null` e a conta com o preço simulado segue.
 4. Campos novos: `promocao_tipo` (`metadata.promotion_type`, texto do ML, `null` sem promoção) nas três ferramentas de margem; `promocao_fim` só em `publiai_margem_anuncio`, por `/prices` e `price_id`, `null` quando não souber. Não derruba o preço se falhar.
-5. Não entram `preco_comprador_brl`, `preco_base_brl` e `preco_lido_em`: seriam cópia de `preco_brl`, `preco_tabela_brl` e `lido_em`.
-6. Cota `leiturasDia` (3.000) conta as leituras novas: 1 por MLB, mais 1 por MLB em promoção na consulta pontual. Página do catálogo passa de 6 para até 56; uma varredura da Zaven (285 MLBs) custa cerca de 320 por dia. O teto não muda.
+5. Entra `preco_lido_em`. Não entram `preco_comprador_brl` e `preco_base_brl`: seriam cópia de `preco_brl` e `preco_tabela_brl`.
+6. Cota `leiturasDia` (3.000) conta as leituras novas: 1 por MLB, mais 1 por MLB em promoção na consulta pontual. O multiget de preço sai: página do catálogo passa de 6 para até 53; uma varredura da Zaven (285 MLBs) custa cerca de 303. O teto não muda.
 7. Na aba Campanhas, `sale_price` só dos anúncios que entram no cálculo (teto 200, 8 em paralelo; cerca de 6 s pela amostra). Os demais seguem sem equilíbrio, como hoje, e sem preço exibido, para não mostrar número que pode estar errado.
 8. Fórmula, imposto, tarifa e o limite do cupom do vendedor não mudam. `meli_percentage` continua fora (ADR-0170, decisão 7).
 

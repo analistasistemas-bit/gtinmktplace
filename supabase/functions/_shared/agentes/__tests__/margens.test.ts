@@ -502,7 +502,9 @@ describe('emenda 5: preço que o comprador paga', () => {
     let n = 0;
     const semCota = deps(a, { reservarLeituras: vi.fn(async () => (++n === 1 ? 'ok' as const : 'limite' as const)) });
     const falha = deps(a, { lerFimPromocao: vi.fn(async () => { throw new Error('x'); }) });
-    for (const d of [semCota, falha]) {
+    let k = 0;
+    const cotaRejeita = deps(a, { reservarLeituras: vi.fn(async () => { if (++k > 1) throw new Error('x'); return 'ok' as const; }) });
+    for (const d of [semCota, falha, cotaRejeita]) {
       const r = await margemDoAlvo('MLB1', d);
       if (r.estado !== 'ok') throw new Error(r.estado);
       expect(r.anuncios[0]).toMatchObject({ margem_pct: 40, promocao_fim: null });

@@ -66,7 +66,8 @@ Identificador com até 200 caracteres e sem caracteres de controle. Alvo com mai
   "anuncios": [
     {
       "mlb": "MLB0000000000", "titulo": "Produto de exemplo", "sku": "00000001",
-      "preco_brl": 59.9, "preco_tabela_brl": 69.9, "em_promocao": true,
+      "preco_brl": 59.9, "preco_tabela_brl": 69.9, "em_promocao": true, "promocao_tipo": "lightning",
+      "preco_lido_em": "2026-11-22T12:00:01.000Z", "promocao_fim": "2026-11-23T03:00:00.000Z",
       "custo_brl": 18.5, "comissao_brl": 9.88, "frete_brl": 6.75, "imposto_brl": 4.79, "liquido_brl": 38.48,
       "margem_pct": 33.4021, "roas_minimo": 2.9938, "motivo": null
     }
@@ -109,8 +110,11 @@ Argumentos: `identificador` (igual à ferramenta de margem) e `preco_brl` (núme
 
 | Campo | Origem |
 |---|---|
-| `preco_brl` | Preço no ar lido no Mercado Livre (`price`); na simulação, o `preco_brl` informado |
-| `preco_tabela_brl` | `original_price` do Mercado Livre; `em_promocao` = preço de tabela maior que o preço atual |
+| `preco_brl` | Preço que o comprador paga agora, com promoção (`amount` do `/sale_price`, por MLB, sem cache); na simulação, o `preco_brl` informado |
+| `preco_tabela_brl` | `regular_amount` do `/sale_price`, quando maior que o preço; `em_promocao` = há preço de tabela maior (`null` se o Mercado Livre informa promoção sem preço de tabela) |
+| `promocao_tipo` | `promotion_type` do Mercado Livre (ex.: `lightning`); na simulação, o da promoção atual |
+| `promocao_fim` | Só em `publiai_margem_anuncio`: fim da promoção vigente; `null` quando não há ou não se sabe |
+| `preco_lido_em` | Horário da leitura do preço daquele anúncio |
 | `custo_brl` | Custo do pacote resolvido (`variacoes.custo`, com escala de kit ou recusa `pacote_a_conferir`) da **pior cor**. Nunca `familias.custo_centavos` |
 | `comissao_brl` | Percentual + parte fixa da tarifa do Mercado Livre no preço usado (cache de até 8 horas) |
 | `frete_brl` | Frete da tarifa do Mercado Livre pelas dimensões do pacote (mesmo cache) |
@@ -145,8 +149,8 @@ Motivo por anúncio (`motivo`, com `margem_pct: null`, exceto o último):
 
 | Motivo | Significado |
 |---|---|
-| `anuncio_indisponivel` | O item ou o preço não veio do Mercado Livre, ou o anúncio não é da conta conectada |
-| `sem_preco` | Sem preço utilizável |
+| `anuncio_indisponivel` | O item não veio do Mercado Livre, ou o anúncio não é da conta conectada |
+| `preco_nao_verificado` | O preço que o comprador paga não pôde ser lido: sem número, nunca com outro preço no lugar |
 | `sem_custo` | Custo do pacote ausente ou zero |
 | `pacote_a_conferir` | Pacote escalado de cadastro que não é kit: não há prova de que o custo era unitário |
 | `sem_cadastro` | Anúncio sem vínculo no cadastro |
@@ -167,7 +171,7 @@ Na `referencia`: `anuncio_sem_numero` quando algum anúncio do alvo está sem n�
 | Chamadas | 60 por minuto, por conexão | `429` |
 | Falhas de credencial | 20 por minuto, por IP (só pedido sem chave válida) | `429` |
 | Tarifas | 5.000 por dia (fuso de São Paulo), por organização; 2 consultas por cor de anúncio | `limite_tarifas` |
-| Leituras | 3.000 por dia (fuso de São Paulo), por organização; 2 por bloco de até 20 anúncios (item e preço) | `limite_leituras` |
+| Leituras | 3.000 por dia (fuso de São Paulo), por organização; 1 por bloco de até 20 anúncios, mais 1 por preço e 1 por anúncio em promoção na consulta pontual | `limite_leituras` |
 | Conexões ativas | 10 por organização | 409 na criação |
 | Validade da chave | Até revogar, 30, 90 ou 365 dias | Expirada ou revogada = `401` |
 | Corpo da requisição | 64 KiB, 10 s de leitura | `413` / `408` |

@@ -7,7 +7,7 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { adminClient } from '../_shared/supabase.ts';
 import { resolverConexaoEstrita } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
-import { lerFimPromocao, lerPrecosComprador } from '../_shared/ml/preco-comprador.ts';
+import { criarLeitorPreco } from '../_shared/ml/preco-comprador.ts';
 import { buscarItensML, criarGetJson, type GetJson } from '../_shared/promocoes/ml.ts';
 import { carregarCadastro, criarTarifaEm, lerAliquotas } from '../_shared/promocoes/deps.ts';
 import type { QueryTarifa } from '../_shared/promocoes/sincronizar.ts';
@@ -32,14 +32,14 @@ class SemConexaoML extends Error {}
 
 /** Deps de margem de UMA chamada de ferramenta, fechadas na org; o ML só é tocado na primeira dep que precisa dele. */
 function depsMargens(admin: SupabaseClient, orgId: string): DepsMargens {
-  type ML = { token: string; get: GetJson; tarifaEm: (q: QueryTarifa) => Promise<Tarifa> };
+  type ML = { preco: ReturnType<typeof criarLeitorPreco>; get: GetJson; tarifaEm: (q: QueryTarifa) => Promise<Tarifa> };
   let ml: Promise<ML> | null = null;
   const doML = () => ml ??= (async () => {
     const cx = await resolverConexaoEstrita(admin, orgId, 'mercado_livre');
     if (!cx?.contaExternaId) throw new SemConexaoML();
     const token = await getValidAccessTokenConexao(cx);
     return {
-      token,
+      preco: criarLeitorPreco(token),
       get: soDoVendedor(criarGetJson(token), cx.contaExternaId),
       // Uma instância por chamada: o disjuntor de `semRetentativa` vale para a chamada inteira.
       tarifaEm: comDiagnostico(criarTarifaEm({ orgId, mlUserId: cx.contaExternaId, token }, { semRetentativa: true })),
@@ -55,8 +55,8 @@ function depsMargens(admin: SupabaseClient, orgId: string): DepsMargens {
     carregarCadastro: () => carregarCadastro(admin, orgId),
     lerAliquotas: () => lerAliquotas(admin, orgId),
     buscarItensML: async (ids) => buscarItensML((await doML()).get, ids),
-    lerPrecos: async (ids) => lerPrecosComprador((await doML()).token, ids),
-    lerFimPromocao: async (alvos) => lerFimPromocao((await doML()).token, alvos, { agora }),
+    lerPrecos: async (ids) => (await doML()).preco.lerPrecos(ids),
+    lerFimPromocao: async (alvos) => (await doML()).preco.lerFimPromocao(alvos),
     tarifaEm: async (q) => (await doML()).tarifaEm(q),
     reservarTarifas: (n) => reservarTarifas(orgId, n, agora),
     reservarLeituras: (n) => reservarLeituras(orgId, n, agora),

@@ -185,8 +185,12 @@ export function margemDoAlvo(identificador: string, d: DepsMargens): Promise<Res
 /** Complemento: sem cota ou com falha, o fim fica desconhecido e o preço continua valendo. */
 async function fimDasPromocoes(cs: Calculada[], d: DepsMargens): Promise<Map<string, string>> {
   const alvos = cs.flatMap(({ saida, lido: l }) => (l?.emPromocao && l.priceId ? [{ mlb: saida.mlb, priceId: l.priceId, preco: l.preco }] : []));
-  if (!alvos.length || await d.reservarLeituras(alvos.length) !== 'ok') return new Map();
-  return await d.lerFimPromocao(alvos).catch(() => new Map());
+  if (!alvos.length) return new Map();
+  try {
+    return await d.reservarLeituras(alvos.length) === 'ok' ? await d.lerFimPromocao(alvos) : new Map();
+  } catch {
+    return new Map();
+  }
 }
 
 /** Mesmo retorno de `margemDoAlvo` com o preço informado em todos os anúncios; `preco_atual_brl` traz o lido. */
