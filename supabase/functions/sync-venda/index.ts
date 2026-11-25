@@ -29,7 +29,7 @@ import { classificarErroML, MLApiError } from '../_shared/ml/erro-ml.ts';
 import { registrarFalhaAuth, registrarSyncOk } from '../_shared/ml/liveness.ts';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 
-interface Job { user_id?: string; order_id?: string; shipping_id?: string }
+interface Job { user_id?: string; order_id?: string; shipping_id?: string; org_id?: string }
 
 /** Classifica o erro (token ou fetch do recurso) e trata conforme a liveness (ADR-0069):
  * permanente-auth → registra + alerta (só na 1ª falha) e responde 200 (não re-tenta sozinho,
@@ -62,7 +62,8 @@ Deno.serve(async (req) => {
   if (!userId) return new Response('user_id obrigatório', { status: 400, headers: corsHeaders });
 
   const admin = adminClient();
-  const orgId = await resolverOrgPorUserId(admin, userId);
+  // org_id vem do sync-devolucao (emenda 9): resolver por usuário falha com conexões em duas orgs.
+  const orgId = job.org_id ?? await resolverOrgPorUserId(admin, userId);
   const conexao = orgId ? await resolverConexao(admin, orgId, 'mercado_livre') : null;
   if (!conexao) return new Response(JSON.stringify({ ok: false, semCredencial: true }), { status: 200, headers: corsHeaders });
 

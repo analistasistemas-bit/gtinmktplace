@@ -50,4 +50,7 @@ describe('fiação do cancelamento na hora', () => {
     expect(t).toMatch(/functions\/v1\/sync-venda/);
     expect(t).toMatch(/drenar: Deno\.env\.get\('DRENAR_CANCELAMENTOS'\), fanout: fanoutAtivo\('FANOUT_RECONCILIAR'\)/);
   });
+  it('sync-venda usa a org do job quando vem, e só resolve por usuário sem ela', () => {
+    expect(ler('sync-venda/index.ts')).toMatch(/const orgId = job\.org_id \?\? await resolverOrgPorUserId\(admin, userId\);/);
+  });
 });

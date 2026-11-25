@@ -17,13 +17,7 @@ const PARALELAS = 5;
 /** Emenda 8 ao ADR-0121: sem prova, sem leitura ou com sobra, fica pendente até aqui; depois segue para o aviso. */
 const TENTATIVAS_SEM_AVISO = 2;
 
-/** `1` = todas as orgs; lista de ids separada por vírgula = só essas; ausente = desligada. */
-export function drenagemLigada(valor: string | undefined, orgId: string): boolean {
-  const v = (valor ?? '').trim();
-  if (!v) return false;
-  if (v === '1') return true;
-  return v.split(',').map((s) => s.trim()).includes(orgId);
-}
+export { drenagemLigada } from '../_shared/estoque/nunca-saiu.ts';
 
 export interface Obrigacao { id: string; orderId: string; geracao: string; versao: string | null }
 export interface Ledger { lidoEm: string; baixas: Array<{ codigoRef: string; quantidade: number; estornada: boolean }> }

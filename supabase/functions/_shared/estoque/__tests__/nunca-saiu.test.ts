@@ -249,12 +249,16 @@ describe('filaAssume: só adia quando a fila do ADR-0211 vai mesmo drenar', () =
     ['conexão de outro canal', { marketplace_connections: [{ org_id: ORG, canal: 'shopee', conta_externa_id: '9', criado_por: 'u' }] }],
   ])('%s: não assume', async (_n, over) => expect(await com(over)).toBe(false));
   it.each([
-    ['drenagem desligada', { drenar: undefined, fanout: true }], ['drenagem por lista', { drenar: ORG, fanout: true }],
+    ['drenagem desligada', { drenar: undefined, fanout: true }], ['drenagem só de outra org', { drenar: 'o2', fanout: true }],
     ['fan-out desligado', { drenar: '1', fanout: false }],
   ])('%s: não assume, sem ler o banco', async (_n, env) => {
     const b = banco(base());
     expect(await filaAssume(b.admin, ORG, 12, env)).toBe(false);
     expect(b.lidas).toEqual([]);
+  });
+  it('lista de orgs: assume só a org listada, como a drenagem', async () => {
+    expect(await filaAssume(banco(base()).admin, ORG, 12, { drenar: `o2, ${ORG}`, fanout: true })).toBe(true);
+    expect(await filaAssume(banco(base()).admin, ORG, 12, { drenar: 'o2,o3', fanout: true })).toBe(false);
   });
   it('erro em qualquer leitura lança (quem chama avisa)', async () => {
     for (const erro of ['ml_vendas', 'organizations', 'marketplace_connections']) {

@@ -14,7 +14,7 @@ describe('dispararCancelamentoNaHora', () => {
     const c = cenario();
     expect(await c.rodar()).toBe(true);
     expect(c.a).toHaveBeenCalledWith('org', P.orderId);
-    expect(c.p).toHaveBeenCalledWith({ user_id: 'u', order_id: '2000000000000001' });
+    expect(c.p).toHaveBeenCalledWith({ user_id: 'u', order_id: '2000000000000001', org_id: 'org' });
   });
   it.each(['paid', 'partially_refunded', null, undefined])('status %s: nem consulta nem publica', async (status) => {
     const c = cenario();

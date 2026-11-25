@@ -105,6 +105,14 @@ export async function notificacaoJaEnviada(admin: SupabaseClient, orgId: string,
   return (data ?? []).length > 0;
 }
 
+/** `1` = todas as orgs; lista de ids separada por vírgula = só essas; ausente = desligada. */
+export function drenagemLigada(valor: string | undefined, orgId: string): boolean {
+  const v = (valor ?? '').trim();
+  if (!v) return false;
+  if (v === '1') return true;
+  return v.split(',').map((s) => s.trim()).includes(orgId);
+}
+
 /**
  * A fila do ADR-0211 vai tratar este pedido? Obrigação armada e pendente, e as condições em que ela drena: flags,
  * org ativa e conexão com conta e dono na mesma linha. Na dúvida, não. Lança em erro de leitura.
@@ -112,7 +120,7 @@ export async function notificacaoJaEnviada(admin: SupabaseClient, orgId: string,
 export async function filaAssume(
   admin: SupabaseClient, orgId: string, orderId: string | number, env: { drenar: string | undefined; fanout: boolean },
 ): Promise<boolean> {
-  if (env.drenar !== '1' || !env.fanout) return false;
+  if (!drenagemLigada(env.drenar, orgId) || !env.fanout) return false;
   const rs = await Promise.all([
     admin.from('ml_vendas').select('id').eq('org_id', orgId).eq('order_id', orderId)
       .not('cancelamento_geracao', 'is', null).is('cancelamento_concluido_em', null).limit(1),
