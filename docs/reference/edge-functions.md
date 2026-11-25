@@ -1765,14 +1765,20 @@ Lógica em `supabase/functions/_shared/galeria/`. Nenhuma edge desta família es
   (`avisaNovaDevolucao`); o aviso de cancelamento ganha texto próprio quando o pedido tem esse claim
   (`cancelamentoPeloComprador`) e a reposição não muda. Redeploy: `sync-devolucao` **v82**,
   `sync-venda` **v119**, `reconciliar-faturamento` **v108**. **Emenda 13/11/2026:** o aviso genérico traz `Motivo:`/`Desfecho:` do claim mais recente (`claimDoPedido` em `_shared/faturamento/devolucoes-io.ts`, substitui `cancelamentoPeloComprador`) e o link do pedido. Redeploy: `sync-venda` **v134**, `reconciliar-faturamento` **v124**, `backfill-faturamento` **v116**, `sync-devolucao` **v93**, `posvenda-acao` **v19**, `posvenda-detalhe` **v17**.
-  **Emenda 8 (24/11/2026, deploy pendente):** envio `cancelled` sem substatus repõe quando
+  **Emenda 8 (24/11/2026):** envio `cancelled` sem substatus repõe quando
   `GET /shipments/{id}/history` prova que a etiqueta nunca foi impressa (`_shared/estoque/nunca-saiu.ts`, prazo 8 s),
   com os itens abertos do ledger (`cancelamento_baixas`) e sem `entrada`/`ajuste`/linha nova de `variacoes` depois da
   baixa; pedido já avisado silencia. Leitura indisponível: webhook e reconciliação devolvem `adiado` se a fila do
-  ADR-0211 vai tratar (obrigação armada, `DRENAR_CANCELAMENTOS=1`, `FANOUT_RECONCILIAR=1`, org ativa, conexão
+  ADR-0211 vai tratar (obrigação armada, `DRENAR_CANCELAMENTOS` ligada para a org, `FANOUT_RECONCILIAR=1`, org ativa, conexão
   completa), senão avisam na hora; a fila insiste 2 vezes e avisa na 3ª (inclusive com o envio ilegível, que nunca repõe). Aviso em estado parcial
   lista só o aberto; estorno não confirmado pela releitura do ledger avisa com texto neutro ("confira o saldo").
-  **Devolução (`sync-devolucao`, claims) não é tocada por este épico: nem
+  **Emenda 9 (24/11/2026):** o `ml-webhook` descarta o 2º `orders_v2` do mesmo pedido, então o `sync-devolucao`, depois de
+  gravar a venda cancelada, publica o pedido no `sync-venda` com `org_id` e `na_hora: true`
+  (`_shared/estoque/cancelamento-na-hora.ts`), só se a fila tem a obrigação pendente. Com `na_hora` o tratamento só repõe com
+  a prova da emenda 8 e não avisa (exceto crédito de kit que falha); o resto devolve `adiado` e fica para a hora cheia. Envio
+  ilegível também vira `adiado` se a fila assume. O `sync-venda` usa `org_id` do job quando vem. Redeploy: `sync-devolucao`
+  **v100**, `sync-venda` **v145**, `reconciliar-faturamento` **v135**.
+  **Devolução física (claim `returns`) não é tocada por este épico: nem
   repõe estoque, nem notifica** — repor exige saber o que voltou e em que estado, decisão do
   operador, fora de escopo (ADR-0094). Toda a lógica de baixa/estorno é envolvida em try/catch — a
   venda é sagrada, nenhuma falha de estoque derruba o `sync-venda`. Redeploy: **v50**.
