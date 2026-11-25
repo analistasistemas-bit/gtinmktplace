@@ -289,7 +289,7 @@ Pendência separada (anterior, fora desta ADR): `enviarTelegram` (`_shared/notif
 
 ## Emenda 5 — preço que o comprador paga (2026-11-25)
 
-**Status:** Aprovada pelo Diego em 2026-11-25, com as mudanças da consulta ao GPT 6.2 Sol (high). Código revisado; deploy e aceite registrados abaixo quando feitos.
+**Status:** Aprovada pelo Diego em 2026-11-25, com as mudanças da consulta ao GPT 6.2 Sol (high). No ar desde 2026-11-25 (main `46f04c11`, `agentes` v9, `ads-campanhas` v35).
 
 **Defeito.** `preco_brl` vem de `price` do `/items/bulk` (`agentes/index.ts`, `lerPrecos`; `_shared/ads/campanhas.ts`, `CAMPOS_ITEM_AGORA`), que não acompanhou as promoções ativas. A fórmula está certa; o preço de entrada, não. A aba Campanhas usa a mesma leitura. O glossário já define o número como "preço vivo, com promoção ativa": o código descumpre a definição. O mesmo defeito foi corrigido em Publicados em 2026-10-20 (ADR-0170).
 
@@ -322,6 +322,10 @@ Pendência separada (anterior, fora desta ADR): `enviarTelegram` (`_shared/notif
 **Alternativas descartadas.** Ler promoções e escolher a vencedora: refaz a regra do ML e a visão por item atrasa (a Relâmpago ativa não veio como `started`). Foto diária do banco: perde Relâmpago. Só a API: divergiria da aba Campanhas. Cache de 15 min: sem cache já cabe na cota.
 
 **Aceite.** Os 5 MLBs com `preco_brl` igual ao `sale_price` na hora (tolerância 0,01) e o mesmo número na aba Campanhas para anúncio em campanha ativa; amostra nova comparada com `sale_price`; Relâmpago com `promocao_tipo` e `promocao_fim`; depois das 00h de 26/11, preço de volta ao da promoção que sobrar; testes com respostas gravadas para: promoção, sem promoção, falha, anúncio de terceiro, cota.
+
+**Aceite (2026-11-25, 19h46 BRT, Zaven).** Arquivos implantados das duas funções iguais ao commit (51 e 43). Os 5 MLBs do relato: `preco_brl` igual ao `sale_price` lido no mesmo minuto (53,59, 53,99 e 36,09), `promocao_tipo: lightning`, `promocao_fim` 2026-11-26 00h BRT; margem da calça Classic 16,4% e ROAS mínimo 6,09, iguais à simulação feita antes da correção. Primeira página do catálogo: 50 anúncios, 0 sem número, `parcial: false`, os 50 iguais ao `sale_price` (tolerância 0,005). 55 chamadas de conferência. **Falta:** a volta ao preço da Black Friday depois das 00h de 26/11; a aba Campanhas aberta por um usuário (precisa de sessão; não foi chamada).
+
+**Revisão de código (GPT 6.2 Sol, high, duas rodadas).** Corrigidos: cache por conta ML, prazo e parada por 429 divididos com `/prices`, falha na reserva do complemento, relógio do fim. Mantidos por decisão: linha fora do cálculo sem preço na aba Campanhas; a cota do complemento pode ser reservada depois de um 429 sem leitura (até 60 de 3.000; a cota é teto de reserva, como a de tarifas). Veredito final do revisor: REVISAR, só por este último ponto.
 
 ## Pode ligar em outra loja? (2026-11-25)
 
