@@ -116,7 +116,7 @@ Migration aplicada, merge na `main` e deploy feitos em 2026-11-22 (ver "Aceite d
 - Conferir se `/items/bulk` devolve item de outro vendedor. **Fechada em 2026-11-24:** amostra medida e validação de `seller_id` no ar (Emenda 2).
 - Qual cabeçalho de IP chega à edge, e se ele pode ser forjado na URL direta do Supabase. **Verificação do piloto encerrada em 2026-11-24**, sem mudança de código: cabeçalhos lidos dentro de uma função temporária e limite testado na `agentes` (ver "Cabeçalho de IP").
 - O cache de comissão `promo:lp:v1` é compartilhado entre organizações. É anterior a este trabalho; pendência separada. Medido em 2026-11-23: a chave é categoria + tipo de anúncio + preço, sem vendedor, e guarda só a comissão (tarifa do ML), nenhum dado da loja. Zaven e Avil receberam do `/sites/MLB/listing_prices` a mesma comissão nos 4 casos testados (categoria MLB430391, clássico e premium, R$ 42,75 a R$ 150). O risco é de exatidão, não de vazamento: só apareceria se um vendedor tivesse tarifa própria (acordo comercial, loja oficial), o que não foi observado. Mantido sem mudança.
-- Não há bloqueio por IP antes da consulta da chave. Sugestão registrada: assinatura embutida na chave antes de abrir a mais lojas.
+- Não há bloqueio por IP antes da consulta da chave. A sugestão de assinatura embutida na chave foi **avaliada e adiada em 2026-11-24** (Emenda 3): deixa de ser condição para abrir a outras lojas.
 - Sem revalidação da conexão depois da leitura do corpo (janela de até 10 s).
 - O limite de 10 conexões ativas não é atômico (contar e inserir são passos separados).
 
@@ -216,6 +216,28 @@ Autorizado pelo Diego. Sem decisão nova e sem mudança de código.
 
 **Inferência:** os dois resultados são compatíveis com o limite por IP que o código descreve e com ele não ser contornável pelos cabeçalhos testados. O 403 é compatível com rejeição na borda da Cloudflare, não confirmada diretamente. Nos 12 pedidos que chegaram à `diag-ip`, o último item de `x-forwarded-for` diferiu do IP de origem, então o ramo de reserva de `ipDoCliente` não identificaria o cliente; ele não seria usado, porque `cf-connecting-ip` veio em todos e tem precedência.
 
-**Não medido:** origem IPv6 (em 2026-11-24, `txvncrgkoynoxwopfkbp.supabase.co` e `txvncrgkoynoxwopfkbp.functions.supabase.co` não tinham registro AAAA; `mcp.publiai.daludi.com.br` tinha dois); HTTP/1.1; mais de uma origem; tráfego pelo Worker neste ensaio (a medição anterior, de um único IP, está na Emenda 1); um Worker de terceiro chamando a URL direta. Consequência esperada da chave do contador: quem tem muitos IPs de verdade tem um limite para cada um; a assinatura na chave é a mitigação proposta, ainda pendente.
+**Não medido:** origem IPv6 (em 2026-11-24, `txvncrgkoynoxwopfkbp.supabase.co` e `txvncrgkoynoxwopfkbp.functions.supabase.co` não tinham registro AAAA; `mcp.publiai.daludi.com.br` tinha dois); HTTP/1.1; mais de uma origem; tráfego pelo Worker neste ensaio (a medição anterior, de um único IP, está na Emenda 1); um Worker de terceiro chamando a URL direta. Consequência esperada da chave do contador: quem tem muitos IPs de verdade tem um limite para cada um; a assinatura na chave, mitigação proposta, foi adiada (Emenda 3).
 
 Revisão independente do texto (Codex gpt-6.2-sol, high, 2026-11-24, três rodadas): considerou defensável manter o código e pediu só ajustes de redação, aplicados; as três rodadas terminaram em "revisar", e os ajustes da última não passaram por nova rodada.
+
+## Emenda 3 — assinatura na chave adiada, com gatilho (2026-11-24)
+
+Aprovada pelo Diego em 2026-11-24 entre três opções. Sem mudança de código; as chaves existentes seguem valendo.
+
+**Decisão.** Não embutir assinatura na chave agora. Ela deixa de ser condição para ligar o módulo em outra loja.
+
+**O que ela resolveria.** Chave inventada no formato certo custa uma consulta ao banco por tentativa, inclusive acima do limite de falhas por IP, que só é debitado depois da consulta (`auth-agente.ts`). Com assinatura, a edge recusaria antes do banco. Não é defesa contra adivinhação, já inviável com 32 bytes aleatórios, nem contra chave vazada.
+
+**Medido em 2026-11-24:** 1 conexão ativa, de 3 criadas, em todas as organizações. Nas 24 horas até 18h05 de Brasília, o log do gateway contou 69 respostas 401 para endereços que contêm `/agentes`, 20 delas do ensaio da seção "Cabeçalho de IP"; as outras 49 não foram classificadas. `supabase/config.toml` tem 56 entradas `verify_jwt = false`. A chave é buscada por igualdade em coluna com índice único (migration `20261122203018`).
+
+**Inferência e risco aceito:** o custo da consulta sob carga não foi medido, e uma conexão ativa com índice único não mostra a capacidade do banco. Chave inventada no formato certo continua chegando a ele depois do limite por IP (sem linha, a função ainda chama o Redis; se a busca falha, responde 503 e registra um aviso sem debitar o IP), e uma carga alta afetaria **todas as lojas, que dividem o mesmo banco**. O risco é de indisponibilidade, não de acesso a dados, e abrir a outras lojas o aceita também abaixo do gatilho. As 56 entradas acima só dizem que o gateway não exige JWT nessas funções, não quais chegam ao banco sem credencial própria, e por isso não sustentam a decisão.
+
+**Gatilho para reabrir:** mais de 1.000 recusas por dia (00h às 24h de Brasília) na função `agentes`, e não em `agente-conexoes`, somando 401, 429 e 503, ou lentidão do banco atribuída à autenticação. É um indicador bruto: inclui chave malformada (que não chega ao banco) e chave válida acima da própria cota. Só o 401 contaria de menos, porque, esgotada a cota de falhas do IP, a recusa de credencial vira 429 e a consulta já foi feita. O valor é um ponto de revisão escolhido, sem relação demonstrada com a capacidade do banco, e o indicador não foi medido nesse recorte (a amostra acima usa outra janela e outro filtro e serve só de contexto). **Não há alarme.** Conferência manual do log do gateway, pelo Diego: ao ligar cada loja, uma vez por semana enquanto houver mais de uma loja com o módulo, e em caso de lentidão. Um pico entre conferências pode passar despercebido.
+
+**Opções não escolhidas:**
+
+- **HMAC no mesmo formato** (22 bytes aleatórios e 10 de assinatura nos 43 caracteres finais, com segredo novo): as chaves antigas cairiam e teriam de ser recriadas, porque aceitá-las em paralelo manteria aberto o caminho sem assinatura; com um segredo único e sem período de transição, perdê-lo ou trocá-lo derruba as chaves de todas as lojas. A chance de forjar passaria a depender da assinatura de 80 bits e do segredo. Em troca, quem gravasse no banco não fabricaria uma chave nova sem o segredo (ainda poderia associar uma chave já assinada a outra organização, se a assinatura cobrir só a chave). Quanto mais chaves existirem, maior o custo de adotar depois.
+- **Conferir o limite de IP antes do banco:** se clientes diferentes compartilham o IP visto pela função, falhas de um bloqueariam chaves válidas de outros. Pelo Worker foi medido um único IP (Emenda 1); o compartilhamento entre clientes distintos não foi medido.
+- **Descartadas sem detalhar:** verificador sem segredo (qualquer um calcula) e token autocontido (revogação imediata ainda exige consultar um estado atualizado).
+
+Revisão independente do texto (Codex gpt-6.2-sol, high, 2026-11-24, três rodadas): considerou defensável adiar no piloto e pediu que o gatilho contasse também 429 e 503, que o risco de indisponibilidade ficasse escrito e que a conferência tivesse responsável e frequência. Aplicado; as três terminaram em "revisar", e os últimos ajustes não passaram por nova rodada.
