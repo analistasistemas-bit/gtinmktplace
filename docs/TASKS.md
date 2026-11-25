@@ -50,7 +50,7 @@
 - [x] Código pronto e revisado na branch `worktree-api-agentes`: servidor MCP `agentes`, edge `agente-conexoes`, tela em Configurações, migration `20261122203018_agente_conexoes.sql`, docs (`docs/reference/acesso-de-agentes.md`).
 - [x] Migration aplicada, merge na `main` (`12d00860`) e deploy em 22/11: `agentes` v1 (pública), `agente-conexoes` v1, `usuarios` v63, `ads-campanhas` v33, `process-familia` v239, `sincronizar-promocoes` v52.
 - [x] Aceite por chamadas reais na Zaven (22/11, chave temporária já revogada): família do ML com 16 anúncios, MLB, MLBU, SKU, título (candidatos), catálogo paginado, simulação, anúncio de outra organização → não encontrado, revogação → 401, auditoria completa. Números conferidos contra custo e alíquota do cadastro.
-- [ ] Diego: gerar a primeira chave pela tela (Configurações › Conexões de agentes) e testar em cada cliente (tabela do guia).
+- [x] Diego: primeira chave pela tela e teste por cliente em 23/11 (5 clientes aceitos; os não testados estão na tabela do guia).
 - [x] Vendedor do anúncio (Emenda 2 da ADR-0210): amostra de 24/11 (240 de terceiros recusados, 340 próprios com dono certo) e filtro por `seller_id` no ar (`ff4e7729`, `agentes` v5).
 - [x] Cabeçalho de IP (24/11): na `agentes`, depois do primeiro 429 nenhuma variação de cabeçalho testada voltou a receber 401; sem mudança de código.
 - [x] Assinatura na chave: avaliada e adiada em 24/11, com gatilho (ADR-0210, Emenda 3); não é mais condição para abrir a outras lojas.

@@ -323,7 +323,7 @@ Programa autônomo (Claude, ChatGPT, Grok, Hermes e afins) que opera o PubliAI e
 _Evitar_: usuário, integração.
 
 **Conexão de agente**:
-Vínculo entre um agente e uma única organização, criado e revogado por administrador dela, com validade. Nasce de duas formas, com o mesmo comportamento: por chave de agente ou por autorização (o administrador aprova o agente numa tela do app). Toda ação é registrada no nome da conexão, não da pessoa que a criou.
+Vínculo entre um agente e uma única organização, criado e revogado por administrador dela, com validade ou até ser revogado. Nasce de duas formas, com o mesmo comportamento: por chave de agente ou por autorização (o administrador aprova o agente numa tela do app). Toda ação é registrada no nome da conexão, não da pessoa que a criou.
 _Evitar_: sessão, login do agente.
 
 **Chave de agente**:
