@@ -374,7 +374,7 @@ Continua aceito: cache de comissão `promo:lp:v1` compartilhado (exatidão, não
 
 **Medido (2026-11-26, SQL só leitura em produção, sem chamada ao ML):** MLBs publicados por loja, pai e filhos, distintos: Avil 374, Zaven 247, Daludi Shop 113, Hairfly Cosmeticos 84, DSA 29, Hairflay 5. Só um MLB (Avil) é do modelo legado com variações no cadastro (17 linhas). Só a Zaven tem o módulo ligado.
 
-**Inferência pela fórmula do código** (`calcular` em `_shared/agentes/margens.ts`; não medido): uma varredura completa custa `2 × ⌈N/20⌉ + N` leituras e `2 × cores` tarifas. Avil: cerca de 412 leituras (de 3.000/dia) e cerca de 780 tarifas (de 5.000/dia), ou seja, umas 7 varreduras completas por dia pelo teto de leituras. Zaven: cerca de 272 leituras e 494 tarifas. A cota não parece ser o gargalo nas lojas atuais; uma loja com mais de ~2.700 MLBs não caberia numa varredura por dia.
+**Inferência pela fórmula do código** (`calcular` em `_shared/agentes/margens.ts`; não medido): uma varredura completa custa `2 × ⌈N/20⌉ + N` leituras e `2 × cores` tarifas. Avil: cerca de 412 leituras (de 3.000/dia) e cerca de 780 tarifas (de 5.000/dia), ou seja, umas 7 varreduras completas por dia pelo teto de leituras. Zaven: cerca de 273 leituras e 494 tarifas. A cota não parece ser o gargalo nas lojas atuais; uma loja com mais de ~2.700 MLBs não caberia numa varredura por dia.
 
 **Não medido, e condição para prometer o recorte:** tempo de uma página de 50 na edge e de uma varredura completa, por página e no total; quantas tarifas vêm do cache; se uma chamada com 150 a 400 MLBs cabe no prazo da edge. Referência anterior: 100 leituras de `sale_price` com 8 em paralelo levaram 3,2 s (Emenda 5), mas a tarifa e o cadastro não entraram nesse número.
 
@@ -383,7 +383,7 @@ Continua aceito: cache de comissão `promo:lp:v1` compartilhado (exatidão, não
 ### Pedido de OK (antes de qualquer código)
 
 1. **Aprovar esta emenda** (ou ajustar: permissões `margens`/`catalogo`, alvo de 20 na comparação, filtro no catálogo em vez de ferramenta nova).
-2. **Medição M1, Zaven** (já autorizada no piloto): varrer o catálogo inteiro pela chave da Zaven, 5 páginas, e ler o tempo de cada chamada no log do gateway. Custo estimado: ~272 leituras e até ~494 tarifas no ML, todas GET, com o token da Zaven pela própria edge `agentes`. Nada escrito.
+2. **Medição M1, Zaven** (já autorizada no piloto): varrer o catálogo inteiro pela chave da Zaven, 5 páginas, e ler o tempo de cada chamada no log do gateway. Custo estimado: ~273 leituras e até ~494 tarifas no ML, todas GET, com o token da Zaven pela própria edge `agentes`. Nada escrito.
 3. **Medição M2, Avil (opcional, a loja grande):** exige ligar o módulo e criar chave na Avil, ou uma edge temporária de diagnóstico (deploy). As duas escrevem configuração da loja ou publicam função, e a ADR-0092 exige autorização do cliente para a plataforma ler dado dele. Recomendação: fazer M1 e extrapolar para a Avil, marcando como inferência; M2 só quando a Avil ligar o módulo pelo roteiro de "Pode ligar em outra loja?".
 
 Classificação: **crítica** (autorização por chave e migration). Depois da aprovação: plano curto, worktree, TDD, revisão independente do código (Codex Sol high) antes do merge; Grok para o que for só documentação.
