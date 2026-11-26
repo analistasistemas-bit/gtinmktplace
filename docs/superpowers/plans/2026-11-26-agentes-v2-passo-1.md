@@ -194,7 +194,7 @@
 - [ ] **Passo 3: implementar.**
   - As contagens saem do resultado de `calcular` antes do filtro.
   - O filtro é aplicado depois de `parcial`, que continua sobre a página lida.
-  - A auditoria do catálogo grava `chaveFiltro` do filtro **validado**. O filtro herdado do cursor só é conhecido depois de ler o cursor: nesse caso gravar a chave lida, já validada.
+  - A auditoria do catálogo grava `chaveFiltro` do filtro **validado dos argumentos**. Página que só herda o filtro do cursor grava `alvo` nulo (ponytail: o modo já está na linha da 1ª página, e não se cria caminho de dado do serviço para a auditoria).
   - Descrições (copy exata):
     - **ferramenta:** `'Margens dos anúncios publicados, 50 por página. Filtros opcionais: abaixo_de_pct (margem menor que o valor, inclui prejuízo) e sem_numero (anúncios sem margem calculada, com o motivo). A loja inteira só está lida quando proximo_cursor vier nulo: página com anuncios vazio não é o fim; siga o cursor e some examinados e as contagens.'`;
     - **`cursor`:** `'proximo_cursor da página anterior; o filtro fica preso a ele.'`.
