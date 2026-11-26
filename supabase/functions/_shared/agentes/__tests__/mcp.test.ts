@@ -52,7 +52,7 @@ describe('tratarMcp — protocolo', () => {
     const txt = (r.corpo as { result: { instructions: string } }).result.instructions;
     for (const t of [
       '"Abaixo de X%": use publiai_margens_catalogo com abaixo_de_pct=X e siga proximo_cursor até vir nulo; página vazia não é o fim. Diga até onde leu se parar antes.',
-      '"O que está sem margem e por quê": publiai_margens_catalogo com sem_numero=true (cadastro a corrigir, com o motivo). Prejuízo ou margem zero: abaixo_de_pct=0.01; só chame de prejuízo o anúncio com motivo sem_espaco_para_ads.',
+      '"O que está sem margem e por quê": publiai_margens_catalogo com sem_numero=true e abaixo_de_pct=0.01 na mesma varredura (sem número = cadastro a corrigir, com o motivo; motivo sem_espaco_para_ads = prejuízo ou margem zero). Só o cadastro a corrigir: apenas sem_numero=true.',
       '"Entre A, B e C, qual deixa X%": use publiai_comparar_precos e escolha o menor preço cuja referencia.margem_pct seja maior ou igual a X, comparando o número sem arredondar; com referencia.motivo anuncio_sem_numero, não escolha preço. alvo_grande: peça um MLB só.',
       'Ao listar, separe anúncios active dos paused ou closed.',
       'sem_permissao: a chave não pode usar essa ferramenta; avise o usuário, sem tentar outra ferramenta para obter o mesmo dado.',
@@ -393,6 +393,8 @@ describe('catálogo: filtros no MCP (Emenda 6)', () => {
     expect(props.abaixo_de_pct.type).toBe('number');
     expect(props.sem_numero.type).toBe('boolean');
     expect(FERRAMENTAS.publiai_margens_catalogo.descricao).toContain('A loja inteira só está lida quando proximo_cursor vier nulo');
+    expect((props as unknown as Record<string, { description: string }>).cursor.description).toBe(
+      'proximo_cursor da página anterior; o filtro fica preso a ele. Página com anuncios vazio não é o fim: siga até proximo_cursor vir nulo.');
   });
 
   it('repassa o filtro e audita a chave canônica como alvo', async () => {
@@ -409,6 +411,22 @@ describe('catálogo: filtros no MCP (Emenda 6)', () => {
     await tratarMcp(chamar('publiai_margens_catalogo', { abaixo_de_pct: null, sem_numero: null }), f, auditar, TODAS);
     expect(f.catalogo).toHaveBeenCalledWith(null, {});
     expect(auditar).toHaveBeenCalledWith('publiai_margens_catalogo', null, 'ok');
+  });
+
+  it('só cursor com filtro herdado: audita o filtro efetivo devolvido pelo serviço', async () => {
+    const auditar = vi.fn(async () => {});
+    const f = fs({ catalogo: vi.fn(async () => ({ estado: 'ok', anuncios: [], proximo_cursor: null, filtro: 'abaixo_de:18' })) });
+    await tratarMcp(chamar('publiai_margens_catalogo', { cursor: 'abc' }), f, auditar, TODAS);
+    expect(auditar).toHaveBeenCalledWith('publiai_margens_catalogo', 'abaixo_de:18', 'ok');
+  });
+
+  it('filtro da resposta fora da forma canônica ou vazio: volta ao filtro dos argumentos', async () => {
+    for (const lixo of ['', 'x', 'abaixo_de:', 7, 'abaixo_de:18+sem_numero; drop']) {
+      const auditar = vi.fn(async () => {});
+      const f = fs({ catalogo: vi.fn(async () => ({ estado: 'ok', anuncios: [], proximo_cursor: null, filtro: lixo })) });
+      await tratarMcp(chamar('publiai_margens_catalogo', { cursor: 'abc', sem_numero: true }), f, auditar, TODAS);
+      expect(auditar, String(lixo)).toHaveBeenCalledWith('publiai_margens_catalogo', 'sem_numero', 'ok');
+    }
   });
 
   it('só cursor (herda o filtro) audita alvo nulo', async () => {

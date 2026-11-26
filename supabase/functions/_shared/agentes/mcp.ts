@@ -34,7 +34,7 @@ const INSTRUCOES = [
     'quando a promoção muda ou acaba (promocao_fim), consulte de novo.',
   'status diferente de active (ex.: paused, closed) = anúncio fora do ar: avise antes de usar a margem dele.',
   '"Abaixo de X%": use publiai_margens_catalogo com abaixo_de_pct=X e siga proximo_cursor até vir nulo; página vazia não é o fim. Diga até onde leu se parar antes.',
-  '"O que está sem margem e por quê": publiai_margens_catalogo com sem_numero=true (cadastro a corrigir, com o motivo). Prejuízo ou margem zero: abaixo_de_pct=0.01; só chame de prejuízo o anúncio com motivo sem_espaco_para_ads.',
+  '"O que está sem margem e por quê": publiai_margens_catalogo com sem_numero=true e abaixo_de_pct=0.01 na mesma varredura (sem número = cadastro a corrigir, com o motivo; motivo sem_espaco_para_ads = prejuízo ou margem zero). Só o cadastro a corrigir: apenas sem_numero=true.',
   '"Entre A, B e C, qual deixa X%": use publiai_comparar_precos e escolha o menor preço cuja referencia.margem_pct seja maior ou igual a X, comparando o número sem arredondar; com referencia.motivo anuncio_sem_numero, não escolha preço. alvo_grande: peça um MLB só.',
   'Ao listar, separe anúncios active dos paused ou closed.',
   'sem_permissao: a chave não pode usar essa ferramenta; avise o usuário, sem tentar outra ferramenta para obter o mesmo dado.',
@@ -44,6 +44,7 @@ const INSTRUCOES = [
 
 const obj = (x: unknown): x is Args => typeof x === 'object' && x !== null && !Array.isArray(x);
 const str = { type: 'string' } as const;
+const FILTRO_CANONICO = /^(abaixo_de:-?\d+(\.\d+)?)?(\+?sem_numero)?$/;
 
 type Ferramenta = {
   descricao: string;
@@ -52,8 +53,8 @@ type Ferramenta = {
   schema: Record<string, unknown>;
   /** Só ferramentas que declaram `identificador` o levam para a auditoria; as demais auditam alvo null. */
   comIdentificador?: true;
-  /** Alvo da auditoria a partir dos argumentos JÁ validados (só roda se `preparar` aceitou); sem ele, alvo nulo. */
-  alvo?(a: Args): string | null;
+  /** Alvo da auditoria a partir dos argumentos JÁ validados (só roda se `preparar` aceitou) e do resultado; sem ele, alvo nulo. */
+  alvo?(a: Args, resultado: unknown): string | null;
   /** Argumentos válidos → execução; inválidos → null. Só lê os argumentos declarados no esquema. */
   preparar(a: Args, f: Ferramentas): (() => Promise<unknown>) | null;
 };
@@ -81,12 +82,20 @@ export const FERRAMENTAS: Record<string, Ferramenta> = {
     schema: {
       type: 'object',
       properties: {
-        cursor: { type: 'string', description: 'proximo_cursor da página anterior; o filtro fica preso a ele.' },
+        cursor: {
+          type: 'string',
+          description: 'proximo_cursor da página anterior; o filtro fica preso a ele. Página com anuncios vazio não é o fim: siga até proximo_cursor vir nulo.',
+        },
         abaixo_de_pct: { type: 'number' },
         sem_numero: { type: 'boolean' },
       },
     },
-    alvo: (a) => { const v = validarFiltro(a); return v === 'invalido' ? null : chaveFiltro(v); },
+    // Filtro efetivo devolvido pelo serviço (inclusive o herdado do cursor), só na forma canônica; senão o dos argumentos.
+    alvo: (a, r) => {
+      if (obj(r) && r.estado === 'ok' && typeof r.filtro === 'string' && r.filtro !== '' && FILTRO_CANONICO.test(r.filtro)) return r.filtro;
+      const v = validarFiltro(a);
+      return v === 'invalido' ? null : chaveFiltro(v);
+    },
     preparar: (a, f) => {
       const filtro = validarFiltro(a);
       return filtro !== 'invalido' && (a.cursor == null || typeof a.cursor === 'string')
@@ -177,7 +186,7 @@ async function chamarFerramenta(
   // Calculado depois da execução: SKU só é gravado se o serviço o resolveu (estado 'ok' explícito).
   const resolvido = obj(resultado) && resultado.estado === 'ok';
   const alvo = !obj(args) ? null
-    : def.alvo ? (executar ? def.alvo(args) : null)
+    : def.alvo ? (executar ? def.alvo(args, resultado) : null)
     : def.comIdentificador ? alvoParaAuditoria(args.identificador, resolvido) : null;
   try {
     await auditar(nome, alvo, estado);

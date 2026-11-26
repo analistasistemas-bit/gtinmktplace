@@ -108,7 +108,8 @@ describe('listarConexoes', () => {
     const r = await listarConexoes(admin, ORG);
     expect(r).toEqual([{
       id: 'c1', nome: 'Claude', prefixo: 'ab12cd34', criada_em: '2026-11-01T00:00:00Z', expira_em: '2027-01-30T00:00:00Z',
-      revogada_em: null, ultimo_uso_em: null, permissoes: ['margens'],
+      // Valor desconhecido na linha nega tudo (Emenda 6): a tela mostra a chave sem permissões.
+      revogada_em: null, ultimo_uso_em: null, permissoes: [],
     }]);
     expect(JSON.stringify(r)).not.toContain('hash');
     const [c] = chamadas;

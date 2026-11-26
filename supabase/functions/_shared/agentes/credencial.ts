@@ -27,10 +27,10 @@ export function extrairChave(req: Request): string | null {
 export type Permissao = 'margens' | 'catalogo';
 export const PERMISSOES: readonly Permissao[] = ['margens', 'catalogo'];
 
-/** Fecha em dado ruim: não-lista → nenhuma; só valores conhecidos, sem repetir. */
+/** Fecha em dado ruim (Emenda 6): não-lista, lista vazia ou qualquer valor desconhecido → nenhuma; repetidos válidos saem uma vez. */
 export function permissoesDaLinha(x: unknown): Permissao[] {
-  if (!Array.isArray(x)) return [];
-  return [...new Set(x.filter((p): p is Permissao => PERMISSOES.includes(p)))];
+  if (!Array.isArray(x) || !x.every((p) => PERMISSOES.includes(p))) return [];
+  return [...new Set(x as Permissao[])];
 }
 
 /** `expira_em` null = vale até revogar (Emenda 1). `permissoes` cru do banco: lido por `permissoesDaLinha`. */

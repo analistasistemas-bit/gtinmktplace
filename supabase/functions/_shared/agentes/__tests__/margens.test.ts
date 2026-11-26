@@ -581,7 +581,7 @@ describe('catálogo: filtros abaixo_de_pct e sem_numero (Emenda 6)', () => {
   it('sem filtro: os 4, com as contagens', async () => {
     const r = await pag();
     expect(mlbs(r)).toEqual(['MLB1', 'MLB2', 'MLB3', 'MLB4']);
-    expect(r).toMatchObject({ examinados: 4, sem_numero_por_motivo: { sem_custo: 1 }, com_margem_ate_zero: 1 });
+    expect(r).toMatchObject({ examinados: 4, sem_numero_por_motivo: { sem_custo: 1 }, com_margem_ate_zero: 1, filtro: null });
   });
 
   it('parcial vale para a página lida, não para o recorte', async () => {
@@ -601,6 +601,8 @@ describe('catálogo: filtros abaixo_de_pct e sem_numero (Emenda 6)', () => {
     if (p2.estado !== 'ok') throw new Error(p2.estado);
     expect(p2.anuncios).toHaveLength(10);
     expect(p2.examinados).toBe(10);
+    expect(p1.filtro).toBe('abaixo_de:18');
+    expect(p2.filtro).toBe('abaixo_de:18');
     // mesmo filtro em forma canônica (18.0 === 18) é aceito
     expect((await margensDoCatalogo(p1.proximo_cursor, d, { abaixo_de_pct: 18.0 })).estado).toBe('ok');
     expect(await margensDoCatalogo(p1.proximo_cursor, d, { abaixo_de_pct: 20 })).toEqual({ estado: 'cursor_invalido' });
@@ -615,7 +617,7 @@ describe('catálogo: filtros abaixo_de_pct e sem_numero (Emenda 6)', () => {
 
   it('página vazia com filtro: contagens zeradas e sem cursor', async () => {
     const r = await pag({ abaixo_de_pct: 18 }, null, []);
-    expect(r).toMatchObject({ anuncios: [], examinados: 0, sem_numero_por_motivo: {}, com_margem_ate_zero: 0, proximo_cursor: null });
+    expect(r).toMatchObject({ anuncios: [], examinados: 0, sem_numero_por_motivo: {}, com_margem_ate_zero: 0, proximo_cursor: null, filtro: 'abaixo_de:18' });
   });
 
   it('validarFiltro e chaveFiltro', () => {

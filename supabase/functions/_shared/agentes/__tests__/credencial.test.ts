@@ -88,9 +88,11 @@ describe('permissoesDaLinha', () => {
     expect(permissoesDaLinha({})).toEqual([]);
   });
 
-  it('só valores conhecidos, sem repetir', () => {
-    expect(permissoesDaLinha(['vendas', 'margens', 'margens'])).toEqual(['margens']);
-    expect(permissoesDaLinha(['catalogo', 'margens', null, 1])).toEqual(['catalogo', 'margens']);
+  it('valor desconhecido, não-string ou lista vazia → nenhuma (Emenda 6); repetidos válidos deduplicados', () => {
+    expect(permissoesDaLinha(['vendas', 'margens', 'margens'])).toEqual([]);
+    expect(permissoesDaLinha(['catalogo', 'valor_desconhecido'])).toEqual([]);
+    expect(permissoesDaLinha(['catalogo', 'margens', null, 1])).toEqual([]);
     expect(permissoesDaLinha([])).toEqual([]);
+    expect(permissoesDaLinha(['margens', 'margens', 'catalogo'])).toEqual(['margens', 'catalogo']);
   });
 });

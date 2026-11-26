@@ -74,6 +74,10 @@ describe('autenticarAgente', () => {
     expect(await autenticarAgente(req(`Bearer ${chave}`), deps())).toEqual({
       ok: true, conexaoId: 'con-1', orgId: 'org-1', permissoes: [],
     });
+    linha = { ...linha!, permissoes: ['catalogo', 'valor_desconhecido'] };
+    expect(await autenticarAgente(req(`Bearer ${chave}`), deps())).toEqual({
+      ok: true, conexaoId: 'con-1', orgId: 'org-1', permissoes: [],
+    });
   });
 
   it('ausente, malformada, não encontrada, revogada e expirada → 401 idêntico, debitando o IP', async () => {

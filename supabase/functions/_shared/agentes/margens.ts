@@ -55,7 +55,7 @@ export type RespostaComparacao =
   | { estado: 'nao_encontrado' | 'alvo_grande' | 'preco_invalido' }
   | Falha;
 export type RespostaCatalogo =
-  | ({ estado: 'ok'; anuncios: MargemAnuncio[]; proximo_cursor: string | null; parcial: boolean } & Contagens & Lido)
+  | ({ estado: 'ok'; anuncios: MargemAnuncio[]; proximo_cursor: string | null; parcial: boolean; filtro: string | null } & Contagens & Lido)
   | { estado: 'cursor_invalido' }
   | Falha;
 
@@ -307,7 +307,8 @@ const recorte = (anuncios: MargemAnuncio[], f: FiltroCatalogo) => (f.abaixo_de_p
   : anuncios.filter((a) => a.margem_pct == null ? f.sem_numero === true : f.abaixo_de_pct !== undefined && a.margem_pct < f.abaixo_de_pct));
 
 /** 50 MLBs por página, em ordem crescente de MLB. `parcial`: algum anúncio sem número por falha de leitura.
- *  O filtro corta `anuncios`, não a leitura; fica gravado no cursor, e chamada sem filtro herda o do cursor. */
+ *  O filtro corta `anuncios`, não a leitura; fica gravado no cursor, e chamada sem filtro herda o do cursor.
+ *  `filtro` = chave canônica do filtro efetivamente aplicado (inclusive o herdado), para a auditoria. */
 export async function margensDoCatalogo(
   cursor: string | null | undefined, d: DepsMargens, filtro: FiltroCatalogo = {},
 ): Promise<RespostaCatalogo> {
@@ -324,11 +325,11 @@ export async function margensDoCatalogo(
   const mlbs = await d.listarMlbs(depois, POR_PAGINA + 1);
   const pagina = mlbs.slice(0, POR_PAGINA);
   const proximo_cursor = mlbs.length > POR_PAGINA ? cursorDe(d.orgId, pagina[pagina.length - 1], chave) : null;
-  if (!pagina.length) return { estado: 'ok', ...lido(d), anuncios: [], proximo_cursor, parcial: false, ...contar([]) };
+  if (!pagina.length) return { estado: 'ok', ...lido(d), anuncios: [], proximo_cursor, parcial: false, filtro: chave, ...contar([]) };
   const r = await calcular(pagina, d, null);
   // Sem teto, `calcular` nunca devolve `alvo_grande`.
   if (!Array.isArray(r)) return r as Falha;
   const todos = r[0].map((c) => semAtual(c.saida));
   const parcial = todos.some((a) => a.motivo != null && FALHA_LEITURA.has(a.motivo));
-  return { estado: 'ok', ...lido(d), anuncios: recorte(todos, f), proximo_cursor, parcial, ...contar(todos) };
+  return { estado: 'ok', ...lido(d), anuncios: recorte(todos, f), proximo_cursor, parcial, filtro: chave, ...contar(todos) };
 }
