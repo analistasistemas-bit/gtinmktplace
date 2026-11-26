@@ -9,6 +9,7 @@ export interface Ferramentas {
   margem(identificador: string): Promise<unknown>;
   catalogo(cursor: string | null, filtro: FiltroCatalogo): Promise<unknown>;
   simular(identificador: string, preco: unknown): Promise<unknown>;
+  comparar(identificador: string, precos: unknown): Promise<unknown>;
 }
 export type Auditar = (ferramenta: string, alvo: string | null, resultado: string) => Promise<void>;
 type Resposta = { status: number; corpo: unknown | null };
@@ -98,6 +99,20 @@ export const FERRAMENTAS: Record<string, Ferramenta> = {
     comIdentificador: true,
     preparar: (a, f) => (typeof a.identificador === 'string' && typeof a.preco_brl === 'number'
       ? () => f.simular(a.identificador as string, a.preco_brl) : null),
+  },
+  publiai_comparar_precos: {
+    descricao: 'Margem e ROAS mínimo de um anúncio em 2 a 5 preços (precos_brl, em reais), numa chamada. Devolve uma ' +
+      'linha por preço com a pior margem do alvo (referencia). Não altera nada no Mercado Livre.',
+    permissao: 'margens',
+    schema: {
+      type: 'object',
+      properties: { identificador: str, precos_brl: { type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 5 } },
+      required: ['identificador', 'precos_brl'],
+    },
+    comIdentificador: true,
+    // Conteúdo da lista (tamanho, valores) é validado no serviço: `preco_invalido`, sem reserva.
+    preparar: (a, f) => (typeof a.identificador === 'string' && a.precos_brl != null
+      ? () => f.comparar(a.identificador as string, a.precos_brl) : null),
   },
 };
 

@@ -18,7 +18,7 @@ import { comDiagnostico } from '../_shared/agentes/diagnostico-tarifa.ts';
 import { reservarLeituras, reservarTarifas } from '../_shared/agentes/limite.ts';
 import { avisarDono, registrarRecusa } from '../_shared/agentes/recusas.ts';
 import { soDoVendedor } from '../_shared/agentes/so-do-vendedor.ts';
-import { type DepsMargens, margemDoAlvo, margensDoCatalogo, simularMargem } from '../_shared/agentes/margens.ts';
+import { compararPrecos, type DepsMargens, margemDoAlvo, margensDoCatalogo, simularMargem } from '../_shared/agentes/margens.ts';
 import { type Ferramentas, ipDoCliente, tratarMcp } from '../_shared/agentes/mcp.ts';
 import { tratarRequisicao } from '../_shared/agentes/http.ts';
 import {
@@ -118,6 +118,7 @@ Deno.serve((req) => {
         margem: (id) => comDeps(db, orgId, (d) => margemDoAlvo(id, d)),
         catalogo: (cursor, filtro) => comDeps(db, orgId, (d) => margensDoCatalogo(cursor, d, filtro)),
         simular: (id, preco) => comDeps(db, orgId, (d) => simularMargem(id, preco, d)),
+        comparar: (id, precos) => comDeps(db, orgId, (d) => compararPrecos(id, precos, d)),
       };
       return tratarMcp(corpo, ferramentas, (ferramenta, alvo, resultado) =>
         gravarChamada(db, { orgId, conexaoId, ferramenta, alvo, resultado }), permissoes);

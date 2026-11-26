@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { chaveFiltro, margemDoAlvo, margensDoCatalogo, simularMargem, validarFiltro, type DepsMargens } from '../margens.ts';
+import { chaveFiltro, compararPrecos, margemDoAlvo, margensDoCatalogo, simularMargem, validarFiltro, type DepsMargens } from '../margens.ts';
 import type { Vinculo } from '../alvo.ts';
 import type { Busca } from '../busca.ts';
 import { LimiteTarifa } from '../../ads/campanhas.ts';
@@ -631,5 +631,121 @@ describe('catálogo: filtros abaixo_de_pct e sem_numero (Emenda 6)', () => {
     expect(chaveFiltro({ abaixo_de_pct: 18.0 })).toBe('abaixo_de:18');
     expect(chaveFiltro({ sem_numero: true })).toBe('sem_numero');
     expect(chaveFiltro({ abaixo_de_pct: 0.01, sem_numero: true })).toBe('abaixo_de:0.01+sem_numero');
+  });
+});
+
+describe('compararPrecos (Emenda 6)', () => {
+  /** Cadastro com uma linha por cor (variation_id = n*100+j, como em `itemML`), para as cores consultarem tarifa. */
+  const comCores = (a: Anuncio, n = 1) => montarCadastro(Array.from({ length: a.cores ?? 1 }, (_, j) => ({
+    ...linha(a, n), id: `v-${a.mlb}-${j}`, ml_variation_id: String(n * 100 + j),
+  })), []);
+
+  it('ordem pedida; alíquota, leituras, itens e cadastro uma vez; tarifa por preço', async () => {
+    const d = deps([{ mlb: 'MLB1', custo: 14, preco: 80 }]);
+    const r = await compararPrecos('MLB1', [59.9, 49.9], d);
+    if (r.estado !== 'ok') throw new Error(r.estado);
+    expect(r.resultados.map((x) => x.preco_brl)).toEqual([59.9, 49.9]);
+    expect(r.resultados.map((x) => x.anuncios[0].preco_brl)).toEqual([59.9, 49.9]);
+    expect(r.resultados[0].anuncios[0]).toMatchObject({ preco_atual_brl: 80, status: 'active' });
+    expect(r).toMatchObject({ lido_em: AGORA.toISOString(), tarifa_idade_max_horas: 8 });
+    expect(d.lerAliquotas).toHaveBeenCalledTimes(1);
+    expect(d.reservarLeituras).toHaveBeenCalledTimes(1);
+    expect(d.reservarLeituras).toHaveBeenCalledWith(2 * 1 + 1);
+    expect(d.buscarItensML).toHaveBeenCalledTimes(1);
+    expect(d.lerPrecos).toHaveBeenCalledTimes(1);
+    expect(d.carregarCadastro).toHaveBeenCalledTimes(1);
+    expect(d.reservarTarifas).toHaveBeenCalledTimes(1);
+    expect(d.reservarTarifas).toHaveBeenCalledWith(4);
+    expect(vi.mocked(d.tarifaEm).mock.calls.map(([q]) => (q as { preco: number }).preco).sort()).toEqual([49.9, 59.9]);
+  });
+
+  it('referencia por preço = pior margem do alvo naquele preço, como na simulação', async () => {
+    const anuncios = [
+      { mlb: 'MLB1', custo: 14, preco: 50, sku: 'SKU-X' },
+      { mlb: 'MLB2', custo: 30, preco: 50, sku: 'SKU-X' },
+    ];
+    const r = await compararPrecos('SKU-X', [50, 100], deps(anuncios));
+    if (r.estado !== 'ok') throw new Error(r.estado);
+    for (const [i, p] of [50, 100].entries()) {
+      const s = await simularMargem('SKU-X', p, deps(anuncios));
+      if (s.estado !== 'ok') throw new Error(s.estado);
+      expect(r.resultados[i]).toEqual({ preco_brl: p, anuncios: s.anuncios, referencia: s.referencia });
+    }
+    expect(r.resultados[0].referencia).toMatchObject({ mlb: 'MLB2' });
+  });
+
+  it('repetidos depois de arredondar a 2 casas: um resultado, tarifas de um preço', async () => {
+    const d = deps([{ mlb: 'MLB1', custo: 14, preco: 80 }]);
+    const r = await compararPrecos('MLB1', [49.9, 49.901], d);
+    if (r.estado !== 'ok') throw new Error(r.estado);
+    expect(r.resultados.map((x) => x.preco_brl)).toEqual([49.9]);
+    expect(d.reservarTarifas).toHaveBeenCalledWith(2);
+  });
+
+  it('preço inválido → preco_invalido sem nenhuma reserva nem leitura', async () => {
+    for (const p of [[49.9], [1, 2, 3, 4, 5, 6], [49.9, -1], '49.9', [49.9, '50'], [49.9, NaN], [49.9, 1000001], null, {}]) {
+      const d = deps([{ mlb: 'MLB1', custo: 14, preco: 80 }]);
+      expect(await compararPrecos('MLB1', p, d), JSON.stringify(p)).toEqual({ estado: 'preco_invalido' });
+      expect(d.resolver.vinculos).not.toHaveBeenCalled();
+      expect(d.reservarLeituras).not.toHaveBeenCalled();
+      expect(d.reservarTarifas).not.toHaveBeenCalled();
+    }
+  });
+
+  it('primeiro corte: 5 preços × 11 MLBs × 2 > 100 → alvo_grande antes de reservar leituras', async () => {
+    const onze = Array.from({ length: 11 }, (_, i) => ({ mlb: `MLB${i + 1}`, custo: 14, preco: 50, sku: 'SKU-X' }));
+    const d = deps(onze);
+    expect(await compararPrecos('SKU-X', [10, 20, 30, 40, 50], d)).toEqual({ estado: 'alvo_grande' });
+    expect(d.lerAliquotas).not.toHaveBeenCalled();
+    expect(d.reservarLeituras).not.toHaveBeenCalled();
+    // 10 MLBs × 5 preços × 2 = 100 cabe
+    expect((await compararPrecos('SKU-X', [10, 20, 30, 40, 50], deps(onze.slice(0, 10)))).estado).toBe('ok');
+  });
+
+  it('segundo corte: 5 preços × 11 cores × 2 > 100 → alvo_grande depois do multiget, antes de preço e tarifa', async () => {
+    const a = { mlb: 'MLB1', custo: 14, preco: 50, cores: 11 };
+    const d = deps([a], { carregarCadastro: vi.fn(async () => comCores(a)) });
+    expect(await compararPrecos('MLB1', [10, 20, 30, 40, 50], d)).toEqual({ estado: 'alvo_grande' });
+    expect(d.reservarLeituras).toHaveBeenCalledTimes(1);
+    expect(d.buscarItensML).toHaveBeenCalledTimes(1);
+    expect(d.lerPrecos).not.toHaveBeenCalled();
+    expect(d.reservarTarifas).not.toHaveBeenCalled();
+    expect(d.tarifaEm).not.toHaveBeenCalled();
+  });
+
+  it('simulação não tem o segundo corte: 1 MLB com 60 cores calcula', async () => {
+    const a = { mlb: 'MLB1', custo: 14, preco: 50, cores: 60 };
+    const d = deps([a], { carregarCadastro: vi.fn(async () => comCores(a)) });
+    const r = await simularMargem('MLB1', 50, d);
+    expect(r.estado).toBe('ok');
+    expect(d.reservarTarifas).toHaveBeenCalledWith(120);
+  });
+
+  it('concorrência: 1 MLB de 10 cores × 5 preços nunca passa de 4 tarifas simultâneas', async () => {
+    const a = { mlb: 'MLB1', custo: 14, preco: 50, cores: 10 };
+    let ativas = 0;
+    let max = 0;
+    const tarifaEm = vi.fn(async () => {
+      max = Math.max(max, ++ativas);
+      await new Promise((r) => setTimeout(r, 1));
+      ativas--;
+      return TARIFA;
+    });
+    const d = deps([a], { carregarCadastro: vi.fn(async () => comCores(a)), tarifaEm });
+    const r = await compararPrecos('MLB1', [10, 20, 30, 40, 50], d);
+    if (r.estado !== 'ok') throw new Error(r.estado);
+    expect(d.reservarTarifas).toHaveBeenCalledWith(100);
+    expect(tarifaEm).toHaveBeenCalledTimes(50);
+    expect(max).toBe(4);
+    expect(r.resultados.every((x) => x.anuncios[0].margem_pct != null)).toBe(true);
+  });
+
+  it('candidatos e nao_encontrado passam direto', async () => {
+    const cand = [{ codigo_pai: 'P1', titulo: 'Camiseta', mlbs: ['MLB1'] }];
+    const d = deps([]);
+    d.resolver.buscarPorTitulo = vi.fn(async () => ({ candidatos: cand, lista_cortada: false }));
+    expect(await compararPrecos('camiseta', [10, 20], d)).toEqual({ estado: 'candidatos', candidatos: cand, lista_cortada: false });
+    expect(await compararPrecos('MLB999', [10, 20], d)).toEqual({ estado: 'nao_encontrado' });
+    expect(d.lerAliquotas).not.toHaveBeenCalled();
   });
 });
