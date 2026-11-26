@@ -3,6 +3,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const criar = vi.fn();
 const revogar = vi.fn();
+const alterar = vi.fn();
 const invalidar = vi.fn();
 let lista: unknown[] = [];
 let chamadas: { data?: unknown[]; isLoading?: boolean; isError?: boolean } = { data: [] };
@@ -11,6 +12,7 @@ vi.mock('@/hooks/useAgenteConexoes', () => ({
   MCP_URL: 'https://exemplo.supabase.co/functions/v1/agentes',
   useAgenteConexoes: () => ({ data: lista, isLoading: false, isError: false }),
   criarConexaoAgente: (...a: unknown[]) => criar(...a),
+  alterarPermissoesAgente: (...a: unknown[]) => alterar(...a),
   useInvalidarConexoes: () => invalidar,
   useRevogarConexao: () => ({ mutate: revogar, isPending: false }),
   useChamadasConexao: (id: string | null) => (id ? chamadas : { data: undefined }),
@@ -23,7 +25,7 @@ import { SECOES, secoesVisiveis } from '../secoes';
 
 const CONEXAO = {
   id: 'c1', nome: 'Claude do Diego', prefixo: 'ab12cd34', criada_em: '2026-11-01T12:00:00Z',
-  expira_em: '2099-01-30T12:00:00Z', revogada_em: null, ultimo_uso_em: null,
+  expira_em: '2099-01-30T12:00:00Z', revogada_em: null, ultimo_uso_em: null, permissoes: ['margens', 'catalogo'],
 };
 const CHAVE = 'pai_ab12cd34_' + 'x'.repeat(43);
 
@@ -44,7 +46,7 @@ describe('visibilidade da seção', () => {
 
 describe('SecaoAgentes', () => {
   beforeEach(() => {
-    criar.mockReset(); revogar.mockReset(); invalidar.mockReset();
+    criar.mockReset(); revogar.mockReset(); alterar.mockReset(); invalidar.mockReset();
     lista = [CONEXAO];
     chamadas = { data: [] };
   });
@@ -81,7 +83,7 @@ describe('SecaoAgentes', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Criar' }));
 
     await waitFor(() => expect(screen.getByDisplayValue(CHAVE)).toBeInTheDocument());
-    expect(criar).toHaveBeenCalledWith('Meu agente', null); // padrão: até revogar (Emenda 1)
+    expect(criar).toHaveBeenCalledWith('Meu agente', null, ['margens', 'catalogo']); // padrão: até revogar (Emenda 1)
     expect(invalidar).toHaveBeenCalled();
     expect(screen.getByText('Esta chave não será exibida de novo.')).toBeInTheDocument();
     // Aba inicial (claude.ai): URL, nome do cabeçalho e valor com Bearer prontos para copiar.
@@ -98,6 +100,46 @@ describe('SecaoAgentes', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Nova conexão' }));
     expect(screen.queryByDisplayValue(CHAVE)).not.toBeInTheDocument();
     expect(screen.getByLabelText('Nome')).toHaveValue('');
+  });
+
+  const MARGENS = 'Margem de anúncios (consulta, simulação e comparação)';
+  const CATALOGO = 'Catálogo inteiro (consome a cota diária da loja)';
+
+  it('criação: dois checkboxes marcados; desmarcar os dois desabilita Criar; envia só o marcado', async () => {
+    criar.mockResolvedValue({ id: 'c2', chave: CHAVE, prefixo: 'ab12cd34', expira_em: null });
+    render(<SecaoAgentes />);
+    fireEvent.click(screen.getByRole('button', { name: 'Nova conexão' }));
+    fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Meu agente' } });
+    const m = screen.getByRole('checkbox', { name: MARGENS });
+    const c = screen.getByRole('checkbox', { name: CATALOGO });
+    expect(m).toBeChecked(); expect(c).toBeChecked();
+    expect(screen.getByText("Sem 'Catálogo inteiro', o agente ainda consulta anúncios um a um e gasta a mesma cota diária.")).toBeInTheDocument();
+    fireEvent.click(m); fireEvent.click(c);
+    expect(screen.getByRole('button', { name: 'Criar' })).toBeDisabled();
+    fireEvent.click(m);
+    fireEvent.click(screen.getByRole('button', { name: 'Criar' }));
+    await waitFor(() => expect(criar).toHaveBeenCalledWith('Meu agente', null, ['margens']));
+  });
+
+  it('lista mostra as permissões; Permissões abre o par de checkboxes e salva', async () => {
+    lista = [{ ...CONEXAO, permissoes: ['margens'] }];
+    alterar.mockResolvedValue({ ok: true });
+    render(<SecaoAgentes />);
+    expect(screen.getByText(/Permissões: Margens/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Permissões' }));
+    const dlg = await screen.findByRole('dialog');
+    expect(within(dlg).getByRole('checkbox', { name: MARGENS })).toBeChecked();
+    expect(within(dlg).getByRole('checkbox', { name: CATALOGO })).not.toBeChecked();
+    fireEvent.click(within(dlg).getByRole('checkbox', { name: CATALOGO }));
+    fireEvent.click(within(dlg).getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => expect(alterar).toHaveBeenCalledWith('c1', ['margens', 'catalogo']));
+    expect(invalidar).toHaveBeenCalled();
+  });
+
+  it('conexão revogada não oferece Permissões', () => {
+    lista = [{ ...CONEXAO, revogada_em: '2026-11-20T12:00:00Z' }];
+    render(<SecaoAgentes />);
+    expect(screen.queryByRole('button', { name: 'Permissões' })).not.toBeInTheDocument();
   });
 
   it('erro ao criar aparece no diálogo e não mostra chave', async () => {

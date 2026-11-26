@@ -7,7 +7,7 @@ const CHAVE = 'pai_ab12cd34_' + 'y'.repeat(43);
 const m = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock('@/lib/supabase', () => ({ supabase: { functions: { invoke: m.invoke } } }));
 
-const { criarConexaoAgente, useAgenteConexoes, useInvalidarConexoes, useRevogarConexao } = await import('../useAgenteConexoes');
+const { criarConexaoAgente, alterarPermissoesAgente, useAgenteConexoes, useInvalidarConexoes, useRevogarConexao } = await import('../useAgenteConexoes');
 
 describe('useAgenteConexoes: a chave não entra no cache', () => {
   it('depois de criar e invalidar a lista, nenhuma mutation em cache e nenhuma query contém a chave', async () => {
@@ -24,16 +24,24 @@ describe('useAgenteConexoes: a chave não entra no cache', () => {
 
     let criada: { chave: string } | undefined;
     await act(async () => {
-      criada = await criarConexaoAgente('x', 90);
+      criada = await criarConexaoAgente('x', 90, ['margens']);
       await result.current.invalidar();
     });
     expect(criada?.chave).toBe(CHAVE);
-    expect(m.invoke).toHaveBeenCalledWith('agente-conexoes', { body: { acao: 'criar', nome: 'x', dias: 90 } });
+    expect(m.invoke).toHaveBeenCalledWith('agente-conexoes', { body: { acao: 'criar', nome: 'x', dias: 90, permissoes: ['margens'] } });
 
     expect(qc.getMutationCache().getAll()).toHaveLength(0);
     for (const q of qc.getQueryCache().getAll()) {
       expect(JSON.stringify(q.state.data ?? null)).not.toContain(CHAVE);
       expect(JSON.stringify(q.queryKey)).not.toContain(CHAVE);
     }
+  });
+});
+
+describe('alterarPermissoesAgente', () => {
+  it('chama a ação permissoes com id e lista', async () => {
+    m.invoke.mockResolvedValue({ data: { ok: true }, error: null });
+    await alterarPermissoesAgente('c1', ['catalogo']);
+    expect(m.invoke).toHaveBeenLastCalledWith('agente-conexoes', { body: { acao: 'permissoes', id: 'c1', permissoes: ['catalogo'] } });
   });
 });

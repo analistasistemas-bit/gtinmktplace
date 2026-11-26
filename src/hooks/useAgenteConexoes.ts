@@ -3,9 +3,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { lerErroEdge } from '@/hooks/useOperacoes';
 
+/** Mesmos valores de `Permissao` em `_shared/agentes/credencial.ts` (o front não importa de supabase/functions). */
+export type PermissaoAgente = 'margens' | 'catalogo';
 export interface ConexaoAgente {
   id: string; nome: string; prefixo: string; criada_em: string; expira_em: string | null;
-  revogada_em: string | null; ultimo_uso_em: string | null;
+  revogada_em: string | null; ultimo_uso_em: string | null; permissoes: PermissaoAgente[];
 }
 export interface ConexaoCriada { id: string; chave: string; prefixo: string; expira_em: string | null }
 export interface ChamadaAgente { criado_em: string; ferramenta: string; alvo: string | null; resultado: string }
@@ -34,8 +36,12 @@ export function useAgenteConexoes() {
 
 /** Sem useMutation de propósito: a chave não pode ficar no cache do React Query. Quem chama guarda o resultado
  *  em estado local e descarta ao fechar o diálogo. */
-export function criarConexaoAgente(nome: string, dias: Validade): Promise<ConexaoCriada> {
-  return chamar<ConexaoCriada>({ acao: 'criar', nome, dias }, 'Não foi possível criar a conexão.');
+export function criarConexaoAgente(nome: string, dias: Validade, permissoes: PermissaoAgente[]): Promise<ConexaoCriada> {
+  return chamar<ConexaoCriada>({ acao: 'criar', nome, dias, permissoes }, 'Não foi possível criar a conexão.');
+}
+
+export function alterarPermissoesAgente(id: string, permissoes: PermissaoAgente[]): Promise<{ ok: true }> {
+  return chamar<{ ok: true }>({ acao: 'permissoes', id, permissoes }, 'Não foi possível alterar as permissões.');
 }
 
 export function useInvalidarConexoes() {

@@ -47,6 +47,20 @@ describe('tratarMcp — protocolo', () => {
     }
   });
 
+  it('initialize traz as regras da Emenda 6 (recorte, sem número, comparação, status, sem_permissao)', async () => {
+    const r = await tratarMcp(rpc('initialize', {}), fs(), vi.fn(), TODAS);
+    const txt = (r.corpo as { result: { instructions: string } }).result.instructions;
+    for (const t of [
+      '"Abaixo de X%": use publiai_margens_catalogo com abaixo_de_pct=X e siga proximo_cursor até vir nulo; página vazia não é o fim. Diga até onde leu se parar antes.',
+      '"O que está sem margem e por quê": publiai_margens_catalogo com sem_numero=true (cadastro a corrigir, com o motivo). Prejuízo ou margem zero: abaixo_de_pct=0.01; só chame de prejuízo o anúncio com motivo sem_espaco_para_ads.',
+      '"Entre A, B e C, qual deixa X%": use publiai_comparar_precos e escolha o menor preço cuja referencia.margem_pct seja maior ou igual a X, comparando o número sem arredondar; com referencia.motivo anuncio_sem_numero, não escolha preço. alvo_grande: peça um MLB só.',
+      'Ao listar, separe anúncios active dos paused ou closed.',
+      'sem_permissao: a chave não pode usar essa ferramenta; avise o usuário, sem tentar outra ferramenta para obter o mesmo dado.',
+    ]) {
+      expect(txt).toContain(t);
+    }
+  });
+
   it('initialize com versão desconhecida responde 2025-06-18', async () => {
     const r = await tratarMcp(rpc('initialize', { protocolVersion: '1999-01-01' }), fs(), vi.fn(), TODAS);
     expect((r.corpo as { result: { protocolVersion: string } }).result.protocolVersion).toBe('2025-06-18');

@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { StatusPill } from '@/components/ui/status-pill';
 import { BotaoCopiar } from '@/components/ui/botao-copiar';
@@ -16,8 +17,8 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {
-  MCP_URL, criarConexaoAgente, useAgenteConexoes, useChamadasConexao, useInvalidarConexoes, useRevogarConexao,
-  type ConexaoAgente, type ConexaoCriada, type Validade,
+  MCP_URL, alterarPermissoesAgente, criarConexaoAgente, useAgenteConexoes, useChamadasConexao, useInvalidarConexoes, useRevogarConexao,
+  type ConexaoAgente, type ConexaoCriada, type PermissaoAgente, type Validade,
 } from '@/hooks/useAgenteConexoes';
 import { LinhasCarregando, SettingsGroup, SettingsRow } from './settings-row';
 
@@ -35,12 +36,74 @@ const PILL = {
   revogada: <StatusPill tone="neutral">Revogada</StatusPill>,
 };
 
+const ROTULO_PERMISSAO: Record<PermissaoAgente, string> = { margens: 'Margens', catalogo: 'Catálogo' };
+const TODAS: PermissaoAgente[] = ['margens', 'catalogo'];
+
+/** Os dois checkboxes de permissão (criação e edição), com o que `catalogo` não protege (Emenda 6). */
+function CampoPermissoes({ valor, onChange, desabilitado }: { valor: PermissaoAgente[]; onChange: (v: PermissaoAgente[]) => void; desabilitado?: boolean }) {
+  const id = useId();
+  const alternar = (p: PermissaoAgente, marcado: boolean) =>
+    onChange(TODAS.filter((x) => (x === p ? marcado : valor.includes(x))));
+  return (
+    <fieldset className="flex flex-col gap-2" disabled={desabilitado}>
+      <legend className="mb-1 text-sm font-medium">Permissões</legend>
+      <div className="flex items-center gap-2 text-sm">
+        <Checkbox id={`${id}-margens`} checked={valor.includes('margens')} onCheckedChange={(v) => alternar('margens', v === true)} />
+        <label htmlFor={`${id}-margens`}>Margem de anúncios (consulta, simulação e comparação)</label>
+      </div>
+      <div className="flex items-center gap-2 text-sm">
+        <Checkbox id={`${id}-catalogo`} checked={valor.includes('catalogo')} onCheckedChange={(v) => alternar('catalogo', v === true)} />
+        <label htmlFor={`${id}-catalogo`}>Catálogo inteiro (consome a cota diária da loja)</label>
+      </div>
+      <p className="text-xs text-muted-foreground">Sem 'Catálogo inteiro', o agente ainda consulta anúncios um a um e gasta a mesma cota diária.</p>
+    </fieldset>
+  );
+}
+
+function DialogPermissoes({ conexao, onFechar }: { conexao: ConexaoAgente | null; onFechar: () => void }) {
+  const invalidar = useInvalidarConexoes();
+  const [valor, setValor] = useState<PermissaoAgente[]>(TODAS);
+  const [salvando, setSalvando] = useState(false);
+  useEffect(() => { if (conexao) setValor(conexao.permissoes); }, [conexao]);
+
+  async function salvar() {
+    if (!conexao) return;
+    setSalvando(true);
+    try {
+      await alterarPermissoesAgente(conexao.id, valor);
+      void invalidar();
+      onFechar();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Não foi possível alterar as permissões.');
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <Dialog open={!!conexao} onOpenChange={(v) => { if (!v && !salvando) onFechar(); }}>
+      <DialogContent processando={salvando}>
+        <DialogHeader>
+          <DialogTitle>Permissões de “{conexao?.nome}”</DialogTitle>
+          <DialogDescription>A mudança vale a partir da próxima chamada do agente.</DialogDescription>
+        </DialogHeader>
+        <CampoPermissoes valor={valor} onChange={setValor} desabilitado={salvando} />
+        <DialogFooter>
+          <Button type="button" variant="outline" disabled={salvando} onClick={onFechar}>Cancelar</Button>
+          <Button type="button" disabled={salvando || valor.length === 0} onClick={() => void salvar()}>Salvar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /** Seção "Agentes" (ADR-0210, fatia 1): só admin fora de sessão de suporte, com o módulo `agentes`. */
 export function SecaoAgentes() {
   const { data, isLoading, isError } = useAgenteConexoes();
   const [novaAberta, setNovaAberta] = useState(false);
   const [revogando, setRevogando] = useState<ConexaoAgente | null>(null);
   const [vendo, setVendo] = useState<ConexaoAgente | null>(null);
+  const [editando, setEditando] = useState<ConexaoAgente | null>(null);
   const revogar = useRevogarConexao();
 
   return (
@@ -64,10 +127,13 @@ export function SecaoAgentes() {
             <SettingsRow
               key={c.id}
               titulo={c.nome}
-              descricao={`Chave pai_${c.prefixo}_… · ${c.expira_em ? `Validade até ${fmtData(c.expira_em)}` : 'Vale até revogar'} · Último uso: ${c.ultimo_uso_em ? fmtData(c.ultimo_uso_em) : 'nunca'}`}
+              descricao={`Chave pai_${c.prefixo}_… · ${c.expira_em ? `Validade até ${fmtData(c.expira_em)}` : 'Vale até revogar'} · Último uso: ${c.ultimo_uso_em ? fmtData(c.ultimo_uso_em) : 'nunca'} · Permissões: ${c.permissoes.map((p) => ROTULO_PERMISSAO[p]).join(' e ')}`}
               estado={PILL[s]}
             >
               <Button size="sm" variant="ghost" onClick={() => setVendo(c)}>Ver chamadas</Button>
+              {s === 'ativa' && (
+                <Button size="sm" variant="outline" onClick={() => setEditando(c)}>Permissões</Button>
+              )}
               {s === 'ativa' && (
                 <Button size="sm" variant="outline" onClick={() => setRevogando(c)}>Revogar</Button>
               )}
@@ -103,6 +169,7 @@ export function SecaoAgentes() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <DialogPermissoes conexao={editando} onFechar={() => setEditando(null)} />
       <DialogChamadas conexao={vendo} onFechar={() => setVendo(null)} />
     </div>
   );
@@ -112,6 +179,7 @@ export function DialogNovaConexao({ aberto, onFechar }: { aberto: boolean; onFec
   const invalidar = useInvalidarConexoes();
   const [nome, setNome] = useState('');
   const [dias, setDias] = useState<Validade>(null);
+  const [permissoes, setPermissoes] = useState<PermissaoAgente[]>(TODAS);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   // A chave vive só aqui, em estado local: sai da memória do React ao fechar (nem React Query, nem localStorage).
@@ -123,7 +191,7 @@ export function DialogNovaConexao({ aberto, onFechar }: { aberto: boolean; onFec
 
   function fechar() {
     sessao.current += 1;
-    setNome(''); setDias(null); setErro(null); setCriada(null); setCopiado(false); setEnviando(false);
+    setNome(''); setDias(null); setPermissoes(TODAS); setErro(null); setCriada(null); setCopiado(false); setEnviando(false);
     onFechar();
   }
 
@@ -132,7 +200,7 @@ export function DialogNovaConexao({ aberto, onFechar }: { aberto: boolean; onFec
     const minha = sessao.current;
     setEnviando(true); setErro(null);
     try {
-      const r = await criarConexaoAgente(nome.trim(), dias);
+      const r = await criarConexaoAgente(nome.trim(), dias, permissoes);
       void invalidar();
       if (minha === sessao.current) setCriada(r);
     } catch (err) {
@@ -207,10 +275,11 @@ export function DialogNovaConexao({ aberto, onFechar }: { aberto: boolean; onFec
                 </SelectContent>
               </Select>
             </div>
+            <CampoPermissoes valor={permissoes} onChange={setPermissoes} />
             {erro && <p className="text-sm text-destructive">{erro}</p>}
             <DialogFooter>
               <Button type="button" variant="outline" disabled={enviando} onClick={fechar}>Cancelar</Button>
-              <Button type="submit" disabled={enviando || !nome.trim()}>Criar</Button>
+              <Button type="submit" disabled={enviando || !nome.trim() || permissoes.length === 0}>Criar</Button>
             </DialogFooter>
           </form>
         )}
@@ -253,6 +322,7 @@ const FERRAMENTAS: Record<string, string> = {
   publiai_margem_anuncio: 'Margem do anúncio',
   publiai_margens_catalogo: 'Margens do catálogo',
   publiai_simular_margem: 'Simulação de preço',
+  publiai_comparar_precos: 'Comparação de preços',
   desconhecida: 'Ferramenta desconhecida',
 };
 const RESULTADOS: Record<string, string> = {

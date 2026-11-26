@@ -33,6 +33,11 @@ const INSTRUCOES = [
   'O preço é o que o comprador paga agora, com promoção. Margem e ROAS mínimo valem para esse preço neste momento: ' +
     'quando a promoção muda ou acaba (promocao_fim), consulte de novo.',
   'status diferente de active (ex.: paused, closed) = anúncio fora do ar: avise antes de usar a margem dele.',
+  '"Abaixo de X%": use publiai_margens_catalogo com abaixo_de_pct=X e siga proximo_cursor até vir nulo; página vazia não é o fim. Diga até onde leu se parar antes.',
+  '"O que está sem margem e por quê": publiai_margens_catalogo com sem_numero=true (cadastro a corrigir, com o motivo). Prejuízo ou margem zero: abaixo_de_pct=0.01; só chame de prejuízo o anúncio com motivo sem_espaco_para_ads.',
+  '"Entre A, B e C, qual deixa X%": use publiai_comparar_precos e escolha o menor preço cuja referencia.margem_pct seja maior ou igual a X, comparando o número sem arredondar; com referencia.motivo anuncio_sem_numero, não escolha preço. alvo_grande: peça um MLB só.',
+  'Ao listar, separe anúncios active dos paused ou closed.',
+  'sem_permissao: a chave não pode usar essa ferramenta; avise o usuário, sem tentar outra ferramenta para obter o mesmo dado.',
   'ROAS mínimo = 100 ÷ margem: abaixo dele o Ads dá prejuízo. Nada aqui altera preço, anúncio ou campanha.',
   AVISO,
 ].join('\n');

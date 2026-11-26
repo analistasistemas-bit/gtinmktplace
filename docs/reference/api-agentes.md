@@ -9,7 +9,7 @@
 A API de agentes é um servidor **MCP** (Model Context Protocol) remoto, público, **somente leitura**, que devolve a margem de contribuição e o ROAS mínimo dos anúncios do Mercado Livre de **uma** organização do PubliAI.
 
 - **Uma organização por chave.** A organização vem só do registro da conexão (chave); nenhuma ferramenta recebe organização como argumento.
-- **Somente leitura.** Não há ferramenta que publique, altere preço, pause ou mexa em promoção. A simulação de preço (`publiai_simular_margem`) não grava nada e não altera o Mercado Livre. Efeitos colaterais internos: uma linha de auditoria por chamada de ferramenta, `ultimo_uso_em` da conexão, contadores de limite no Redis e, eventualmente, a renovação do token do Mercado Livre da organização (a mesma que o app faz).
+- **Somente leitura.** Não há ferramenta que publique, altere preço, pause ou mexa em promoção. A simulação e a comparação de preços (`publiai_simular_margem`, `publiai_comparar_precos`) não gravam nada e não alteram o Mercado Livre. Efeitos colaterais internos: uma linha de auditoria por chamada de ferramenta, `ultimo_uso_em` da conexão, contadores de limite no Redis e, eventualmente, a renovação do token do Mercado Livre da organização (a mesma que o app faz).
 - **Cálculo.** A margem é a do ACOS de equilíbrio da aba Campanhas do `/ads` (`detalheEquilibrioDoMlb`), sem fórmula própria.
 - **Estado atual.** Em produção desde 2026-11-22 (fatia 1 da ADR-0210), em piloto numa organização. Fatias 2 (OAuth) e 3 (chave de plataforma) não existem.
 - **Transporte.** MCP sobre HTTP, JSON-RPC 2.0, um `POST` por mensagem, resposta sempre `application/json` (nunca SSE), sem sessão.
@@ -106,7 +106,7 @@ JSON-RPC 2.0 sobre HTTP. Cada `POST` carrega uma mensagem; o campo `jsonrpc` tem
 | `initialize` | Responde `protocolVersion`, `capabilities`, `serverInfo` | `202` |
 | `notifications/initialized` | — | `202`, sem corpo |
 | `ping` | `result: {}` | `202` |
-| `tools/list` | Lista as 4 ferramentas | `202` |
+| `tools/list` | Lista as ferramentas que a chave pode usar (até 5; ver [permissões](#permissões-por-chave)) | `202` |
 | `tools/call` | Executa a ferramenta | `202` (nada é executado) |
 | qualquer outro | erro `-32601` | `202` |
 
@@ -235,7 +235,7 @@ Resposta de ferramenta conhecida (sempre HTTP `200`):
 ```
 
 - O resultado da ferramenta é um **objeto JSON serializado dentro de `content[0].text`** (há um único item, `type: "text"`). Não há `structuredContent`. O cliente deve fazer `JSON.parse` do texto.
-- `isError` é `true` somente quando o resultado é `{"erro":"argumento_invalido"}`, `{"erro":"indisponivel"}` ou tem `estado: "indisponivel"`. Todos os demais estados (`nao_encontrado`, `limite_tarifas`, `sem_aliquota`...) chegam com `isError: false`: são resultado de negócio.
+- `isError` é `true` somente quando o resultado é `{"erro":"argumento_invalido"}`, `{"erro":"indisponivel"}` ou tem `estado: "indisponivel"` ou `estado: "sem_permissao"`. Todos os demais estados (`nao_encontrado`, `limite_tarifas`, `sem_aliquota`...) chegam com `isError: false`: são resultado de negócio.
 - Ferramenta inexistente não usa este envelope: é o erro JSON-RPC `-32602`.
 - Se a gravação da auditoria falhar, a resposta é `{"erro":"indisponivel"}` com `isError: true`, mesmo que o cálculo tenha dado certo (a auditoria é obrigatória).
 
@@ -388,15 +388,23 @@ Busca por palavras (`exemplo azul 4`):
 
 Uma consulta por família devolve cada anúncio com o seu número. `referencia` é a **pior margem** entre eles **somente se todos** têm número; se algum estiver sem, a referência fica vazia (`anuncio_sem_numero`), porque um mínimo parcial esconderia o anúncio que pode estar no prejuízo. `referencia.mlb` indica o anúncio que determinou o mínimo (empate: fica o primeiro). A igualdade com a aba Campanhas vale por anúncio; o agregado da família não promete igualdade (ADR-0210).
 
+### Permissões por chave
+
+Cada ferramenta exige uma permissão da chave (ADR-0210, Emenda 6): `margens` (`publiai_margem_anuncio`, `publiai_simular_margem`, `publiai_comparar_precos`) ou `catalogo` (`publiai_margens_catalogo`). `publiai_loja` vale para toda chave. A chave guarda uma lista com ao menos uma das duas; lista vazia, valor desconhecido ou que não seja lista não libera nada. `tools/list` mostra só o permitido. Em `tools/call` a ordem é: ferramenta existe (senão `-32602`) → chave tem a permissão → argumentos e cursor → negócio; assim uma chave sem `catalogo` não usa o cursor para testar nada. Sem permissão: `{ "estado": "sem_permissao" }` com `isError: true` (não é `401`: a chave é válida), auditado com `resultado: sem_permissao`. A mudança vale na chamada seguinte. `catalogo` impede a varredura da loja em poucas chamadas, mas uma chave só com `margens` ainda lê custo e margem de anúncios por MLB, SKU ou palavra (até 60 por alvo) e gasta a mesma cota diária. A edge `agente-conexoes` aceita `{ acao: 'criar', nome, dias, permissoes? }` (omitir `permissoes` = as duas; `null` → 400) e `{ acao: 'permissoes', id, permissoes }` (`{ ok: true }`, 400 `Escolha ao menos uma permissão válida.`, 404 para inexistente, de outra organização ou revogada); `listar` devolve `permissoes` por conexão.
+
 ### 5.3 `publiai_margens_catalogo`
 
-**Descrição:** "Margens de todos os anúncios publicados, 50 por página. Passe `proximo_cursor` para a página seguinte."
+**Descrição:** "Margens dos anúncios publicados, 50 por página. Filtros opcionais: `abaixo_de_pct` e `sem_numero`. A loja inteira só está lida quando `proximo_cursor` vier nulo." Permissão: `catalogo`.
 
 **Entrada:**
 
 | Campo | Tipo | Obrigatório | Regras |
 |---|---|---|---|
 | `cursor` | string | não | Ausente ou `null` = primeira página. Valor não string → `argumento_invalido`. String vazia ou que não seja um `proximo_cursor` válido desta organização → `cursor_invalido` |
+| `abaixo_de_pct` | number | não | Finito, entre −100 e 100 (fora → `argumento_invalido`; `null` = ausente). Anúncios com número e `margem_pct` menor que o valor, inclusive prejuízo e zero. "Abaixo de 18%" = `18`; "prejuízo ou zero" = `0.01` (só `motivo = sem_espaco_para_ads` é prejuízo) |
+| `sem_numero` | boolean | não | Só `true` (outro valor → `argumento_invalido`; `null` = ausente). Anúncios sem número, com o `motivo` |
+
+**Filtros.** Os dois podem ir juntos (união: entra o anúncio que atende a um). O filtro corta `anuncios`, não a leitura nem a cota: a página lida é a mesma de 50. **O filtro fica gravado no cursor** (`{ o, d, f }`): a página seguinte o herda; filtro diferente do gravado → `cursor_invalido` (a comparação usa a forma canônica, `18` = `18.0`; o `f` lido do cursor passa pelo mesmo validador dos argumentos). Auditoria do alvo: `abaixo_de:18`, `sem_numero` ou `abaixo_de:0.01+sem_numero`; sem filtro, nulo. **Lista vazia com `proximo_cursor` não é o fim**: siga até ele vir nulo e some as contagens; se parar antes, diga até onde leu.
 
 **Página.** Até **50** anúncios por página, em ordem crescente de MLB, comparando o texto do MLB (ordem lexicográfica, não numérica: `MLB10` vem antes de `MLB9`). O catálogo reúne os MLBs publicados no Mercado Livre da organização, tanto do modelo legado (MLB no pai) quanto do user products (MLB nos filhos ativos), sem repetição. Catálogo sem anúncios: `ok` com `anuncios: []`, `proximo_cursor: null`, `parcial: false`, sem calcular nada (nem sequer verifica alíquota ou conexão com o Mercado Livre).
 
@@ -410,7 +418,9 @@ Uma consulta por família devolve cada anúncio com o seu número. `referencia` 
 
 **`parcial`.** `true` quando ao menos um anúncio da página ficou sem número por `erro_tarifa`, `anuncio_indisponivel` ou `preco_nao_verificado` (falha de leitura no Mercado Livre, que pode desaparecer em nova consulta). Anúncio sem número por outro motivo (`sem_custo`, `sem_origem`, `pacote_a_conferir`...) é problema de cadastro e **não** marca `parcial`. Não há `referencia` no catálogo.
 
-**Estados de resposta:** `ok` (`{ estado, lido_em, tarifa_idade_max_horas, anuncios, proximo_cursor, parcial }`), `cursor_invalido`, `sem_aliquota`, `limite_tarifas`, `limite_leituras`, `sem_conexao_ml`, `indisponivel`, mais `argumento_invalido` e `{"erro":"indisponivel"}`. Se o teto de tarifas é atingido no meio da página, a página inteira vira `limite_tarifas`: não há página parcial por limite.
+**Contagens** (em todo `ok`, com ou sem filtro; valem para a página **lida, antes do filtro**, assim como `parcial`; `anuncios` é o recorte): `examinados` (número), `sem_numero_por_motivo` (objeto motivo → contagem, só os sem número) e `com_margem_ate_zero` (contagem de `sem_espaco_para_ads`, que tem número). Página vazia traz as contagens zeradas.
+
+**Estados de resposta:** `ok` (`{ estado, lido_em, tarifa_idade_max_horas, anuncios, proximo_cursor, parcial, examinados, sem_numero_por_motivo, com_margem_ate_zero }`), `sem_permissao`, `cursor_invalido`, `sem_aliquota`, `limite_tarifas`, `limite_leituras`, `sem_conexao_ml`, `indisponivel`, mais `argumento_invalido` e `{"erro":"indisponivel"}`. Se o teto de tarifas é atingido no meio da página, a página inteira vira `limite_tarifas`: não há página parcial por limite.
 
 ```bash
 curl -sS "https://<projeto>.supabase.co/functions/v1/agentes" \
@@ -430,13 +440,18 @@ Resultado (cada item de `anuncios` tem os mesmos campos da seção 6; aqui resum
     { "mlb": "MLB0000000001", "margem_pct": null, "roas_minimo": null, "motivo": "erro_tarifa" }
   ],
   "proximo_cursor": "<cursor opaco>",
-  "parcial": true
+  "parcial": true,
+  "examinados": 50,
+  "sem_numero_por_motivo": { "erro_tarifa": 1 },
+  "com_margem_ate_zero": 0
 }
 ```
 
+Com `{"abaixo_de_pct": 18}` o mesmo formato volta com `anuncios` só com os recortados e as contagens da página inteira.
+
 ### 5.4 `publiai_simular_margem`
 
-**Descrição:** "Margem e ROAS mínimo de um anúncio se o preço fosse `preco_brl` (em reais). Não altera nada no Mercado Livre."
+**Descrição:** "Margem e ROAS mínimo de um anúncio se o preço fosse `preco_brl` (em reais). Não altera nada no Mercado Livre." Permissão: `margens`.
 
 **Entrada:**
 
@@ -479,6 +494,47 @@ Resultado (valores ilustrativos; margem simulada de 8,75 % no preço de R$ 80,00
     }
   ],
   "referencia": { "margem_pct": 8.75, "roas_minimo": 11.428571428571429, "mlb": "MLB0000000000", "motivo": null }
+}
+```
+
+### 5.5 `publiai_comparar_precos`
+
+**Descrição:** "Margem e ROAS mínimo de um anúncio em 2 a 5 preços (`precos_brl`, em reais), numa chamada. Devolve uma linha por preço com a pior margem do alvo (`referencia`). Não altera nada no Mercado Livre." Permissão: `margens`.
+
+**Entrada:**
+
+| Campo | Tipo | Obrigatório | Regras |
+|---|---|---|---|
+| `identificador` | string | sim | Igual à de `publiai_margem_anuncio` |
+| `precos_brl` | number[] | sim | De 2 a 5 números JSON. Ausente ou `null` → `argumento_invalido`. Cada preço é arredondado a 2 casas e validado como em `publiai_simular_margem`; repetidos depois do arredondamento são deduplicados (sobrar um só é aceito). Preço inválido ou tamanho fora de 2 a 5 → `preco_invalido` na chamada inteira, sem reserva de cota |
+
+**Comportamento.** Alíquota, itens, status, preço atual e cadastro são lidos **uma vez**; a tarifa é consultada por preço (comissão e frete mudam por faixa). Resolução do alvo, limite de 60 anúncios e demais estados como em `publiai_margem_anuncio`. Teto de **100** consultas de tarifa por chamada, em dois cortes: antes de qualquer reserva ou leitura, `preços × anúncios × 2 > 100` → `alvo_grande`; depois do multiget de itens e antes de ler preços ou reservar tarifas, `preços × cores × 2 > 100` → `alvo_grande` (o segundo corte já gastou a reserva de leituras; com 5 preços cabem até 10 cores). Em `alvo_grande`, peça um MLB só; não dispare uma simulação por preço. Não existe "preço para atingir X%".
+
+**Resposta:** `{ estado: "ok", lido_em, tarifa_idade_max_horas, resultados: [{ preco_brl, anuncios, referencia }] }`, na ordem pedida (sem repetidos); `anuncios` tem a forma de `publiai_simular_margem` e `referencia` a de `publiai_margem_anuncio`. **Estados:** os de `publiai_simular_margem`, mais `sem_permissao`. A auditoria grava o alvo canônico (como na simulação); o número de preços não é gravado.
+
+**Qual preço deixa X%.** O menor preço cuja `referencia.margem_pct` seja maior ou igual a X, comparando o número sem arredondar; com `referencia.motivo = anuncio_sem_numero`, nenhum preço é escolhido.
+
+```bash
+curl -sS "https://<projeto>.supabase.co/functions/v1/agentes" \
+  -H "Authorization: Bearer $PUBLIAI_KEY" -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"publiai_comparar_precos","arguments":{"identificador":"MLB0000000000","precos_brl":[55.7,57.37,61.17]}}}'
+```
+
+Resultado (valores ilustrativos; `anuncios` resumido):
+
+```json
+{
+  "estado": "ok",
+  "lido_em": "2026-11-26T12:00:00.000Z",
+  "tarifa_idade_max_horas": 8,
+  "resultados": [
+    { "preco_brl": 55.7, "anuncios": [ { "mlb": "MLB0000000000", "preco_brl": 55.7, "margem_pct": 16.2, "roas_minimo": 6.1728, "motivo": null } ],
+      "referencia": { "margem_pct": 16.2, "roas_minimo": 6.1728, "mlb": "MLB0000000000", "motivo": null } },
+    { "preco_brl": 57.37, "anuncios": [ { "mlb": "MLB0000000000", "preco_brl": 57.37, "margem_pct": 18.4, "roas_minimo": 5.4348, "motivo": null } ],
+      "referencia": { "margem_pct": 18.4, "roas_minimo": 5.4348, "mlb": "MLB0000000000", "motivo": null } },
+    { "preco_brl": 61.17, "anuncios": [ { "mlb": "MLB0000000000", "preco_brl": 61.17, "margem_pct": 21.4, "roas_minimo": 4.6729, "motivo": null } ],
+      "referencia": { "margem_pct": 21.4, "roas_minimo": 4.6729, "mlb": "MLB0000000000", "motivo": null } }
+  ]
 }
 ```
 
@@ -544,12 +600,13 @@ Regras de leitura dos números:
 
 | Estado | Ferramentas | Significado | O que o integrador faz |
 |---|---|---|---|
-| `ok` | margem, catálogo, simular | Resposta com anúncios. Cada anúncio pode ter `motivo` | Ler cada anúncio; checar `motivo` e, no catálogo, `parcial` e `proximo_cursor` |
+| `ok` | margem, catálogo, simular, comparar | Resposta com anúncios. Cada anúncio pode ter `motivo` | Ler cada anúncio; checar `motivo` e, no catálogo, `parcial` e `proximo_cursor` |
 | `candidatos` | margem, simular | Busca por palavras; nada foi calculado | Mostrar ao usuário, que escolhe; consultar de novo por um dos MLBs. `lista_cortada`: pedir mais detalhes |
 | `nao_encontrado` | margem, simular | Nada publicado nesta organização com esse identificador (alvo de outra organização responde igual) | Conferir o identificador; não insistir |
-| `alvo_grande` | margem, simular | O alvo resolve para mais de 60 anúncios | Consultar por MLB ou usar o catálogo |
-| `cursor_invalido` | catálogo | Cursor mal formado ou de outra organização | Recomeçar da primeira página (sem `cursor`) |
-| `preco_invalido` | simular | Preço fora de (0, 1.000.000] depois do arredondamento a 2 casas | Corrigir o valor |
+| `alvo_grande` | margem, simular, comparar | O alvo resolve para mais de 60 anúncios; na comparação, também quando passa de 100 consultas de tarifa (preços × anúncios ou cores × 2) | Consultar por MLB (comparação: um MLB só) ou usar o catálogo |
+| `sem_permissao` | todas menos `publiai_loja` | A chave não tem a permissão da ferramenta (`isError: true`). Auditado com `resultado: sem_permissao` | Avisar o usuário; não tentar outra ferramenta para o mesmo dado |
+| `cursor_invalido` | catálogo | Cursor mal formado, de outra organização ou com filtro diferente do gravado nele | Recomeçar da primeira página (sem `cursor`) |
+| `preco_invalido` | simular, comparar | Preço fora de (0, 1.000.000] depois do arredondamento a 2 casas (comparação: também lista fora de 2 a 5 preços) | Corrigir o valor |
 | `sem_aliquota` | margem, catálogo, simular | A organização não tem alíquota de imposto válida (nacional e importado) | Não repetir; o operador precisa cadastrar a alíquota no app |
 | `sem_conexao_ml` | margem, catálogo, simular | A organização não tem conta do Mercado Livre conectada | Não repetir; o operador precisa conectar a conta |
 | `limite_tarifas` | margem, catálogo, simular | Teto diário de consultas de tarifa atingido, ou a fila parou nele no meio da chamada | Esperar o dia seguinte (fuso de São Paulo); reduzir o alvo |
@@ -625,7 +682,7 @@ Cada `tools/call` de ferramenta conhecida grava **uma** linha em `agente_chamada
 |---|---|
 | `ferramenta` | Nome da ferramenta; `desconhecida` para nome inexistente (o nome enviado pelo cliente nunca é gravado) |
 | `resultado` | O `estado` do resultado (`ok`, `nao_encontrado`, `limite_tarifas`...); `erro` para `argumento_invalido`, falha interna ou ferramenta desconhecida |
-| `alvo` | Só em `publiai_margem_anuncio` e `publiai_simular_margem`; nas demais é `null`. Forma canônica do identificador, nunca texto livre |
+| `alvo` | Em `publiai_margem_anuncio`, `publiai_simular_margem` e `publiai_comparar_precos`: forma canônica do identificador, nunca texto livre. No catálogo: o modo do filtro (`abaixo_de:18`, `sem_numero`, `abaixo_de:0.01+sem_numero`), nulo sem filtro. Em `publiai_loja` e em `sem_permissao`: `null` |
 
 Regra do `alvo` (calculada depois da execução; o identificador é aparado de espaços):
 

@@ -12,7 +12,21 @@ O agente não altera nada: não publica, não muda preço, não pausa, não mexe
 
 1. Na Central de controle, ligar o módulo **Acesso de agentes** da organização (vem desligado).
 2. Um administrador abre **Configurações → Conexões de agentes → Nova conexão**, dá um nome e escolhe a validade: **Até revogar** (padrão), 30, 90 ou 365 dias (ADR-0210, Emenda 1).
-3. Copiar a chave. Ela é exibida **uma única vez**; depois só o prefixo (`pai_xxxxxxxx_…`) aparece na lista. Se perder, revogue e crie outra.
+3. Marcar as **permissões** da chave (as duas vêm marcadas; ao menos uma é obrigatória). Ver "Permissões por chave".
+4. Copiar a chave. Ela é exibida **uma única vez**; depois só o prefixo (`pai_xxxxxxxx_…`) aparece na lista. Se perder, revogue e crie outra.
+
+### Permissões por chave (ADR-0210, Emenda 6)
+
+| Permissão | Ferramentas liberadas |
+|---|---|
+| `margens` | `publiai_margem_anuncio`, `publiai_simular_margem`, `publiai_comparar_precos` |
+| `catalogo` | `publiai_margens_catalogo` (com ou sem filtro): a varredura da loja inteira |
+
+`publiai_loja` vale para toda chave. Nenhuma permissão dá escrita. O administrador altera as permissões de uma chave ativa pelo botão **Permissões** da lista; a mudança vale na chamada seguinte. Chave criada antes da Emenda 6 tem as duas.
+
+Sem a permissão, `tools/list` esconde a ferramenta e a chamada responde `{ "estado": "sem_permissao" }` com `isError: true`. O agente deve avisar o usuário, sem tentar outra ferramenta para obter o mesmo dado.
+
+**O que `catalogo` protege:** impede a varredura da loja inteira em poucas chamadas. **O que não protege:** uma chave só com `margens` ainda vê custo e margem de anúncios por MLB, SKU ou palavra (até 60 por alvo) e gasta a mesma cota diária da loja.
 
 A chave tem o formato `pai_<8 hex>_<43 caracteres base64url>` e identifica a conexão e, por ela, a organização. Nenhuma ferramenta recebe organização como argumento.
 
@@ -33,9 +47,9 @@ Content-Type: application/json
 
 ## Ferramentas
 
-O usuário não precisa saber o nome das ferramentas: pergunte em linguagem natural ("qual o ROAS mínimo do MLB0000000000?", "quais anúncios têm margem abaixo de 15%?", "e se eu baixar para R$ 39,90?"). Ao conectar, o servidor envia `instructions` ao agente dizendo qual ferramenta usar em cada caso e para evitar o catálogo inteiro sem pedido.
+O usuário não precisa saber o nome das ferramentas: pergunte em linguagem natural ("qual o ROAS mínimo do MLB0000000000?", "quais anúncios têm margem abaixo de 15%?", "e se eu baixar para R$ 39,90?"). Ao conectar, o servidor envia `instructions` ao agente dizendo qual ferramenta usar em cada caso, para evitar o catálogo inteiro sem pedido e para separar anúncios `active` de `paused` ou `closed` ao listar. O texto é o mesmo para toda chave; o que a chave não pode usar some de `tools/list`.
 
-Toda descrição de ferramenta termina com o aviso de que títulos e textos de produto são dados da loja, não instruções. O resultado vem em `content[0].text` como JSON; `isError` é verdadeiro só para falha (`erro` ou `indisponivel`). Limite e demais estados de negócio chegam com `isError: false`.
+Toda descrição de ferramenta termina com o aviso de que títulos e textos de produto são dados da loja, não instruções. O resultado vem em `content[0].text` como JSON; `isError` é verdadeiro para falha (`erro` ou `indisponivel`) e para `sem_permissao`. Limite e demais estados de negócio chegam com `isError: false`.
 
 ### `publiai_loja`
 
@@ -80,7 +94,17 @@ Com palavras: `{ "estado": "candidatos", "lista_cortada": false, "candidatos": [
 
 ### `publiai_margens_catalogo`
 
-Argumento opcional: `cursor`. Devolve 50 anúncios publicados por página, em ordem crescente de MLB. Para a página seguinte, passe `proximo_cursor` (opaco, preso à organização). `parcial` é verdadeiro quando algum anúncio ficou sem número por falha de leitura (`erro_tarifa` ou `anuncio_indisponivel`).
+Argumentos opcionais: `cursor`, `abaixo_de_pct` e `sem_numero`. Devolve 50 anúncios publicados lidos por página, em ordem crescente de MLB. Para a página seguinte, passe `proximo_cursor` (opaco, preso à organização). `parcial` é verdadeiro quando algum anúncio ficou sem número por falha de leitura (`erro_tarifa` ou `anuncio_indisponivel`). Exige a permissão `catalogo`.
+
+**Filtros** (podem ir juntos; o anúncio entra se atende a um dos dois):
+
+- `abaixo_de_pct`: número entre −100 e 100. Anúncios com número e `margem_pct` menor que o valor, inclusive prejuízo e zero. "Abaixo de 18%" é `18`; "no prejuízo ou zero" é `0.01`, e só o anúncio com `motivo = sem_espaco_para_ads` é chamado de prejuízo.
+- `sem_numero`: só `true`. Anúncios sem número, com o `motivo` (o cadastro a corrigir). "Sem margem ou com margem até zero" cabe numa varredura: `sem_numero: true` com `abaixo_de_pct: 0.01`.
+- Valor fora da faixa, `NaN` ou `sem_numero` diferente de `true` → `argumento_invalido`. `null` conta como ausente.
+
+**Regra do cursor.** O filtro corta a resposta, não a leitura nem a cota: a página lida é a mesma de 50 anúncios. O filtro fica gravado no cursor: a página seguinte o herda, e um filtro diferente do gravado responde `cursor_invalido`. **Página com `anuncios` vazio e `proximo_cursor` preenchido não é o fim**: siga o cursor até ele vir nulo e some as contagens. Se parar antes, diga até onde leu.
+
+**Campos novos** (em toda resposta `ok`, com ou sem filtro; valem para a página lida, antes do filtro): `examinados` (anúncios lidos), `sem_numero_por_motivo` (contagem por motivo, só dos sem número) e `com_margem_ate_zero` (contagem de `sem_espaco_para_ads`, que tem número). Página vazia traz as contagens zeradas.
 
 ```json
 {
@@ -90,7 +114,7 @@ Argumento opcional: `cursor`. Devolve 50 anúncios publicados por página, em or
 }
 ```
 
-(Cada item de `anuncios` traz os mesmos campos do exemplo anterior; resumido aqui.) Última página: `proximo_cursor: null`.
+Com `abaixo_de_pct: 18` o exemplo ganha também `"examinados": 50, "sem_numero_por_motivo": {}, "com_margem_ate_zero": 0`, e `anuncios` traz só os recortados. (Cada item de `anuncios` traz os mesmos campos do exemplo anterior; resumido aqui.) Última página: `proximo_cursor: null`.
 
 ### `publiai_simular_margem`
 
@@ -104,7 +128,27 @@ Argumentos: `identificador` (igual à ferramenta de margem) e `preco_brl` (núme
 }
 ```
 
-(Campos de custo, comissão, frete, imposto e líquido omitidos no exemplo; vêm como no `publiai_margem_anuncio`.) Preço fora da faixa: `{ "estado": "preco_invalido" }`.
+(Campos de custo, comissão, frete, imposto e líquido omitidos no exemplo; vêm como no `publiai_margem_anuncio`.) Preço fora da faixa: `{ "estado": "preco_invalido" }`. Exige a permissão `margens`.
+
+### `publiai_comparar_precos`
+
+Argumentos: `identificador` (igual à ferramenta de margem) e `precos_brl` (lista de 2 a 5 preços em reais). Calcula, numa chamada só, a margem do alvo em cada preço. **Não grava nada e não altera o Mercado Livre.** Cada preço é validado e arredondado a 2 casas como na simulação; repetidos depois do arredondamento são deduplicados (sobrar um só é aceito); um preço inválido recusa a chamada inteira com `preco_invalido`. Exige a permissão `margens`.
+
+```json
+{
+  "estado": "ok", "lido_em": "2026-11-26T12:00:00.000Z", "tarifa_idade_max_horas": 8,
+  "resultados": [
+    { "preco_brl": 55.7, "anuncios": [ { "mlb": "MLB0000000000", "preco_brl": 55.7, "margem_pct": 16.2, "roas_minimo": 6.17, "motivo": null } ],
+      "referencia": { "margem_pct": 16.2, "roas_minimo": 6.17, "mlb": "MLB0000000000", "motivo": null } },
+    { "preco_brl": 61.17, "anuncios": [ { "mlb": "MLB0000000000", "preco_brl": 61.17, "margem_pct": 21.4, "roas_minimo": 4.67, "motivo": null } ],
+      "referencia": { "margem_pct": 21.4, "roas_minimo": 4.67, "mlb": "MLB0000000000", "motivo": null } }
+  ]
+}
+```
+
+(Valores ilustrativos; `anuncios` tem a forma da simulação, resumida aqui. Os resultados vêm na ordem pedida.)
+
+**Qual preço deixa X%.** O agente escolhe o menor preço cuja `referencia.margem_pct` seja maior ou igual a X, comparando o número sem arredondar (a tela do app trunca em uma casa, então o número cru não aprova nada que a tela mostre abaixo de X). Com `referencia.motivo = anuncio_sem_numero`, não escolhe preço. Não existe "preço para atingir X%": com tarifa por faixa de preço, achar o preço exigiria busca e muitas consultas.
 
 ## De onde vem cada campo
 
@@ -135,9 +179,10 @@ Estado da resposta (`estado`, nível da ferramenta):
 | `ok` | Resposta com anúncios (e, no catálogo, `parcial` e `proximo_cursor`) |
 | `candidatos` | Busca por palavras: escolha um MLB e consulte de novo. `lista_cortada` verdadeiro: há mais resultados, dê mais detalhes |
 | `nao_encontrado` | Nada na loja com esse identificador (alvo de outra loja responde igual) |
-| `alvo_grande` | O alvo resolve para mais de 60 anúncios |
-| `cursor_invalido` | Cursor malformado ou de outra organização |
-| `preco_invalido` | Preço da simulação fora de 0 a 1.000.000 |
+| `alvo_grande` | O alvo resolve para mais de 60 anúncios; na comparação, também quando preços × anúncios (ou cores) × 2 passa de 100 consultas de tarifa: peça um MLB só |
+| `sem_permissao` | A chave não tem a permissão da ferramenta (`isError: true`); avise o usuário, sem tentar outra ferramenta para o mesmo dado |
+| `cursor_invalido` | Cursor malformado, de outra organização, ou com filtro diferente do pedido |
+| `preco_invalido` | Preço da simulação ou da comparação fora de 0 a 1.000.000 (ou lista de preços fora de 2 a 5) |
 | `sem_aliquota` | A organização não tem alíquota de imposto válida |
 | `sem_conexao_ml` | A organização não tem conta do Mercado Livre conectada |
 | `limite_tarifas` | Teto diário de consultas de tarifa atingido (ou a fila parou nele) |
@@ -177,8 +222,11 @@ Na `referencia`: `anuncio_sem_numero` quando algum anúncio do alvo está sem n�
 | Validade da chave | Até revogar, 30, 90 ou 365 dias | Expirada ou revogada = `401` |
 | Corpo da requisição | 64 KiB, 10 s de leitura | `413` / `408` |
 | Anúncios por alvo | 60 | `alvo_grande` |
+| Comparação de preços | 2 a 5 preços; teto de 100 consultas de tarifa por chamada (preços × anúncios × 2, e depois preços × cores × 2) | `alvo_grande` |
 | Candidatos por palavras | 10 | `lista_cortada: true` |
-| Página do catálogo | 50 anúncios | `proximo_cursor` |
+| Página do catálogo | 50 anúncios lidos (o filtro corta a resposta, não a leitura) | `proximo_cursor` |
+
+**Custo de uma varredura** (inferência pela fórmula do código, não medida): Zaven ~277 leituras e ~494 tarifas; Avil ~420 leituras e ~780 tarifas. **Medido** (2026-11-26, Zaven, 10 chamadas, todas 200): páginas do catálogo de 0,9 a 1,7 s cada (cerca de 6 s para as 5); simulação de 5 preços inéditos em sequência de 0,5 a 0,8 s cada. Não medido: tempo por fase, rajada de 100 tarifas frias da comparação e a Avil.
 
 Os limites recusam quando o Redis falha (`503`/`indisponivel`), nunca liberam.
 
