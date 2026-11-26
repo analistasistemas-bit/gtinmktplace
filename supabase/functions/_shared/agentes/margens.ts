@@ -208,12 +208,12 @@ export function simularMargem(
 }
 
 export type FiltroCatalogo = { abaixo_de_pct?: number; sem_numero?: true };
-/** Ausente = `undefined`; qualquer outro valor fora da faixa ou do tipo é inválido (nunca vira "sem filtro"). */
+/** Ausente = `undefined` ou `null` (como o `cursor`); qualquer outro valor fora da faixa ou do tipo é inválido (nunca vira "sem filtro"). */
 export function validarFiltro(a: { abaixo_de_pct?: unknown; sem_numero?: unknown }): FiltroCatalogo | 'invalido' {
   const { abaixo_de_pct: n, sem_numero: s } = a;
-  if (n !== undefined && !(typeof n === 'number' && Number.isFinite(n) && n >= -100 && n <= 100)) return 'invalido';
-  if (s !== undefined && s !== true) return 'invalido';
-  return { ...(n !== undefined && { abaixo_de_pct: n as number }), ...(s !== undefined && { sem_numero: true as const }) };
+  if (n != null && !(typeof n === 'number' && Number.isFinite(n) && n >= -100 && n <= 100)) return 'invalido';
+  if (s != null && s !== true) return 'invalido';
+  return { ...(n != null && { abaixo_de_pct: n as number }), ...(s != null && { sem_numero: true as const }) };
 }
 /** Forma canônica do filtro (cursor e auditoria): `abaixo_de:<n>`, `sem_numero` ou `abaixo_de:<n>+sem_numero`. */
 export function chaveFiltro(f: FiltroCatalogo): string | null {
@@ -252,7 +252,11 @@ function lerCursor(c: string, orgId: string): { depois: string; f: string | null
 
 function contar(anuncios: MargemAnuncio[]): Contagens {
   const sem_numero_por_motivo: Record<string, number> = {};
-  for (const a of anuncios) if (a.margem_pct == null) sem_numero_por_motivo[a.motivo ?? 'sem_motivo'] = (sem_numero_por_motivo[a.motivo ?? 'sem_motivo'] ?? 0) + 1;
+  for (const a of anuncios) {
+    if (a.margem_pct != null) continue;
+    const m = a.motivo ?? 'sem_motivo';
+    sem_numero_por_motivo[m] = (sem_numero_por_motivo[m] ?? 0) + 1;
+  }
   return { examinados: anuncios.length, sem_numero_por_motivo, com_margem_ate_zero: anuncios.filter((a) => a.motivo === 'sem_espaco_para_ads').length };
 }
 /** União: entra quem atende a um dos filtros dados; sem filtro, todos. */

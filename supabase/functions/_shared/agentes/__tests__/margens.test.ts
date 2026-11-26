@@ -620,6 +620,7 @@ describe('catálogo: filtros abaixo_de_pct e sem_numero (Emenda 6)', () => {
 
   it('validarFiltro e chaveFiltro', () => {
     expect(validarFiltro({})).toEqual({});
+    expect(validarFiltro({ abaixo_de_pct: null, sem_numero: null })).toEqual({});
     expect(validarFiltro({ abaixo_de_pct: -100 })).toEqual({ abaixo_de_pct: -100 });
     expect(validarFiltro({ abaixo_de_pct: 18, sem_numero: true })).toEqual({ abaixo_de_pct: 18, sem_numero: true });
     for (const a of [{ abaixo_de_pct: NaN }, { abaixo_de_pct: 101 }, { abaixo_de_pct: -100.5 }, { abaixo_de_pct: Infinity },

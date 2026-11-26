@@ -360,6 +360,14 @@ describe('catálogo: filtros no MCP (Emenda 6)', () => {
     expect(auditar).toHaveBeenCalledWith('publiai_margens_catalogo', 'abaixo_de:18+sem_numero', 'ok');
   });
 
+  it('null nos filtros vale como ausente: filtro vazio e alvo nulo', async () => {
+    const f = fs();
+    const auditar = vi.fn(async () => {});
+    await tratarMcp(chamar('publiai_margens_catalogo', { abaixo_de_pct: null, sem_numero: null }), f, auditar, TODAS);
+    expect(f.catalogo).toHaveBeenCalledWith(null, {});
+    expect(auditar).toHaveBeenCalledWith('publiai_margens_catalogo', null, 'ok');
+  });
+
   it('só cursor (herda o filtro) audita alvo nulo', async () => {
     const auditar = vi.fn(async () => {});
     await tratarMcp(chamar('publiai_margens_catalogo', { cursor: 'abc' }), fs(), auditar, TODAS);
