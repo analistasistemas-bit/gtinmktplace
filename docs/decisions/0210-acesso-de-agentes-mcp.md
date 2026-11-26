@@ -344,7 +344,7 @@ Continua aceito: cache de comissão `promo:lp:v1` compartilhado (exatidão, não
 
 ## Emenda 6 — v2 (solicitações), passo 1: recorte, comparação de preços, sem número e permissões por chave (PROPOSTA, 2026-11-26)
 
-**Status:** proposta, **aguardando aprovação do Diego**. Sem código, sem migration, sem chamada ao Mercado Livre.
+**Status:** **Aprovada pelo Diego em 2026-11-26**, depois de três revisões (seção "Revisões da proposta"). Medição M1 feita no mesmo dia (seção "Medição M1"). Implementação a seguir; migration, merge e deploy com OK.
 **Origem:** `docs/superpowers/specs/2026-11-25-api-agentes-v2-solicitacoes-ideias.md` (ideias 2, 7 e 8 e permissões por chave). "Fatia 2 da API", no vocabulário do Diego, é esta v2; a fatia 2 desta ADR continua sendo o OAuth.
 
 **Decisões do Diego (2026-11-26), registradas para as próximas fatias:**
@@ -460,6 +460,29 @@ Só um MLB (Avil) é do modelo legado com variações no cadastro (17 linhas). S
 - **Teto de tamanho:** uma loja acima de cerca de 2.700 MLBs não caberia numa varredura por dia.
 
 **Não medido:** tempo por página e da varredura completa na edge; tarifa fria (preço inédito), que é o caso da comparação; a Avil. O tempo da Zaven **não** será extrapolado para a Avil, que tem o único MLB com 17 variações.
+
+### Medição M1 (2026-11-26, 09h22 de Brasília, Zaven)
+
+Com OK do Diego, pelo conector do claude.ai com a chave da Zaven (a própria edge `agentes`, `v10`). Só GET no ML; nada escrito. Duração lida em `execution_time_ms` do log do gateway (`function_edge_logs`), 10 pedidos, todos 200.
+
+**Medido:**
+
+| Chamada | Tempo na edge |
+|---|---|
+| Catálogo, páginas 1 a 5, em sequência (cursor nulo na 5ª) | 1.677, 1.098, 1.099, 1.048 e 931 ms (soma 5,9 s) |
+| Simulação de `MLB5419187671` com 5 preços inéditos (57,37 a 66,83), em sequência | 824, 616, 602, 533 e 532 ms |
+
+- Todas as páginas vieram com `parcial: false`, sem anúncio sem número e sem `erro_tarifa`. A segunda passada nos MLBs com erro não foi necessária.
+- As 5 simulações vieram com número.
+
+**Não medido:**
+
+- se o cache de tarifas estava quente: o acerto não é registrado, e os preços do catálogo já existiam antes;
+- o tempo por fase (cadastro, preço, tarifa);
+- a rajada de 100 tarifas frias em paralelo da comparação;
+- a Avil.
+
+**Inferência:** uma página de 50 leva cerca de 1 a 1,7 s; a loja inteira da Zaven, cerca de 6 s somando as chamadas. A cota e o tempo não impedem o recorte página a página, que pode ser prometido. O que limita o recorte é o agente seguir o cursor, e não a edge. Página maior continua fora desta fatia, como decidido.
 
 ### Pedido de OK (antes de qualquer código)
 
