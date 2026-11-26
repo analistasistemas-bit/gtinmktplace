@@ -1,13 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ResultadoAuthAgente } from '../auth-agente.ts';
+import type { Permissao } from '../credencial.ts';
 import { tratarRequisicao } from '../http.ts';
 
-const OK: ResultadoAuthAgente = { ok: true, conexaoId: 'con-A', orgId: 'org-A' };
+const OK: ResultadoAuthAgente = { ok: true, conexaoId: 'con-A', orgId: 'org-A', permissoes: ['margens'] };
+type Auth = { conexaoId: string; orgId: string; permissoes: Permissao[] };
 
 function deps(auth: ResultadoAuthAgente = OK) {
   return {
     autenticar: vi.fn(async (_req: Request) => auth),
-    despachar: vi.fn(async (corpo: unknown, a: { conexaoId: string; orgId: string }) =>
+    despachar: vi.fn(async (corpo: unknown, a: Auth) =>
       ({ status: 200, corpo: { eco: corpo, ...a } as unknown })),
   };
 }
@@ -111,23 +113,26 @@ describe('tratarRequisicao', () => {
 
   it('despachar recebe exatamente a org e a conexão autenticadas; duas orgs nunca se cruzam', async () => {
     const porChave: Record<string, ResultadoAuthAgente> = {
-      A: { ok: true, conexaoId: 'con-A', orgId: 'org-A' },
-      B: { ok: true, conexaoId: 'con-B', orgId: 'org-B' },
+      A: { ok: true, conexaoId: 'con-A', orgId: 'org-A', permissoes: ['margens'] },
+      B: { ok: true, conexaoId: 'con-B', orgId: 'org-B', permissoes: ['catalogo'] },
     };
     const d = {
       autenticar: vi.fn(async (req: Request) => porChave[req.headers.get('x-chave')!]),
-      despachar: vi.fn(async (corpo: unknown, a: { conexaoId: string; orgId: string }) => ({ status: 200, corpo: { corpo, ...a } as unknown })),
+      despachar: vi.fn(async (corpo: unknown, a: Auth) => ({ status: 200, corpo: { corpo, ...a } as unknown })),
     };
     const [ra, rb] = await Promise.all([
       tratarRequisicao(post('{"q":"a"}', { 'x-chave': 'A' }), d),
       tratarRequisicao(post('{"q":"b"}', { 'x-chave': 'B' }), d),
     ]);
-    expect(await ra.json()).toEqual({ corpo: { q: 'a' }, conexaoId: 'con-A', orgId: 'org-A' });
-    expect(await rb.json()).toEqual({ corpo: { q: 'b' }, conexaoId: 'con-B', orgId: 'org-B' });
+    expect(await ra.json()).toEqual({ corpo: { q: 'a' }, conexaoId: 'con-A', orgId: 'org-A', permissoes: ['margens'] });
+    expect(await rb.json()).toEqual({ corpo: { q: 'b' }, conexaoId: 'con-B', orgId: 'org-B', permissoes: ['catalogo'] });
     expect(d.despachar.mock.calls.map((c) => c[1])).toEqual(
-      expect.arrayContaining([{ conexaoId: 'con-A', orgId: 'org-A' }, { conexaoId: 'con-B', orgId: 'org-B' }]),
+      expect.arrayContaining([
+        { conexaoId: 'con-A', orgId: 'org-A', permissoes: ['margens'] },
+        { conexaoId: 'con-B', orgId: 'org-B', permissoes: ['catalogo'] },
+      ]),
     );
-    for (const c of d.despachar.mock.calls) expect(Object.keys(c[1]).sort()).toEqual(['conexaoId', 'orgId']);
+    for (const c of d.despachar.mock.calls) expect(Object.keys(c[1]).sort()).toEqual(['conexaoId', 'orgId', 'permissoes']);
   });
 });
 

@@ -1,7 +1,9 @@
 // Casca HTTP da edge pública `agentes` (ADR-0210, fatia 1). Pura e testável: a edge só monta `autenticar` e
 // `despachar`. Ordem: método → tamanho declarado → autenticação → corpo (teto e tempo) → JSON → despacho.
-// `despachar` recebe só a org e a conexão que `autenticar` devolveu. Sem CORS: clientes MCP são servidor a servidor.
+// `despachar` recebe só a org, a conexão e as permissões que `autenticar` devolveu. Sem CORS: clientes MCP são
+// servidor a servidor.
 import type { ResultadoAuthAgente } from './auth-agente.ts';
+import type { Permissao } from './credencial.ts';
 import { erroParse } from './mcp.ts';
 
 export const MAX_CORPO = 65_536;
@@ -9,7 +11,10 @@ export const TEMPO_LEITURA_MS = 10_000;
 
 export interface DepsHttp {
   autenticar(req: Request): Promise<ResultadoAuthAgente>;
-  despachar(corpo: unknown, auth: { conexaoId: string; orgId: string }): Promise<{ status: number; corpo: unknown | null }>;
+  despachar(
+    corpo: unknown,
+    auth: { conexaoId: string; orgId: string; permissoes: Permissao[] },
+  ): Promise<{ status: number; corpo: unknown | null }>;
   /** Alarme de recusas: chamado uma vez por resposta 401, 429 ou 503, sem esperar e sem mudar a resposta. */
   aoRecusar?(): void;
 }
@@ -84,7 +89,7 @@ async function responder(req: Request, d: DepsHttp, tempoMs: number): Promise<Re
       return json(r.corpo, r.status);
     }
 
-    const r = await d.despachar(corpo, { conexaoId: auth.conexaoId, orgId: auth.orgId });
+    const r = await d.despachar(corpo, { conexaoId: auth.conexaoId, orgId: auth.orgId, permissoes: auth.permissoes });
     return r.corpo === null ? new Response(null, { status: r.status }) : json(r.corpo, r.status);
   } catch {
     // Sem a mensagem: pode carregar dado de outra camada.

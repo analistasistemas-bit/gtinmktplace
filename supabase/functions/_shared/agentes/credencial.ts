@@ -23,8 +23,20 @@ export function extrairChave(req: Request): string | null {
   return m && FORMATO.test(m[1]) ? m[1] : null;
 }
 
-/** `expira_em` null = vale até revogar (Emenda 1). */
-export type LinhaConexao = { id: string; org_id: string; expira_em: string | null; revogada_em: string | null };
+/** Permissões por chave (Emenda 6). `publiai_loja` não exige nenhuma; nenhuma dá escrita. */
+export type Permissao = 'margens' | 'catalogo';
+export const PERMISSOES: readonly Permissao[] = ['margens', 'catalogo'];
+
+/** Fecha em dado ruim: não-lista → nenhuma; só valores conhecidos, sem repetir. */
+export function permissoesDaLinha(x: unknown): Permissao[] {
+  if (!Array.isArray(x)) return [];
+  return [...new Set(x.filter((p): p is Permissao => PERMISSOES.includes(p)))];
+}
+
+/** `expira_em` null = vale até revogar (Emenda 1). `permissoes` cru do banco: lido por `permissoesDaLinha`. */
+export type LinhaConexao = {
+  id: string; org_id: string; expira_em: string | null; revogada_em: string | null; permissoes: unknown;
+};
 
 /** Revogada vence expirada; expira exatamente em `agora` já é expirada. Fecha em dado ruim: `revogada_em` não nulo
  *  (mesmo não parseável) = revogada; `expira_em` ou `agora` inválidos = expirada; só `null` exato é "sem validade". */

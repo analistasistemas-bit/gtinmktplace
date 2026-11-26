@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { extrairChave, gerarChave, hashChave, situacaoDaConexao, type LinhaConexao } from '../credencial.ts';
+import {
+  extrairChave, gerarChave, hashChave, type LinhaConexao, permissoesDaLinha, situacaoDaConexao,
+} from '../credencial.ts';
 
 const FORMATO = /^pai_[0-9a-f]{8}_[A-Za-z0-9_-]{43}$/;
 const req = (auth?: string) => new Request('https://x.test', { headers: auth ? { Authorization: auth } : {} });
@@ -51,7 +53,9 @@ describe('extrairChave', () => {
 
 describe('situacaoDaConexao', () => {
   const agora = new Date('2026-11-22T12:00:00.000Z');
-  const base: LinhaConexao = { id: 'c1', org_id: 'o1', expira_em: '2026-12-22T12:00:00.000Z', revogada_em: null };
+  const base: LinhaConexao = {
+    id: 'c1', org_id: 'o1', expira_em: '2026-12-22T12:00:00.000Z', revogada_em: null, permissoes: ['margens'],
+  };
 
   it('ok, revogada, expirada (expira exatamente agora = expirada)', () => {
     expect(situacaoDaConexao(base, agora)).toBe('ok');
@@ -73,5 +77,20 @@ describe('situacaoDaConexao', () => {
     expect(situacaoDaConexao(base, new Date('lixo'))).toBe('expirada');
     expect(situacaoDaConexao({ ...base, revogada_em: 'lixo' }, agora)).toBe('revogada');
     expect(situacaoDaConexao({ ...base, revogada_em: '' }, agora)).toBe('revogada');
+  });
+});
+
+describe('permissoesDaLinha', () => {
+  it('não-lista → nenhuma permissão', () => {
+    expect(permissoesDaLinha(null)).toEqual([]);
+    expect(permissoesDaLinha(undefined)).toEqual([]);
+    expect(permissoesDaLinha('margens')).toEqual([]);
+    expect(permissoesDaLinha({})).toEqual([]);
+  });
+
+  it('só valores conhecidos, sem repetir', () => {
+    expect(permissoesDaLinha(['vendas', 'margens', 'margens'])).toEqual(['margens']);
+    expect(permissoesDaLinha(['catalogo', 'margens', null, 1])).toEqual(['catalogo', 'margens']);
+    expect(permissoesDaLinha([])).toEqual([]);
   });
 });

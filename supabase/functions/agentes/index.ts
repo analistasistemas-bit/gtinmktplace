@@ -111,7 +111,7 @@ Deno.serve((req) => {
     // Bot da Daludi no chat do dono do SaaS, como em varrer-anuncios-orfaos.
     aoRecusar: () => EdgeRuntime.waitUntil(registrarRecusa(new Date(), (texto) =>
       avisarDono(Deno.env.get('TELEGRAM_BOT_TOKEN') ?? null, Deno.env.get('TELEGRAM_LEADS_CHAT_ID') ?? null, texto))),
-    despachar(corpo, { orgId, conexaoId }) {
+    despachar(corpo, { orgId, conexaoId, permissoes }) {
       const db = admin();
       const ferramentas: Ferramentas = {
         loja: () => lerLoja(db, orgId),
@@ -120,7 +120,7 @@ Deno.serve((req) => {
         simular: (id, preco) => comDeps(db, orgId, (d) => simularMargem(id, preco, d)),
       };
       return tratarMcp(corpo, ferramentas, (ferramenta, alvo, resultado) =>
-        gravarChamada(db, { orgId, conexaoId, ferramenta, alvo, resultado }));
+        gravarChamada(db, { orgId, conexaoId, ferramenta, alvo, resultado }), permissoes);
     },
   });
 });

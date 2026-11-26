@@ -229,7 +229,7 @@ export async function listarMlbs(admin: SupabaseClient, orgId: string, depois: s
 
 /** Única consulta sem org: a org ainda é desconhecida e sai daqui. */
 export async function buscarConexaoPorHash(admin: SupabaseClient, hash: string): Promise<LinhaConexao | null> {
-  return dado('conexao', await admin.from('agente_conexoes').select('id, org_id, expira_em, revogada_em')
+  return dado('conexao', await admin.from('agente_conexoes').select('id, org_id, expira_em, revogada_em, permissoes')
     .eq('hash', hash).maybeSingle() as Res<LinhaConexao>);
 }
 

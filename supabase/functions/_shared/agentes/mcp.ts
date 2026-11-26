@@ -1,6 +1,7 @@
 // Servidor MCP do acesso de agentes (ADR-0210, fatia 1): JSON-RPC 2.0 puro, sem IO. A edge `agentes` entrega
 // as ferramentas já fechadas na organização da conexão; nada aqui recebe ou escolhe organização.
 // Títulos de produto são dado não confiável: toda descrição de ferramenta termina com o aviso.
+import type { Permissao } from './credencial.ts';
 
 export interface Ferramentas {
   loja(): Promise<unknown>;
@@ -39,6 +40,8 @@ const str = { type: 'string' } as const;
 
 type Ferramenta = {
   descricao: string;
+  /** Permissão da chave exigida (Emenda 6); null só em `publiai_loja`. Obrigatória: o compilador cobra toda nova. */
+  permissao: Permissao | null;
   schema: Record<string, unknown>;
   /** Só ferramentas que declaram `identificador` o levam para a auditoria; as demais auditam alvo null. */
   comIdentificador?: true;
@@ -46,21 +49,24 @@ type Ferramenta = {
   preparar(a: Args, f: Ferramentas): (() => Promise<unknown>) | null;
 };
 
-const FERRAMENTAS: Record<string, Ferramenta> = {
+export const FERRAMENTAS: Record<string, Ferramenta> = {
   publiai_loja: {
     descricao: 'Nome da organização e apelido da conta do Mercado Livre conectada.',
+    permissao: null,
     schema: { type: 'object', properties: {} },
     preparar: (_a, f) => () => f.loja(),
   },
   publiai_margem_anuncio: {
     descricao: 'Margem de contribuição (%) e ROAS mínimo de um anúncio. Aceita MLB, MLBU, família do ML, SKU ou ' +
       'palavras do nome, cor, estampa ou tamanho (texto devolve candidatos para o usuário escolher).',
+    permissao: 'margens',
     schema: { type: 'object', properties: { identificador: str }, required: ['identificador'] },
     comIdentificador: true,
     preparar: (a, f) => (typeof a.identificador === 'string' ? () => f.margem(a.identificador as string) : null),
   },
   publiai_margens_catalogo: {
     descricao: 'Margens de todos os anúncios publicados, 50 por página. Passe `proximo_cursor` para a página seguinte.',
+    permissao: 'catalogo',
     schema: { type: 'object', properties: { cursor: str } },
     preparar: (a, f) => (a.cursor == null || typeof a.cursor === 'string'
       ? () => f.catalogo((a.cursor as string | undefined) ?? null) : null),
@@ -68,6 +74,7 @@ const FERRAMENTAS: Record<string, Ferramenta> = {
   publiai_simular_margem: {
     descricao: 'Margem e ROAS mínimo de um anúncio se o preço fosse `preco_brl` (em reais). Não altera nada no ' +
       'Mercado Livre.',
+    permissao: 'margens',
     schema: {
       type: 'object', properties: { identificador: str, preco_brl: { type: 'number' } },
       required: ['identificador', 'preco_brl'],
@@ -84,8 +91,12 @@ const erro = (id: unknown, code: number, message: string, status = 200): Respost
 export const erroParse = (): Resposta => erro(null, -32700, 'Parse error', 400);
 const conteudo = (id: unknown, v: unknown, isError: boolean) =>
   ok(id, { content: [{ type: 'text', text: JSON.stringify(v) }], isError });
+const permitida = (def: Ferramenta, permissoes: readonly Permissao[]) =>
+  def.permissao === null || permissoes.includes(def.permissao);
 
-async function chamarFerramenta(id: unknown, params: unknown, f: Ferramentas, auditar: Auditar): Promise<Resposta> {
+async function chamarFerramenta(
+  id: unknown, params: unknown, f: Ferramentas, auditar: Auditar, permissoes: readonly Permissao[],
+): Promise<Resposta> {
   const nome = obj(params) && typeof params.name === 'string' ? params.name : null;
   const def = nome != null && Object.hasOwn(FERRAMENTAS, nome) ? FERRAMENTAS[nome] : null;
   if (!nome || !def) {
@@ -97,6 +108,16 @@ async function chamarFerramenta(id: unknown, params: unknown, f: Ferramentas, au
       return conteudo(id, { erro: 'indisponivel' }, true);
     }
     return erro(id, -32602, 'Unknown tool');
+  }
+  // Antes dos argumentos: chave sem a permissão não usa cursor ou identificador para testar nada.
+  if (!permitida(def, permissoes)) {
+    try {
+      await auditar(nome, null, 'sem_permissao');
+    } catch {
+      console.error('[agentes] auditoria falhou', nome);
+      return conteudo(id, { erro: 'indisponivel' }, true);
+    }
+    return conteudo(id, { estado: 'sem_permissao' }, true);
   }
   const args = obj(params) ? (params.arguments ?? {}) : {};
   const executar = obj(args) ? def.preparar(args, f) : null;
@@ -130,7 +151,9 @@ async function chamarFerramenta(id: unknown, params: unknown, f: Ferramentas, au
   return conteudo(id, resultado, estado === 'erro' || estado === 'indisponivel');
 }
 
-export async function tratarMcp(corpo: unknown, f: Ferramentas, auditar: Auditar): Promise<Resposta> {
+export async function tratarMcp(
+  corpo: unknown, f: Ferramentas, auditar: Auditar, permissoes: readonly Permissao[],
+): Promise<Resposta> {
   const invalido = () => erro(null, -32600, 'Invalid Request', 400);
   if (!obj(corpo) || corpo.jsonrpc !== '2.0') return invalido();
   // O Streamable HTTP pede 202 sem corpo para notificação (method, sem id, params objeto/array ou ausente) e
@@ -157,12 +180,12 @@ export async function tratarMcp(corpo: unknown, f: Ferramentas, auditar: Auditar
       return ok(id, {});
     case 'tools/list':
       return ok(id, {
-        tools: Object.entries(FERRAMENTAS).map(([name, t]) => ({
+        tools: Object.entries(FERRAMENTAS).filter(([, t]) => permitida(t, permissoes)).map(([name, t]) => ({
           name, description: `${t.descricao} ${AVISO}`, inputSchema: t.schema,
         })),
       });
     case 'tools/call':
-      return await chamarFerramenta(id, params, f, auditar);
+      return await chamarFerramenta(id, params, f, auditar, permissoes);
     default:
       return erro(id, -32601, 'Method not found');
   }

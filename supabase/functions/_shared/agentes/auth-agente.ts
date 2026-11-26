@@ -1,7 +1,9 @@
 // Portão da chamada de agente (ADR-0210, fatia 1). Lógica pura, padrão de `_shared/auth-org.ts`: todo IO chega
 // por `DepsAuthAgente` (a fiação com o banco é da edge). A org vem só da linha da conexão.
 // Logs só com códigos fixos: nada de chave, hash, motivo do 401 ou mensagem de erro de dependência.
-import { extrairChave, hashChave, type LinhaConexao, situacaoDaConexao } from './credencial.ts';
+import {
+  extrairChave, hashChave, type LinhaConexao, type Permissao, permissoesDaLinha, situacaoDaConexao,
+} from './credencial.ts';
 import { reservarChamada, reservarFalhaIp } from './limite.ts';
 
 export interface DepsAuthAgente {
@@ -17,7 +19,7 @@ type Recusa = {
   status: 401 | 403 | 429 | 503;
   codigo: 'nao_autorizado' | 'acesso_desligado' | 'limite' | 'indisponivel';
 };
-export type ResultadoAuthAgente = { ok: true; conexaoId: string; orgId: string } | Recusa;
+export type ResultadoAuthAgente = { ok: true; conexaoId: string; orgId: string; permissoes: Permissao[] } | Recusa;
 
 const INDISPONIVEL: Recusa = { ok: false, status: 503, codigo: 'indisponivel' };
 const LIMITE: Recusa = { ok: false, status: 429, codigo: 'limite' };
@@ -68,5 +70,5 @@ export async function autenticarAgente(req: Request, d: DepsAuthAgente): Promise
   } catch {
     console.warn('[agentes] auth: marcar_uso_falhou');
   }
-  return { ok: true, conexaoId: linha.id, orgId: linha.org_id };
+  return { ok: true, conexaoId: linha.id, orgId: linha.org_id, permissoes: permissoesDaLinha(linha.permissoes) };
 }

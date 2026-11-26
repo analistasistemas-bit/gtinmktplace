@@ -27,7 +27,7 @@ const req = (auth?: string) =>
 
 let chave: string;
 let hash: string;
-let linha: { id: string; org_id: string; expira_em: string; revogada_em: string | null } | null;
+let linha: { id: string; org_id: string; expira_em: string; revogada_em: string | null; permissoes: unknown } | null;
 
 function deps(over: Partial<DepsAuthAgente> = {}) {
   return {
@@ -46,18 +46,34 @@ beforeEach(async () => {
   resIp = null;
   resChamada = 'ok';
   ({ chave, hash } = await gerarChave());
-  linha = { id: 'con-1', org_id: 'org-1', expira_em: '2027-01-01T00:00:00Z', revogada_em: null };
+  linha = {
+    id: 'con-1', org_id: 'org-1', expira_em: '2027-01-01T00:00:00Z', revogada_em: null,
+    permissoes: ['margens', 'catalogo'],
+  };
 });
 
 describe('autenticarAgente', () => {
   it('chave válida → ok com conexão e org da linha; marca uso', async () => {
     const d = deps();
-    expect(await autenticarAgente(req(`Bearer ${chave}`), d)).toEqual({ ok: true, conexaoId: 'con-1', orgId: 'org-1' });
+    expect(await autenticarAgente(req(`Bearer ${chave}`), d)).toEqual({
+      ok: true, conexaoId: 'con-1', orgId: 'org-1', permissoes: ['margens', 'catalogo'],
+    });
     expect(d.buscarConexaoPorHash).toHaveBeenCalledWith(hash);
     expect(d.orgAtivaComModulo).toHaveBeenCalledWith('org-1');
     expect(reservarChamada).toHaveBeenCalledWith('con-1', agora);
     expect(d.marcarUso).toHaveBeenCalledWith('con-1', 'org-1');
     expect(reservarFalhaIp).not.toHaveBeenCalled();
+  });
+
+  it('permissões vêm da linha; null ou lixo → nenhuma (nunca libera por padrão)', async () => {
+    linha = { ...linha!, permissoes: ['catalogo'] };
+    expect(await autenticarAgente(req(`Bearer ${chave}`), deps())).toEqual({
+      ok: true, conexaoId: 'con-1', orgId: 'org-1', permissoes: ['catalogo'],
+    });
+    linha = { ...linha!, permissoes: null };
+    expect(await autenticarAgente(req(`Bearer ${chave}`), deps())).toEqual({
+      ok: true, conexaoId: 'con-1', orgId: 'org-1', permissoes: [],
+    });
   });
 
   it('ausente, malformada, não encontrada, revogada e expirada → 401 idêntico, debitando o IP', async () => {
@@ -172,7 +188,7 @@ describe('autenticarAgente', () => {
     const r3 = await autenticarAgente(req(`Bearer ${chave}`), deps({ marcarUso: boom }));
     expect(r1).toEqual({ ok: false, status: 503, codigo: 'indisponivel' });
     expect(r2).toEqual({ ok: false, status: 503, codigo: 'indisponivel' });
-    expect(r3).toEqual({ ok: true, conexaoId: 'con-1', orgId: 'org-1' });
+    expect(r3).toEqual({ ok: true, conexaoId: 'con-1', orgId: 'org-1', permissoes: ['margens', 'catalogo'] });
     expect(espioes[0].mock.calls).toEqual([
       ['[agentes] auth: banco_indisponivel'],
       ['[agentes] auth: modulo_indisponivel'],
