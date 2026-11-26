@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-11-22
+atualizado: 2026-11-26
 ---
 
 # Changelog
@@ -8,6 +8,14 @@ atualizado: 2026-11-22
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-11-25
+
+- **Margem pelo preço que o comprador paga** (`main` `46f04c11` e `4ff1a212`, `agentes` v10, `ads-campanhas` v35, ADR-0210
+  Emenda 5). A API de agentes e a aba Campanhas liam `price` do `/items`, que não acompanha promoção: 79 de 80 anúncios
+  ativos da Zaven saíam com preço acima (mediana 18%) e ROAS mínimo otimista. Agora `/sale_price` por anúncio, sem cache;
+  sem leitura, sem número. Novos campos `promocao_tipo`, `promocao_fim`, `preco_lido_em` e `status`. Aceite 5/5, 50/50 e
+  volta do preço às 00h05 de 26/11.
 
 ## 2026-11-22
 
