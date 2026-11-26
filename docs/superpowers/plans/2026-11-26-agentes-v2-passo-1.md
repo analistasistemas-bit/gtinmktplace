@@ -54,7 +54,7 @@
 
 ---
 
-### Tarefa 1: Migration da coluna `permissoes`
+### Task 1: Migration da coluna `permissoes`
 
 **Arquivos:** criar `supabase/migrations/<timestamp>_agente_conexoes_permissoes.sql`, por `supabase migration new agente_conexoes_permissoes`. Antes, `git fetch` e conferir que o timestamp é maior que o da última migration da `origin/main`.
 
@@ -77,7 +77,7 @@
   Termina em `raise exception 'TESTE_OK'` e `rollback`. Esperado: erro `P0001: TESTE_OK`.
 - [ ] **Passo 3:** commit `feat(agentes): coluna permissoes por chave (migration, não aplicada)`. **Não rodar `db push`**: pedir OK ao Diego no fim do plano.
 
-### Tarefa 2: Permissões na autenticação e na casca MCP
+### Task 2: Permissões na autenticação e na casca MCP
 
 **Arquivos:**
 - modificar `_shared/agentes/credencial.ts`, `auth-agente.ts`, `deps-banco.ts` (`buscarConexaoPorHash`), `http.ts` (tipo de `despachar`), `mcp.ts` e `agentes/index.ts`;
@@ -120,7 +120,7 @@
 - [ ] **Passo 4:** os mesmos testes → PASS; `deno lint supabase/functions/_shared/agentes supabase/functions/agentes` sem erro.
 - [ ] **Passo 5:** commit `feat(agentes): permissão por chave na autenticação e no MCP`.
 
-### Tarefa 3: Criar e alterar permissões em `agente-conexoes`
+### Task 3: Criar e alterar permissões em `agente-conexoes`
 
 **Arquivos:**
 - modificar `_shared/agentes/conexoes.ts`, `conexoes-http.ts` e `agente-conexoes/index.ts`;
@@ -153,7 +153,7 @@
 - [ ] **Passo 4:** os dois arquivos → PASS; lint.
 - [ ] **Passo 5:** commit `feat(agentes): criar e alterar permissões da chave`.
 
-### Tarefa 4: Filtros do catálogo
+### Task 4: Filtros do catálogo
 
 **Arquivos:**
 - modificar `_shared/agentes/margens.ts`, `mcp.ts` (esquema, `preparar`, auditoria do catálogo) e `agentes/index.ts`;
@@ -201,7 +201,7 @@
 - [ ] **Passo 4:** PASS; lint.
 - [ ] **Passo 5:** commit `feat(agentes): recorte e sem número no catálogo`.
 
-### Tarefa 5: `publiai_comparar_precos`
+### Task 5: `publiai_comparar_precos`
 
 **Arquivos:**
 - modificar `_shared/agentes/margens.ts`, `mcp.ts` e `agentes/index.ts`;
@@ -239,7 +239,7 @@
 - [ ] **Passo 4:** todos os testes de `margens.test.ts` (antigos inclusive) → PASS; lint.
 - [ ] **Passo 5:** commit `feat(agentes): comparar preços`.
 
-### Tarefa 6: Instruções, tela e guias
+### Task 6: Instruções, tela e guias
 
 **Arquivos:**
 - modificar `mcp.ts` (`INSTRUCOES`), `src/hooks/useAgenteConexoes.ts`, `src/components/configuracoes/secao-agentes.tsx`, `docs/reference/acesso-de-agentes.md` e `docs/reference/api-agentes.md`;
