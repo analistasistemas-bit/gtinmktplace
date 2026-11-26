@@ -344,7 +344,8 @@ Continua aceito: cache de comissão `promo:lp:v1` compartilhado (exatidão, não
 
 ## Emenda 6 — v2 (solicitações), passo 1: recorte, comparação de preços, sem número e permissões por chave (PROPOSTA, 2026-11-26)
 
-**Status:** proposta, **aguardando aprovação do Diego**. Sem código, sem migration, sem chamada ao Mercado Livre. Origem: `docs/superpowers/specs/2026-11-25-api-agentes-v2-solicitacoes-ideias.md` (ideias 2, 7 e 8 e permissões por chave). "Fatia 2 da API", no vocabulário do Diego, é esta v2; a fatia 2 desta ADR continua sendo o OAuth.
+**Status:** proposta, **aguardando aprovação do Diego**. Sem código, sem migration, sem chamada ao Mercado Livre.
+**Origem:** `docs/superpowers/specs/2026-11-25-api-agentes-v2-solicitacoes-ideias.md` (ideias 2, 7 e 8 e permissões por chave). "Fatia 2 da API", no vocabulário do Diego, é esta v2; a fatia 2 desta ADR continua sendo o OAuth.
 
 **Decisões do Diego (2026-11-26), registradas para as próximas fatias:**
 
@@ -354,46 +355,85 @@ Continua aceito: cache de comissão `promo:lp:v1` compartilhado (exatidão, não
 
 ### Ferramentas (somente leitura, mesma conta de `equilibrioDoMlb`, sem fórmula nova)
 
-**1. Recorte e sem número no catálogo.** `publiai_margens_catalogo` ganha dois argumentos opcionais, **excludentes**:
+**1. Recorte e sem número no catálogo.** `publiai_margens_catalogo` ganha dois argumentos opcionais, que podem ir **juntos** (união: o anúncio entra se atende a um dos dois):
 
-- `abaixo_de_pct` (número finito entre −100 e 100): devolve só anúncios com número e `margem_pct` menor que o valor. Responde "abaixo de X%" e "o que está no prejuízo" (prejuízo ou zero = `abaixo_de_pct` acima de zero; 18 já inclui o zero).
-- `sem_numero` (só `true`): devolve só anúncios sem número (`margem_pct` nulo), com o `motivo` de cada um (`sem_custo`, `sem_origem`, `sem_dimensao`, `pacote_a_conferir`, `preco_nao_verificado`...). Responde "o que está sem margem e por quê" no sentido de cadastro a corrigir. Margem calculada ≤ 0 tem número (`sem_espaco_para_ads`) e não entra aqui.
-- Os dois juntos, `sem_numero` diferente de `true` ou `abaixo_de_pct` fora da faixa (inclusive `NaN`) → `argumento_invalido`.
+- `abaixo_de_pct` (número finito entre −100 e 100): anúncios com número e `margem_pct` menor que o valor, inclusive prejuízo e zero. Para "abaixo de 18%", 18; para "no prejuízo ou zero", qualquer valor acima de zero.
+- `sem_numero` (só `true`): anúncios sem número (`margem_pct` nulo), com o `motivo` de cada um (`sem_custo`, `sem_origem`, `sem_dimensao`, `pacote_a_conferir`, `preco_nao_verificado`...), ou seja, o cadastro a corrigir.
+- "O que está sem margem e por quê", no sentido amplo (sem número **ou** com margem ≤ 0), cabe numa varredura só: `sem_numero: true` com `abaixo_de_pct` pequeno, por exemplo 0,01. Valor fora da faixa, `NaN` ou `sem_numero` diferente de `true` → `argumento_invalido`.
 
-**Regra da página filtrada.** A varredura, o custo e o cursor são os da página atual: 50 anúncios por chamada, em ordem de MLB. O filtro corta a resposta, não a cota. `examinados`, `contagem_por_motivo` e `parcial` contam a página **lida, antes do filtro**; `anuncios` é o recorte. **Lista vazia com `proximo_cursor` não é o fim.** A resposta para a loja inteira exige seguir o cursor até ele ser nulo e somar as contagens. A descrição da ferramenta e as instruções do `initialize` dizem isso explicitamente, porque hoje elas mandam não chamar ferramenta além do necessário. Sem filtro, nada muda.
+**Regra da página filtrada.**
 
-Estender em vez de criar ferramenta: é a mesma varredura e o mesmo cursor; outra ferramenta com o mesmo laço de 50 não reduz erro de paginação (Grok concorda).
+- A varredura, o custo e a ordem são os da página atual: 50 anúncios por chamada, em ordem de MLB. O filtro corta a resposta, não a cota.
+- **O filtro fica gravado no cursor** (`{ o, d, f }`). A página seguinte o herda, e um filtro diferente do gravado responde `cursor_invalido`. Sem isso, o agente que esquece o filtro na página 2 receberia 50 anúncios sem filtro.
+- Todas as respostas do catálogo passam a trazer, inclusive sem filtro (campos novos, sem tipo condicional):
+  - `examinados`;
+  - `sem_numero_por_motivo`, só os motivos sem número;
+  - `com_margem_ate_zero`, contagem de `sem_espaco_para_ads`, que tem número.
 
-**Tamanho da página:** 50, como hoje. Crescer a página exige medir dois relógios separados: o leitor de `sale_price` tem prazo fixo de 20 s por requisição (`PRAZO_TOTAL_MS`, `_shared/ml/preco-comprador.ts`), e 100 preços com 8 em paralelo levaram 3,2 s (Emenda 5). Com esse ritmo, 400 preços ficariam perto do prazo, e as tarifas (4 em paralelo) ainda viriam depois. **Fora desta fatia.**
+  As contagens e `parcial` valem para a página **lida, antes do filtro**; `anuncios` é o recorte.
+- **Lista vazia com `proximo_cursor` não é o fim.** A resposta da loja inteira exige seguir o cursor até ele ser nulo e somar as contagens. A regra vai na descrição da ferramenta, do argumento `cursor` e do campo `proximo_cursor`, que o modelo vê a cada passo, e não só no `initialize`.
+- Limite conhecido: lojas grandes precisam de muitas chamadas em sequência (Zaven 5, Avil 8). Cliente com teto de chamadas por turno pode parar antes. O agente deve dizer até onde leu.
+- Ao listar, as instruções mandam separar `active` de `paused`/`closed` (o `status` já vem em cada anúncio).
 
-**2. `publiai_comparar_precos`** (nova): `identificador` (igual à margem) e `precos_brl` (2 a 5 preços, cada um válido como na simulação; um inválido recusa a chamada inteira com `preco_invalido`). Devolve, por preço, na ordem pedida, os anúncios e a `referencia` (pior margem do alvo), na mesma forma de `publiai_simular_margem`.
+**Por que estender em vez de criar ferramenta:** é a mesma varredura e o mesmo cursor.
 
-- Item, status e preço atual são lidos **uma vez**. Não pode ser cinco `calcular` seguidos, que multiplicariam as leituras. A tarifa é consultada por preço, porque comissão e frete mudam por faixa.
-- Teto por chamada pela reserva de tarifas, e não por número de anúncios: `preços × cores × 2` acima de **200** → `alvo_grande` antes do Redis. Assim o teto cobre também MLB com variações. Nesse caso, as instruções pedem um MLB só e não mandam disparar uma simulação por preço.
+**Tamanho da página:** 50, como hoje. Crescer exige medir dois relógios: o leitor de `sale_price` tem prazo fixo de 20 s por requisição (`PRAZO_TOTAL_MS`, `_shared/ml/preco-comprador.ts`), e 100 preços com 8 em paralelo levaram 3,2 s (Emenda 5). Depois disso ainda vêm as tarifas, 4 em paralelo. **Fora desta fatia.**
+
+**2. `publiai_comparar_precos`** (nova).
+
+- Argumentos: `identificador` (igual à margem) e `precos_brl`, de 2 a 5 preços. Cada um é validado como na simulação e arredondado a 2 casas; repetidos depois do arredondamento são deduplicados. Um preço inválido recusa a chamada inteira com `preco_invalido`.
+- Resposta: `{ estado: "ok", lido_em, tarifa_idade_max_horas, resultados: [{ preco_brl, anuncios, referencia }] }`, na ordem pedida. `anuncios` tem a forma de `publiai_simular_margem`.
+- Implementação: generalizar `calcular` (`margens.ts`) para uma lista de preços. Alíquota, itens, status, preço atual e cadastro são lidos **uma vez**; a tarifa é consultada por preço, porque comissão e frete mudam por faixa. A simulação vira o caso de um preço só. Nunca cinco `calcular` em sequência.
+- Teto em dois cortes, com **100** consultas de tarifa por chamada:
+  - antes de qualquer reserva ou leitura, `preços × anúncios × 2 > 100` → `alvo_grande` (cada anúncio tem ao menos uma cor);
+  - depois do multiget de itens e antes de ler preços ou reservar tarifas, `preços × cores × 2 > 100` → `alvo_grande`.
+
+  Com 5 preços, isso dá até 10 cores. Nesse caso, as instruções pedem um MLB só e não mandam disparar uma simulação por preço.
+- Paralelismo por par (anúncio, preço), com 4 de concorrência no total. Assim, um MLB com muitas cores não fica sequencial.
 - Sem "preço para atingir X%": com tarifa por faixa, achar o preço exige busca e muitas consultas.
-- Regra no `initialize`: para "qual deixa X%", o agente escolhe o menor preço cuja `referencia.margem_pct` seja ≥ X, comparando o número cru. Com `referencia.motivo = anuncio_sem_numero`, não escolhe preço.
-- Por que ferramenta nova, e não lista de preços em `simular`: a leitura é única e a tabela sai numa chamada só. Para um anúncio, três `simular` também respondem, com mais leituras.
+- Regra no `initialize`: para "qual deixa X%", o agente escolhe o menor preço cuja `referencia.margem_pct` seja ≥ X, comparando o número cru. A tela **trunca** em uma casa (aceite de 23/11), então o cru não aprova nada que a tela mostre abaixo de X. Com `referencia.motivo = anuncio_sem_numero`, não escolhe preço.
 
 **3.** Instruções do `initialize`, descrições, teste e guia (`docs/reference/acesso-de-agentes.md`, `docs/reference/api-agentes.md`) no mesmo commit.
 
 ### Permissões por chave
 
-- Coluna `permissoes text[] not null`, com check no conjunto conhecido, em `agente_conexoes` (migration com OK, aplicada antes do deploy da edge). Backfill das chaves existentes com as duas permissões, que é o comportamento de hoje.
-- Valores agora:
-  - **`margens`**: `publiai_margem_anuncio`, `publiai_simular_margem` e `publiai_comparar_precos`.
-  - **`catalogo`**: `publiai_margens_catalogo` com ou sem filtro, a varredura em massa.
-  - `publiai_loja` vale para toda chave. `vendas` só nasce no passo 2, com a ferramenta.
-- Um mapa único ferramenta → permissão, lido na mesma consulta da conexão (`buscarConexaoPorHash`), aplicado em `tools/list` (mostra só o permitido) e em `tools/call`, antes de qualquer leitura de negócio. Lista vazia ou valor desconhecido não libera nada. Ferramenta não permitida → `estado: "sem_permissao"` com `isError: true` (não 401: a chave é válida). Ferramenta inexistente continua `-32602`. A mudança vale na chamada seguinte.
-- Chave nova: as duas permissões marcadas por padrão; o administrador desmarca na criação. Para mudar depois, ação nova na edge `agente-conexoes`, com os portões que ela já tem (organização do JWT, sessão de suporte recusada, só administrador, módulo ligado). O corpo do pedido não escolhe organização.
-- **Limite conhecido:** tirar `catalogo` não protege a cota. `comparar_precos` pode reservar até 200 tarifas por chamada; umas 25 chamadas esgotam as 5.000 do dia da loja. O limite de 60 chamadas por minuto não impede isso.
-- Auditoria: grava o modo do filtro (`abaixo_de:<número>` ou `sem_numero`) e `sem_permissao`; nunca o título.
-- Não muda: organização só da conexão (filtro e preços não recebem organização; cursor de outra organização continua `cursor_invalido`), isolamento, limites, somente leitura. Nenhuma permissão dá escrita.
+- **Migration** (com OK, aplicada antes do deploy da edge):
+  - coluna `permissoes text[] not null default '{margens,catalogo}'`; o padrão mantém a edge antiga funcionando no intervalo;
+  - check: só valores conhecidos, sem nulos nem repetidos, ao menos um;
+  - as chaves existentes ficam com as duas pelo padrão, que é o comportamento de hoje.
+- **Valores agora:**
+  - **`margens`**: `publiai_margem_anuncio`, `publiai_simular_margem` e `publiai_comparar_precos`;
+  - **`catalogo`**: `publiai_margens_catalogo`, com ou sem filtro, a varredura em massa;
+  - `publiai_loja` vale para toda chave;
+  - `vendas` só nasce no passo 2, com a ferramenta.
+- **Mapa único ferramenta → permissão**, lido na mesma consulta da conexão (`buscarConexaoPorHash`) e aplicado em `tools/list` (mostra só o permitido) e em `tools/call`.
+  - **Ordem em `tools/call`:** ferramenta existe (senão `-32602`) → chave tem permissão → argumentos e cursor → negócio. Assim, uma chave sem `catalogo` não usa o cursor para testar nada.
+  - Ferramenta fora do mapa nega por padrão. Lista vazia ou valor desconhecido não libera nada.
+  - Sem permissão → `estado: "sem_permissao"`, com `isError: true` (não 401: a chave é válida). A mudança vale na chamada seguinte.
+  - O texto do `initialize` não muda por chave; `tools/list` e `sem_permissao` bastam.
+- **Chave nova:** as duas permissões marcadas por padrão; o administrador desmarca na criação.
+- **Mudar depois:** ação nova na edge `agente-conexoes`, com os portões que ela já tem (organização do JWT, sessão de suporte recusada, só administrador, módulo ligado). O update filtra `org_id` da sessão, `id` e `revogada_em is null`, e exige uma linha afetada, como a revogação já faz (`conexoes.ts`). Inexistente, de outra organização ou revogada responde igual. O corpo do pedido não escolhe organização.
+- **O que `catalogo` protege e o que não protege** (dito na tela e no guia):
+  - **Protege:** impede a varredura da loja inteira em poucas chamadas.
+  - **Não protege:**
+    - chave só com `margens` ainda vê custo e margem de anúncios por MLB, SKU ou palavra (até 60 por alvo);
+    - essa chave ainda gasta a cota diária da loja.
+  - As cotas são contadores próprios do acesso de agentes (`agt:` no Redis) e não afetam o app nem a aba Campanhas.
+- **Auditoria:**
+  - grava o modo do filtro (`abaixo_de:<número>`, `sem_numero`) só depois de validado; argumento inválido grava só `argumento_invalido`;
+  - em `comparar_precos`, grava o alvo canônico, como hoje, e o número de preços;
+  - grava `sem_permissao`; nunca o título.
+- **Não muda:**
+  - a organização vem só da conexão; filtro e preços não recebem organização;
+  - cursor de outra organização continua `cursor_invalido`;
+  - isolamento, limites e somente leitura;
+  - nenhuma permissão dá escrita.
 
 ### Cota e tempo
 
-**Medido** (2026-11-26, SQL só leitura em produção, sem chamada ao ML): MLBs publicados por loja, pai e filhos, distintos:
+**Medido** (2026-11-26, SQL só leitura em produção, sem chamada ao ML): MLBs publicados por loja, pai e filhos, distintos.
 
-| Loja | MLBs |
+| Loja | MLBs publicados |
 |---|---|
 | Avil | 374 |
 | Zaven | 247 |
@@ -402,36 +442,75 @@ Estender em vez de criar ferramenta: é a mesma varredura e o mesmo cursor; outr
 | DSA | 29 |
 | Hairflay | 5 |
 
-Só um MLB (Avil) é do modelo legado, com 17 variações no cadastro. Só a Zaven tem o módulo ligado.
+Só um MLB (Avil) é do modelo legado com variações no cadastro (17 linhas). Só a Zaven tem o módulo ligado.
 
-**Inferência pela fórmula do código** (`calcular` em `_shared/agentes/margens.ts`; não medida): uma varredura completa custa `2 × ⌈N/20⌉ + N` leituras e `2 × cores` tarifas, reservadas **antes** do cache e do cadastro. Anúncio que vai sair `sem_custo` também gasta reserva.
+**Inferência pela fórmula do código** (`calcular` em `_shared/agentes/margens.ts`; não medida):
 
-| Loja | Leituras (teto 3.000/dia) | Tarifas (teto 5.000/dia) |
+- **Fórmula:** a reserva é feita por página de 50: `2 × ⌈página/20⌉ + página` leituras e `2 × cores` tarifas. As duas são reservadas **antes** do cache e do cadastro, então um anúncio que vai sair `sem_custo` também gasta reserva.
+- **Varredura completa:**
+
+| Loja | Leituras (teto 3.000 por dia) | Tarifas (teto 5.000 por dia) |
 |---|---|---|
-| Avil | ~412 (~7 varreduras por dia) | ~780 |
-| Zaven | ~273 | ~494 |
+| Zaven | ~277 (4 × 56 + 53) | ~494 |
+| Avil | ~420 (7 × 56 + 28), cerca de 7 varreduras por dia | ~780 |
 
-Acerto de cache reduz tempo e carga no ML, não a cota. Uma loja acima de ~2.700 MLBs não caberia numa varredura por dia. Revisor (Grok 4.7 xhigh) conferiu a conta da Zaven contra o código.
+- **O que o cache muda:** acerto de cache reduz tempo e carga no ML, não a cota.
+- **Teto de tamanho:** uma loja acima de cerca de 2.700 MLBs não caberia numa varredura por dia.
 
-**Não medido:** tempo por página e da varredura completa na edge; `comparar_precos`; a Avil. O tempo da Zaven **não** será extrapolado para a Avil: a Avil tem o único MLB com 17 variações e outro perfil de cadastro.
+**Não medido:** tempo por página e da varredura completa na edge; tarifa fria (preço inédito), que é o caso da comparação; a Avil. O tempo da Zaven **não** será extrapolado para a Avil, que tem o único MLB com 17 variações.
 
 ### Pedido de OK (antes de qualquer código)
 
 1. **Aprovar esta emenda** ou ajustá-la.
-2. **Medição M1, Zaven** (já autorizada no piloto), para prometer o recorte página a página: varrer o catálogo inteiro pela chave da Zaven, 5 páginas. Por chamada, anotar duração e status no log do gateway, `parcial` e quantos `erro_tarifa`; depois, uma segunda passada só nesses MLBs (a Emenda 5 viu falha transitória na rajada fria). Custo estimado: ~273 leituras e até ~494 tarifas no ML, todas GET, com o token da Zaven pela própria edge `agentes`. Nada escrito.
-3. **Avil:** sem medição agora. Só quando ela ligar o módulo pelo roteiro de "Pode ligar em outra loja?" (autorização do cliente, ADR-0092).
+2. **Medição M1 na Zaven** (já autorizada no piloto), pela chave da Zaven e a própria edge `agentes`. Tudo GET; nada escrito.
+   - **a) Catálogo inteiro (5 páginas, em sequência).** Anotar por chamada: duração e status no log do gateway, `parcial` e quantos `erro_tarifa`. Depois, uma segunda passada só nos MLBs com erro (a Emenda 5 viu falha transitória na rajada fria). Anotar também se o cache de tarifas já estava quente: a aba Campanhas aberta nas últimas 8 h aquece o cache.
+   - **b) Tarifa fria.** Simular 5 preços inéditos num MLB, como substituto da comparação, que ainda não existe. Duração de cada simulação.
+   - **Custo estimado:** ~277 leituras e até ~494 tarifas em (a); ~15 leituras e ~10 tarifas em (b).
+   - **Limite:** o tempo por fase (cadastro, preço, tarifa) não aparece no log do gateway. Só sairia com registro novo na edge, o que exige deploy e fica fora de M1.
+3. **Avil:** sem medição agora. Só quando ela ligar o módulo pelo roteiro de "Pode ligar em outra loja?" (autorização do cliente, ADR-0092). A medição real de `comparar_precos` entra no aceite da implementação.
 
-Classificação: **crítica** (autorização por chave e migration). Depois da aprovação: plano curto, TDD, revisão independente do código (Codex Sol high) antes do merge.
+**Classificação: crítica** (autorização por chave e migration). Depois da aprovação: plano curto, TDD, revisão independente do código (Codex Sol high) antes do merge.
 
-**Revisão da proposta (Grok 4.7 xhigh, 2026-11-26, uma rodada, pacote sanitizado com as lojas anonimizadas): APROVAR COM AJUSTES.** Todos os ajustes foram aplicados acima e conferidos no código (`PRAZO_TOTAL_MS` e concorrência 8 em `preco-comprador.ts`; `isError` em `mcp.ts`; portões de `agente-conexoes`):
+### Revisões da proposta
+
+Pacote sanitizado, com lojas anonimizadas e sem `.env`.
+
+**1. Grok 4.7 xhigh (2026-11-26): APROVAR COM AJUSTES.** Aplicado:
 
 - regra da página filtrada (o revisor a marcou como bloqueador);
-- separação entre sem número e prejuízo;
 - regra de escolha na comparação;
-- teto de 200 pela reserva de tarifas, e não por anúncios;
+- teto pela reserva de tarifas;
 - validação dos argumentos;
-- detalhes da permissão e da auditoria;
-- M1 com `parcial` e `erro_tarifa`, sem extrapolar para a Avil;
+- permissão e auditoria;
+- M1 sem extrapolar para a Avil;
 - página maior só com os dois relógios medidos.
+
+Os dois filtros eram excludentes por sugestão dele; a revisão seguinte os uniu (abaixo).
+
+**2. Gemini 4 Carbon high (2026-11-26; o Carbon não tem xhigh no cursor-agent), sem ver o parecer do Grok: APROVAR COM AJUSTES.** Conferido no código antes de aceitar.
+
+Aceitos:
+
+- **marcados como bloqueador pelo revisor:**
+  - teto em dois cortes, o primeiro antes de qualquer leitura (as cores só se conhecem depois do multiget);
+  - `default` na migration e update preso a `org_id` e `revogada_em is null`;
+  - ordem existe → permissão → argumentos;
+- **demais aceitos:**
+  - filtro gravado no cursor;
+  - filtros combináveis numa varredura só;
+  - contagens separando sem número de margem ≤ 0, sempre presentes;
+  - regra de paginação também na descrição do campo;
+  - teto de 200 para 100 e paralelismo por par (anúncio, preço);
+  - formato da resposta da comparação;
+  - `calcular` generalizado para uma lista de preços;
+  - conta de leituras por página (277 e 420, antes 273 e 412);
+  - tarifa fria e cache quente em M1;
+  - auditoria só depois de validar;
+  - separar `active` ao listar.
+
+Recusados:
+
+- **Comparar com arredondamento de tela.** A tela trunca, não arredonda; o número cru é o que não aprova nada abaixo da meta.
+- **`initialize` diferente por permissão.** É código a mais; `tools/list` e `sem_permissao` já cobrem.
 
 Os ajustes não passaram por nova rodada.
