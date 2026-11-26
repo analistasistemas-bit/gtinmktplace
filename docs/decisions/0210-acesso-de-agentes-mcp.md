@@ -357,20 +357,20 @@ Continua aceito: cache de comissão `promo:lp:v1` compartilhado (exatidão, não
 
 **1. Recorte e sem número no catálogo.** `publiai_margens_catalogo` ganha dois argumentos opcionais, que podem ir **juntos** (união: o anúncio entra se atende a um dos dois):
 
-- `abaixo_de_pct` (número finito entre −100 e 100): anúncios com número e `margem_pct` menor que o valor, inclusive prejuízo e zero. Para "abaixo de 18%", 18; para "no prejuízo ou zero", qualquer valor acima de zero.
+- `abaixo_de_pct` (número finito entre −100 e 100): anúncios com número e `margem_pct` menor que o valor, inclusive prejuízo e zero. Para "abaixo de 18%", 18; para "no prejuízo ou zero", 0,01, e só chamar de prejuízo ou zero o anúncio com `motivo = sem_espaco_para_ads` (um valor maior traria margens positivas junto).
 - `sem_numero` (só `true`): anúncios sem número (`margem_pct` nulo), com o `motivo` de cada um (`sem_custo`, `sem_origem`, `sem_dimensao`, `pacote_a_conferir`, `preco_nao_verificado`...), ou seja, o cadastro a corrigir.
 - "O que está sem margem e por quê", no sentido amplo (sem número **ou** com margem ≤ 0), cabe numa varredura só: `sem_numero: true` com `abaixo_de_pct` pequeno, por exemplo 0,01. Valor fora da faixa, `NaN` ou `sem_numero` diferente de `true` → `argumento_invalido`.
 
 **Regra da página filtrada.**
 
 - A varredura, o custo e a ordem são os da página atual: 50 anúncios por chamada, em ordem de MLB. O filtro corta a resposta, não a cota.
-- **O filtro fica gravado no cursor** (`{ o, d, f }`). A página seguinte o herda, e um filtro diferente do gravado responde `cursor_invalido`. Sem isso, o agente que esquece o filtro na página 2 receberia 50 anúncios sem filtro.
+- **O filtro fica gravado no cursor** (`{ o, d, f }`). A página seguinte o herda, e um filtro diferente do gravado responde `cursor_invalido`. Sem isso, o agente que esquece o filtro na página 2 receberia 50 anúncios sem filtro. O cursor não é assinado: o `f` lido dele passa pelo mesmo validador dos argumentos (inválido → `cursor_invalido`), e a comparação com o filtro pedido usa a forma canônica (`18` = `18.0`). A trava de organização (`o`) não muda.
 - Todas as respostas do catálogo passam a trazer, inclusive sem filtro (campos novos, sem tipo condicional):
   - `examinados`;
   - `sem_numero_por_motivo`, só os motivos sem número;
   - `com_margem_ate_zero`, contagem de `sem_espaco_para_ads`, que tem número.
 
-  As contagens e `parcial` valem para a página **lida, antes do filtro**; `anuncios` é o recorte.
+  As contagens e `parcial` valem para a página **lida, antes do filtro**; `anuncios` é o recorte. A página vazia (loja sem anúncios ou fim) também traz as contagens, zeradas.
 - **Lista vazia com `proximo_cursor` não é o fim.** A resposta da loja inteira exige seguir o cursor até ele ser nulo e somar as contagens. A regra vai na descrição da ferramenta, do argumento `cursor` e do campo `proximo_cursor`, que o modelo vê a cada passo, e não só no `initialize`.
 - Limite conhecido: lojas grandes precisam de muitas chamadas em sequência (Zaven 5, Avil 8). Cliente com teto de chamadas por turno pode parar antes. O agente deve dizer até onde leu.
 - Ao listar, as instruções mandam separar `active` de `paused`/`closed` (o `status` já vem em cada anúncio).
@@ -381,14 +381,14 @@ Continua aceito: cache de comissão `promo:lp:v1` compartilhado (exatidão, não
 
 **2. `publiai_comparar_precos`** (nova).
 
-- Argumentos: `identificador` (igual à margem) e `precos_brl`, de 2 a 5 preços. Cada um é validado como na simulação e arredondado a 2 casas; repetidos depois do arredondamento são deduplicados. Um preço inválido recusa a chamada inteira com `preco_invalido`.
+- Argumentos: `identificador` (igual à margem) e `precos_brl`, de 2 a 5 preços na chamada. Cada um é validado como na simulação e arredondado a 2 casas; repetidos depois do arredondamento são deduplicados, e sobrar um só é aceito. Um preço inválido recusa a chamada inteira com `preco_invalido`.
 - Resposta: `{ estado: "ok", lido_em, tarifa_idade_max_horas, resultados: [{ preco_brl, anuncios, referencia }] }`, na ordem pedida. `anuncios` tem a forma de `publiai_simular_margem`.
 - Implementação: generalizar `calcular` (`margens.ts`) para uma lista de preços. Alíquota, itens, status, preço atual e cadastro são lidos **uma vez**; a tarifa é consultada por preço, porque comissão e frete mudam por faixa. A simulação vira o caso de um preço só. Nunca cinco `calcular` em sequência.
 - Teto em dois cortes, com **100** consultas de tarifa por chamada:
   - antes de qualquer reserva ou leitura, `preços × anúncios × 2 > 100` → `alvo_grande` (cada anúncio tem ao menos uma cor);
   - depois do multiget de itens e antes de ler preços ou reservar tarifas, `preços × cores × 2 > 100` → `alvo_grande`.
 
-  Com 5 preços, isso dá até 10 cores. Nesse caso, as instruções pedem um MLB só e não mandam disparar uma simulação por preço.
+  O segundo corte vem depois da reserva de leituras e do multiget, então já gastou essa cota (o primeiro corte limita o alvo a 25 anúncios com 2 preços, então no máximo 29 leituras); aceito. Com 5 preços, isso dá até 10 cores. Nesse caso, as instruções pedem um MLB só e não mandam disparar uma simulação por preço.
 - Paralelismo por par (anúncio, preço), com 4 de concorrência no total. Assim, um MLB com muitas cores não fica sequencial.
 - Sem "preço para atingir X%": com tarifa por faixa, achar o preço exige busca e muitas consultas.
 - Regra no `initialize`: para "qual deixa X%", o agente escolhe o menor preço cuja `referencia.margem_pct` seja ≥ X, comparando o número cru. A tela **trunca** em uma casa (aceite de 23/11), então o cru não aprova nada que a tela mostre abaixo de X. Com `referencia.motivo = anuncio_sem_numero`, não escolhe preço.
@@ -399,7 +399,7 @@ Continua aceito: cache de comissão `promo:lp:v1` compartilhado (exatidão, não
 
 - **Migration** (com OK, aplicada antes do deploy da edge):
   - coluna `permissoes text[] not null default '{margens,catalogo}'`; o padrão mantém a edge antiga funcionando no intervalo;
-  - check: só valores conhecidos, sem nulos nem repetidos, ao menos um;
+  - check: `permissoes <@ '{margens,catalogo}' and cardinality(permissoes) >= 1` (só valores conhecidos, sem nulos, ao menos um; repetido não abre nada e não é barrado);
   - as chaves existentes ficam com as duas pelo padrão, que é o comportamento de hoje.
 - **Valores agora:**
   - **`margens`**: `publiai_margem_anuncio`, `publiai_simular_margem` e `publiai_comparar_precos`;
@@ -408,10 +408,11 @@ Continua aceito: cache de comissão `promo:lp:v1` compartilhado (exatidão, não
   - `vendas` só nasce no passo 2, com a ferramenta.
 - **Mapa único ferramenta → permissão**, lido na mesma consulta da conexão (`buscarConexaoPorHash`) e aplicado em `tools/list` (mostra só o permitido) e em `tools/call`.
   - **Ordem em `tools/call`:** ferramenta existe (senão `-32602`) → chave tem permissão → argumentos e cursor → negócio. Assim, uma chave sem `catalogo` não usa o cursor para testar nada.
-  - Ferramenta fora do mapa nega por padrão. Lista vazia ou valor desconhecido não libera nada.
+  - O mapa é um campo obrigatório `permissao: 'margens' | 'catalogo' | null` em cada ferramenta (`mcp.ts`), `null` só em `publiai_loja`: o compilador cobra toda ferramenta nova.
+  - Lista vazia, valor desconhecido ou `permissoes` que não seja lista não libera nada (`LinhaConexao` e o resultado da autenticação ganham o campo).
   - Sem permissão → `estado: "sem_permissao"`, com `isError: true` (não 401: a chave é válida). A mudança vale na chamada seguinte.
   - O texto do `initialize` não muda por chave; `tools/list` e `sem_permissao` bastam.
-- **Chave nova:** as duas permissões marcadas por padrão; o administrador desmarca na criação.
+- **Chave nova:** as duas permissões marcadas por padrão; o administrador desmarca na criação. Criar e alterar usam o mesmo validador (só valores conhecidos, ao menos um; ausente = padrão); hoje `validarNova` só trata nome e validade.
 - **Mudar depois:** ação nova na edge `agente-conexoes`, com os portões que ela já tem (organização do JWT, sessão de suporte recusada, só administrador, módulo ligado). O update filtra `org_id` da sessão, `id` e `revogada_em is null`, e exige uma linha afetada, como a revogação já faz (`conexoes.ts`). Inexistente, de outra organização ou revogada responde igual. O corpo do pedido não escolhe organização.
 - **O que `catalogo` protege e o que não protege** (dito na tela e no guia):
   - **Protege:** impede a varredura da loja inteira em poucas chamadas.
@@ -420,8 +421,9 @@ Continua aceito: cache de comissão `promo:lp:v1` compartilhado (exatidão, não
     - essa chave ainda gasta a cota diária da loja.
   - As cotas são contadores próprios do acesso de agentes (`agt:` no Redis) e não afetam o app nem a aba Campanhas.
 - **Auditoria:**
-  - grava o modo do filtro (`abaixo_de:<número>`, `sem_numero`) só depois de validado; argumento inválido grava só `argumento_invalido`;
-  - em `comparar_precos`, grava o alvo canônico, como hoje, e o número de preços;
+  - sem migration: a tabela só tem `ferramenta`, `alvo` e `resultado`, sem check;
+  - no catálogo, `alvo` = modo do filtro validado (`abaixo_de:18`, `sem_numero` ou `abaixo_de:0.01+sem_numero`; sem filtro, nulo como hoje); argumento inválido grava só `argumento_invalido`;
+  - em `comparar_precos`, `alvo` = alvo canônico, como em `simular` (o número de preços não é gravado);
   - grava `sem_permissao`; nunca o título.
 - **Não muda:**
   - a organização vem só da conexão; filtro e preços não recebem organização;
@@ -512,5 +514,29 @@ Recusados:
 
 - **Comparar com arredondamento de tela.** A tela trunca, não arredonda; o número cru é o que não aprova nada abaixo da meta.
 - **`initialize` diferente por permissão.** É código a mais; `tools/list` e `sem_permissao` já cobrem.
+
+**3. Fable 5.2 (2026-11-26, autorizado pelo Diego, subagente local lendo o código no worktree), última rodada: APROVAR COM AJUSTES, sem bloqueador.**
+
+Conferiu contra o código as contas (277, 420, 494, 780, M1(b)), o `default` da migration, a ausência de cache da conexão, o update preso à organização e a comparação fechada na organização. Não achou caminho para contornar a permissão.
+
+Confirmou os aceites e as recusas anteriores, nenhum revertido.
+
+Aplicado:
+
+- frase contraditória do prejuízo, agora 0,01 e `sem_espaco_para_ads`;
+- filtro do cursor validado e comparado em forma canônica;
+- formato da auditoria em `alvo`, sem gravar o número de preços;
+- mesmo validador de permissões em criar e alterar;
+- campo obrigatório `permissao` por ferramenta;
+- permissões que não são lista negam tudo;
+- check com `<@` e `cardinality`;
+- contagens também na página vazia;
+- deduplicação de preços;
+- custo do segundo corte registrado.
+
+**Ele registrou como inferência:**
+
+- 100 tarifas frias, 4 em paralelo, podem repetir a falha transitória da Emenda 5, e a M1(b), que roda em sequência, não mede essa rajada. Fica para o aceite da implementação.
+- Não chamar `campanhas.ts` por fora: `detalheEquilibrioDoMlb` já recebe o preço e é chamada por par dentro de `calcular`.
 
 Os ajustes não passaram por nova rodada.
