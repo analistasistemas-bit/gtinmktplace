@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { margemDoAlvo, margensDoCatalogo, simularMargem, type DepsMargens } from '../margens.ts';
+import { chaveFiltro, margemDoAlvo, margensDoCatalogo, simularMargem, validarFiltro, type DepsMargens } from '../margens.ts';
 import type { Vinculo } from '../alvo.ts';
 import type { Busca } from '../busca.ts';
 import { LimiteTarifa } from '../../ads/campanhas.ts';
@@ -67,6 +67,7 @@ function deps(anuncios: Anuncio[], o: Partial<DepsMargens> & { semItem?: string[
 }
 
 const cursorDe = (o: string, ultimo: string) => Buffer.from(JSON.stringify({ o, d: ultimo })).toString('base64url');
+const cursorComF = (o: string, ultimo: string, f: string) => Buffer.from(JSON.stringify({ o, d: ultimo, f })).toString('base64url');
 const duasCasas = (x: number) => Math.abs(x * 100 - Math.round(x * 100)) < 1e-9;
 
 describe('margemDoAlvo', () => {
@@ -548,5 +549,86 @@ describe('status do anúncio', () => {
     }));
     if (r.estado !== 'ok') throw new Error(r.estado);
     expect(r.anuncios[0]).toMatchObject({ status: null, motivo: 'anuncio_indisponivel' });
+  });
+});
+
+describe('catálogo: filtros abaixo_de_pct e sem_numero (Emenda 6)', () => {
+  // margens ~30, ~10, ~-2 (preço 50: líquido = 34 − custo) e sem número (sem_custo)
+  const quatro = [
+    { mlb: 'MLB1', custo: 19, preco: 50 }, { mlb: 'MLB2', custo: 29, preco: 50 },
+    { mlb: 'MLB3', custo: 35, preco: 50 }, { mlb: 'MLB4', custo: null, preco: 50 },
+  ];
+  const pag = async (f?: Parameters<typeof margensDoCatalogo>[2], c: string | null = null, a = quatro) => {
+    const r = await margensDoCatalogo(c, deps(a), f);
+    if (r.estado !== 'ok') throw new Error(r.estado);
+    return r;
+  };
+  const mlbs = (r: { anuncios: { mlb: string }[] }) => r.anuncios.map((a) => a.mlb);
+
+  it('abaixo_de_pct 18: só 10 e −2; contagens da página lida antes do filtro', async () => {
+    const r = await pag({ abaixo_de_pct: 18 });
+    expect(mlbs(r)).toEqual(['MLB2', 'MLB3']);
+    expect(r.examinados).toBe(4);
+    expect(r.sem_numero_por_motivo).toEqual({ sem_custo: 1 });
+    expect(r.com_margem_ate_zero).toBe(1);
+  });
+
+  it('sem_numero: só o sem_custo; os dois juntos: união', async () => {
+    expect(mlbs(await pag({ sem_numero: true }))).toEqual(['MLB4']);
+    expect(mlbs(await pag({ abaixo_de_pct: 18, sem_numero: true }))).toEqual(['MLB2', 'MLB3', 'MLB4']);
+  });
+
+  it('sem filtro: os 4, com as contagens', async () => {
+    const r = await pag();
+    expect(mlbs(r)).toEqual(['MLB1', 'MLB2', 'MLB3', 'MLB4']);
+    expect(r).toMatchObject({ examinados: 4, sem_numero_por_motivo: { sem_custo: 1 }, com_margem_ate_zero: 1 });
+  });
+
+  it('parcial vale para a página lida, não para o recorte', async () => {
+    const r = await margensDoCatalogo(null, deps(quatro, { semPreco: ['MLB1'] }), { sem_numero: true });
+    if (r.estado !== 'ok') throw new Error(r.estado);
+    expect(r.parcial).toBe(true);
+    expect(mlbs(r)).toEqual(['MLB1', 'MLB4']);
+  });
+
+  it('cursor: página seguinte herda o filtro; filtro diferente, cursor sem f ou f forjado → cursor_invalido', async () => {
+    const muitos = Array.from({ length: 60 }, (_, i) => ({ mlb: `MLB${1001 + i}`, custo: 29, preco: 50 }));
+    const d = deps(muitos);
+    const p1 = await margensDoCatalogo(null, d, { abaixo_de_pct: 18 });
+    if (p1.estado !== 'ok') throw new Error(p1.estado);
+    expect(p1.proximo_cursor).toBe(cursorComF(ORG, 'MLB1050', 'abaixo_de:18'));
+    const p2 = await margensDoCatalogo(p1.proximo_cursor, d);
+    if (p2.estado !== 'ok') throw new Error(p2.estado);
+    expect(p2.anuncios).toHaveLength(10);
+    expect(p2.examinados).toBe(10);
+    // mesmo filtro em forma canônica (18.0 === 18) é aceito
+    expect((await margensDoCatalogo(p1.proximo_cursor, d, { abaixo_de_pct: 18.0 })).estado).toBe('ok');
+    expect(await margensDoCatalogo(p1.proximo_cursor, d, { abaixo_de_pct: 20 })).toEqual({ estado: 'cursor_invalido' });
+    expect(await margensDoCatalogo(p1.proximo_cursor, d, { sem_numero: true })).toEqual({ estado: 'cursor_invalido' });
+    expect(await margensDoCatalogo(cursorDe(ORG, 'MLB1050'), d, { sem_numero: true })).toEqual({ estado: 'cursor_invalido' });
+    for (const f of ['abaixo_de:999', 'abaixo_de:abc', 'sem_numero+abaixo_de:18', 'abaixo_de:18.0', 'x', '', 'sem_numero+sem_numero']) {
+      expect(await margensDoCatalogo(cursorComF(ORG, 'MLB1050', f), d), f).toEqual({ estado: 'cursor_invalido' });
+    }
+    expect(await margensDoCatalogo(cursorComF(ORG, 'MLB1050', 'abaixo_de:18+sem_numero'), d)).toMatchObject({ estado: 'ok' });
+    expect(await margensDoCatalogo(cursorComF(ORG, 'MLB1050', 'sem_numero'), d)).toMatchObject({ estado: 'ok' });
+  });
+
+  it('página vazia com filtro: contagens zeradas e sem cursor', async () => {
+    const r = await pag({ abaixo_de_pct: 18 }, null, []);
+    expect(r).toMatchObject({ anuncios: [], examinados: 0, sem_numero_por_motivo: {}, com_margem_ate_zero: 0, proximo_cursor: null });
+  });
+
+  it('validarFiltro e chaveFiltro', () => {
+    expect(validarFiltro({})).toEqual({});
+    expect(validarFiltro({ abaixo_de_pct: -100 })).toEqual({ abaixo_de_pct: -100 });
+    expect(validarFiltro({ abaixo_de_pct: 18, sem_numero: true })).toEqual({ abaixo_de_pct: 18, sem_numero: true });
+    for (const a of [{ abaixo_de_pct: NaN }, { abaixo_de_pct: 101 }, { abaixo_de_pct: -100.5 }, { abaixo_de_pct: Infinity },
+      { abaixo_de_pct: '18' }, { sem_numero: false }, { sem_numero: 'true' }, { sem_numero: 1 }]) {
+      expect(validarFiltro(a), JSON.stringify(a)).toBe('invalido');
+    }
+    expect(chaveFiltro({})).toBeNull();
+    expect(chaveFiltro({ abaixo_de_pct: 18.0 })).toBe('abaixo_de:18');
+    expect(chaveFiltro({ sem_numero: true })).toBe('sem_numero');
+    expect(chaveFiltro({ abaixo_de_pct: 0.01, sem_numero: true })).toBe('abaixo_de:0.01+sem_numero');
   });
 });

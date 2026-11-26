@@ -116,7 +116,7 @@ Deno.serve((req) => {
       const ferramentas: Ferramentas = {
         loja: () => lerLoja(db, orgId),
         margem: (id) => comDeps(db, orgId, (d) => margemDoAlvo(id, d)),
-        catalogo: (cursor) => comDeps(db, orgId, (d) => margensDoCatalogo(cursor, d)),
+        catalogo: (cursor, filtro) => comDeps(db, orgId, (d) => margensDoCatalogo(cursor, d, filtro)),
         simular: (id, preco) => comDeps(db, orgId, (d) => simularMargem(id, preco, d)),
       };
       return tratarMcp(corpo, ferramentas, (ferramenta, alvo, resultado) =>

@@ -2,11 +2,12 @@
 // as ferramentas já fechadas na organização da conexão; nada aqui recebe ou escolhe organização.
 // Títulos de produto são dado não confiável: toda descrição de ferramenta termina com o aviso.
 import type { Permissao } from './credencial.ts';
+import { chaveFiltro, type FiltroCatalogo, validarFiltro } from './margens.ts';
 
 export interface Ferramentas {
   loja(): Promise<unknown>;
   margem(identificador: string): Promise<unknown>;
-  catalogo(cursor: string | null): Promise<unknown>;
+  catalogo(cursor: string | null, filtro: FiltroCatalogo): Promise<unknown>;
   simular(identificador: string, preco: unknown): Promise<unknown>;
 }
 export type Auditar = (ferramenta: string, alvo: string | null, resultado: string) => Promise<void>;
@@ -45,6 +46,8 @@ type Ferramenta = {
   schema: Record<string, unknown>;
   /** Só ferramentas que declaram `identificador` o levam para a auditoria; as demais auditam alvo null. */
   comIdentificador?: true;
+  /** Alvo da auditoria a partir dos argumentos JÁ validados (só roda se `preparar` aceitou); sem ele, alvo nulo. */
+  alvo?(a: Args): string | null;
   /** Argumentos válidos → execução; inválidos → null. Só lê os argumentos declarados no esquema. */
   preparar(a: Args, f: Ferramentas): (() => Promise<unknown>) | null;
 };
@@ -65,11 +68,24 @@ export const FERRAMENTAS: Record<string, Ferramenta> = {
     preparar: (a, f) => (typeof a.identificador === 'string' ? () => f.margem(a.identificador as string) : null),
   },
   publiai_margens_catalogo: {
-    descricao: 'Margens de todos os anúncios publicados, 50 por página. Passe `proximo_cursor` para a página seguinte.',
+    descricao: 'Margens dos anúncios publicados, 50 por página. Filtros opcionais: abaixo_de_pct (margem menor que o ' +
+      'valor, inclui prejuízo) e sem_numero (anúncios sem margem calculada, com o motivo). A loja inteira só está lida ' +
+      'quando proximo_cursor vier nulo: página com anuncios vazio não é o fim; siga o cursor e some examinados e as contagens.',
     permissao: 'catalogo',
-    schema: { type: 'object', properties: { cursor: str } },
-    preparar: (a, f) => (a.cursor == null || typeof a.cursor === 'string'
-      ? () => f.catalogo((a.cursor as string | undefined) ?? null) : null),
+    schema: {
+      type: 'object',
+      properties: {
+        cursor: { type: 'string', description: 'proximo_cursor da página anterior; o filtro fica preso a ele.' },
+        abaixo_de_pct: { type: 'number' },
+        sem_numero: { type: 'boolean' },
+      },
+    },
+    alvo: (a) => { const v = validarFiltro(a); return v === 'invalido' ? null : chaveFiltro(v); },
+    preparar: (a, f) => {
+      const filtro = validarFiltro(a);
+      return filtro !== 'invalido' && (a.cursor == null || typeof a.cursor === 'string')
+        ? () => f.catalogo((a.cursor as string | undefined) ?? null, filtro) : null;
+    },
   },
   publiai_simular_margem: {
     descricao: 'Margem e ROAS mínimo de um anúncio se o preço fosse `preco_brl` (em reais). Não altera nada no ' +
@@ -140,7 +156,9 @@ async function chamarFerramenta(
   }
   // Calculado depois da execução: SKU só é gravado se o serviço o resolveu (estado 'ok' explícito).
   const resolvido = obj(resultado) && resultado.estado === 'ok';
-  const alvo = def.comIdentificador && obj(args) ? alvoParaAuditoria(args.identificador, resolvido) : null;
+  const alvo = !obj(args) ? null
+    : def.alvo ? (executar ? def.alvo(args) : null)
+    : def.comIdentificador ? alvoParaAuditoria(args.identificador, resolvido) : null;
   try {
     await auditar(nome, alvo, estado);
   } catch {

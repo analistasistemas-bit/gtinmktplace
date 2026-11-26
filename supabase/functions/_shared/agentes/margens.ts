@@ -47,8 +47,10 @@ export type RespostaAlvo<A = MargemPontual> =
   | { estado: 'candidatos'; candidatos: Candidato[]; lista_cortada: boolean }
   | { estado: 'nao_encontrado' | 'alvo_grande' }
   | Falha;
+/** Contagens da página LIDA (antes do filtro): `anuncios` é o recorte, elas e `parcial` valem para a página inteira. */
+type Contagens = { examinados: number; sem_numero_por_motivo: Record<string, number>; com_margem_ate_zero: number };
 export type RespostaCatalogo =
-  | ({ estado: 'ok'; anuncios: MargemAnuncio[]; proximo_cursor: string | null; parcial: boolean } & Lido)
+  | ({ estado: 'ok'; anuncios: MargemAnuncio[]; proximo_cursor: string | null; parcial: boolean } & Contagens & Lido)
   | { estado: 'cursor_invalido' }
   | Falha;
 
@@ -205,35 +207,80 @@ export function simularMargem(
   return doAlvo(identificador, d, preco, (cs) => cs.map((c) => c.saida));
 }
 
-// Cursor opaco, não secreto: o campo `o` amarra a página à organização da conexão.
+export type FiltroCatalogo = { abaixo_de_pct?: number; sem_numero?: true };
+/** Ausente = `undefined`; qualquer outro valor fora da faixa ou do tipo é inválido (nunca vira "sem filtro"). */
+export function validarFiltro(a: { abaixo_de_pct?: unknown; sem_numero?: unknown }): FiltroCatalogo | 'invalido' {
+  const { abaixo_de_pct: n, sem_numero: s } = a;
+  if (n !== undefined && !(typeof n === 'number' && Number.isFinite(n) && n >= -100 && n <= 100)) return 'invalido';
+  if (s !== undefined && s !== true) return 'invalido';
+  return { ...(n !== undefined && { abaixo_de_pct: n as number }), ...(s !== undefined && { sem_numero: true as const }) };
+}
+/** Forma canônica do filtro (cursor e auditoria): `abaixo_de:<n>`, `sem_numero` ou `abaixo_de:<n>+sem_numero`. */
+export function chaveFiltro(f: FiltroCatalogo): string | null {
+  const partes = [f.abaixo_de_pct !== undefined ? `abaixo_de:${String(Number(f.abaixo_de_pct))}` : null, f.sem_numero ? 'sem_numero' : null]
+    .filter((p) => p != null);
+  return partes.length ? partes.join('+') : null;
+}
+/** Inverso de `chaveFiltro`, passando pelo mesmo validador dos argumentos; chave que não volta igual → null. */
+function filtroDeChave(chave: string): FiltroCatalogo | null {
+  const a: { abaixo_de_pct?: number; sem_numero?: true } = {};
+  for (const p of chave.split('+')) {
+    if (p === 'sem_numero') a.sem_numero = true;
+    else if (p.startsWith('abaixo_de:')) a.abaixo_de_pct = Number(p.slice(10));
+    else return null;
+  }
+  const f = validarFiltro(a);
+  return f !== 'invalido' && chaveFiltro(f) === chave ? f : null;
+}
+
+// Cursor opaco, não secreto: o campo `o` amarra a página à organização da conexão; `f` (opcional) prende o filtro.
 const b64url = (s: string) => btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-const cursorDe = (orgId: string, ultimo: string) => b64url(JSON.stringify({ o: orgId, d: ultimo }));
-function lerCursor(c: string, orgId: string): string | null {
+const cursorDe = (orgId: string, ultimo: string, f: string | null) => b64url(JSON.stringify({ o: orgId, d: ultimo, ...(f && { f }) }));
+function lerCursor(c: string, orgId: string): { depois: string; f: string | null } | null {
   if (!/^[A-Za-z0-9_-]+$/.test(c)) return null;
   try {
     const v: unknown = JSON.parse(atob(c.replace(/-/g, '+').replace(/_/g, '/')));
     if (typeof v !== 'object' || v === null || Array.isArray(v)) return null;
-    const { o, d } = v as Record<string, unknown>;
-    return o === orgId && typeof d === 'string' && MLB_RE.test(d) ? d : null;
+    const { o, d, f } = v as Record<string, unknown>;
+    if (o !== orgId || typeof d !== 'string' || !MLB_RE.test(d)) return null;
+    if (f === undefined) return { depois: d, f: null };
+    return typeof f === 'string' && filtroDeChave(f) ? { depois: d, f } : null;
   } catch {
     return null;
   }
 }
 
-/** 50 MLBs por página, em ordem crescente de MLB. `parcial`: algum anúncio sem número por falha de leitura. */
-export async function margensDoCatalogo(cursor: string | null | undefined, d: DepsMargens): Promise<RespostaCatalogo> {
+function contar(anuncios: MargemAnuncio[]): Contagens {
+  const sem_numero_por_motivo: Record<string, number> = {};
+  for (const a of anuncios) if (a.margem_pct == null) sem_numero_por_motivo[a.motivo ?? 'sem_motivo'] = (sem_numero_por_motivo[a.motivo ?? 'sem_motivo'] ?? 0) + 1;
+  return { examinados: anuncios.length, sem_numero_por_motivo, com_margem_ate_zero: anuncios.filter((a) => a.motivo === 'sem_espaco_para_ads').length };
+}
+/** União: entra quem atende a um dos filtros dados; sem filtro, todos. */
+const recorte = (anuncios: MargemAnuncio[], f: FiltroCatalogo) => (f.abaixo_de_pct === undefined && !f.sem_numero ? anuncios
+  : anuncios.filter((a) => a.margem_pct == null ? f.sem_numero === true : f.abaixo_de_pct !== undefined && a.margem_pct < f.abaixo_de_pct));
+
+/** 50 MLBs por página, em ordem crescente de MLB. `parcial`: algum anúncio sem número por falha de leitura.
+ *  O filtro corta `anuncios`, não a leitura; fica gravado no cursor, e chamada sem filtro herda o do cursor. */
+export async function margensDoCatalogo(
+  cursor: string | null | undefined, d: DepsMargens, filtro: FiltroCatalogo = {},
+): Promise<RespostaCatalogo> {
   let depois: string | null = null;
+  let f = filtro;
+  let chave = chaveFiltro(filtro);
   if (cursor != null) {
-    depois = typeof cursor === 'string' ? lerCursor(cursor, d.orgId) : null;
-    if (depois == null) return { estado: 'cursor_invalido' };
+    const c = typeof cursor === 'string' ? lerCursor(cursor, d.orgId) : null;
+    if (c == null) return { estado: 'cursor_invalido' };
+    if (chave == null && c.f != null) { f = filtroDeChave(c.f)!; chave = c.f; }
+    if (chave !== c.f) return { estado: 'cursor_invalido' };
+    depois = c.depois;
   }
   const mlbs = await d.listarMlbs(depois, POR_PAGINA + 1);
   const pagina = mlbs.slice(0, POR_PAGINA);
-  const proximo_cursor = mlbs.length > POR_PAGINA ? cursorDe(d.orgId, pagina[pagina.length - 1]) : null;
-  if (!pagina.length) return { estado: 'ok', ...lido(d), anuncios: [], proximo_cursor, parcial: false };
+  const proximo_cursor = mlbs.length > POR_PAGINA ? cursorDe(d.orgId, pagina[pagina.length - 1], chave) : null;
+  if (!pagina.length) return { estado: 'ok', ...lido(d), anuncios: [], proximo_cursor, parcial: false, ...contar([]) };
   const r = await calcular(pagina, d, null);
   if (!Array.isArray(r)) return r;
-  const anuncios = r.map((c) => semAtual(c.saida));
-  const parcial = anuncios.some((a) => a.motivo != null && FALHA_LEITURA.has(a.motivo));
-  return { estado: 'ok', ...lido(d), anuncios, proximo_cursor, parcial };
+  const todos = r.map((c) => semAtual(c.saida));
+  const parcial = todos.some((a) => a.motivo != null && FALHA_LEITURA.has(a.motivo));
+  return { estado: 'ok', ...lido(d), anuncios: recorte(todos, f), proximo_cursor, parcial, ...contar(todos) };
 }

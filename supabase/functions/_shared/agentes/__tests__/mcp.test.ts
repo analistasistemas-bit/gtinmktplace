@@ -137,8 +137,8 @@ describe('tratarMcp — tools/call', () => {
     expect(texto(await tratarMcp(chamar('publiai_loja'), f, auditar, TODAS)).json).toEqual({ organizacao: 'Loja A', conta_ml: 'LOJA_A', conta_ml_id: '123' });
     await tratarMcp(chamar('publiai_margens_catalogo', { cursor: 'abc' }), f, auditar, TODAS);
     await tratarMcp(chamar('publiai_margens_catalogo', {}), f, auditar, TODAS);
-    expect(f.catalogo).toHaveBeenNthCalledWith(1, 'abc');
-    expect(f.catalogo).toHaveBeenNthCalledWith(2, null);
+    expect(f.catalogo).toHaveBeenNthCalledWith(1, 'abc', {});
+    expect(f.catalogo).toHaveBeenNthCalledWith(2, null, {});
     expect(auditar.mock.calls).toEqual([
       ['publiai_loja', null, 'ok'], ['publiai_margens_catalogo', null, 'ok'], ['publiai_margens_catalogo', null, 'ok'],
     ]);
@@ -341,5 +341,39 @@ describe('alvoParaAuditoria', () => {
   ])('%j (resolvido %j) → %j', (entrada, resolvido, esperado) => {
     expect(chave).toMatch(/^pai_[0-9a-f]{8}_[A-Za-z0-9_-]{43}$/);
     expect(alvoParaAuditoria(entrada, resolvido)).toBe(esperado);
+  });
+});
+
+describe('catálogo: filtros no MCP (Emenda 6)', () => {
+  it('esquema declara abaixo_de_pct (number) e sem_numero (boolean)', () => {
+    const props = (FERRAMENTAS.publiai_margens_catalogo.schema as { properties: Record<string, { type: string }> }).properties;
+    expect(props.abaixo_de_pct.type).toBe('number');
+    expect(props.sem_numero.type).toBe('boolean');
+    expect(FERRAMENTAS.publiai_margens_catalogo.descricao).toContain('A loja inteira só está lida quando proximo_cursor vier nulo');
+  });
+
+  it('repassa o filtro e audita a chave canônica como alvo', async () => {
+    const f = fs();
+    const auditar = vi.fn(async () => {});
+    await tratarMcp(chamar('publiai_margens_catalogo', { abaixo_de_pct: 18, sem_numero: true }), f, auditar, TODAS);
+    expect(f.catalogo).toHaveBeenCalledWith(null, { abaixo_de_pct: 18, sem_numero: true });
+    expect(auditar).toHaveBeenCalledWith('publiai_margens_catalogo', 'abaixo_de:18+sem_numero', 'ok');
+  });
+
+  it('só cursor (herda o filtro) audita alvo nulo', async () => {
+    const auditar = vi.fn(async () => {});
+    await tratarMcp(chamar('publiai_margens_catalogo', { cursor: 'abc' }), fs(), auditar, TODAS);
+    expect(auditar).toHaveBeenCalledWith('publiai_margens_catalogo', null, 'ok');
+  });
+
+  it('argumento inválido: argumento_invalido, alvo nulo, sem chamar o serviço', async () => {
+    for (const a of [{ abaixo_de_pct: '18' }, { abaixo_de_pct: 101 }, { sem_numero: false }, { abaixo_de_pct: 18, cursor: 7 }]) {
+      const f = fs();
+      const auditar = vi.fn(async () => {});
+      const r = await tratarMcp(chamar('publiai_margens_catalogo', a), f, auditar, TODAS);
+      expect(texto(r)).toEqual({ isError: true, json: { erro: 'argumento_invalido' } });
+      expect(f.catalogo).not.toHaveBeenCalled();
+      expect(auditar).toHaveBeenCalledWith('publiai_margens_catalogo', null, 'erro');
+    }
   });
 });
