@@ -359,7 +359,7 @@ Continua aceito: cache de comissão `promo:lp:v1` compartilhado (exatidão, não
 
 - `abaixo_de_pct` (número finito entre −100 e 100): anúncios com número e `margem_pct` menor que o valor, inclusive prejuízo e zero. Para "abaixo de 18%", 18; para "no prejuízo ou zero", 0,01, e só chamar de prejuízo ou zero o anúncio com `motivo = sem_espaco_para_ads` (um valor maior traria margens positivas junto).
 - `sem_numero` (só `true`): anúncios sem número (`margem_pct` nulo), com o `motivo` de cada um (`sem_custo`, `sem_origem`, `sem_dimensao`, `pacote_a_conferir`, `preco_nao_verificado`...), ou seja, o cadastro a corrigir.
-- "O que está sem margem e por quê", no sentido amplo (sem número **ou** com margem ≤ 0), cabe numa varredura só: `sem_numero: true` com `abaixo_de_pct` pequeno, por exemplo 0,01. Valor fora da faixa, `NaN` ou `sem_numero` diferente de `true` → `argumento_invalido`.
+- "O que está sem margem e por quê", no sentido amplo (sem número **ou** com margem ≤ 0), cabe numa varredura só: `sem_numero: true` com `abaixo_de_pct` pequeno, por exemplo 0,01. `null` em `abaixo_de_pct` ou `sem_numero` vale como ausente, como no `cursor`. Valor fora da faixa, `NaN` ou `sem_numero` diferente de `true` → `argumento_invalido`.
 
 **Regra da página filtrada.**
 
@@ -372,7 +372,7 @@ Continua aceito: cache de comissão `promo:lp:v1` compartilhado (exatidão, não
 
   As contagens e `parcial` valem para a página **lida, antes do filtro**; `anuncios` é o recorte. A página vazia (loja sem anúncios ou fim) também traz as contagens, zeradas.
 - **Lista vazia com `proximo_cursor` não é o fim.** A resposta da loja inteira exige seguir o cursor até ele ser nulo e somar as contagens. A regra vai na descrição da ferramenta, do argumento `cursor` e do campo `proximo_cursor`, que o modelo vê a cada passo, e não só no `initialize`.
-- Limite conhecido: lojas grandes precisam de muitas chamadas em sequência (Zaven 5, Avil 8). Cliente com teto de chamadas por turno pode parar antes. O agente deve dizer até onde leu.
+- Limite conhecido: lojas grandes precisam de muitas chamadas em sequência (Zaven 5, loja maior 8). Cliente com teto de chamadas por turno pode parar antes. O agente deve dizer até onde leu.
 - Ao listar, as instruções mandam separar `active` de `paused`/`closed` (o `status` já vem em cada anúncio).
 
 **Por que estender em vez de criar ferramenta:** é a mesma varredura e o mesmo cursor.
@@ -388,7 +388,7 @@ Continua aceito: cache de comissão `promo:lp:v1` compartilhado (exatidão, não
   - antes de qualquer reserva ou leitura, `preços × anúncios × 2 > 100` → `alvo_grande` (cada anúncio tem ao menos uma cor);
   - depois do multiget de itens e antes de ler preços ou reservar tarifas, `preços × cores × 2 > 100` → `alvo_grande`.
 
-  O segundo corte vem depois da reserva de leituras e do multiget, então já gastou essa cota (o primeiro corte limita o alvo a 25 anúncios com 2 preços, então no máximo 29 leituras); aceito. Com 5 preços, isso dá até 10 cores. Nesse caso, as instruções pedem um MLB só e não mandam disparar uma simulação por preço.
+  O segundo corte vem depois da reserva de leituras e do multiget, então já gastou essa cota; aceito. Com 2 preços distintos, o primeiro corte limita o alvo a 25 anúncios (até 29 leituras); se a deduplicação deixar 1 preço, passam até 50 anúncios (até 56 leituras) antes do segundo corte. Com 5 preços, isso dá até 10 cores. Nesse caso, as instruções pedem um MLB só e não mandam disparar uma simulação por preço.
 - Paralelismo por par (anúncio, preço), com 4 de concorrência no total. Assim, um MLB com muitas cores não fica sequencial.
 - Sem "preço para atingir X%": com tarifa por faixa, achar o preço exige busca e muitas consultas.
 - Regra no `initialize`: para "qual deixa X%", o agente escolhe o menor preço cuja `referencia.margem_pct` seja ≥ X, comparando o número cru. A tela **trunca** em uma casa (aceite de 23/11), então o cru não aprova nada que a tela mostre abaixo de X. Com `referencia.motivo = anuncio_sem_numero`, não escolhe preço.
@@ -422,9 +422,13 @@ Continua aceito: cache de comissão `promo:lp:v1` compartilhado (exatidão, não
   - As cotas são contadores próprios do acesso de agentes (`agt:` no Redis) e não afetam o app nem a aba Campanhas.
 - **Auditoria:**
   - sem migration: a tabela só tem `ferramenta`, `alvo` e `resultado`, sem check;
-  - no catálogo, `alvo` = modo do filtro validado (`abaixo_de:18`, `sem_numero` ou `abaixo_de:0.01+sem_numero`; sem filtro, nulo como hoje); argumento inválido grava só `argumento_invalido`;
+  - no catálogo, `alvo` = modo do filtro efetivamente aplicado (`abaixo_de:18`, `sem_numero` ou `abaixo_de:0.01+sem_numero`), inclusive o herdado do cursor: a resposta traz `filtro` com essa forma canônica; sem filtro, nulo como hoje; argumento inválido grava só `argumento_invalido`;
   - em `comparar_precos`, `alvo` = alvo canônico, como em `simular` (o número de preços não é gravado);
   - grava `sem_permissao`; nunca o título.
+- **Ordem de deploy obrigatória:** migration → edge `agentes` → edge `agente-conexoes` → front (o front sai com o merge na main, que dispara o deploy no Render). Por quê:
+  - edge antes da migration: a coluna `permissoes` não existe e a edge responde 503/500;
+  - `agente-conexoes` antes de `agentes`: emite chave restrita que a MCP antiga não respeita;
+  - front antes de `agente-conexoes`: a lista de chaves quebra e a tela pode criar chave com acesso total.
 - **Não muda:**
   - a organização vem só da conexão; filtro e preços não recebem organização;
   - cursor de outra organização continua `cursor_invalido`;
@@ -437,14 +441,11 @@ Continua aceito: cache de comissão `promo:lp:v1` compartilhado (exatidão, não
 
 | Loja | MLBs publicados |
 |---|---|
-| Avil | 374 |
+| Loja maior | 374 |
 | Zaven | 247 |
-| Daludi Shop | 113 |
-| Hairfly Cosmeticos | 84 |
-| DSA | 29 |
-| Hairflay | 5 |
+| Outras quatro lojas | 113, 84, 29 e 5 |
 
-Só um MLB (Avil) é do modelo legado com variações no cadastro (17 linhas). Só a Zaven tem o módulo ligado.
+Só um MLB (da loja maior) é do modelo legado com variações no cadastro (17 linhas). Só a Zaven tem o módulo ligado.
 
 **Inferência pela fórmula do código** (`calcular` em `_shared/agentes/margens.ts`; não medida):
 
@@ -454,12 +455,12 @@ Só um MLB (Avil) é do modelo legado com variações no cadastro (17 linhas). S
 | Loja | Leituras (teto 3.000 por dia) | Tarifas (teto 5.000 por dia) |
 |---|---|---|
 | Zaven | ~277 (4 × 56 + 53) | ~494 |
-| Avil | ~420 (7 × 56 + 28), cerca de 7 varreduras por dia | ~780 |
+| Loja maior (374 MLBs) | ~420 (7 × 56 + 28), cerca de 7 varreduras por dia | ~780 |
 
 - **O que o cache muda:** acerto de cache reduz tempo e carga no ML, não a cota.
 - **Teto de tamanho:** uma loja acima de cerca de 2.700 MLBs não caberia numa varredura por dia.
 
-**Não medido:** tempo por página e da varredura completa na edge; tarifa fria (preço inédito), que é o caso da comparação; a Avil. O tempo da Zaven **não** será extrapolado para a Avil, que tem o único MLB com 17 variações.
+**Não medido:** tempo por página e da varredura completa na edge; tarifa fria (preço inédito), que é o caso da comparação; a loja maior. O tempo da Zaven **não** será extrapolado para a loja maior, que tem o único MLB com 17 variações.
 
 ### Medição M1 (2026-11-26, 09h22 de Brasília, Zaven)
 
@@ -480,7 +481,7 @@ Com OK do Diego, pelo conector do claude.ai com a chave da Zaven (a própria edg
 - se o cache de tarifas estava quente: o acerto não é registrado, e os preços do catálogo já existiam antes;
 - o tempo por fase (cadastro, preço, tarifa);
 - a rajada de 100 tarifas frias em paralelo da comparação;
-- a Avil.
+- a loja maior.
 
 **Inferência:** uma página de 50 leva cerca de 1 a 1,7 s; a loja inteira da Zaven, cerca de 6 s somando as chamadas. A cota e o tempo não impedem o recorte página a página, que pode ser prometido. O que limita o recorte é o agente seguir o cursor, e não a edge. Página maior continua fora desta fatia, como decidido.
 
@@ -492,7 +493,7 @@ Com OK do Diego, pelo conector do claude.ai com a chave da Zaven (a própria edg
    - **b) Tarifa fria.** Simular 5 preços inéditos num MLB, como substituto da comparação, que ainda não existe. Duração de cada simulação.
    - **Custo estimado:** ~277 leituras e até ~494 tarifas em (a); ~15 leituras e ~10 tarifas em (b).
    - **Limite:** o tempo por fase (cadastro, preço, tarifa) não aparece no log do gateway. Só sairia com registro novo na edge, o que exige deploy e fica fora de M1.
-3. **Avil:** sem medição agora. Só quando ela ligar o módulo pelo roteiro de "Pode ligar em outra loja?" (autorização do cliente, ADR-0092). A medição real de `comparar_precos` entra no aceite da implementação.
+3. **Loja maior:** sem medição agora. Só quando ela ligar o módulo pelo roteiro de "Pode ligar em outra loja?" (autorização do cliente, ADR-0092). A medição real de `comparar_precos` entra no aceite da implementação.
 
 **Classificação: crítica** (autorização por chave e migration). Depois da aprovação: plano curto, TDD, revisão independente do código (Codex Sol high) antes do merge.
 
@@ -507,7 +508,7 @@ Pacote sanitizado, com lojas anonimizadas e sem `.env`.
 - teto pela reserva de tarifas;
 - validação dos argumentos;
 - permissão e auditoria;
-- M1 sem extrapolar para a Avil;
+- M1 sem extrapolar para a loja maior;
 - página maior só com os dois relógios medidos.
 
 Os dois filtros eram excludentes por sugestão dele; a revisão seguinte os uniu (abaixo).

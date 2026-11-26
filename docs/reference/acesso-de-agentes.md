@@ -99,22 +99,35 @@ Argumentos opcionais: `cursor`, `abaixo_de_pct` e `sem_numero`. Devolve 50 anún
 **Filtros** (podem ir juntos; o anúncio entra se atende a um dos dois):
 
 - `abaixo_de_pct`: número entre −100 e 100. Anúncios com número e `margem_pct` menor que o valor, inclusive prejuízo e zero. "Abaixo de 18%" é `18`; "no prejuízo ou zero" é `0.01`, e só o anúncio com `motivo = sem_espaco_para_ads` é chamado de prejuízo.
-- `sem_numero`: só `true`. Anúncios sem número, com o `motivo` (o cadastro a corrigir). "Sem margem ou com margem até zero" cabe numa varredura: `sem_numero: true` com `abaixo_de_pct: 0.01`.
+- `sem_numero`: só `true`. Anúncios sem número, com o `motivo` (o cadastro a corrigir).
+- "O que está sem margem e por quê": `sem_numero=true` e `abaixo_de_pct=0.01` na mesma varredura (sem número = cadastro a corrigir, com o motivo; motivo `sem_espaco_para_ads` = prejuízo ou margem zero). Só o cadastro a corrigir: apenas `sem_numero=true`.
 - Valor fora da faixa, `NaN` ou `sem_numero` diferente de `true` → `argumento_invalido`. `null` conta como ausente.
 
 **Regra do cursor.** O filtro corta a resposta, não a leitura nem a cota: a página lida é a mesma de 50 anúncios. O filtro fica gravado no cursor: a página seguinte o herda, e um filtro diferente do gravado responde `cursor_invalido`. **Página com `anuncios` vazio e `proximo_cursor` preenchido não é o fim**: siga o cursor até ele vir nulo e some as contagens. Se parar antes, diga até onde leu.
 
-**Campos novos** (em toda resposta `ok`, com ou sem filtro; valem para a página lida, antes do filtro): `examinados` (anúncios lidos), `sem_numero_por_motivo` (contagem por motivo, só dos sem número) e `com_margem_ate_zero` (contagem de `sem_espaco_para_ads`, que tem número). Página vazia traz as contagens zeradas.
+**Campos novos** (em toda resposta `ok`, com ou sem filtro; valem para a página lida, antes do filtro): `examinados` (anúncios lidos), `sem_numero_por_motivo` (contagem por motivo, só dos sem número) e `com_margem_ate_zero` (contagem de `sem_espaco_para_ads`, que tem número). Página vazia traz as contagens zeradas. `filtro` é o filtro efetivamente aplicado, em forma canônica (`abaixo_de:18`, `sem_numero` ou `abaixo_de:0.01+sem_numero`), inclusive o herdado do cursor; sem filtro, `null`. É também o que a auditoria grava.
 
 ```json
 {
   "estado": "ok", "lido_em": "2026-11-22T12:00:00.000Z", "tarifa_idade_max_horas": 8,
   "anuncios": [ { "mlb": "MLB0000000000", "margem_pct": 33.4021, "roas_minimo": 2.9938, "motivo": null } ],
-  "proximo_cursor": "eyJvIjoi…", "parcial": false
+  "proximo_cursor": "eyJvIjoi…", "parcial": false, "filtro": null,
+  "examinados": 50, "sem_numero_por_motivo": {}, "com_margem_ate_zero": 0
 }
 ```
 
-Com `abaixo_de_pct: 18` o exemplo ganha também `"examinados": 50, "sem_numero_por_motivo": {}, "com_margem_ate_zero": 0`, e `anuncios` traz só os recortados. (Cada item de `anuncios` traz os mesmos campos do exemplo anterior; resumido aqui.) Última página: `proximo_cursor: null`.
+Com `abaixo_de_pct: 18` (ou só o cursor de uma página pedida com esse filtro), `anuncios` traz só os recortados e as contagens valem para a página inteira:
+
+```json
+{
+  "estado": "ok", "lido_em": "2026-11-22T12:00:00.000Z", "tarifa_idade_max_horas": 8,
+  "anuncios": [ { "mlb": "MLB0000000001", "margem_pct": 12.5, "roas_minimo": 8, "motivo": null } ],
+  "proximo_cursor": "eyJvIjoi…", "parcial": false, "filtro": "abaixo_de:18",
+  "examinados": 50, "sem_numero_por_motivo": { "sem_custo": 2 }, "com_margem_ate_zero": 0
+}
+```
+
+(Cada item de `anuncios` traz os mesmos campos do exemplo anterior; resumido aqui.) Última página: `proximo_cursor: null`.
 
 ### `publiai_simular_margem`
 
@@ -226,7 +239,7 @@ Na `referencia`: `anuncio_sem_numero` quando algum anúncio do alvo está sem n�
 | Candidatos por palavras | 10 | `lista_cortada: true` |
 | Página do catálogo | 50 anúncios lidos (o filtro corta a resposta, não a leitura) | `proximo_cursor` |
 
-**Custo de uma varredura** (inferência pela fórmula do código, não medida): Zaven ~277 leituras e ~494 tarifas; Avil ~420 leituras e ~780 tarifas. **Medido** (2026-11-26, Zaven, 10 chamadas, todas 200): páginas do catálogo de 0,9 a 1,7 s cada (cerca de 6 s para as 5); simulação de 5 preços inéditos em sequência de 0,5 a 0,8 s cada. Não medido: tempo por fase, rajada de 100 tarifas frias da comparação e a Avil.
+**Custo de uma varredura** (inferência pela fórmula do código, não medida): loja de ~250 anúncios ~277 leituras e ~494 tarifas; loja de ~370 anúncios ~420 leituras e ~780 tarifas. **Medido** (2026-11-26, loja de ~250 anúncios, 10 chamadas, todas 200): páginas do catálogo de 0,9 a 1,7 s cada (cerca de 6 s para as 5); simulação de 5 preços inéditos em sequência de 0,5 a 0,8 s cada. Não medido: tempo por fase, rajada de 100 tarifas frias da comparação e a loja de ~370 anúncios.
 
 Os limites recusam quando o Redis falha (`503`/`indisponivel`), nunca liberam.
 
