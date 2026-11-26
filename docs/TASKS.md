@@ -59,7 +59,8 @@
 - [x] Alarme de recusas na `agentes` (ADR-0210, Emenda 4, decisão 2): no ar em 25/11, aviso real disparado com 1.010 recusas.
 - [ ] `erro_tarifa` esporádico na API de agentes (2 de 10 séries em 25/11, sempre nos 4 primeiros anúncios): registro do motivo no ar (`agentes` v8, log "tarifa indisponível"); na próxima ocorrência, ler o motivo e decidir a correção (ADR-0210).
 - [x] Preço que o comprador paga na margem (ADR-0210, Emenda 5): no ar em 25/11 (`46f04c11`, `agentes` v9, `ads-campanhas` v35); aceite 5 de 5 e 50 de 50.
-- [ ] Emenda 5: conferir a volta ao preço da Black Friday depois das 00h de 26/11 e abrir a aba Campanhas uma vez.
+- [x] Emenda 5: volta ao preço da Black Friday conferida às 00h05 de 26/11 (5 de 5); campo `status` do anúncio na API (pedido do aceite).
+- [ ] Emenda 5: abrir a aba Campanhas uma vez.
 - [ ] **Segundo momento:** v2 (solicitações por agentes), ideias, ordem e 3 decisões em aberto em [`2026-11-25-api-agentes-v2-solicitacoes-ideias.md`](superpowers/specs/2026-11-25-api-agentes-v2-solicitacoes-ideias.md). Não iniciada; não é a fatia 2 (OAuth).
 - [ ] Segunda loja: seguir o roteiro da seção "Pode ligar em outra loja?" da ADR-0210.
 - [ ] `enviarTelegram` registra a mensagem crua do erro de rede, que pode trazer o token do bot (várias edges; achado do Grok em 25/11, não verificado em log).
