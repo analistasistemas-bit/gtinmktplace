@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  LIMITE_CONEXOES_ATIVAS, contarAtivas, expiraEm, idValido, inserirConexao, listarChamadas, listarConexoes, revogarConexao,
-  validarNova,
+  LIMITE_CONEXOES_ATIVAS, alterarPermissoes, contarAtivas, expiraEm, idValido, inserirConexao, listarChamadas, listarConexoes,
+  revogarConexao, validarNova, validarPermissoes,
 } from '../conexoes.ts';
 
 const ORG = 'org-A';
@@ -34,15 +34,23 @@ const tem = (c: Chamada, ...op: Op) => c.ops.some((o) => JSON.stringify(o) === J
 const ok = (data: unknown): Res => ({ data, error: null });
 const ERRO: Res = { data: null, error: { message: 'fora' } };
 const AGORA = new Date('2026-11-22T12:00:00.000Z');
+const TODAS = ['margens', 'catalogo'];
 
 describe('validarNova', () => {
   it('aceita nome com espaços nas pontas e validade permitida', () => {
-    expect(validarNova({ nome: '  Claude  ', dias: 90 })).toEqual({ nome: 'Claude', dias: 90 });
-    expect(validarNova({ nome: 'x'.repeat(60), dias: 365 })).toEqual({ nome: 'x'.repeat(60), dias: 365 });
-    expect(validarNova({ nome: 'a', dias: 30 })).toEqual({ nome: 'a', dias: 30 });
+    expect(validarNova({ nome: '  Claude  ', dias: 90 })).toEqual({ nome: 'Claude', dias: 90, permissoes: TODAS });
+    expect(validarNova({ nome: 'x'.repeat(60), dias: 365 })).toEqual({ nome: 'x'.repeat(60), dias: 365, permissoes: TODAS });
+    expect(validarNova({ nome: 'a', dias: 30 })).toEqual({ nome: 'a', dias: 30, permissoes: TODAS });
   });
   it('dias null explícito = até revogar (Emenda 1)', () => {
-    expect(validarNova({ nome: 'a', dias: null })).toEqual({ nome: 'a', dias: null });
+    expect(validarNova({ nome: 'a', dias: null })).toEqual({ nome: 'a', dias: null, permissoes: TODAS });
+  });
+  it('permissoes ausente = as duas; presente vale como veio; inválida → permissoes_invalidas', () => {
+    expect(validarNova({ nome: 'x', dias: null })).toEqual({ nome: 'x', dias: null, permissoes: ['margens', 'catalogo'] });
+    expect(validarNova({ nome: 'x', dias: 90, permissoes: ['catalogo'] })).toEqual({ nome: 'x', dias: 90, permissoes: ['catalogo'] });
+    for (const permissoes of [[], ['vendas'], 'margens', ['margens', 'margens'], null]) {
+      expect(validarNova({ nome: 'x', dias: 90, permissoes })).toEqual({ erro: 'permissoes_invalidas' });
+    }
   });
   it('nome vazio, só espaços, 61 caracteres ou não-texto → nome_invalido', () => {
     for (const nome of ['', '   ', 'x'.repeat(61), 42, null, undefined]) {
@@ -57,6 +65,16 @@ describe('validarNova', () => {
   it('corpo que não é objeto → nome_invalido', () => {
     expect(validarNova(null)).toEqual({ erro: 'nome_invalido' });
     expect(validarNova('x')).toEqual({ erro: 'nome_invalido' });
+  });
+});
+
+describe('validarPermissoes', () => {
+  it('lista não vazia, só conhecidas, sem repetir', () => {
+    expect(validarPermissoes(['margens'])).toEqual(['margens']);
+    expect(validarPermissoes(['catalogo', 'margens'])).toEqual(['catalogo', 'margens']);
+    for (const x of [[], ['vendas'], 'margens', ['margens', 'margens'], ['margens', 'vendas'], null, undefined, [null]]) {
+      expect(validarPermissoes(x)).toBeNull();
+    }
   });
 });
 
@@ -84,17 +102,19 @@ describe('listarConexoes', () => {
     const linha = {
       id: 'c1', nome: 'Claude', prefixo: 'ab12cd34', criada_em: '2026-11-01T00:00:00Z', expira_em: '2027-01-30T00:00:00Z',
       revogada_em: null, ultimo_uso_em: null, hash: 'nao-pode-sair', org_id: ORG, criada_por: 'u1',
+      permissoes: ['margens', 'vendas', 'margens'],
     };
     const { admin, chamadas } = fake({ agente_conexoes: [ok([linha])] });
     const r = await listarConexoes(admin, ORG);
     expect(r).toEqual([{
       id: 'c1', nome: 'Claude', prefixo: 'ab12cd34', criada_em: '2026-11-01T00:00:00Z', expira_em: '2027-01-30T00:00:00Z',
-      revogada_em: null, ultimo_uso_em: null,
+      revogada_em: null, ultimo_uso_em: null, permissoes: ['margens'],
     }]);
     expect(JSON.stringify(r)).not.toContain('hash');
     const [c] = chamadas;
     expect(tem(c, 'eq', 'org_id', ORG)).toBe(true);
     expect(c.ops.find(([m]) => m === 'select')?.[1]).not.toContain('hash');
+    expect(c.ops.find(([m]) => m === 'select')?.[1]).toContain('permissoes');
     expect(tem(c, 'order', 'criada_em', { ascending: false })).toBe(true);
   });
   it('erro de leitura lança', async () => {
@@ -124,18 +144,20 @@ describe('inserirConexao', () => {
     const { admin, chamadas } = fake({ agente_conexoes: [ok({ id: 'c9' })] });
     const r = await inserirConexao(admin, ORG, {
       nome: 'Claude', prefixo: 'ab12cd34', hash: 'h', criada_por: 'u1', expira_em: '2027-01-01T00:00:00.000Z',
+      permissoes: ['margens'],
     });
     expect(r).toEqual({ id: 'c9' });
     const [c] = chamadas;
     expect(tem(c, 'insert', {
       org_id: ORG, nome: 'Claude', prefixo: 'ab12cd34', hash: 'h', criada_por: 'u1', expira_em: '2027-01-01T00:00:00.000Z',
+      permissoes: ['margens'],
     })).toBe(true);
     expect(tem(c, 'select', 'id')).toBe(true);
   });
   it('colisão de hash lança erro sem detalhe', async () => {
     const { admin } = fake({ agente_conexoes: [{ data: null, error: { message: 'duplicate key value hash=abc' } }] });
     await expect(inserirConexao(admin, ORG, {
-      nome: 'x', prefixo: 'p', hash: 'h', criada_por: 'u1', expira_em: 'e',
+      nome: 'x', prefixo: 'p', hash: 'h', criada_por: 'u1', expira_em: 'e', permissoes: ['margens'],
     })).rejects.toThrow(/^agentes\.inserirConexao$/);
   });
 });
@@ -165,6 +187,29 @@ describe('revogarConexao', () => {
   it('erro de escrita lança', async () => {
     const { admin } = fake({ agente_conexoes: [ERRO] });
     await expect(revogarConexao(admin, ORG, 'c1', AGORA)).rejects.toThrow();
+  });
+});
+
+describe('alterarPermissoes', () => {
+  it('grava só na linha da org, com o id e não revogada; uma linha → true', async () => {
+    const { admin, chamadas } = fake({ agente_conexoes: [ok([{ id: 'c1' }])] });
+    expect(await alterarPermissoes(admin, ORG, 'c1', ['catalogo'])).toBe(true);
+    const [c] = chamadas;
+    expect(tem(c, 'update', { permissoes: ['catalogo'] })).toBe(true);
+    expect(tem(c, 'eq', 'org_id', ORG)).toBe(true);
+    expect(tem(c, 'eq', 'id', 'c1')).toBe(true);
+    expect(tem(c, 'is', 'revogada_em', null)).toBe(true);
+    expect(tem(c, 'select', 'id')).toBe(true);
+    expect(chamadas).toHaveLength(1);
+  });
+  it('nenhuma linha (inexistente, outra org ou revogada) → false', async () => {
+    const { admin } = fake({ agente_conexoes: [ok([]), ok(null)] });
+    expect(await alterarPermissoes(admin, ORG, 'c1', ['margens'])).toBe(false);
+    expect(await alterarPermissoes(admin, ORG, 'c1', ['margens'])).toBe(false);
+  });
+  it('erro de escrita lança', async () => {
+    const { admin } = fake({ agente_conexoes: [ERRO] });
+    await expect(alterarPermissoes(admin, ORG, 'c1', ['margens'])).rejects.toThrow(/^agentes\.alterarPermissoes$/);
   });
 });
 

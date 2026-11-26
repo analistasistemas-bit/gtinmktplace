@@ -3,7 +3,10 @@
 // `identificar`; o corpo nunca escolhe organização nem autor. A chave só sai em `criar`; `hash` nunca sai (as
 // respostas são projetadas aqui, não confiam no formato que as ações devolvem). Nunca logar `e.message`.
 import { corsHeaders, handleOptions } from '../cors.ts';
-import { type Chamada, type ConexaoLista, LIMITE_CONEXOES_ATIVAS, idValido, projetarConexao, validarNova } from './conexoes.ts';
+import {
+  type Chamada, type ConexaoLista, LIMITE_CONEXOES_ATIVAS, idValido, projetarConexao, validarNova, validarPermissoes,
+} from './conexoes.ts';
+import type { Permissao } from './credencial.ts';
 
 export type DepsConexoes = {
   /** Pode lançar `Response` (401/403), como `requireUserOrg`. */
@@ -11,10 +14,12 @@ export type DepsConexoes = {
   moduloLigado(orgId: string): Promise<boolean>;
   acoes: {
     contarAtivas(orgId: string): Promise<number>;
-    criar(orgId: string, userId: string, e: { nome: string; dias: number | null }): Promise<{ id: string; chave: string; prefixo: string; expira_em: string | null }>;
+    criar(orgId: string, userId: string, e: { nome: string; dias: number | null; permissoes: Permissao[] }): Promise<{ id: string; chave: string; prefixo: string; expira_em: string | null }>;
     listar(orgId: string): Promise<ConexaoLista[]>;
     /** `false` = não existe nesta org. */
     revogar(orgId: string, id: string): Promise<boolean>;
+    /** `false` = não existe nesta org ou já revogada. */
+    alterarPermissoes(orgId: string, id: string, p: Permissao[]): Promise<boolean>;
     chamadas(orgId: string, id: string): Promise<Chamada[]>;
   };
 };
@@ -22,6 +27,12 @@ export type DepsConexoes = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 const NAO_ENCONTRADA = { erro: 'Conexão não encontrada.' };
+const PERMISSOES_INVALIDAS = { erro: 'Escolha ao menos uma permissão válida.' };
+const ERRO_NOVA = {
+  nome_invalido: { erro: 'Nome deve ter de 1 a 60 caracteres.' },
+  validade_invalida: { erro: 'Validade inválida.' },
+  permissoes_invalidas: PERMISSOES_INVALIDAS,
+};
 
 export async function tratarConexoes(req: Request, d: DepsConexoes): Promise<Response> {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -49,9 +60,7 @@ export async function tratarConexoes(req: Request, d: DepsConexoes): Promise<Res
         return json((await acoes.listar(orgId)).map(projetarConexao));
       case 'criar': {
         const v = validarNova(body);
-        if ('erro' in v) {
-          return json({ erro: v.erro === 'nome_invalido' ? 'Nome deve ter de 1 a 60 caracteres.' : 'Validade inválida.' }, 400);
-        }
+        if ('erro' in v) return json(ERRO_NOVA[v.erro], 400);
         if ((await acoes.contarAtivas(orgId)) >= LIMITE_CONEXOES_ATIVAS) {
           return json({ erro: `Limite de ${LIMITE_CONEXOES_ATIVAS} conexões ativas. Revogue uma antes de criar outra.` }, 409);
         }
@@ -61,6 +70,13 @@ export async function tratarConexoes(req: Request, d: DepsConexoes): Promise<Res
       case 'revogar':
         if (!idValido(body.id) || !(await acoes.revogar(orgId, body.id))) return json(NAO_ENCONTRADA, 404);
         return json({ ok: true });
+      case 'permissoes': {
+        if (!idValido(body.id)) return json(NAO_ENCONTRADA, 404);
+        const p = validarPermissoes(body.permissoes);
+        if (!p) return json(PERMISSOES_INVALIDAS, 400);
+        if (!(await acoes.alterarPermissoes(orgId, body.id, p))) return json(NAO_ENCONTRADA, 404);
+        return json({ ok: true });
+      }
       case 'chamadas':
         if (!idValido(body.id)) return json(NAO_ENCONTRADA, 404);
         return json((await acoes.chamadas(orgId, body.id)).map((c) => ({

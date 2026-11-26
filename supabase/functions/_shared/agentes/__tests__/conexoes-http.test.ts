@@ -12,8 +12,9 @@ function deps(over: Partial<{ isAdmin: boolean; support: unknown; modulo: boolea
     criar: vi.fn(async () => ({ id: ID, chave: CHAVE, prefixo: 'ab12cd34', expira_em: '2027-01-01T00:00:00.000Z', hash: 'h-criar' })),
     listar: vi.fn(async () => [{
       id: ID, nome: 'Claude', prefixo: 'ab12cd34', criada_em: 'c', expira_em: 'e', revogada_em: null, ultimo_uso_em: null,
-      hash: 'h-listar', org_id: ORG,
+      hash: 'h-listar', org_id: ORG, permissoes: ['catalogo'],
     }]),
+    alterarPermissoes: vi.fn(async () => true),
     revogar: vi.fn(async () => true),
     chamadas: vi.fn(async () => [{ criado_em: 'c', ferramenta: 'publiai_loja', alvo: null, resultado: 'ok', hash: 'h-cham' }]),
   };
@@ -34,6 +35,13 @@ describe('tratarConexoes: portões', () => {
     const { d, acoes } = deps({ support: { requestId: 'r', scope: 'full' } });
     expect((await tratarConexoes(post({ acao: 'listar' }), d)).status).toBe(403);
     expect(d.moduloLigado).not.toHaveBeenCalled();
+    nenhumaAcao(acoes);
+  });
+  it('permissoes em sessão de suporte → 403 antes de ler o corpo', async () => {
+    const { d, acoes } = deps({ support: { requestId: 'r', scope: 'full' } });
+    const req = post({ acao: 'permissoes', id: ID, permissoes: ['margens'] });
+    expect((await tratarConexoes(req, d)).status).toBe(403);
+    expect(req.bodyUsed).toBe(false);
     nenhumaAcao(acoes);
   });
   it('não-admin → 403, nenhuma ação', async () => {
@@ -67,13 +75,62 @@ describe('tratarConexoes: ações', () => {
     const { d, acoes } = deps();
     await tratarConexoes(post({ acao: 'criar', nome: 'x', dias: 90, org_id: 'org-B', orgId: 'org-B', criada_por: 'u-B', userId: 'u-B' }), d);
     expect(acoes.contarAtivas).toHaveBeenCalledWith(ORG);
-    expect(acoes.criar).toHaveBeenCalledWith(ORG, USER, { nome: 'x', dias: 90 });
+    expect(acoes.criar).toHaveBeenCalledWith(ORG, USER, { nome: 'x', dias: 90, permissoes: ['margens', 'catalogo'] });
     await tratarConexoes(post({ acao: 'listar', org_id: 'org-B' }), d);
     expect(acoes.listar).toHaveBeenCalledWith(ORG);
     await tratarConexoes(post({ acao: 'revogar', id: ID, org_id: 'org-B' }), d);
     expect(acoes.revogar).toHaveBeenCalledWith(ORG, ID);
     await tratarConexoes(post({ acao: 'chamadas', id: ID, org_id: 'org-B' }), d);
     expect(acoes.chamadas).toHaveBeenCalledWith(ORG, ID);
+    await tratarConexoes(post({ acao: 'permissoes', id: ID, permissoes: ['margens'], org_id: 'org-B' }), d);
+    expect(acoes.alterarPermissoes).toHaveBeenCalledWith(ORG, ID, ['margens']);
+  });
+
+  it('listar projeta permissoes (lidas por permissoesDaLinha) e nunca hash', async () => {
+    const { d } = deps();
+    const txt = await (await tratarConexoes(post({ acao: 'listar' }), d)).text();
+    expect(JSON.parse(txt)[0].permissoes).toEqual(['catalogo']);
+    expect(txt).not.toContain('hash');
+  });
+
+  it('criar com permissões escolhidas repassa; inválidas → 400 sem contar nem criar', async () => {
+    const { d, acoes } = deps();
+    expect((await tratarConexoes(post({ acao: 'criar', nome: 'x', dias: 90, permissoes: ['catalogo'] }), d)).status).toBe(200);
+    expect(acoes.criar).toHaveBeenCalledWith(ORG, USER, { nome: 'x', dias: 90, permissoes: ['catalogo'] });
+    acoes.criar.mockClear();
+    const r = await tratarConexoes(post({ acao: 'criar', nome: 'x', dias: 90, permissoes: ['vendas'] }), d);
+    expect(r.status).toBe(400);
+    expect(await r.json()).toEqual({ erro: 'Escolha ao menos uma permissão válida.' });
+    expect(acoes.contarAtivas).toHaveBeenCalledTimes(1);
+    expect(acoes.criar).not.toHaveBeenCalled();
+  });
+
+  it('permissoes: ok → { ok: true }', async () => {
+    const { d } = deps();
+    const r = await tratarConexoes(post({ acao: 'permissoes', id: ID, permissoes: ['margens', 'catalogo'] }), d);
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ ok: true });
+  });
+
+  it('permissoes: ação devolvendo false ou id inválido → 404 com o mesmo corpo da revogação', async () => {
+    const { d, acoes } = deps();
+    acoes.alterarPermissoes.mockResolvedValue(false);
+    const a = await tratarConexoes(post({ acao: 'permissoes', id: ID, permissoes: ['margens'] }), d);
+    const b = await tratarConexoes(post({ acao: 'permissoes', id: 'abc', permissoes: ['margens'] }), d);
+    expect([a.status, b.status]).toEqual([404, 404]);
+    expect(await a.json()).toEqual({ erro: 'Conexão não encontrada.' });
+    expect(await b.json()).toEqual({ erro: 'Conexão não encontrada.' });
+    expect(acoes.alterarPermissoes).toHaveBeenCalledTimes(1);
+  });
+
+  it('permissoes: lista vazia ou inválida → 400 sem chamar a ação', async () => {
+    const { d, acoes } = deps();
+    for (const permissoes of [[], ['vendas'], 'margens', ['margens', 'margens'], undefined]) {
+      const r = await tratarConexoes(post({ acao: 'permissoes', id: ID, permissoes }), d);
+      expect(r.status).toBe(400);
+      expect(await r.json()).toEqual({ erro: 'Escolha ao menos uma permissão válida.' });
+    }
+    expect(acoes.alterarPermissoes).not.toHaveBeenCalled();
   });
 
   it('só criar devolve chave; nenhuma resposta tem hash', async () => {

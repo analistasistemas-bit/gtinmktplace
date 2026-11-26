@@ -366,6 +366,7 @@ describe('autenticação e auditoria', () => {
     const { admin, chamadas } = fake({ agente_conexoes: [ok(linha), ok(null), ERRO] });
     expect(await buscarConexaoPorHash(admin, 'h')).toEqual(linha);
     expect(tem(chamadas[0], 'eq', 'hash', 'h')).toBe(true);
+    expect(chamadas[0].ops.find(([m]) => m === 'select')?.[1]).toContain('permissoes');
     expect(await buscarConexaoPorHash(admin, 'h')).toBeNull();
     await expect(buscarConexaoPorHash(admin, 'h')).rejects.toThrow();
   });
