@@ -564,3 +564,16 @@ Aplicado:
 - Não chamar `campanhas.ts` por fora: `detalheEquilibrioDoMlb` já recebe o preço e é chamada por par dentro de `calcular`.
 
 Os ajustes não passaram por nova rodada.
+
+### Implementação, deploy e aceite parcial (2026-11-26 e 27)
+
+Plano: `docs/superpowers/plans/2026-11-26-agentes-v2-passo-1.md` (6 tarefas, subagente por tarefa com revisão de cada uma; Opus nas tarefas de autorização, migration e `calcular`, Sonnet nas demais). Revisão final do branch: Codex gpt-6.2-sol high, pacote sanitizado (lojas anonimizadas, sem `.env`), veredito REVISAR com 1 bloqueador e 3 importantes, todos corrigidos e conferidos por um revisor Opus: permissão desconhecida na linha passou a negar tudo; a auditoria grava o filtro herdado do cursor (campo `filtro` na resposta); instrução de "sem margem e por quê" no sentido amplo; ordem de deploy acima. Onze achados menores ficaram adiados (nenhum de segurança ou contrato).
+
+**Deploy (2026-11-27, 07h48 de Brasília):** migration `20261126125330` testada antes em transação desfeita (`TESTE_OK`) e aplicada por `db push`; `db:check` alinhado; coluna com default `{margens,catalogo}`, check ativo e nenhuma linha fora do padrão. `agentes` v11 (`verify_jwt` falso) e `agente-conexoes` v4 (`verify_jwt` verdadeiro), 58 de 58 arquivos baixados iguais ao commit. Merge fast-forward na `main` em `00d01014`, CI verde (`frontend`, `backend-lint`).
+
+**Aceite parcial (Zaven, pelo conector do claude.ai desta sessão):**
+
+- Catálogo sem filtro: resposta com `examinados: 50`, `sem_numero_por_motivo: {}`, `com_margem_ate_zero: 0`, `filtro: null` e margens iguais às da M1 (ex.: `MLB5419187671` 17,9964%).
+- O conector desta sessão guardou a lista de ferramentas antiga e mandou `abaixo_de_pct` como texto: a edge recusou com `argumento_invalido` e a auditoria gravou `erro` com alvo nulo, como especificado.
+
+**Falta (precisa de conversa nova no conector, que relê a lista):** 5 ferramentas em `tools/list`; `abaixo_de_pct: 18` até o cursor nulo; `sem_numero`; `publiai_comparar_precos` em `MLB5419187671` com `[55.7, 57.37, 61.17]`; chave só com `margens` recebendo `sem_permissao` no catálogo; tela de permissões aberta por um administrador.
